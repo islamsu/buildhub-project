@@ -21,15 +21,41 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, ShoppingBag, FileText, MessageSquare, Bot, Star, Settings, BarChart3, Shield, Building2 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
-const menuItems = [
-  { icon: LayoutDashboard, label: "Page 1", path: "/" },
-  { icon: Users, label: "Page 2", path: "/some-path" },
+const HOMEOWNER_MENU = [
+  { icon: LayoutDashboard, label: 'Overview',    path: '/dashboard' },
+  { icon: FolderOpen,      label: 'My Projects', path: '/dashboard' },
+  { icon: ShoppingBag,     label: 'Marketplace', path: '/marketplace' },
+  { icon: FileText,        label: 'Get Quotes',  path: '/rfq' },
+  { icon: MessageSquare,   label: 'Messages',    path: '/messages' },
+  { icon: Bot,             label: 'AI Assistant',path: '/ai' },
+  { icon: Star,            label: 'Reviews',     path: '/messages' },
+  { icon: Settings,        label: 'Settings',    path: '/dashboard' },
+];
+
+const PROVIDER_MENU = [
+  { icon: LayoutDashboard, label: 'Dashboard',   path: '/provider' },
+  { icon: FileText,        label: 'RFQ Inbox',   path: '/rfq' },
+  { icon: ShoppingBag,     label: 'Marketplace', path: '/marketplace' },
+  { icon: MessageSquare,   label: 'Messages',    path: '/messages' },
+  { icon: Bot,             label: 'AI Assistant',path: '/ai' },
+  { icon: Star,            label: 'My Reviews',  path: '/messages' },
+  { icon: BarChart3,       label: 'Analytics',   path: '/provider' },
+  { icon: Settings,        label: 'Settings',    path: '/provider' },
+];
+
+const ADMIN_MENU = [
+  { icon: LayoutDashboard, label: 'Admin Panel',  path: '/admin' },
+  { icon: Users,           label: 'Users',        path: '/admin' },
+  { icon: Shield,          label: 'Verifications',path: '/admin' },
+  { icon: FileText,        label: 'Disputes',     path: '/admin' },
+  { icon: BarChart3,       label: 'Analytics',    path: '/admin' },
+  { icon: Settings,        label: 'Settings',     path: '/admin' },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -110,8 +136,16 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
+
+  const userRole = (user as any)?.userRole ?? 'homeowner';
+  const menuItems = userRole === 'admin' || user?.role === 'admin'
+    ? ADMIN_MENU
+    : ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'].includes(userRole)
+      ? PROVIDER_MENU
+      : HOMEOWNER_MENU;
+
+  const activeMenuItem = menuItems.find(item => item.path === location);
 
   useEffect(() => {
     if (isCollapsed) {
@@ -168,9 +202,8 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-semibold tracking-tight truncate">
-                    Navigation
-                  </span>
+                  <Building2 className="h-5 w-5 text-primary flex-shrink-0" />
+                  <span className="font-bold tracking-tight truncate text-primary">BuildHub</span>
                 </div>
               ) : null}
             </div>
