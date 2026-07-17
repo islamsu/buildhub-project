@@ -305,7 +305,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                           <TooltipTrigger>
                             <TrendingDown className="w-4 h-4 text-emerald-500" />
                           </TooltipTrigger>
-                          <TooltipContent>Lowest Price</TooltipContent>
+                          <TooltipContent>{t('rfq.lowest_price')}</TooltipContent>
                         </Tooltip>
                       )}
                     </div>

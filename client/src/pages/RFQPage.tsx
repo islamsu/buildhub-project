@@ -82,13 +82,13 @@ export default function RFQPage() {
           <div>
             <h1 className="text-3xl font-bold">{t('nav.rfq')}</h1>
             <p className="text-muted-foreground mt-1">
-              Post your requirements and receive competitive quotations from verified providers
+              {t('rfq.subtitle')}
             </p>
           </div>
           {isAuthenticated ? (
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
-                <Button className="gap-2"><Plus className="w-4 h-4" /> Post RFQ</Button>
+                <Button className="gap-2"><Plus className="w-4 h-4" /> {t('rfq.post')}</Button>
               </DialogTrigger>
               <DialogContent className="max-w-lg">
                 <DialogHeader>
@@ -96,18 +96,18 @@ export default function RFQPage() {
                 </DialogHeader>
                 <div className="space-y-4 mt-2">
                   <Input
-                    placeholder="RFQ Title (e.g. Apartment Finishing – 150m²)"
+                    placeholder={t('rfq.title.placeholder')}
                     value={form.title}
                     onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
                   />
                   <Textarea
-                    placeholder="Describe your requirements in detail…"
+                    placeholder={t('rfq.description.placeholder')}
                     rows={4}
                     value={form.description}
                     onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                   />
                   <Select onValueChange={v => setForm(f => ({ ...f, category: v }))}>
-                    <SelectTrigger><SelectValue placeholder="Category" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={t('rfq.category')} /></SelectTrigger>
                     <SelectContent>
                       {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                     </SelectContent>
@@ -126,7 +126,7 @@ export default function RFQPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Deadline</label>
+                    <label className="text-xs text-muted-foreground">{t('rfq.deadline')}</label>
                     <Input
                       type="date"
                       value={form.deadline}
@@ -143,14 +143,14 @@ export default function RFQPage() {
                     disabled={createRfq.isPending || !form.title}
                   >
                     <Send className="w-4 h-4" />
-                    {createRfq.isPending ? 'Posting…' : 'Post RFQ'}
+                    {createRfq.isPending ? t('rfq.submitting') : t('rfq.submit')}
                   </Button>
                 </div>
               </DialogContent>
             </Dialog>
           ) : (
             <Button onClick={() => startLogin()} className="gap-2">
-              <Plus className="w-4 h-4" /> Post RFQ
+              <Plus className="w-4 h-4" /> {t('rfq.post')}
             </Button>
           )}
         </div>
@@ -178,11 +178,11 @@ export default function RFQPage() {
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <h3 className="font-semibold text-lg">{rfq.title}</h3>
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${statusStyle}`}>
-                          {rfq.status ?? 'open'}
+                          {rfq.status === 'open' ? t('rfq.status.open') : rfq.status === 'closed' ? t('rfq.status.closed') : rfq.status === 'awarded' ? t('rfq.status.awarded') : t('rfq.status.open')}
                         </span>
                         {isOwner && (
                           <Badge variant="outline" className="text-xs gap-1">
-                            <Users className="w-3 h-3" /> Your RFQ
+                            <Users className="w-3 h-3" /> {t('rfq.your_rfq')}
                           </Badge>
                         )}
                       </div>
@@ -201,7 +201,7 @@ export default function RFQPage() {
                         )}
                         {rfq.budget && (
                           <span className="flex items-center gap-1">
-                            <DollarSign className="w-3.5 h-3.5" />EGP {Number(rfq.budget).toLocaleString()}
+                            <DollarSign className="w-3.5 h-3.5" />{t('common.egp')} {Number(rfq.budget).toLocaleString()}
                           </span>
                         )}
                         {rfq.location && (
@@ -226,7 +226,7 @@ export default function RFQPage() {
                           className="gap-1.5"
                           onClick={() => setCompareRfq(rfq)}
                         >
-                          <BarChart3 className="w-4 h-4" /> Compare Quotes
+                          <BarChart3 className="w-4 h-4" /> {t('rfq.compare')}
                         </Button>
                       ) : (
                         <Button
@@ -235,7 +235,7 @@ export default function RFQPage() {
                           className="gap-1.5"
                           onClick={() => setCompareRfq(rfq)}
                         >
-                          View Details <ChevronRight className="w-3.5 h-3.5" />
+                          {t('rfq.view_details')} <ChevronRight className="w-3.5 h-3.5" />
                         </Button>
                       )}
                     </div>
@@ -253,7 +253,7 @@ export default function RFQPage() {
           <SheetHeader className="mb-6">
             <SheetTitle className="flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-primary" />
-              Quotation Comparison
+              {t('rfq.comparison.title')}
             </SheetTitle>
           </SheetHeader>
           {compareRfq && (
