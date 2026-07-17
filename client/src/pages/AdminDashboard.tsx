@@ -49,7 +49,7 @@ export default function AdminDashboard() {
 
   const { data: stats } = trpc.admin.stats.useQuery(undefined, { enabled: isAuthenticated && (user as any)?.role === 'admin' });
   const { data: allUsers, refetch: refetchUsers } = trpc.admin.users.useQuery(undefined, { enabled: isAuthenticated && (user as any)?.role === 'admin' });
-  const verifyUser = trpc.admin.verifyUser.useMutation({ onSuccess: () => { toast.success('User status updated'); refetchUsers(); } });
+  const verifyUser = trpc.admin.verifyUser.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تم تحديث حالة المستخدم' : 'User status updated'); refetchUsers(); } });
 
   if (loading) return null;
   if (!isAuthenticated) { startLogin(); return null; }
@@ -86,7 +86,7 @@ export default function AdminDashboard() {
             <p className="text-muted-foreground">{lang === 'ar' ? 'مراقبة وإدارة منصة BuildHub' : 'Monitor and manage the BuildHub platform'}</p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge className="badge-success text-xs px-3 py-1">Platform Healthy</Badge>
+            <Badge className="badge-success text-xs px-3 py-1">{lang === 'ar' ? 'المنصة تعمل بشكل جيد' : 'Platform Healthy'}</Badge>
             <Badge className="badge-info text-xs px-3 py-1 flex items-center gap-1"><Activity className="w-3 h-3" /> Live</Badge>
           </div>
         </div>
@@ -125,7 +125,7 @@ export default function AdminDashboard() {
                 <CardTitle className="flex items-center gap-2"><Users className="w-5 h-5" /> User Management</CardTitle>
                 <div className="relative w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input className="pl-9 h-9 text-sm" placeholder="Search users..." value={userSearch} onChange={e => setUserSearch(e.target.value)} />
+                  <Input className="pl-9 h-9 text-sm" placeholder={lang === 'ar' ? 'بحث عن مستخدمين...' : 'Search users...'} value={userSearch} onChange={e => setUserSearch(e.target.value)} />
                 </div>
               </CardHeader>
               <CardContent>
@@ -210,7 +210,7 @@ export default function AdminDashboard() {
                 </CardContent>
               </Card>
               <Card className="lg:col-span-2">
-                <CardHeader><CardTitle className="text-base">Platform Health Metrics</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base">{lang === 'ar' ? 'مقاييس صحة المنصة' : 'Platform Health Metrics'}</CardTitle></CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     {[
@@ -287,7 +287,7 @@ export default function AdminDashboard() {
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => toast.info('Under investigation')}>{t('admin.investigate')}</Button>
-                          <Button size="sm" variant="destructive" className="h-7 text-xs gap-1" onClick={() => toast.success('User suspended')}>
+                          <Button size="sm" variant="destructive" className="h-7 text-xs gap-1" onClick={() => toast.success(lang === 'ar' ? 'تم تعليق المستخدم' : 'User suspended')}>
                             <Ban className="w-3 h-3" /> Suspend
                           </Button>
                         </div>

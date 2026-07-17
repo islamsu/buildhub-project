@@ -82,7 +82,7 @@ export default function AIAssistantPage() {
               messages={messages.filter(m => m.role !== 'system')}
               onSendMessage={handleSend}
               isLoading={chatMutation.isPending}
-              placeholder="Ask about costs, materials, project planning..."
+              placeholder={lang === 'ar' ? 'اسأل عن التكاليف، المواد، تخطيط المشاريع...' : 'Ask about costs, materials, project planning...'}
               suggestedPrompts={[
                 'Estimate cost for a 200m² apartment finishing',
                 'What materials do I need for a kitchen renovation?',

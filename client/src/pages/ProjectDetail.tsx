@@ -21,20 +21,20 @@ import {
   TrendingUp, MapPin, Bot, ClipboardList, BookOpen
 } from 'lucide-react';
 
+export default function ProjectDetail() {
+  const { t, lang } = useLanguage();
 const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
-  low:    { label: 'Low',    color: 'badge-info' },
-  medium: { label: 'Medium', color: 'badge-warning' },
-  high:   { label: 'High',   color: 'badge-error' },
+  low:    { label: lang === 'ar' ? 'منخفضة' : 'Low',    color: 'badge-info' },
+  medium: { label: lang === 'ar' ? 'متوسطة' : 'Medium', color: 'badge-warning' },
+  high:   { label: lang === 'ar' ? 'عالية' : 'High',   color: 'badge-error' },
 };
 
 const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ComponentType<any> }> = {
-  todo:        { label: 'To Do',       color: 'text-muted-foreground', icon: Clock },
-  in_progress: { label: 'In Progress', color: 'text-blue-500',         icon: TrendingUp },
-  done:        { label: 'Done',        color: 'text-green-500',        icon: CheckCircle2 },
+  todo:        { label: lang === 'ar' ? 'قيد الانتظار' : 'To Do',       color: 'text-muted-foreground', icon: Clock },
+  in_progress: { label: lang === 'ar' ? 'قيد التنفيذ' : 'In Progress', color: 'text-blue-500',         icon: TrendingUp },
+  done:        { label: lang === 'ar' ? 'مكتملة' : 'Done',        color: 'text-green-500',        icon: CheckCircle2 },
 };
 
-export default function ProjectDetail() {
-  const { t, lang } = useLanguage();
   const { id } = useParams<{ id: string }>();
   const projectId = parseInt(id ?? '0');
   const { isAuthenticated, loading } = useAuth();
@@ -61,12 +61,12 @@ export default function ProjectDetail() {
   const { data: expenses, refetch: refetchExp } = trpc.projects.expenses.useQuery({ projectId }, { enabled: isAuthenticated && projectId > 0 });
   const { data: dailyLogs, refetch: refetchLogs } = trpc.projects.dailyLogs.useQuery({ projectId }, { enabled: isAuthenticated && projectId > 0 });
 
-  const addTask = trpc.projects.addTask.useMutation({ onSuccess: () => { toast.success('Task added!'); setTaskOpen(false); refetchTasks(); setTaskForm({ title: '', description: '', priority: 'medium', dueDate: '' }); }, onError: (e: { message: string }) => toast.error(e.message) });
+  const addTask = trpc.projects.addTask.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تمت إضافة المهمة!' : 'Task added!'); setTaskOpen(false); refetchTasks(); setTaskForm({ title: '', description: '', priority: 'medium', dueDate: '' }); }, onError: (e: { message: string }) => toast.error(e.message) });
   const updateTask = trpc.projects.updateTask.useMutation({ onSuccess: () => refetchTasks(), onError: (e: { message: string }) => toast.error(e.message) });
-  const addMilestone = trpc.projects.addMilestone.useMutation({ onSuccess: () => { toast.success('Milestone added!'); setMsOpen(false); refetchMs(); setMsForm({ title: '', dueDate: '' }); }, onError: (e: { message: string }) => toast.error(e.message) });
-  const addExpense = trpc.projects.addExpense.useMutation({ onSuccess: () => { toast.success('Expense recorded!'); setExpOpen(false); refetchExp(); setExpForm({ category: '', description: '', amount: '' }); }, onError: (e: { message: string }) => toast.error(e.message) });
-  const addLog = trpc.projects.addDailyLog.useMutation({ onSuccess: () => { toast.success('Log added!'); setLogOpen(false); refetchLogs(); setLogForm({ description: '', weather: '', workers: '' }); }, onError: (e: { message: string }) => toast.error(e.message) });
-  const updateProject = trpc.projects.update.useMutation({ onSuccess: () => { toast.success('Project updated!'); refetchProject(); }, onError: (e: { message: string }) => toast.error(e.message) });
+  const addMilestone = trpc.projects.addMilestone.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تمت إضافة المعلم!' : 'Milestone added!'); setMsOpen(false); refetchMs(); setMsForm({ title: '', dueDate: '' }); }, onError: (e: { message: string }) => toast.error(e.message) });
+  const addExpense = trpc.projects.addExpense.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تم تسجيل المصروف!' : 'Expense recorded!'); setExpOpen(false); refetchExp(); setExpForm({ category: '', description: '', amount: '' }); }, onError: (e: { message: string }) => toast.error(e.message) });
+  const addLog = trpc.projects.addDailyLog.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تم إضافة السجل!' : 'Log added!'); setLogOpen(false); refetchLogs(); setLogForm({ description: '', weather: '', workers: '' }); }, onError: (e: { message: string }) => toast.error(e.message) });
+  const updateProject = trpc.projects.update.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تم تحديث المشروع!' : 'Project updated!'); refetchProject(); }, onError: (e: { message: string }) => toast.error(e.message) });
 
   if (loading) return null;
   if (!isAuthenticated) { startLogin(); return null; }
@@ -238,7 +238,7 @@ export default function ProjectDetail() {
                     <DialogContent className="max-w-sm">
                       <DialogHeader><DialogTitle>{t('project.add_milestone')}</DialogTitle></DialogHeader>
                       <div className="space-y-3 mt-2">
-                        <Input placeholder="Milestone title" value={msForm.title} onChange={e => setMsForm(f => ({ ...f, title: e.target.value }))} />
+                        <Input placeholder={lang === 'ar' ? 'عنوان المعلم' : 'Milestone title'} value={msForm.title} onChange={e => setMsForm(f => ({ ...f, title: e.target.value }))} />
                         <Input type="date" value={msForm.dueDate} onChange={e => setMsForm(f => ({ ...f, dueDate: e.target.value }))} />
                         <Button className="w-full" onClick={() => addMilestone.mutate({ projectId, title: msForm.title, dueDate: msForm.dueDate ? new Date(msForm.dueDate) : undefined })} disabled={addMilestone.isPending || !msForm.title}>
                           Add Milestone
@@ -264,7 +264,7 @@ export default function ProjectDetail() {
                         {ms.dueDate && <p className="text-xs text-muted-foreground mt-0.5">Due: {new Date(ms.dueDate as Date).toLocaleDateString()}</p>}
                       </div>
                       <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${ms.status === 'completed' ? 'badge-success' : 'badge-info'}`}>
-                        {ms.status === 'completed' ? 'Completed' : 'Pending'}
+                        {ms.status === 'completed' ? (lang === 'ar' ? 'مكتمل' : 'Completed') : (lang === 'ar' ? 'قيد الانتظار' : 'Pending')}
                       </span>
                     </div>
                   ))}
@@ -286,7 +286,7 @@ export default function ProjectDetail() {
                       <DialogHeader><DialogTitle>{t('project.add_expense')}</DialogTitle></DialogHeader>
                       <div className="space-y-3 mt-2">
                         <Input placeholder="Category (e.g. Materials, Labor)" value={expForm.category} onChange={e => setExpForm(f => ({ ...f, category: e.target.value }))} />
-                        <Input placeholder="Description" value={expForm.description} onChange={e => setExpForm(f => ({ ...f, description: e.target.value }))} />
+                        <Input placeholder={lang === 'ar' ? 'الوصف' : 'Description'} value={expForm.description} onChange={e => setExpForm(f => ({ ...f, description: e.target.value }))} />
                         <Input type="number" placeholder="Amount (EGP)" value={expForm.amount} onChange={e => setExpForm(f => ({ ...f, amount: e.target.value }))} />
                         <Button className="w-full" onClick={() => addExpense.mutate({ projectId, ...expForm, amount: parseFloat(expForm.amount) })} disabled={addExpense.isPending || !expForm.amount}>
                           Record Expense
@@ -330,10 +330,10 @@ export default function ProjectDetail() {
                     <DialogContent className="max-w-md">
                       <DialogHeader><DialogTitle>{t('project.add_log')}</DialogTitle></DialogHeader>
                       <div className="space-y-3 mt-2">
-                        <Textarea placeholder="What happened today? Work done, issues, observations..." rows={4} value={logForm.description} onChange={e => setLogForm(f => ({ ...f, description: e.target.value }))} />
+                        <Textarea placeholder={lang === 'ar' ? 'ماذا حدث اليوم؟ الأعمال المنجزة، المشكلات، الملاحظات...' : 'What happened today? Work done, issues, observations...'} rows={4} value={logForm.description} onChange={e => setLogForm(f => ({ ...f, description: e.target.value }))} />
                         <div className="grid grid-cols-2 gap-3">
                           <Input placeholder="Weather (e.g. Sunny)" value={logForm.weather} onChange={e => setLogForm(f => ({ ...f, weather: e.target.value }))} />
-                          <Input type="number" placeholder="Workers on site" value={logForm.workers} onChange={e => setLogForm(f => ({ ...f, workers: e.target.value }))} />
+                          <Input type="number" placeholder={lang === 'ar' ? 'عدد العمال في الموقع' : 'Workers on site'} value={logForm.workers} onChange={e => setLogForm(f => ({ ...f, workers: e.target.value }))} />
                         </div>
                         <Button className="w-full" onClick={() => addLog.mutate({ projectId, description: logForm.description, weather: logForm.weather || undefined, workers: logForm.workers ? parseInt(logForm.workers) : undefined })} disabled={addLog.isPending || !logForm.description}>
                           Save Log

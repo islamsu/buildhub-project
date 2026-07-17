@@ -33,7 +33,7 @@ export default function AuthPage() {
 
   const updateRole = trpc.auth.updateRole.useMutation({
     onSuccess: () => {
-      toast.success('Profile set up successfully!');
+      toast.success(lang === 'ar' ? 'تم إعداد الملف الشخصي بنجاح!' : 'Profile set up successfully!');
       setStep('done');
     },
     onError: (e: { message: string }) => toast.error(e.message),

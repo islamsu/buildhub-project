@@ -15,7 +15,7 @@ import { FileText, DollarSign, Clock, MapPin, Send, Star, TrendingUp, CheckCircl
 import { useLocation } from 'wouter';
 
 export default function ProviderDashboard() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const { user, isAuthenticated, loading } = useAuth();
   const [, navigate] = useLocation();
   const [quoteForm, setQuoteForm] = useState({ rfqId: 0, price: '', timeline: '', warranty: '', notes: '' });
@@ -23,7 +23,7 @@ export default function ProviderDashboard() {
 
   const { data: rfqs } = trpc.rfq.list.useQuery();
   const submitQuote = trpc.rfq.submitQuotation.useMutation({
-    onSuccess: () => { toast.success('Quotation submitted!'); setQuoteOpen(false); },
+    onSuccess: () => { toast.success(lang === 'ar' ? 'تم تقديم العرض!' : 'Quotation submitted!'); setQuoteOpen(false); },
     onError: (e: { message: string }) => toast.error(e.message),
   });
 

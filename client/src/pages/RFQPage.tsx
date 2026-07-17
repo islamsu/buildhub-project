@@ -44,7 +44,7 @@ type RFQItem = {
 };
 
 export default function RFQPage() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const { isAuthenticated, user } = useAuth();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -57,7 +57,7 @@ export default function RFQPage() {
 
   const createRfq = trpc.rfq.create.useMutation({
     onSuccess: () => {
-      toast.success('RFQ posted successfully!');
+      toast.success(lang === 'ar' ? 'تم نشر طلب العرض بنجاح!' : 'RFQ posted successfully!');
       setOpen(false);
       setForm({ title: '', description: '', category: '', budget: '', location: '', deadline: '' });
       refetch();

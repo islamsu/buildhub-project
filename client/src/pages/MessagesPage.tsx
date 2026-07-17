@@ -50,7 +50,7 @@ export default function MessagesPage() {
   const { t, lang, dir } = useLanguage();
   const { isAuthenticated } = useAuth();
   const { data: notifications } = trpc.notifications.list.useQuery(undefined, { enabled: isAuthenticated });
-  const markRead = trpc.notifications.markAllRead.useMutation({ onSuccess: () => toast.success('All marked as read') });
+  const markRead = trpc.notifications.markAllRead.useMutation({ onSuccess: () => toast.success(lang === 'ar' ? 'تم تحديد الكل كمقروء' : 'All marked as read') });
 
   const [selectedConv, setSelectedConv] = useState<number | null>(1);
   const [messageText, setMessageText] = useState('');
