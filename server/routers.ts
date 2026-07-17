@@ -194,6 +194,13 @@ const rfqRouter = router({
     if (!db) return [];
     return db.select().from(rfqs).where(eq(rfqs.requesterId, ctx.user.id)).orderBy(desc(rfqs.createdAt));
   }),
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [rfq] = await db.select().from(rfqs).where(eq(rfqs.id, input.id));
+    if (!rfq) throw new TRPCError({ code: 'NOT_FOUND' });
+    return rfq;
+  }),
   create: protectedProcedure
     .input(z.object({
       title: z.string().min(1),
@@ -216,7 +223,32 @@ const rfqRouter = router({
   quotations: protectedProcedure.input(z.object({ rfqId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(quotations).where(eq(quotations.rfqId, input.rfqId)).orderBy(quotations.price);
+    const rows = await db
+      .select({
+        id:               quotations.id,
+        rfqId:            quotations.rfqId,
+        providerId:       quotations.providerId,
+        price:            quotations.price,
+        currency:         quotations.currency,
+        timeline:         quotations.timeline,
+        warranty:         quotations.warranty,
+        paymentTerms:     quotations.paymentTerms,
+        notes:            quotations.notes,
+        status:           quotations.status,
+        createdAt:        quotations.createdAt,
+        providerName:     users.name,
+        providerEmail:    users.email,
+        providerRating:   users.rating,
+        providerReviews:  users.reviewCount,
+        providerVerified: users.verified,
+        providerRole:     users.userRole,
+        providerLocation: users.location,
+      })
+      .from(quotations)
+      .leftJoin(users, eq(quotations.providerId, users.id))
+      .where(eq(quotations.rfqId, input.rfqId))
+      .orderBy(quotations.price);
+    return rows;
   }),
   submitQuotation: protectedProcedure
     .input(z.object({
@@ -235,6 +267,30 @@ const rfqRouter = router({
         providerId: ctx.user.id,
         price: String(input.price),
       });
+      return { success: true };
+    }),
+  acceptQuotation: protectedProcedure
+    .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [rfq] = await db.select().from(rfqs).where(and(eq(rfqs.id, input.rfqId), eq(rfqs.requesterId, ctx.user.id)));
+      if (!rfq) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this RFQ' });
+      await db.update(quotations).set({ status: 'accepted' }).where(eq(quotations.id, input.quotationId));
+      await db.update(quotations).set({ status: 'rejected' }).where(
+        and(eq(quotations.rfqId, input.rfqId), sql`id != ${input.quotationId}`)
+      );
+      await db.update(rfqs).set({ status: 'awarded' }).where(eq(rfqs.id, input.rfqId));
+      return { success: true };
+    }),
+  rejectQuotation: protectedProcedure
+    .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [rfq] = await db.select().from(rfqs).where(and(eq(rfqs.id, input.rfqId), eq(rfqs.requesterId, ctx.user.id)));
+      if (!rfq) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this RFQ' });
+      await db.update(quotations).set({ status: 'rejected' }).where(eq(quotations.id, input.quotationId));
       return { success: true };
     }),
 });

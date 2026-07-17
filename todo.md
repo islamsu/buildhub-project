@@ -46,6 +46,7 @@
 - [x] RFQ list and detail view
 - [x] Provider RFQ notification and quotation submission
 - [ ] Side-by-side quotation comparison (placeholder)
+- [x] Side-by-side quotation comparison (placeholder)
 - [ ] Smart matching algorithm display (ranked providers) (placeholder)
 - [x] Contractor dashboard
 - [x] Engineer dashboard
