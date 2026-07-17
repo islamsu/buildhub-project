@@ -84,7 +84,7 @@ export default function ProviderDashboard() {
             {(!rfqs || rfqs.length === 0) ? (
               <div className="text-center py-12 text-muted-foreground">
                 <FileText className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                <p>No open RFQs at the moment. Check back soon!</p>
+                <p>{t('provider.no_rfqs')}</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -109,13 +109,13 @@ export default function ProviderDashboard() {
                         </DialogTrigger>
                         <DialogContent className="max-w-md">
                           <DialogHeader>
-                            <DialogTitle>Submit Quotation</DialogTitle>
+                            <DialogTitle>{t('provider.submit_quote')}</DialogTitle>
                           </DialogHeader>
                           <div className="space-y-3 mt-2">
                             <Input placeholder="Your Price (EGP)" type="number" value={quoteForm.price} onChange={e => setQuoteForm(f => ({ ...f, price: e.target.value }))} />
                             <Input placeholder="Timeline (days)" type="number" value={quoteForm.timeline} onChange={e => setQuoteForm(f => ({ ...f, timeline: e.target.value }))} />
-                            <Input placeholder="Warranty (e.g. 1 year)" value={quoteForm.warranty} onChange={e => setQuoteForm(f => ({ ...f, warranty: e.target.value }))} />
-                            <Textarea placeholder="Additional notes, payment terms..." rows={3} value={quoteForm.notes} onChange={e => setQuoteForm(f => ({ ...f, notes: e.target.value }))} />
+                            <Input placeholder={t('common.warranty')} value={quoteForm.warranty} onChange={e => setQuoteForm(f => ({ ...f, warranty: e.target.value }))} />
+                            <Textarea placeholder={t('common.notes')} rows={3} value={quoteForm.notes} onChange={e => setQuoteForm(f => ({ ...f, notes: e.target.value }))} />
                             <Button className="w-full gap-2" onClick={() => submitQuote.mutate({ rfqId: quoteForm.rfqId, price: parseFloat(quoteForm.price), timeline: quoteForm.timeline ? parseInt(quoteForm.timeline) : undefined, warranty: quoteForm.warranty || undefined, notes: quoteForm.notes || undefined })} disabled={submitQuote.isPending || !quoteForm.price}>
                               <Send className="w-4 h-4" /> {submitQuote.isPending ? 'Submitting...' : 'Submit Quotation'}
                             </Button>

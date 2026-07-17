@@ -89,7 +89,7 @@ export default function ProjectDetail() {
         {!project ? (
           <div className="text-center py-16 text-muted-foreground">
             <FileText className="w-12 h-12 mx-auto mb-4 opacity-30" />
-            <p>Project not found or loading...</p>
+            <p>{t('common.loading')}</p>
           </div>
         ) : (
           <>
@@ -125,10 +125,10 @@ export default function ProjectDetail() {
             {/* Summary Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
               {[
-                { label: 'Progress', value: `${project.progress ?? 0}%`, icon: TrendingUp, color: 'text-blue-500', bg: 'bg-blue-50', extra: <Progress value={project.progress ?? 0} className="h-1 mt-1" /> },
-                { label: 'Tasks Done', value: `${doneTasks}/${totalTasks}`, icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-50' },
-                { label: 'Budget', value: project.budget ? `EGP ${Number(project.budget).toLocaleString()}` : '—', icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-50' },
-                { label: 'Spent', value: `EGP ${totalExpenses.toLocaleString()}`, icon: BarChart3, color: 'text-purple-500', bg: 'bg-purple-50' },
+                { label: t('project.progress'), value: `${project.progress ?? 0}%`, icon: TrendingUp, color: 'text-blue-500', bg: 'bg-blue-50', extra: <Progress value={project.progress ?? 0} className="h-1 mt-1" /> },
+                { label: t('project.tasks'), value: `${doneTasks}/${totalTasks}`, icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-50' },
+                { label: t('project.budget'), value: project.budget ? `${t('common.egp')} ${Number(project.budget).toLocaleString()}` : '—', icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-50' },
+                { label: t('project.budget_used'), value: `${t('common.egp')} ${totalExpenses.toLocaleString()}`, icon: BarChart3, color: 'text-purple-500', bg: 'bg-purple-50' },
               ].map(s => (
                 <Card key={s.label}>
                   <CardContent className="p-4 flex items-center gap-3">
@@ -164,7 +164,7 @@ export default function ProjectDetail() {
                       <Button size="sm" className="gap-1.5"><Plus className="w-4 h-4" /> Add Task</Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-md">
-                      <DialogHeader><DialogTitle>Add Task</DialogTitle></DialogHeader>
+                      <DialogHeader><DialogTitle>{t('project.add_task')}</DialogTitle></DialogHeader>
                       <div className="space-y-3 mt-2">
                         <Input placeholder="Task title" value={taskForm.title} onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))} />
                         <Textarea placeholder="Description (optional)" rows={2} value={taskForm.description} onChange={e => setTaskForm(f => ({ ...f, description: e.target.value }))} />
@@ -172,9 +172,9 @@ export default function ProjectDetail() {
                           <Select value={taskForm.priority} onValueChange={v => setTaskForm(f => ({ ...f, priority: v as any }))}>
                             <SelectTrigger><SelectValue placeholder="Priority" /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="low">Low</SelectItem>
-                              <SelectItem value="medium">Medium</SelectItem>
-                              <SelectItem value="high">High</SelectItem>
+                              <SelectItem value="low">{t('project.priority.low')}</SelectItem>
+                              <SelectItem value="medium">{t('project.priority.medium')}</SelectItem>
+                              <SelectItem value="high">{t('project.priority.high')}</SelectItem>
                             </SelectContent>
                           </Select>
                           <Input type="date" value={taskForm.dueDate} onChange={e => setTaskForm(f => ({ ...f, dueDate: e.target.value }))} />
@@ -190,7 +190,7 @@ export default function ProjectDetail() {
                   {(!tasks || tasks.length === 0) && (
                     <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-xl">
                       <CheckCircle2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                      <p>No tasks yet. Add your first task!</p>
+                      <p>{t('project.no_tasks')}</p>
                     </div>
                   )}
                   {tasks?.map(task => {
@@ -215,9 +215,9 @@ export default function ProjectDetail() {
                           <Select value={task.status ?? 'todo'} onValueChange={v => updateTask.mutate({ id: task.id, status: v as any })}>
                             <SelectTrigger className="w-28 h-7 text-xs border-0 bg-muted"><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="todo">To Do</SelectItem>
-                              <SelectItem value="in_progress">In Progress</SelectItem>
-                              <SelectItem value="done">Done</SelectItem>
+                              <SelectItem value="todo">{t('common.status.pending')}</SelectItem>
+                              <SelectItem value="in_progress">{t('common.status.in_progress')}</SelectItem>
+                              <SelectItem value="done">{t('common.status.completed')}</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -236,7 +236,7 @@ export default function ProjectDetail() {
                       <Button size="sm" className="gap-1.5"><Plus className="w-4 h-4" /> Add Milestone</Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-sm">
-                      <DialogHeader><DialogTitle>Add Milestone</DialogTitle></DialogHeader>
+                      <DialogHeader><DialogTitle>{t('project.add_milestone')}</DialogTitle></DialogHeader>
                       <div className="space-y-3 mt-2">
                         <Input placeholder="Milestone title" value={msForm.title} onChange={e => setMsForm(f => ({ ...f, title: e.target.value }))} />
                         <Input type="date" value={msForm.dueDate} onChange={e => setMsForm(f => ({ ...f, dueDate: e.target.value }))} />
@@ -251,7 +251,7 @@ export default function ProjectDetail() {
                   {(!milestones || milestones.length === 0) && (
                     <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-xl">
                       <Flag className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                      <p>No milestones yet. Define your project milestones!</p>
+                      <p>{t('project.no_milestones')}</p>
                     </div>
                   )}
                   {milestones?.map((ms, i) => (
@@ -283,7 +283,7 @@ export default function ProjectDetail() {
                       <Button size="sm" className="gap-1.5"><Plus className="w-4 h-4" /> Add Expense</Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-sm">
-                      <DialogHeader><DialogTitle>Record Expense</DialogTitle></DialogHeader>
+                      <DialogHeader><DialogTitle>{t('project.add_expense')}</DialogTitle></DialogHeader>
                       <div className="space-y-3 mt-2">
                         <Input placeholder="Category (e.g. Materials, Labor)" value={expForm.category} onChange={e => setExpForm(f => ({ ...f, category: e.target.value }))} />
                         <Input placeholder="Description" value={expForm.description} onChange={e => setExpForm(f => ({ ...f, description: e.target.value }))} />
@@ -299,7 +299,7 @@ export default function ProjectDetail() {
                   {(!expenses || expenses.length === 0) && (
                     <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-xl">
                       <DollarSign className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                      <p>No expenses recorded yet.</p>
+                      <p>{t('project.no_expenses')}</p>
                     </div>
                   )}
                   {expenses?.map(exp => (
@@ -328,7 +328,7 @@ export default function ProjectDetail() {
                       <Button size="sm" className="gap-1.5"><Plus className="w-4 h-4" /> Add Log</Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-md">
-                      <DialogHeader><DialogTitle>Daily Site Log</DialogTitle></DialogHeader>
+                      <DialogHeader><DialogTitle>{t('project.add_log')}</DialogTitle></DialogHeader>
                       <div className="space-y-3 mt-2">
                         <Textarea placeholder="What happened today? Work done, issues, observations..." rows={4} value={logForm.description} onChange={e => setLogForm(f => ({ ...f, description: e.target.value }))} />
                         <div className="grid grid-cols-2 gap-3">
@@ -346,7 +346,7 @@ export default function ProjectDetail() {
                   {(!dailyLogs || dailyLogs.length === 0) && (
                     <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-xl">
                       <BookOpen className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                      <p>No daily logs yet. Start documenting your progress!</p>
+                      <p>{t('project.no_logs')}</p>
                     </div>
                   )}
                   {dailyLogs?.map(log => (

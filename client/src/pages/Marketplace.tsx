@@ -71,10 +71,10 @@ export default function Marketplace() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="featured">Featured</SelectItem>
-                  <SelectItem value="price_asc">Price: Low to High</SelectItem>
-                  <SelectItem value="price_desc">Price: High to Low</SelectItem>
-                  <SelectItem value="rating">Top Rated</SelectItem>
+                  <SelectItem value="featured">{t('market.featured')}</SelectItem>
+                  <SelectItem value="price_asc">{t('market.sort.price_asc')}</SelectItem>
+                  <SelectItem value="price_desc">{t('market.sort.price_desc')}</SelectItem>
+                  <SelectItem value="rating">{t('market.sort.rating')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

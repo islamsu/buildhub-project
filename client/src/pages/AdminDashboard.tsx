@@ -82,7 +82,7 @@ export default function AdminDashboard() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold mb-1">Admin Control Panel</h2>
+            <h2 className="text-2xl font-bold mb-1">{t('admin.title')}</h2>
             <p className="text-muted-foreground">Monitor and manage the BuildHub platform</p>
           </div>
           <div className="flex items-center gap-2">
@@ -138,7 +138,7 @@ export default function AdminDashboard() {
                         <th className="text-left py-3 px-2 font-medium text-muted-foreground">Role</th>
                         <th className="text-left py-3 px-2 font-medium text-muted-foreground">Status</th>
                         <th className="text-left py-3 px-2 font-medium text-muted-foreground">Joined</th>
-                        <th className="text-left py-3 px-2 font-medium text-muted-foreground">Actions</th>
+                        <th className="text-left py-3 px-2 font-medium text-muted-foreground">{t('admin.actions')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -182,7 +182,7 @@ export default function AdminDashboard() {
           <TabsContent value="analytics">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
-                <CardHeader><CardTitle className="text-base">User Growth</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base">{t('admin.user_growth')}</CardTitle></CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={220}>
                     <LineChart data={MONTHLY_USERS}>
@@ -247,8 +247,8 @@ export default function AdminDashboard() {
                           </div>
                           <p className="text-xs text-muted-foreground mb-2">{d.parties}</p>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            <span>Type: {d.type}</span>
-                            <span>Date: {d.date}</span>
+                            <span>{t('common.type')}: {d.type}</span>
+                            <span>{t('common.date')}: {d.date}</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
@@ -286,7 +286,7 @@ export default function AdminDashboard() {
                           <p className="text-xs text-muted-foreground mt-1">Flagged: {f.date}</p>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
-                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => toast.info('Under investigation')}>Investigate</Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => toast.info('Under investigation')}>{t('admin.investigate')}</Button>
                           <Button size="sm" variant="destructive" className="h-7 text-xs gap-1" onClick={() => toast.success('User suspended')}>
                             <Ban className="w-3 h-3" /> Suspend
                           </Button>

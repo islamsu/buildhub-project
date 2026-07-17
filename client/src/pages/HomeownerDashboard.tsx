@@ -3,13 +3,11 @@ import { useAuth } from '@/_core/hooks/useAuth';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { trpc } from '@/lib/trpc';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -19,18 +17,10 @@ import {
   CheckCircle2, Clock, AlertCircle, FileText, Bot, ShoppingCart,
   BarChart3, Building2
 } from 'lucide-react';
-import { Link, useLocation } from 'wouter';
-
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ComponentType<any> }> = {
-  planning:  { label: 'Planning',   color: 'badge-info',    icon: Clock },
-  active:    { label: 'Active',     color: 'badge-success', icon: CheckCircle2 },
-  on_hold:   { label: 'On Hold',    color: 'badge-warning', icon: AlertCircle },
-  completed: { label: 'Completed',  color: 'badge-success', icon: CheckCircle2 },
-  cancelled: { label: 'Cancelled',  color: 'badge-error',   icon: AlertCircle },
-};
+import { useLocation } from 'wouter';
 
 export default function HomeownerDashboard() {
-  const { t, dir } = useLanguage();
+  const { t, lang, dir } = useLanguage();
   const { user, isAuthenticated, loading } = useAuth();
   const [, navigate] = useLocation();
   const [newProjectOpen, setNewProjectOpen] = useState(false);
@@ -38,7 +28,7 @@ export default function HomeownerDashboard() {
 
   const { data: projects, refetch } = trpc.projects.list.useQuery(undefined, { enabled: isAuthenticated });
   const createProject = trpc.projects.create.useMutation({
-    onSuccess: () => { toast.success('Project created!'); setNewProjectOpen(false); refetch(); setForm({ title: '', description: '', type: 'residential', budget: '', location: '' }); },
+    onSuccess: () => { toast.success(t('common.success')); setNewProjectOpen(false); refetch(); setForm({ title: '', description: '', type: 'residential', budget: '', location: '' }); },
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
@@ -49,27 +39,42 @@ export default function HomeownerDashboard() {
   const totalSpent  = projects?.reduce((s, p) => s + Number(p.spent ?? 0), 0) ?? 0;
   const activeCount = projects?.filter(p => p.status === 'active').length ?? 0;
 
+  const statusConfig: Record<string, { label: string; color: string; icon: React.ComponentType<any> }> = {
+    planning:  { label: lang === 'ar' ? 'تخطيط' : 'Planning',   color: 'badge-info',    icon: Clock },
+    active:    { label: t('common.status.active'),    color: 'badge-success', icon: CheckCircle2 },
+    on_hold:   { label: lang === 'ar' ? 'معلق' : 'On Hold',    color: 'badge-warning', icon: AlertCircle },
+    completed: { label: t('common.status.completed'), color: 'badge-success', icon: CheckCircle2 },
+    cancelled: { label: t('common.status.cancelled'), color: 'badge-error',   icon: AlertCircle },
+  };
+
   const statCards = [
-    { label: 'Total Projects', value: projects?.length ?? 0, icon: FolderOpen, color: 'text-blue-500', bg: 'bg-blue-50' },
-    { label: 'Active Projects', value: activeCount, icon: TrendingUp, color: 'text-green-500', bg: 'bg-green-50' },
-    { label: 'Total Budget', value: `EGP ${totalBudget.toLocaleString()}`, icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-50' },
-    { label: 'Total Spent', value: `EGP ${totalSpent.toLocaleString()}`, icon: BarChart3, color: 'text-purple-500', bg: 'bg-purple-50' },
+    { label: lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects', value: projects?.length ?? 0, icon: FolderOpen, color: 'text-blue-500', bg: 'bg-blue-50' },
+    { label: t('dash.active_projects'), value: activeCount, icon: TrendingUp, color: 'text-green-500', bg: 'bg-green-50' },
+    { label: t('project.budget'), value: `${t('common.egp')} ${totalBudget.toLocaleString()}`, icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-50' },
+    { label: t('dash.total_spent'), value: `${t('common.egp')} ${totalSpent.toLocaleString()}`, icon: BarChart3, color: 'text-purple-500', bg: 'bg-purple-50' },
+  ];
+
+  const quickActions = [
+    { label: t('dash.explore_market'), icon: ShoppingCart, href: '/marketplace', color: 'text-blue-500' },
+    { label: t('dash.get_quotes'), icon: FileText, href: '/rfq', color: 'text-green-500' },
+    { label: t('dash.ai'), icon: Bot, href: '/ai', color: 'text-purple-500' },
+    { label: t('dash.messages'), icon: Building2, href: '/messages', color: 'text-amber-500' },
   ];
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div className="space-y-6" dir={dir}>
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold">
               {t('dash.overview')} 👋
             </h2>
-            <p className="text-muted-foreground mt-0.5">Welcome back, {user?.name?.split(' ')[0] ?? 'there'}!</p>
+            <p className="text-muted-foreground mt-0.5">{t('dash.welcome')}, {user?.name?.split(' ')[0] ?? (lang === 'ar' ? 'هناك' : 'there')}!</p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => navigate('/ai')} className="gap-2">
-              <Bot className="w-4 h-4" /> AI Assistant
+              <Bot className="w-4 h-4" /> {t('dash.ai')}
             </Button>
             <Dialog open={newProjectOpen} onOpenChange={setNewProjectOpen}>
               <DialogTrigger asChild>
@@ -81,24 +86,24 @@ export default function HomeownerDashboard() {
                 </DialogHeader>
                 <div className="space-y-4 mt-2">
                   <Input placeholder={t('project.name')} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
-                  <Textarea placeholder="Describe your project..." rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+                  <Textarea placeholder={t('project.description')} rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
                   <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v as any }))}>
                     <SelectTrigger><SelectValue placeholder={t('project.type')} /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="residential">Residential</SelectItem>
-                      <SelectItem value="commercial">Commercial</SelectItem>
-                      <SelectItem value="renovation">Renovation</SelectItem>
-                      <SelectItem value="finishing">Finishing</SelectItem>
-                      <SelectItem value="maintenance">Maintenance</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="residential">{lang === 'ar' ? 'سكني' : 'Residential'}</SelectItem>
+                      <SelectItem value="commercial">{t('project.type.commercial')}</SelectItem>
+                      <SelectItem value="renovation">{t('project.type.renovation')}</SelectItem>
+                      <SelectItem value="finishing">{lang === 'ar' ? 'تشطيب' : 'Finishing'}</SelectItem>
+                      <SelectItem value="maintenance">{lang === 'ar' ? 'صيانة' : 'Maintenance'}</SelectItem>
+                      <SelectItem value="other">{t('project.type.other')}</SelectItem>
                     </SelectContent>
                   </Select>
                   <div className="grid grid-cols-2 gap-3">
-                    <Input placeholder={t('project.budget') + ' (EGP)'} type="number" value={form.budget} onChange={e => setForm(f => ({ ...f, budget: e.target.value }))} />
+                    <Input placeholder={`${t('project.budget')} (${t('common.egp')})`} type="number" value={form.budget} onChange={e => setForm(f => ({ ...f, budget: e.target.value }))} />
                     <Input placeholder={t('project.location')} value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
                   </div>
                   <Button className="w-full" onClick={() => createProject.mutate({ ...form, budget: form.budget ? parseFloat(form.budget) : undefined })} disabled={createProject.isPending || !form.title}>
-                    {createProject.isPending ? 'Creating...' : 'Create Project'}
+                    {createProject.isPending ? t('common.loading') : t('project.create')}
                   </Button>
                 </div>
               </DialogContent>
@@ -125,12 +130,7 @@ export default function HomeownerDashboard() {
 
         {/* Quick Actions */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: 'Browse Marketplace', icon: ShoppingCart, href: '/marketplace', color: 'text-blue-500' },
-            { label: 'Post RFQ', icon: FileText, href: '/rfq', color: 'text-green-500' },
-            { label: 'AI Assistant', icon: Bot, href: '/ai', color: 'text-purple-500' },
-            { label: 'Messages', icon: Building2, href: '/messages', color: 'text-amber-500' },
-          ].map(action => (
+          {quickActions.map(action => (
             <Card key={action.label} className="card-hover cursor-pointer" onClick={() => navigate(action.href)}>
               <CardContent className="p-4 text-center">
                 <action.icon className={`w-6 h-6 mx-auto mb-2 ${action.color}`} />
@@ -147,14 +147,14 @@ export default function HomeownerDashboard() {
               <FolderOpen className="w-5 h-5" /> {t('dash.projects')}
             </CardTitle>
             <Button variant="outline" size="sm" onClick={() => setNewProjectOpen(true)} className="gap-1">
-              <Plus className="w-4 h-4" /> New
+              <Plus className="w-4 h-4" /> {t('common.add')}
             </Button>
           </CardHeader>
           <CardContent>
             {(!projects || projects.length === 0) ? (
               <div className="text-center py-12">
                 <FolderOpen className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-30" />
-                <p className="text-muted-foreground mb-4">No projects yet. Create your first project!</p>
+                <p className="text-muted-foreground mb-4">{t('dash.no_projects')} {t('dash.start_project')}</p>
                 <Button onClick={() => setNewProjectOpen(true)} className="gap-2">
                   <Plus className="w-4 h-4" /> {t('project.new')}
                 </Button>
@@ -162,7 +162,7 @@ export default function HomeownerDashboard() {
             ) : (
               <div className="space-y-3">
                 {projects.map(project => {
-                  const sc = STATUS_CONFIG[project.status ?? 'planning'];
+                  const sc = statusConfig[project.status ?? 'planning'];
                   const StatusIcon = sc.icon;
                   const spentPct = project.budget ? Math.min(100, (Number(project.spent) / Number(project.budget)) * 100) : 0;
                   return (
@@ -187,8 +187,8 @@ export default function HomeownerDashboard() {
                         <Progress value={project.progress ?? 0} className="h-1.5" />
                         {project.budget && (
                           <div className="flex justify-between text-xs text-muted-foreground">
-                            <span>Budget: EGP {Number(project.budget).toLocaleString()}</span>
-                            <span>Spent: EGP {Number(project.spent ?? 0).toLocaleString()} ({spentPct.toFixed(0)}%)</span>
+                            <span>{t('project.budget')}: {t('common.egp')} {Number(project.budget).toLocaleString()}</span>
+                            <span>{lang === 'ar' ? 'المنفق' : 'Spent'}: {t('common.egp')} {Number(project.spent ?? 0).toLocaleString()} ({spentPct.toFixed(0)}%)</span>
                           </div>
                         )}
                       </div>

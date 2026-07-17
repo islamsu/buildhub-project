@@ -92,7 +92,7 @@ export default function RFQPage() {
               </DialogTrigger>
               <DialogContent className="max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>Post a Request for Quotation</DialogTitle>
+                  <DialogTitle>{t('rfq.post.title')}</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 mt-2">
                   <Input
@@ -114,13 +114,13 @@ export default function RFQPage() {
                   </Select>
                   <div className="grid grid-cols-2 gap-3">
                     <Input
-                      placeholder="Budget (EGP)"
+                      placeholder={t('rfq.budget')}
                       type="number"
                       value={form.budget}
                       onChange={e => setForm(f => ({ ...f, budget: e.target.value }))}
                     />
                     <Input
-                      placeholder="Location"
+                      placeholder={t('rfq.location')}
                       value={form.location}
                       onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
                     />
@@ -160,8 +160,8 @@ export default function RFQPage() {
           {allRfqs.length === 0 && (
             <div className="text-center py-20 text-muted-foreground">
               <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
-              <p className="font-medium">No RFQs yet</p>
-              <p className="text-sm mt-1">Be the first to post a request for quotation!</p>
+              <p className="font-medium">{t('rfq.no_rfqs')}</p>
+              <p className="text-sm mt-1">{t('rfq.no_rfqs.desc')}</p>
             </div>
           )}
 

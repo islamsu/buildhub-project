@@ -29,10 +29,10 @@ const SYSTEM_PROMPT = `You are BuildHub AI — an expert construction and home i
 Always provide practical, actionable advice. When estimating costs, mention that prices are approximate and vary by location. Be concise but thorough. Support both English and Arabic queries.`;
 
 export default function AIAssistantPage() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [messages, setMessages] = useState<Message[]>([
     { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'assistant', content: "Hello! I'm BuildHub AI. I can help you with cost estimation, material selection, project planning, risk assessment, and much more. What would you like to know?" },
+    { role: 'assistant', content: lang === 'ar' ? 'مرحباً! أنا BuildHub AI. يمكنني مساعدتك في تقدير التكاليف واختيار المواد وتخطيط المشاريع وتقييم المخاطر والمزيد. بماذا تريد أن تعرف؟' : "Hello! I'm BuildHub AI. I can help you with cost estimation, material selection, project planning, risk assessment, and much more. What would you like to know?" },
   ]);
 
   const chatMutation = trpc.ai.chat.useMutation({

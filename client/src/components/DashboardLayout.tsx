@@ -21,41 +21,42 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, ShoppingBag, FileText, MessageSquare, Bot, Star, Settings, BarChart3, Shield, Building2 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
-const HOMEOWNER_MENU = [
-  { icon: LayoutDashboard, label: 'Overview',    path: '/dashboard' },
-  { icon: FolderOpen,      label: 'My Projects', path: '/dashboard' },
-  { icon: ShoppingBag,     label: 'Marketplace', path: '/marketplace' },
-  { icon: FileText,        label: 'Get Quotes',  path: '/rfq' },
-  { icon: MessageSquare,   label: 'Messages',    path: '/messages' },
-  { icon: Bot,             label: 'AI Assistant',path: '/ai' },
-  { icon: Star,            label: 'Reviews',     path: '/messages' },
-  { icon: Settings,        label: 'Settings',    path: '/dashboard' },
+const HOMEOWNER_MENU_KEYS = [
+  { icon: LayoutDashboard, labelKey: 'dash.overview',    path: '/dashboard' },
+  { icon: FolderOpen,      labelKey: 'dash.projects',    path: '/dashboard' },
+  { icon: ShoppingBag,     labelKey: 'nav.marketplace',  path: '/marketplace' },
+  { icon: FileText,        labelKey: 'dash.get_quotes',  path: '/rfq' },
+  { icon: MessageSquare,   labelKey: 'dash.messages',    path: '/messages' },
+  { icon: Bot,             labelKey: 'dash.ai',          path: '/ai' },
+  { icon: Star,            labelKey: 'dash.reviews',     path: '/messages' },
+  { icon: Settings,        labelKey: 'dash.settings',    path: '/dashboard' },
 ];
 
-const PROVIDER_MENU = [
-  { icon: LayoutDashboard, label: 'Dashboard',   path: '/provider' },
-  { icon: FileText,        label: 'RFQ Inbox',   path: '/rfq' },
-  { icon: ShoppingBag,     label: 'Marketplace', path: '/marketplace' },
-  { icon: MessageSquare,   label: 'Messages',    path: '/messages' },
-  { icon: Bot,             label: 'AI Assistant',path: '/ai' },
-  { icon: Star,            label: 'My Reviews',  path: '/messages' },
-  { icon: BarChart3,       label: 'Analytics',   path: '/provider' },
-  { icon: Settings,        label: 'Settings',    path: '/provider' },
+const PROVIDER_MENU_KEYS = [
+  { icon: LayoutDashboard, labelKey: 'provider.title',   path: '/provider' },
+  { icon: FileText,        labelKey: 'provider.open_rfqs', path: '/rfq' },
+  { icon: ShoppingBag,     labelKey: 'nav.marketplace',  path: '/marketplace' },
+  { icon: MessageSquare,   labelKey: 'dash.messages',    path: '/messages' },
+  { icon: Bot,             labelKey: 'dash.ai',          path: '/ai' },
+  { icon: Star,            labelKey: 'dash.reviews',     path: '/messages' },
+  { icon: BarChart3,       labelKey: 'admin.analytics',  path: '/provider' },
+  { icon: Settings,        labelKey: 'dash.settings',    path: '/provider' },
 ];
 
-const ADMIN_MENU = [
-  { icon: LayoutDashboard, label: 'Admin Panel',  path: '/admin' },
-  { icon: Users,           label: 'Users',        path: '/admin' },
-  { icon: Shield,          label: 'Verifications',path: '/admin' },
-  { icon: FileText,        label: 'Disputes',     path: '/admin' },
-  { icon: BarChart3,       label: 'Analytics',    path: '/admin' },
-  { icon: Settings,        label: 'Settings',     path: '/admin' },
+const ADMIN_MENU_KEYS = [
+  { icon: LayoutDashboard, labelKey: 'admin.title',      path: '/admin' },
+  { icon: Users,           labelKey: 'admin.users',      path: '/admin' },
+  { icon: Shield,          labelKey: 'admin.pending_verifications', path: '/admin' },
+  { icon: FileText,        labelKey: 'admin.disputes',   path: '/admin' },
+  { icon: BarChart3,       labelKey: 'admin.analytics',  path: '/admin' },
+  { icon: Settings,        labelKey: 'dash.settings',    path: '/admin' },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -82,16 +83,17 @@ export default function DashboardLayout({
     return <DashboardLayoutSkeleton />
   }
 
+  const { t } = useLanguage();
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
           <div className="flex flex-col items-center gap-6">
             <h1 className="text-2xl font-semibold tracking-tight text-center">
-              Sign in to continue
+              {t('auth.signin')}
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Access to this dashboard requires authentication. Continue to launch the login flow.
+              {t('auth.tagline')}
             </p>
           </div>
           <Button
@@ -99,7 +101,7 @@ export default function DashboardLayout({
             size="lg"
             className="w-full shadow-lg hover:shadow-xl transition-all"
           >
-            Sign in
+            {t('nav.signin')}
           </Button>
         </div>
       </div>
@@ -131,6 +133,7 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
+  const { t } = useLanguage();
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -139,11 +142,12 @@ function DashboardLayoutContent({
   const isMobile = useIsMobile();
 
   const userRole = (user as any)?.userRole ?? 'homeowner';
-  const menuItems = userRole === 'admin' || user?.role === 'admin'
-    ? ADMIN_MENU
+  const menuKeys = userRole === 'admin' || user?.role === 'admin'
+    ? ADMIN_MENU_KEYS
     : ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'].includes(userRole)
-      ? PROVIDER_MENU
-      : HOMEOWNER_MENU;
+      ? PROVIDER_MENU_KEYS
+      : HOMEOWNER_MENU_KEYS;
+  const menuItems = menuKeys.map(item => ({ ...item, label: t(item.labelKey) }));
 
   const activeMenuItem = menuItems.find(item => item.path === location);
 
@@ -251,15 +255,15 @@ function DashboardLayoutContent({
                   </div>
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem
-                  onClick={logout}
-                  className="cursor-pointer text-destructive focus:text-destructive"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Sign out</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem
+                    onClick={logout}
+                    className="cursor-pointer text-destructive focus:text-destructive"
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>{t('nav.logout')}</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
             </DropdownMenu>
           </SidebarFooter>
         </Sidebar>
@@ -281,7 +285,7 @@ function DashboardLayoutContent({
               <div className="flex items-center gap-3">
                 <div className="flex flex-col gap-1">
                   <span className="tracking-tight text-foreground">
-                    {activeMenuItem?.label ?? "Menu"}
+                    {activeMenuItem?.label ?? t('dash.overview')}
                   </span>
                 </div>
               </div>

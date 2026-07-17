@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -118,6 +119,7 @@ interface Props {
 }
 
 export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqStatus, isOwner, onClose }: Props) {
+  const { t } = useLanguage();
   const [sortKey, setSortKey] = useState<SortKey>('score');
   const [sortAsc, setSortAsc] = useState(false);
   const [confirmAccept, setConfirmAccept] = useState<QuotationRow | null>(null);
@@ -127,7 +129,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
 
   const acceptMutation = trpc.rfq.acceptQuotation.useMutation({
     onSuccess: () => {
-      toast.success('Quotation accepted! The provider has been notified.');
+      toast.success(t('common.success'));
       setConfirmAccept(null);
       refetch();
     },
@@ -136,7 +138,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
 
   const rejectMutation = trpc.rfq.rejectQuotation.useMutation({
     onSuccess: () => {
-      toast.success('Quotation rejected.');
+      toast.success(t('common.success'));
       setConfirmReject(null);
       refetch();
     },
@@ -183,13 +185,13 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
         <div>
           <h2 className="text-xl font-bold">{rfqTitle}</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {quotes.length} quotation{quotes.length !== 1 ? 's' : ''} received
-            {rfqBudget && <span className="ml-2">· Budget: <strong>EGP {rfqBudget.toLocaleString()}</strong></span>}
+            {quotes.length} {t('rfq.quotations')}
+            {rfqBudget && <span className="ml-2">· {t('project.budget')}: <strong>{t('common.egp')} {rfqBudget.toLocaleString()}</strong></span>}
           </p>
         </div>
         {rfqAwarded && (
           <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 gap-1">
-            <Trophy className="w-3.5 h-3.5" /> Awarded
+            <Trophy className="w-3.5 h-3.5" /> {t('common.awarded')}
           </Badge>
         )}
       </div>
@@ -197,11 +199,11 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
       {/* Sort controls */}
       {quotes.length > 1 && (
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-muted-foreground">Sort by:</span>
-          <SortBtn label="Best Score" k="score" icon={<Zap className="w-3 h-3" />} />
-          <SortBtn label="Price" k="price" icon={<DollarSign className="w-3 h-3" />} />
-          <SortBtn label="Rating" k="rating" icon={<Star className="w-3 h-3" />} />
-          <SortBtn label="Timeline" k="timeline" icon={<Clock className="w-3 h-3" />} />
+          <span className="text-xs text-muted-foreground">{t('common.sort_by')}:</span>
+          <SortBtn label={t('rfq.sort.score')} k="score" icon={<Zap className="w-3 h-3" />} />
+          <SortBtn label={t('rfq.sort.price')} k="price" icon={<DollarSign className="w-3 h-3" />} />
+          <SortBtn label={t('rfq.sort.rating')} k="rating" icon={<Star className="w-3 h-3" />} />
+          <SortBtn label={t('rfq.sort.timeline')} k="timeline" icon={<Clock className="w-3 h-3" />} />
         </div>
       )}
 
@@ -209,7 +211,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
       {isLoading && (
         <div className="text-center py-12 text-muted-foreground">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          Loading quotations…
+          {t('common.loading')}
         </div>
       )}
 
@@ -217,8 +219,8 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
       {!isLoading && quotes.length === 0 && (
         <div className="text-center py-16 text-muted-foreground">
           <DollarSign className="w-12 h-12 mx-auto mb-4 opacity-20" />
-          <p className="font-medium">No quotations yet</p>
-          <p className="text-sm mt-1">Providers will submit their offers here once they see your RFQ.</p>
+          <p className="font-medium">{t('rfq.no_quotes')}</p>
+          <p className="text-sm mt-1">{t('rfq.no_quotes.desc')}</p>
         </div>
       )}
 
@@ -245,14 +247,14 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                 {isBest && !rfqAwarded && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
                     <span className="bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full shadow flex items-center gap-1">
-                      <Trophy className="w-3 h-3" /> Best Value
+                      <Trophy className="w-3 h-3" /> {t('rfq.best_value')}
                     </span>
                   </div>
                 )}
                 {isAccepted && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
                     <span className="bg-emerald-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" /> Accepted
+                      <CheckCircle2 className="w-3 h-3" /> {t('common.accepted')}
                     </span>
                   </div>
                 )}
@@ -271,7 +273,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                             <TooltipTrigger>
                               <Shield className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                             </TooltipTrigger>
-                            <TooltipContent>Verified Provider</TooltipContent>
+                            <TooltipContent>{t('common.verified')}</TooltipContent>
                           </Tooltip>
                         )}
                       </div>
@@ -310,8 +312,8 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                     {rfqBudget && (
                       <div className={`text-xs mt-1 font-medium ${parseFloat(q.price) <= rfqBudget ? 'text-emerald-600' : 'text-red-500'}`}>
                         {parseFloat(q.price) <= rfqBudget
-                          ? `EGP ${(rfqBudget - parseFloat(q.price)).toLocaleString()} under budget`
-                          : `EGP ${(parseFloat(q.price) - rfqBudget).toLocaleString()} over budget`}
+                          ? `${t('common.egp')} ${(rfqBudget - parseFloat(q.price)).toLocaleString()} ↓`
+                          : `${t('common.egp')} ${(parseFloat(q.price) - rfqBudget).toLocaleString()} ↑`}
                       </div>
                     )}
                   </div>
@@ -320,7 +322,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-muted-foreground flex items-center gap-1">
-                        <Info className="w-3 h-3" /> Match Score
+                        <Info className="w-3 h-3" /> {t('rfq.match_score')}
                       </span>
                       <span className="font-semibold">{q.score}/100</span>
                     </div>
@@ -331,27 +333,27 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5" /> Timeline
+                        <Clock className="w-3.5 h-3.5" /> {t('common.timeline')}
                       </span>
                       <span className="font-medium flex items-center gap-1">
-                        {q.timeline ? `${q.timeline} days` : '—'}
+                        {q.timeline ? `${q.timeline} ${t('common.days')}` : '—'}
                         {isFastest && q.timeline && (
                           <Tooltip>
                             <TooltipTrigger><Zap className="w-3.5 h-3.5 text-amber-500" /></TooltipTrigger>
-                            <TooltipContent>Fastest Delivery</TooltipContent>
+                            <TooltipContent>{t('rfq.fastest')}</TooltipContent>
                           </Tooltip>
                         )}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground flex items-center gap-1.5">
-                        <Shield className="w-3.5 h-3.5" /> Warranty
+                        <Shield className="w-3.5 h-3.5" /> {t('common.warranty')}
                       </span>
                       <span className="font-medium">{q.warranty ?? '—'}</span>
                     </div>
                     <div className="flex items-start justify-between gap-2">
                       <span className="text-muted-foreground flex items-center gap-1.5 shrink-0">
-                        <DollarSign className="w-3.5 h-3.5" /> Payment
+                        <DollarSign className="w-3.5 h-3.5" /> {t('common.payment')}
                       </span>
                       <span className="font-medium text-right text-xs leading-relaxed">{q.paymentTerms ?? '—'}</span>
                     </div>
@@ -367,7 +369,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                   {/* Status badge */}
                   {isRejected && (
                     <div className="flex items-center justify-center gap-1.5 text-xs text-red-500 font-medium">
-                      <XCircle className="w-3.5 h-3.5" /> Rejected
+                      <XCircle className="w-3.5 h-3.5" /> {t('common.rejected')}
                     </div>
                   )}
 
@@ -380,7 +382,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                         onClick={() => setConfirmAccept(q)}
                         disabled={acceptMutation.isPending}
                       >
-                        <ThumbsUp className="w-3.5 h-3.5" /> Accept
+                        <ThumbsUp className="w-3.5 h-3.5" /> {t('rfq.accept')}
                       </Button>
                       <Button
                         size="sm"
@@ -389,13 +391,13 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                         onClick={() => setConfirmReject(q)}
                         disabled={rejectMutation.isPending}
                       >
-                        <ThumbsDown className="w-3.5 h-3.5" /> Reject
+                        <ThumbsDown className="w-3.5 h-3.5" /> {t('rfq.reject')}
                       </Button>
                     </div>
                   )}
                   {isOwner && rfqAwarded && isAccepted && (
                     <div className="flex items-center justify-center gap-1.5 text-xs text-emerald-600 font-semibold pt-2">
-                      <Award className="w-4 h-4" /> Awarded to this provider
+                      <Award className="w-4 h-4" /> {t('rfq.awarded_to')}
                     </div>
                   )}
                 </CardContent>
@@ -409,13 +411,13 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
       {sorted.length >= 2 && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Side-by-Side Comparison</CardTitle>
+            <CardTitle className="text-base">{t('rfq.comparison.side_by_side')}</CardTitle>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left py-2 pr-4 text-muted-foreground font-medium w-32">Criteria</th>
+                  <th className="text-left py-2 pr-4 text-muted-foreground font-medium w-32">{t('common.details')}</th>
                   {sorted.map(q => (
                     <th key={q.id} className="text-center py-2 px-3 font-semibold min-w-[140px]">
                       <div className="flex flex-col items-center gap-1">
@@ -430,14 +432,14 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                 {/* Price */}
                 <tr>
                   <td className="py-2.5 pr-4 text-muted-foreground flex items-center gap-1.5">
-                    <DollarSign className="w-3.5 h-3.5" /> Price
+                    <DollarSign className="w-3.5 h-3.5" /> {t('common.price')}
                   </td>
                   {sorted.map(q => {
                     const cheapest = parseFloat(q.price) === lowestPrice;
                     return (
                       <td key={q.id} className={`text-center py-2.5 px-3 font-semibold ${cheapest ? 'text-emerald-600' : ''}`}>
                         {parseFloat(q.price).toLocaleString()} {q.currency ?? 'EGP'}
-                        {cheapest && <div className="text-xs font-normal text-emerald-500">Lowest</div>}
+                        {cheapest && <div className="text-xs font-normal text-emerald-500">{t('rfq.lowest_price')}</div>}
                       </td>
                     );
                   })}
@@ -445,14 +447,14 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                 {/* Timeline */}
                 <tr className="bg-muted/20">
                   <td className="py-2.5 pr-4 text-muted-foreground flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5" /> Timeline
+                    <Clock className="w-3.5 h-3.5" /> {t('common.timeline')}
                   </td>
                   {sorted.map(q => {
                     const fastest = q.timeline === fastestTimeline && fastestTimeline < 9999;
                     return (
                       <td key={q.id} className={`text-center py-2.5 px-3 font-medium ${fastest ? 'text-amber-600' : ''}`}>
-                        {q.timeline ? `${q.timeline} days` : '—'}
-                        {fastest && <div className="text-xs font-normal text-amber-500">Fastest</div>}
+                        {q.timeline ? `${q.timeline} ${t('common.days')}` : '—'}
+                        {fastest && <div className="text-xs font-normal text-amber-500">{t('rfq.fastest')}</div>}
                       </td>
                     );
                   })}
@@ -460,7 +462,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                 {/* Rating */}
                 <tr>
                   <td className="py-2.5 pr-4 text-muted-foreground flex items-center gap-1.5">
-                    <Star className="w-3.5 h-3.5" /> Rating
+                    <Star className="w-3.5 h-3.5" /> {t('common.rating')}
                   </td>
                   {sorted.map(q => (
                     <td key={q.id} className="text-center py-2.5 px-3">
@@ -471,7 +473,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                 {/* Verified */}
                 <tr className="bg-muted/20">
                   <td className="py-2.5 pr-4 text-muted-foreground flex items-center gap-1.5">
-                    <Shield className="w-3.5 h-3.5" /> Verified
+                    <Shield className="w-3.5 h-3.5" /> {t('common.verified')}
                   </td>
                   {sorted.map(q => (
                     <td key={q.id} className="text-center py-2.5 px-3">
@@ -484,7 +486,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                 {/* Warranty */}
                 <tr>
                   <td className="py-2.5 pr-4 text-muted-foreground flex items-center gap-1.5">
-                    <Award className="w-3.5 h-3.5" /> Warranty
+                    <Award className="w-3.5 h-3.5" /> {t('common.warranty')}
                   </td>
                   {sorted.map(q => (
                     <td key={q.id} className="text-center py-2.5 px-3 text-xs">{q.warranty ?? '—'}</td>
@@ -493,7 +495,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                 {/* Payment Terms */}
                 <tr className="bg-muted/20">
                   <td className="py-2.5 pr-4 text-muted-foreground flex items-center gap-1.5">
-                    <DollarSign className="w-3.5 h-3.5" /> Payment
+                    <DollarSign className="w-3.5 h-3.5" /> {t('common.payment')}
                   </td>
                   {sorted.map(q => (
                     <td key={q.id} className="text-center py-2.5 px-3 text-xs">{q.paymentTerms ?? '—'}</td>
@@ -502,7 +504,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                 {/* Status */}
                 <tr>
                   <td className="py-2.5 pr-4 text-muted-foreground flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Status
+                    <CheckCircle2 className="w-3.5 h-3.5" /> {t('common.status')}
                   </td>
                   {sorted.map(q => (
                     <td key={q.id} className="text-center py-2.5 px-3">
@@ -510,7 +512,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                         ${q.status === 'accepted' ? 'bg-emerald-100 text-emerald-700' :
                           q.status === 'rejected' ? 'bg-red-100 text-red-600' :
                           'bg-blue-100 text-blue-700'}`}>
-                        {q.status ?? 'pending'}
+                        {t(`common.${q.status ?? 'pending'}`)}
                       </span>
                     </td>
                   ))}
@@ -525,21 +527,19 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
       <AlertDialog open={!!confirmAccept} onOpenChange={() => setConfirmAccept(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Accept Quotation?</AlertDialogTitle>
+            <AlertDialogTitle>{t('rfq.accept.confirm.title')}</AlertDialogTitle>
             <AlertDialogDescription>
-              You are about to accept the quotation from <strong>{confirmAccept?.providerName ?? 'this provider'}</strong> for{' '}
-              <strong>EGP {confirmAccept ? parseFloat(confirmAccept.price).toLocaleString() : ''}</strong>.
-              All other quotations will be automatically rejected and the RFQ will be marked as awarded.
+              {t('rfq.accept.confirm.desc').replace('{name}', confirmAccept?.providerName ?? '').replace('{price}', `${t('common.egp')} ${confirmAccept ? parseFloat(confirmAccept.price).toLocaleString() : ''}`)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-emerald-600 hover:bg-emerald-700"
               onClick={() => confirmAccept && acceptMutation.mutate({ quotationId: confirmAccept.id, rfqId })}
               disabled={acceptMutation.isPending}
             >
-              {acceptMutation.isPending ? 'Accepting…' : 'Yes, Accept'}
+              {acceptMutation.isPending ? t('rfq.accepting') : t('rfq.accept')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -549,20 +549,19 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
       <AlertDialog open={!!confirmReject} onOpenChange={() => setConfirmReject(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Reject Quotation?</AlertDialogTitle>
+            <AlertDialogTitle>{t('rfq.reject.confirm.title')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to reject the quotation from <strong>{confirmReject?.providerName ?? 'this provider'}</strong>?
-              This action can be undone by contacting support.
+              {t('rfq.reject.confirm.desc').replace('{name}', confirmReject?.providerName ?? '')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-red-600 hover:bg-red-700"
               onClick={() => confirmReject && rejectMutation.mutate({ quotationId: confirmReject.id, rfqId })}
               disabled={rejectMutation.isPending}
             >
-              {rejectMutation.isPending ? 'Rejecting…' : 'Yes, Reject'}
+              {rejectMutation.isPending ? t('rfq.rejecting') : t('rfq.reject')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
