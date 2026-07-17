@@ -20,6 +20,17 @@ const CATEGORY_ICONS: Record<string, string> = {
   'Cleaning': '🧹', 'Maintenance': '🔨', 'Moving': '📦',
 };
 
+
+const CATEGORY_AR: Record<string, string> = {
+  'All': 'الكل', 'Materials': 'مواد البناء', 'Furniture': 'أثاث', 'Lighting': 'إضاءة',
+  'Electrical': 'كهرباء', 'Plumbing': 'سباكة', 'HVAC': 'تكييف وتهوية', 'Paint': 'دهانات',
+  'Ceramics': 'سيراميك', 'Granite': 'جرانيت', 'Marble': 'رخام', 'Wood': 'خشب',
+  'Doors': 'أبواب', 'Windows': 'نوافذ', 'Roofing': 'أسقف', 'Glass': 'زجاج',
+  'Steel': 'حديد', 'Concrete': 'خرسانة', 'Waterproofing': 'عزل مائي', 'Solar': 'طاقة شمسية',
+  'Smart Home': 'المنزل الذكي', 'Pools': 'مسابح', 'Landscaping': 'تنسيق حدائق',
+  'Security': 'أمن وحماية', 'Fire Fighting': 'إطفاء حريق', 'Cleaning': 'نظافة',
+  'Maintenance': 'صيانة', 'Moving': 'نقل عفش',
+};
 const DEMO_PRODUCTS = [
   { id: 1, name: 'Premium Ceramic Floor Tiles', nameAr: 'بلاط سيراميك فاخر', category: 'Ceramics', brand: 'Cleopatra', price: '450', currency: 'EGP', unit: 'm²', rating: '4.8', reviewCount: 124, stock: 500, images: null, origin: 'Egypt', deliveryDays: 3, featured: true },
   { id: 2, name: 'Italian Marble Slabs', nameAr: 'ألواح رخام إيطالي', category: 'Marble', brand: 'Carrara', price: '2800', currency: 'EGP', unit: 'm²', rating: '4.9', reviewCount: 87, stock: 200, images: null, origin: 'Italy', deliveryDays: 14, featured: true },
@@ -55,7 +66,7 @@ export default function Marketplace() {
         <div className="bg-gradient-to-r from-primary to-primary/80 text-primary-foreground py-12">
           <div className="container">
             <h1 className="text-3xl font-bold mb-2">{t('nav.marketplace')}</h1>
-            <p className="text-primary-foreground/80 mb-6">Browse thousands of construction products from verified suppliers</p>
+            <p className="text-primary-foreground/80 mb-6">{t('market.subtitle')}</p>
             <div className="flex gap-3 max-w-2xl">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -85,7 +96,7 @@ export default function Marketplace() {
           <div className="flex gap-8">
             {/* Sidebar Categories */}
             <aside className="hidden lg:block w-56 flex-shrink-0">
-              <h3 className="font-semibold mb-3 text-sm uppercase tracking-wide text-muted-foreground">Categories</h3>
+              <h3 className="font-semibold mb-3 text-sm uppercase tracking-wide text-muted-foreground">{lang === 'ar' ? 'الفئات' : 'Categories'}</h3>
               <div className="space-y-1">
                 {allCategories.map(cat => (
                   <button
@@ -98,7 +109,7 @@ export default function Marketplace() {
                     }`}
                   >
                     <span>{CATEGORY_ICONS[cat] ?? '📦'}</span>
-                    {cat}
+                    {lang === 'ar' ? (CATEGORY_AR[cat] ?? cat) : cat}
                   </button>
                 ))}
               </div>
@@ -116,13 +127,13 @@ export default function Marketplace() {
                       selectedCategory === cat ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                     }`}
                   >
-                    {cat}
+                    {lang === 'ar' ? (CATEGORY_AR[cat] ?? cat) : cat}
                   </button>
                 ))}
               </div>
 
               <div className="flex items-center justify-between mb-4">
-                <p className="text-sm text-muted-foreground">{filtered.length} products</p>
+                <p className="text-sm text-muted-foreground">{filtered.length} {lang === 'ar' ? 'منتج' : 'products'}</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -133,11 +144,11 @@ export default function Marketplace() {
                       <Package className="w-16 h-16 text-muted-foreground/30" />
                       {product.featured && (
                         <Badge className="absolute top-2 left-2 bg-amber-500 text-white text-xs">
-                          <Zap className="w-3 h-3 mr-1" /> Featured
+                          <Zap className="w-3 h-3 mr-1" /> {lang === 'ar' ? 'مميز' : 'Featured'}
                         </Badge>
                       )}
                       <Badge variant="secondary" className="absolute top-2 right-2 text-xs">
-                        {product.category}
+                        {lang === 'ar' ? (CATEGORY_AR[product.category] ?? product.category) : product.category}
                       </Badge>
                     </div>
                     <CardContent className="p-4">
@@ -149,14 +160,14 @@ export default function Marketplace() {
                         <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
                         <span className="text-xs font-medium">{product.rating}</span>
                         <span className="text-xs text-muted-foreground">({product.reviewCount})</span>
-                        <span className="text-xs text-muted-foreground ml-auto">🚚 {product.deliveryDays}d</span>
+                        <span className="text-xs text-muted-foreground ml-auto">🚚 {product.deliveryDays}{lang === 'ar' ? 'ي' : 'd'}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <div>
                           <span className="font-bold text-primary">{Number(product.price).toLocaleString()} {product.currency}</span>
                           <span className="text-xs text-muted-foreground">/{product.unit}</span>
                         </div>
-                        <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => toast.success('Added to RFQ list')}>
+                        <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => toast.success(lang === 'ar' ? 'تمت الإضافة إلى قائمة الطلبات' : 'Added to RFQ list')}>
                           <ShoppingCart className="w-3.5 h-3.5" /> {t('market.add_to_rfq')}
                         </Button>
                       </div>

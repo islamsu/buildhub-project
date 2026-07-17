@@ -62,8 +62,8 @@ export default function AIAssistantPage() {
               <Bot className="w-4 h-4" />
               {t('dash.ai')}
             </div>
-            <h1 className="text-3xl font-bold mb-2">Your AI Construction Expert</h1>
-            <p className="text-muted-foreground">Ask anything about cost estimation, materials, project planning, and more</p>
+            <h1 className="text-3xl font-bold mb-2">{lang === 'ar' ? 'خبيرك في البناء بالذكاء الاصطناعي' : 'Your AI Construction Expert'}</h1>
+            <p className="text-muted-foreground">{lang === 'ar' ? 'اسأل عن أي شيء: تقدير التكاليف، المواد، إدارة المشاريع...' : 'Ask anything about cost estimation, materials, project planning, and more'}</p>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">

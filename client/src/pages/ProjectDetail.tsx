@@ -34,7 +34,7 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
 };
 
 export default function ProjectDetail() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const { id } = useParams<{ id: string }>();
   const projectId = parseInt(id ?? '0');
   const { isAuthenticated, loading } = useAuth();
@@ -82,7 +82,7 @@ export default function ProjectDetail() {
         {/* Back */}
         <Link href="/dashboard">
           <Button variant="ghost" size="sm" className="mb-6 gap-2 -ml-2">
-            <ArrowLeft className="w-4 h-4" /> Back to Dashboard
+            <ArrowLeft className="w-4 h-4" /> {lang === 'ar' ? 'العودة للوحة التحكم' : 'Back to Dashboard'}
           </Button>
         </Link>
 
@@ -103,19 +103,19 @@ export default function ProjectDetail() {
                 {project.description && <p className="text-muted-foreground">{project.description}</p>}
                 <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
                   {project.location && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{project.location}</span>}
-                  <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" />Created {new Date(project.createdAt).toLocaleDateString()}</span>
-                  {project.budget && <span className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" />Budget: EGP {Number(project.budget).toLocaleString()}</span>}
+                  <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" />{lang === 'ar' ? 'أُنشئ ' : 'Created '}{new Date(project.createdAt).toLocaleDateString()}</span>
+                  {project.budget && <span className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" />{lang === 'ar' ? 'الميزانية: ' : 'Budget: '}{t('common.egp')} {Number(project.budget).toLocaleString()}</span>}
                 </div>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.open('/ai', '_blank')}>
-                  <Bot className="w-4 h-4" /> AI Help
+                  <Bot className="w-4 h-4" /> {lang === 'ar' ? 'مساعدة AI' : 'AI Help'}
                 </Button>
                 <Select value={project.status ?? 'planning'} onValueChange={v => updateProject.mutate({ id: projectId, status: v as any })}>
                   <SelectTrigger className="w-36 h-9 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {['planning', 'active', 'on_hold', 'completed', 'cancelled'].map(s => (
-                      <SelectItem key={s} value={s} className="capitalize">{s.replace('_', ' ')}</SelectItem>
+                      <SelectItem key={s} value={s} className="capitalize">{lang === 'ar' ? {'planning':'تخطيط','active':'نشط','on_hold':'متوقف','completed':'مكتمل','cancelled':'ملغي'}[s] ?? s : s.replace('_', ' ')}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -148,29 +148,29 @@ export default function ProjectDetail() {
             {/* Tabs */}
             <Tabs defaultValue="tasks">
               <TabsList className="mb-6 flex-wrap h-auto gap-1">
-                <TabsTrigger value="tasks" className="gap-1.5"><CheckCircle2 className="w-4 h-4" /> Tasks ({totalTasks})</TabsTrigger>
-                <TabsTrigger value="milestones" className="gap-1.5"><Flag className="w-4 h-4" /> Milestones ({milestones?.length ?? 0})</TabsTrigger>
-                <TabsTrigger value="expenses" className="gap-1.5"><DollarSign className="w-4 h-4" /> Expenses</TabsTrigger>
-                <TabsTrigger value="logs" className="gap-1.5"><BookOpen className="w-4 h-4" /> Daily Logs</TabsTrigger>
-                <TabsTrigger value="documents" className="gap-1.5"><FileText className="w-4 h-4" /> Documents</TabsTrigger>
+                <TabsTrigger value="tasks" className="gap-1.5"><CheckCircle2 className="w-4 h-4" /> {t('project.tasks')} ({totalTasks})</TabsTrigger>
+                <TabsTrigger value="milestones" className="gap-1.5"><Flag className="w-4 h-4" /> {t('project.milestones')} ({milestones?.length ?? 0})</TabsTrigger>
+                <TabsTrigger value="expenses" className="gap-1.5"><DollarSign className="w-4 h-4" /> {t('project.expenses')}</TabsTrigger>
+                <TabsTrigger value="logs" className="gap-1.5"><BookOpen className="w-4 h-4" /> {t('project.daily_logs')}</TabsTrigger>
+                <TabsTrigger value="documents" className="gap-1.5"><FileText className="w-4 h-4" /> {t('project.documents')}</TabsTrigger>
               </TabsList>
 
               {/* Tasks */}
               <TabsContent value="tasks">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-semibold">Task List</h3>
+                  <h3 className="font-semibold">{lang === 'ar' ? 'قائمة المهام' : 'Task List'}</h3>
                   <Dialog open={taskOpen} onOpenChange={setTaskOpen}>
                     <DialogTrigger asChild>
-                      <Button size="sm" className="gap-1.5"><Plus className="w-4 h-4" /> Add Task</Button>
+                      <Button size="sm" className="gap-1.5"><Plus className="w-4 h-4" /> {t('project.add_task')}</Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-md">
                       <DialogHeader><DialogTitle>{t('project.add_task')}</DialogTitle></DialogHeader>
                       <div className="space-y-3 mt-2">
-                        <Input placeholder="Task title" value={taskForm.title} onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))} />
-                        <Textarea placeholder="Description (optional)" rows={2} value={taskForm.description} onChange={e => setTaskForm(f => ({ ...f, description: e.target.value }))} />
+                        <Input placeholder={lang === 'ar' ? 'عنوان المهمة' : 'Task title'} value={taskForm.title} onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))} />
+                        <Textarea placeholder={lang === 'ar' ? 'الوصف (اختياري)' : 'Description (optional)'} rows={2} value={taskForm.description} onChange={e => setTaskForm(f => ({ ...f, description: e.target.value }))} />
                         <div className="grid grid-cols-2 gap-3">
                           <Select value={taskForm.priority} onValueChange={v => setTaskForm(f => ({ ...f, priority: v as any }))}>
-                            <SelectTrigger><SelectValue placeholder="Priority" /></SelectTrigger>
+                            <SelectTrigger><SelectValue placeholder={lang === 'ar' ? 'الأولوية' : 'Priority'} /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="low">{t('project.priority.low')}</SelectItem>
                               <SelectItem value="medium">{t('project.priority.medium')}</SelectItem>
@@ -180,7 +180,7 @@ export default function ProjectDetail() {
                           <Input type="date" value={taskForm.dueDate} onChange={e => setTaskForm(f => ({ ...f, dueDate: e.target.value }))} />
                         </div>
                         <Button className="w-full" onClick={() => addTask.mutate({ projectId, ...taskForm, dueDate: taskForm.dueDate ? new Date(taskForm.dueDate) : undefined })} disabled={addTask.isPending || !taskForm.title}>
-                          {addTask.isPending ? 'Adding...' : 'Add Task'}
+                          {addTask.isPending ? (lang === 'ar' ? 'جاري الإضافة...' : 'Adding...') : t('project.add_task')}
                         </Button>
                       </div>
                     </DialogContent>
@@ -230,7 +230,7 @@ export default function ProjectDetail() {
               {/* Milestones */}
               <TabsContent value="milestones">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-semibold">Project Milestones</h3>
+                  <h3 className="font-semibold">{lang === 'ar' ? 'معالم المشروع' : 'Project Milestones'}</h3>
                   <Dialog open={msOpen} onOpenChange={setMsOpen}>
                     <DialogTrigger asChild>
                       <Button size="sm" className="gap-1.5"><Plus className="w-4 h-4" /> Add Milestone</Button>
@@ -275,7 +275,7 @@ export default function ProjectDetail() {
               <TabsContent value="expenses">
                 <div className="flex justify-between items-center mb-4">
                   <div>
-                    <h3 className="font-semibold">Expense Tracker</h3>
+                    <h3 className="font-semibold">{lang === 'ar' ? 'متتبع المصروفات' : 'Expense Tracker'}</h3>
                     <p className="text-sm text-muted-foreground">Total: EGP {totalExpenses.toLocaleString()}</p>
                   </div>
                   <Dialog open={expOpen} onOpenChange={setExpOpen}>
@@ -322,7 +322,7 @@ export default function ProjectDetail() {
               {/* Daily Logs */}
               <TabsContent value="logs">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-semibold">Daily Site Logs</h3>
+                  <h3 className="font-semibold">{lang === 'ar' ? 'سجلات الموقع اليومية' : 'Daily Site Logs'}</h3>
                   <Dialog open={logOpen} onOpenChange={setLogOpen}>
                     <DialogTrigger asChild>
                       <Button size="sm" className="gap-1.5"><Plus className="w-4 h-4" /> Add Log</Button>
@@ -370,8 +370,8 @@ export default function ProjectDetail() {
               <TabsContent value="documents">
                 <div className="text-center py-16 text-muted-foreground border-2 border-dashed border-border rounded-xl">
                   <FileText className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                  <p className="font-medium mb-1">Document Management</p>
-                  <p className="text-sm">Upload drawings, BOQs, contracts, and invoices</p>
+                  <p className="font-medium mb-1">{lang === 'ar' ? 'إدارة المستندات' : 'Document Management'}</p>
+                  <p className="text-sm">{lang === 'ar' ? 'ارفع المخططات والكميات والعقود والفواتير' : 'Upload drawings, BOQs, contracts, and invoices'}</p>
                   <Button className="mt-4 gap-2" variant="outline">
                     <Plus className="w-4 h-4" /> Upload Document
                   </Button>

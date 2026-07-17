@@ -58,9 +58,9 @@ export default function AdminDashboard() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-destructive" />
-          <h2 className="text-2xl font-bold mb-2">Access Denied</h2>
-          <p className="text-muted-foreground">You do not have admin privileges.</p>
-          <Button className="mt-4" onClick={() => navigate('/dashboard')}>Go to Dashboard</Button>
+          <h2 className="text-2xl font-bold mb-2">{lang === 'ar' ? 'غير مصرح' : 'Access Denied'}</h2>
+          <p className="text-muted-foreground">{lang === 'ar' ? 'ليس لديك صلاحيات المشرف.' : 'You do not have admin privileges.'}</p>
+          <Button className="mt-4" onClick={() => navigate('/dashboard')}>{lang === 'ar' ? 'الذهاب للوحة التحكم' : 'Go to Dashboard'}</Button>
         </div>
       </div>
     );
@@ -83,7 +83,7 @@ export default function AdminDashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold mb-1">{t('admin.title')}</h2>
-            <p className="text-muted-foreground">Monitor and manage the BuildHub platform</p>
+            <p className="text-muted-foreground">{lang === 'ar' ? 'مراقبة وإدارة منصة BuildHub' : 'Monitor and manage the BuildHub platform'}</p>
           </div>
           <div className="flex items-center gap-2">
             <Badge className="badge-success text-xs px-3 py-1">Platform Healthy</Badge>
@@ -133,11 +133,11 @@ export default function AdminDashboard() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border">
-                        <th className="text-left py-3 px-2 font-medium text-muted-foreground">Name</th>
-                        <th className="text-left py-3 px-2 font-medium text-muted-foreground">Email</th>
-                        <th className="text-left py-3 px-2 font-medium text-muted-foreground">Role</th>
-                        <th className="text-left py-3 px-2 font-medium text-muted-foreground">Status</th>
-                        <th className="text-left py-3 px-2 font-medium text-muted-foreground">Joined</th>
+                        <th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الاسم' : 'Name'}</th>
+                        <th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'البريد الإلكتروني' : 'Email'}</th>
+                        <th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الدور' : 'Role'}</th>
+                        <th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الحالة' : 'Status'}</th>
+                        <th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'تاريخ الانضمام' : 'Joined'}</th>
                         <th className="text-left py-3 px-2 font-medium text-muted-foreground">{t('admin.actions')}</th>
                       </tr>
                     </thead>
@@ -169,7 +169,7 @@ export default function AdminDashboard() {
                         </tr>
                       ))}
                       {(!filteredUsers || filteredUsers.length === 0) && (
-                        <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">No users found</td></tr>
+                        <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">{lang === 'ar' ? 'لا يوجد مستخدمون' : 'No users found'}</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -196,7 +196,7 @@ export default function AdminDashboard() {
                 </CardContent>
               </Card>
               <Card>
-                <CardHeader><CardTitle className="text-base">Projects Created</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base">{lang === 'ar' ? 'مشاريع منشأة' : 'Projects Created'}</CardTitle></CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={MONTHLY_USERS}>
@@ -319,7 +319,7 @@ export default function AdminDashboard() {
                       {section.items.map(item => (
                         <div key={item} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                           <span className="text-sm">{item}</span>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => toast.info('Settings coming soon')}>Configure</Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => toast.info('Settings coming soon')}>{lang === 'ar' ? 'ضبط' : 'Configure'}</Button>
                         </div>
                       ))}
                     </div>

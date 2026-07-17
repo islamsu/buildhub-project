@@ -115,9 +115,9 @@ export default function AuthPage() {
           </p>
         </div>
         <div className="flex gap-8 text-sm text-white/60">
-          <div><p className="text-2xl font-bold text-white">10K+</p><p>Users</p></div>
-          <div><p className="text-2xl font-bold text-white">5K+</p><p>Projects</p></div>
-          <div><p className="text-2xl font-bold text-white">2K+</p><p>Providers</p></div>
+          <div><p className="text-2xl font-bold text-white">10K+</p><p>{lang === 'ar' ? 'مستخدم' : 'Users'}</p></div>
+          <div><p className="text-2xl font-bold text-white">5K+</p><p>{lang === 'ar' ? 'مشروع' : 'Projects'}</p></div>
+          <div><p className="text-2xl font-bold text-white">2K+</p><p>{lang === 'ar' ? 'مزود' : 'Providers'}</p></div>
         </div>
       </div>
 
