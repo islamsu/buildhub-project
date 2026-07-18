@@ -1,0 +1,268 @@
+import { useLanguage } from '@/contexts/LanguageContext';
+import Navbar from '@/components/Navbar';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import { useLocation } from 'wouter';
+import { useMemo, useState } from 'react';
+import { Search, Package, Store, PenTool, HardHat, ArrowRight, ArrowLeft, Star, BadgeCheck, TrendingUp, Sparkles } from 'lucide-react';
+import { PRODUCT_CATEGORIES, VENDORS, DESIGNERS, FINISHING_COMPANIES, DESIGN_CATEGORIES, FINISHING_CATEGORIES } from '@/lib/marketplaceData';
+
+export default function MarketplaceHub() {
+  const { lang } = useLanguage();
+  const [, navigate] = useLocation();
+  const [search, setSearch] = useState('');
+  const ar = lang === 'ar';
+  const Arrow = ar ? ArrowLeft : ArrowRight;
+
+  // AI-style autocomplete: search across products categories, vendors, designers, companies
+  const suggestions = useMemo(() => {
+    if (!search.trim() || search.trim().length < 2) return [];
+    const q = search.trim().toLowerCase();
+    const out: { type: string; typeAr: string; label: string; href: string }[] = [];
+    PRODUCT_CATEGORIES.filter(c => c.en.toLowerCase().includes(q) || c.ar.includes(q)).slice(0, 4).forEach(c =>
+      out.push({ type: 'Product Category', typeAr: 'فئة منتجات', label: ar ? c.ar : c.en, href: `/marketplace/products?cat=${c.id}` }));
+    VENDORS.filter(v => v.name.toLowerCase().includes(q) || v.nameAr.includes(q)).slice(0, 3).forEach(v =>
+      out.push({ type: 'Vendor', typeAr: 'مورد', label: ar ? v.nameAr : v.name, href: `/marketplace/vendors/${v.id}` }));
+    DESIGNERS.filter(d => d.name.toLowerCase().includes(q) || d.nameAr.includes(q)).slice(0, 3).forEach(d =>
+      out.push({ type: 'Designer', typeAr: 'مصمم', label: ar ? d.nameAr : d.name, href: `/marketplace/designers/${d.id}` }));
+    FINISHING_COMPANIES.filter(f => f.name.toLowerCase().includes(q) || f.nameAr.includes(q)).slice(0, 3).forEach(f =>
+      out.push({ type: 'Finishing Company', typeAr: 'شركة تشطيبات', label: ar ? f.nameAr : f.name, href: `/marketplace/finishing/${f.id}` }));
+    return out.slice(0, 8);
+  }, [search, ar]);
+
+  const sections = [
+    {
+      id: 'products',
+      href: '/marketplace/products',
+      icon: Package,
+      gradient: 'from-blue-600 to-cyan-500',
+      title: ar ? 'المنتجات' : 'Products',
+      desc: ar ? 'كتالوج شامل لمواد البناء والتشطيب من أكثر من 30 فئة' : 'Comprehensive catalog of building & finishing materials across 30+ categories',
+      stat: `${PRODUCT_CATEGORIES.length}+`,
+      statLabel: ar ? 'فئة' : 'Categories',
+      chips: PRODUCT_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
+    },
+    {
+      id: 'vendors',
+      href: '/marketplace/vendors',
+      icon: Store,
+      gradient: 'from-emerald-600 to-teal-500',
+      title: ar ? 'الموردون' : 'Vendors',
+      desc: ar ? 'دليل الموردين والمصنعين الموثوقين في مصر' : 'Directory of trusted suppliers and manufacturers across Egypt',
+      stat: `${VENDORS.length}`,
+      statLabel: ar ? 'مورد' : 'Vendors',
+      chips: VENDORS.slice(0, 3).map(v => (ar ? v.nameAr : v.name)),
+    },
+    {
+      id: 'designers',
+      href: '/marketplace/designers',
+      icon: PenTool,
+      gradient: 'from-violet-600 to-purple-500',
+      title: ar ? 'خدمات التصميم' : 'Design Services',
+      desc: ar ? 'مكاتب تصميم محترفة ومصممون مستقلون في 14 تخصصاً' : 'Professional design firms and independent designers across 14 disciplines',
+      stat: `${DESIGN_CATEGORIES.length}`,
+      statLabel: ar ? 'تخصص' : 'Disciplines',
+      chips: DESIGN_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
+    },
+    {
+      id: 'finishing',
+      href: '/marketplace/finishing',
+      icon: HardHat,
+      gradient: 'from-orange-600 to-amber-500',
+      title: ar ? 'شركات التشطيبات' : 'Finishing Companies',
+      desc: ar ? 'شركات متخصصة في الإنشاءات والتجهيز والتجديد والتشطيبات' : 'Companies specializing in construction, fit-out, renovation, and finishing',
+      stat: `${FINISHING_CATEGORIES.length}`,
+      statLabel: ar ? 'خدمة' : 'Services',
+      chips: FINISHING_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
+    },
+  ];
+
+  const featuredVendors = VENDORS.filter(v => v.featured).slice(0, 4);
+  const featuredDesigners = DESIGNERS.filter(d => d.featured).slice(0, 3);
+  const featuredCompanies = FINISHING_COMPANIES.filter(f => f.featured).slice(0, 3);
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Navbar />
+      <div className="pt-16">
+        {/* Hero + universal search */}
+        <div className="bg-gradient-to-br from-primary via-primary/90 to-primary/70 text-primary-foreground py-16 relative overflow-hidden">
+          <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 25% 30%, white 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
+          <div className="container relative">
+            <Badge className="bg-white/15 text-white border-0 mb-4 backdrop-blur">
+              <Sparkles className="w-3.5 h-3.5 me-1" /> {ar ? 'مركز الاكتشاف' : 'Discovery Hub'}
+            </Badge>
+            <h1 className="text-4xl md:text-5xl font-bold mb-3">{ar ? 'استكشف السوق' : 'Explore Marketplace'}</h1>
+            <p className="text-primary-foreground/80 text-lg max-w-2xl mb-8">
+              {ar
+                ? 'اكتشف المنتجات، وقيّم الموردين، ووظف المحترفين، واطلب عروض الأسعار — كل ذلك في منظومة بناء متكاملة.'
+                : 'Discover products, evaluate suppliers, hire professionals, and request quotations — all in one connected construction ecosystem.'}
+            </p>
+            <div className="relative max-w-2xl">
+              <Search className="absolute start-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <Input
+                className="ps-12 h-14 text-base bg-white text-foreground shadow-xl rounded-xl"
+                placeholder={ar ? 'ابحث عن منتجات، موردين، مصممين، شركات تشطيب…' : 'Search products, vendors, designers, finishing companies…'}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              {suggestions.length > 0 && (
+                <div className="absolute top-full mt-2 inset-x-0 bg-popover text-popover-foreground rounded-xl shadow-2xl border border-border overflow-hidden z-50">
+                  {suggestions.map((s, i) => (
+                    <button
+                      key={i}
+                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted text-start transition-colors"
+                      onClick={() => { setSearch(''); navigate(s.href); }}
+                    >
+                      <span className="font-medium text-sm">{s.label}</span>
+                      <Badge variant="secondary" className="text-xs">{ar ? s.typeAr : s.type}</Badge>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Four premium section cards */}
+        <div className="container py-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {sections.map(s => (
+              <Card
+                key={s.id}
+                className="group cursor-pointer overflow-hidden border-border hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 relative"
+                onClick={() => navigate(s.href)}
+              >
+                <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${s.gradient}`} />
+                <div className="p-6 md:p-8">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${s.gradient} flex items-center justify-center text-white shadow-lg`}>
+                      <s.icon className="w-7 h-7" />
+                    </div>
+                    <div className="text-end">
+                      <div className="text-2xl font-bold">{s.stat}</div>
+                      <div className="text-xs text-muted-foreground">{s.statLabel}</div>
+                    </div>
+                  </div>
+                  <h2 className="text-xl font-bold mb-2 group-hover:text-primary transition-colors">{s.title}</h2>
+                  <p className="text-sm text-muted-foreground mb-4">{s.desc}</p>
+                  <div className="flex flex-wrap gap-1.5 mb-4">
+                    {s.chips.map((c, i) => (
+                      <Badge key={i} variant="secondary" className="text-xs font-normal">{c}</Badge>
+                    ))}
+                    <Badge variant="outline" className="text-xs font-normal">+{ar ? 'المزيد' : 'more'}</Badge>
+                  </div>
+                  <div className="flex items-center gap-1 text-sm font-medium text-primary">
+                    {ar ? 'استكشف' : 'Explore'} <Arrow className="w-4 h-4 group-hover:translate-x-1 rtl:group-hover:-translate-x-1 transition-transform" />
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          {/* Featured vendors strip */}
+          <div className="mt-14">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <BadgeCheck className="w-5 h-5 text-emerald-600" /> {ar ? 'موردون مميزون' : 'Featured Vendors'}
+              </h3>
+              <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/vendors')}>
+                {ar ? 'عرض الكل' : 'View all'}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {featuredVendors.map(v => (
+                <Card key={v.id} className="p-4 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate(`/marketplace/vendors/${v.id}`)}>
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl">{v.logo}</div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm truncate flex items-center gap-1">
+                        {ar ? v.nameAr : v.name}
+                        {v.verified && <BadgeCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">{ar ? v.categoryAr : v.category}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs">
+                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                    <span className="font-medium">{v.rating}</span>
+                    <span className="text-muted-foreground">({v.reviewCount})</span>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* Featured designers + companies strip */}
+          <div className="mt-12 grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div>
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="text-lg font-bold flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-violet-600" /> {ar ? 'مصممون مميزون' : 'Featured Designers'}
+                </h3>
+                <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/designers')}>
+                  {ar ? 'عرض الكل' : 'View all'}
+                </button>
+              </div>
+              <div className="space-y-3">
+                {featuredDesigners.map(d => (
+                  <Card key={d.id} className="p-4 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate(`/marketplace/designers/${d.id}`)}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-muted flex items-center justify-center text-xl flex-shrink-0">{d.logo}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-sm flex items-center gap-1">
+                          {ar ? d.nameAr : d.name}
+                          {d.verified && <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" />}
+                          {d.awardWinning && <span title={ar ? 'حائز على جوائز' : 'Award-winning'}>🏆</span>}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">{(ar ? d.specialtiesAr : d.specialties).join(' · ')}</div>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs flex-shrink-0">
+                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                        <span className="font-medium">{d.rating}</span>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="text-lg font-bold flex items-center gap-2">
+                  <HardHat className="w-5 h-5 text-orange-600" /> {ar ? 'شركات تشطيب مميزة' : 'Featured Finishing Companies'}
+                </h3>
+                <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/finishing')}>
+                  {ar ? 'عرض الكل' : 'View all'}
+                </button>
+              </div>
+              <div className="space-y-3">
+                {featuredCompanies.map(f => (
+                  <Card key={f.id} className="p-4 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate(`/marketplace/finishing/${f.id}`)}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-muted flex items-center justify-center text-xl flex-shrink-0">{f.logo}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-sm flex items-center gap-1">
+                          {ar ? f.nameAr : f.name}
+                          {f.verified && <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" />}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">{(ar ? f.servicesAr : f.services).slice(0, 2).join(' · ')}</div>
+                      </div>
+                      <div className="text-end flex-shrink-0">
+                        <div className="flex items-center gap-1 text-xs justify-end">
+                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                          <span className="font-medium">{f.rating}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">{f.completedProjects}+ {ar ? 'مشروع' : 'projects'}</div>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

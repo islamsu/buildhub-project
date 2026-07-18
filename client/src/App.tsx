@@ -5,6 +5,10 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import MarketplaceHub from "./pages/MarketplaceHub";
+import VendorsDirectory from "./pages/VendorsDirectory";
+import DesignersDirectory from "./pages/DesignersDirectory";
+import FinishingDirectory from "./pages/FinishingDirectory";
 import AuthPage from "./pages/AuthPage";
 import HomeownerDashboard from "./pages/HomeownerDashboard";
 import ProviderDashboard from "./pages/ProviderDashboard";
@@ -23,7 +27,14 @@ function Router() {
       <Route path={"/dashboard"} component={HomeownerDashboard} />
       <Route path={"/provider"} component={ProviderDashboard} />
       <Route path={"/admin"} component={AdminDashboard} />
-      <Route path={"/marketplace"} component={Marketplace} />
+      <Route path={"/marketplace"} component={MarketplaceHub} />
+      <Route path={"/marketplace/products"} component={Marketplace} />
+      <Route path={"/marketplace/vendors/:id"} component={VendorsDirectory} />
+      <Route path={"/marketplace/vendors"} component={VendorsDirectory} />
+      <Route path={"/marketplace/designers/:id"} component={DesignersDirectory} />
+      <Route path={"/marketplace/designers"} component={DesignersDirectory} />
+      <Route path={"/marketplace/finishing/:id"} component={FinishingDirectory} />
+      <Route path={"/marketplace/finishing"} component={FinishingDirectory} />
       <Route path={"/projects/:id"} component={ProjectDetail} />
       <Route path={"/rfq"} component={RFQPage} />
       <Route path={"/messages"} component={MessagesPage} />
@@ -48,4 +59,3 @@ function App() {
 }
 
 export default App;
-

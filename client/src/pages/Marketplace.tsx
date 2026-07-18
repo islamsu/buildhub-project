@@ -4,11 +4,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { trpc } from '@/lib/trpc';
 import { useState } from 'react';
-import { Search, SlidersHorizontal, Star, Package, ShoppingCart, Zap } from 'lucide-react';
+import { Search, SlidersHorizontal, Star, Package, ShoppingCart, Zap, ArrowLeft, ArrowRight, Heart, Scale, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { useLocation } from 'wouter';
 
 const CATEGORY_ICONS: Record<string, string> = {
   'Materials': '🧱', 'Furniture': '🛋️', 'Lighting': '💡', 'Electrical': '⚡',
@@ -46,9 +48,37 @@ const DEMO_PRODUCTS = [
 
 export default function Marketplace() {
   const { t, lang } = useLanguage();
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [sortBy, setSortBy] = useState('featured');
+  const [wishlist, setWishlist] = useState<number[]>(() => {
+    try { return JSON.parse(localStorage.getItem('bh-wishlist') || '[]'); } catch { return []; }
+  });
+  const [compareIds, setCompareIds] = useState<number[]>([]);
+  const [showCompare, setShowCompare] = useState(false);
+
+  const toggleWishlist = (id: number) => {
+    setWishlist(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      localStorage.setItem('bh-wishlist', JSON.stringify(next));
+      toast.success(prev.includes(id)
+        ? (lang === 'ar' ? 'تمت الإزالة من المفضلة' : 'Removed from wishlist')
+        : (lang === 'ar' ? 'تمت الإضافة إلى المفضلة' : 'Added to wishlist'));
+      return next;
+    });
+  };
+  const toggleCompare = (id: number) => {
+    setCompareIds(prev => {
+      if (prev.includes(id)) return prev.filter(x => x !== id);
+      if (prev.length >= 3) {
+        toast.info(lang === 'ar' ? 'يمكن مقارنة 3 منتجات كحد أقصى' : 'You can compare up to 3 products');
+        return prev;
+      }
+      return [...prev, id];
+    });
+  };
+  const BackIcon = lang === 'ar' ? ArrowRight : ArrowLeft;
 
   const { data: categories } = trpc.marketplace.categories.useQuery();
 
@@ -67,6 +97,9 @@ export default function Marketplace() {
         {/* Header */}
         <div className="bg-gradient-to-r from-primary to-primary/80 text-primary-foreground py-12">
           <div className="container">
+            <button className="flex items-center gap-1 text-primary-foreground/70 hover:text-primary-foreground text-sm mb-4 transition-colors" onClick={() => navigate('/marketplace')}>
+              <BackIcon className="w-4 h-4" /> {lang === 'ar' ? 'السوق' : 'Marketplace'}
+            </button>
             <h1 className="text-3xl font-bold mb-2">{t('nav.marketplace')}</h1>
             <p className="text-primary-foreground/80 mb-6">{t('market.subtitle')}</p>
             <div className="flex gap-3 max-w-2xl">
@@ -160,6 +193,22 @@ export default function Marketplace() {
                       <Badge variant="secondary" className="absolute top-2 right-2 text-xs">
                         {lang === 'ar' ? (CATEGORY_AR[product.category] ?? product.category) : product.category}
                       </Badge>
+                      <div className="absolute bottom-2 right-2 flex gap-1.5">
+                        <button
+                          aria-label="wishlist"
+                          onClick={e => { e.stopPropagation(); toggleWishlist(product.id); }}
+                          className="h-8 w-8 rounded-full bg-white/90 shadow flex items-center justify-center hover:bg-white transition-colors"
+                        >
+                          <Heart className={`w-4 h-4 ${wishlist.includes(product.id) ? 'fill-rose-500 text-rose-500' : 'text-slate-500'}`} />
+                        </button>
+                        <button
+                          aria-label="compare"
+                          onClick={e => { e.stopPropagation(); toggleCompare(product.id); }}
+                          className={`h-8 w-8 rounded-full shadow flex items-center justify-center transition-colors ${compareIds.includes(product.id) ? 'bg-primary text-primary-foreground' : 'bg-white/90 text-slate-500 hover:bg-white'}`}
+                        >
+                          <Scale className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                     <CardContent className="p-4">
                       <h3 className="font-semibold text-sm mb-1 line-clamp-2">
@@ -189,6 +238,69 @@ export default function Marketplace() {
           </div>
         </div>
       </div>
+
+      {/* Compare floating bar */}
+      {compareIds.length > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border bg-background px-4 py-2 shadow-xl">
+          <Scale className="w-4 h-4 text-primary" />
+          <span className="text-sm font-medium">
+            {compareIds.length} {lang === 'ar' ? 'منتج للمقارنة' : 'to compare'}
+          </span>
+          <Button size="sm" className="rounded-full" disabled={compareIds.length < 2} onClick={() => setShowCompare(true)}>
+            {lang === 'ar' ? 'قارن الآن' : 'Compare Now'}
+          </Button>
+          <button aria-label="clear compare" onClick={() => setCompareIds([])} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Compare dialog */}
+      <Dialog open={showCompare} onOpenChange={setShowCompare}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{lang === 'ar' ? 'مقارنة المنتجات' : 'Product Comparison'}</DialogTitle>
+          </DialogHeader>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th className="p-2 text-start text-muted-foreground font-medium">{lang === 'ar' ? 'الخاصية' : 'Attribute'}</th>
+                  {compareIds.map(id => {
+                    const p = DEMO_PRODUCTS.find(x => x.id === id)!;
+                    return (
+                      <th key={id} className="p-2 text-start">
+                        <div className="w-28">
+                          {p.images && <img src={p.images} alt="" className="mb-1 h-16 w-full rounded object-cover" />}
+                          <div className="font-semibold leading-tight">{lang === 'ar' && p.nameAr ? p.nameAr : p.name}</div>
+                        </div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {([
+                  { key: 'price', label: lang === 'ar' ? 'السعر' : 'Price', render: (p: any) => `${p.price.toLocaleString()} ${lang === 'ar' ? 'جنيه' : 'EGP'}${p.unit ? '/' + p.unit : ''}` },
+                  { key: 'rating', label: lang === 'ar' ? 'التقييم' : 'Rating', render: (p: any) => `${p.rating} ★ (${p.reviews})` },
+                  { key: 'brand', label: lang === 'ar' ? 'العلامة التجارية' : 'Brand', render: (p: any) => p.brand },
+                  { key: 'origin', label: lang === 'ar' ? 'بلد المنشأ' : 'Origin', render: (p: any) => p.origin },
+                  { key: 'category', label: lang === 'ar' ? 'الفئة' : 'Category', render: (p: any) => lang === 'ar' ? (CATEGORY_AR[p.category] ?? p.category) : p.category },
+                  { key: 'delivery', label: lang === 'ar' ? 'التوصيل' : 'Delivery', render: (p: any) => `${p.deliveryDays}${lang === 'ar' ? 'ي' : 'd'}` },
+                ]).map(row => (
+                  <tr key={row.key} className="border-t">
+                    <td className="p-2 font-medium text-muted-foreground">{row.label}</td>
+                    {compareIds.map(id => {
+                      const p = DEMO_PRODUCTS.find(x => x.id === id)!;
+                      return <td key={id} className="p-2">{row.render(p)}</td>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
