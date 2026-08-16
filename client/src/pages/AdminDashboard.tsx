@@ -113,6 +113,7 @@ export default function AdminDashboard() {
   const previewObjectUrlRef = useRef<string | null>(null);
   const isAdmin = isAuthenticated && (user as any)?.role === 'admin';
   const utils = trpc.useUtils();
+  const utilsTrpc = trpc.useUtils();
   const complianceQueueInput = useMemo(() => ({ includeDummy: includeDummyRegistrations }), [includeDummyRegistrations]);
 
   const { data: stats } = trpc.admin.stats.useQuery(undefined, { enabled: isAdmin });
@@ -367,7 +368,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const utilsTrpc = trpc.useUtils();
   const exportAuditPdf = async () => {
     if (!isAdmin) return;
     const toastId = `audit-export-${Date.now()}`;

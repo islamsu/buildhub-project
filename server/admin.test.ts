@@ -128,3 +128,14 @@ describe('bulk registration decisions', () => {
     expect(db.update).not.toHaveBeenCalled();
   });
 });
+
+it('keeps AdminDashboard hooks unconditional before loading and access returns', async () => {
+  const { readFileSync } = await import('node:fs');
+  const dashboard = readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
+  const utilsHookIndex = dashboard.indexOf('const utilsTrpc = trpc.useUtils();');
+  const loadingReturnIndex = dashboard.indexOf('if (loading) return null;');
+  const deniedReturnIndex = dashboard.indexOf('if (!isAdmin) {');
+  expect(utilsHookIndex).toBeGreaterThan(-1);
+  expect(utilsHookIndex).toBeLessThan(loadingReturnIndex);
+  expect(utilsHookIndex).toBeLessThan(deniedReturnIndex);
+});

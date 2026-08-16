@@ -228,3 +228,8 @@
 - [x] Implement complete admin audit-log PDF export reflecting all available historical audit events and account data
 - [x] Add Vitest coverage for invitation expiry, password setup, badge rendering, and PDF export permissions
 - [x] Save and deliver the Phase 25 checkpoint
+
+## Admin Dashboard Crash Fix
+- [x] Diagnose and fix React error #310 crashing the /admin route
+- [x] Run TypeScript, Vitest, production build, and visual verification for the admin route
+- [ ] Save the Admin Dashboard crash-fix checkpoint
