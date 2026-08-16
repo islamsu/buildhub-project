@@ -120,13 +120,21 @@
 - [ ] Save checkpoint v1.7 after the full attachment-flow verification
 
 ## Phase 13: Role-Specific Platforms
-- [ ] Create role-aware platform routing after authentication for Homeowner, Contractor, Engineer, Architect, Supplier, and Project Manager
-- [ ] Give each role a dedicated navigation shell and dashboard information architecture
-- [ ] Add Supplier product listing, order/RFQ review, and project discovery actions
-- [ ] Add Contractor RFQ intake, quotation, team, and project-management actions
-- [ ] Add Engineer project collaboration, technical deliverables, and RFQ actions
-- [ ] Add Architect design portfolio, collaboration, and project actions
-- [ ] Add Homeowner project, budget, RFQ, and provider-management actions
-- [ ] Add Project Manager project portfolio, milestones, teams, and reporting actions
-- [ ] Preserve Arabic/English translations, RTL/LTR behavior, and role-based access safeguards
-- [ ] Add Vitest coverage and visually verify each role platform before checkpoint
+- [x] Create role-aware platform routing after authentication for Homeowner, Contractor, Engineer, Architect, Supplier, and Project Manager
+- [x] Give each role a dedicated navigation shell and dashboard information architecture
+- [x] Add Supplier product listing, order/RFQ review, and project discovery actions
+- [x] Add Contractor RFQ intake, quotation, team, and project-management actions
+- [x] Add Engineer project collaboration, technical deliverables, and RFQ actions
+- [x] Add Architect design portfolio, collaboration, and project actions
+- [x] Add Homeowner project, budget, RFQ, and provider-management actions
+- [x] Add Project Manager project portfolio, milestones, teams, and reporting actions
+- [x] Preserve Arabic/English translations, RTL/LTR behavior, and role-based access safeguards
+- [x] Add Vitest coverage and visually verify each role platform before checkpoint
+
+## Phase 14: Deep Role-Specific Platform Enhancements
+- [x] Implement contractor-specific team & project management modules
+- [x] Add engineer technical deliverables & document review workflows
+- [x] Build architect portfolio & design collaboration views
+- [x] Add homeowner provider-management & shortlist workflows
+- [x] Build project manager milestone, team, and reporting views
+- [x] Add authenticated visual QA / test evidence for all role platforms
