@@ -10,14 +10,15 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { startLogin } from '@/const';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   FileText, Plus, Clock, MapPin, DollarSign, Send,
-  BarChart3, ChevronRight, Users,
+  BarChart3, ChevronRight, Users, Paperclip, X, FileUp, Loader2,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import QuotationComparison from '@/components/QuotationComparison';
+import { parseRfqAttachments } from '@shared/rfqAttachments';
 
 const CATEGORIES = [
   'Materials', 'Labor', 'Complete Project', 'Engineering', 'Design',
@@ -41,7 +42,16 @@ type RFQItem = {
   status: 'open' | 'closed' | 'awarded' | null;
   requesterId: number;
   createdAt: Date;
+  attachments?: string | null;
 };
+
+type Attachment = { key: string; url: string; name: string; type: string; size: number };
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function RFQPage() {
   const { t, lang } = useLanguage();
@@ -51,6 +61,76 @@ export default function RFQPage() {
     title: '', description: '', category: '', budget: '', location: '', deadline: '',
   });
   const [compareRfq, setCompareRfq] = useState<RFQItem | null>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadingName, setUploadingName] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadSpeed, setUploadSpeed] = useState(0);
+  const [uploadEta, setUploadEta] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadAttachment = trpc.rfq.uploadAttachment.useMutation();
+
+  const MAX_FILES = 6;
+  const MAX_SIZE = 8 * 1024 * 1024;
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const selected = Array.from(files);
+    if (attachments.length + selected.length > MAX_FILES) {
+      toast.error(lang === 'ar' ? `الحد الأقصى ${MAX_FILES} ملفات` : `Maximum ${MAX_FILES} files allowed`);
+      return;
+    }
+    setUploading(true);
+    for (const file of selected) {
+      const isValid = file.type.startsWith('image/') || file.type === 'application/pdf';
+      if (!isValid) {
+        toast.error(lang === 'ar' ? `${file.name}: يُسمح فقط بالصور وملفات PDF` : `${file.name}: only images and PDF files are allowed`);
+        continue;
+      }
+      if (file.size > MAX_SIZE) {
+        toast.error(lang === 'ar' ? `${file.name}: الحجم الأقصى 8 ميجابايت` : `${file.name}: max size is 8MB`);
+        continue;
+      }
+      setUploadingName(file.name);
+      setUploadProgress(0);
+      setUploadSpeed(0);
+      setUploadEta(null);
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          const startedAt = performance.now();
+          reader.onprogress = event => {
+            if (!event.lengthComputable) return;
+            const elapsed = Math.max((performance.now() - startedAt) / 1000, 0.001);
+            const speed = event.loaded / elapsed;
+            const progress = Math.min(Math.round((event.loaded / event.total) * 88), 88);
+            setUploadProgress(progress);
+            setUploadSpeed(speed);
+            setUploadEta(speed > 0 ? Math.ceil((event.total - event.loaded) / speed) : null);
+          };
+          reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '');
+          reader.onerror = () => reject(new Error('Read failed'));
+          reader.readAsDataURL(file);
+        });
+        setUploadProgress(92);
+        const uploaded = await uploadAttachment.mutateAsync({
+          fileName: file.name,
+          contentType: file.type,
+          base64,
+        });
+        setUploadProgress(100);
+        setAttachments(prev => [...prev, uploaded]);
+      } catch {
+        toast.error(lang === 'ar' ? `فشل رفع ${file.name}` : `Failed to upload ${file.name}`);
+      }
+    }
+    setUploading(false);
+    setUploadingName('');
+    setUploadProgress(0);
+    setUploadSpeed(0);
+    setUploadEta(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
 
   const { data: rfqs = [], refetch } = trpc.rfq.list.useQuery();
   const { data: myRfqs = [] } = trpc.rfq.myList.useQuery(undefined, { enabled: isAuthenticated });
@@ -60,6 +140,7 @@ export default function RFQPage() {
       toast.success(lang === 'ar' ? 'تم نشر طلب العرض بنجاح!' : 'RFQ posted successfully!');
       setOpen(false);
       setForm({ title: '', description: '', category: '', budget: '', location: '', deadline: '' });
+      setAttachments([]);
       refetch();
     },
     onError: (e) => toast.error(e.message),
@@ -133,14 +214,88 @@ export default function RFQPage() {
                       onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))}
                     />
                   </div>
+                  {/* Attachments */}
+                  <div className="space-y-2">
+                    <label className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Paperclip className="w-3.5 h-3.5" />
+                      {lang === 'ar' ? 'المرفقات — صور مرجعية أو مخططات PDF (حتى 6 ملفات، 8 م.ب لكل ملف)' : 'Attachments — reference images or PDF floor plans (up to 6 files, 8MB each)'}
+                    </label>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*,application/pdf"
+                      multiple
+                      className="hidden"
+                      onChange={e => handleFiles(e.target.files)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading || attachments.length >= MAX_FILES}
+                      className="w-full border-2 border-dashed border-border rounded-lg p-4 text-center text-sm text-muted-foreground hover:border-primary/50 hover:bg-accent/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {uploading ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          {lang === 'ar' ? `جاري رفع ${uploadingName}…` : `Uploading ${uploadingName}…`}
+                        </span>
+                      ) : (
+                        <span className="flex items-center justify-center gap-2">
+                          <FileUp className="w-4 h-4" />
+                          {lang === 'ar' ? 'اضغط لاختيار الملفات' : 'Click to choose files'}
+                        </span>
+                      )}
+                    </button>
+                    {uploading && (
+                      <div className="space-y-1.5" aria-live="polite">
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                          <span>{uploadProgress}%</span>
+                          <span>{uploadSpeed > 0 ? `${(uploadSpeed / (1024 * 1024)).toFixed(1)} MB/s` : (lang === 'ar' ? 'جارٍ التحضير…' : 'Preparing…')}</span>
+                          <span>{uploadEta !== null ? (lang === 'ar' ? `${uploadEta} ث متبقية` : `${uploadEta}s remaining`) : ''}</span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                          <div className="h-full rounded-full bg-primary transition-[width] duration-200" style={{ width: `${uploadProgress}%` }} />
+                        </div>
+                      </div>
+                    )}
+                    {attachments.length > 0 && (
+                      <div className="grid grid-cols-2 gap-2">
+                        {attachments.map((att, i) => (
+                          <div key={att.key} className="flex items-center gap-2 border rounded-lg p-2 bg-muted/30 text-xs">
+                            {att.type.startsWith('image/') ? (
+                              <img src={att.url} alt={att.name} className="w-10 h-10 rounded object-cover shrink-0" />
+                            ) : (
+                              <div className="w-10 h-10 rounded bg-red-50 border border-red-100 flex items-center justify-center shrink-0">
+                                <FileText className="w-4 h-4 text-red-500" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="truncate font-medium">{att.name}</p>
+                              <p className="text-muted-foreground">{formatSize(att.size)}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
+                              className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive shrink-0"
+                              aria-label={lang === 'ar' ? 'إزالة' : 'Remove'}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <Button
                     className="w-full gap-2"
                     onClick={() => createRfq.mutate({
                       ...form,
                       budget: form.budget ? parseFloat(form.budget) : undefined,
                       deadline: form.deadline ? new Date(form.deadline) : undefined,
+                      attachments: attachments.length > 0 ? attachments : undefined,
                     })}
-                    disabled={createRfq.isPending || !form.title}
+                    disabled={createRfq.isPending || uploading || !form.title}
                   >
                     <Send className="w-4 h-4" />
                     {createRfq.isPending ? t('rfq.submitting') : t('rfq.submit')}
@@ -215,6 +370,25 @@ export default function RFQPage() {
                           </span>
                         )}
                       </div>
+
+                      {(() => {
+                        const atts = parseRfqAttachments(rfq.attachments);
+                        if (atts.length === 0) return null;
+                        return (
+                          <div className="flex flex-wrap items-center gap-2 mt-3">
+                            {atts.map(att => att.type.startsWith('image/') ? (
+                              <a key={att.key} href={att.url} target="_blank" rel="noreferrer" title={att.name}>
+                                <img src={att.url} alt={att.name} className="w-14 h-14 rounded-md object-cover border hover:opacity-80 transition-opacity" />
+                              </a>
+                            ) : (
+                              <a key={att.key} href={att.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs border rounded-md px-2.5 py-2 bg-muted/30 hover:bg-muted/60 transition-colors max-w-[180px]">
+                                <FileText className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                                <span className="truncate">{att.name}</span>
+                              </a>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* CTA */}

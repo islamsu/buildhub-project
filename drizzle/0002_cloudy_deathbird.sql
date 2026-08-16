@@ -1,0 +1,1 @@
+ALTER TABLE `rfqs` ADD `attachments` text;

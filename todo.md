@@ -98,3 +98,23 @@
 - [x] Universal features: sort options, grid/list view toggle, verification badges, favorites
 - [x] Full bilingual AR/EN coverage for all new marketplace pages
 - [x] Routes registered in App.tsx and cross-navigation between sections
+
+## Phase 12: RFQ File Uploads
+- [x] Add RFQ attachment metadata field and apply database migration
+- [x] Add protected S3-backed RFQ attachment upload procedure with file validation
+- [x] Add bilingual RFQ attachment picker with image/PDF previews, size/type validation, and upload state
+- [x] Persist attachments when creating an RFQ and render attachment previews on RFQ cards
+- [x] Add Vitest coverage for attachment validation and metadata parsing
+- [x] Verify RFQ upload flow visually and save checkpoint v1.7
+- [ ] Address remaining placeholder flows (OTP, real-time messaging, and other roadmap items)
+
+## Phase 12 Recovery Note
+- [x] Reapply RFQ upload work after sandbox restoration from checkpoint e1386070
+- [x] Re-run TypeScript and Vitest checks before checkpoint
+- [x] Re-verify the upload UI at desktop and mobile widths
+- [x] Save checkpoint v1.7 after recovery verification
+
+## Phase 12 Verification Gaps
+- [ ] Add Vitest coverage for attachment metadata parsing, including valid, empty, and malformed JSON
+- [ ] Visually exercise the RFQ picker, in-progress upload state, and rendered attachment card output
+- [ ] Save checkpoint v1.7 after the full attachment-flow verification

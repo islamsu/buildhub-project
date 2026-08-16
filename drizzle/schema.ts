@@ -133,6 +133,7 @@ export const rfqs = mysqlTable('rfqs', {
   budget:      decimal('budget', { precision: 12, scale: 2 }),
   location:    varchar('location', { length: 255 }),
   deadline:    timestamp('deadline'),
+  attachments: text('attachments'),
   status:      mysqlEnum('status', ['open', 'closed', 'awarded']).default('open'),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
   updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),

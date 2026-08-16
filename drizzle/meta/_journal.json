@@ -15,6 +15,13 @@
       "when": 1784239591881,
       "tag": "0001_burly_supreme_intelligence",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1786871649950,
+      "tag": "0002_cloudy_deathbird",
+      "breakpoints": true
     }
   ]
 }

@@ -6,6 +6,8 @@ import { publicProcedure, protectedProcedure, router } from './_core/trpc';
 import { TRPCError } from '@trpc/server';
 import { getDb } from './db';
 import { invokeLLM } from './_core/llm';
+import { storagePut } from './storage';
+import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
 import {
   projects, milestones, tasks, documents, products,
   rfqs, quotations, messages, notifications, reviews,
@@ -209,16 +211,47 @@ const rfqRouter = router({
       budget: z.number().optional(),
       location: z.string().optional(),
       deadline: z.date().optional(),
+      attachments: z.array(z.object({
+        key: z.string(),
+        url: z.string(),
+        name: z.string(),
+        type: z.string(),
+        size: z.number(),
+      })).max(6).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const { attachments, ...rest } = input;
       const result = await db.insert(rfqs).values({
-        ...input,
+        ...rest,
         requesterId: ctx.user.id,
         budget: input.budget != null ? String(input.budget) : undefined,
+        attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : undefined,
       });
       return { id: Number(result[0].insertId) };
+    }),
+  uploadAttachment: protectedProcedure
+    .input(z.object({
+      fileName: z.string().min(1).max(255),
+      contentType: z.string().refine(
+        isAllowedRfqAttachmentType,
+        { message: 'Only images and PDF floor plans are allowed' },
+      ),
+      base64: z.string().max(11_000_000, 'File too large (max ~8MB)'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const buffer = Buffer.from(input.base64, 'base64');
+      if (buffer.length > MAX_RFQ_ATTACHMENT_SIZE) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
+      }
+      const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
+      const { key, url } = await storagePut(
+        `rfq-attachments/user-${ctx.user.id}/${safeName}`,
+        buffer,
+        input.contentType,
+      );
+      return { key, url, name: input.fileName, type: input.contentType, size: buffer.length };
     }),
   quotations: protectedProcedure.input(z.object({ rfqId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
