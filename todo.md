@@ -118,3 +118,15 @@
 - [ ] Add Vitest coverage for attachment metadata parsing, including valid, empty, and malformed JSON
 - [ ] Visually exercise the RFQ picker, in-progress upload state, and rendered attachment card output
 - [ ] Save checkpoint v1.7 after the full attachment-flow verification
+
+## Phase 13: Role-Specific Platforms
+- [ ] Create role-aware platform routing after authentication for Homeowner, Contractor, Engineer, Architect, Supplier, and Project Manager
+- [ ] Give each role a dedicated navigation shell and dashboard information architecture
+- [ ] Add Supplier product listing, order/RFQ review, and project discovery actions
+- [ ] Add Contractor RFQ intake, quotation, team, and project-management actions
+- [ ] Add Engineer project collaboration, technical deliverables, and RFQ actions
+- [ ] Add Architect design portfolio, collaboration, and project actions
+- [ ] Add Homeowner project, budget, RFQ, and provider-management actions
+- [ ] Add Project Manager project portfolio, milestones, teams, and reporting actions
+- [ ] Preserve Arabic/English translations, RTL/LTR behavior, and role-based access safeguards
+- [ ] Add Vitest coverage and visually verify each role platform before checkpoint

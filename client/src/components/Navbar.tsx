@@ -15,6 +15,7 @@ import { Link, useLocation } from 'wouter';
 import { Building2, Globe, Menu, X, Bell, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import { getRolePlatformPath } from '@/lib/rolePlatform';
 
 export default function Navbar() {
   const { lang, setLang, t, dir } = useLanguage();
@@ -28,13 +29,7 @@ export default function Navbar() {
 
   const isTransparent = location === '/';
 
-  const getDashboardPath = () => {
-    if (!user) return '/dashboard';
-    const role = (user as any).userRole;
-    if (role === 'admin') return '/admin';
-    if (['contractor', 'engineer', 'architect', 'supplier', 'project_manager'].includes(role)) return '/provider';
-    return '/dashboard';
-  };
+  const getDashboardPath = () => getRolePlatformPath((user as any)?.userRole);
 
   const navLinks = [
     { label: t('nav.home'), href: '/' },

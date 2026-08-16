@@ -39,11 +39,21 @@ const authRouter = router({
 });
 
 // ── Projects Router ────────────────────────────────────────────────────────
+const providerRoles = ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'] as const;
+
 const projectsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
     return db.select().from(projects).where(eq(projects.ownerId, ctx.user.id)).orderBy(desc(projects.createdAt));
+  }),
+  directory: protectedProcedure.query(async ({ ctx }) => {
+    if (!providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Provider access required' });
+    }
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(projects).orderBy(desc(projects.updatedAt)).limit(50);
   }),
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
@@ -173,6 +183,39 @@ const marketplaceRouter = router({
     if (!product) throw new TRPCError({ code: 'NOT_FOUND' });
     return product;
   }),
+  myProducts: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user.userRole !== 'supplier') {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
+    }
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(products).where(eq(products.supplierId, ctx.user.id)).orderBy(desc(products.createdAt));
+  }),
+  create: protectedProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      nameAr: z.string().optional(),
+      description: z.string().optional(),
+      category: z.string().min(1),
+      brand: z.string().optional(),
+      price: z.number().optional(),
+      stock: z.number().int().min(0).optional(),
+      unit: z.string().optional(),
+      deliveryDays: z.number().int().min(1).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.userRole !== 'supplier') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const result = await db.insert(products).values({
+        ...input,
+        supplierId: ctx.user.id,
+        price: input.price != null ? String(input.price) : undefined,
+      });
+      return { id: Number(result[0].insertId) };
+    }),
   categories: publicProcedure.query(async () => {
     return [
       'Materials', 'Furniture', 'Lighting', 'Electrical', 'Plumbing',
@@ -253,6 +296,23 @@ const rfqRouter = router({
       );
       return { key, url, name: input.fileName, type: input.contentType, size: buffer.length };
     }),
+  myQuotations: protectedProcedure.query(async ({ ctx }) => {
+    if (!providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Provider access required' });
+    }
+    const db = await getDb();
+    if (!db) return [];
+    return db.select({
+      id: quotations.id,
+      rfqId: quotations.rfqId,
+      price: quotations.price,
+      timeline: quotations.timeline,
+      status: quotations.status,
+      createdAt: quotations.createdAt,
+      rfqTitle: rfqs.title,
+      rfqStatus: rfqs.status,
+    }).from(quotations).leftJoin(rfqs, eq(quotations.rfqId, rfqs.id)).where(eq(quotations.providerId, ctx.user.id)).orderBy(desc(quotations.createdAt));
+  }),
   quotations: protectedProcedure.input(z.object({ rfqId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];

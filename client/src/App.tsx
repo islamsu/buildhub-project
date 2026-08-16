@@ -12,6 +12,7 @@ import FinishingDirectory from "./pages/FinishingDirectory";
 import AuthPage from "./pages/AuthPage";
 import HomeownerDashboard from "./pages/HomeownerDashboard";
 import ProviderDashboard from "./pages/ProviderDashboard";
+import RolePlatform from "./pages/RolePlatform";
 import AdminDashboard from "./pages/AdminDashboard";
 import Marketplace from "./pages/Marketplace";
 import ProjectDetail from "./pages/ProjectDetail";
@@ -26,6 +27,7 @@ function Router() {
       <Route path={"/auth"} component={AuthPage} />
       <Route path={"/dashboard"} component={HomeownerDashboard} />
       <Route path={"/provider"} component={ProviderDashboard} />
+      <Route path={"/platform/:role"} component={RolePlatform} />
       <Route path={"/admin"} component={AdminDashboard} />
       <Route path={"/marketplace"} component={MarketplaceHub} />
       <Route path={"/marketplace/products"} component={Marketplace} />

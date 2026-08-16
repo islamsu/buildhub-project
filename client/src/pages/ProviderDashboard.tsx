@@ -8,11 +8,12 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { trpc } from '@/lib/trpc';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { startLogin } from '@/const';
 import { FileText, DollarSign, Clock, MapPin, Send, Star, TrendingUp, CheckCircle2, Bot } from 'lucide-react';
 import { useLocation } from 'wouter';
+import { getRolePlatformPath } from '@/lib/rolePlatform';
 
 export default function ProviderDashboard() {
   const { t, lang } = useLanguage();
@@ -27,10 +28,14 @@ export default function ProviderDashboard() {
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
+  const userRole = (user as any)?.userRole ?? 'contractor';
+  useEffect(() => {
+    if (isAuthenticated) navigate(getRolePlatformPath(userRole));
+  }, [isAuthenticated, userRole, navigate]);
+
   if (loading) return null;
   if (!isAuthenticated) { startLogin(); return null; }
 
-  const userRole = (user as any)?.userRole ?? 'contractor';
   const roleLabel = userRole.charAt(0).toUpperCase() + userRole.slice(1).replace('_', ' ');
 
   const statCards = [

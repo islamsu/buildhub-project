@@ -22,35 +22,68 @@ import {
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, ShoppingBag, FileText, MessageSquare, Bot, Star, Settings, BarChart3, Shield, Building2 } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, ShoppingBag, FileText, MessageSquare, Bot, Star, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, BookOpenCheck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
 const HOMEOWNER_MENU_KEYS = [
-  { icon: LayoutDashboard, labelKey: 'dash.overview',    path: '/dashboard' },
-  { icon: FolderOpen,      labelKey: 'dash.projects',    path: '/dashboard' },
-  { icon: ShoppingBag,     labelKey: 'nav.marketplace',  path: '/marketplace' },
-  { icon: FileText,        labelKey: 'dash.get_quotes',  path: '/rfq' },
-  { icon: MessageSquare,   labelKey: 'dash.messages',    path: '/messages' },
-  { icon: Bot,             labelKey: 'dash.ai',          path: '/ai' },
-  { icon: Star,            labelKey: 'dash.reviews',     path: '/messages' },
-  { icon: Settings,        labelKey: 'dash.settings',    path: '/dashboard' },
+  { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/homeowner' },
+  { icon: FolderOpen, labelKey: 'dash.projects', path: '/dashboard' },
+  { icon: ShoppingBag, labelKey: 'nav.marketplace', path: '/marketplace' },
+  { icon: FileText, labelKey: 'dash.get_quotes', path: '/rfq' },
+  { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
+  { icon: Bot, labelKey: 'dash.ai', path: '/ai' },
+  { icon: Star, labelKey: 'dash.reviews', path: '/messages' },
+  { icon: Settings, labelKey: 'dash.settings', path: '/platform/homeowner' },
 ];
 
-const PROVIDER_MENU_KEYS = [
-  { icon: LayoutDashboard, labelKey: 'provider.title',   path: '/provider' },
-  { icon: FileText,        labelKey: 'provider.open_rfqs', path: '/rfq' },
-  { icon: ShoppingBag,     labelKey: 'nav.marketplace',  path: '/marketplace' },
-  { icon: MessageSquare,   labelKey: 'dash.messages',    path: '/messages' },
-  { icon: Bot,             labelKey: 'dash.ai',          path: '/ai' },
-  { icon: Star,            labelKey: 'dash.reviews',     path: '/messages' },
-  { icon: BarChart3,       labelKey: 'admin.analytics',  path: '/provider' },
-  { icon: Settings,        labelKey: 'dash.settings',    path: '/provider' },
-];
+const ROLE_MENU_KEYS = {
+  contractor: [
+    { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/contractor' },
+    { icon: ClipboardList, labelKey: 'platform.pipeline', path: '/platform/contractor' },
+    { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
+    { icon: FolderOpen, labelKey: 'platform.projects', path: '/platform/contractor' },
+    { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
+    { icon: BarChart3, labelKey: 'platform.performance', path: '/platform/contractor' },
+  ],
+  engineer: [
+    { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/engineer' },
+    { icon: PenTool, labelKey: 'platform.documents', path: '/platform/engineer' },
+    { icon: BriefcaseBusiness, labelKey: 'platform.project_queue', path: '/platform/engineer' },
+    { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
+    { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
+    { icon: BarChart3, labelKey: 'platform.performance', path: '/platform/engineer' },
+  ],
+  architect: [
+    { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/architect' },
+    { icon: PenTool, labelKey: 'platform.portfolio', path: '/platform/architect' },
+    { icon: FolderOpen, labelKey: 'platform.projects', path: '/platform/architect' },
+    { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
+    { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
+    { icon: BarChart3, labelKey: 'platform.performance', path: '/platform/architect' },
+  ],
+  supplier: [
+    { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/supplier' },
+    { icon: Package, labelKey: 'platform.catalogue', path: '/platform/supplier' },
+    { icon: ClipboardList, labelKey: 'platform.review_requests', path: '/rfq' },
+    { icon: ShoppingBag, labelKey: 'nav.marketplace', path: '/marketplace/products' },
+    { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
+    { icon: BarChart3, labelKey: 'platform.performance', path: '/platform/supplier' },
+  ],
+  project_manager: [
+    { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/project_manager' },
+    { icon: KanbanSquare, labelKey: 'platform.project_queue', path: '/platform/project_manager' },
+    { icon: FolderOpen, labelKey: 'platform.projects', path: '/platform/project_manager' },
+    { icon: Users, labelKey: 'platform.team', path: '/messages' },
+    { icon: BookOpenCheck, labelKey: 'platform.documents', path: '/platform/project_manager' },
+    { icon: BarChart3, labelKey: 'platform.performance', path: '/platform/project_manager' },
+  ],
+} as const;
 
 const ADMIN_MENU_KEYS = [
+
   { icon: LayoutDashboard, labelKey: 'admin.title',      path: '/admin' },
   { icon: Users,           labelKey: 'admin.users',      path: '/admin' },
   { icon: Shield,          labelKey: 'admin.pending_verifications', path: '/admin' },
@@ -144,9 +177,7 @@ function DashboardLayoutContent({
   const userRole = (user as any)?.userRole ?? 'homeowner';
   const menuKeys = userRole === 'admin' || user?.role === 'admin'
     ? ADMIN_MENU_KEYS
-    : ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'].includes(userRole)
-      ? PROVIDER_MENU_KEYS
-      : HOMEOWNER_MENU_KEYS;
+    : ROLE_MENU_KEYS[userRole as keyof typeof ROLE_MENU_KEYS] ?? HOMEOWNER_MENU_KEYS;
   const menuItems = menuKeys.map(item => ({ ...item, label: t(item.labelKey) }));
 
   const activeMenuItem = menuItems.find(item => item.path === location);
@@ -218,7 +249,7 @@ function DashboardLayoutContent({
               {menuItems.map(item => {
                 const isActive = location === item.path;
                 return (
-                  <SidebarMenuItem key={item.path}>
+                  <SidebarMenuItem key={`${item.path}-${item.labelKey}`}>
                     <SidebarMenuButton
                       isActive={isActive}
                       onClick={() => setLocation(item.path)}

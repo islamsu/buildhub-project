@@ -9,6 +9,7 @@ import { startLogin } from '@/const';
 import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'wouter';
 import { toast } from 'sonner';
+import { getRolePlatformPath } from '@/lib/rolePlatform';
 import { Building2, Home, HardHat, Wrench, Layers, Package, UserCog, ChevronRight, Globe } from 'lucide-react';
 
 type UserRole = 'homeowner' | 'contractor' | 'engineer' | 'architect' | 'supplier' | 'project_manager';
@@ -32,36 +33,30 @@ export default function AuthPage() {
   const [step, setStep] = useState<'role' | 'details' | 'done'>('role');
 
   const updateRole = trpc.auth.updateRole.useMutation({
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       toast.success(lang === 'ar' ? 'تم إعداد الملف الشخصي بنجاح!' : 'Profile set up successfully!');
       setStep('done');
+      navigate(getRolePlatformPath(variables.userRole));
     },
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
   useEffect(() => {
     if (!loading && isAuthenticated && user) {
-      const userRole = (user as any).userRole;
-      if (userRole && userRole !== 'homeowner') {
-        // Already has a role set, redirect
-        if (['contractor', 'engineer', 'architect', 'supplier', 'project_manager'].includes(userRole)) {
-          navigate('/provider');
-        } else if (userRole === 'admin') {
-          navigate('/admin');
-        } else {
-          navigate('/dashboard');
-        }
+      const pendingRole = localStorage.getItem('pending_role') as UserRole | null;
+      if (pendingRole) {
+        localStorage.removeItem('pending_role');
+        updateRole.mutate({ userRole: pendingRole });
+        return;
       }
+      const userRole = (user as any).userRole;
+      if (userRole) navigate(getRolePlatformPath(userRole));
     }
   }, [loading, isAuthenticated, user]);
 
   useEffect(() => {
     if (step === 'done' && selectedRole) {
-      if (['contractor', 'engineer', 'architect', 'supplier', 'project_manager'].includes(selectedRole)) {
-        navigate('/provider');
-      } else {
-        navigate('/dashboard');
-      }
+      navigate(getRolePlatformPath(selectedRole));
     }
   }, [step, selectedRole]);
 
@@ -82,7 +77,7 @@ export default function AuthPage() {
     engineer: t('roles.engineer'),
     architect: t('roles.architect'),
     supplier: t('roles.supplier'),
-    project_manager: 'Project Manager',
+    project_manager: t('roles.pm'),
   };
 
   const roleDescs: Record<UserRole, string> = {
@@ -91,7 +86,7 @@ export default function AuthPage() {
     engineer: t('roles.engineer.desc'),
     architect: t('roles.architect.desc'),
     supplier: t('roles.supplier.desc'),
-    project_manager: 'Manage construction projects end-to-end for clients.',
+    project_manager: t('roles.pm.desc'),
   };
 
   return (
@@ -186,7 +181,7 @@ export default function AuthPage() {
             disabled={!selectedRole || updateRole.isPending}
             onClick={handleContinue}
           >
-            {updateRole.isPending ? 'Setting up...' : isAuthenticated ? 'Complete Setup' : t('auth.continue')}
+            {updateRole.isPending ? t('common.loading') : isAuthenticated ? t('auth.complete_setup') : t('auth.continue')}
             <ChevronRight className="w-4 h-4" />
           </Button>
 
