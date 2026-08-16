@@ -690,6 +690,23 @@ const adminRouter = router({
     await db.insert(notifications).values({ userId: input.userId, title: 'Registration status updated', body: input.note || `Your registration is now ${input.status.replace('_', ' ')}`, type: 'compliance', link: '/compliance' });
     return { success: true, onboardingStatus: input.status };
   }),
+  bulkUpdateApplicantStatus: adminProcedure.input(z.object({
+    userIds: z.array(z.number().int().positive()).min(1).max(100),
+    status: z.enum(['approved', 'rejected']),
+    note: z.string().max(2000).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const userIds = Array.from(new Set(input.userIds));
+    const applicants = await db.select().from(users).where(and(inArray(users.id, userIds), inArray(users.userRole, providerRoles)));
+    if (applicants.length !== userIds.length) throw new TRPCError({ code: 'NOT_FOUND', message: 'One or more compliance applicants could not be found' });
+    if (applicants.some(applicant => !['under_review', 'update_required', 'not_started'].includes(applicant.onboardingStatus))) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Bulk decisions may only include pending applicants' });
+    const reviewedAt = new Date();
+    await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: reviewedAt, onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(inArray(users.id, userIds));
+    await db.insert(registrationReviewEvents).values(applicants.map(applicant => ({ userId: applicant.id, actorId: ctx.user.id, action: 'bulk_applicant_status_updated', status: input.status, note: input.note })));
+    await db.insert(notifications).values(applicants.map(applicant => ({ userId: applicant.id, title: input.status === 'approved' ? 'Registration approved' : 'Registration rejected', body: input.note || `Your registration is ${input.status}`, type: 'compliance', link: '/compliance' })));
+    return { success: true, updatedCount: applicants.length, onboardingStatus: input.status };
+  }),
   verifyUser: adminProcedure.input(z.object({ userId: z.number(), verified: z.boolean() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });

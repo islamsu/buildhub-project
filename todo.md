@@ -199,4 +199,13 @@
 - [x] Add permission-aware CSV export for filtered registration metrics and relevant dates
 - [x] Preserve bilingual AR/EN labels, RTL/LTR behavior, responsive layout, and current admin filters
 - [x] Add Vitest coverage and visual verification for filters, quick-view states, and CSV export
-- [ ] Save the Phase 22 checkpoint
+- [x] Save the Phase 22 checkpoint
+
+## Phase 23: Applicant Search, Bulk Decisions, and Export Feedback
+- [x] Add fast applicant name/email search combined with category and date filters
+- [x] Add admin-only multi-select pending applications with confirmed bulk approval
+- [x] Add confirmed bulk rejection with optional rejection reason and immediate status refresh
+- [x] Add CSV export loading, success, error, and dismissible toast feedback
+- [x] Preserve bilingual AR/EN labels, RTL/LTR behavior, responsive layout, and security rules
+- [x] Add Vitest coverage and visual verification for search, bulk actions, and export feedback
+- [x] Save the Phase 23 checkpoint

@@ -53,7 +53,7 @@ describe('compliance queue enhancements', () => {
     expect(admin).toContain('filterRegistrationApplicants');
     expect(admin).toContain('buildRegistrationMetricsCsv');
     expect(admin).toContain('Export CSV');
-    expect(admin).toContain('if (!isAdmin) return');
+    expect(admin).toContain('if (!isAdmin || csvExporting');
   });
 
   it('provides a loading animation, failure message, and retry action for document previews', () => {
@@ -62,5 +62,20 @@ describe('compliance queue enhancements', () => {
     expect(admin).toContain('documentPreviewStatus === \'error\'');
     expect(admin).toContain('loadDocumentPreview(activeDocument)');
     expect(admin).toContain('documentPreviewError');
+  });
+
+  it('wires applicant search, confirmed bulk decisions, and export toast lifecycle', () => {
+    const admin = source('client/src/pages/AdminDashboard.tsx');
+    const router = source('server/routers.ts');
+    expect(admin).toContain('registrationSearch');
+    expect(admin).toContain('pendingRegistrationApplicants');
+    expect(admin).toContain('bulkUpdateApplicantStatus');
+    expect(admin).toContain('Confirm bulk approval');
+    expect(admin).toContain('Rejection reason (optional)');
+    expect(admin).toContain('toast.loading');
+    expect(admin).toContain('toast.success');
+    expect(admin).toContain('toast.error');
+    expect(router).toContain('bulkUpdateApplicantStatus');
+    expect(router).toContain('Bulk decisions may only include pending applicants');
   });
 });

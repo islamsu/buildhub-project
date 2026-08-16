@@ -92,3 +92,39 @@ describe('admin disputes and settings', () => {
     await expect(caller.admin.updateSetting({ key: 'notAllowed', value: 'true' })).rejects.toThrow('Unknown setting key');
   });
 });
+
+describe('bulk registration decisions', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('updates pending applicants in bulk and records the rejection reason', async () => {
+    const applicants = [
+      { id: 21, userRole: 'contractor', onboardingStatus: 'under_review' },
+      { id: 22, userRole: 'supplier', onboardingStatus: 'update_required' },
+    ];
+    const whereMock = vi.fn().mockResolvedValue(applicants);
+    const setMock = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
+    const valuesMock = vi.fn().mockResolvedValue([]);
+    const db = {
+      select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: whereMock }) }),
+      update: vi.fn().mockReturnValue({ set: setMock }),
+      insert: vi.fn().mockReturnValue({ values: valuesMock }),
+    };
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+
+    await expect(caller.admin.bulkUpdateApplicantStatus({ userIds: [21, 22], status: 'rejected', note: 'Please provide a valid license.' })).resolves.toEqual({ success: true, updatedCount: 2, onboardingStatus: 'rejected' });
+    expect(setMock).toHaveBeenCalledWith(expect.objectContaining({ onboardingStatus: 'rejected', onboardingReviewNotes: 'Please provide a valid license.', verified: false }));
+    expect(valuesMock).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ userId: 21, action: 'bulk_applicant_status_updated', status: 'rejected', note: 'Please provide a valid license.' })]));
+    expect(valuesMock).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ userId: 22, type: 'compliance', link: '/compliance' })]));
+  });
+
+  it('rejects bulk decisions that include an already approved or rejected non-pending applicant', async () => {
+    const whereMock = vi.fn().mockResolvedValue([{ id: 31, userRole: 'engineer', onboardingStatus: 'rejected' }]);
+    const db = { select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: whereMock }) }), update: vi.fn(), insert: vi.fn() };
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+
+    await expect(caller.admin.bulkUpdateApplicantStatus({ userIds: [31], status: 'approved' })).rejects.toThrow('pending applicants');
+    expect(db.update).not.toHaveBeenCalled();
+  });
+});
