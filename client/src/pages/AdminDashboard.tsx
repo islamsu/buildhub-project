@@ -130,7 +130,17 @@ export default function AdminDashboard() {
   }, [settings]);
 
   const createUser = trpc.admin.createUser.useMutation({
-    onSuccess: () => { toast.success(lang === 'ar' ? 'تم إنشاء الحساب الإداري' : 'Admin-created account created'); setCreateAccountType(null); setAccountDraft({ name: '', username: '', email: '', phone: '', userRole: 'homeowner', note: '' }); utils.admin.users.invalidate(); utils.admin.stats.invalidate(); },
+    onSuccess: data => {
+      toast.success(lang === 'ar' ? 'تم إنشاء الحساب الإداري وإرسال الدعوة' : 'Admin account created & invitation generated');
+      if (data.invitationLink) {
+        navigator.clipboard?.writeText?.(window.location.origin + data.invitationLink);
+        toast.info(lang === 'ar' ? 'تم نسخ رابط إعداد كلمة المرور إلى الحافظة' : 'Password setup link copied to clipboard', { duration: 6000 });
+      }
+      setCreateAccountType(null);
+      setAccountDraft({ name: '', username: '', email: '', phone: '', userRole: 'homeowner', note: '' });
+      utils.admin.users.invalidate();
+      utils.admin.stats.invalidate();
+    },
     onError: error => toast.error(error.message),
   });
   const createDummyUser = trpc.admin.createDummyUser.useMutation({
@@ -143,6 +153,17 @@ export default function AdminDashboard() {
   });
   const deleteDummyUser = trpc.admin.deleteDummyUser.useMutation({
     onSuccess: () => { toast.success(lang === 'ar' ? 'تم حذف المستخدم التجريبي' : 'Dummy user deleted'); setAuditTarget(null); utils.admin.users.invalidate(); utils.admin.stats.invalidate(); },
+    onError: error => toast.error(error.message),
+  });
+  const resendInvitation = trpc.admin.resendInvitation.useMutation({
+    onSuccess: data => {
+      toast.success(lang === 'ar' ? 'تم إعادة إرسال دعوة إعداد كلمة المرور' : 'Password setup invitation resent');
+      if (data.invitationLink) {
+        navigator.clipboard?.writeText?.(window.location.origin + data.invitationLink);
+        toast.info(lang === 'ar' ? 'تم نسخ رابط الدعوة إلى الحافظة' : 'Invitation link copied to clipboard', { duration: 6000 });
+      }
+      utils.admin.users.invalidate();
+    },
     onError: error => toast.error(error.message),
   });
   const verifyUser = trpc.admin.verifyUser.useMutation({
@@ -346,6 +367,82 @@ export default function AdminDashboard() {
     }
   };
 
+  const utilsTrpc = trpc.useUtils();
+  const exportAuditPdf = async () => {
+    if (!isAdmin) return;
+    const toastId = `audit-export-${Date.now()}`;
+    toast.loading(lang === 'ar' ? 'جاري إعداد تقرير تدقيق الحسابات بصيغة PDF…' : 'Generating audit log PDF report…', { id: toastId, duration: Infinity, closeButton: true });
+    try {
+      const auditRows = await utilsTrpc.admin.fullAuditReport.fetch();
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        toast.error(lang === 'ar' ? 'يرجى السماح بالنوافذ المنبثقة لتنزيل ملف PDF' : 'Please allow popups to download the PDF report', { id: toastId, duration: 5000, closeButton: true });
+        return;
+      }
+      const html = `<!DOCTYPE html>
+      <html lang="${lang}">
+      <head>
+        <meta charset="utf-8">
+        <title>BuildHub - Comprehensive Account Audit Log</title>
+        <style>
+          body { font-family: system-ui, -apple-system, sans-serif; padding: 24px; color: #111827; }
+          h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+          p { font-size: 12px; color: #6b7280; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 12px; }
+          th, td { border: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; }
+          th { background-color: #f3f4f6; font-weight: 600; color: #374151; }
+          tr:nth-child(even) { background-color: #f9fafb; }
+          .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 500; background: #e5e7eb; }
+        </style>
+      </head>
+      <body>
+        <h1>BuildHub Enterprise Account Audit Log</h1>
+        <p>Generated on ${new Date().toLocaleString()} · Total Audit Events: ${auditRows.length}</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>User</th>
+              <th>Email</th>
+              <th>Account Type</th>
+              <th>Role</th>
+              <th>Action</th>
+              <th>Actor</th>
+              <th>Status</th>
+              <th>Invitation</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${auditRows.map(row => `
+              <tr>
+                <td>${new Date(row.createdAt).toLocaleString()}</td>
+                <td><strong>${row.userName}</strong></td>
+                <td>${row.userEmail}</td>
+                <td><span class="badge">${row.accountType}</span></td>
+                <td>${row.role}</td>
+                <td><code>${row.action}</code></td>
+                <td>${row.actorName}</td>
+                <td>${row.accountStatus}</td>
+                <td>${row.invitationStatus}</td>
+                <td>${row.note}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <script>
+          window.onload = () => { window.print(); };
+        </script>
+      </body>
+      </html>`;
+      printWindow.document.write(html);
+      printWindow.document.close();
+      toast.success(lang === 'ar' ? 'تم إنشاء تقرير التدقيق بنجاح' : 'Audit log PDF export ready', { id: toastId, duration: 5000, closeButton: true });
+    } catch {
+      toast.error(lang === 'ar' ? 'تعذر إنشاء تقرير التدقيق. حاول مرة أخرى.' : 'Audit PDF export failed. Please try again.', { id: toastId, duration: 6000, closeButton: true });
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6" dir={dir}>
@@ -378,8 +475,10 @@ export default function AdminDashboard() {
 
           <TabsContent value="users">
             <Card>
-              <CardHeader className="space-y-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><CardTitle className="flex items-center gap-2"><Users className="w-5 h-5" />{lang === 'ar' ? 'إدارة المستخدمين حسب المجموعة' : 'User Management by Group'}</CardTitle><div className="flex flex-wrap items-center gap-2"><Button size="sm" className="h-8 gap-1" onClick={() => { setCreateAccountType('admin'); setAccountDraft({ name: '', username: '', email: '', phone: '', userRole: 'homeowner', note: '' }); }}><UserPlus className="h-3.5 w-3.5" />{lang === 'ar' ? 'إنشاء حساب' : 'Create account'}</Button><Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => { setCreateAccountType('dummy'); setAccountDraft({ name: '', username: '', email: '', phone: '', userRole: 'homeowner', note: '' }); }}><Power className="h-3.5 w-3.5" />{lang === 'ar' ? 'مستخدم تجريبي' : 'Dummy user'}</Button><div className="relative w-full lg:w-72"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9 h-9 text-sm" placeholder={lang === 'ar' ? 'بحث بالاسم أو البريد...' : 'Search by name or email...'} value={userSearch} onChange={event => setUserSearch(event.target.value)} /></div></div></div><div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-8"><button type="button" onClick={() => setSelectedGroup('all')} className={`rounded-lg border p-3 text-start transition-colors ${selectedGroup === 'all' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="text-xs text-muted-foreground">{lang === 'ar' ? 'الكل' : 'All Users'}</p><p className="text-lg font-semibold">{allUsers.length}</p></button>{ROLE_GROUPS.map(group => <button type="button" key={group.key} onClick={() => setSelectedGroup(group.key)} className={`rounded-lg border p-3 text-start transition-colors ${selectedGroup === group.key ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="truncate text-xs text-muted-foreground">{lang === 'ar' ? group.ar : group.en}</p><p className="text-lg font-semibold">{groupCounts[group.key] ?? 0}</p></button>)}</div></CardHeader>
-              <CardContent><div className="mb-3 flex items-center justify-between text-sm text-muted-foreground"><span>{selectedGroup === 'all' ? (lang === 'ar' ? 'كل المجموعات' : 'All groups') : labelForRole(selectedGroup, lang)}</span>{usersLoading && <RefreshCw className="h-4 w-4 animate-spin" />}</div><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-border"><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الاسم' : 'Name'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'البريد الإلكتروني' : 'Email'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'المجموعة' : 'Group'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الحالة' : 'Status'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الانضمام' : 'Joined'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{t('admin.actions')}</th></tr></thead><tbody>{filteredUsers.map(userRow => { const status = (userRow as any).accountStatus ?? 'active'; const isFrozen = status === 'frozen'; const isSelf = userRow.id === (user as any).id; return <tr key={userRow.id} className="border-b border-border/50 hover:bg-muted/30"><td className="py-3 px-2 font-medium"><div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-muted-foreground" /><span className="truncate">{userRow.name ?? '—'}</span>{(userRow as any).isDummy && <Badge className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">{lang === 'ar' ? 'تجريبي' : 'Test/Dummy'}</Badge>}</div><p className="mt-1 text-xs font-normal text-muted-foreground">@{(userRow as any).username ?? '—'} · {(userRow as any).accountSource === 'admin_created' ? (lang === 'ar' ? 'منشأ بواسطة المشرف' : 'Admin created') : (lang === 'ar' ? 'تسجيل ذاتي' : 'Self registered')}</p></td><td className="py-3 px-2 text-muted-foreground">{userRow.email ?? '—'}</td><td className="py-3 px-2"><Badge variant="secondary">{labelForRole((userRow as any).userRole ?? userRow.role, lang)}</Badge></td><td className="py-3 px-2"><Badge variant={isFrozen ? 'destructive' : 'outline'}>{formatStatus(status, lang)}{!isFrozen && ` · ${formatStatus((userRow as any).verified ? 'accepted' : 'pending', lang)}`}</Badge></td><td className="py-3 px-2 text-muted-foreground">{new Date(userRow.createdAt).toLocaleDateString()}</td><td className="py-3 px-2"><div className="flex flex-wrap items-center gap-1"><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setAuditTarget(userRow)}><History className="h-3 w-3" />{lang === 'ar' ? 'السجل' : 'Audit'}</Button>{(userRow as any).isDummy ? <><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setDummyUserActive.mutate({ userId: userRow.id, active: isFrozen })} disabled={setDummyUserActive.isPending}>{isFrozen ? <Power className="h-3 w-3" /> : <Ban className="h-3 w-3" />}{isFrozen ? (lang === 'ar' ? 'تفعيل' : 'Activate') : (lang === 'ar' ? 'تعطيل' : 'Deactivate')}</Button><Button size="sm" variant="ghost" className="h-7 gap-1 text-xs text-destructive hover:text-destructive" onClick={() => { if (window.confirm(lang === 'ar' ? 'حذف المستخدم التجريبي؟' : 'Delete this dummy user?')) deleteDummyUser.mutate({ userId: userRow.id }); }} disabled={deleteDummyUser.isPending}><Trash2 className="h-3 w-3" />{lang === 'ar' ? 'حذف' : 'Delete'}</Button></> : <><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => verifyUser.mutate({ userId: userRow.id, verified: !(userRow as any).verified })} disabled={verifyUser.isPending}><ShieldCheck className="h-3 w-3" />{(userRow as any).verified ? (lang === 'ar' ? 'إلغاء التحقق' : 'Unverify') : (lang === 'ar' ? 'تحقق' : 'Verify')}</Button><Button size="sm" variant={isFrozen ? 'outline' : 'ghost'} className={`h-7 gap-1 text-xs ${isFrozen ? '' : 'text-destructive hover:text-destructive'}`} onClick={() => { setFreezeTarget(userRow); setFreezeReason((userRow as any).frozenReason ?? ''); }} disabled={isSelf}>{isFrozen ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}{isFrozen ? (lang === 'ar' ? 'إلغاء التجميد' : 'Unfreeze') : (lang === 'ar' ? 'تجميد' : 'Freeze')}</Button></>}</div></td></tr>; })}{filteredUsers.length === 0 && <tr><td colSpan={6} className="py-10 text-center text-muted-foreground">{lang === 'ar' ? 'لا يوجد مستخدمون في هذه المجموعة' : 'No users in this group'}</td></tr>}</tbody></table></div></CardContent>
+              <CardHeader className="space-y-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><CardTitle className="flex items-center gap-2"><Users className="w-5 h-5" />{lang === 'ar' ? 'إدارة المستخدمين حسب المجموعة' : 'User Management by Group'}</CardTitle><div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" className="h-8 gap-1" onClick={exportAuditPdf}><Download className="h-3.5 w-3.5" />{lang === 'ar' ? 'تصدير سجل التدقيق PDF' : 'Export Audit PDF'}</Button><Button size="sm" className="h-8 gap-1" onClick={() => { setCreateAccountType('admin'); setAccountDraft({ name: '', username: '', email: '', phone: '', userRole: 'homeowner', note: '' }); }}><UserPlus className="h-3.5 w-3.5" />{lang === 'ar' ? 'إنشاء حساب' : 'Create account'}</Button><Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => { setCreateAccountType('dummy'); setAccountDraft({ name: '', username: '', email: '', phone: '', userRole: 'homeowner', note: '' }); }}><Power className="h-3.5 w-3.5" />{lang === 'ar' ? 'مستخدم تجريبي' : 'Dummy user'}</Button><div className="relative w-full lg:w-72"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9 h-9 text-sm" placeholder={lang === 'ar' ? 'بحث بالاسم أو البريد...' : 'Search by name or email...'} value={userSearch} onChange={event => setUserSearch(event.target.value)} /></div></div></div><div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-8">
+<button type="button" onClick={() => setSelectedGroup('all')} className={`rounded-lg border p-3 text-start transition-colors ${selectedGroup === 'all' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="text-xs text-muted-foreground">{lang === 'ar' ? 'الكل' : 'All Users'}</p><p className="text-lg font-semibold">{allUsers.length}</p></button>{ROLE_GROUPS.map(group => <button type="button" key={group.key} onClick={() => setSelectedGroup(group.key)} className={`rounded-lg border p-3 text-start transition-colors ${selectedGroup === group.key ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="truncate text-xs text-muted-foreground">{lang === 'ar' ? group.ar : group.en}</p><p className="text-lg font-semibold">{groupCounts[group.key] ?? 0}</p></button>)}</div></CardHeader>
+              <CardContent><div className="mb-3 flex items-center justify-between text-sm text-muted-foreground"><span>{selectedGroup === 'all' ? (lang === 'ar' ? 'كل المجموعات' : 'All groups') : labelForRole(selectedGroup, lang)}</span>{usersLoading && <RefreshCw className="h-4 w-4 animate-spin" />}</div><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-border"><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الاسم' : 'Name'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'البريد الإلكتروني' : 'Email'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'المجموعة' : 'Group'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الحالة' : 'Status'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الانضمام' : 'Joined'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{t('admin.actions')}</th></tr></thead><tbody>{filteredUsers.map(userRow => { const status = (userRow as any).accountStatus ?? 'active'; const isFrozen = status === 'frozen'; const isSelf = userRow.id === (user as any).id; return <tr key={userRow.id} className="border-b border-border/50 hover:bg-muted/30"><td className="py-3 px-2 font-medium"><div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-muted-foreground" /><span className="truncate">{userRow.name ?? '—'}</span>{(userRow as any).isDummy ? <Badge className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">{lang === 'ar' ? 'تجريبي / اختباري' : 'Dummy / Test'}</Badge> : (userRow as any).accountSource === 'admin_created' ? <Badge className="border-blue-200 bg-blue-50 text-[10px] text-blue-700">{lang === 'ar' ? 'منشأ بواسطة المشرف' : 'Admin Created'}</Badge> : <Badge className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">{lang === 'ar' ? 'تسجيل ذاتي' : 'Self Registered'}</Badge>}</div><p className="mt-1 text-xs font-normal text-muted-foreground">@{(userRow as any).username ?? '—'} · {(userRow as any).invitationStatus && (userRow as any).invitationStatus !== 'none' ? `${lang === 'ar' ? 'الدعوة' : 'Invite'}: ${formatStatus((userRow as any).invitationStatus, lang)}` : ''}</p></td><td className="py-3 px-2 text-muted-foreground">{userRow.email ?? '—'}</td><td className="py-3 px-2"><Badge variant="secondary">{labelForRole((userRow as any).userRole ?? userRow.role, lang)}</Badge></td><td className="py-3 px-2"><Badge variant={isFrozen ? 'destructive' : 'outline'}>{formatStatus(status, lang)}{!isFrozen && ` · ${formatStatus((userRow as any).verified ? 'accepted' : 'pending', lang)}`}</Badge></td><td className="py-3 px-2 text-muted-foreground">{new Date(userRow.createdAt).toLocaleDateString()}</td><td className="py-3 px-2"><div className="flex flex-wrap items-center gap-1"><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setAuditTarget(userRow)}><History className="h-3 w-3" />{lang === 'ar' ? 'السجل' : 'Audit'}</Button>{(userRow as any).accountSource === 'admin_created' && !(userRow as any).isDummy && <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => resendInvitation.mutate({ userId: userRow.id })} disabled={resendInvitation.isPending}><SendHorizontal className="h-3 w-3" />{lang === 'ar' ? 'إعادة دعوة' : 'Resend Invite'}</Button>}{(userRow as any).isDummy ? <><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setDummyUserActive.mutate({ userId: userRow.id, active: isFrozen })} disabled={setDummyUserActive.isPending}>{isFrozen ? <Power className="h-3 w-3" /> : <Ban className="h-3 w-3" />}{isFrozen ? (lang === 'ar' ? 'تفعيل' : 'Activate') : (lang === 'ar' ? 'تعطيل' : 'Deactivate')}</Button><Button size="sm" variant="ghost" className="h-7 gap-1 text-xs text-destructive hover:text-destructive" onClick={() => { if (window.confirm(lang === 'ar' ? 'حذف المستخدم التجريبي؟' : 'Delete this dummy user?')) deleteDummyUser.mutate({ userId: userRow.id }); }} disabled={deleteDummyUser.isPending}><Trash2 className="h-3 w-3" />{lang === 'ar' ? 'حذف' : 'Delete'}</Button></> : <><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => verifyUser.mutate({ userId: userRow.id, verified: !(userRow as any).verified })} disabled={verifyUser.isPending}><ShieldCheck className="h-3 w-3" />{(userRow as any).verified ? (lang === 'ar' ? 'إلغاء التحقق' : 'Unverify') : (lang === 'ar' ? 'تحقق' : 'Verify')}</Button><Button size="sm" variant={isFrozen ? 'outline' : 'ghost'} className={`h-7 gap-1 text-xs ${isFrozen ? '' : 'text-destructive hover:text-destructive'}`} onClick={() => { setFreezeTarget(userRow); setFreezeReason((userRow as any).frozenReason ?? ''); }} disabled={isSelf}>{isFrozen ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}{isFrozen ? (lang === 'ar' ? 'إلغاء التجميد' : 'Unfreeze') : (lang === 'ar' ? 'تجميد' : 'Freeze')}</Button></>}
+</div></td></tr>; })}{filteredUsers.length === 0 && <tr><td colSpan={6} className="py-10 text-center text-muted-foreground">{lang === 'ar' ? 'لا يوجد مستخدمون في هذه المجموعة' : 'No users in this group'}</td></tr>}</tbody></table></div></CardContent>
             </Card>
           </TabsContent>
 

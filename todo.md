@@ -219,4 +219,12 @@
 - [x] Exclude dummy users from business metrics, registration summaries, reports, and analytics by default
 - [x] Preserve shared authentication/security rules and complete account creation audit trail
 - [x] Add Vitest coverage and visual verification for signup, admin user creation, dummy controls, and metric isolation
-- [x] Save the Phase 24 checkpoint
+- [x] Save the Phase 24 checkpoint (v0033cbf)
+
+## Phase 25: Admin Invitations, Account Badges, and PDF Audit Export
+- [x] Extend database schema with invitation lifecycle tokens, expiry timestamps, and invite statuses
+- [x] Implement secure expiring invitation token generation, resend, and password setup procedures
+- [x] Add distinct visual account-type badges (Self Registered, Admin Created, Dummy / Test) to the admin user management table
+- [x] Implement complete admin audit-log PDF export reflecting all available historical audit events and account data
+- [x] Add Vitest coverage for invitation expiry, password setup, badge rendering, and PDF export permissions
+- [x] Save and deliver the Phase 25 checkpoint

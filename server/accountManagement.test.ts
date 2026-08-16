@@ -53,9 +53,9 @@ describe('admin account management', () => {
       note: 'Created for onboarding support',
     });
 
-    expect(result).toEqual({ success: true, userId: 42 });
+    expect(result).toEqual(expect.objectContaining({ success: true, userId: 42, invitationLink: expect.any(String) }));
     expect(valuesMock).toHaveBeenNthCalledWith(1, expect.objectContaining({ username: 'managed.contractor', email: 'managed@example.com', accountSource: 'admin_created', isDummy: false, createdBy: 1, userRole: 'contractor', onboardingStatus: 'not_started' }));
-    expect(valuesMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ userId: 42, action: 'admin_created_account', source: 'admin_created' }));
+    expect(valuesMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ userId: 42, action: 'admin_created_account_with_invite', source: 'admin_created' }));
   });
 
   it('rejects duplicate username or email before inserting an admin-created account', async () => {
@@ -115,7 +115,7 @@ describe('dummy account isolation and UI wiring', () => {
     const router = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
     expect(dashboard).toContain('Create account');
     expect(dashboard).toContain('Dummy user');
-    expect(dashboard).toContain('Test/Dummy');
+    expect(dashboard).toContain('Dummy / Test');
     expect(dashboard).toContain('Account audit trail');
     expect(dashboard).toContain('Include test data');
     expect(router).toContain('createUser: adminProcedure');

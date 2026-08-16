@@ -657,6 +657,7 @@ const adminRouter = router({
     phone: z.string().trim().max(32).optional(),
     userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager', 'admin']),
     note: z.string().trim().max(1000).optional(),
+    sendInvitation: z.boolean().default(true),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
@@ -666,12 +667,72 @@ const adminRouter = router({
     if (await getUserByEmail(email)) throw new TRPCError({ code: 'CONFLICT', message: 'Email is already in use' });
     const professional = isComplianceRole(input.userRole);
     const openId = `admin_${randomUUID()}`;
+    const inviteToken = randomUUID() + '-' + randomUUID().slice(0, 8);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
     const result = await db.insert(users).values({
       openId, username, name: input.name, email, phone: input.phone || null, loginMethod: 'admin_created', role: input.userRole === 'admin' ? 'admin' : 'user', userRole: input.userRole, accountSource: 'admin_created', isDummy: false, createdBy: ctx.user.id, creationNote: input.note || null, onboardingStatus: professional ? 'not_started' : 'approved', verified: !professional,
+      invitationStatus: input.sendInvitation ? 'invitation_sent' : 'none',
+      invitationToken: input.sendInvitation ? inviteToken : null,
+      invitationExpiresAt: input.sendInvitation ? expiresAt : null,
+      invitationSentAt: input.sendInvitation ? new Date() : null,
     });
     const userId = Number(result[0]?.insertId);
-    await db.insert(userAccountAuditEvents).values({ userId, actorId: ctx.user.id, action: 'admin_created_account', source: 'admin_created', note: input.note || null });
-    return { success: true, userId };
+    await db.insert(userAccountAuditEvents).values({ userId, actorId: ctx.user.id, action: input.sendInvitation ? 'admin_created_account_with_invite' : 'admin_created_account', source: 'admin_created', note: input.note || null });
+    return { success: true, userId, invitationLink: input.sendInvitation ? `/auth/setup-password?token=${inviteToken}` : null };
+  }),
+  resendInvitation: adminProcedure.input(z.object({ userId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [target] = await db.select().from(users).where(eq(users.id, input.userId));
+    if (!target || target.accountSource !== 'admin_created') throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only admin-created accounts can be invited' });
+    const inviteToken = randomUUID() + '-' + randomUUID().slice(0, 8);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await db.update(users).set({ invitationStatus: 'invitation_sent', invitationToken: inviteToken, invitationExpiresAt: expiresAt, invitationSentAt: new Date() }).where(eq(users.id, input.userId));
+    await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'invitation_resent', source: 'admin_created', note: `Resent to ${target.email}` });
+    return { success: true, invitationLink: `/auth/setup-password?token=${inviteToken}` };
+  }),
+  completeInvitation: publicProcedure.input(z.object({ token: z.string().min(10), password: z.string().min(6).max(128) })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [target] = await db.select().from(users).where(eq(users.invitationToken, input.token));
+    if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'Invalid or expired invitation link' });
+    if (target.invitationExpiresAt && new Date(target.invitationExpiresAt).getTime() < Date.now()) {
+      await db.update(users).set({ invitationStatus: 'expired' }).where(eq(users.id, target.id));
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This invitation link has expired' });
+    }
+    if (target.invitationStatus === 'password_set') {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This invitation link has already been used' });
+    }
+    await db.update(users).set({ invitationStatus: 'password_set', invitationToken: null, invitationExpiresAt: null, passwordSetAt: new Date(), passwordHash: input.password, verified: true, accountStatus: 'active' }).where(eq(users.id, target.id));
+    await db.insert(userAccountAuditEvents).values({ userId: target.id, actorId: target.id, action: 'password_set_via_invitation', source: 'admin_created', note: 'Password successfully configured by user' });
+    return { success: true, username: target.username };
+  }),
+  fullAuditReport: adminProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const events = await db.select().from(userAccountAuditEvents).orderBy(desc(userAccountAuditEvents.createdAt)).limit(1000);
+    const allUsersList = await db.select().from(users);
+    const userMap = new Map(allUsersList.map(u => [u.id, u]));
+    const adminMap = new Map(allUsersList.map(u => [u.id, u.name || u.email || `#${u.id}`]));
+    return events.map(event => {
+      const targetUser = userMap.get(event.userId);
+      const actorName = event.actorId ? (adminMap.get(event.actorId) ?? `Admin #${event.actorId}`) : 'System';
+      return {
+        id: event.id,
+        userId: event.userId,
+        userName: targetUser?.name || targetUser?.email || `#${event.userId}`,
+        userEmail: targetUser?.email || '—',
+        accountType: targetUser?.isDummy ? 'Dummy / Test' : targetUser?.accountSource === 'admin_created' ? 'Admin Created' : 'Self Registered',
+        role: targetUser?.userRole || targetUser?.role || 'user',
+        actorName,
+        action: event.action,
+        source: event.source || 'system',
+        note: event.note || '—',
+        createdAt: event.createdAt,
+        accountStatus: targetUser?.accountStatus || 'active',
+        invitationStatus: targetUser?.invitationStatus || 'none',
+      };
+    });
   }),
   createDummyUser: adminProcedure.input(z.object({
     name: z.string().trim().min(1).max(255).optional(),

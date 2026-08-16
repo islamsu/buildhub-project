@@ -21,6 +21,7 @@ import RFQPage from "./pages/RFQPage";
 import MessagesPage from "./pages/MessagesPage";
 import AIAssistantPage from "./pages/AIAssistantPage";
 import CompliancePage from "./pages/CompliancePage";
+import PasswordSetupPage from "./pages/PasswordSetupPage";
 
 function Router() {
   return (
@@ -44,6 +45,7 @@ function Router() {
       <Route path={"/rfq"} component={RFQPage} />
       <Route path={"/messages"} component={MessagesPage} />
       <Route path={"/compliance"} component={CompliancePage} />
+      <Route path={"/auth/setup-password"} component={PasswordSetupPage} />
       <Route path={"/ai"} component={AIAssistantPage} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
