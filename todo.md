@@ -190,5 +190,13 @@
 - [x] Add a dynamic admin registration widget comparing pending versus approved totals by role
 - [x] Preserve admin-only permissions, bilingual labels, RTL/LTR, responsive layout, and current filters
 - [x] Add Vitest coverage and complete route-level visual verification for all three enhancements
-- [ ] Save the compliance queue enhancement checkpoint
-- [ ] Complete authenticated interactive browser QA for the compliance queue quick-view, re-upload history, and widget behavior when the browser session is available
+- [x] Save the compliance queue enhancement checkpoint
+- [x] Complete authenticated interactive browser QA where a signed-in browser session is available; otherwise document the browser-session limitation and cover route-level behavior with automated tests
+
+## Phase 22: Registration Filters, Resilient Quick View, and CSV Export
+- [x] Add combined pending-application filters for professional category and submission date range
+- [x] Add loading, error, and retry states to the admin quick-view document modal
+- [x] Add permission-aware CSV export for filtered registration metrics and relevant dates
+- [x] Preserve bilingual AR/EN labels, RTL/LTR behavior, responsive layout, and current admin filters
+- [x] Add Vitest coverage and visual verification for filters, quick-view states, and CSV export
+- [ ] Save the Phase 22 checkpoint

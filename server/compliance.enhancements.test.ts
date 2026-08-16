@@ -35,11 +35,32 @@ describe('compliance queue enhancements', () => {
     const admin = source('client/src/pages/AdminDashboard.tsx');
     expect(admin).toContain('activeDocument');
     expect(admin).toContain('setActiveDocument(document)');
-    expect(admin).toContain("setActiveDocument(previewDocument)");
+    expect(admin).toContain("loadDocumentPreview(previewDocument)");
     expect(admin).toContain('Quick view');
     expect(admin).toContain('Document preview');
+    expect(admin).toContain('documentPreviewStatus');
+    expect(admin).toContain('Retry');
     expect(admin).toContain('activeDocument?.mimeType?.startsWith(\'image/\')');
     expect(admin).toContain('Re-upload history');
     expect(admin).toContain('item.applicantNote');
+  });
+
+  it('exposes combined widget filters and permission-aware CSV export', () => {
+    const admin = source('client/src/pages/AdminDashboard.tsx');
+    expect(admin).toContain('registrationRoleFilter');
+    expect(admin).toContain('registrationDateFrom');
+    expect(admin).toContain('registrationDateTo');
+    expect(admin).toContain('filterRegistrationApplicants');
+    expect(admin).toContain('buildRegistrationMetricsCsv');
+    expect(admin).toContain('Export CSV');
+    expect(admin).toContain('if (!isAdmin) return');
+  });
+
+  it('provides a loading animation, failure message, and retry action for document previews', () => {
+    const admin = source('client/src/pages/AdminDashboard.tsx');
+    expect(admin).toContain('documentPreviewStatus === \'loading\'');
+    expect(admin).toContain('documentPreviewStatus === \'error\'');
+    expect(admin).toContain('loadDocumentPreview(activeDocument)');
+    expect(admin).toContain('documentPreviewError');
   });
 });
