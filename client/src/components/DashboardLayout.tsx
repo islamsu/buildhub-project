@@ -90,13 +90,12 @@ const ROLE_MENU_KEYS = {
 } as const;
 
 const ADMIN_MENU_KEYS = [
-
-  { icon: LayoutDashboard, labelKey: 'admin.title',      path: '/admin' },
-  { icon: Users,           labelKey: 'admin.users',      path: '/admin' },
-  { icon: Shield,          labelKey: 'admin.pending_verifications', path: '/admin' },
-  { icon: FileText,        labelKey: 'admin.disputes',   path: '/admin' },
-  { icon: BarChart3,       labelKey: 'admin.analytics',  path: '/admin' },
-  { icon: Settings,        labelKey: 'dash.settings',    path: '/admin' },
+  { icon: LayoutDashboard, labelKey: 'admin.title', path: '/admin' },
+  { icon: Users, labelKey: 'admin.users', path: '/admin/users' },
+  { icon: Shield, labelKey: 'admin.pending_verifications', path: '/admin/compliance' },
+  { icon: FileText, labelKey: 'admin.disputes', path: '/admin/disputes' },
+  { icon: BarChart3, labelKey: 'admin.analytics', path: '/admin/analytics' },
+  { icon: Settings, labelKey: 'dash.settings', path: '/admin/settings' },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -187,7 +186,8 @@ function DashboardLayoutContent({
     : ROLE_MENU_KEYS[userRole as keyof typeof ROLE_MENU_KEYS] ?? HOMEOWNER_MENU_KEYS;
   const menuItems = menuKeys.map(item => ({ ...item, label: t(item.labelKey) }));
 
-  const activeMenuItem = menuItems.find(item => item.path === location);
+  const activeMenuItem = menuItems.find(item => item.path === location)
+    ?? (location === '/admin' ? menuItems.find(item => item.path === '/admin') : undefined);
 
   useEffect(() => {
     if (isCollapsed) {

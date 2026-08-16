@@ -139,3 +139,15 @@ it('keeps AdminDashboard hooks unconditional before loading and access returns',
   expect(utilsHookIndex).toBeLessThan(loadingReturnIndex);
   expect(utilsHookIndex).toBeLessThan(deniedReturnIndex);
 });
+
+it('wires admin sidebar items to distinct dashboard sections', async () => {
+  const { readFileSync } = await import('node:fs');
+  const layout = readFileSync(new URL('../client/src/components/DashboardLayout.tsx', import.meta.url), 'utf8');
+  const dashboard = readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
+  expect(layout).toContain("path: '/admin/users'");
+  expect(layout).toContain("path: '/admin/compliance'");
+  expect(layout).toContain("path: '/admin/disputes'");
+  expect(layout).toContain("path: '/admin/analytics'");
+  expect(layout).toContain("path: '/admin/settings'");
+  expect(dashboard).toContain('<Tabs value={adminSection} onValueChange={handleAdminSectionChange}>');
+});

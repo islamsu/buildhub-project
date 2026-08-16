@@ -232,4 +232,10 @@
 ## Admin Dashboard Crash Fix
 - [x] Diagnose and fix React error #310 crashing the /admin route
 - [x] Run TypeScript, Vitest, production build, and visual verification for the admin route
-- [ ] Save the Admin Dashboard crash-fix checkpoint
+- [x] Save the Admin Dashboard crash-fix checkpoint (v852ec272)
+
+## Admin Sidebar Navigation Fix
+- [x] Make Admin Control Panel sidebar items switch reliably between dashboard sections
+- [x] Preserve active state, keyboard access, bilingual labels, and responsive behavior
+- [x] Add regression coverage and visual verification for all admin navigation items
+- [ ] Save the Admin sidebar navigation fix checkpoint

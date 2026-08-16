@@ -31,6 +31,7 @@ function Router() {
       <Route path={"/dashboard"} component={HomeownerDashboard} />
       <Route path={"/provider"} component={ProviderDashboard} />
       <Route path={"/platform/:role"} component={RolePlatform} />
+      <Route path={"/admin/:section"} component={AdminDashboard} />
       <Route path={"/admin"} component={AdminDashboard} />
       <Route path={"/marketplace"} component={MarketplaceHub} />
       <Route path={"/marketplace/products"} component={Marketplace} />
