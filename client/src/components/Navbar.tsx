@@ -2,6 +2,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { startLogin } from '@/const';
 import { Button } from '@/components/ui/button';
+import LanguageToggle from '@/components/LanguageToggle';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -12,13 +13,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Link, useLocation } from 'wouter';
-import { Building2, Globe, Menu, X, Bell, ChevronDown } from 'lucide-react';
+import { Building2, Menu, X, Bell, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
 
 export default function Navbar() {
-  const { lang, setLang, t, dir } = useLanguage();
+  const { lang, t, dir } = useLanguage();
   const { user, isAuthenticated, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [location, navigate] = useLocation();
@@ -76,16 +77,7 @@ export default function Navbar() {
 
           {/* Right side */}
           <div className="flex items-center gap-2">
-            {/* Language Toggle */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
-              className={`gap-1.5 text-sm font-medium ${isTransparent ? 'text-white/80 hover:text-white hover:bg-white/10' : ''}`}
-            >
-              <Globe className="w-4 h-4" />
-              {lang === 'en' ? 'العربية' : 'English'}
-            </Button>
+            <LanguageToggle className={isTransparent ? 'text-white/80 hover:text-white hover:bg-white/10' : ''} />
 
             {isAuthenticated && user ? (
               <>
@@ -178,6 +170,7 @@ export default function Navbar() {
                 {link.label}
               </Link>
             ))}
+            <LanguageToggle className="w-full justify-start px-4 py-2.5" />
             {!isAuthenticated && (
               <div className="flex gap-2 mt-2 pt-2 border-t border-border">
                 <Button variant="outline" size="sm" className="flex-1" onClick={() => startLogin()}>

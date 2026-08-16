@@ -3,9 +3,10 @@ import { useLocation } from 'wouter';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
+import LanguageToggle from '@/components/LanguageToggle';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { ShieldCheck, Lock, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
+import { Lock, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function PasswordSetupPage() {
@@ -44,7 +45,10 @@ export default function PasswordSetupPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4" dir={dir}>
-      <Card className="w-full max-w-md">
+      <div className="fixed right-4 top-4 z-10 rtl:left-4 rtl:right-auto">
+        <LanguageToggle />
+      </div>
+      <Card className="w-full max-w-md min-w-0">
         <CardHeader className="text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
             <Lock className="h-6 w-6" />

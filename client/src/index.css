@@ -134,8 +134,18 @@
     box-sizing: border-box;
     border-color: var(--border);
   }
+  html {
+    width: 100%;
+    min-width: 320px;
+    overflow-x: auto;
+    scrollbar-gutter: stable;
+  }
+
   body {
     @apply bg-background text-foreground;
+    width: 100%;
+    min-width: 320px;
+    overflow-x: auto;
     font-family: 'Inter', 'Cairo', sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
     -webkit-font-smoothing: antialiased;
@@ -162,6 +172,16 @@
     line-height: 1.2;
   }
 
+  #root {
+    width: 100%;
+    min-width: 0;
+  }
+
+  img, video, canvas {
+    max-width: 100%;
+    height: auto;
+  }
+
   html {
     scroll-behavior: smooth;
   }
@@ -183,6 +203,20 @@
   }
 
   .flex { min-width: 0; min-height: 0; }
+
+  /* Keep ordinary pages within the viewport while allowing intentional wide tables and comparison panels to scroll horizontally. */
+  .viewport-shell {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .horizontal-scroll-rail {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-gutter: stable;
+  }
 
   /* Brand gradient */
   .gradient-brand {

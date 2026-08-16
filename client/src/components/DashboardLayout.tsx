@@ -27,6 +27,7 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
+import LanguageToggle from "./LanguageToggle";
 
 const HOMEOWNER_MENU_KEYS = [
   { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/homeowner' },
@@ -275,6 +276,10 @@ function DashboardLayoutContent({
           </SidebarContent>
 
           <SidebarFooter className="p-3">
+            <LanguageToggle
+              showLabel={!isCollapsed}
+              className="mb-2 w-full justify-start group-data-[collapsible=icon]:justify-center"
+            />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -328,9 +333,10 @@ function DashboardLayoutContent({
                 </div>
               </div>
             </div>
+            <LanguageToggle showLabel={false} className="h-9 w-9 shrink-0" />
           </div>
         )}
-        <main className="flex-1 p-4">{children}</main>
+        <main className="min-w-0 flex-1 overflow-x-visible p-4">{children}</main>
       </SidebarInset>
     </>
   );

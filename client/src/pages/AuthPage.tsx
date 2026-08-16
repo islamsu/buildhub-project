@@ -8,9 +8,10 @@ import { useAuth } from '@/_core/hooks/useAuth';
 import { startLogin } from '@/const';
 import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'wouter';
+import LanguageToggle from '@/components/LanguageToggle';
 import { toast } from 'sonner';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
-import { Building2, Home, HardHat, Layers, Package, UserCog, ChevronRight, Globe, ShieldCheck, KeyRound } from 'lucide-react';
+import { Building2, Home, HardHat, Layers, Package, UserCog, ChevronRight, ShieldCheck, KeyRound } from 'lucide-react';
 
 type UserRole = 'homeowner' | 'contractor' | 'engineer' | 'architect' | 'supplier' | 'project_manager';
 const PROFESSIONAL_ROLES: UserRole[] = ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'];
@@ -25,10 +26,10 @@ const ROLES: { id: UserRole; icon: React.ComponentType<any>; color: string; bg: 
 ];
 
 export default function AuthPage() {
-  const { t, lang, setLang, dir } = useLanguage();
+  const { t, lang, dir } = useLanguage();
   const { user, isAuthenticated, loading } = useAuth();
   const [location, navigate] = useLocation();
-  const isDummyMode = new URLSearchParams(location.split('?')[1] ?? '').get('mode') === 'dummy';
+  const isDummyMode = new URLSearchParams(window.location.search).get('mode') === 'dummy';
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -59,7 +60,7 @@ export default function AuthPage() {
   });
 
   useEffect(() => {
-    const query = new URLSearchParams(location.split('?')[1] ?? '');
+    const query = new URLSearchParams(window.location.search);
     if (query.get('error') === 'account_exists') toast.error(t('auth.account.exists'));
   }, [location, t]);
 
@@ -163,18 +164,14 @@ export default function AuthPage() {
       {/* Right Panel - Auth Form */}
       <div className="flex-1 flex flex-col items-center justify-center p-6 lg:p-12">
         <div className="w-full max-w-md">
-          {/* Mobile logo */}
-          <div className="flex items-center justify-between mb-8 lg:hidden">
-            <Link href="/" className="flex items-center gap-2">
+          <div className="mb-8 flex items-center justify-between gap-4">
+            <Link href="/" className="flex items-center gap-2 lg:hidden">
               <div className="w-8 h-8 rounded-lg gradient-brand flex items-center justify-center">
                 <Building2 className="w-4 h-4 text-white" />
               </div>
               <span className="font-bold text-lg">BuildHub</span>
             </Link>
-            <Button variant="ghost" size="sm" onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="gap-1.5">
-              <Globe className="w-4 h-4" />
-              {lang === 'en' ? 'العربية' : 'English'}
-            </Button>
+            <LanguageToggle className="ml-auto" />
           </div>
 
           <div className="mb-8">

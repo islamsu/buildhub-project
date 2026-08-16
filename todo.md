@@ -261,5 +261,13 @@
 - [x] Add bilingual dummy-user sign-in UI without changing the Manus OAuth flow for real users
 - [x] Add tests for dummy password verification, frozen-account protection, and session issuance
 - [x] Verify the create-dummy and change-password controls from the Admin User Management route markup and responsive route screenshots; verify the live bilingual dummy sign-in panel in browser preview (modal-open interaction is unavailable in the preview driver)
-- [ ] Save a new checkpoint for the complete dummy-password feature
+- [x] Save a new checkpoint for the complete dummy-password feature (v5304e331)
+
+
+## Site-wide Language and Responsive Overflow
+- [x] Add a consistent language switch button to the shared site navigation and authenticated layouts
+- [x] Ensure language switching preserves Arabic/English content direction and persists across routes
+- [x] Make the global page shell fit viewport widths without unintended vertical or horizontal clipping
+- [x] Add bottom horizontal scrolling in both directions when content legitimately exceeds the viewport
+- [ ] Verify desktop, tablet, and mobile layouts and save a checkpoint
 
