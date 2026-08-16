@@ -1,6 +1,5 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/_core/hooks/useAuth';
-import { startLogin } from '@/const';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getRolePlatformPath, isPlatformRole, ROLE_PLATFORM_COPY, type PlatformRole } from '@/lib/rolePlatform';
 import { trpc } from '@/lib/trpc';
@@ -68,7 +67,7 @@ export default function RolePlatform() {
   const requestedRole = typeof window !== 'undefined' ? window.location.pathname.split('/').pop() : '';
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) startLogin();
+    if (!loading && !isAuthenticated) navigate('/auth?mode=login');
     if (!loading && isAuthenticated && (rawRole === 'admin' || accountRole === 'admin')) navigate('/admin');
     if (!loading && isAuthenticated && isComplianceRole(rawRole) && onboardingStatus !== 'approved') navigate('/compliance');
     if (!loading && isAuthenticated && isPlatformRole(rawRole) && requestedRole !== rawRole) {

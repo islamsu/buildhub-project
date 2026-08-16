@@ -229,4 +229,29 @@ describe('dummy account isolation and UI wiring', () => {
     expect(dashboard).toContain('setDummyUserPassword');
     expect(router).toContain("action: 'dummy_user_deleted'");
   });
+
+  it('routes generic unauthenticated entry points to dummy-aware login instead of direct OAuth', () => {
+    const sourceFiles = [
+      '../client/src/main.tsx',
+      '../client/src/_core/hooks/useAuth.ts',
+      '../client/src/components/Navbar.tsx',
+      '../client/src/components/DashboardLayout.tsx',
+      '../client/src/pages/AdminDashboard.tsx',
+      '../client/src/pages/CompliancePage.tsx',
+      '../client/src/pages/HomeownerDashboard.tsx',
+      '../client/src/pages/MessagesPage.tsx',
+      '../client/src/pages/ProjectDetail.tsx',
+      '../client/src/pages/ProviderDashboard.tsx',
+      '../client/src/pages/RFQPage.tsx',
+      '../client/src/pages/RolePlatform.tsx',
+    ].map(relativePath => readFileSync(new URL(relativePath, import.meta.url), 'utf8'));
+
+    for (const source of sourceFiles) expect(source).toContain('/auth?mode=login');
+    expect(sourceFiles.join('\\n')).not.toMatch(/startLogin\\(\\)/);
+
+    const authPage = readFileSync(new URL('../client/src/pages/AuthPage.tsx', import.meta.url), 'utf8');
+    expect(authPage).toContain('isLoginMode');
+    expect(authPage).toContain('Sign in with BuildHub');
+    expect(authPage).toContain('No verification code is required');
+  });
 });

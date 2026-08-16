@@ -11,7 +11,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
-import { startLogin } from '@/const';
 import { useState } from 'react';
 import ProjectDetailEnhancements from '@/components/ProjectDetailEnhancements';
 import { toast } from 'sonner';
@@ -70,7 +69,7 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
   const updateProject = trpc.projects.update.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تم تحديث المشروع!' : 'Project updated!'); refetchProject(); }, onError: (e: { message: string }) => toast.error(e.message) });
 
   if (loading) return null;
-  if (!isAuthenticated) { startLogin(); return null; }
+  if (!isAuthenticated) { window.location.href = '/auth?mode=login'; return null; }
 
   const totalExpenses = expenses?.reduce((s, e) => s + Number(e.amount), 0) ?? 0;
   const doneTasks = tasks?.filter(t => t.status === 'done').length ?? 0;

@@ -1,6 +1,5 @@
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/_core/hooks/useAuth';
-import { startLogin } from '@/const';
 import { Button } from '@/components/ui/button';
 import LanguageToggle from '@/components/LanguageToggle';
 import { Badge } from '@/components/ui/badge';
@@ -128,7 +127,7 @@ export default function Navbar() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => startLogin()}
+                  onClick={() => navigate('/auth?mode=login')}
                   className={isTransparent ? 'text-white/80 hover:text-white hover:bg-white/10' : ''}
                 >
                   {t('nav.signin')}
@@ -173,7 +172,7 @@ export default function Navbar() {
             <LanguageToggle className="w-full justify-start px-4 py-2.5" />
             {!isAuthenticated && (
               <div className="flex gap-2 mt-2 pt-2 border-t border-border">
-                <Button variant="outline" size="sm" className="flex-1" onClick={() => startLogin()}>
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => navigate('/auth?mode=login')}>
                   {t('nav.signin')}
                 </Button>
                 <Button size="sm" className="flex-1" onClick={() => { navigate('/auth?mode=signup'); setMobileOpen(false); }}

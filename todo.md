@@ -284,5 +284,15 @@
 - [x] Show the stored freeze reason next to Frozen in the Admin User Management table
 - [x] Preserve bilingual labels and safe fallback behavior when no reason is stored
 - [x] Add regression coverage and verify the responsive admin table
-- [ ] Save a checkpoint for the frozen-status reason display
+- [x] Save a checkpoint for the frozen-status reason display (vbf54369f)
 
+
+## Dummy Test-User Verification Regression
+- [x] Identify every test-user sign-in entry point that still requests a verification code
+- [x] Route all dummy/test accounts through local password authentication without verification
+- [x] Preserve real-user OAuth and verification behavior
+- [x] Add regression coverage for the actual failing path and verify the sign-in UI
+- [ ] Save a checkpoint for the regression fix
+
+
+- [x] Make the generic login screen dummy-password-first and move real-user OAuth behind an explicit real-user sign-in mode

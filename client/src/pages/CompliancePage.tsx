@@ -6,7 +6,6 @@ import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
-import { startLogin } from '@/const';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { CheckCircle2, Clock3, FileCheck2, FileUp, History, Loader2, ShieldCheck, UploadCloud, XCircle } from 'lucide-react';
@@ -90,7 +89,7 @@ export default function CompliancePage() {
     }
   };
 
-  if (!isAuthenticated) return <div className="min-h-screen bg-background"><Navbar /><div className="container pt-32 text-center"><ShieldCheck className="mx-auto mb-4 h-14 w-14 text-muted-foreground/40" /><h1 className="text-2xl font-bold">{isArabic ? 'سجّل الدخول لإكمال التحقق' : 'Sign in to complete verification'}</h1><Button className="mt-5" onClick={() => startLogin()}>{isArabic ? 'تسجيل الدخول' : 'Sign in'}</Button></div></div>;
+  if (!isAuthenticated) return <div className="min-h-screen bg-background"><Navbar /><div className="container pt-32 text-center"><ShieldCheck className="mx-auto mb-4 h-14 w-14 text-muted-foreground/40" /><h1 className="text-2xl font-bold">{isArabic ? 'سجّل الدخول لإكمال التحقق' : 'Sign in to complete verification'}</h1><Button className="mt-5" onClick={() => { window.location.href = '/auth?mode=login'; }}>{isArabic ? 'تسجيل الدخول' : 'Sign in'}</Button></div></div>;
   if (!isProfessional) return <div className="min-h-screen bg-background"><Navbar /><div className="container pt-32 text-center"><CheckCircle2 className="mx-auto mb-4 h-14 w-14 text-emerald-500" /><h1 className="text-2xl font-bold">{isArabic ? 'حسابك الفردي لا يحتاج مستندات مهنية' : 'Your individual account does not require professional documents'}</h1></div></div>;
 
   const overallStatus = data?.status || 'not_started';

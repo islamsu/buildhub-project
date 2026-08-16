@@ -11,7 +11,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { trpc } from '@/lib/trpc';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { startLogin } from '@/const';
 import {
   Plus, FolderOpen, TrendingUp, DollarSign, Calendar, MapPin,
   CheckCircle2, Clock, AlertCircle, FileText, Bot, ShoppingCart,
@@ -33,7 +32,7 @@ export default function HomeownerDashboard() {
   });
 
   if (loading) return null;
-  if (!isAuthenticated) { startLogin(); return null; }
+  if (!isAuthenticated) { window.location.href = '/auth?mode=login'; return null; }
 
   const totalBudget = projects?.reduce((s, p) => s + Number(p.budget ?? 0), 0) ?? 0;
   const totalSpent  = projects?.reduce((s, p) => s + Number(p.spent ?? 0), 0) ?? 0;

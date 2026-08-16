@@ -10,7 +10,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { trpc } from '@/lib/trpc';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { startLogin } from '@/const';
 import { FileText, DollarSign, Clock, MapPin, Send, Star, TrendingUp, CheckCircle2, Bot } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
@@ -34,7 +33,7 @@ export default function ProviderDashboard() {
   }, [isAuthenticated, userRole, navigate]);
 
   if (loading) return null;
-  if (!isAuthenticated) { startLogin(); return null; }
+  if (!isAuthenticated) { window.location.href = '/auth?mode=login'; return null; }
 
   const roleLabel = userRole.charAt(0).toUpperCase() + userRole.slice(1).replace('_', ' ');
 

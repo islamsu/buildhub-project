@@ -9,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
-import { startLogin } from '@/const';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -329,7 +328,7 @@ export default function RFQPage() {
               </DialogContent>
             </Dialog>
           ) : (
-            <Button onClick={() => startLogin()} className="gap-2">
+            <Button onClick={() => { window.location.href = '/auth?mode=login'; }} className="gap-2">
               <Plus className="w-4 h-4" /> {t('rfq.post')}
             </Button>
           )}

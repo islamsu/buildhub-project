@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
-import { startLogin } from '@/const';
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import {
@@ -79,7 +78,7 @@ export default function MessagesPage() {
         <div className="container pt-32 text-center">
           <MessageSquare className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-30" />
           <h2 className="text-2xl font-bold mb-2">{lang === 'ar' ? 'سجّل الدخول لعرض الرسائل' : 'Sign in to view messages'}</h2>
-          <Button onClick={() => startLogin()} className="mt-4">{lang === 'ar' ? 'تسجيل الدخول' : 'Sign In'}</Button>
+          <Button onClick={() => { window.location.href = '/auth?mode=login'; }} className="mt-4">{lang === 'ar' ? 'تسجيل الدخول' : 'Sign In'}</Button>
         </div>
       </div>
     );

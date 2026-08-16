@@ -21,7 +21,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
-import { startLogin } from '@/const';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { summarizeComplianceRegistrations } from '@shared/compliance';
 import { buildRegistrationMetricsCsv, filterRegistrationApplicants, dateKey } from '@shared/registrationMetrics';
@@ -349,7 +348,7 @@ export default function AdminDashboard() {
   }, [filteredRegistrationApplicants, lang]);
 
   if (loading) return null;
-  if (!isAuthenticated) { startLogin(); return null; }
+  if (!isAuthenticated) { window.location.href = '/auth?mode=login'; return null; }
   if (!isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center" dir={dir}>

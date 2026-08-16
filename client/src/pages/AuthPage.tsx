@@ -29,7 +29,10 @@ export default function AuthPage() {
   const { t, lang, dir } = useLanguage();
   const { user, isAuthenticated, loading } = useAuth();
   const [location, navigate] = useLocation();
-  const isDummyMode = new URLSearchParams(window.location.search).get('mode') === 'dummy';
+  const authMode = new URLSearchParams(window.location.search).get('mode');
+  const isDummyMode = authMode === 'dummy';
+  const isLoginMode = authMode === 'login';
+  const isOAuthMode = authMode === 'oauth';
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -65,7 +68,7 @@ export default function AuthPage() {
   }, [location, t]);
 
   useEffect(() => {
-    if (!loading && isAuthenticated && user && !isDummyMode) {
+    if (!loading && isAuthenticated && user && !isDummyMode && !isLoginMode && !isOAuthMode) {
       const pendingRole = localStorage.getItem('pending_role') as UserRole | null;
       const pendingUsername = localStorage.getItem('pending_username') || undefined;
       if (pendingRole) {
@@ -77,7 +80,7 @@ export default function AuthPage() {
       const userRole = (user as any).userRole as UserRole | undefined;
       if (userRole) navigate(PROFESSIONAL_ROLES.includes(userRole) && (user as any).onboardingStatus !== 'approved' ? '/compliance' : getRolePlatformPath(userRole));
     }
-  }, [loading, isAuthenticated, user, isDummyMode]);
+  }, [loading, isAuthenticated, user, isDummyMode, isLoginMode, isOAuthMode]);
 
   useEffect(() => {
     if (step === 'done' && selectedRole) {
@@ -175,11 +178,32 @@ export default function AuthPage() {
           </div>
 
           <div className="mb-8">
-            <h1 className="text-2xl font-bold mb-1">{t('auth.signup')}</h1>
-            <p className="text-muted-foreground text-sm">{t('auth.role.select')}</p>
+            <h1 className="text-2xl font-bold mb-1">{isLoginMode || isOAuthMode ? (lang === 'ar' ? 'تسجيل الدخول' : 'Sign in') : t('auth.signup')}</h1>
+            <p className="text-muted-foreground text-sm">{isLoginMode ? (lang === 'ar' ? 'استخدم بيانات المستخدم التجريبي أو اختر تسجيل الدخول للمستخدمين الحقيقيين.' : 'Use test-user credentials or choose real-user sign-in.') : isOAuthMode ? (lang === 'ar' ? 'تسجيل الدخول للمستخدمين الحقيقيين عبر BuildHub.' : 'Sign in as a real user through BuildHub.') : t('auth.role.select')}</p>
             {isAuthenticated && <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700"><ShieldCheck className="h-4 w-4" />{lang === 'ar' ? 'تم التحقق من هويتك بأمان عبر تسجيل الدخول الموحد' : 'Your identity is securely verified through BuildHub OAuth'}</div>}
           </div>
 
+          {isLoginMode && (
+            <div className="mb-6 space-y-3">
+              <Button type="button" variant="outline" className="w-full" onClick={() => navigate('/auth?mode=oauth')}>
+                {lang === 'ar' ? 'تسجيل الدخول لمستخدم حقيقي' : 'Real-user sign in'}
+              </Button>
+              <div className="flex items-center gap-3 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" /><span>{lang === 'ar' ? 'أو' : 'or'}</span><span className="h-px flex-1 bg-border" /></div>
+            </div>
+          )}
+
+          {isOAuthMode && (
+            <div className="mb-6 space-y-3">
+              <Button type="button" className="w-full" onClick={() => startLogin()}>
+                {lang === 'ar' ? 'تسجيل الدخول باستخدام BuildHub' : 'Sign in with BuildHub'}
+              </Button>
+              <Button type="button" variant="outline" className="w-full" onClick={() => navigate('/auth?mode=login')}>
+                {lang === 'ar' ? 'العودة إلى تسجيل دخول المستخدم التجريبي' : 'Back to test-user sign in'}
+              </Button>
+            </div>
+          )}
+
+          {!isLoginMode && !isOAuthMode && <>
           {/* Step 1: Role Selection */}
           <div className="grid grid-cols-2 gap-3 mb-6">
             {ROLES.map(role => (
@@ -209,7 +233,9 @@ export default function AuthPage() {
             </div>
           )}
 
-          <Button
+          </>}
+
+          {!isLoginMode && !isOAuthMode && <Button
             className="w-full gap-2"
             size="lg"
             disabled={!selectedRole || updateRole.isPending || checkSignupAvailability.isPending || (!isAuthenticated && username.trim().length < 3)}
@@ -217,18 +243,20 @@ export default function AuthPage() {
           >
             {updateRole.isPending || checkSignupAvailability.isPending ? t('common.loading') : isAuthenticated ? t('auth.complete_setup') : t('auth.continue')}
             <ChevronRight className="w-4 h-4" />
-          </Button>
+          </Button>}
 
-          {!isDummyMode && (
+          {!isDummyMode && !isLoginMode && !isOAuthMode && (
             <p className="text-center text-sm text-muted-foreground mt-4">
               {t('auth.have.account')}{' '}
-              <button onClick={() => startLogin()} className="text-primary font-medium hover:underline">
+              <button onClick={() => navigate('/auth?mode=login')} className="text-primary font-medium hover:underline">
                 {t('auth.signin')}
               </button>
             </p>
           )}
 
-          <div className="mt-6 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 p-4">
+          {(isLoginMode || isOAuthMode) && <p className="mb-6 text-center text-sm text-muted-foreground">{lang === 'ar' ? 'ليس لديك حساب؟' : 'New to BuildHub?'}{' '}<button onClick={() => navigate('/auth?mode=signup')} className="font-medium text-primary hover:underline">{lang === 'ar' ? 'إنشاء حساب' : 'Create an account'}</button></p>}
+
+          {!isOAuthMode && <div className="mt-6 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 p-4">
             <div className="mb-3 flex items-start gap-2">
               <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
               <div>
@@ -243,7 +271,7 @@ export default function AuthPage() {
                 {signInDummy.isPending ? t('common.loading') : (lang === 'ar' ? 'تسجيل الدخول كمستخدم تجريبي' : 'Sign in as dummy')}
               </Button>
             </div>
-          </div>
+          </div>}
         </div>
       </div>
     </div>

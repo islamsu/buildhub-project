@@ -1,4 +1,3 @@
-import { startLogin } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
@@ -76,11 +75,12 @@ export function useAuth(options?: UseAuthOptions) {
     if (typeof window === "undefined") return;
     if (redirectPath && window.location.pathname === redirectPath) return;
 
-    // Navigate at this moment only. startLogin() mints the nonce + cookie itself.
+    // Use the shared auth page when no explicit destination is supplied so
+    // locally managed dummy/test accounts can sign in without OAuth verification.
     if (redirectPath) {
       window.location.href = redirectPath;
-    } else {
-      startLogin();
+    } else if (window.location.pathname !== "/auth") {
+      window.location.href = "/auth?mode=login";
     }
   }, [
     redirectOnUnauthenticated,
