@@ -238,4 +238,10 @@
 - [x] Make Admin Control Panel sidebar items switch reliably between dashboard sections
 - [x] Preserve active state, keyboard access, bilingual labels, and responsive behavior
 - [x] Add regression coverage and visual verification for all admin navigation items
-- [ ] Save the Admin sidebar navigation fix checkpoint
+- [x] Save the Admin sidebar navigation fix checkpoint (v25aa3ece)
+
+## Freeze User Reason Dropdown
+- [x] Add predefined bilingual freeze-reason options to the admin dialog
+- [x] Preserve the selected reason through freeze persistence and audit records
+- [x] Add regression coverage and responsive verification for the freeze dialog
+- [x] Save the Freeze User reason-dropdown checkpoint

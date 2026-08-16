@@ -33,7 +33,8 @@ describe('admin user controls', () => {
 
   it('freezes and unfreezes another user with a persistent status', async () => {
     const setMock = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
-    const db = { update: vi.fn().mockReturnValue({ set: setMock }) };
+    const insertMock = vi.fn().mockResolvedValue([]);
+    const db = { update: vi.fn().mockReturnValue({ set: setMock }), insert: vi.fn().mockReturnValue({ values: insertMock }) };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
     const caller = appRouter.createCaller(makeAdminCtx());
 
@@ -150,4 +151,15 @@ it('wires admin sidebar items to distinct dashboard sections', async () => {
   expect(layout).toContain("path: '/admin/analytics'");
   expect(layout).toContain("path: '/admin/settings'");
   expect(dashboard).toContain('<Tabs value={adminSection} onValueChange={handleAdminSectionChange}>');
+});
+
+it('provides a required bilingual freeze-reason dropdown in the admin UI', async () => {
+  const { readFileSync } = await import('node:fs');
+  const dashboard = readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
+  expect(dashboard).toContain('FREEZE_REASONS');
+  expect(dashboard).toContain('Freeze reason');
+  expect(dashboard).toContain('سبب التجميد');
+  expect(dashboard).toContain("value={freezeReason}");
+  expect(dashboard).toContain("freezeReason === 'other'");
+  expect(dashboard).toContain('!freezeReason');
 });

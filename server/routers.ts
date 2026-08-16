@@ -891,11 +891,19 @@ const adminRouter = router({
     if (input.userId === ctx.user.id) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Administrators cannot freeze their own account' });
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const action = input.frozen ? 'account_frozen' : 'account_unfrozen';
+    const reasonText = input.frozen ? (input.reason || 'Suspended by an administrator') : 'Account unfrozen by administrator';
     await db.update(users).set({
       accountStatus: input.frozen ? 'frozen' : 'active',
       frozenAt: input.frozen ? new Date() : null,
-      frozenReason: input.frozen ? (input.reason || 'Suspended by an administrator') : null,
+      frozenReason: input.frozen ? reasonText : null,
     }).where(eq(users.id, input.userId));
+    await db.insert(userAccountAuditEvents).values({
+      userId: input.userId,
+      actorId: ctx.user.id,
+      action,
+      note: reasonText,
+    });
     return { success: true, status: input.frozen ? 'frozen' : 'active' };
   }),
   disputes: adminProcedure.query(async () => {
