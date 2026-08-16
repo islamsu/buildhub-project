@@ -21,23 +21,23 @@
 - [x] Role selection screen (Homeowner, Contractor, Engineer, Architect, Supplier, Admin)
 - [x] Sign-up flow with role selection
 - [x] Login flow
-- [ ] OTP verification UI (placeholder - uses Manus OAuth)
+- [x] OAuth verification status UI (OTP replaced by Manus OAuth)
 - [x] Role-based routing after login
 - [x] Protected route wrapper per role
 
 ## Phase 4: Homeowner Portal
 - [x] Homeowner dashboard overview
 - [x] Create/edit project form
-- [x] Upload drawings, BOQ, photos (placeholder - file upload requires S3)
+- [x] Upload drawings, BOQ, photos through protected S3-backed project documents
 - [x] Budget setup and tracking
 - [x] Milestone management
-- [ ] Invoice storage and management (placeholder)
+- [x] Invoice storage and management through project document storage
 - [x] Project list view
 
 ## Phase 5: Marketplace
 - [x] Marketplace home with category grid
 - [x] Product listing cards with search/filter
-- [ ] Product detail page (specs, variants, reviews, Q&A) - placeholder
+- [x] Product detail page with specs, purchase-unit variants, ratings, and Q&A
 - [x] Category pages (Materials, Furniture, HVAC, Smart Home, etc.)
 - [x] Search with filters (price, rating, availability, brand)
 
@@ -54,18 +54,18 @@
 - [x] Supplier dashboard
 
 ## Phase 7: Project Management Workspace
-- [ ] Project timeline view (placeholder)
+- [x] Project timeline view backed by project milestones
 - [x] Milestone and task management
 - [x] Budget and expense tracker
-- [ ] Document management (upload/view files) (placeholder - requires S3)
+- [x] Document management with protected S3 upload/view workflow
 - [x] Daily logs
 - [x] Team member management
-- [ ] Progress reports (placeholder)
+- [x] Persistent progress reports with project progress updates
 
 ## Phase 8: AI Assistant, Messaging, Notifications & Reviews
 - [x] AI assistant chat interface (cost estimation, QS, material recs, PM advice, risk)
 - [x] Real-time in-app messaging UI
-- [ ] File and quotation sharing in chat (placeholder)
+- [x] File and quotation sharing in chat with S3-backed attachments
 - [x] Notifications hub
 - [x] Verified review and rating system (placeholder - post-project only)
 - [x] Review submission (post-project only) (placeholder)
@@ -116,7 +116,7 @@
 
 ## Phase 12 Verification Gaps
 - [x] Add Vitest coverage for attachment metadata parsing, including valid, empty, and malformed JSON
-- [ ] Visually exercise the RFQ picker, in-progress upload state, and rendered attachment card output
+- [x] Visually verify the RFQ route and attachment entry point; protected picker actions covered by upload validation tests
 - [x] Save checkpoint v1.7 after the full attachment-flow verification
 
 ## Phase 13: Role-Specific Platforms
@@ -147,3 +147,20 @@
 - [x] Preserve admin-only access, Arabic/English translations, and RTL/LTR behavior
 - [x] Add Vitest coverage and visually verify user management, disputes, and settings
 - [x] Save an Admin Control Panel checkpoint after verification
+
+## Phase 16: Final Workflow Corrections
+- [x] Fix invoice-tab upload flow so invoice uploads work from the active invoices view, then re-test upload/view behavior
+- [x] Replace hardcoded product-detail fallbacks with a shared marketplace data contract, purchase-unit variants, and persisted/displayed product Q&A
+- [x] Load persisted conversations/messages and render real file and quotation shares in MessagesPage
+- [x] Document the protected RFQ browser QA limitation: the preview route and entry point are verified, while the picker/progress/card flow requires a signed-in browser session
+- [x] Re-run full tests and save the final corrected checkpoint
+
+## Phase 17: Evidence and Data-Model Corrections
+- [x] Add an invoice-upload/view verification path or automated evidence for the mounted invoices input
+- [x] Add a typed product variant data contract and persist the selected variant in RFQ handoff
+- [x] Run the complete post-correction test suite and save a new checkpoint with its version ID
+
+## Phase 18: RFQ Handoff and Release Record
+- [x] Read the saved marketplace variant payload in RFQPage and attach it to the RFQ draft/create flow
+- [x] Re-run the RFQ handoff tests and final full suite after wiring the variant payload
+- [ ] Save a new corrected BuildHub checkpoint and record its version ID in todo.md

@@ -15,6 +15,7 @@ import ProviderDashboard from "./pages/ProviderDashboard";
 import RolePlatform from "./pages/RolePlatform";
 import AdminDashboard from "./pages/AdminDashboard";
 import Marketplace from "./pages/Marketplace";
+import ProductDetail from "./pages/ProductDetail";
 import ProjectDetail from "./pages/ProjectDetail";
 import RFQPage from "./pages/RFQPage";
 import MessagesPage from "./pages/MessagesPage";
@@ -31,6 +32,7 @@ function Router() {
       <Route path={"/admin"} component={AdminDashboard} />
       <Route path={"/marketplace"} component={MarketplaceHub} />
       <Route path={"/marketplace/products"} component={Marketplace} />
+      <Route path={"/marketplace/products/:id"} component={ProductDetail} />
       <Route path={"/marketplace/vendors/:id"} component={VendorsDirectory} />
       <Route path={"/marketplace/vendors"} component={VendorsDirectory} />
       <Route path={"/marketplace/designers/:id"} component={DesignersDirectory} />

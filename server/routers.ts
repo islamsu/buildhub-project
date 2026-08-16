@@ -8,12 +8,13 @@ import { getDb } from './db';
 import { invokeLLM } from './_core/llm';
 import { storagePut } from './storage';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
+import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
   projects, milestones, tasks, documents, products,
   rfqs, quotations, messages, notifications, reviews,
-  dailyLogs, expenses, users, disputes, adminSettings,
+  dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
 } from '../drizzle/schema';
-import { eq, desc, and, sql } from 'drizzle-orm';
+import { eq, desc, and, sql, inArray } from 'drizzle-orm';
 
 // ── Auth Router ────────────────────────────────────────────────────────────
 const authRouter = router({
@@ -164,6 +165,51 @@ const projectsRouter = router({
       await db.insert(dailyLogs).values({ ...input, authorId: ctx.user.id });
       return { success: true };
     }),
+  documents: protectedProcedure.input(z.object({ projectId: z.number(), type: z.enum(['drawing', 'boq', 'photo', 'contract', 'invoice', 'other']).optional() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
+    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+    const filters = input.type ? and(eq(documents.projectId, input.projectId), eq(documents.type, input.type)) : eq(documents.projectId, input.projectId);
+    return db.select().from(documents).where(filters).orderBy(desc(documents.createdAt));
+  }),
+  uploadDocument: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      name: z.string().min(1).max(255),
+      type: z.enum(['drawing', 'boq', 'photo', 'contract', 'invoice', 'other']),
+      contentType: z.string().refine(isAllowedProjectDocumentType, { message: 'Unsupported project document type' }),
+      base64: z.string().max(11_000_000, 'File too large (max ~8MB)'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
+      if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+      const buffer = Buffer.from(input.base64, 'base64');
+      if (buffer.length > 8 * 1024 * 1024) throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
+      const safeName = input.name.replace(/[^\w.-]+/g, '_');
+      const { key, url } = await storagePut(`project-documents/user-${ctx.user.id}/project-${input.projectId}/${safeName}`, buffer, input.contentType);
+      const result = await db.insert(documents).values({ projectId: input.projectId, uploaderId: ctx.user.id, name: input.name, type: input.type, url, fileKey: key, size: buffer.length });
+      return { id: Number(result[0].insertId), key, url, name: input.name, type: input.type, size: buffer.length };
+    }),
+  progressReports: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
+    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+    return db.select().from(progressReports).where(eq(progressReports.projectId, input.projectId)).orderBy(desc(progressReports.createdAt));
+  }),
+  addProgressReport: protectedProcedure.input(z.object({ projectId: z.number(), title: z.string().min(1), summary: z.string().min(1), progress: z.number().int().min(0).max(100) })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
+    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+    const progress = clampProjectProgress(input.progress);
+    await db.insert(progressReports).values({ ...input, progress, authorId: ctx.user.id });
+    await db.update(projects).set({ progress }).where(eq(projects.id, input.projectId));
+    return { success: true };
+  }),
 });
 
 // ── Marketplace Router ─────────────────────────────────────────────────────
@@ -225,6 +271,19 @@ const marketplaceRouter = router({
       'Security', 'Fire Fighting', 'Cleaning', 'Maintenance', 'Moving',
     ];
   }),
+  questions: publicProcedure.input(z.object({ productId: z.number() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(productQuestions).where(eq(productQuestions.productId, input.productId)).orderBy(desc(productQuestions.createdAt));
+  }),
+  askQuestion: protectedProcedure.input(z.object({ productId: z.number(), question: z.string().min(2).max(2000) })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [product] = await db.select({ id: products.id }).from(products).where(eq(products.id, input.productId));
+    if (!product && input.productId > 10) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
+    const result = await db.insert(productQuestions).values({ productId: input.productId, askerId: ctx.user.id, question: input.question });
+    return { id: Number(result[0].insertId) };
+  }),
 });
 
 // ── RFQ Router ─────────────────────────────────────────────────────────────
@@ -254,6 +313,7 @@ const rfqRouter = router({
       budget: z.number().optional(),
       location: z.string().optional(),
       deadline: z.date().optional(),
+      productReference: z.object({ productId: z.number(), variantId: z.string().min(1), variantLabel: z.string().min(1) }).optional(),
       attachments: z.array(z.object({
         key: z.string(),
         url: z.string(),
@@ -265,12 +325,13 @@ const rfqRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const { attachments, ...rest } = input;
+      const { attachments, productReference, ...rest } = input;
       const result = await db.insert(rfqs).values({
         ...rest,
         requesterId: ctx.user.id,
         budget: input.budget != null ? String(input.budget) : undefined,
         attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : undefined,
+        productReference: productReference ?? undefined,
       });
       return { id: Number(result[0].insertId) };
     }),
@@ -386,6 +447,49 @@ const rfqRouter = router({
       await db.update(quotations).set({ status: 'rejected' }).where(eq(quotations.id, input.quotationId));
       return { success: true };
     }),
+});
+
+// ── Messages Router ─────────────────────────────────────────────────────────
+const messagesRouter = router({
+  conversations: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.select({ senderId: messages.senderId, receiverId: messages.receiverId, content: messages.content, createdAt: messages.createdAt }).from(messages).where(sql`${messages.senderId} = ${ctx.user.id} OR ${messages.receiverId} = ${ctx.user.id}`).orderBy(desc(messages.createdAt));
+    const otherIds = Array.from(new Set(rows.map(row => row.senderId === ctx.user.id ? row.receiverId : row.senderId)));
+    if (!otherIds.length) return [];
+    const people = await db.select({ id: users.id, name: users.name, userRole: users.userRole }).from(users).where(inArray(users.id, otherIds));
+    return people.map(person => {
+      const latest = rows.find(row => row.senderId === person.id || row.receiverId === person.id);
+      const name = person.name || 'BuildHub user';
+      return { id: person.id, name, initials: name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase(), lastMessage: latest?.content ?? '', time: latest?.createdAt ? new Date(latest.createdAt).toLocaleDateString() : '', unread: 0, online: false, role: person.userRole || 'Member' };
+    });
+  }),
+  list: protectedProcedure.input(z.object({ otherUserId: z.number().optional() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const filter = input.otherUserId
+      ? and(sql`(${messages.senderId} = ${ctx.user.id} AND ${messages.receiverId} = ${input.otherUserId}) OR (${messages.senderId} = ${input.otherUserId} AND ${messages.receiverId} = ${ctx.user.id})`)
+      : sql`${messages.senderId} = ${ctx.user.id} OR ${messages.receiverId} = ${ctx.user.id}`;
+    return db.select().from(messages).where(filter).orderBy(messages.createdAt);
+  }),
+  send: protectedProcedure.input(z.object({ receiverId: z.number(), projectId: z.number().optional(), content: z.string().min(1), type: z.enum(['text', 'file', 'quotation']).default('text'), fileUrl: z.string().url().optional(), quotationId: z.number().optional() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    if (input.type === 'quotation') {
+      if (!input.quotationId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Quotation reference is required' });
+      const [quotation] = await db.select({ id: quotations.id }).from(quotations).where(eq(quotations.id, input.quotationId));
+      if (!quotation) throw new TRPCError({ code: 'NOT_FOUND', message: 'Quotation not found' });
+    }
+    const result = await db.insert(messages).values({ ...input, senderId: ctx.user.id });
+    return { id: Number(result[0].insertId), ...input, senderId: ctx.user.id };
+  }),
+  uploadAttachment: protectedProcedure.input(z.object({ fileName: z.string().min(1).max(255), contentType: z.string().startsWith('image/').or(z.literal('application/pdf')), base64: z.string().max(11_000_000) })).mutation(async ({ ctx, input }) => {
+    const buffer = Buffer.from(input.base64, 'base64');
+    if (buffer.length > 8 * 1024 * 1024) throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
+    const safeName = input.fileName.replace(/[^\\w.-]+/g, '_');
+    const { key, url } = await storagePut(`message-attachments/user-${ctx.user.id}/${Date.now()}-${safeName}`, buffer, input.contentType);
+    return { key, url, name: input.fileName, size: buffer.length, type: input.contentType };
+  }),
 });
 
 // ── Notifications Router ───────────────────────────────────────────────────
@@ -549,6 +653,7 @@ export const appRouter = router({
   projects: projectsRouter,
   marketplace: marketplaceRouter,
   rfq: rfqRouter,
+  messages: messagesRouter,
   notifications: notificationsRouter,
   reviews: reviewsRouter,
   admin: adminRouter,

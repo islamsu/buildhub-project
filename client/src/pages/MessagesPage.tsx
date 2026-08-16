@@ -24,7 +24,7 @@ const MOCK_CONVERSATIONS = [
   { id: 4, name: 'BuildHub Support', initials: 'BH', lastMessage: 'Your verification is complete!', time: 'Sun', unread: 0, online: true, role: 'Support' },
 ];
 
-const MOCK_MESSAGES: Record<number, Array<{ id: number; from: 'me' | 'them'; content: string; time: string; type: 'text' | 'file' }>> = {
+const MOCK_MESSAGES: Record<number, Array<{ id: number; from: 'me' | 'them'; content: string; time: string; type: 'text' | 'file'; fileUrl?: string; quotationId?: number }>> = {
   1: [
     { id: 1, from: 'them', content: 'Hello! I saw your RFQ for the apartment renovation.', time: '10:00 AM', type: 'text' },
     { id: 2, from: 'me', content: 'Hi Ahmed! Yes, I need a contractor for a 150m² apartment finishing.', time: '10:05 AM', type: 'text' },
@@ -48,19 +48,29 @@ const MOCK_MESSAGES: Record<number, Array<{ id: number; from: 'me' | 'them'; con
 
 export default function MessagesPage() {
   const { t, lang, dir } = useLanguage();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { data: notifications } = trpc.notifications.list.useQuery(undefined, { enabled: isAuthenticated });
+  const { data: persistedConversations = [] } = trpc.messages.conversations.useQuery(undefined, { enabled: isAuthenticated });
   const markRead = trpc.notifications.markAllRead.useMutation({ onSuccess: () => toast.success(lang === 'ar' ? 'تم تحديد الكل كمقروء' : 'All marked as read') });
 
   const [selectedConv, setSelectedConv] = useState<number | null>(1);
   const [messageText, setMessageText] = useState('');
   const [localMessages, setLocalMessages] = useState(MOCK_MESSAGES);
   const [searchConv, setSearchConv] = useState('');
+  const [quotationId, setQuotationId] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { data: persistedMessages = [], refetch: refetchMessages } = trpc.messages.list.useQuery({ otherUserId: selectedConv ?? undefined }, { enabled: isAuthenticated && selectedConv !== null });
+  const sendMutation = trpc.messages.send.useMutation({ onSuccess: () => refetchMessages(), onError: error => toast.error(error.message) });
+  const uploadMutation = trpc.messages.uploadAttachment.useMutation({ onError: error => toast.error(error.message) });
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [selectedConv, localMessages]);
+
+  useEffect(() => {
+    if (persistedConversations.length > 0 && !persistedConversations.some(conversation => conversation.id === selectedConv)) setSelectedConv(persistedConversations[0].id);
+  }, [persistedConversations, selectedConv]);
 
   if (!isAuthenticated) {
     return (
@@ -75,21 +85,50 @@ export default function MessagesPage() {
     );
   }
 
-  const filteredConvs = MOCK_CONVERSATIONS.filter(c =>
+  const conversations = persistedConversations.length > 0 ? persistedConversations : MOCK_CONVERSATIONS;
+  const filteredConvs = conversations.filter(c =>
     !searchConv || c.name.toLowerCase().includes(searchConv.toLowerCase())
   );
 
-  const activeConv = MOCK_CONVERSATIONS.find(c => c.id === selectedConv);
-  const activeMessages = selectedConv ? (localMessages[selectedConv] ?? []) : [];
+  const activeConv = conversations.find(c => c.id === selectedConv);
+  const persistedDisplayMessages = persistedMessages.map(message => ({ id: message.id, from: message.senderId === (user as any)?.id ? 'me' as const : 'them' as const, content: message.content, time: new Date(message.createdAt).toLocaleTimeString(lang === 'ar' ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' }), type: message.type === 'text' ? 'text' as const : 'file' as const, fileUrl: message.fileUrl ?? undefined, quotationId: message.quotationId ?? undefined }));
+  const activeMessages = persistedDisplayMessages.length > 0 ? persistedDisplayMessages : (selectedConv ? (localMessages[selectedConv] ?? []) : []);
+
+  const appendLocalMessage = (content: string, type: 'text' | 'file') => {
+    if (!selectedConv) return;
+    const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    setLocalMessages(prev => ({ ...prev, [selectedConv]: [...(prev[selectedConv] ?? []), { id: Date.now(), from: 'me', content, time: now, type }] }));
+  };
 
   const sendMessage = () => {
     if (!messageText.trim() || !selectedConv) return;
-    const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    setLocalMessages(prev => ({
-      ...prev,
-      [selectedConv]: [...(prev[selectedConv] ?? []), { id: Date.now(), from: 'me', content: messageText.trim(), time: now, type: 'text' }],
-    }));
+    const content = messageText.trim();
+    sendMutation.mutate({ receiverId: selectedConv, content, type: 'text' });
+    appendLocalMessage(content, 'text');
     setMessageText('');
+  };
+
+    const shareQuotation = () => {
+    if (!selectedConv || !quotationId.trim()) { toast.error(lang === 'ar' ? 'أدخل رقم عرض السعر' : 'Enter a quotation ID'); return; }
+    const content = lang === 'ar' ? `تمت مشاركة عرض السعر #${quotationId}` : `Quotation #${quotationId} shared for review`;
+    sendMutation.mutate({ receiverId: selectedConv, content, type: 'quotation', quotationId: Number(quotationId) });
+    appendLocalMessage(content, 'file');
+    setQuotationId('');
+  };
+
+
+  const handleFile = (file?: File) => {
+    if (!file || !selectedConv) return;
+    if (file.size > 8 * 1024 * 1024 || !(file.type.startsWith('image/') || file.type === 'application/pdf')) {
+      toast.error(lang === 'ar' ? 'يسمح بصور وملفات PDF حتى 8 ميجابايت' : 'Images and PDFs up to 8MB are supported');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = String(reader.result).split(',')[1] ?? '';
+      uploadMutation.mutate({ fileName: file.name, contentType: file.type as 'application/pdf', base64 }, { onSuccess: attachment => { sendMutation.mutate({ receiverId: selectedConv, content: attachment.name, type: 'file', fileUrl: attachment.url }); appendLocalMessage(attachment.name, 'file'); } });
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -190,7 +229,7 @@ export default function MessagesPage() {
                             {msg.type === 'file' ? (
                               <div className="flex items-center gap-2">
                                 <FileText className="w-4 h-4 flex-shrink-0" />
-                                <span>{msg.content}</span>
+                                {msg.fileUrl ? <a className="underline underline-offset-2" href={msg.fileUrl} target="_blank" rel="noreferrer">{msg.content}</a> : msg.quotationId ? <a className="underline underline-offset-2" href={`/rfq?quotation=${msg.quotationId}`}>{msg.content}</a> : <span>{msg.content}</span>}
                               </div>
                             ) : msg.content}
                           </div>
@@ -207,9 +246,12 @@ export default function MessagesPage() {
                   {/* Input */}
                   <div className="p-3 border-t border-border">
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" className="w-9 h-9 p-0 flex-shrink-0" onClick={() => toast.info(lang === 'ar' ? 'قريباً' : 'File sharing coming soon')}>
+                      <Button variant="ghost" size="sm" className="w-9 h-9 p-0 flex-shrink-0" onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}>
                         <Paperclip className="w-4 h-4" />
                       </Button>
+                      <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={event => handleFile(event.target.files?.[0])} />
+                      <Input className="h-9 w-24 text-xs" inputMode="numeric" placeholder={lang === 'ar' ? 'رقم العرض' : 'Quote ID'} value={quotationId} onChange={event => setQuotationId(event.target.value.replace(/\D/g, ''))} aria-label={lang === 'ar' ? 'رقم عرض السعر' : 'Quotation ID'} />
+                      <Button variant="ghost" size="sm" className="h-9 px-2 text-xs" onClick={shareQuotation} disabled={sendMutation.isPending || !quotationId}>{lang === 'ar' ? 'مشاركة عرض' : 'Share quote'}</Button>
                       <Input
                         className="flex-1 h-9"
                         placeholder={lang === 'ar' ? 'اكتب رسالة...' : 'Type a message...'}

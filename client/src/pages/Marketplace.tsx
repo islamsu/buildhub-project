@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { Search, SlidersHorizontal, Star, Package, ShoppingCart, Zap, ArrowLeft, ArrowRight, Heart, Scale, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
+import { DEMO_PRODUCTS } from '@/lib/marketplaceCatalog';
 
 const CATEGORY_ICONS: Record<string, string> = {
   'Materials': '🧱', 'Furniture': '🛋️', 'Lighting': '💡', 'Electrical': '⚡',
@@ -33,18 +34,6 @@ const CATEGORY_AR: Record<string, string> = {
   'Security': 'أمن وحماية', 'Fire Fighting': 'إطفاء حريق', 'Cleaning': 'نظافة',
   'Maintenance': 'صيانة', 'Moving': 'نقل عفش',
 };
-const DEMO_PRODUCTS = [
-  { id: 1, name: 'Premium Ceramic Floor Tiles', nameAr: 'بلاط سيراميك فاخر', category: 'Ceramics', brand: 'Cleopatra', price: '450', currency: 'EGP', unit: 'm²', rating: '4.8', reviewCount: 124, stock: 500, images: '/manus-storage/ceramic-tiles_74dab71a.jpg', origin: 'Egypt', deliveryDays: 3, featured: true },
-  { id: 2, name: 'Italian Marble Slabs', nameAr: 'رخام إيطالي فاخر', category: 'Marble', brand: 'Carrara', price: '2800', currency: 'EGP', unit: 'm²', rating: '4.9', reviewCount: 87, stock: 200, images: '/manus-storage/marble-slab_d4dcd0da.jpg', origin: 'Italy', deliveryDays: 14, featured: true },
-  { id: 3, name: 'Split Air Conditioner 2.25HP', nameAr: 'مكيف سبليت 2.25 حصان', category: 'HVAC', brand: 'Carrier', price: '12500', currency: 'EGP', unit: 'unit', rating: '4.7', reviewCount: 156, stock: 40, images: '/manus-storage/hvac-unit_c5e4fb99.jpg', origin: 'USA', deliveryDays: 7, featured: true },
-  { id: 4, name: 'Solar Panel 400W', nameAr: 'لوح طاقة شمسية 400 واط', category: 'Solar', brand: 'SunPower', price: '3500', currency: 'EGP', unit: 'panel', rating: '4.6', reviewCount: 43, stock: 80, images: '/manus-storage/solar-panel_28c472ca.jpg', origin: 'USA', deliveryDays: 10, featured: true },
-  { id: 5, name: 'Modular Kitchen Cabinet', nameAr: 'خزانة مطبخ مودرن', category: 'Furniture', brand: 'IKEA', price: '8500', currency: 'EGP', unit: 'set', rating: '4.5', reviewCount: 201, stock: 30, images: '/manus-storage/kitchen-cabinet_84c6ca2d.jpg', origin: 'Sweden', deliveryDays: 21, featured: false },
-  { id: 6, name: 'High-Pressure Water Pump', nameAr: 'طلمبة مياه عالية الضغط', category: 'Plumbing', brand: 'Grundfos', price: '2200', currency: 'EGP', unit: 'unit', rating: '4.7', reviewCount: 38, stock: 60, images: '/manus-storage/water-pump_8d32d40a.jpg', origin: 'Denmark', deliveryDays: 5, featured: false },
-  { id: 7, name: 'Thermal Insulation Boards', nameAr: 'ألواح عزل حراري', category: 'Materials', brand: 'Rockwool', price: '180', currency: 'EGP', unit: 'm²', rating: '4.4', reviewCount: 92, stock: 1000, images: '/manus-storage/insulation-boards_3479c166.jpg', origin: 'Denmark', deliveryDays: 4, featured: false },
-  { id: 8, name: 'Smart Home Security System', nameAr: 'نظام أمان منزلي ذكي', category: 'Security', brand: 'Hikvision', price: '4500', currency: 'EGP', unit: 'set', rating: '4.8', reviewCount: 67, stock: 45, images: '/manus-storage/security-system_5bddcf47.jpg', origin: 'China', deliveryDays: 7, featured: true },
-  { id: 9, name: 'LED Ceiling Panel Light 50W', nameAr: 'لوح إضاءة LED سقفي 50 واط', category: 'Lighting', brand: 'Philips', price: '320', currency: 'EGP', unit: 'unit', rating: '4.6', reviewCount: 183, stock: 300, images: '/manus-storage/led-panel_fb7cac42.jpg', origin: 'Netherlands', deliveryDays: 3, featured: true },
-  { id: 10, name: 'Premium Granite Countertop Slab', nameAr: 'بلاطة جرانيت فاخرة للمطبخ', category: 'Granite', brand: 'StoneWorks', price: '1800', currency: 'EGP', unit: 'm²', rating: '4.7', reviewCount: 55, stock: 150, images: '/manus-storage/granite-slab_26ca65cd.png', origin: 'Brazil', deliveryDays: 10, featured: true },
-];
 
 export default function Marketplace() {
   const { t, lang } = useLanguage();
@@ -173,7 +162,7 @@ export default function Marketplace() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filtered.map(product => (
-                  <Card key={product.id} className="card-hover overflow-hidden group">
+                  <Card key={product.id} className="card-hover overflow-hidden group cursor-pointer" role="button" tabIndex={0} onClick={() => navigate(`/marketplace/products/${product.id}`)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') navigate(`/marketplace/products/${product.id}`); }}>
                    {/* Product Image Placeholder */}
                    <div className="h-48 bg-gradient-to-br from-muted to-muted/50 flex items-center justify-center relative">
                       {product.images ? (
@@ -226,7 +215,7 @@ export default function Marketplace() {
                           <span className="font-bold text-primary">{Number(product.price).toLocaleString()} {product.currency}</span>
                           <span className="text-xs text-muted-foreground">/{product.unit}</span>
                         </div>
-                        <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => toast.success(lang === 'ar' ? 'تمت الإضافة إلى قائمة الطلبات' : 'Added to RFQ list')}>
+                        <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={event => { event.stopPropagation(); toast.success(lang === 'ar' ? 'تمت الإضافة إلى قائمة الطلبات' : 'Added to RFQ list'); }}>
                           <ShoppingCart className="w-3.5 h-3.5" /> {t('market.add_to_rfq')}
                         </Button>
                       </div>

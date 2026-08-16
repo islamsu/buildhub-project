@@ -2,6 +2,7 @@ import {
   boolean,
   decimal,
   int,
+  json,
   mysqlEnum,
   mysqlTable,
   text,
@@ -97,6 +98,17 @@ export const documents = mysqlTable('documents', {
   createdAt: timestamp('createdAt').defaultNow().notNull(),
 });
 
+// ── Marketplace Product Questions ──────────────────────────────────────────
+export const productQuestions = mysqlTable('productQuestions', {
+  id:         int('id').autoincrement().primaryKey(),
+  productId:  int('productId').notNull(),
+  askerId:    int('askerId').notNull(),
+  question:   text('question').notNull(),
+  answer:     text('answer'),
+  answeredAt: timestamp('answeredAt'),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+});
+
 // ── Marketplace Products ───────────────────────────────────────────────────
 export const products = mysqlTable('products', {
   id:          int('id').autoincrement().primaryKey(),
@@ -137,6 +149,7 @@ export const rfqs = mysqlTable('rfqs', {
   location:    varchar('location', { length: 255 }),
   deadline:    timestamp('deadline'),
   attachments: text('attachments'),
+  productReference: json('productReference'),
   status:      mysqlEnum('status', ['open', 'closed', 'awarded']).default('open'),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
   updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
@@ -166,6 +179,7 @@ export const messages = mysqlTable('messages', {
   content:    text('content').notNull(),
   type:       mysqlEnum('type', ['text', 'file', 'quotation']).default('text'),
   fileUrl:    text('fileUrl'),
+  quotationId:int('quotationId'),
   read:       boolean('read').default(false),
   createdAt:  timestamp('createdAt').defaultNow().notNull(),
 });
@@ -192,6 +206,17 @@ export const reviews = mysqlTable('reviews', {
   comment:    text('comment'),
   verified:   boolean('verified').default(false),
   createdAt:  timestamp('createdAt').defaultNow().notNull(),
+});
+
+// ── Progress Reports ────────────────────────────────────────────────────────
+export const progressReports = mysqlTable('progressReports', {
+  id:          int('id').autoincrement().primaryKey(),
+  projectId:   int('projectId').notNull(),
+  authorId:    int('authorId').notNull(),
+  title:       varchar('title', { length: 255 }).notNull(),
+  summary:     text('summary').notNull(),
+  progress:    int('progress').notNull().default(0),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
 });
 
 // ── Disputes ────────────────────────────────────────────────────────────────
@@ -251,12 +276,14 @@ export type Project     = typeof projects.$inferSelect;
 export type Milestone   = typeof milestones.$inferSelect;
 export type Task        = typeof tasks.$inferSelect;
 export type Document    = typeof documents.$inferSelect;
+export type ProductQuestion = typeof productQuestions.$inferSelect;
 export type Product     = typeof products.$inferSelect;
 export type Rfq         = typeof rfqs.$inferSelect;
 export type Quotation   = typeof quotations.$inferSelect;
 export type Message     = typeof messages.$inferSelect;
 export type Notification= typeof notifications.$inferSelect;
 export type Review      = typeof reviews.$inferSelect;
+export type ProgressReport = typeof progressReports.$inferSelect;
 export type Dispute     = typeof disputes.$inferSelect;
 export type AdminSetting= typeof adminSettings.$inferSelect;
 export type DailyLog    = typeof dailyLogs.$inferSelect;

@@ -10,7 +10,7 @@ import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'wouter';
 import { toast } from 'sonner';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
-import { Building2, Home, HardHat, Wrench, Layers, Package, UserCog, ChevronRight, Globe } from 'lucide-react';
+import { Building2, Home, HardHat, Layers, Package, UserCog, ChevronRight, Globe, ShieldCheck } from 'lucide-react';
 
 type UserRole = 'homeowner' | 'contractor' | 'engineer' | 'architect' | 'supplier' | 'project_manager';
 
@@ -136,6 +136,7 @@ export default function AuthPage() {
           <div className="mb-8">
             <h1 className="text-2xl font-bold mb-1">{t('auth.signup')}</h1>
             <p className="text-muted-foreground text-sm">{t('auth.role.select')}</p>
+            {isAuthenticated && <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700"><ShieldCheck className="h-4 w-4" />{lang === 'ar' ? 'تم التحقق من هويتك بأمان عبر تسجيل الدخول الموحد' : 'Your identity is securely verified through BuildHub OAuth'}</div>}
           </div>
 
           {/* Step 1: Role Selection */}

@@ -13,6 +13,7 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { startLogin } from '@/const';
 import { useState } from 'react';
+import ProjectDetailEnhancements from '@/components/ProjectDetailEnhancements';
 import { toast } from 'sonner';
 import { Link, useParams } from 'wouter';
 import {
@@ -153,6 +154,7 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                 <TabsTrigger value="expenses" className="gap-1.5"><DollarSign className="w-4 h-4" /> {t('project.expenses')}</TabsTrigger>
                 <TabsTrigger value="logs" className="gap-1.5"><BookOpen className="w-4 h-4" /> {t('project.daily_logs')}</TabsTrigger>
                 <TabsTrigger value="documents" className="gap-1.5"><FileText className="w-4 h-4" /> {t('project.documents')}</TabsTrigger>
+                <TabsTrigger value="operations" className="gap-1.5"><BarChart3 className="w-4 h-4" /> {lang === 'ar' ? 'عمليات المشروع' : 'Project Operations'}</TabsTrigger>
               </TabsList>
 
               {/* Tasks */}
@@ -376,6 +378,10 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                     <Plus className="w-4 h-4" /> Upload Document
                   </Button>
                 </div>
+              </TabsContent>
+
+              <TabsContent value="operations">
+                <ProjectDetailEnhancements projectId={projectId} lang={lang} />
               </TabsContent>
             </Tabs>
           </>

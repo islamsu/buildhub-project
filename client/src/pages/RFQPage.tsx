@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { startLogin } from '@/const';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   FileText, Plus, Clock, MapPin, DollarSign, Send,
@@ -43,6 +43,7 @@ type RFQItem = {
   requesterId: number;
   createdAt: Date;
   attachments?: string | null;
+  productReference?: { productId: number; variantId: string; variantLabel: string } | null;
 };
 
 type Attachment = { key: string; url: string; name: string; type: string; size: number };
@@ -53,6 +54,14 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function normalizeProductReference(value: unknown): RFQItem['productReference'] {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.productId === 'number' && typeof candidate.variantId === 'string' && typeof candidate.variantLabel === 'string'
+    ? { productId: candidate.productId, variantId: candidate.variantId, variantLabel: candidate.variantLabel }
+    : null;
+}
+
 export default function RFQPage() {
   const { t, lang } = useLanguage();
   const { isAuthenticated, user } = useAuth();
@@ -60,6 +69,7 @@ export default function RFQPage() {
   const [form, setForm] = useState({
     title: '', description: '', category: '', budget: '', location: '', deadline: '',
   });
+  const [marketplaceProduct, setMarketplaceProduct] = useState<{ productId: number; variantId: string; variantLabel: string } | null>(null);
   const [compareRfq, setCompareRfq] = useState<RFQItem | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -69,6 +79,17 @@ export default function RFQPage() {
   const [uploadEta, setUploadEta] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadAttachment = trpc.rfq.uploadAttachment.useMutation();
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('bh-rfq-product') || 'null');
+      if (saved && Number.isFinite(saved.productId) && saved.variantId && saved.variantLabel) {
+        const reference = { productId: Number(saved.productId), variantId: String(saved.variantId), variantLabel: String(saved.variantLabel) };
+        setMarketplaceProduct(reference);
+        setForm(current => ({ ...current, title: current.title || `RFQ for marketplace product #${reference.productId}`, description: current.description || `Please quote for the selected marketplace product variant: ${reference.variantLabel}.` }));
+      }
+    } catch { /* Ignore malformed local draft data. */ }
+  }, []);
 
   const MAX_FILES = 6;
   const MAX_SIZE = 8 * 1024 * 1024;
@@ -141,18 +162,20 @@ export default function RFQPage() {
       setOpen(false);
       setForm({ title: '', description: '', category: '', budget: '', location: '', deadline: '' });
       setAttachments([]);
+      setMarketplaceProduct(null);
+      localStorage.removeItem('bh-rfq-product');
       refetch();
     },
     onError: (e) => toast.error(e.message),
   });
 
   // Merge and deduplicate: show user's own RFQs first, then public ones
-  const allRfqs: RFQItem[] = isAuthenticated
+  const allRfqs: RFQItem[] = (isAuthenticated
     ? [
         ...myRfqs,
         ...rfqs.filter(r => !myRfqs.some(m => m.id === r.id)),
       ]
-    : rfqs;
+    : rfqs).map(rfq => ({ ...rfq, productReference: normalizeProductReference(rfq.productReference) })) as RFQItem[];
 
   return (
     <div className="min-h-screen bg-background">
@@ -214,6 +237,7 @@ export default function RFQPage() {
                       onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))}
                     />
                   </div>
+                  {marketplaceProduct && <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm"><div><p className="font-medium">{lang === 'ar' ? 'منتج مرتبط بطلب الأسعار' : 'Linked marketplace product'}</p><p className="text-xs text-muted-foreground">#{marketplaceProduct.productId} · {marketplaceProduct.variantLabel}</p></div><button type="button" className="text-xs text-muted-foreground underline" onClick={() => { setMarketplaceProduct(null); localStorage.removeItem('bh-rfq-product'); }}>{lang === 'ar' ? 'إزالة' : 'Remove'}</button></div>}
                   {/* Attachments */}
                   <div className="space-y-2">
                     <label className="text-xs text-muted-foreground flex items-center gap-1">
@@ -293,6 +317,7 @@ export default function RFQPage() {
                       ...form,
                       budget: form.budget ? parseFloat(form.budget) : undefined,
                       deadline: form.deadline ? new Date(form.deadline) : undefined,
+                      productReference: marketplaceProduct ?? undefined,
                       attachments: attachments.length > 0 ? attachments : undefined,
                     })}
                     disabled={createRfq.isPending || uploading || !form.title}
@@ -332,6 +357,7 @@ export default function RFQPage() {
                       {/* Title + status */}
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <h3 className="font-semibold text-lg">{rfq.title}</h3>
+                        {rfq.productReference && <Badge variant="outline" className="text-xs">{lang === 'ar' ? `منتج #${rfq.productReference.productId} · ${rfq.productReference.variantLabel}` : `Product #${rfq.productReference.productId} · ${rfq.productReference.variantLabel}`}</Badge>}
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${statusStyle}`}>
                           {rfq.status === 'open' ? t('rfq.status.open') : rfq.status === 'closed' ? t('rfq.status.closed') : rfq.status === 'awarded' ? t('rfq.status.awarded') : t('rfq.status.open')}
                         </span>
