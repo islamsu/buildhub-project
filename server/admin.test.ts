@@ -163,3 +163,11 @@ it('provides a required bilingual freeze-reason dropdown in the admin UI', async
   expect(dashboard).toContain("freezeReason === 'other'");
   expect(dashboard).toContain('!freezeReason');
 });
+
+it('shows a stored freeze reason next to the Frozen status badge', async () => {
+  const { readFileSync } = await import('node:fs');
+  const dashboard = readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
+  expect(dashboard).toContain('function formatFreezeReason');
+  expect(dashboard).toContain('(userRow as any).frozenReason');
+  expect(dashboard).toContain("formatStatus(status, lang)}{isFrozen ?");
+});

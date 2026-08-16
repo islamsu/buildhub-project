@@ -277,5 +277,12 @@
 - [x] Prevent verification-code prompts or requests during dummy-user login
 - [x] Preserve real-user OAuth and verification behavior
 - [x] Add authentication regression tests and verify the sign-in UI
-- [ ] Save a checkpoint for the verification-code bypass
+- [x] Save a checkpoint for the verification-code bypass (vb095966a)
+
+
+## Frozen Status Reason Display
+- [x] Show the stored freeze reason next to Frozen in the Admin User Management table
+- [x] Preserve bilingual labels and safe fallback behavior when no reason is stored
+- [x] Add regression coverage and verify the responsive admin table
+- [ ] Save a checkpoint for the frozen-status reason display
 
