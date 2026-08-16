@@ -18,6 +18,9 @@ export const users = mysqlTable('users', {
   phone:       varchar('phone', { length: 32 }),
   loginMethod: varchar('loginMethod', { length: 64 }),
   role:        mysqlEnum('role', ['user', 'admin']).default('user').notNull(),
+  accountStatus: mysqlEnum('accountStatus', ['active', 'frozen']).default('active').notNull(),
+  frozenAt:    timestamp('frozenAt'),
+  frozenReason: text('frozenReason'),
   userRole:    mysqlEnum('userRole', [
                  'homeowner', 'contractor', 'engineer', 'architect',
                  'supplier', 'project_manager', 'admin',
@@ -191,6 +194,31 @@ export const reviews = mysqlTable('reviews', {
   createdAt:  timestamp('createdAt').defaultNow().notNull(),
 });
 
+// ── Disputes ────────────────────────────────────────────────────────────────
+export const disputes = mysqlTable('disputes', {
+  id:             int('id').autoincrement().primaryKey(),
+  reporterId:     int('reporterId').notNull(),
+  respondentId:   int('respondentId'),
+  projectId:      int('projectId'),
+  title:          varchar('title', { length: 255 }).notNull(),
+  description:    text('description').notNull(),
+  type:           varchar('type', { length: 80 }).default('general').notNull(),
+  priority:       mysqlEnum('priority', ['low', 'medium', 'high']).default('medium').notNull(),
+  status:         mysqlEnum('status', ['open', 'investigating', 'resolved', 'rejected']).default('open').notNull(),
+  resolutionNotes:text('resolutionNotes'),
+  createdAt:      timestamp('createdAt').defaultNow().notNull(),
+  updatedAt:      timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+});
+
+// ── Admin Settings ──────────────────────────────────────────────────────────
+export const adminSettings = mysqlTable('adminSettings', {
+  id:        int('id').autoincrement().primaryKey(),
+  settingKey:varchar('settingKey', { length: 120 }).notNull().unique(),
+  value:     text('value').notNull(),
+  updatedBy: int('updatedBy').notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+});
+
 // ── Daily Logs ─────────────────────────────────────────────────────────────
 export const dailyLogs = mysqlTable('dailyLogs', {
   id:          int('id').autoincrement().primaryKey(),
@@ -229,6 +257,8 @@ export type Quotation   = typeof quotations.$inferSelect;
 export type Message     = typeof messages.$inferSelect;
 export type Notification= typeof notifications.$inferSelect;
 export type Review      = typeof reviews.$inferSelect;
+export type Dispute     = typeof disputes.$inferSelect;
+export type AdminSetting= typeof adminSettings.$inferSelect;
 export type DailyLog    = typeof dailyLogs.$inferSelect;
 export type Expense     = typeof expenses.$inferSelect;
 

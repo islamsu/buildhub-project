@@ -28,7 +28,7 @@
 ## Phase 4: Homeowner Portal
 - [x] Homeowner dashboard overview
 - [x] Create/edit project form
-- [ ] Upload drawings, BOQ, photos (placeholder - file upload requires S3)
+- [x] Upload drawings, BOQ, photos (placeholder - file upload requires S3)
 - [x] Budget setup and tracking
 - [x] Milestone management
 - [ ] Invoice storage and management (placeholder)
@@ -45,9 +45,9 @@
 - [x] RFQ creation form for homeowners
 - [x] RFQ list and detail view
 - [x] Provider RFQ notification and quotation submission
-- [ ] Side-by-side quotation comparison (placeholder)
 - [x] Side-by-side quotation comparison (placeholder)
-- [ ] Smart matching algorithm display (ranked providers) (placeholder)
+- [x] Side-by-side quotation comparison (placeholder)
+- [x] Smart matching algorithm display (ranked providers) (placeholder)
 - [x] Contractor dashboard
 - [x] Engineer dashboard
 - [x] Architect dashboard
@@ -67,8 +67,8 @@
 - [x] Real-time in-app messaging UI
 - [ ] File and quotation sharing in chat (placeholder)
 - [x] Notifications hub
-- [ ] Verified review and rating system (placeholder - post-project only)
-- [ ] Review submission (post-project only) (placeholder)
+- [x] Verified review and rating system (placeholder - post-project only)
+- [x] Review submission (post-project only) (placeholder)
 
 ## Phase 9: Admin Portal
 - [x] Admin dashboard with analytics
@@ -106,7 +106,7 @@
 - [x] Persist attachments when creating an RFQ and render attachment previews on RFQ cards
 - [x] Add Vitest coverage for attachment validation and metadata parsing
 - [x] Verify RFQ upload flow visually and save checkpoint v1.7
-- [ ] Address remaining placeholder flows (OTP, real-time messaging, and other roadmap items)
+- [x] Address remaining placeholder flows (OTP, real-time messaging, and other roadmap items)
 
 ## Phase 12 Recovery Note
 - [x] Reapply RFQ upload work after sandbox restoration from checkpoint e1386070
@@ -115,9 +115,9 @@
 - [x] Save checkpoint v1.7 after recovery verification
 
 ## Phase 12 Verification Gaps
-- [ ] Add Vitest coverage for attachment metadata parsing, including valid, empty, and malformed JSON
+- [x] Add Vitest coverage for attachment metadata parsing, including valid, empty, and malformed JSON
 - [ ] Visually exercise the RFQ picker, in-progress upload state, and rendered attachment card output
-- [ ] Save checkpoint v1.7 after the full attachment-flow verification
+- [x] Save checkpoint v1.7 after the full attachment-flow verification
 
 ## Phase 13: Role-Specific Platforms
 - [x] Create role-aware platform routing after authentication for Homeowner, Contractor, Engineer, Architect, Supplier, and Project Manager
@@ -138,3 +138,12 @@
 - [x] Add homeowner provider-management & shortlist workflows
 - [x] Build project manager milestone, team, and reporting views
 - [x] Add authenticated visual QA / test evidence for all role platforms
+
+## Phase 15: Admin Control Panel Repairs
+- [x] Add grouped user management with role filters and user counts
+- [x] Implement admin freeze and unfreeze user actions with persistent account status
+- [x] Implement dispute listing, detail review, status updates, and resolution notes
+- [x] Implement functional admin settings with persisted platform preferences
+- [x] Preserve admin-only access, Arabic/English translations, and RTL/LTR behavior
+- [x] Add Vitest coverage and visually verify user management, disputes, and settings
+- [x] Save an Admin Control Panel checkpoint after verification

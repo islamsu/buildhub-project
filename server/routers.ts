@@ -11,7 +11,7 @@ import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttach
 import {
   projects, milestones, tasks, documents, products,
   rfqs, quotations, messages, notifications, reviews,
-  dailyLogs, expenses, users,
+  dailyLogs, expenses, users, disputes, adminSettings,
 } from '../drizzle/schema';
 import { eq, desc, and, sql } from 'drizzle-orm';
 
@@ -435,30 +435,96 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+const DEFAULT_ADMIN_SETTINGS: Record<string, string> = {
+  maintenanceMode: 'false',
+  registrationEnabled: 'true',
+  emailNotifications: 'true',
+  smsAlerts: 'false',
+  autoVerifyKyc: 'false',
+  manualReviewThreshold: '3',
+  transactionFeePercent: '2.5',
+  commissionPercent: '5',
+  reviewApprovalRequired: 'true',
+  spamSensitivity: 'medium',
+};
+
 const adminRouter = router({
   stats: adminProcedure.query(async () => {
     const db = await getDb();
-    if (!db) return { users: 0, projects: 0, products: 0, rfqs: 0 };
+    if (!db) return { users: 0, projects: 0, products: 0, rfqs: 0, disputes: 0 };
     const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(users);
     const [projectCount] = await db.select({ count: sql<number>`count(*)` }).from(projects);
     const [productCount] = await db.select({ count: sql<number>`count(*)` }).from(products);
     const [rfqCount] = await db.select({ count: sql<number>`count(*)` }).from(rfqs);
+    const [disputeCount] = await db.select({ count: sql<number>`count(*)` }).from(disputes).where(eq(disputes.status, 'open'));
     return {
       users: Number(userCount?.count ?? 0),
       projects: Number(projectCount?.count ?? 0),
       products: Number(productCount?.count ?? 0),
       rfqs: Number(rfqCount?.count ?? 0),
+      disputes: Number(disputeCount?.count ?? 0),
     };
   }),
   users: adminProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(users).orderBy(desc(users.createdAt)).limit(100);
+    return db.select().from(users).orderBy(desc(users.createdAt)).limit(250);
   }),
   verifyUser: adminProcedure.input(z.object({ userId: z.number(), verified: z.boolean() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     await db.update(users).set({ verified: input.verified }).where(eq(users.id, input.userId));
+    return { success: true };
+  }),
+  setUserFrozen: adminProcedure.input(z.object({ userId: z.number(), frozen: z.boolean(), reason: z.string().max(500).optional() })).mutation(async ({ ctx, input }) => {
+    if (input.userId === ctx.user.id) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Administrators cannot freeze their own account' });
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    await db.update(users).set({
+      accountStatus: input.frozen ? 'frozen' : 'active',
+      frozenAt: input.frozen ? new Date() : null,
+      frozenReason: input.frozen ? (input.reason || 'Suspended by an administrator') : null,
+    }).where(eq(users.id, input.userId));
+    return { success: true, status: input.frozen ? 'frozen' : 'active' };
+  }),
+  disputes: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.select().from(disputes).orderBy(desc(disputes.createdAt));
+    const userRows = await db.select({ id: users.id, name: users.name }).from(users);
+    const names = new Map(userRows.map(row => [row.id, row.name]));
+    return rows.map(row => ({
+      ...row,
+      reporterName: names.get(row.reporterId) ?? null,
+      respondentName: row.respondentId ? names.get(row.respondentId) ?? null : null,
+    }));
+  }),
+  updateDispute: adminProcedure.input(z.object({
+    disputeId: z.number(),
+    status: z.enum(['open', 'investigating', 'resolved', 'rejected']),
+    resolutionNotes: z.string().max(2000).optional(),
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    await db.update(disputes).set({ status: input.status, resolutionNotes: input.resolutionNotes }).where(eq(disputes.id, input.disputeId));
+    return { success: true };
+  }),
+  settings: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return DEFAULT_ADMIN_SETTINGS;
+    const rows = await db.select({ settingKey: adminSettings.settingKey, value: adminSettings.value }).from(adminSettings);
+    return { ...DEFAULT_ADMIN_SETTINGS, ...Object.fromEntries(rows.map(row => [row.settingKey, row.value])) };
+  }),
+  updateSetting: adminProcedure.input(z.object({ key: z.string().min(1).max(120), value: z.string().max(2000) })).mutation(async ({ ctx, input }) => {
+    if (!(input.key in DEFAULT_ADMIN_SETTINGS)) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unknown setting key' });
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [existing] = await db.select({ id: adminSettings.id }).from(adminSettings).where(eq(adminSettings.settingKey, input.key));
+    if (existing) {
+      await db.update(adminSettings).set({ value: input.value, updatedBy: ctx.user.id }).where(eq(adminSettings.id, existing.id));
+    } else {
+      await db.insert(adminSettings).values({ settingKey: input.key, value: input.value, updatedBy: ctx.user.id });
+    }
     return { success: true };
   }),
 });

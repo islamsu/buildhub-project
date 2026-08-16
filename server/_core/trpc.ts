@@ -16,6 +16,9 @@ const requireUser = t.middleware(async opts => {
   if (!ctx.user) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
   }
+  if (ctx.user.role !== 'admin' && ctx.user.accountStatus === 'frozen') {
+    throw new TRPCError({ code: "FORBIDDEN", message: "This account is frozen. Contact an administrator." });
+  }
 
   return next({
     ctx: {
