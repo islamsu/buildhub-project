@@ -13,8 +13,10 @@ import {
   projects, milestones, tasks, documents, products,
   rfqs, quotations, messages, notifications, reviews,
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
+  registrationDocuments, registrationReviewEvents,
 } from '../drizzle/schema';
 import { eq, desc, and, sql, inArray } from 'drizzle-orm';
+import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, type ComplianceDocumentStatus } from '../shared/compliance';
 
 // ── Auth Router ────────────────────────────────────────────────────────────
 const authRouter = router({
@@ -34,13 +36,67 @@ const authRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      await db.update(users).set({ userRole: input.userRole, name: input.name, phone: input.phone, location: input.location }).where(eq(users.id, ctx.user.id));
+      await db.update(users).set({ userRole: input.userRole, name: input.name, phone: input.phone, location: input.location, onboardingStatus: isComplianceRole(input.userRole) ? 'not_started' : 'approved', verified: isComplianceRole(input.userRole) ? false : true }).where(eq(users.id, ctx.user.id));
       return { success: true };
     }),
 });
 
+// ── Registration Compliance Router ─────────────────────────────────────────
+const complianceProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (!isComplianceRole(ctx.user.userRole)) throw new TRPCError({ code: 'FORBIDDEN', message: 'Professional onboarding is required for this role' });
+  return next({ ctx });
+});
+
+const MAX_REGISTRATION_DOCUMENT_SIZE = 10 * 1024 * 1024;
+const isAllowedRegistrationDocumentType = (contentType: string) => contentType === 'application/pdf' || contentType.startsWith('image/');
+
+function getOverallComplianceStatus(role: string | null | undefined, docs: Array<{ documentType: string; status: string }>, requestedStatus?: string): ComplianceStatus {
+  if (requestedStatus === 'rejected') return 'rejected';
+  if (requestedStatus === 'update_required') return 'update_required';
+  const required = getComplianceRequirements(role).filter(requirement => requirement.required);
+  const allApproved = required.length > 0 && required.every(requirement => docs.some(doc => doc.documentType === requirement.type && doc.status === 'approved'));
+  return allApproved ? 'approved' : 'under_review';
+}
+
+const registrationRouter = router({
+  requirements: complianceProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [applicant] = await db.select({ userRole: users.userRole, onboardingStatus: users.onboardingStatus, onboardingReviewNotes: users.onboardingReviewNotes, onboardingReviewedAt: users.onboardingReviewedAt }).from(users).where(eq(users.id, ctx.user.id));
+    const docs = await db.select().from(registrationDocuments).where(eq(registrationDocuments.userId, ctx.user.id)).orderBy(desc(registrationDocuments.createdAt));
+    const events = await db.select().from(registrationReviewEvents).where(eq(registrationReviewEvents.userId, ctx.user.id)).orderBy(desc(registrationReviewEvents.createdAt)).limit(50);
+    return { role: applicant?.userRole ?? ctx.user.userRole, status: applicant?.onboardingStatus ?? 'not_started', reviewNotes: applicant?.onboardingReviewNotes ?? null, reviewedAt: applicant?.onboardingReviewedAt ?? null, requirements: getComplianceRequirements(applicant?.userRole ?? ctx.user.userRole), documents: docs, events };
+  }),
+  uploadDocument: complianceProcedure.input(z.object({
+    documentType: z.string().min(1).max(100),
+    fileName: z.string().min(1).max(255),
+    contentType: z.string().refine(isAllowedRegistrationDocumentType, 'Only PDF and image files are supported'),
+    base64: z.string().min(1),
+    applicantNote: z.string().max(1000).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const requirements = getComplianceRequirements(ctx.user.userRole);
+    const requirement = requirements.find(item => item.type === input.documentType);
+    if (!requirement) throw new TRPCError({ code: 'BAD_REQUEST', message: 'This document is not required for the selected role' });
+    const bytes = Buffer.from(input.base64, 'base64');
+    if (bytes.length === 0 || bytes.length > MAX_REGISTRATION_DOCUMENT_SIZE) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Registration documents must be between 1 byte and 10MB' });
+    const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const { key, url } = await storagePut(`registration/${ctx.user.id}/${Date.now()}-${safeName}`, bytes, input.contentType);
+    const result = await db.insert(registrationDocuments).values({ userId: ctx.user.id, documentType: input.documentType, displayName: requirement.name, fileName: input.fileName, url, fileKey: key, mimeType: input.contentType, size: bytes.length, status: 'submitted', applicantNote: input.applicantNote });
+    await db.update(users).set({ onboardingStatus: 'under_review', onboardingReviewNotes: null }).where(eq(users.id, ctx.user.id));
+    await db.insert(registrationReviewEvents).values({ userId: ctx.user.id, documentId: Number(result[0].insertId), actorId: ctx.user.id, action: 'document_submitted', status: 'submitted', note: input.applicantNote });
+    return { id: Number(result[0].insertId), key, url, status: 'submitted' as const };
+  }),
+});
+
 // ── Projects Router ────────────────────────────────────────────────────────
 const providerRoles = ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'] as const;
+const approvedProviderProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (!providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])) throw new TRPCError({ code: 'FORBIDDEN', message: 'Provider access required' });
+  if ((ctx.user as any).onboardingStatus !== 'approved') throw new TRPCError({ code: 'FORBIDDEN', message: 'Professional registration approval is required. Visit /compliance.' });
+  return next({ ctx });
+});
 
 const projectsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -48,7 +104,7 @@ const projectsRouter = router({
     if (!db) return [];
     return db.select().from(projects).where(eq(projects.ownerId, ctx.user.id)).orderBy(desc(projects.createdAt));
   }),
-  directory: protectedProcedure.query(async ({ ctx }) => {
+  directory: approvedProviderProcedure.query(async ({ ctx }) => {
     if (!providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Provider access required' });
     }
@@ -229,7 +285,7 @@ const marketplaceRouter = router({
     if (!product) throw new TRPCError({ code: 'NOT_FOUND' });
     return product;
   }),
-  myProducts: protectedProcedure.query(async ({ ctx }) => {
+  myProducts: approvedProviderProcedure.query(async ({ ctx }) => {
     if (ctx.user.userRole !== 'supplier') {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
     }
@@ -237,7 +293,7 @@ const marketplaceRouter = router({
     if (!db) return [];
     return db.select().from(products).where(eq(products.supplierId, ctx.user.id)).orderBy(desc(products.createdAt));
   }),
-  create: protectedProcedure
+  create: approvedProviderProcedure
     .input(z.object({
       name: z.string().min(1),
       nameAr: z.string().optional(),
@@ -357,7 +413,7 @@ const rfqRouter = router({
       );
       return { key, url, name: input.fileName, type: input.contentType, size: buffer.length };
     }),
-  myQuotations: protectedProcedure.query(async ({ ctx }) => {
+  myQuotations: approvedProviderProcedure.query(async ({ ctx }) => {
     if (!providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Provider access required' });
     }
@@ -404,7 +460,7 @@ const rfqRouter = router({
       .orderBy(quotations.price);
     return rows;
   }),
-  submitQuotation: protectedProcedure
+  submitQuotation: approvedProviderProcedure
     .input(z.object({
       rfqId: z.number(),
       price: z.number(),
@@ -574,6 +630,61 @@ const adminRouter = router({
     if (!db) return [];
     return db.select().from(users).orderBy(desc(users.createdAt)).limit(250);
   }),
+  complianceQueue: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const applicants = await db.select().from(users).where(inArray(users.userRole, providerRoles));
+    const docs = await db.select().from(registrationDocuments).orderBy(desc(registrationDocuments.createdAt));
+    return applicants.map(applicant => ({
+      ...applicant,
+      requirements: getComplianceRequirements(applicant.userRole),
+      documents: docs.filter(document => document.userId === applicant.id),
+    })).filter(applicant => applicant.onboardingStatus !== 'approved' || applicant.documents.length > 0);
+  }),
+  complianceApplicant: adminProcedure.input(z.object({ userId: z.number() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [applicant] = await db.select().from(users).where(eq(users.id, input.userId));
+    if (!applicant || !isComplianceRole(applicant.userRole)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Compliance applicant not found' });
+    const docs = await db.select().from(registrationDocuments).where(eq(registrationDocuments.userId, input.userId)).orderBy(desc(registrationDocuments.createdAt));
+    const events = await db.select().from(registrationReviewEvents).where(eq(registrationReviewEvents.userId, input.userId)).orderBy(desc(registrationReviewEvents.createdAt)).limit(100);
+    return { applicant, requirements: getComplianceRequirements(applicant.userRole), documents: docs, events };
+  }),
+  reviewComplianceDocument: adminProcedure.input(z.object({
+    documentId: z.number(),
+    status: z.enum(['under_review', 'approved', 'rejected', 'update_required']),
+    reviewerNote: z.string().max(2000).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [document] = await db.select().from(registrationDocuments).where(eq(registrationDocuments.id, input.documentId));
+    if (!document) throw new TRPCError({ code: 'NOT_FOUND', message: 'Registration document not found' });
+    const [applicant] = await db.select().from(users).where(eq(users.id, document.userId));
+    if (!applicant) throw new TRPCError({ code: 'NOT_FOUND', message: 'Applicant not found' });
+    await db.update(registrationDocuments).set({ status: input.status, reviewerNote: input.reviewerNote ?? null, reviewedBy: ctx.user.id, reviewedAt: new Date() }).where(eq(registrationDocuments.id, input.documentId));
+    const allDocs = await db.select({ documentType: registrationDocuments.documentType, status: registrationDocuments.status }).from(registrationDocuments).where(eq(registrationDocuments.userId, applicant.id));
+    const overallStatus = getOverallComplianceStatus(applicant.userRole, allDocs, input.status);
+    await db.update(users).set({ onboardingStatus: overallStatus, onboardingReviewNotes: input.reviewerNote ?? null, onboardingReviewedAt: new Date(), onboardingReviewedBy: ctx.user.id, verified: overallStatus === 'approved' }).where(eq(users.id, applicant.id));
+    await db.insert(registrationReviewEvents).values({ userId: applicant.id, documentId: document.id, actorId: ctx.user.id, action: 'document_reviewed', status: input.status, note: input.reviewerNote });
+    const title = input.status === 'approved' ? 'Registration document approved' : input.status === 'update_required' ? 'Registration document update required' : input.status === 'rejected' ? 'Registration document rejected' : 'Registration document under review';
+    const body = input.reviewerNote ? `${document.displayName}: ${input.reviewerNote}` : `${document.displayName} status changed to ${input.status.replace('_', ' ')}`;
+    await db.insert(notifications).values({ userId: applicant.id, title, body, type: 'compliance', link: '/compliance' });
+    return { success: true, documentStatus: input.status, onboardingStatus: overallStatus };
+  }),
+  updateApplicantStatus: adminProcedure.input(z.object({
+    userId: z.number(),
+    status: z.enum(['under_review', 'approved', 'rejected', 'update_required']),
+    note: z.string().max(2000).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [applicant] = await db.select().from(users).where(eq(users.id, input.userId));
+    if (!applicant || !isComplianceRole(applicant.userRole)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Compliance applicant not found' });
+    await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: new Date(), onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(eq(users.id, input.userId));
+    await db.insert(registrationReviewEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'applicant_status_updated', status: input.status, note: input.note });
+    await db.insert(notifications).values({ userId: input.userId, title: 'Registration status updated', body: input.note || `Your registration is now ${input.status.replace('_', ' ')}`, type: 'compliance', link: '/compliance' });
+    return { success: true, onboardingStatus: input.status };
+  }),
   verifyUser: adminProcedure.input(z.object({ userId: z.number(), verified: z.boolean() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
@@ -657,6 +768,7 @@ export const appRouter = router({
   notifications: notificationsRouter,
   reviews: reviewsRouter,
   admin: adminRouter,
+  compliance: registrationRouter,
   ai: aiRouter,
 });
 

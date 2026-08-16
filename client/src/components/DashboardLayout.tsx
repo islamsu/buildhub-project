@@ -39,9 +39,12 @@ const HOMEOWNER_MENU_KEYS = [
   { icon: Settings, labelKey: 'dash.settings', path: '/platform/homeowner' },
 ];
 
+const COMPLIANCE_MENU_ITEM = { icon: Shield, labelKey: 'platform.compliance', path: '/compliance' } as const;
+
 const ROLE_MENU_KEYS = {
   contractor: [
     { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/contractor' },
+    COMPLIANCE_MENU_ITEM,
     { icon: ClipboardList, labelKey: 'platform.pipeline', path: '/platform/contractor' },
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: FolderOpen, labelKey: 'platform.projects', path: '/platform/contractor' },
@@ -50,6 +53,7 @@ const ROLE_MENU_KEYS = {
   ],
   engineer: [
     { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/engineer' },
+    COMPLIANCE_MENU_ITEM,
     { icon: PenTool, labelKey: 'platform.documents', path: '/platform/engineer' },
     { icon: BriefcaseBusiness, labelKey: 'platform.project_queue', path: '/platform/engineer' },
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
@@ -58,6 +62,7 @@ const ROLE_MENU_KEYS = {
   ],
   architect: [
     { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/architect' },
+    COMPLIANCE_MENU_ITEM,
     { icon: PenTool, labelKey: 'platform.portfolio', path: '/platform/architect' },
     { icon: FolderOpen, labelKey: 'platform.projects', path: '/platform/architect' },
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
@@ -66,6 +71,7 @@ const ROLE_MENU_KEYS = {
   ],
   supplier: [
     { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/supplier' },
+    COMPLIANCE_MENU_ITEM,
     { icon: Package, labelKey: 'platform.catalogue', path: '/platform/supplier' },
     { icon: ClipboardList, labelKey: 'platform.review_requests', path: '/rfq' },
     { icon: ShoppingBag, labelKey: 'nav.marketplace', path: '/marketplace/products' },
@@ -74,6 +80,7 @@ const ROLE_MENU_KEYS = {
   ],
   project_manager: [
     { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/project_manager' },
+    COMPLIANCE_MENU_ITEM,
     { icon: KanbanSquare, labelKey: 'platform.project_queue', path: '/platform/project_manager' },
     { icon: FolderOpen, labelKey: 'platform.projects', path: '/platform/project_manager' },
     { icon: Users, labelKey: 'platform.team', path: '/messages' },

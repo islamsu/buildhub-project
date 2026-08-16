@@ -163,4 +163,23 @@
 ## Phase 18: RFQ Handoff and Release Record
 - [x] Read the saved marketplace variant payload in RFQPage and attach it to the RFQ draft/create flow
 - [x] Re-run the RFQ handoff tests and final full suite after wiring the variant payload
-- [ ] Save a new corrected BuildHub checkpoint and record its version ID in todo.md
+- [x] Save corrected BuildHub checkpoint 2282bce0 and record its version ID in todo.md
+
+## Phase 19: Legal Document Onboarding and Compliance Review
+- [x] Define role-specific legal-document requirements for Contractor, Engineer, Architect, Supplier, and Project Manager registrations
+- [x] Add secure applicant document submission with file validation, progress, and S3-backed metadata
+- [x] Add onboarding status dashboard with submitted, under review, approved, rejected, and update-required states
+- [x] Add admin compliance queue grouped by applicant role and registration status
+- [x] Add admin document review, approval, rejection, and request-update actions with notes
+- [x] Send applicant status/update-request notifications and render an audit timeline
+- [x] Preserve admin-only access, role safeguards, Arabic/English translations, and RTL/LTR behavior
+- [x] Add Vitest coverage and visually verify applicant and admin compliance flows
+- [ ] Save the compliance onboarding checkpoint
+
+## Phase 20: Compliance QA Corrections
+- [x] Add submitted status support to shared compliance labels and verify EN/AR rendering
+- [x] Add role and registration-status filters/grouping to the admin compliance queue
+- [x] Enforce onboarding approval before protected professional workflows beyond the role-platform route
+- [x] Add automated structure coverage for compliance filters and workflow gating
+- [x] Complete authenticated browser QA where a signed-in session is available, otherwise document the login limitation
+- [ ] Save the corrected compliance checkpoint after the gap fixes

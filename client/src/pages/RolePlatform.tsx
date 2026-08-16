@@ -4,6 +4,7 @@ import { startLogin } from '@/const';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getRolePlatformPath, isPlatformRole, ROLE_PLATFORM_COPY, type PlatformRole } from '@/lib/rolePlatform';
 import { trpc } from '@/lib/trpc';
+import { isComplianceRole } from '@shared/compliance';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,19 +60,21 @@ export default function RolePlatform() {
   const { user, isAuthenticated, loading } = useAuth();
   const { t, lang, dir } = useLanguage();
   const [, navigate] = useLocation();
-  const account = user as { userRole?: string; role?: string } | null;
+  const account = user as { userRole?: string; role?: string; onboardingStatus?: string } | null;
   const rawRole = account?.userRole;
   const accountRole = account?.role;
+  const onboardingStatus = account?.onboardingStatus;
   const role: PlatformRole = isPlatformRole(rawRole) ? rawRole : 'homeowner';
   const requestedRole = typeof window !== 'undefined' ? window.location.pathname.split('/').pop() : '';
 
   useEffect(() => {
     if (!loading && !isAuthenticated) startLogin();
     if (!loading && isAuthenticated && (rawRole === 'admin' || accountRole === 'admin')) navigate('/admin');
+    if (!loading && isAuthenticated && isComplianceRole(rawRole) && onboardingStatus !== 'approved') navigate('/compliance');
     if (!loading && isAuthenticated && isPlatformRole(rawRole) && requestedRole !== rawRole) {
       navigate(getRolePlatformPath(rawRole));
     }
-  }, [loading, isAuthenticated, rawRole, accountRole, requestedRole, navigate]);
+  }, [loading, isAuthenticated, rawRole, accountRole, onboardingStatus, requestedRole, navigate]);
 
   const isProfessional = role !== 'homeowner';
   const isSupplier = role === 'supplier';

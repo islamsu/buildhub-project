@@ -20,6 +20,7 @@ import ProjectDetail from "./pages/ProjectDetail";
 import RFQPage from "./pages/RFQPage";
 import MessagesPage from "./pages/MessagesPage";
 import AIAssistantPage from "./pages/AIAssistantPage";
+import CompliancePage from "./pages/CompliancePage";
 
 function Router() {
   return (
@@ -42,6 +43,7 @@ function Router() {
       <Route path={"/projects/:id"} component={ProjectDetail} />
       <Route path={"/rfq"} component={RFQPage} />
       <Route path={"/messages"} component={MessagesPage} />
+      <Route path={"/compliance"} component={CompliancePage} />
       <Route path={"/ai"} component={AIAssistantPage} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />

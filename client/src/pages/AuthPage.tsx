@@ -13,6 +13,7 @@ import { getRolePlatformPath } from '@/lib/rolePlatform';
 import { Building2, Home, HardHat, Layers, Package, UserCog, ChevronRight, Globe, ShieldCheck } from 'lucide-react';
 
 type UserRole = 'homeowner' | 'contractor' | 'engineer' | 'architect' | 'supplier' | 'project_manager';
+const PROFESSIONAL_ROLES: UserRole[] = ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'];
 
 const ROLES: { id: UserRole; icon: React.ComponentType<any>; color: string; bg: string }[] = [
   { id: 'homeowner', icon: Home, color: 'text-blue-600', bg: 'bg-blue-50 hover:bg-blue-100 border-blue-200' },
@@ -36,7 +37,7 @@ export default function AuthPage() {
     onSuccess: (_result, variables) => {
       toast.success(lang === 'ar' ? 'تم إعداد الملف الشخصي بنجاح!' : 'Profile set up successfully!');
       setStep('done');
-      navigate(getRolePlatformPath(variables.userRole));
+      navigate(PROFESSIONAL_ROLES.includes(variables.userRole as UserRole) ? '/compliance' : getRolePlatformPath(variables.userRole));
     },
     onError: (e: { message: string }) => toast.error(e.message),
   });
@@ -49,8 +50,8 @@ export default function AuthPage() {
         updateRole.mutate({ userRole: pendingRole });
         return;
       }
-      const userRole = (user as any).userRole;
-      if (userRole) navigate(getRolePlatformPath(userRole));
+      const userRole = (user as any).userRole as UserRole | undefined;
+      if (userRole) navigate(PROFESSIONAL_ROLES.includes(userRole) && (user as any).onboardingStatus !== 'approved' ? '/compliance' : getRolePlatformPath(userRole));
     }
   }, [loading, isAuthenticated, user]);
 

@@ -30,6 +30,10 @@ export const users = mysqlTable('users', {
   bio:         text('bio'),
   location:    varchar('location', { length: 255 }),
   verified:    boolean('verified').default(false),
+  onboardingStatus: mysqlEnum('onboardingStatus', ['not_started', 'under_review', 'update_required', 'approved', 'rejected']).default('not_started').notNull(),
+  onboardingReviewNotes: text('onboardingReviewNotes'),
+  onboardingReviewedAt: timestamp('onboardingReviewedAt'),
+  onboardingReviewedBy: int('onboardingReviewedBy'),
   rating:      decimal('rating', { precision: 3, scale: 2 }).default('0.00'),
   reviewCount: int('reviewCount').default(0),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
@@ -96,6 +100,38 @@ export const documents = mysqlTable('documents', {
   fileKey:   varchar('fileKey', { length: 255 }),
   size:      int('size'),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
+});
+
+// ── Registration Compliance Documents ────────────────────────────────────────
+export const registrationDocuments = mysqlTable('registrationDocuments', {
+  id:         int('id').autoincrement().primaryKey(),
+  userId:     int('userId').notNull(),
+  documentType: varchar('documentType', { length: 100 }).notNull(),
+  displayName: varchar('displayName', { length: 255 }).notNull(),
+  fileName:   varchar('fileName', { length: 255 }).notNull(),
+  url:        text('url').notNull(),
+  fileKey:    varchar('fileKey', { length: 255 }),
+  mimeType:   varchar('mimeType', { length: 100 }).notNull(),
+  size:       int('size').notNull(),
+  status:     mysqlEnum('status', ['submitted', 'under_review', 'approved', 'rejected', 'update_required']).default('submitted').notNull(),
+  applicantNote: text('applicantNote'),
+  reviewerNote: text('reviewerNote'),
+  reviewedBy: int('reviewedBy'),
+  reviewedAt: timestamp('reviewedAt'),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+});
+
+// ── Registration Compliance Audit Events ─────────────────────────────────────
+export const registrationReviewEvents = mysqlTable('registrationReviewEvents', {
+  id:         int('id').autoincrement().primaryKey(),
+  userId:     int('userId').notNull(),
+  documentId: int('documentId'),
+  actorId:    int('actorId').notNull(),
+  action:     varchar('action', { length: 80 }).notNull(),
+  status:     varchar('status', { length: 50 }),
+  note:       text('note'),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
 });
 
 // ── Marketplace Product Questions ──────────────────────────────────────────
