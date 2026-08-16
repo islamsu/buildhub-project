@@ -224,6 +224,8 @@ describe('dummy account isolation and UI wiring', () => {
     expect(dashboard).toContain('Password (optional)');
     expect(authPage).toContain('Dummy / Test user sign-in');
     expect(authPage).toContain('signInDummy');
+    expect(authPage).toContain('No verification code is required');
+    expect(authPage).toContain("!isDummyMode &&");
     expect(dashboard).toContain('setDummyUserPassword');
     expect(router).toContain("action: 'dummy_user_deleted'");
   });

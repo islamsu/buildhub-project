@@ -219,19 +219,21 @@ export default function AuthPage() {
             <ChevronRight className="w-4 h-4" />
           </Button>
 
-          <p className="text-center text-sm text-muted-foreground mt-4">
-            {t('auth.have.account')}{' '}
-            <button onClick={() => startLogin()} className="text-primary font-medium hover:underline">
-              {t('auth.signin')}
-            </button>
-          </p>
+          {!isDummyMode && (
+            <p className="text-center text-sm text-muted-foreground mt-4">
+              {t('auth.have.account')}{' '}
+              <button onClick={() => startLogin()} className="text-primary font-medium hover:underline">
+                {t('auth.signin')}
+              </button>
+            </p>
+          )}
 
           <div className="mt-6 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 p-4">
             <div className="mb-3 flex items-start gap-2">
               <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
               <div>
                 <p className="text-sm font-semibold text-amber-950">{lang === 'ar' ? 'تسجيل دخول مستخدم تجريبي' : 'Dummy / Test user sign-in'}</p>
-                <p className="mt-1 text-xs text-amber-900/70">{lang === 'ar' ? 'استخدم بيانات الدخول التي حددها المسؤول لهذا الحساب التجريبي.' : 'Use the credentials set by an administrator for this test account.'}</p>
+                <p className="mt-1 text-xs text-amber-900/70">{lang === 'ar' ? 'استخدم بيانات الدخول التي حددها المسؤول لهذا الحساب التجريبي. لا حاجة إلى رمز تحقق.' : 'Use the credentials set by an administrator for this test account. No verification code is required.'}</p>
               </div>
             </div>
             <div className="space-y-2.5">

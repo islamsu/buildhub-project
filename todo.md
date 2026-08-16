@@ -269,5 +269,13 @@
 - [x] Ensure language switching preserves Arabic/English content direction and persists across routes
 - [x] Make the global page shell fit viewport widths without unintended vertical or horizontal clipping
 - [x] Add bottom horizontal scrolling in both directions when content legitimately exceeds the viewport
-- [ ] Verify desktop, tablet, and mobile layouts and save a checkpoint
+- [x] Verify desktop, tablet, and mobile layouts and save a checkpoint (vde9f3b9d)
+
+
+## Dummy User Verification-Code Bypass
+- [x] Trace and isolate dummy-user sign-in from real-user verification requests
+- [x] Prevent verification-code prompts or requests during dummy-user login
+- [x] Preserve real-user OAuth and verification behavior
+- [x] Add authentication regression tests and verify the sign-in UI
+- [ ] Save a checkpoint for the verification-code bypass
 
