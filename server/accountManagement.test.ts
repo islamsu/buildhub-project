@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { scryptSync } from 'node:crypto';
 import { filterRegistrationApplicants } from '../shared/registrationMetrics';
 
 vi.mock('./db', () => ({
@@ -13,6 +14,7 @@ vi.mock('./db', () => ({
 import { appRouter } from './routers';
 import type { TrpcContext } from './_core/context';
 import { getDb, getUserByEmail, getUserByUsername } from './db';
+import { sdk } from './_core/sdk';
 
 function makeCtx(role: 'admin' | 'user' = 'admin'): TrpcContext {
   return {
@@ -31,8 +33,13 @@ function makeCtx(role: 'admin' | 'user' = 'admin'): TrpcContext {
       lastSignedIn: new Date(),
     },
     req: { protocol: 'https', headers: {} } as TrpcContext['req'],
-    res: { clearCookie: vi.fn() } as unknown as TrpcContext['res'],
+    res: { clearCookie: vi.fn(), cookie: vi.fn() } as unknown as TrpcContext['res'],
   };
+}
+
+function fixturePasswordHash(password: string): string {
+  const salt = 'a'.repeat(32);
+  return `scrypt$${salt}$${scryptSync(password, salt, 64).toString('hex')}`;
 }
 
 describe('admin account management', () => {
@@ -79,6 +86,95 @@ describe('admin account management', () => {
     expect(valuesMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ userId: 55, action: 'dummy_user_created', source: 'dummy' }));
   });
 
+  it('hashes a manually supplied password during dummy-user creation', async () => {
+    (getUserByUsername as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    const valuesMock = vi.fn().mockResolvedValueOnce([{ insertId: 56 }]).mockResolvedValueOnce([]);
+    const db = { insert: vi.fn().mockReturnValue({ values: valuesMock }) };
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+
+    await appRouter.createCaller(makeCtx()).admin.createDummyUser({ userRole: 'homeowner', password: 'DummyPass123!' });
+
+    const insertedUser = valuesMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(insertedUser.passwordHash).toEqual(expect.stringMatching(/^scrypt\$[^$]+\$[a-f0-9]+$/));
+    expect(insertedUser.passwordHash).not.toBe('DummyPass123!');
+    expect(insertedUser.invitationStatus).toBe('password_set');
+  });
+
+  it('allows admins to replace a dummy password and records an audit event', async () => {
+    const whereSelect = vi.fn().mockResolvedValue([{ id: 56, isDummy: true }]);
+    const updateSet = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
+    const valuesMock = vi.fn().mockResolvedValue([]);
+    const db = {
+      select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: whereSelect }) }),
+      update: vi.fn().mockReturnValue({ set: updateSet }),
+      insert: vi.fn().mockReturnValue({ values: valuesMock }),
+    };
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+
+    await expect(appRouter.createCaller(makeCtx()).admin.setDummyUserPassword({ userId: 56, password: 'NewDummyPass123!' })).resolves.toEqual({ success: true });
+
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ invitationStatus: 'password_set', passwordHash: expect.stringMatching(/^scrypt\$/), passwordSetAt: expect.any(Date) }));
+    expect(valuesMock).toHaveBeenCalledWith(expect.objectContaining({ userId: 56, action: 'dummy_user_password_changed', source: 'dummy' }));
+  });
+
+  it('rejects password updates for non-dummy accounts', async () => {
+    const whereSelect = vi.fn().mockResolvedValue([{ id: 57, isDummy: false }]);
+    const db = { select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: whereSelect }) }), update: vi.fn(), insert: vi.fn() };
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+
+    await expect(appRouter.createCaller(makeCtx()).admin.setDummyUserPassword({ userId: 57, password: 'NewDummyPass123!' })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('signs in an active dummy user with the stored password and issues a session cookie', async () => {
+    (getUserByUsername as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 88,
+      openId: 'dummy-open-id-88',
+      username: 'dummy.tester',
+      name: 'Dummy Tester',
+      isDummy: true,
+      loginMethod: 'dummy',
+      passwordHash: fixturePasswordHash('DummyLogin123!'),
+      accountStatus: 'active',
+      deactivatedAt: null,
+      userRole: 'homeowner',
+      onboardingStatus: 'approved',
+    });
+    const db = {
+      update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
+      insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue([]) }),
+    };
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const sessionTokenSpy = vi.spyOn(sdk, 'createSessionToken').mockResolvedValue('dummy-session-token');
+    const ctx = makeCtx();
+
+    await expect(appRouter.createCaller(ctx).auth.signInDummy({ username: 'DUMMY.TESTER', password: 'DummyLogin123!' })).resolves.toEqual({ success: true, userRole: 'homeowner', onboardingStatus: 'approved' });
+
+    expect(sessionTokenSpy).toHaveBeenCalledWith('dummy-open-id-88', expect.objectContaining({ name: 'Dummy Tester' }));
+    expect((ctx.res as any).cookie).toHaveBeenCalledWith(expect.any(String), 'dummy-session-token', expect.objectContaining({ httpOnly: true, path: '/' }));
+    expect(db.insert).toHaveBeenCalled();
+    sessionTokenSpy.mockRestore();
+  });
+
+  it('rejects an incorrect dummy password and frozen dummy accounts', async () => {
+    (getUserByUsername as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 89,
+      openId: 'dummy-open-id-89',
+      username: 'dummy.locked',
+      name: 'Locked Dummy',
+      isDummy: true,
+      loginMethod: 'dummy',
+      passwordHash: fixturePasswordHash('CorrectPass123!'),
+      accountStatus: 'frozen',
+      deactivatedAt: new Date(),
+      userRole: 'homeowner',
+      onboardingStatus: 'approved',
+    });
+
+    await expect(appRouter.createCaller(makeCtx()).auth.signInDummy({ username: 'dummy.locked', password: 'WrongPass123!' })).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    await expect(appRouter.createCaller(makeCtx()).auth.signInDummy({ username: 'dummy.locked', password: 'CorrectPass123!' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
   it('allows only admins to access dummy-user creation', async () => {
     await expect(appRouter.createCaller(makeCtx('user')).admin.createDummyUser({ userRole: 'homeowner' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
@@ -112,6 +208,7 @@ describe('dummy account isolation and UI wiring', () => {
 
   it('exposes source, dummy controls, and account audit wiring in the admin UI and router', () => {
     const dashboard = readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
+    const authPage = readFileSync(new URL('../client/src/pages/AuthPage.tsx', import.meta.url), 'utf8');
     const router = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
     expect(dashboard).toContain('Create account');
     expect(dashboard).toContain('Dummy user');
@@ -120,6 +217,14 @@ describe('dummy account isolation and UI wiring', () => {
     expect(dashboard).toContain('Include test data');
     expect(router).toContain('createUser: adminProcedure');
     expect(router).toContain('createDummyUser: adminProcedure');
+    expect(router).toContain('setDummyUserPassword: adminProcedure');
+    expect(router).toContain("action: 'dummy_user_password_changed'");
+    expect(router).toContain("action: 'dummy_user_signed_in'");
+    expect(router).toContain('signInDummy: publicProcedure');
+    expect(dashboard).toContain('Password (optional)');
+    expect(authPage).toContain('Dummy / Test user sign-in');
+    expect(authPage).toContain('signInDummy');
+    expect(dashboard).toContain('setDummyUserPassword');
     expect(router).toContain("action: 'dummy_user_deleted'");
   });
 });

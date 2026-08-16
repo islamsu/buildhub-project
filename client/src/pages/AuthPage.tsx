@@ -10,7 +10,7 @@ import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'wouter';
 import { toast } from 'sonner';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
-import { Building2, Home, HardHat, Layers, Package, UserCog, ChevronRight, Globe, ShieldCheck } from 'lucide-react';
+import { Building2, Home, HardHat, Layers, Package, UserCog, ChevronRight, Globe, ShieldCheck, KeyRound } from 'lucide-react';
 
 type UserRole = 'homeowner' | 'contractor' | 'engineer' | 'architect' | 'supplier' | 'project_manager';
 const PROFESSIONAL_ROLES: UserRole[] = ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'];
@@ -28,13 +28,27 @@ export default function AuthPage() {
   const { t, lang, setLang, dir } = useLanguage();
   const { user, isAuthenticated, loading } = useAuth();
   const [location, navigate] = useLocation();
+  const isDummyMode = new URLSearchParams(location.split('?')[1] ?? '').get('mode') === 'dummy';
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [username, setUsername] = useState('');
+  const [dummyUsername, setDummyUsername] = useState('');
+  const [dummyPassword, setDummyPassword] = useState('');
   const [step, setStep] = useState<'role' | 'details' | 'done'>('role');
 
   const checkSignupAvailability = trpc.auth.checkSignupAvailability.useMutation();
+  const signInDummy = trpc.auth.signInDummy.useMutation({
+    onSuccess: result => {
+      toast.success(lang === 'ar' ? 'تم تسجيل الدخول كمستخدم تجريبي' : 'Signed in as a dummy user');
+      if (!result.userRole) {
+        navigate('/');
+        return;
+      }
+      navigate(PROFESSIONAL_ROLES.includes(result.userRole as UserRole) && result.onboardingStatus !== 'approved' ? '/compliance' : getRolePlatformPath(result.userRole as UserRole));
+    },
+    onError: (error: { message: string }) => toast.error(error.message),
+  });
   const updateRole = trpc.auth.updateRole.useMutation({
     onSuccess: (_result, variables) => {
       toast.success(lang === 'ar' ? 'تم إعداد الملف الشخصي بنجاح!' : 'Profile set up successfully!');
@@ -50,7 +64,7 @@ export default function AuthPage() {
   }, [location, t]);
 
   useEffect(() => {
-    if (!loading && isAuthenticated && user) {
+    if (!loading && isAuthenticated && user && !isDummyMode) {
       const pendingRole = localStorage.getItem('pending_role') as UserRole | null;
       const pendingUsername = localStorage.getItem('pending_username') || undefined;
       if (pendingRole) {
@@ -62,13 +76,19 @@ export default function AuthPage() {
       const userRole = (user as any).userRole as UserRole | undefined;
       if (userRole) navigate(PROFESSIONAL_ROLES.includes(userRole) && (user as any).onboardingStatus !== 'approved' ? '/compliance' : getRolePlatformPath(userRole));
     }
-  }, [loading, isAuthenticated, user]);
+  }, [loading, isAuthenticated, user, isDummyMode]);
 
   useEffect(() => {
     if (step === 'done' && selectedRole) {
       navigate(getRolePlatformPath(selectedRole));
     }
   }, [step, selectedRole]);
+
+  const handleDummySignIn = () => {
+    const normalizedUsername = dummyUsername.trim().toLowerCase();
+    if (!normalizedUsername || !dummyPassword) return;
+    signInDummy.mutate({ username: normalizedUsername, password: dummyPassword });
+  };
 
   const handleContinue = () => {
     if (!selectedRole) return;
@@ -208,6 +228,23 @@ export default function AuthPage() {
               {t('auth.signin')}
             </button>
           </p>
+
+          <div className="mt-6 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 p-4">
+            <div className="mb-3 flex items-start gap-2">
+              <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+              <div>
+                <p className="text-sm font-semibold text-amber-950">{lang === 'ar' ? 'تسجيل دخول مستخدم تجريبي' : 'Dummy / Test user sign-in'}</p>
+                <p className="mt-1 text-xs text-amber-900/70">{lang === 'ar' ? 'استخدم بيانات الدخول التي حددها المسؤول لهذا الحساب التجريبي.' : 'Use the credentials set by an administrator for this test account.'}</p>
+              </div>
+            </div>
+            <div className="space-y-2.5">
+              <Input placeholder={lang === 'ar' ? 'اسم المستخدم التجريبي' : 'Dummy username'} value={dummyUsername} onChange={event => setDummyUsername(event.target.value)} autoComplete="username" />
+              <Input type="password" placeholder={lang === 'ar' ? 'كلمة المرور' : 'Password'} value={dummyPassword} onChange={event => setDummyPassword(event.target.value)} autoComplete="current-password" />
+              <Button type="button" variant="outline" className="w-full border-amber-300 bg-white/80 hover:bg-white" onClick={handleDummySignIn} disabled={signInDummy.isPending || dummyUsername.trim().length < 3 || dummyPassword.length < 8}>
+                {signInDummy.isPending ? t('common.loading') : (lang === 'ar' ? 'تسجيل الدخول كمستخدم تجريبي' : 'Sign in as dummy')}
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

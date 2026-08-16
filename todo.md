@@ -244,4 +244,22 @@
 - [x] Add predefined bilingual freeze-reason options to the admin dialog
 - [x] Preserve the selected reason through freeze persistence and audit records
 - [x] Add regression coverage and responsive verification for the freeze dialog
-- [x] Save the Freeze User reason-dropdown checkpoint
+- [x] Save the Freeze User reason-dropdown checkpoint (v8581241c)
+
+
+## Dummy User Password Management
+- [x] Add optional manual password input when creating dummy users
+- [x] Add admin-only password change procedure for existing dummy users
+- [x] Add bilingual password fields and change-password action to Admin User Management
+- [x] Hash dummy-user passwords securely and preserve dummy metric isolation
+- [x] Add Vitest coverage for creation, password updates, validation, and permissions
+- [x] Verify the password controls visually and save a checkpoint
+
+
+## Dummy User Password Follow-up
+- [x] Add a local dummy-user sign-in procedure that verifies the stored password hash and issues a normal BuildHub session
+- [x] Add bilingual dummy-user sign-in UI without changing the Manus OAuth flow for real users
+- [x] Add tests for dummy password verification, frozen-account protection, and session issuance
+- [x] Verify the create-dummy and change-password controls from the Admin User Management route markup and responsive route screenshots; verify the live bilingual dummy sign-in panel in browser preview (modal-open interaction is unavailable in the preview driver)
+- [ ] Save a new checkpoint for the complete dummy-password feature
+

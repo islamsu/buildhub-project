@@ -16,8 +16,28 @@ import {
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, userAccountAuditEvents,
 } from '../drizzle/schema';
 import { eq, desc, and, sql, inArray, notInArray } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { promisify } from 'node:util';
 import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, type ComplianceDocumentStatus } from '../shared/compliance';
+import { sdk } from './_core/sdk';
+
+const scryptAsync = promisify(scryptCallback);
+
+async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString('hex');
+  const derivedKey = (await scryptAsync(password, salt, 64)) as Buffer;
+  return `scrypt$${salt}$${derivedKey.toString('hex')}`;
+}
+
+async function verifyPassword(password: string, storedHash: string | null | undefined): Promise<boolean> {
+  if (!storedHash) return false;
+  const [algorithm, salt, encodedKey] = storedHash.split('$');
+  if (algorithm !== 'scrypt' || !salt || !encodedKey || !/^[a-f0-9]+$/i.test(encodedKey)) return false;
+  const storedKey = Buffer.from(encodedKey, 'hex');
+  if (storedKey.length === 0) return false;
+  const derivedKey = (await scryptAsync(password, salt, storedKey.length)) as Buffer;
+  return derivedKey.length === storedKey.length && timingSafeEqual(derivedKey, storedKey);
+}
 
 // ── Auth Router ────────────────────────────────────────────────────────────
 const authRouter = router({
@@ -26,6 +46,26 @@ const authRouter = router({
     const cookieOptions = getSessionCookieOptions(ctx.req);
     ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
     return { success: true } as const;
+  }),
+  signInDummy: publicProcedure.input(z.object({
+    username: z.string().trim().min(3).max(100),
+    password: z.string().min(8).max(128),
+  })).mutation(async ({ ctx, input }) => {
+    const target = await getUserByUsername(input.username);
+    if (!target?.isDummy || target.loginMethod !== 'dummy' || !(await verifyPassword(input.password, target.passwordHash))) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid dummy username or password' });
+    }
+    if (target.accountStatus !== 'active' || target.deactivatedAt) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'This dummy account is not active' });
+    }
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const sessionToken = await sdk.createSessionToken(target.openId, { name: target.name || target.username || 'Dummy user' });
+    const cookieOptions = getSessionCookieOptions(ctx.req);
+    ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions });
+    await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, target.id));
+    await db.insert(userAccountAuditEvents).values({ userId: target.id, actorId: target.id, action: 'dummy_user_signed_in', source: 'dummy', note: 'Dummy user signed in with a locally managed password' });
+    return { success: true, userRole: target.userRole, onboardingStatus: target.onboardingStatus } as const;
   }),
   checkSignupAvailability: publicProcedure.input(z.object({
     username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/, 'Use letters, numbers, dots, underscores, or hyphens only'),
@@ -703,7 +743,8 @@ const adminRouter = router({
     if (target.invitationStatus === 'password_set') {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'This invitation link has already been used' });
     }
-    await db.update(users).set({ invitationStatus: 'password_set', invitationToken: null, invitationExpiresAt: null, passwordSetAt: new Date(), passwordHash: input.password, verified: true, accountStatus: 'active' }).where(eq(users.id, target.id));
+    const passwordHash = await hashPassword(input.password);
+    await db.update(users).set({ invitationStatus: 'password_set', invitationToken: null, invitationExpiresAt: null, passwordSetAt: new Date(), passwordHash, verified: true, accountStatus: 'active' }).where(eq(users.id, target.id));
     await db.insert(userAccountAuditEvents).values({ userId: target.id, actorId: target.id, action: 'password_set_via_invitation', source: 'admin_created', note: 'Password successfully configured by user' });
     return { success: true, username: target.username };
   }),
@@ -739,20 +780,35 @@ const adminRouter = router({
     username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/).optional(),
     userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager']),
     note: z.string().trim().max(1000).optional(),
+    password: z.string().min(8).max(128).optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const token = randomUUID().replace(/-/g, '').slice(0, 12);
+    const passwordHash = input.password ? await hashPassword(input.password) : null;
     const username = normalizeUsername(input.username) ?? `dummy_${input.userRole}_${token}`;
     const email = `dummy+${token}@buildhub.test`;
     if (await getUserByUsername(username)) throw new TRPCError({ code: 'CONFLICT', message: 'Username is already in use' });
     const professional = isComplianceRole(input.userRole);
     const result = await db.insert(users).values({
-      openId: `dummy_${randomUUID()}`, username, name: input.name?.trim() || `Dummy ${input.userRole}`, email, loginMethod: 'dummy', role: 'user', userRole: input.userRole, accountSource: 'admin_created', isDummy: true, createdBy: ctx.user.id, creationNote: input.note || 'Created for testing', accountStatus: 'frozen', frozenAt: new Date(), frozenReason: 'Dummy/test accounts are disabled by default', deactivatedAt: new Date(), onboardingStatus: professional ? 'not_started' : 'approved', verified: false,
+      openId: `dummy_${randomUUID()}`, username, name: input.name?.trim() || `Dummy ${input.userRole}`, email, loginMethod: 'dummy', role: 'user', userRole: input.userRole, accountSource: 'admin_created', isDummy: true, createdBy: ctx.user.id, creationNote: input.note || 'Created for testing', accountStatus: 'frozen', frozenAt: new Date(), frozenReason: 'Dummy/test accounts are disabled by default', deactivatedAt: new Date(), onboardingStatus: professional ? 'not_started' : 'approved', verified: false, passwordHash, invitationStatus: passwordHash ? 'password_set' : 'none', passwordSetAt: passwordHash ? new Date() : null,
     });
     const userId = Number(result[0]?.insertId);
     await db.insert(userAccountAuditEvents).values({ userId, actorId: ctx.user.id, action: 'dummy_user_created', source: 'dummy', note: input.note || 'Created for testing' });
     return { success: true, userId, username, email };
+  }),
+  setDummyUserPassword: adminProcedure.input(z.object({
+    userId: z.number().int().positive(),
+    password: z.string().min(8).max(128),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [target] = await db.select().from(users).where(eq(users.id, input.userId));
+    if (!target?.isDummy) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only dummy users can have a manually managed password' });
+    const passwordHash = await hashPassword(input.password);
+    await db.update(users).set({ passwordHash, invitationStatus: 'password_set', invitationToken: null, invitationExpiresAt: null, passwordSetAt: new Date() }).where(eq(users.id, input.userId));
+    await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'dummy_user_password_changed', source: 'dummy', note: 'Password updated by an administrator' });
+    return { success: true };
   }),
   setDummyUserActive: adminProcedure.input(z.object({ userId: z.number().int().positive(), active: z.boolean(), note: z.string().max(500).optional() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
