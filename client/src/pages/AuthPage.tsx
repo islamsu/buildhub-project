@@ -27,12 +27,14 @@ const ROLES: { id: UserRole; icon: React.ComponentType<any>; color: string; bg: 
 export default function AuthPage() {
   const { t, lang, setLang, dir } = useLanguage();
   const { user, isAuthenticated, loading } = useAuth();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [username, setUsername] = useState('');
   const [step, setStep] = useState<'role' | 'details' | 'done'>('role');
 
+  const checkSignupAvailability = trpc.auth.checkSignupAvailability.useMutation();
   const updateRole = trpc.auth.updateRole.useMutation({
     onSuccess: (_result, variables) => {
       toast.success(lang === 'ar' ? 'تم إعداد الملف الشخصي بنجاح!' : 'Profile set up successfully!');
@@ -43,11 +45,18 @@ export default function AuthPage() {
   });
 
   useEffect(() => {
+    const query = new URLSearchParams(location.split('?')[1] ?? '');
+    if (query.get('error') === 'account_exists') toast.error(t('auth.account.exists'));
+  }, [location, t]);
+
+  useEffect(() => {
     if (!loading && isAuthenticated && user) {
       const pendingRole = localStorage.getItem('pending_role') as UserRole | null;
+      const pendingUsername = localStorage.getItem('pending_username') || undefined;
       if (pendingRole) {
         localStorage.removeItem('pending_role');
-        updateRole.mutate({ userRole: pendingRole });
+        localStorage.removeItem('pending_username');
+        updateRole.mutate({ userRole: pendingRole, username: pendingUsername });
         return;
       }
       const userRole = (user as any).userRole as UserRole | undefined;
@@ -64,12 +73,26 @@ export default function AuthPage() {
   const handleContinue = () => {
     if (!selectedRole) return;
     if (!isAuthenticated) {
-      // Store role selection, then redirect to OAuth
-      localStorage.setItem('pending_role', selectedRole);
-      startLogin();
+      const normalizedUsername = username.trim().toLowerCase();
+      if (!/^[a-z0-9._-]{3,100}$/.test(normalizedUsername)) {
+        toast.error(t('auth.username.hint'));
+        return;
+      }
+      checkSignupAvailability.mutate({ username: normalizedUsername }, {
+        onSuccess: availability => {
+          if (!availability.usernameAvailable || availability.hasExistingAccount) {
+            toast.error(t('auth.account.exists'));
+            return;
+          }
+          localStorage.setItem('pending_role', selectedRole);
+          localStorage.setItem('pending_username', normalizedUsername);
+          startLogin({ type: 'signUp', returnTo: '/auth?mode=signup', username: normalizedUsername });
+        },
+        onError: error => toast.error(error.message),
+      });
       return;
     }
-    updateRole.mutate({ userRole: selectedRole, name: name || undefined, phone: phone || undefined });
+    updateRole.mutate({ userRole: selectedRole, name: name || undefined, phone: phone || undefined, username: username.trim() || undefined });
   };
 
   const roleLabels: Record<UserRole, string> = {
@@ -161,29 +184,21 @@ export default function AuthPage() {
             ))}
           </div>
 
-          {/* Step 2: Details (if authenticated) */}
-          {isAuthenticated && selectedRole && (
-            <div className="space-y-3 mb-6">
-              <Input
-                placeholder={t('auth.name')}
-                value={name}
-                onChange={e => setName(e.target.value)}
-              />
-              <Input
-                placeholder={t('auth.phone')}
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-              />
+          {/* Step 2: Details */}
+          {selectedRole && (
+            <div className="mb-6 space-y-3">
+              {!isAuthenticated && <div><Input placeholder={t('auth.username')} value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" /><p className="mt-1 text-xs text-muted-foreground">{t('auth.username.hint')}</p></div>}
+              {isAuthenticated && <><Input placeholder={t('auth.name')} value={name} onChange={e => setName(e.target.value)} /><Input placeholder={t('auth.phone')} value={phone} onChange={e => setPhone(e.target.value)} /></>}
             </div>
           )}
 
           <Button
             className="w-full gap-2"
             size="lg"
-            disabled={!selectedRole || updateRole.isPending}
+            disabled={!selectedRole || updateRole.isPending || checkSignupAvailability.isPending || (!isAuthenticated && username.trim().length < 3)}
             onClick={handleContinue}
           >
-            {updateRole.isPending ? t('common.loading') : isAuthenticated ? t('auth.complete_setup') : t('auth.continue')}
+            {updateRole.isPending || checkSignupAvailability.isPending ? t('common.loading') : isAuthenticated ? t('auth.complete_setup') : t('auth.continue')}
             <ChevronRight className="w-4 h-4" />
           </Button>
 

@@ -299,6 +299,8 @@ class SDKServer {
           email: userInfo.email ?? null,
           loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
           lastSignedIn: signedInAt,
+          accountSource: 'self_registered',
+          isDummy: false,
         });
         user = await db.getUserByOpenId(userInfo.openId);
       } catch (error) {

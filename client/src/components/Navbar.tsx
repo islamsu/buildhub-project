@@ -143,7 +143,7 @@ export default function Navbar() {
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => navigate('/auth')}
+                  onClick={() => navigate('/auth?mode=signup')}
                   className={isTransparent ? 'bg-white text-primary hover:bg-white/90' : ''}
                 >
                   {t('nav.signup')}
@@ -183,7 +183,8 @@ export default function Navbar() {
                 <Button variant="outline" size="sm" className="flex-1" onClick={() => startLogin()}>
                   {t('nav.signin')}
                 </Button>
-                <Button size="sm" className="flex-1" onClick={() => { navigate('/auth'); setMobileOpen(false); }}>
+                <Button size="sm" className="flex-1" onClick={() => { navigate('/auth?mode=signup'); setMobileOpen(false); }}
+>
                   {t('nav.signup')}
                 </Button>
               </div>

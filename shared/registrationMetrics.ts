@@ -10,6 +10,7 @@ export type RegistrationMetricApplicant = {
   email?: string | null;
   userRole?: string | null;
   onboardingStatus?: string | null;
+  isDummy?: boolean | null;
   onboardingReviewedAt?: Date | string | null;
   createdAt?: Date | string | null;
   documents?: RegistrationMetricDocument[];
@@ -19,6 +20,7 @@ export type RegistrationMetricFilters = {
   role?: string;
   from?: string;
   to?: string;
+  includeDummy?: boolean;
 };
 
 export function getLatestRegistrationDocument(applicant: RegistrationMetricApplicant) {
@@ -50,6 +52,7 @@ export function filterRegistrationApplicants(applicants: RegistrationMetricAppli
   const to = filters.to ?? '';
   if (from && to && from > to) return [];
   return applicants.filter(applicant => {
+    if (applicant.isDummy && !filters.includeDummy) return false;
     if (role !== 'all' && applicant.userRole !== role) return false;
     if (applicant.onboardingStatus === 'approved') return true;
     return (!from && !to) || isDateWithinRange(getRegistrationSubmissionDate(applicant), from, to);

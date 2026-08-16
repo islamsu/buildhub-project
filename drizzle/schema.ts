@@ -7,6 +7,7 @@ import {
   mysqlTable,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
 } from 'drizzle-orm/mysql-core';
 
@@ -14,11 +15,17 @@ import {
 export const users = mysqlTable('users', {
   id:          int('id').autoincrement().primaryKey(),
   openId:      varchar('openId', { length: 64 }).notNull().unique(),
+  username:    varchar('username', { length: 100 }),
   name:        text('name'),
   email:       varchar('email', { length: 320 }),
   phone:       varchar('phone', { length: 32 }),
   loginMethod: varchar('loginMethod', { length: 64 }),
   role:        mysqlEnum('role', ['user', 'admin']).default('user').notNull(),
+  accountSource: mysqlEnum('accountSource', ['self_registered', 'admin_created']).default('self_registered').notNull(),
+  isDummy:     boolean('isDummy').default(false).notNull(),
+  createdBy:   int('createdBy'),
+  creationNote:text('creationNote'),
+  deactivatedAt: timestamp('deactivatedAt'),
   accountStatus: mysqlEnum('accountStatus', ['active', 'frozen']).default('active').notNull(),
   frozenAt:    timestamp('frozenAt'),
   frozenReason: text('frozenReason'),
@@ -39,6 +46,19 @@ export const users = mysqlTable('users', {
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
   updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
   lastSignedIn:timestamp('lastSignedIn').defaultNow().notNull(),
+}, table => ({
+  usernameUnique: uniqueIndex('users_username_unique').on(table.username),
+  emailUnique: uniqueIndex('users_email_unique').on(table.email),
+}));
+
+export const userAccountAuditEvents = mysqlTable('userAccountAuditEvents', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull(),
+  actorId:   int('actorId'),
+  action:    varchar('action', { length: 80 }).notNull(),
+  source:    varchar('source', { length: 40 }),
+  note:      text('note'),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
 });
 
 // ── Projects ───────────────────────────────────────────────────────────────

@@ -209,3 +209,14 @@
 - [x] Preserve bilingual AR/EN labels, RTL/LTR behavior, responsive layout, and security rules
 - [x] Add Vitest coverage and visual verification for search, bulk actions, and export feedback
 - [x] Save the Phase 23 checkpoint
+
+## Phase 24: Account Onboarding, Admin Users, and Dummy Data Controls
+- [x] Route Create Account directly into the self-service sign-up flow and preserve account recovery for existing users
+- [x] Add account provenance, dummy-user flags, creator metadata, and audit fields with uniqueness safeguards
+- [x] Add duplicate username/email detection across self-registered and admin-created accounts
+- [x] Add admin-created account form with role/professional-category assignment and source labeling
+- [x] Add admin dummy-user creation with role selection, test labeling, deactivation, and deletion controls
+- [x] Exclude dummy users from business metrics, registration summaries, reports, and analytics by default
+- [x] Preserve shared authentication/security rules and complete account creation audit trail
+- [x] Add Vitest coverage and visual verification for signup, admin user creation, dummy controls, and metric isolation
+- [x] Save the Phase 24 checkpoint

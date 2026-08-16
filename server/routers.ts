@@ -4,7 +4,7 @@ import { getSessionCookieOptions } from './_core/cookies';
 import { systemRouter } from './_core/systemRouter';
 import { publicProcedure, protectedProcedure, router } from './_core/trpc';
 import { TRPCError } from '@trpc/server';
-import { getDb } from './db';
+import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername } from './db';
 import { invokeLLM } from './_core/llm';
 import { storagePut } from './storage';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
@@ -13,9 +13,10 @@ import {
   projects, milestones, tasks, documents, products,
   rfqs, quotations, messages, notifications, reviews,
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
-  registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents,
+  registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, userAccountAuditEvents,
 } from '../drizzle/schema';
-import { eq, desc, and, sql, inArray } from 'drizzle-orm';
+import { eq, desc, and, sql, inArray, notInArray } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, type ComplianceDocumentStatus } from '../shared/compliance';
 
 // ── Auth Router ────────────────────────────────────────────────────────────
@@ -26,17 +27,31 @@ const authRouter = router({
     ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
     return { success: true } as const;
   }),
+  checkSignupAvailability: publicProcedure.input(z.object({
+    username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/, 'Use letters, numbers, dots, underscores, or hyphens only'),
+    email: z.string().email().optional(),
+  })).mutation(async ({ input }) => {
+    const username = normalizeUsername(input.username);
+    const email = normalizeEmail(input.email);
+    const [usernameUser, emailUser] = await Promise.all([
+      username ? getUserByUsername(username) : undefined,
+      email ? getUserByEmail(email) : undefined,
+    ]);
+    return { usernameAvailable: !usernameUser, emailAvailable: !emailUser, hasExistingAccount: Boolean(usernameUser || emailUser) };
+  }),
   updateRole: protectedProcedure
     .input(z.object({
       userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager', 'admin']),
       name: z.string().optional(),
       phone: z.string().optional(),
       location: z.string().optional(),
+      username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      await db.update(users).set({ userRole: input.userRole, name: input.name, phone: input.phone, location: input.location, onboardingStatus: isComplianceRole(input.userRole) ? 'not_started' : 'approved', verified: isComplianceRole(input.userRole) ? false : true }).where(eq(users.id, ctx.user.id));
+      await db.update(users).set({ username: input.username ? normalizeUsername(input.username) : undefined, userRole: input.userRole, name: input.name, phone: input.phone, location: input.location, onboardingStatus: isComplianceRole(input.userRole) ? 'not_started' : 'approved', verified: isComplianceRole(input.userRole) ? false : true }).where(eq(users.id, ctx.user.id));
+      await db.insert(userAccountAuditEvents).values({ userId: ctx.user.id, actorId: ctx.user.id, action: 'profile_role_completed', source: 'self_registered', note: `Role selected: ${input.userRole}` });
       return { success: true };
     }),
 });
@@ -615,10 +630,12 @@ const adminRouter = router({
   stats: adminProcedure.query(async () => {
     const db = await getDb();
     if (!db) return { users: 0, projects: 0, products: 0, rfqs: 0, disputes: 0 };
-    const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(users);
-    const [projectCount] = await db.select({ count: sql<number>`count(*)` }).from(projects);
+    const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.isDummy, false));
+    const dummyRows = await db.select({ id: users.id }).from(users).where(eq(users.isDummy, true));
+    const dummyIds = dummyRows.map(row => row.id);
+    const [projectCount] = await db.select({ count: sql<number>`count(*)` }).from(projects).where(dummyIds.length ? notInArray(projects.ownerId, dummyIds) : undefined);
     const [productCount] = await db.select({ count: sql<number>`count(*)` }).from(products);
-    const [rfqCount] = await db.select({ count: sql<number>`count(*)` }).from(rfqs);
+    const [rfqCount] = await db.select({ count: sql<number>`count(*)` }).from(rfqs).where(dummyIds.length ? notInArray(rfqs.requesterId, dummyIds) : undefined);
     const [disputeCount] = await db.select({ count: sql<number>`count(*)` }).from(disputes).where(eq(disputes.status, 'open'));
     return {
       users: Number(userCount?.count ?? 0),
@@ -633,10 +650,106 @@ const adminRouter = router({
     if (!db) return [];
     return db.select().from(users).orderBy(desc(users.createdAt)).limit(250);
   }),
-  complianceQueue: adminProcedure.query(async () => {
+  createUser: adminProcedure.input(z.object({
+    username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/),
+    email: z.string().trim().email(),
+    name: z.string().trim().min(1).max(255),
+    phone: z.string().trim().max(32).optional(),
+    userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager', 'admin']),
+    note: z.string().trim().max(1000).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const username = normalizeUsername(input.username)!;
+    const email = normalizeEmail(input.email)!;
+    if (await getUserByUsername(username)) throw new TRPCError({ code: 'CONFLICT', message: 'Username is already in use' });
+    if (await getUserByEmail(email)) throw new TRPCError({ code: 'CONFLICT', message: 'Email is already in use' });
+    const professional = isComplianceRole(input.userRole);
+    const openId = `admin_${randomUUID()}`;
+    const result = await db.insert(users).values({
+      openId, username, name: input.name, email, phone: input.phone || null, loginMethod: 'admin_created', role: input.userRole === 'admin' ? 'admin' : 'user', userRole: input.userRole, accountSource: 'admin_created', isDummy: false, createdBy: ctx.user.id, creationNote: input.note || null, onboardingStatus: professional ? 'not_started' : 'approved', verified: !professional,
+    });
+    const userId = Number(result[0]?.insertId);
+    await db.insert(userAccountAuditEvents).values({ userId, actorId: ctx.user.id, action: 'admin_created_account', source: 'admin_created', note: input.note || null });
+    return { success: true, userId };
+  }),
+  createDummyUser: adminProcedure.input(z.object({
+    name: z.string().trim().min(1).max(255).optional(),
+    username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/).optional(),
+    userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager']),
+    note: z.string().trim().max(1000).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const token = randomUUID().replace(/-/g, '').slice(0, 12);
+    const username = normalizeUsername(input.username) ?? `dummy_${input.userRole}_${token}`;
+    const email = `dummy+${token}@buildhub.test`;
+    if (await getUserByUsername(username)) throw new TRPCError({ code: 'CONFLICT', message: 'Username is already in use' });
+    const professional = isComplianceRole(input.userRole);
+    const result = await db.insert(users).values({
+      openId: `dummy_${randomUUID()}`, username, name: input.name?.trim() || `Dummy ${input.userRole}`, email, loginMethod: 'dummy', role: 'user', userRole: input.userRole, accountSource: 'admin_created', isDummy: true, createdBy: ctx.user.id, creationNote: input.note || 'Created for testing', accountStatus: 'frozen', frozenAt: new Date(), frozenReason: 'Dummy/test accounts are disabled by default', deactivatedAt: new Date(), onboardingStatus: professional ? 'not_started' : 'approved', verified: false,
+    });
+    const userId = Number(result[0]?.insertId);
+    await db.insert(userAccountAuditEvents).values({ userId, actorId: ctx.user.id, action: 'dummy_user_created', source: 'dummy', note: input.note || 'Created for testing' });
+    return { success: true, userId, username, email };
+  }),
+  setDummyUserActive: adminProcedure.input(z.object({ userId: z.number().int().positive(), active: z.boolean(), note: z.string().max(500).optional() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [target] = await db.select().from(users).where(eq(users.id, input.userId));
+    if (!target?.isDummy) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only dummy users can be changed here' });
+    await db.update(users).set({ accountStatus: input.active ? 'active' : 'frozen', deactivatedAt: input.active ? null : new Date(), frozenAt: input.active ? null : new Date(), frozenReason: input.active ? null : (input.note || 'Disabled by an administrator') }).where(eq(users.id, input.userId));
+    await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: input.active ? 'dummy_user_activated' : 'dummy_user_deactivated', source: 'dummy', note: input.note });
+    return { success: true, active: input.active };
+  }),
+  deleteDummyUser: adminProcedure.input(z.object({ userId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [target] = await db.select().from(users).where(eq(users.id, input.userId));
+    if (!target?.isDummy) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only dummy users can be deleted' });
+    await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'dummy_user_deleted', source: 'dummy', note: target.creationNote });
+    await db.delete(users).where(eq(users.id, input.userId));
+    return { success: true };
+  }),
+  accountAudit: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    const applicants = await db.select().from(users).where(inArray(users.userRole, providerRoles));
+    return db.select().from(userAccountAuditEvents).where(eq(userAccountAuditEvents.userId, input.userId)).orderBy(desc(userAccountAuditEvents.createdAt)).limit(100);
+  }),
+  analyticsSummary: adminProcedure.input(z.object({ includeDummy: z.boolean().default(false) }).optional()).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const dummyRows = await db.select({ id: users.id }).from(users).where(eq(users.isDummy, true));
+    const dummyIds = dummyRows.map(row => row.id);
+    const userRows = await db.select({ createdAt: users.createdAt, isDummy: users.isDummy }).from(users).where(input?.includeDummy ? undefined : eq(users.isDummy, false));
+    const projectRows = await db.select({ createdAt: projects.createdAt, ownerId: projects.ownerId }).from(projects).where(input?.includeDummy || !dummyIds.length ? undefined : notInArray(projects.ownerId, dummyIds));
+    
+    const monthlyMap: Record<string, { users: number; projects: number }> = {};
+    for (const u of userRows) {
+      const month = new Date(u.createdAt).toISOString().slice(0, 7);
+      if (!monthlyMap[month]) monthlyMap[month] = { users: 0, projects: 0 };
+      monthlyMap[month].users += 1;
+    }
+    for (const p of projectRows) {
+      const month = new Date(p.createdAt).toISOString().slice(0, 7);
+      if (!monthlyMap[month]) monthlyMap[month] = { users: 0, projects: 0 };
+      monthlyMap[month].projects += 1;
+    }
+    const sortedMonths = Object.keys(monthlyMap).sort();
+    if (sortedMonths.length === 0) {
+      return [{ month: '2026-07', users: userRows.length, projects: projectRows.length }];
+    }
+    return sortedMonths.map(month => ({
+      month,
+      users: monthlyMap[month].users,
+      projects: monthlyMap[month].projects,
+    }));
+  }),
+  complianceQueue: adminProcedure.input(z.object({ includeDummy: z.boolean().default(false) }).optional()).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const applicantFilter = input?.includeDummy ? inArray(users.userRole, providerRoles) : and(inArray(users.userRole, providerRoles), eq(users.isDummy, false));
+    const applicants = await db.select().from(users).where(applicantFilter);
     const docs = await db.select().from(registrationDocuments).orderBy(desc(registrationDocuments.createdAt));
     return applicants.map(applicant => ({
       ...applicant,
