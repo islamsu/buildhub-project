@@ -13,7 +13,7 @@ import {
   projects, milestones, tasks, documents, products,
   rfqs, quotations, messages, notifications, reviews,
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
-  registrationDocuments, registrationReviewEvents,
+  registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents,
 } from '../drizzle/schema';
 import { eq, desc, and, sql, inArray } from 'drizzle-orm';
 import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, type ComplianceDocumentStatus } from '../shared/compliance';
@@ -64,8 +64,9 @@ const registrationRouter = router({
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const [applicant] = await db.select({ userRole: users.userRole, onboardingStatus: users.onboardingStatus, onboardingReviewNotes: users.onboardingReviewNotes, onboardingReviewedAt: users.onboardingReviewedAt }).from(users).where(eq(users.id, ctx.user.id));
     const docs = await db.select().from(registrationDocuments).where(eq(registrationDocuments.userId, ctx.user.id)).orderBy(desc(registrationDocuments.createdAt));
+    const history = await db.select().from(registrationDocumentSubmissions).where(eq(registrationDocumentSubmissions.userId, ctx.user.id)).orderBy(desc(registrationDocumentSubmissions.createdAt)).limit(100);
     const events = await db.select().from(registrationReviewEvents).where(eq(registrationReviewEvents.userId, ctx.user.id)).orderBy(desc(registrationReviewEvents.createdAt)).limit(50);
-    return { role: applicant?.userRole ?? ctx.user.userRole, status: applicant?.onboardingStatus ?? 'not_started', reviewNotes: applicant?.onboardingReviewNotes ?? null, reviewedAt: applicant?.onboardingReviewedAt ?? null, requirements: getComplianceRequirements(applicant?.userRole ?? ctx.user.userRole), documents: docs, events };
+    return { role: applicant?.userRole ?? ctx.user.userRole, status: applicant?.onboardingStatus ?? 'not_started', reviewNotes: applicant?.onboardingReviewNotes ?? null, reviewedAt: applicant?.onboardingReviewedAt ?? null, requirements: getComplianceRequirements(applicant?.userRole ?? ctx.user.userRole), documents: docs, history, events };
   }),
   uploadDocument: complianceProcedure.input(z.object({
     documentType: z.string().min(1).max(100),
@@ -84,9 +85,11 @@ const registrationRouter = router({
     const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
     const { key, url } = await storagePut(`registration/${ctx.user.id}/${Date.now()}-${safeName}`, bytes, input.contentType);
     const result = await db.insert(registrationDocuments).values({ userId: ctx.user.id, documentType: input.documentType, displayName: requirement.name, fileName: input.fileName, url, fileKey: key, mimeType: input.contentType, size: bytes.length, status: 'submitted', applicantNote: input.applicantNote });
+    const documentId = Number(result[0].insertId);
+    await db.insert(registrationDocumentSubmissions).values({ documentId, userId: ctx.user.id, documentType: input.documentType, fileName: input.fileName, url, fileKey: key, mimeType: input.contentType, size: bytes.length, status: 'submitted', applicantNote: input.applicantNote });
     await db.update(users).set({ onboardingStatus: 'under_review', onboardingReviewNotes: null }).where(eq(users.id, ctx.user.id));
-    await db.insert(registrationReviewEvents).values({ userId: ctx.user.id, documentId: Number(result[0].insertId), actorId: ctx.user.id, action: 'document_submitted', status: 'submitted', note: input.applicantNote });
-    return { id: Number(result[0].insertId), key, url, status: 'submitted' as const };
+    await db.insert(registrationReviewEvents).values({ userId: ctx.user.id, documentId, actorId: ctx.user.id, action: 'document_submitted', status: 'submitted', note: input.applicantNote });
+    return { id: documentId, key, url, status: 'submitted' as const };
   }),
 });
 
@@ -647,8 +650,9 @@ const adminRouter = router({
     const [applicant] = await db.select().from(users).where(eq(users.id, input.userId));
     if (!applicant || !isComplianceRole(applicant.userRole)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Compliance applicant not found' });
     const docs = await db.select().from(registrationDocuments).where(eq(registrationDocuments.userId, input.userId)).orderBy(desc(registrationDocuments.createdAt));
+    const history = await db.select().from(registrationDocumentSubmissions).where(eq(registrationDocumentSubmissions.userId, input.userId)).orderBy(desc(registrationDocumentSubmissions.createdAt)).limit(100);
     const events = await db.select().from(registrationReviewEvents).where(eq(registrationReviewEvents.userId, input.userId)).orderBy(desc(registrationReviewEvents.createdAt)).limit(100);
-    return { applicant, requirements: getComplianceRequirements(applicant.userRole), documents: docs, events };
+    return { applicant, requirements: getComplianceRequirements(applicant.userRole), documents: docs, history, events };
   }),
   reviewComplianceDocument: adminProcedure.input(z.object({
     documentId: z.number(),
@@ -662,6 +666,7 @@ const adminRouter = router({
     const [applicant] = await db.select().from(users).where(eq(users.id, document.userId));
     if (!applicant) throw new TRPCError({ code: 'NOT_FOUND', message: 'Applicant not found' });
     await db.update(registrationDocuments).set({ status: input.status, reviewerNote: input.reviewerNote ?? null, reviewedBy: ctx.user.id, reviewedAt: new Date() }).where(eq(registrationDocuments.id, input.documentId));
+    await db.update(registrationDocumentSubmissions).set({ status: input.status }).where(eq(registrationDocumentSubmissions.documentId, input.documentId));
     const allDocs = await db.select({ documentType: registrationDocuments.documentType, status: registrationDocuments.status }).from(registrationDocuments).where(eq(registrationDocuments.userId, applicant.id));
     const overallStatus = getOverallComplianceStatus(applicant.userRole, allDocs, input.status);
     await db.update(users).set({ onboardingStatus: overallStatus, onboardingReviewNotes: input.reviewerNote ?? null, onboardingReviewedAt: new Date(), onboardingReviewedBy: ctx.user.id, verified: overallStatus === 'approved' }).where(eq(users.id, applicant.id));

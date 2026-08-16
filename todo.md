@@ -174,7 +174,7 @@
 - [x] Send applicant status/update-request notifications and render an audit timeline
 - [x] Preserve admin-only access, role safeguards, Arabic/English translations, and RTL/LTR behavior
 - [x] Add Vitest coverage and visually verify applicant and admin compliance flows
-- [ ] Save the compliance onboarding checkpoint
+- [x] Save compliance onboarding checkpoint a9be14e7
 
 ## Phase 20: Compliance QA Corrections
 - [x] Add submitted status support to shared compliance labels and verify EN/AR rendering
@@ -182,4 +182,13 @@
 - [x] Enforce onboarding approval before protected professional workflows beyond the role-platform route
 - [x] Add automated structure coverage for compliance filters and workflow gating
 - [x] Complete authenticated browser QA where a signed-in session is available, otherwise document the login limitation
-- [ ] Save the corrected compliance checkpoint after the gap fixes
+- [x] Save corrected compliance checkpoint a9be14e7 after the gap fixes
+
+## Phase 21: Compliance Queue Enhancements
+- [x] Add an in-queue document quick-view modal with close/navigation behavior and responsive document preview
+- [x] Add explanatory notes for applicant re-uploads after Update Required and preserve document submission history
+- [x] Add a dynamic admin registration widget comparing pending versus approved totals by role
+- [x] Preserve admin-only permissions, bilingual labels, RTL/LTR, responsive layout, and current filters
+- [x] Add Vitest coverage and complete route-level visual verification for all three enhancements
+- [ ] Save the compliance queue enhancement checkpoint
+- [ ] Complete authenticated interactive browser QA for the compliance queue quick-view, re-upload history, and widget behavior when the browser session is available

@@ -122,6 +122,22 @@ export const registrationDocuments = mysqlTable('registrationDocuments', {
   updatedAt: timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
 });
 
+// ── Registration Document Submission History ─────────────────────────────────
+export const registrationDocumentSubmissions = mysqlTable('registrationDocumentSubmissions', {
+  id:           int('id').autoincrement().primaryKey(),
+  documentId:   int('documentId').notNull(),
+  userId:       int('userId').notNull(),
+  documentType: varchar('documentType', { length: 100 }).notNull(),
+  fileName:     varchar('fileName', { length: 255 }).notNull(),
+  url:          text('url').notNull(),
+  fileKey:      varchar('fileKey', { length: 255 }),
+  mimeType:     varchar('mimeType', { length: 100 }).notNull(),
+  size:         int('size').notNull(),
+  status:       mysqlEnum('status', ['submitted', 'under_review', 'approved', 'rejected', 'update_required']).default('submitted').notNull(),
+  applicantNote:text('applicantNote'),
+  createdAt:    timestamp('createdAt').defaultNow().notNull(),
+});
+
 // ── Registration Compliance Audit Events ─────────────────────────────────────
 export const registrationReviewEvents = mysqlTable('registrationReviewEvents', {
   id:         int('id').autoincrement().primaryKey(),

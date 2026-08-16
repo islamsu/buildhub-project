@@ -64,6 +64,13 @@
       "when": 1786876678625,
       "tag": "0008_clumsy_daimon_hellstrom",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1786878902848,
+      "tag": "0009_thankful_chronomancer",
+      "breakpoints": true
     }
   ]
 }

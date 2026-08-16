@@ -11,6 +11,23 @@ export type ComplianceRequirement = {
   required: boolean;
 };
 
+export type ComplianceRegistrationSummaryRow = { role: ComplianceRole; label: string; pending: number; approved: number };
+
+const COMPLIANCE_ROLE_LABELS: Record<ComplianceRole, [string, string]> = {
+  contractor: ['Contractors', 'المقاولون'],
+  engineer: ['Engineers', 'المهندسون'],
+  architect: ['Architects', 'المهندسون المعماريون'],
+  supplier: ['Suppliers', 'الموردون'],
+  project_manager: ['Project Managers', 'مديرو المشاريع'],
+};
+
+export function summarizeComplianceRegistrations(registrations: Array<{ userRole?: string | null; onboardingStatus?: string | null }>, arabic = false): ComplianceRegistrationSummaryRow[] {
+  return (Object.keys(COMPLIANCE_ROLE_LABELS) as ComplianceRole[]).map(role => {
+    const roleRegistrations = registrations.filter(registration => registration.userRole === role);
+    return { role, label: COMPLIANCE_ROLE_LABELS[role][arabic ? 1 : 0], pending: roleRegistrations.filter(registration => registration.onboardingStatus !== 'approved').length, approved: roleRegistrations.filter(registration => registration.onboardingStatus === 'approved').length };
+  });
+}
+
 const COMMON_REQUIREMENTS: ComplianceRequirement[] = [
   { type: 'identity', name: 'Government-issued ID', nameAr: 'هوية حكومية سارية', description: 'Clear copy of the authorized representative’s government ID.', descriptionAr: 'نسخة واضحة من هوية الممثل القانوني السارية.', required: true },
   { type: 'tax_card', name: 'Tax card', nameAr: 'البطاقة الضريبية', description: 'Current tax registration document.', descriptionAr: 'مستند التسجيل الضريبي الساري.', required: true },
