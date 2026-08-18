@@ -10,6 +10,7 @@ import { storagePut } from './storage';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
 import { acceptQuotationSecure, rejectQuotationSecure } from './quotationWorkflow';
 import { aiChatLimiters, getClientIp } from './_core/rateLimit';
+import { notifyUser, notifyUsers } from './notifications';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
   projects, milestones, tasks, documents, products,
@@ -170,7 +171,19 @@ const projectsRouter = router({
     }
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(projects).orderBy(desc(projects.updatedAt)).limit(50);
+    // Lead-directory listing only - never select budget/spent (or other owner-private
+    // columns) here. Confirmed against every consumer of this query (RolePlatform.tsx's
+    // provider/supplier/PM workspaces) that only id/title/type/status/location/progress
+    // are ever rendered from directory results.
+    return db.select({
+      id: projects.id,
+      title: projects.title,
+      type: projects.type,
+      status: projects.status,
+      location: projects.location,
+      progress: projects.progress,
+      updatedAt: projects.updatedAt,
+    }).from(projects).orderBy(desc(projects.updatedAt)).limit(50);
   }),
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
@@ -452,6 +465,7 @@ const rfqRouter = router({
       budget: z.number().optional(),
       location: z.string().optional(),
       deadline: z.date().optional(),
+      projectId: z.number().optional(),
       productReference: z.object({ productId: z.number(), variantId: z.string().min(1), variantLabel: z.string().min(1) }).optional(),
       attachments: z.array(z.object({
         key: z.string(),
@@ -464,6 +478,10 @@ const rfqRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      if (input.projectId != null) {
+        const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
+        if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+      }
       const { attachments, productReference, ...rest } = input;
       const result = await db.insert(rfqs).values({
         ...rest,
@@ -560,6 +578,10 @@ const rfqRouter = router({
         providerId: ctx.user.id,
         price: String(input.price),
       });
+      const [rfq] = await db.select({ requesterId: rfqs.requesterId, title: rfqs.title }).from(rfqs).where(eq(rfqs.id, input.rfqId));
+      if (rfq) {
+        await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: '/rfq' });
+      }
       return { success: true };
     }),
   acceptQuotation: protectedProcedure
@@ -650,21 +672,39 @@ const reviewsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      // Only allow verified post-project reviews, and only from the homeowner who owns the
-      // project - the schema has no RFQ->project link or participants table, so project
-      // ownership is the only relationship this app can actually verify server-side.
+      // Only allow verified post-project reviews, and only from the homeowner who owns the project.
       const [project] = await db.select().from(projects).where(and(eq(projects.id, input.projectId), eq(projects.status, 'completed')));
       if (!project || project.ownerId !== ctx.user.id) throw new TRPCError({ code: 'FORBIDDEN', message: 'Reviews only allowed for completed projects you own' });
       if (input.revieweeId === ctx.user.id) throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot review yourself' });
-      const [reviewee] = await db.select({ id: users.id, userRole: users.userRole }).from(users).where(eq(users.id, input.revieweeId));
-      if (!reviewee || !providerRoles.includes(reviewee.userRole as typeof providerRoles[number])) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Reviewee must be a service provider' });
+
+      // Verified participation: the project may have one or more RFQs linked to it
+      // (rfqs.projectId, set at RFQ-creation time) with an accepted quotation - the provider
+      // of that quotation genuinely won/fulfilled work on this project. When at least one such
+      // link exists, the reviewee MUST be one of those verified providers. Older/unlinked
+      // projects (created before this link existed, or never linked to an RFQ) have no such
+      // relationship to check - for those we fall back to the same provider-role heuristic
+      // used since Phase 2, rather than blocking every historical review outright.
+      const awardedProviders = await db.select({ providerId: quotations.providerId })
+        .from(quotations)
+        .innerJoin(rfqs, eq(quotations.rfqId, rfqs.id))
+        .where(and(eq(rfqs.projectId, input.projectId), eq(quotations.status, 'accepted')));
+
+      if (awardedProviders.length > 0) {
+        if (!awardedProviders.some(p => p.providerId === input.revieweeId)) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'This provider did not win an awarded RFQ on this project' });
+        }
+      } else {
+        const [reviewee] = await db.select({ id: users.id, userRole: users.userRole }).from(users).where(eq(users.id, input.revieweeId));
+        if (!reviewee || !providerRoles.includes(reviewee.userRole as typeof providerRoles[number])) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Reviewee must be a service provider' });
+        }
       }
       const [existing] = await db.select({ id: reviews.id }).from(reviews).where(
         and(eq(reviews.projectId, input.projectId), eq(reviews.reviewerId, ctx.user.id), eq(reviews.revieweeId, input.revieweeId))
       );
       if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'You have already reviewed this provider for this project' });
       await db.insert(reviews).values({ ...input, reviewerId: ctx.user.id, verified: true });
+      await notifyUser(db, { userId: input.revieweeId, title: 'New review received', body: `You received a new ${input.rating}-star review.`, type: 'review', link: '/provider' });
       return { success: true };
     }),
 });
@@ -925,7 +965,7 @@ const adminRouter = router({
     await db.insert(registrationReviewEvents).values({ userId: applicant.id, documentId: document.id, actorId: ctx.user.id, action: 'document_reviewed', status: input.status, note: input.reviewerNote });
     const title = input.status === 'approved' ? 'Registration document approved' : input.status === 'update_required' ? 'Registration document update required' : input.status === 'rejected' ? 'Registration document rejected' : 'Registration document under review';
     const body = input.reviewerNote ? `${document.displayName}: ${input.reviewerNote}` : `${document.displayName} status changed to ${input.status.replace('_', ' ')}`;
-    await db.insert(notifications).values({ userId: applicant.id, title, body, type: 'compliance', link: '/compliance' });
+    await notifyUser(db, { userId: applicant.id, title, body, type: 'compliance', link: '/compliance' });
     return { success: true, documentStatus: input.status, onboardingStatus: overallStatus };
   }),
   updateApplicantStatus: adminProcedure.input(z.object({
@@ -939,7 +979,7 @@ const adminRouter = router({
     if (!applicant || !isComplianceRole(applicant.userRole)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Compliance applicant not found' });
     await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: new Date(), onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(eq(users.id, input.userId));
     await db.insert(registrationReviewEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'applicant_status_updated', status: input.status, note: input.note });
-    await db.insert(notifications).values({ userId: input.userId, title: 'Registration status updated', body: input.note || `Your registration is now ${input.status.replace('_', ' ')}`, type: 'compliance', link: '/compliance' });
+    await notifyUser(db, { userId: input.userId, title: 'Registration status updated', body: input.note || `Your registration is now ${input.status.replace('_', ' ')}`, type: 'compliance', link: '/compliance' });
     return { success: true, onboardingStatus: input.status };
   }),
   bulkUpdateApplicantStatus: adminProcedure.input(z.object({
@@ -956,7 +996,7 @@ const adminRouter = router({
     const reviewedAt = new Date();
     await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: reviewedAt, onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(inArray(users.id, userIds));
     await db.insert(registrationReviewEvents).values(applicants.map(applicant => ({ userId: applicant.id, actorId: ctx.user.id, action: 'bulk_applicant_status_updated', status: input.status, note: input.note })));
-    await db.insert(notifications).values(applicants.map(applicant => ({ userId: applicant.id, title: input.status === 'approved' ? 'Registration approved' : 'Registration rejected', body: input.note || `Your registration is ${input.status}`, type: 'compliance', link: '/compliance' })));
+    await notifyUsers(db, applicants.map(applicant => ({ userId: applicant.id, title: input.status === 'approved' ? 'Registration approved' : 'Registration rejected', body: input.note || `Your registration is ${input.status}`, type: 'compliance', link: '/compliance' })));
     return { success: true, updatedCount: applicants.length, onboardingStatus: input.status };
   }),
   verifyUser: adminProcedure.input(z.object({ userId: z.number(), verified: z.boolean() })).mutation(async ({ input }) => {

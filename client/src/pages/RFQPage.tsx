@@ -68,6 +68,8 @@ export default function RFQPage() {
   const [form, setForm] = useState({
     title: '', description: '', category: '', budget: '', location: '', deadline: '',
   });
+  const [linkedProjectId, setLinkedProjectId] = useState<string>('none');
+  const { data: myProjects = [] } = trpc.projects.list.useQuery(undefined, { enabled: isAuthenticated });
   const [marketplaceProduct, setMarketplaceProduct] = useState<{ productId: number; variantId: string; variantLabel: string } | null>(null);
   const [compareRfq, setCompareRfq] = useState<RFQItem | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -160,6 +162,7 @@ export default function RFQPage() {
       toast.success(lang === 'ar' ? 'تم نشر طلب العرض بنجاح!' : 'RFQ posted successfully!');
       setOpen(false);
       setForm({ title: '', description: '', category: '', budget: '', location: '', deadline: '' });
+      setLinkedProjectId('none');
       setAttachments([]);
       setMarketplaceProduct(null);
       localStorage.removeItem('bh-rfq-product');
@@ -236,6 +239,18 @@ export default function RFQPage() {
                       onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))}
                     />
                   </div>
+                  {myProjects.length > 0 && (
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">{t('rfq.linkedProject')}</label>
+                      <Select value={linkedProjectId} onValueChange={setLinkedProjectId}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">{t('rfq.linkedProject.none')}</SelectItem>
+                          {myProjects.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.title}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   {marketplaceProduct && <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm"><div><p className="font-medium">{lang === 'ar' ? 'منتج مرتبط بطلب الأسعار' : 'Linked marketplace product'}</p><p className="text-xs text-muted-foreground">#{marketplaceProduct.productId} · {marketplaceProduct.variantLabel}</p></div><button type="button" className="text-xs text-muted-foreground underline" onClick={() => { setMarketplaceProduct(null); localStorage.removeItem('bh-rfq-product'); }}>{lang === 'ar' ? 'إزالة' : 'Remove'}</button></div>}
                   {/* Attachments */}
                   <div className="space-y-2">
@@ -316,6 +331,7 @@ export default function RFQPage() {
                       ...form,
                       budget: form.budget ? parseFloat(form.budget) : undefined,
                       deadline: form.deadline ? new Date(form.deadline) : undefined,
+                      projectId: linkedProjectId !== 'none' ? Number(linkedProjectId) : undefined,
                       productReference: marketplaceProduct ?? undefined,
                       attachments: attachments.length > 0 ? attachments : undefined,
                     })}

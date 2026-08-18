@@ -14,7 +14,7 @@ import { Search, Star, BadgeCheck, MapPin, Clock, Truck, Award, ArrowLeft, Arrow
 import { VENDORS, type Vendor } from '@/lib/marketplaceData';
 
 export default function VendorsDirectory() {
-  const { lang } = useLanguage();
+  const { lang, t } = useLanguage();
   const ar = lang === 'ar';
   const [, navigate] = useLocation();
   const [, params] = useRoute('/marketplace/vendors/:id');
@@ -51,10 +51,10 @@ export default function VendorsDirectory() {
 
   const badges = (v: Vendor) => (
     <div className="flex flex-wrap gap-1">
-      {v.verified && <Badge className="bg-emerald-100 text-emerald-700 border-0 text-xs"><BadgeCheck className="w-3 h-3 me-0.5" />{ar ? 'موثق' : 'Verified'}</Badge>}
-      {v.topRated && <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">⭐ {ar ? 'الأعلى تقييماً' : 'Top Rated'}</Badge>}
-      {v.recommended && <Badge className="bg-blue-100 text-blue-700 border-0 text-xs">👍 {ar ? 'موصى به' : 'Recommended'}</Badge>}
-      {v.isNew && <Badge className="bg-violet-100 text-violet-700 border-0 text-xs">✨ {ar ? 'جديد' : 'New'}</Badge>}
+      {v.verified && <Badge className="bg-emerald-100 text-emerald-700 border-0 text-xs"><BadgeCheck className="w-3 h-3 me-0.5" />{t('common.verified')}</Badge>}
+      {v.topRated && <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">⭐ {t('vendorsDir.badgeTopRated')}</Badge>}
+      {v.recommended && <Badge className="bg-blue-100 text-blue-700 border-0 text-xs">👍 {t('vendorsDir.badgeRecommended')}</Badge>}
+      {v.isNew && <Badge className="bg-violet-100 text-violet-700 border-0 text-xs">✨ {t('vendorsDir.badgeNew')}</Badge>}
     </div>
   );
 
@@ -65,10 +65,10 @@ export default function VendorsDirectory() {
         <div className="bg-gradient-to-br from-emerald-700 to-teal-600 text-white py-12">
           <div className="container">
             <button className="flex items-center gap-1 text-white/80 hover:text-white text-sm mb-4" onClick={() => navigate('/marketplace')}>
-              <Back className="w-4 h-4" /> {ar ? 'السوق' : 'Marketplace'}
+              <Back className="w-4 h-4" /> {t('common.back_to_marketplace')}
             </button>
-            <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center gap-3"><Store className="w-8 h-8" /> {ar ? 'دليل الموردين' : 'Vendors Directory'}</h1>
-            <p className="text-white/80 max-w-2xl">{ar ? 'موردون ومصنعون موثوقون لمواد البناء والتشطيب في جميع أنحاء مصر' : 'Trusted suppliers and manufacturers of building and finishing materials across Egypt'}</p>
+            <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center gap-3"><Store className="w-8 h-8" /> {t('vendorsDir.title')}</h1>
+            <p className="text-white/80 max-w-2xl">{t('vendorsDir.subtitle')}</p>
           </div>
         </div>
 
@@ -77,29 +77,29 @@ export default function VendorsDirectory() {
           <div className="flex flex-col md:flex-row gap-3 mb-6">
             <div className="relative flex-1">
               <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input className="ps-9" placeholder={ar ? 'ابحث عن مورد…' : 'Search vendors…'} value={search} onChange={e => setSearch(e.target.value)} />
+              <Input className="ps-9" placeholder={t('vendorsDir.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <Select value={catFilter} onValueChange={setCatFilter}>
               <SelectTrigger className="w-full md:w-52"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">{ar ? 'كل الفئات' : 'All Categories'}</SelectItem>
+                <SelectItem value="all">{t('vendorsDir.allCategories')}</SelectItem>
                 {categories.map(c => <SelectItem key={c} value={c}>{ar ? (VENDORS.find(v => v.category === c)?.categoryAr ?? c) : c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={locFilter} onValueChange={setLocFilter}>
               <SelectTrigger className="w-full md:w-44"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">{ar ? 'كل المواقع' : 'All Locations'}</SelectItem>
+                <SelectItem value="all">{t('vendorsDir.allLocations')}</SelectItem>
                 {locations.map(l => <SelectItem key={l} value={l}>{ar ? (VENDORS.find(v => v.location === l)?.locationAr ?? l) : l}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={sortBy} onValueChange={setSortBy}>
               <SelectTrigger className="w-full md:w-44"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="featured">{ar ? 'مميز أولاً' : 'Featured first'}</SelectItem>
-                <SelectItem value="rating">{ar ? 'الأعلى تقييماً' : 'Highest rated'}</SelectItem>
-                <SelectItem value="orders">{ar ? 'الأكثر طلبات' : 'Most orders'}</SelectItem>
-                <SelectItem value="years">{ar ? 'الأقدم خبرة' : 'Most experienced'}</SelectItem>
+                <SelectItem value="featured">{t('vendorsDir.sortFeatured')}</SelectItem>
+                <SelectItem value="rating">{t('vendorsDir.sortRating')}</SelectItem>
+                <SelectItem value="orders">{t('vendorsDir.sortOrders')}</SelectItem>
+                <SelectItem value="years">{t('vendorsDir.sortExperience')}</SelectItem>
               </SelectContent>
             </Select>
             <div className="flex gap-1 border border-border rounded-md p-0.5">
@@ -108,7 +108,7 @@ export default function VendorsDirectory() {
             </div>
           </div>
 
-          <p className="text-sm text-muted-foreground mb-4">{filtered.length} {ar ? 'مورد' : 'vendors'}</p>
+          <p className="text-sm text-muted-foreground mb-4">{filtered.length} {t('vendorsDir.countSuffix')}</p>
 
           <div className={view === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5' : 'space-y-4'}>
             {filtered.map(v => (
@@ -128,10 +128,10 @@ export default function VendorsDirectory() {
                 <div className="mb-3">{badges(v)}</div>
                 <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{ar ? v.descriptionAr : v.description}</p>
                 <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {ar ? v.locationAr : v.location} · {v.branches} {ar ? 'فرع' : 'branches'}</span>
-                  <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {ar ? 'يرد خلال' : 'Responds'} {v.responseTime}</span>
+                  <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {ar ? v.locationAr : v.location} · {v.branches} {t('vendorsDir.branchesSuffix')}</span>
+                  <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {t('vendorsDir.responds')} {v.responseTime}</span>
                   <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> {ar ? v.deliveryCoverageAr : v.deliveryCoverage}</span>
-                  <span className="flex items-center gap-1"><Award className="w-3.5 h-3.5" /> {v.completedOrders.toLocaleString()} {ar ? 'طلب' : 'orders'}</span>
+                  <span className="flex items-center gap-1"><Award className="w-3.5 h-3.5" /> {v.completedOrders.toLocaleString()} {t('vendorsDir.ordersSuffix')}</span>
                 </div>
               </Card>
             ))}
@@ -158,10 +158,10 @@ export default function VendorsDirectory() {
                 <p className="text-sm">{ar ? selected.descriptionAr : selected.description}</p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
                   {[
-                    { v: selected.rating, l: ar ? 'التقييم' : 'Rating' },
-                    { v: selected.completedOrders.toLocaleString(), l: ar ? 'الطلبات' : 'Orders' },
-                    { v: selected.yearsInBusiness, l: ar ? 'سنوات الخبرة' : 'Years' },
-                    { v: selected.branches, l: ar ? 'الفروع' : 'Branches' },
+                    { v: selected.rating, l: t('common.rating') },
+                    { v: selected.completedOrders.toLocaleString(), l: t('vendorsDir.dialogStatOrders') },
+                    { v: selected.yearsInBusiness, l: t('vendorsDir.dialogStatYears') },
+                    { v: selected.branches, l: t('vendorsDir.dialogStatBranches') },
                   ].map((s, i) => (
                     <div key={i} className="bg-muted rounded-lg p-3">
                       <div className="text-lg font-bold">{s.v}</div>
@@ -172,19 +172,19 @@ export default function VendorsDirectory() {
                 <div className="text-sm space-y-2">
                   <p className="flex items-center gap-2"><MapPin className="w-4 h-4 text-muted-foreground" /> {ar ? selected.locationAr : selected.location}</p>
                   <p className="flex items-center gap-2"><Truck className="w-4 h-4 text-muted-foreground" /> {ar ? selected.deliveryCoverageAr : selected.deliveryCoverage}</p>
-                  <p className="flex items-center gap-2"><Clock className="w-4 h-4 text-muted-foreground" /> {ar ? 'يرد خلال' : 'Responds within'} {selected.responseTime}</p>
+                  <p className="flex items-center gap-2"><Clock className="w-4 h-4 text-muted-foreground" /> {t('vendorsDir.respondsWithin')} {selected.responseTime}</p>
                 </div>
                 {selected.certifications.length > 0 && (
                   <div>
-                    <h4 className="text-sm font-semibold mb-1.5">{ar ? 'الشهادات' : 'Certifications'}</h4>
+                    <h4 className="text-sm font-semibold mb-1.5">{t('vendorsDir.certifications')}</h4>
                     <div className="flex flex-wrap gap-1.5">
                       {selected.certifications.map(c => <Badge key={c} variant="outline">{c}</Badge>)}
                     </div>
                   </div>
                 )}
                 <div className="flex gap-2 pt-2">
-                  <Button className="flex-1" onClick={() => navigate('/rfq')}><FileText className="w-4 h-4 me-1.5" /> {ar ? 'طلب عرض سعر' : 'Request Quote'}</Button>
-                  <Button variant="outline" className="flex-1" onClick={() => toast.info(ar ? 'المراسلة متاحة بعد تسجيل الدخول' : 'Messaging available after sign-in')}><MessageSquare className="w-4 h-4 me-1.5" /> {ar ? 'مراسلة' : 'Message'}</Button>
+                  <Button className="flex-1" onClick={() => navigate('/rfq')}><FileText className="w-4 h-4 me-1.5" /> {t('common.request_quote')}</Button>
+                  <Button variant="outline" className="flex-1" onClick={() => toast.info(t('common.messaging_after_signin'))}><MessageSquare className="w-4 h-4 me-1.5" /> {t('common.message')}</Button>
                 </div>
               </div>
             </>

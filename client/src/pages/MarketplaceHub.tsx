@@ -9,7 +9,7 @@ import { Search, Package, Store, PenTool, HardHat, ArrowRight, ArrowLeft, Star, 
 import { PRODUCT_CATEGORIES, VENDORS, DESIGNERS, FINISHING_COMPANIES, DESIGN_CATEGORIES, FINISHING_CATEGORIES } from '@/lib/marketplaceData';
 
 export default function MarketplaceHub() {
-  const { lang } = useLanguage();
+  const { lang, t } = useLanguage();
   const [, navigate] = useLocation();
   const [search, setSearch] = useState('');
   const ar = lang === 'ar';
@@ -19,17 +19,17 @@ export default function MarketplaceHub() {
   const suggestions = useMemo(() => {
     if (!search.trim() || search.trim().length < 2) return [];
     const q = search.trim().toLowerCase();
-    const out: { type: string; typeAr: string; label: string; href: string }[] = [];
+    const out: { type: string; label: string; href: string }[] = [];
     PRODUCT_CATEGORIES.filter(c => c.en.toLowerCase().includes(q) || c.ar.includes(q)).slice(0, 4).forEach(c =>
-      out.push({ type: 'Product Category', typeAr: 'فئة منتجات', label: ar ? c.ar : c.en, href: `/marketplace/products?cat=${c.id}` }));
+      out.push({ type: t('marketHub.suggestionProductCategory'), label: ar ? c.ar : c.en, href: `/marketplace/products?cat=${c.id}` }));
     VENDORS.filter(v => v.name.toLowerCase().includes(q) || v.nameAr.includes(q)).slice(0, 3).forEach(v =>
-      out.push({ type: 'Vendor', typeAr: 'مورد', label: ar ? v.nameAr : v.name, href: `/marketplace/vendors/${v.id}` }));
+      out.push({ type: t('marketHub.suggestionVendor'), label: ar ? v.nameAr : v.name, href: `/marketplace/vendors/${v.id}` }));
     DESIGNERS.filter(d => d.name.toLowerCase().includes(q) || d.nameAr.includes(q)).slice(0, 3).forEach(d =>
-      out.push({ type: 'Designer', typeAr: 'مصمم', label: ar ? d.nameAr : d.name, href: `/marketplace/designers/${d.id}` }));
+      out.push({ type: t('marketHub.suggestionDesigner'), label: ar ? d.nameAr : d.name, href: `/marketplace/designers/${d.id}` }));
     FINISHING_COMPANIES.filter(f => f.name.toLowerCase().includes(q) || f.nameAr.includes(q)).slice(0, 3).forEach(f =>
-      out.push({ type: 'Finishing Company', typeAr: 'شركة تشطيبات', label: ar ? f.nameAr : f.name, href: `/marketplace/finishing/${f.id}` }));
+      out.push({ type: t('marketHub.suggestionFinishingCompany'), label: ar ? f.nameAr : f.name, href: `/marketplace/finishing/${f.id}` }));
     return out.slice(0, 8);
-  }, [search, ar]);
+  }, [search, ar, t]);
 
   const sections = [
     {
@@ -37,10 +37,10 @@ export default function MarketplaceHub() {
       href: '/marketplace/products',
       icon: Package,
       gradient: 'from-blue-600 to-cyan-500',
-      title: ar ? 'المنتجات' : 'Products',
-      desc: ar ? 'كتالوج شامل لمواد البناء والتشطيب من أكثر من 30 فئة' : 'Comprehensive catalog of building & finishing materials across 30+ categories',
+      title: t('marketHub.sectionProductsTitle'),
+      desc: t('marketHub.sectionProductsDesc'),
       stat: `${PRODUCT_CATEGORIES.length}+`,
-      statLabel: ar ? 'فئة' : 'Categories',
+      statLabel: t('marketHub.categoriesLabel'),
       chips: PRODUCT_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
     },
     {
@@ -48,10 +48,10 @@ export default function MarketplaceHub() {
       href: '/marketplace/vendors',
       icon: Store,
       gradient: 'from-emerald-600 to-teal-500',
-      title: ar ? 'الموردون' : 'Vendors',
-      desc: ar ? 'دليل الموردين والمصنعين الموثوقين في مصر' : 'Directory of trusted suppliers and manufacturers across Egypt',
+      title: t('marketHub.sectionVendorsTitle'),
+      desc: t('marketHub.sectionVendorsDesc'),
       stat: `${VENDORS.length}`,
-      statLabel: ar ? 'مورد' : 'Vendors',
+      statLabel: t('marketHub.vendorsLabel'),
       chips: VENDORS.slice(0, 3).map(v => (ar ? v.nameAr : v.name)),
     },
     {
@@ -59,10 +59,10 @@ export default function MarketplaceHub() {
       href: '/marketplace/designers',
       icon: PenTool,
       gradient: 'from-violet-600 to-purple-500',
-      title: ar ? 'خدمات التصميم' : 'Design Services',
-      desc: ar ? 'مكاتب تصميم محترفة ومصممون مستقلون في 14 تخصصاً' : 'Professional design firms and independent designers across 14 disciplines',
+      title: t('marketHub.sectionDesignersTitle'),
+      desc: t('marketHub.sectionDesignersDesc'),
       stat: `${DESIGN_CATEGORIES.length}`,
-      statLabel: ar ? 'تخصص' : 'Disciplines',
+      statLabel: t('marketHub.disciplinesLabel'),
       chips: DESIGN_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
     },
     {
@@ -70,10 +70,10 @@ export default function MarketplaceHub() {
       href: '/marketplace/finishing',
       icon: HardHat,
       gradient: 'from-orange-600 to-amber-500',
-      title: ar ? 'شركات التشطيبات' : 'Finishing Companies',
-      desc: ar ? 'شركات متخصصة في الإنشاءات والتجهيز والتجديد والتشطيبات' : 'Companies specializing in construction, fit-out, renovation, and finishing',
+      title: t('marketHub.sectionFinishingTitle'),
+      desc: t('marketHub.sectionFinishingDesc'),
       stat: `${FINISHING_CATEGORIES.length}`,
-      statLabel: ar ? 'خدمة' : 'Services',
+      statLabel: t('marketHub.servicesLabel'),
       chips: FINISHING_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
     },
   ];
@@ -91,19 +91,17 @@ export default function MarketplaceHub() {
           <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 25% 30%, white 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
           <div className="container relative">
             <Badge className="bg-white/15 text-white border-0 mb-4 backdrop-blur">
-              <Sparkles className="w-3.5 h-3.5 me-1" /> {ar ? 'مركز الاكتشاف' : 'Discovery Hub'}
+              <Sparkles className="w-3.5 h-3.5 me-1" /> {t('marketHub.discoveryHub')}
             </Badge>
-            <h1 className="text-4xl md:text-5xl font-bold mb-3">{ar ? 'استكشف السوق' : 'Explore Marketplace'}</h1>
+            <h1 className="text-4xl md:text-5xl font-bold mb-3">{t('marketHub.exploreTitle')}</h1>
             <p className="text-primary-foreground/80 text-lg max-w-2xl mb-8">
-              {ar
-                ? 'اكتشف المنتجات، وقيّم الموردين، ووظف المحترفين، واطلب عروض الأسعار — كل ذلك في منظومة بناء متكاملة.'
-                : 'Discover products, evaluate suppliers, hire professionals, and request quotations — all in one connected construction ecosystem.'}
+              {t('marketHub.heroSubtitle')}
             </p>
             <div className="relative max-w-2xl">
               <Search className="absolute start-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               <Input
                 className="ps-12 h-14 text-base bg-white text-foreground shadow-xl rounded-xl"
-                placeholder={ar ? 'ابحث عن منتجات، موردين، مصممين، شركات تشطيب…' : 'Search products, vendors, designers, finishing companies…'}
+                placeholder={t('marketHub.searchPlaceholder')}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
@@ -116,7 +114,7 @@ export default function MarketplaceHub() {
                       onClick={() => { setSearch(''); navigate(s.href); }}
                     >
                       <span className="font-medium text-sm">{s.label}</span>
-                      <Badge variant="secondary" className="text-xs">{ar ? s.typeAr : s.type}</Badge>
+                      <Badge variant="secondary" className="text-xs">{s.type}</Badge>
                     </button>
                   ))}
                 </div>
@@ -151,10 +149,10 @@ export default function MarketplaceHub() {
                     {s.chips.map((c, i) => (
                       <Badge key={i} variant="secondary" className="text-xs font-normal">{c}</Badge>
                     ))}
-                    <Badge variant="outline" className="text-xs font-normal">+{ar ? 'المزيد' : 'more'}</Badge>
+                    <Badge variant="outline" className="text-xs font-normal">+{t('marketHub.more')}</Badge>
                   </div>
                   <div className="flex items-center gap-1 text-sm font-medium text-primary">
-                    {ar ? 'استكشف' : 'Explore'} <Arrow className="w-4 h-4 group-hover:translate-x-1 rtl:group-hover:-translate-x-1 transition-transform" />
+                    {t('marketHub.explore')} <Arrow className="w-4 h-4 group-hover:translate-x-1 rtl:group-hover:-translate-x-1 transition-transform" />
                   </div>
                 </div>
               </Card>
@@ -165,10 +163,10 @@ export default function MarketplaceHub() {
           <div className="mt-14">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-bold flex items-center gap-2">
-                <BadgeCheck className="w-5 h-5 text-emerald-600" /> {ar ? 'موردون مميزون' : 'Featured Vendors'}
+                <BadgeCheck className="w-5 h-5 text-emerald-600" /> {t('marketHub.featuredVendors')}
               </h3>
               <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/vendors')}>
-                {ar ? 'عرض الكل' : 'View all'}
+                {t('marketHub.viewAll')}
               </button>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -199,10 +197,10 @@ export default function MarketplaceHub() {
             <div>
               <div className="flex items-center justify-between mb-5">
                 <h3 className="text-lg font-bold flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-violet-600" /> {ar ? 'مصممون مميزون' : 'Featured Designers'}
+                  <TrendingUp className="w-5 h-5 text-violet-600" /> {t('marketHub.featuredDesigners')}
                 </h3>
                 <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/designers')}>
-                  {ar ? 'عرض الكل' : 'View all'}
+                  {t('marketHub.viewAll')}
                 </button>
               </div>
               <div className="space-y-3">
@@ -214,7 +212,7 @@ export default function MarketplaceHub() {
                         <div className="font-semibold text-sm flex items-center gap-1">
                           {ar ? d.nameAr : d.name}
                           {d.verified && <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" />}
-                          {d.awardWinning && <span title={ar ? 'حائز على جوائز' : 'Award-winning'}>🏆</span>}
+                          {d.awardWinning && <span title={t('marketHub.awardWinningTitle')}>🏆</span>}
                         </div>
                         <div className="text-xs text-muted-foreground truncate">{(ar ? d.specialtiesAr : d.specialties).join(' · ')}</div>
                       </div>
@@ -230,10 +228,10 @@ export default function MarketplaceHub() {
             <div>
               <div className="flex items-center justify-between mb-5">
                 <h3 className="text-lg font-bold flex items-center gap-2">
-                  <HardHat className="w-5 h-5 text-orange-600" /> {ar ? 'شركات تشطيب مميزة' : 'Featured Finishing Companies'}
+                  <HardHat className="w-5 h-5 text-orange-600" /> {t('marketHub.featuredCompanies')}
                 </h3>
                 <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/finishing')}>
-                  {ar ? 'عرض الكل' : 'View all'}
+                  {t('marketHub.viewAll')}
                 </button>
               </div>
               <div className="space-y-3">
@@ -253,7 +251,7 @@ export default function MarketplaceHub() {
                           <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
                           <span className="font-medium">{f.rating}</span>
                         </div>
-                        <div className="text-xs text-muted-foreground">{f.completedProjects}+ {ar ? 'مشروع' : 'projects'}</div>
+                        <div className="text-xs text-muted-foreground">{f.completedProjects}+ {t('marketHub.projectsSuffix')}</div>
                       </div>
                     </div>
                   </Card>

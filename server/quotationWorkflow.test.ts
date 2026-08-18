@@ -48,29 +48,44 @@ function createLockedFakeDb(initial: { rfq: RfqRow; quotations: QuotationRow[] }
 
   function makeTx(targetQuotationId: number) {
     let acceptedTargetInThisTx = false;
+    let quotationsSelectCount = 0;
     return {
       select() {
         return {
           from(table: unknown) {
-            return {
-              where() {
-                return {
+            if (table === rfqs) {
+              return {
+                where: () => ({
                   async for() {
-                    if (table === rfqs) {
-                      return state.rfq ? [{ ...state.rfq }] : [];
-                    }
-                    if (table === quotations) {
+                    return state.rfq ? [{ ...state.rfq }] : [];
+                  },
+                }),
+              };
+            }
+            if (table === quotations) {
+              quotationsSelectCount += 1;
+              if (quotationsSelectCount === 1) {
+                // The single target-quotation FOR UPDATE lookup.
+                return {
+                  where: () => ({
+                    async for() {
                       const q = state.quotations.get(targetQuotationId);
                       // Faithfully mirror the real WHERE (id = target AND rfqId = rfq): a
                       // quotation that belongs to a different RFQ must not resolve here.
                       if (q && q.rfqId === state.rfq?.id) return [{ ...q }];
                       return [];
-                    }
-                    throw new Error('unexpected table passed to select().for()');
-                  },
+                    },
+                  }),
                 };
-              },
-            };
+              }
+              // acceptQuotationSecure's plain (non-locking) read of every OTHER quotation's
+              // providerId on this RFQ, used only to notify the auto-rejected providers.
+              const others = [...state.quotations.values()]
+                .filter(q => q.id !== targetQuotationId && q.rfqId === state.rfq?.id)
+                .map(q => ({ providerId: q.providerId }));
+              return { where: () => Promise.resolve(others) };
+            }
+            throw new Error('unexpected table passed to select()');
           },
         };
       },
@@ -123,7 +138,17 @@ function createLockedFakeDb(initial: { rfq: RfqRow; quotations: QuotationRow[] }
     });
   }
 
-  return { state, updateCalls, transaction, bindTransaction };
+  // Post-transaction notification dispatch (notifyUser/notifyUsers) runs against the plain
+  // `db` object, not `tx` - harmless no-op here, just recorded for assertions.
+  const notificationInserts: unknown[] = [];
+  const insert = vi.fn(() => ({
+    values: vi.fn((rows: unknown) => {
+      notificationInserts.push(rows);
+      return Promise.resolve([{ insertId: 1 }]);
+    }),
+  }));
+
+  return { state, updateCalls, transaction, bindTransaction, insert, notificationInserts };
 }
 
 describe('rfq.acceptQuotation (live production route)', () => {
@@ -138,7 +163,7 @@ describe('rfq.acceptQuotation (live production route)', () => {
       ],
     });
     harness.transaction.mockImplementation(harness.bindTransaction(10));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
 
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.rfq.acceptQuotation({ quotationId: 10, rfqId: 5 })).resolves.toEqual({
@@ -152,6 +177,26 @@ describe('rfq.acceptQuotation (live production route)', () => {
     expect(harness.state.rfq?.status).toBe('awarded');
   });
 
+  it('notifies the accepted provider and the auto-rejected competitor after commit', async () => {
+    const harness = createLockedFakeDb({
+      rfq: { id: 5, requesterId: 1, status: 'open' },
+      quotations: [
+        { id: 10, rfqId: 5, providerId: 20, status: 'pending' },
+        { id: 11, rfqId: 5, providerId: 21, status: 'pending' },
+      ],
+    });
+    harness.transaction.mockImplementation(harness.bindTransaction(10));
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
+
+    const caller = appRouter.createCaller(makeCtx(1));
+    await caller.rfq.acceptQuotation({ quotationId: 10, rfqId: 5 });
+
+    expect(harness.notificationInserts).toContainEqual(expect.objectContaining({ userId: 20, type: 'quotation' }));
+    expect(harness.notificationInserts).toContainEqual(
+      expect.arrayContaining([expect.objectContaining({ userId: 21, type: 'quotation' })])
+    );
+  });
+
   it('[Test 3] FORBIDDEN when the quotation belongs to a different RFQ than the one supplied (cross-RFQ IDOR)', async () => {
     const harness = createLockedFakeDb({
       // Attacker owns RFQ 99; quotation 10 actually belongs to RFQ 5 (someone else's).
@@ -159,7 +204,7 @@ describe('rfq.acceptQuotation (live production route)', () => {
       quotations: [{ id: 10, rfqId: 5, providerId: 20, status: 'pending' }],
     });
     harness.transaction.mockImplementation(harness.bindTransaction(10));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
 
     const caller = appRouter.createCaller(makeCtx(2));
     await expect(caller.rfq.acceptQuotation({ quotationId: 10, rfqId: 99 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -174,7 +219,7 @@ describe('rfq.acceptQuotation (live production route)', () => {
       quotations: [{ id: 10, rfqId: 5, providerId: 20, status: 'pending' }],
     });
     harness.transaction.mockImplementation(harness.bindTransaction(10));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
 
     const caller = appRouter.createCaller(makeCtx(99));
     await expect(caller.rfq.acceptQuotation({ quotationId: 10, rfqId: 5 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -190,7 +235,7 @@ describe('rfq.acceptQuotation (live production route)', () => {
       quotations: [{ id: 10, rfqId: 5, providerId: 20, status: 'accepted' }],
     });
     harness.transaction.mockImplementation(harness.bindTransaction(10));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
 
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.rfq.acceptQuotation({ quotationId: 10, rfqId: 5 })).rejects.toMatchObject({ code: 'CONFLICT' });
@@ -203,7 +248,7 @@ describe('rfq.acceptQuotation (live production route)', () => {
       quotations: [{ id: 10, rfqId: 5, providerId: 20, status: 'rejected' }],
     });
     harness.transaction.mockImplementation(harness.bindTransaction(10));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
 
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.rfq.acceptQuotation({ quotationId: 10, rfqId: 5 })).rejects.toMatchObject({ code: 'CONFLICT' });
@@ -216,7 +261,7 @@ describe('rfq.acceptQuotation (live production route)', () => {
       quotations: [{ id: 11, rfqId: 5, providerId: 21, status: 'pending' }],
     });
     harness.transaction.mockImplementation(harness.bindTransaction(11));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
 
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.rfq.acceptQuotation({ quotationId: 11, rfqId: 5 })).rejects.toMatchObject({ code: 'CONFLICT' });
@@ -230,7 +275,7 @@ describe('rfq.acceptQuotation (live production route)', () => {
       quotations: [{ id: 10, rfqId: 5, providerId: 20, status: 'pending' }],
     });
     harness.transaction.mockImplementation(harness.bindTransaction(10));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
 
     // providerId 20 is the vendor who submitted the quotation — not the RFQ owner.
     const caller = appRouter.createCaller(makeCtx(20, 'contractor'));
@@ -246,7 +291,7 @@ describe('rfq.acceptQuotation (live production route)', () => {
     harness.transaction
       .mockImplementationOnce(harness.bindTransaction(10))
       .mockImplementationOnce(harness.bindTransaction(10));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
 
     const caller = appRouter.createCaller(makeCtx(1));
     const results = await Promise.allSettled([
@@ -274,7 +319,7 @@ describe('rfq.acceptQuotation (live production route)', () => {
     harness.transaction
       .mockImplementationOnce(harness.bindTransaction(10))
       .mockImplementationOnce(harness.bindTransaction(11));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
 
     const caller = appRouter.createCaller(makeCtx(1));
     const results = await Promise.allSettled([
@@ -300,11 +345,12 @@ describe('rfq.rejectQuotation (live production route)', () => {
       quotations: [{ id: 7, rfqId: 5, providerId: 20, status: 'pending' }],
     });
     harness.transaction.mockImplementation(harness.bindTransaction(7));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
 
     const caller = appRouter.createCaller(makeCtx(2));
     await expect(caller.rfq.rejectQuotation({ quotationId: 7, rfqId: 5 })).resolves.toEqual({ success: true });
     expect(harness.state.quotations.get(7)?.status).toBe('rejected');
+    expect(harness.notificationInserts).toContainEqual(expect.objectContaining({ userId: 20, type: 'quotation' }));
   });
 
   it('FORBIDDEN when the quotation belongs to a different RFQ than the one supplied (cross-RFQ IDOR)', async () => {
@@ -313,7 +359,7 @@ describe('rfq.rejectQuotation (live production route)', () => {
       quotations: [{ id: 7, rfqId: 5, providerId: 20, status: 'pending' }],
     });
     harness.transaction.mockImplementation(harness.bindTransaction(7));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
 
     const caller = appRouter.createCaller(makeCtx(2));
     await expect(caller.rfq.rejectQuotation({ quotationId: 7, rfqId: 99 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -326,7 +372,7 @@ describe('rfq.rejectQuotation (live production route)', () => {
       quotations: [{ id: 7, rfqId: 5, providerId: 20, status: 'pending' }],
     });
     harness.transaction.mockImplementation(harness.bindTransaction(7));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
 
     const caller = appRouter.createCaller(makeCtx(50));
     await expect(caller.rfq.rejectQuotation({ quotationId: 7, rfqId: 5 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -339,7 +385,7 @@ describe('rfq.rejectQuotation (live production route)', () => {
       quotations: [{ id: 7, rfqId: 5, providerId: 20, status: 'accepted' }],
     });
     harness.transaction.mockImplementation(harness.bindTransaction(7));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
 
     const caller = appRouter.createCaller(makeCtx(2));
     await expect(caller.rfq.rejectQuotation({ quotationId: 7, rfqId: 5 })).rejects.toMatchObject({ code: 'CONFLICT' });

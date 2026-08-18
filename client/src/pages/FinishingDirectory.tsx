@@ -14,7 +14,7 @@ import { Search, Star, BadgeCheck, MapPin, Users, ArrowLeft, ArrowRight, HardHat
 import { FINISHING_COMPANIES, FINISHING_CATEGORIES, type FinishingCompany } from '@/lib/marketplaceData';
 
 export default function FinishingDirectory() {
-  const { lang } = useLanguage();
+  const { lang, t } = useLanguage();
   const ar = lang === 'ar';
   const [, navigate] = useLocation();
   const [, params] = useRoute('/marketplace/finishing/:id');
@@ -46,10 +46,10 @@ export default function FinishingDirectory() {
 
   const badges = (f: FinishingCompany) => (
     <div className="flex flex-wrap gap-1">
-      {f.verified && <Badge className="bg-emerald-100 text-emerald-700 border-0 text-xs"><BadgeCheck className="w-3 h-3 me-0.5" />{ar ? 'موثق' : 'Verified'}</Badge>}
-      {f.topRated && <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">⭐ {ar ? 'الأعلى تقييماً' : 'Top Rated'}</Badge>}
-      {f.fastResponse && <Badge className="bg-cyan-100 text-cyan-700 border-0 text-xs"><Zap className="w-3 h-3 me-0.5" />{ar ? 'استجابة سريعة' : 'Fast Response'}</Badge>}
-      {f.isNew && <Badge className="bg-violet-100 text-violet-700 border-0 text-xs">✨ {ar ? 'جديد' : 'New'}</Badge>}
+      {f.verified && <Badge className="bg-emerald-100 text-emerald-700 border-0 text-xs"><BadgeCheck className="w-3 h-3 me-0.5" />{t('common.verified')}</Badge>}
+      {f.topRated && <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">⭐ {t('finishingDir.badgeTopRated')}</Badge>}
+      {f.fastResponse && <Badge className="bg-cyan-100 text-cyan-700 border-0 text-xs"><Zap className="w-3 h-3 me-0.5" />{t('finishingDir.badgeFastResponse')}</Badge>}
+      {f.isNew && <Badge className="bg-violet-100 text-violet-700 border-0 text-xs">✨ {t('finishingDir.badgeNew')}</Badge>}
     </div>
   );
 
@@ -60,16 +60,16 @@ export default function FinishingDirectory() {
         <div className="bg-gradient-to-br from-orange-700 to-amber-600 text-white py-12">
           <div className="container">
             <button className="flex items-center gap-1 text-white/80 hover:text-white text-sm mb-4" onClick={() => navigate('/marketplace')}>
-              <Back className="w-4 h-4" /> {ar ? 'السوق' : 'Marketplace'}
+              <Back className="w-4 h-4" /> {t('common.back_to_marketplace')}
             </button>
-            <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center gap-3"><HardHat className="w-8 h-8" /> {ar ? 'شركات التشطيبات' : 'Finishing Companies'}</h1>
-            <p className="text-white/80 max-w-2xl">{ar ? 'شركات متخصصة في الإنشاءات والتشطيبات والتجهيز والتجديد — من الهيكل حتى التسليم النهائي' : 'Specialists in construction, finishing, fit-out, and renovation — from core & shell to final handover'}</p>
+            <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center gap-3"><HardHat className="w-8 h-8" /> {t('finishingDir.title')}</h1>
+            <p className="text-white/80 max-w-2xl">{t('finishingDir.subtitle')}</p>
           </div>
         </div>
 
         <div className="container py-8">
           <div className="flex gap-2 overflow-x-auto pb-3 mb-4">
-            <Button size="sm" variant={svcFilter === 'all' ? 'default' : 'outline'} className="rounded-full flex-shrink-0" onClick={() => setSvcFilter('all')}>{ar ? 'الكل' : 'All'}</Button>
+            <Button size="sm" variant={svcFilter === 'all' ? 'default' : 'outline'} className="rounded-full flex-shrink-0" onClick={() => setSvcFilter('all')}>{t('finishingDir.categoryAll')}</Button>
             {FINISHING_CATEGORIES.map(c => (
               <Button key={c.id} size="sm" variant={svcFilter === c.id ? 'default' : 'outline'} className="rounded-full flex-shrink-0" onClick={() => setSvcFilter(c.id)}>
                 <span className="me-1">{c.icon}</span>{ar ? c.ar : c.en}
@@ -80,20 +80,20 @@ export default function FinishingDirectory() {
           <div className="flex flex-col md:flex-row gap-3 mb-6">
             <div className="relative flex-1">
               <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input className="ps-9" placeholder={ar ? 'ابحث عن شركة تشطيبات…' : 'Search finishing companies…'} value={search} onChange={e => setSearch(e.target.value)} />
+              <Input className="ps-9" placeholder={t('finishingDir.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <Select value={sortBy} onValueChange={setSortBy}>
               <SelectTrigger className="w-full md:w-48"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="featured">{ar ? 'مميز أولاً' : 'Featured first'}</SelectItem>
-                <SelectItem value="rating">{ar ? 'الأعلى تقييماً' : 'Highest rated'}</SelectItem>
-                <SelectItem value="projects">{ar ? 'الأكثر مشاريع' : 'Most projects'}</SelectItem>
-                <SelectItem value="years">{ar ? 'الأقدم خبرة' : 'Most experienced'}</SelectItem>
+                <SelectItem value="featured">{t('finishingDir.sortFeatured')}</SelectItem>
+                <SelectItem value="rating">{t('finishingDir.sortRating')}</SelectItem>
+                <SelectItem value="projects">{t('finishingDir.sortProjects')}</SelectItem>
+                <SelectItem value="years">{t('finishingDir.sortYears')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          <p className="text-sm text-muted-foreground mb-4">{filtered.length} {ar ? 'شركة' : 'companies'}</p>
+          <p className="text-sm text-muted-foreground mb-4">{filtered.length} {t('finishingDir.countSuffix')}</p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {filtered.map(f => (
@@ -114,8 +114,8 @@ export default function FinishingDirectory() {
                 <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{ar ? f.descriptionAr : f.description}</p>
                 <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {ar ? f.locationAr : f.location}</span>
-                  <span className="flex items-center gap-1"><Briefcase className="w-3.5 h-3.5" /> {f.completedProjects}+ {ar ? 'مشروع منجز' : 'completed'}</span>
-                  <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {f.teamSize} {ar ? 'فرد' : 'team'} · {f.engineers} {ar ? 'مهندس' : 'engineers'}</span>
+                  <span className="flex items-center gap-1"><Briefcase className="w-3.5 h-3.5" /> {f.completedProjects}+ {t('finishingDir.completedSuffix')}</span>
+                  <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {f.teamSize} {t('finishingDir.teamSuffix')} · {f.engineers} {t('finishingDir.engineersSuffix')}</span>
                   <span className="flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" /> {ar ? f.warrantyAr : f.warranty}</span>
                 </div>
               </Card>
@@ -142,10 +142,10 @@ export default function FinishingDirectory() {
                 <p className="text-sm">{ar ? selected.descriptionAr : selected.description}</p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
                   {[
-                    { v: selected.rating, l: ar ? 'التقييم' : 'Rating' },
-                    { v: `${selected.completedProjects}+`, l: ar ? 'مشاريع منجزة' : 'Completed' },
-                    { v: selected.activeProjects, l: ar ? 'مشاريع جارية' : 'Active' },
-                    { v: selected.yearsInBusiness, l: ar ? 'سنوات الخبرة' : 'Years' },
+                    { v: selected.rating, l: t('common.rating') },
+                    { v: `${selected.completedProjects}+`, l: t('finishingDir.dialogStatCompleted') },
+                    { v: selected.activeProjects, l: t('finishingDir.dialogStatActive') },
+                    { v: selected.yearsInBusiness, l: t('finishingDir.dialogStatYears') },
                   ].map((s, i) => (
                     <div key={i} className="bg-muted rounded-lg p-3">
                       <div className="text-lg font-bold">{s.v}</div>
@@ -154,20 +154,20 @@ export default function FinishingDirectory() {
                   ))}
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold mb-1.5">{ar ? 'الخدمات' : 'Services'}</h4>
+                  <h4 className="text-sm font-semibold mb-1.5">{t('finishingDir.servicesLabel')}</h4>
                   <div className="flex flex-wrap gap-1.5">
                     {(ar ? selected.servicesAr : selected.services).map(s => <Badge key={s} variant="outline">{s}</Badge>)}
                   </div>
                 </div>
                 <div className="text-sm space-y-2">
-                  <p className="flex items-center gap-2"><MapPin className="w-4 h-4 text-muted-foreground" /> {ar ? 'مناطق الخدمة:' : 'Service areas:'} {ar ? selected.serviceAreasAr : selected.serviceAreas}</p>
-                  <p className="flex items-center gap-2"><Briefcase className="w-4 h-4 text-muted-foreground" /> {ar ? 'نموذج التسعير:' : 'Pricing:'} {ar ? selected.pricingModelAr : selected.pricingModel}</p>
-                  <p className="flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-muted-foreground" /> {ar ? 'الضمان:' : 'Warranty:'} {ar ? selected.warrantyAr : selected.warranty}</p>
-                  <p className="flex items-center gap-2"><Users className="w-4 h-4 text-muted-foreground" /> {selected.teamSize} {ar ? 'فرد' : 'team members'} · {selected.engineers} {ar ? 'مهندس' : 'engineers'}</p>
+                  <p className="flex items-center gap-2"><MapPin className="w-4 h-4 text-muted-foreground" /> {t('finishingDir.serviceAreasLabel')} {ar ? selected.serviceAreasAr : selected.serviceAreas}</p>
+                  <p className="flex items-center gap-2"><Briefcase className="w-4 h-4 text-muted-foreground" /> {t('finishingDir.pricingLabel')} {ar ? selected.pricingModelAr : selected.pricingModel}</p>
+                  <p className="flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-muted-foreground" /> {t('finishingDir.warrantyLabel')} {ar ? selected.warrantyAr : selected.warranty}</p>
+                  <p className="flex items-center gap-2"><Users className="w-4 h-4 text-muted-foreground" /> {selected.teamSize} {t('finishingDir.teamMembersSuffix')} · {selected.engineers} {t('finishingDir.engineersSuffix')}</p>
                 </div>
                 <div className="flex gap-2 pt-2">
-                  <Button className="flex-1" onClick={() => navigate('/rfq')}><FileText className="w-4 h-4 me-1.5" /> {ar ? 'طلب عرض سعر' : 'Request Quote'}</Button>
-                  <Button variant="outline" className="flex-1" onClick={() => toast.info(ar ? 'المراسلة متاحة بعد تسجيل الدخول' : 'Messaging available after sign-in')}><MessageSquare className="w-4 h-4 me-1.5" /> {ar ? 'مراسلة' : 'Message'}</Button>
+                  <Button className="flex-1" onClick={() => navigate('/rfq')}><FileText className="w-4 h-4 me-1.5" /> {t('common.request_quote')}</Button>
+                  <Button variant="outline" className="flex-1" onClick={() => toast.info(t('common.messaging_after_signin'))}><MessageSquare className="w-4 h-4 me-1.5" /> {t('common.message')}</Button>
                 </div>
               </div>
             </>
