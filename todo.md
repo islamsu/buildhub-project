@@ -292,7 +292,14 @@
 - [x] Route all dummy/test accounts through local password authentication without verification
 - [x] Preserve real-user OAuth and verification behavior
 - [x] Add regression coverage for the actual failing path and verify the sign-in UI
-- [ ] Save a checkpoint for the regression fix
+- [x] Save a checkpoint for the regression fix (vc8b7e2e5)
 
 
 - [x] Make the generic login screen dummy-password-first and move real-user OAuth behind an explicit real-user sign-in mode
+
+## OpenAI Integration
+- [x] Assess existing AI chat/estimation procedures in server/routers.ts
+- [x] Implement secure OpenAI client helper with environment/secret fallback
+- [x] Connect BuildHub AI assistant and construction tools to OpenAI
+- [x] Add Vitest coverage for OpenAI integration and secret handling
+- [x] Save checkpoint and provide clear instructions on obtaining OpenAI API keys
