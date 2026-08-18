@@ -51,6 +51,53 @@ describe('admin user controls', () => {
   });
 });
 
+describe('deleteDummyUser (Phase 3C: FK-constraint aware deletion)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('deletes a dummy user with no related records', async () => {
+    const selectWhereMock = vi.fn().mockResolvedValue([{ id: 6, isDummy: true, creationNote: 'test account' }]);
+    const insertValuesMock = vi.fn().mockResolvedValue([]);
+    const deleteWhereMock = vi.fn().mockResolvedValue([]);
+    const db = {
+      select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: selectWhereMock }) }),
+      insert: vi.fn().mockReturnValue({ values: insertValuesMock }),
+      delete: vi.fn().mockReturnValue({ where: deleteWhereMock }),
+    };
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+
+    await expect(caller.admin.deleteDummyUser({ userId: 6 })).resolves.toEqual({ success: true });
+    expect(db.delete).toHaveBeenCalled();
+  });
+
+  it('rejects deleting a non-dummy user', async () => {
+    const selectWhereMock = vi.fn().mockResolvedValue([{ id: 6, isDummy: false }]);
+    const db = { select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: selectWhereMock }) }) };
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+
+    await expect(caller.admin.deleteDummyUser({ userId: 6 })).rejects.toThrow('Only dummy users can be deleted');
+  });
+
+  it('converts a foreign-key-restrict database error into a clear CONFLICT instead of leaking the raw driver error', async () => {
+    const selectWhereMock = vi.fn().mockResolvedValue([{ id: 6, isDummy: true, creationNote: 'test account' }]);
+    const insertValuesMock = vi.fn().mockResolvedValue([]);
+    const fkError = Object.assign(new Error('Failed query'), {
+      cause: { code: 'ER_ROW_IS_REFERENCED_2', message: 'Cannot delete or update a parent row: a foreign key constraint fails' },
+    });
+    const deleteWhereMock = vi.fn().mockRejectedValue(fkError);
+    const db = {
+      select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: selectWhereMock }) }),
+      insert: vi.fn().mockReturnValue({ values: insertValuesMock }),
+      delete: vi.fn().mockReturnValue({ where: deleteWhereMock }),
+    };
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+
+    await expect(caller.admin.deleteDummyUser({ userId: 6 })).rejects.toThrow('still has related records');
+  });
+});
+
 describe('admin disputes and settings', () => {
   beforeEach(() => vi.clearAllMocks());
 

@@ -1,6 +1,8 @@
 import {
   boolean,
   decimal,
+  foreignKey,
+  index,
   int,
   json,
   mysqlEnum,
@@ -23,7 +25,7 @@ export const users = mysqlTable('users', {
   role:        mysqlEnum('role', ['user', 'admin']).default('user').notNull(),
   accountSource: mysqlEnum('accountSource', ['self_registered', 'admin_created']).default('self_registered').notNull(),
   isDummy:     boolean('isDummy').default(false).notNull(),
-  createdBy:   int('createdBy'),
+  createdBy:   int('createdBy').references((): any => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   creationNote:text('creationNote'),
   deactivatedAt: timestamp('deactivatedAt'),
   accountStatus: mysqlEnum('accountStatus', ['active', 'frozen']).default('active').notNull(),
@@ -40,7 +42,7 @@ export const users = mysqlTable('users', {
   onboardingStatus: mysqlEnum('onboardingStatus', ['not_started', 'under_review', 'update_required', 'approved', 'rejected']).default('not_started').notNull(),
   onboardingReviewNotes: text('onboardingReviewNotes'),
   onboardingReviewedAt: timestamp('onboardingReviewedAt'),
-  onboardingReviewedBy: int('onboardingReviewedBy'),
+  onboardingReviewedBy: int('onboardingReviewedBy').references((): any => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   invitationStatus: mysqlEnum('invitationStatus', ['none', 'invitation_sent', 'pending_setup', 'password_set', 'expired']).default('none').notNull(),
   invitationToken: varchar('invitationToken', { length: 128 }),
   invitationExpiresAt: timestamp('invitationExpiresAt'),
@@ -55,22 +57,30 @@ export const users = mysqlTable('users', {
 }, table => ({
   usernameUnique: uniqueIndex('users_username_unique').on(table.username),
   emailUnique: uniqueIndex('users_email_unique').on(table.email),
+  createdByIdx: index('users_createdBy_idx').on(table.createdBy),
+  onboardingReviewedByIdx: index('users_onboardingReviewedBy_idx').on(table.onboardingReviewedBy),
 }));
 
 export const userAccountAuditEvents = mysqlTable('userAccountAuditEvents', {
   id:        int('id').autoincrement().primaryKey(),
-  userId:    int('userId').notNull(),
-  actorId:   int('actorId'),
+  // Nullable + SET NULL (not RESTRICT): every user gets an audit event on creation
+  // (see routers.ts 'dummy_user_created' etc.), so RESTRICT here would make it
+  // impossible to ever delete any user — the audit trail must outlive its subject.
+  userId:    int('userId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  actorId:   int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   action:    varchar('action', { length: 80 }).notNull(),
   source:    varchar('source', { length: 40 }),
   note:      text('note'),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  userIdIdx: index('userAccountAuditEvents_userId_idx').on(table.userId),
+  actorIdIdx: index('userAccountAuditEvents_actorId_idx').on(table.actorId),
+}));
 
 // ── Projects ───────────────────────────────────────────────────────────────
 export const projects = mysqlTable('projects', {
   id:          int('id').autoincrement().primaryKey(),
-  ownerId:     int('ownerId').notNull(),
+  ownerId:     int('ownerId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   title:       varchar('title', { length: 255 }).notNull(),
   description: text('description'),
   type:        mysqlEnum('type', [
@@ -88,50 +98,61 @@ export const projects = mysqlTable('projects', {
   endDate:     timestamp('endDate'),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
   updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  ownerIdIdx: index('projects_ownerId_idx').on(table.ownerId),
+}));
 
 // ── Milestones ─────────────────────────────────────────────────────────────
 export const milestones = mysqlTable('milestones', {
   id:        int('id').autoincrement().primaryKey(),
-  projectId: int('projectId').notNull(),
+  projectId: int('projectId').notNull().references(() => projects.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   title:     varchar('title', { length: 255 }).notNull(),
   dueDate:   timestamp('dueDate'),
   status:    mysqlEnum('status', ['pending', 'in_progress', 'completed']).default('pending'),
   progress:  int('progress').default(0),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  projectIdIdx: index('milestones_projectId_idx').on(table.projectId),
+}));
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
 export const tasks = mysqlTable('tasks', {
   id:          int('id').autoincrement().primaryKey(),
-  projectId:   int('projectId').notNull(),
-  milestoneId: int('milestoneId'),
-  assigneeId:  int('assigneeId'),
+  projectId:   int('projectId').notNull().references(() => projects.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  milestoneId: int('milestoneId').references(() => milestones.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  assigneeId:  int('assigneeId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   title:       varchar('title', { length: 255 }).notNull(),
   description: text('description'),
   status:      mysqlEnum('status', ['todo', 'in_progress', 'done']).default('todo'),
   priority:    mysqlEnum('priority', ['low', 'medium', 'high']).default('medium'),
   dueDate:     timestamp('dueDate'),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  projectIdIdx: index('tasks_projectId_idx').on(table.projectId),
+  milestoneIdIdx: index('tasks_milestoneId_idx').on(table.milestoneId),
+  assigneeIdIdx: index('tasks_assigneeId_idx').on(table.assigneeId),
+}));
 
 // ── Documents ──────────────────────────────────────────────────────────────
 export const documents = mysqlTable('documents', {
   id:        int('id').autoincrement().primaryKey(),
-  projectId: int('projectId').notNull(),
-  uploaderId:int('uploaderId').notNull(),
+  projectId: int('projectId').notNull().references(() => projects.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  uploaderId:int('uploaderId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   name:      varchar('name', { length: 255 }).notNull(),
   type:      mysqlEnum('type', ['drawing', 'boq', 'photo', 'contract', 'invoice', 'other']).default('other'),
   url:       text('url').notNull(),
   fileKey:   varchar('fileKey', { length: 255 }),
   size:      int('size'),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  projectIdIdx: index('documents_projectId_idx').on(table.projectId),
+  uploaderIdIdx: index('documents_uploaderId_idx').on(table.uploaderId),
+}));
 
 // ── Registration Compliance Documents ────────────────────────────────────────
 export const registrationDocuments = mysqlTable('registrationDocuments', {
   id:         int('id').autoincrement().primaryKey(),
-  userId:     int('userId').notNull(),
+  userId:     int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   documentType: varchar('documentType', { length: 100 }).notNull(),
   displayName: varchar('displayName', { length: 255 }).notNull(),
   fileName:   varchar('fileName', { length: 255 }).notNull(),
@@ -142,17 +163,20 @@ export const registrationDocuments = mysqlTable('registrationDocuments', {
   status:     mysqlEnum('status', ['submitted', 'under_review', 'approved', 'rejected', 'update_required']).default('submitted').notNull(),
   applicantNote: text('applicantNote'),
   reviewerNote: text('reviewerNote'),
-  reviewedBy: int('reviewedBy'),
+  reviewedBy: int('reviewedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   reviewedAt: timestamp('reviewedAt'),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  userIdIdx: index('registrationDocuments_userId_idx').on(table.userId),
+  reviewedByIdx: index('registrationDocuments_reviewedBy_idx').on(table.reviewedBy),
+}));
 
 // ── Registration Document Submission History ─────────────────────────────────
 export const registrationDocumentSubmissions = mysqlTable('registrationDocumentSubmissions', {
   id:           int('id').autoincrement().primaryKey(),
   documentId:   int('documentId').notNull(),
-  userId:       int('userId').notNull(),
+  userId:       int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   documentType: varchar('documentType', { length: 100 }).notNull(),
   fileName:     varchar('fileName', { length: 255 }).notNull(),
   url:          text('url').notNull(),
@@ -162,35 +186,50 @@ export const registrationDocumentSubmissions = mysqlTable('registrationDocumentS
   status:       mysqlEnum('status', ['submitted', 'under_review', 'approved', 'rejected', 'update_required']).default('submitted').notNull(),
   applicantNote:text('applicantNote'),
   createdAt:    timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  documentIdIdx: index('registrationDocumentSubmissions_documentId_idx').on(table.documentId),
+  userIdIdx: index('registrationDocumentSubmissions_userId_idx').on(table.userId),
+  documentIdFk: foreignKey({
+    columns: [table.documentId],
+    foreignColumns: [registrationDocuments.id],
+    name: 'regDocSubmissions_documentId_fk',
+  }).onDelete('restrict').onUpdate('restrict'),
+}));
 
 // ── Registration Compliance Audit Events ─────────────────────────────────────
 export const registrationReviewEvents = mysqlTable('registrationReviewEvents', {
   id:         int('id').autoincrement().primaryKey(),
-  userId:     int('userId').notNull(),
-  documentId: int('documentId'),
-  actorId:    int('actorId').notNull(),
+  userId:     int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  documentId: int('documentId').references(() => registrationDocuments.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  actorId:    int('actorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   action:     varchar('action', { length: 80 }).notNull(),
   status:     varchar('status', { length: 50 }),
   note:       text('note'),
   createdAt:  timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  userIdIdx: index('registrationReviewEvents_userId_idx').on(table.userId),
+  documentIdIdx: index('registrationReviewEvents_documentId_idx').on(table.documentId),
+  actorIdIdx: index('registrationReviewEvents_actorId_idx').on(table.actorId),
+}));
 
 // ── Marketplace Product Questions ──────────────────────────────────────────
 export const productQuestions = mysqlTable('productQuestions', {
   id:         int('id').autoincrement().primaryKey(),
-  productId:  int('productId').notNull(),
-  askerId:    int('askerId').notNull(),
+  productId:  int('productId').notNull().references(() => products.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  askerId:    int('askerId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   question:   text('question').notNull(),
   answer:     text('answer'),
   answeredAt: timestamp('answeredAt'),
   createdAt:  timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  productIdIdx: index('productQuestions_productId_idx').on(table.productId),
+  askerIdIdx: index('productQuestions_askerId_idx').on(table.askerId),
+}));
 
 // ── Marketplace Products ───────────────────────────────────────────────────
 export const products = mysqlTable('products', {
   id:          int('id').autoincrement().primaryKey(),
-  supplierId:  int('supplierId').notNull(),
+  supplierId:  int('supplierId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   name:        varchar('name', { length: 255 }).notNull(),
   nameAr:      varchar('nameAr', { length: 255 }),
   description: text('description'),
@@ -213,13 +252,15 @@ export const products = mysqlTable('products', {
   active:      boolean('active').default(true),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
   updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  supplierIdIdx: index('products_supplierId_idx').on(table.supplierId),
+}));
 
 // ── RFQs ───────────────────────────────────────────────────────────────────
 export const rfqs = mysqlTable('rfqs', {
   id:          int('id').autoincrement().primaryKey(),
-  requesterId: int('requesterId').notNull(),
-  projectId:   int('projectId'),
+  requesterId: int('requesterId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  projectId:   int('projectId').references(() => projects.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   title:       varchar('title', { length: 255 }).notNull(),
   description: text('description'),
   category:    varchar('category', { length: 100 }),
@@ -231,13 +272,16 @@ export const rfqs = mysqlTable('rfqs', {
   status:      mysqlEnum('status', ['open', 'closed', 'awarded']).default('open'),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
   updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  requesterIdIdx: index('rfqs_requesterId_idx').on(table.requesterId),
+  projectIdIdx: index('rfqs_projectId_idx').on(table.projectId),
+}));
 
 // ── Quotations ─────────────────────────────────────────────────────────────
 export const quotations = mysqlTable('quotations', {
   id:           int('id').autoincrement().primaryKey(),
-  rfqId:        int('rfqId').notNull(),
-  providerId:   int('providerId').notNull(),
+  rfqId:        int('rfqId').notNull().references(() => rfqs.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  providerId:   int('providerId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   price:        decimal('price', { precision: 12, scale: 2 }).notNull(),
   currency:     varchar('currency', { length: 10 }).default('EGP'),
   timeline:     int('timeline'),
@@ -246,63 +290,80 @@ export const quotations = mysqlTable('quotations', {
   notes:        text('notes'),
   status:       mysqlEnum('status', ['pending', 'accepted', 'rejected']).default('pending'),
   createdAt:    timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  rfqIdIdx: index('quotations_rfqId_idx').on(table.rfqId),
+  providerIdIdx: index('quotations_providerId_idx').on(table.providerId),
+}));
 
 // ── Messages ───────────────────────────────────────────────────────────────
 export const messages = mysqlTable('messages', {
   id:         int('id').autoincrement().primaryKey(),
-  senderId:   int('senderId').notNull(),
-  receiverId: int('receiverId').notNull(),
-  projectId:  int('projectId'),
+  senderId:   int('senderId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  receiverId: int('receiverId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  projectId:  int('projectId').references(() => projects.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   content:    text('content').notNull(),
   type:       mysqlEnum('type', ['text', 'file', 'quotation']).default('text'),
   fileUrl:    text('fileUrl'),
-  quotationId:int('quotationId'),
+  quotationId:int('quotationId').references(() => quotations.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   read:       boolean('read').default(false),
   createdAt:  timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  senderIdIdx: index('messages_senderId_idx').on(table.senderId),
+  receiverIdIdx: index('messages_receiverId_idx').on(table.receiverId),
+  projectIdIdx: index('messages_projectId_idx').on(table.projectId),
+  quotationIdIdx: index('messages_quotationId_idx').on(table.quotationId),
+}));
 
 // ── Notifications ──────────────────────────────────────────────────────────
 export const notifications = mysqlTable('notifications', {
   id:        int('id').autoincrement().primaryKey(),
-  userId:    int('userId').notNull(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   title:     varchar('title', { length: 255 }).notNull(),
   body:      text('body'),
   type:      varchar('type', { length: 50 }).default('info'),
   read:      boolean('read').default(false),
   link:      varchar('link', { length: 255 }),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  userIdReadIdx: index('notifications_userId_read_idx').on(table.userId, table.read),
+}));
 
 // ── Reviews ────────────────────────────────────────────────────────────────
 export const reviews = mysqlTable('reviews', {
   id:         int('id').autoincrement().primaryKey(),
-  projectId:  int('projectId').notNull(),
-  reviewerId: int('reviewerId').notNull(),
-  revieweeId: int('revieweeId').notNull(),
+  projectId:  int('projectId').notNull().references(() => projects.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  reviewerId: int('reviewerId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  revieweeId: int('revieweeId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   rating:     int('rating').notNull(),
   comment:    text('comment'),
   verified:   boolean('verified').default(false),
   createdAt:  timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  projectIdIdx: index('reviews_projectId_idx').on(table.projectId),
+  reviewerIdIdx: index('reviews_reviewerId_idx').on(table.reviewerId),
+  revieweeIdIdx: index('reviews_revieweeId_idx').on(table.revieweeId),
+}));
 
 // ── Progress Reports ────────────────────────────────────────────────────────
 export const progressReports = mysqlTable('progressReports', {
   id:          int('id').autoincrement().primaryKey(),
-  projectId:   int('projectId').notNull(),
-  authorId:    int('authorId').notNull(),
+  projectId:   int('projectId').notNull().references(() => projects.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  authorId:    int('authorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   title:       varchar('title', { length: 255 }).notNull(),
   summary:     text('summary').notNull(),
   progress:    int('progress').notNull().default(0),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  projectIdIdx: index('progressReports_projectId_idx').on(table.projectId),
+  authorIdIdx: index('progressReports_authorId_idx').on(table.authorId),
+}));
 
 // ── Disputes ────────────────────────────────────────────────────────────────
 export const disputes = mysqlTable('disputes', {
   id:             int('id').autoincrement().primaryKey(),
-  reporterId:     int('reporterId').notNull(),
-  respondentId:   int('respondentId'),
-  projectId:      int('projectId'),
+  reporterId:     int('reporterId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  respondentId:   int('respondentId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  projectId:      int('projectId').references(() => projects.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   title:          varchar('title', { length: 255 }).notNull(),
   description:    text('description').notNull(),
   type:           varchar('type', { length: 80 }).default('general').notNull(),
@@ -311,33 +372,42 @@ export const disputes = mysqlTable('disputes', {
   resolutionNotes:text('resolutionNotes'),
   createdAt:      timestamp('createdAt').defaultNow().notNull(),
   updatedAt:      timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  reporterIdIdx: index('disputes_reporterId_idx').on(table.reporterId),
+  respondentIdIdx: index('disputes_respondentId_idx').on(table.respondentId),
+  projectIdIdx: index('disputes_projectId_idx').on(table.projectId),
+}));
 
 // ── Admin Settings ──────────────────────────────────────────────────────────
 export const adminSettings = mysqlTable('adminSettings', {
   id:        int('id').autoincrement().primaryKey(),
   settingKey:varchar('settingKey', { length: 120 }).notNull().unique(),
   value:     text('value').notNull(),
-  updatedBy: int('updatedBy').notNull(),
+  updatedBy: int('updatedBy').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   updatedAt: timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  updatedByIdx: index('adminSettings_updatedBy_idx').on(table.updatedBy),
+}));
 
 // ── Daily Logs ─────────────────────────────────────────────────────────────
 export const dailyLogs = mysqlTable('dailyLogs', {
   id:          int('id').autoincrement().primaryKey(),
-  projectId:   int('projectId').notNull(),
-  authorId:    int('authorId').notNull(),
+  projectId:   int('projectId').notNull().references(() => projects.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  authorId:    int('authorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   date:        timestamp('date').defaultNow().notNull(),
   description: text('description').notNull(),
   weather:     varchar('weather', { length: 50 }),
   workers:     int('workers'),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  projectIdIdx: index('dailyLogs_projectId_idx').on(table.projectId),
+  authorIdIdx: index('dailyLogs_authorId_idx').on(table.authorId),
+}));
 
 // ── Expenses ───────────────────────────────────────────────────────────────
 export const expenses = mysqlTable('expenses', {
   id:          int('id').autoincrement().primaryKey(),
-  projectId:   int('projectId').notNull(),
+  projectId:   int('projectId').notNull().references(() => projects.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   category:    varchar('category', { length: 100 }),
   description: text('description'),
   amount:      decimal('amount', { precision: 12, scale: 2 }).notNull(),
@@ -345,7 +415,9 @@ export const expenses = mysqlTable('expenses', {
   date:        timestamp('date').defaultNow(),
   receiptUrl:  text('receiptUrl'),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
-});
+}, table => ({
+  projectIdIdx: index('expenses_projectId_idx').on(table.projectId),
+}));
 
 // ── Types ──────────────────────────────────────────────────────────────────
 export type User        = typeof users.$inferSelect;
@@ -366,4 +438,3 @@ export type Dispute     = typeof disputes.$inferSelect;
 export type AdminSetting= typeof adminSettings.$inferSelect;
 export type DailyLog    = typeof dailyLogs.$inferSelect;
 export type Expense     = typeof expenses.$inferSelect;
-

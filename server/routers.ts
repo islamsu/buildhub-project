@@ -818,12 +818,12 @@ const adminRouter = router({
     const userMap = new Map(allUsersList.map(u => [u.id, u]));
     const adminMap = new Map(allUsersList.map(u => [u.id, u.name || u.email || `#${u.id}`]));
     return events.map(event => {
-      const targetUser = userMap.get(event.userId);
+      const targetUser = event.userId != null ? userMap.get(event.userId) : undefined;
       const actorName = event.actorId ? (adminMap.get(event.actorId) ?? `Admin #${event.actorId}`) : 'System';
       return {
         id: event.id,
         userId: event.userId,
-        userName: targetUser?.name || targetUser?.email || `#${event.userId}`,
+        userName: targetUser?.name || targetUser?.email || (event.userId != null ? `#${event.userId}` : 'Deleted user'),
         userEmail: targetUser?.email || '—',
         accountType: targetUser?.isDummy ? 'Dummy / Test' : targetUser?.accountSource === 'admin_created' ? 'Admin Created' : 'Self Registered',
         role: targetUser?.userRole || targetUser?.role || 'user',
@@ -887,7 +887,14 @@ const adminRouter = router({
     const [target] = await db.select().from(users).where(eq(users.id, input.userId));
     if (!target?.isDummy) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only dummy users can be deleted' });
     await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'dummy_user_deleted', source: 'dummy', note: target.creationNote });
-    await db.delete(users).where(eq(users.id, input.userId));
+    try {
+      await db.delete(users).where(eq(users.id, input.userId));
+    } catch (err) {
+      if ((err as { cause?: { code?: string } })?.cause?.code === 'ER_ROW_IS_REFERENCED_2') {
+        throw new TRPCError({ code: 'CONFLICT', message: 'This dummy user still has related records (projects, quotations, messages, reviews, etc.) and cannot be deleted. Reassign or remove those records first.' });
+      }
+      throw err;
+    }
     return { success: true };
   }),
   accountAudit: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
