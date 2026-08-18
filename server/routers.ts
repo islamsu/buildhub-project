@@ -8,6 +8,7 @@ import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUser
 import { invokeLLM } from './_core/llm';
 import { storagePut } from './storage';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
+import { acceptQuotationSecure, rejectQuotationSecure } from './quotationWorkflow';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
   projects, milestones, tasks, documents, products,
@@ -540,26 +541,12 @@ const rfqRouter = router({
   acceptQuotation: protectedProcedure
     .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const [rfq] = await db.select().from(rfqs).where(and(eq(rfqs.id, input.rfqId), eq(rfqs.requesterId, ctx.user.id)));
-      if (!rfq) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this RFQ' });
-      await db.update(quotations).set({ status: 'accepted' }).where(eq(quotations.id, input.quotationId));
-      await db.update(quotations).set({ status: 'rejected' }).where(
-        and(eq(quotations.rfqId, input.rfqId), sql`id != ${input.quotationId}`)
-      );
-      await db.update(rfqs).set({ status: 'awarded' }).where(eq(rfqs.id, input.rfqId));
-      return { success: true };
+      return acceptQuotationSecure(input.rfqId, input.quotationId, ctx.user.id);
     }),
   rejectQuotation: protectedProcedure
     .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const [rfq] = await db.select().from(rfqs).where(and(eq(rfqs.id, input.rfqId), eq(rfqs.requesterId, ctx.user.id)));
-      if (!rfq) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this RFQ' });
-      await db.update(quotations).set({ status: 'rejected' }).where(eq(quotations.id, input.quotationId));
-      return { success: true };
+      return rejectQuotationSecure(input.rfqId, input.quotationId, ctx.user.id);
     }),
 });
 
