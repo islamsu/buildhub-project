@@ -9,6 +9,7 @@ import { invokeLLM } from './_core/llm';
 import { storagePut } from './storage';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
 import { acceptQuotationSecure, rejectQuotationSecure } from './quotationWorkflow';
+import { aiChatLimiters, getClientIp } from './_core/rateLimit';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
   projects, milestones, tasks, documents, products,
@@ -222,6 +223,8 @@ const projectsRouter = router({
   milestones: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
+    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
+    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
     return db.select().from(milestones).where(eq(milestones.projectId, input.projectId)).orderBy(milestones.dueDate);
   }),
   addMilestone: protectedProcedure
@@ -229,12 +232,16 @@ const projectsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
+      if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
       await db.insert(milestones).values(input);
       return { success: true };
     }),
   tasks: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
+    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
+    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
     return db.select().from(tasks).where(eq(tasks.projectId, input.projectId)).orderBy(desc(tasks.createdAt));
   }),
   addTask: protectedProcedure
@@ -242,6 +249,8 @@ const projectsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
+      if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
       await db.insert(tasks).values(input);
       return { success: true };
     }),
@@ -251,12 +260,21 @@ const projectsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       const { id, ...data } = input;
+      // Tasks don't carry the owner directly - join through their project so a
+      // not-found task and a task on someone else's project fail identically.
+      const [row] = await db.select({ ownerId: projects.ownerId })
+        .from(tasks)
+        .innerJoin(projects, eq(tasks.projectId, projects.id))
+        .where(eq(tasks.id, id));
+      if (!row || row.ownerId !== ctx.user.id) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
       await db.update(tasks).set(data).where(eq(tasks.id, id));
       return { success: true };
     }),
   expenses: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
+    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
+    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
     return db.select().from(expenses).where(eq(expenses.projectId, input.projectId)).orderBy(desc(expenses.date));
   }),
   addExpense: protectedProcedure
@@ -264,12 +282,16 @@ const projectsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
+      if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
       await db.insert(expenses).values({ ...input, amount: String(input.amount) });
       return { success: true };
     }),
   dailyLogs: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
+    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
+    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
     return db.select().from(dailyLogs).where(eq(dailyLogs.projectId, input.projectId)).orderBy(desc(dailyLogs.date));
   }),
   addDailyLog: protectedProcedure
@@ -277,6 +299,8 @@ const projectsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
+      if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
       await db.insert(dailyLogs).values({ ...input, authorId: ctx.user.id });
       return { success: true };
     }),
@@ -626,9 +650,20 @@ const reviewsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      // Only allow verified post-project reviews
+      // Only allow verified post-project reviews, and only from the homeowner who owns the
+      // project - the schema has no RFQ->project link or participants table, so project
+      // ownership is the only relationship this app can actually verify server-side.
       const [project] = await db.select().from(projects).where(and(eq(projects.id, input.projectId), eq(projects.status, 'completed')));
-      if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'Reviews only allowed for completed projects' });
+      if (!project || project.ownerId !== ctx.user.id) throw new TRPCError({ code: 'FORBIDDEN', message: 'Reviews only allowed for completed projects you own' });
+      if (input.revieweeId === ctx.user.id) throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot review yourself' });
+      const [reviewee] = await db.select({ id: users.id, userRole: users.userRole }).from(users).where(eq(users.id, input.revieweeId));
+      if (!reviewee || !providerRoles.includes(reviewee.userRole as typeof providerRoles[number])) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Reviewee must be a service provider' });
+      }
+      const [existing] = await db.select({ id: reviews.id }).from(reviews).where(
+        and(eq(reviews.projectId, input.projectId), eq(reviews.reviewerId, ctx.user.id), eq(reviews.revieweeId, input.revieweeId))
+      );
+      if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'You have already reviewed this provider for this project' });
       await db.insert(reviews).values({ ...input, reviewerId: ctx.user.id, verified: true });
       return { success: true };
     }),
@@ -991,14 +1026,37 @@ const adminRouter = router({
   }),
 });
 
-// ── App Router ─────────────────────────────────────────────────────────────
+// ── AI Router ──────────────────────────────────────────────────────────────
+const MAX_AI_MESSAGES = 40;
+const MAX_AI_MESSAGE_LENGTH = 6000;
+const MAX_AI_RESPONSE_TOKENS = 1024;
+
+const aiChatProcedure = protectedProcedure.use(({ ctx, next }) => {
+  const now = Date.now();
+  const userKey = String(ctx.user.id);
+  const ip = getClientIp(ctx.req);
+  const results = [
+    aiChatLimiters.userBurst.check(userKey, now),
+    aiChatLimiters.userSustained.check(userKey, now),
+    ...(ip ? [aiChatLimiters.ipBurst.check(ip, now), aiChatLimiters.ipSustained.check(ip, now)] : []),
+  ];
+  const blocked = results.find(result => !result.allowed);
+  if (blocked) {
+    throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: `Too many AI requests. Try again in ${Math.ceil(blocked.retryAfterMs / 1000)}s.` });
+  }
+  return next({ ctx });
+});
+
 const aiRouter = router({
-  chat: publicProcedure
+  chat: aiChatProcedure
     .input(z.object({
-      messages: z.array(z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string() })),
+      messages: z.array(z.object({
+        role: z.enum(['system', 'user', 'assistant']),
+        content: z.string().min(1).max(MAX_AI_MESSAGE_LENGTH),
+      })).min(1).max(MAX_AI_MESSAGES),
     }))
     .mutation(async ({ input }) => {
-      const response = await invokeLLM({ messages: input.messages as any });
+      const response = await invokeLLM({ messages: input.messages as any, max_tokens: MAX_AI_RESPONSE_TOKENS });
       const raw = response.choices[0]?.message?.content;
       const content = typeof raw === 'string' ? raw : Array.isArray(raw) ? raw.map((c: any) => c.text ?? '').join('') : 'Sorry, I could not process your request.';
       return { content };
