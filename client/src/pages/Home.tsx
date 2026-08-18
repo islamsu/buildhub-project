@@ -1,4 +1,5 @@
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useRef, useState, type TouchEvent } from 'react';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,7 +10,7 @@ import {
   Building2, ShoppingBag, FileText, Bot, Users, Star, ArrowRight,
   CheckCircle2, Zap, Shield, Globe, HardHat, Layers,
   Package, UserCog, ChevronRight, TrendingUp, Clock, MapPin,
-  BarChart3, MessageSquare, Sparkles, Play
+  BarChart3, MessageSquare, Sparkles, Play, ChevronLeft
 } from 'lucide-react';
 import { Home as HomeIcon } from 'lucide-react';
 
@@ -146,6 +147,24 @@ export default function Home() {
     architect: t('roles.architect.desc'),
     supplier: t('roles.supplier.desc'),
     project_manager: lang === 'ar' ? 'أدر مشاريع البناء من البداية للنهاية.' : 'Manage construction projects end-to-end.',
+  };
+
+  const [activeTestimonial, setActiveTestimonial] = useState(0);
+  const touchStartX = useRef<number | null>(null);
+  const goToTestimonial = (nextIndex: number) => {
+    setActiveTestimonial((nextIndex + TESTIMONIALS.length) % TESTIMONIALS.length);
+  };
+  const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    touchStartX.current = event.touches[0]?.clientX ?? null;
+  };
+  const handleTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    if (touchStartX.current === null) return;
+    const endX = event.changedTouches[0]?.clientX;
+    if (endX === undefined) return;
+    const deltaX = endX - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(deltaX) < 40) return;
+    goToTestimonial(activeTestimonial + (deltaX < 0 ? 1 : -1));
   };
 
   return (
@@ -312,29 +331,96 @@ export default function Home() {
             <Badge variant="secondary" className="mb-4 text-sm px-4 py-1">{lang === 'ar' ? 'آراء العملاء' : 'Testimonials'}</Badge>
             <h2 className="text-4xl font-bold mb-4">{lang === 'ar' ? 'ماذا يقول عملاؤنا' : 'What Our Users Say'}</h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {TESTIMONIALS.map((t_) => (
-              <Card key={t_.name} className="border-border">
-                <CardContent className="p-6">
-                  <div className="flex gap-0.5 mb-4">
-                    {Array.from({ length: t_.rating }).map((_, i) => (
-                      <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
-                    ))}
-                  </div>
-                  <p className="text-sm leading-relaxed text-foreground mb-4">
-                    "{lang === 'ar' ? t_.textAr : t_.text}"
-                  </p>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full gradient-brand flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                      {(lang === 'ar' ? t_.nameAr : t_.name).charAt(0)}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-sm">{lang === 'ar' ? t_.nameAr : t_.name}</p>
-                      <p className="text-xs text-muted-foreground">{lang === 'ar' ? t_.roleAr : t_.role} · {t_.location}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+          <div
+            className="flex items-center gap-3 sm:gap-5 max-w-4xl mx-auto"
+            role="region"
+            aria-roledescription="carousel"
+            aria-label={lang === 'ar' ? 'آراء العملاء' : 'Customer testimonials'}
+          >
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="shrink-0 rounded-full bg-background/90 shadow-sm"
+              aria-label={lang === 'ar' ? 'الرأي السابق' : 'Previous testimonial'}
+              onClick={() => goToTestimonial(activeTestimonial - 1)}
+            >
+              <ChevronLeft className="w-5 h-5" aria-hidden="true" />
+            </Button>
+
+            <div
+              className="min-w-0 flex-1 outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-4 rounded-xl"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowLeft') {
+                  event.preventDefault();
+                  goToTestimonial(activeTestimonial - 1);
+                } else if (event.key === 'ArrowRight') {
+                  event.preventDefault();
+                  goToTestimonial(activeTestimonial + 1);
+                } else if (event.key === 'Home') {
+                  event.preventDefault();
+                  goToTestimonial(0);
+                } else if (event.key === 'End') {
+                  event.preventDefault();
+                  goToTestimonial(TESTIMONIALS.length - 1);
+                }
+              }}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              aria-live="polite"
+            >
+              {(() => {
+                const t_ = TESTIMONIALS[activeTestimonial];
+                return (
+                  <Card className="border-border h-full select-none">
+                    <CardContent className="p-6 sm:p-8">
+                      <div className="flex gap-0.5 mb-4" aria-label={`${t_.rating} ${lang === 'ar' ? 'نجوم' : 'stars'}`}>
+                        {Array.from({ length: t_.rating }).map((_, i) => (
+                          <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" aria-hidden="true" />
+                        ))}
+                      </div>
+                      <p className="text-sm sm:text-base leading-relaxed text-foreground mb-6">
+                        "{lang === 'ar' ? t_.textAr : t_.text}"
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full gradient-brand flex items-center justify-center text-white font-bold text-sm flex-shrink-0" aria-hidden="true">
+                          {(lang === 'ar' ? t_.nameAr : t_.name).charAt(0)}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-sm">{lang === 'ar' ? t_.nameAr : t_.name}</p>
+                          <p className="text-xs text-muted-foreground">{lang === 'ar' ? t_.roleAr : t_.role} · {t_.location}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="shrink-0 rounded-full bg-background/90 shadow-sm"
+              aria-label={lang === 'ar' ? 'الرأي التالي' : 'Next testimonial'}
+              onClick={() => goToTestimonial(activeTestimonial + 1)}
+            >
+              <ChevronLeft className="w-5 h-5 rotate-180" aria-hidden="true" />
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-center gap-2 mt-6" role="tablist" aria-label={lang === 'ar' ? 'التنقل بين الآراء' : 'Choose testimonial'}>
+            {TESTIMONIALS.map((t_, index) => (
+              <button
+                key={t_.name}
+                type="button"
+                role="tab"
+                aria-selected={activeTestimonial === index}
+                aria-label={`${lang === 'ar' ? 'الرأي' : 'Testimonial'} ${index + 1}`}
+                className={`h-2.5 rounded-full transition-all ${activeTestimonial === index ? 'w-8 bg-primary' : 'w-2.5 bg-primary/25 hover:bg-primary/50'}`}
+                onClick={() => goToTestimonial(index)}
+              />
             ))}
           </div>
         </div>

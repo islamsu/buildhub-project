@@ -303,3 +303,10 @@
 - [x] Connect BuildHub AI assistant and construction tools to OpenAI
 - [x] Add Vitest coverage for OpenAI integration and secret handling
 - [x] Save checkpoint and provide clear instructions on obtaining OpenAI API keys
+
+## Testimonial Carousel
+- [x] Inspect and preserve the existing approved testimonial content
+- [x] Add accessible left/right testimonial navigation
+- [x] Add touch swipe and responsive carousel behavior
+- [x] Add regression coverage and verify desktop/mobile layouts
+- [ ] Save a checkpoint for the testimonial carousel
