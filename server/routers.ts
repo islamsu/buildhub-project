@@ -33,7 +33,14 @@ import {
 import { deriveBillingState } from './billing/domain';
 import { resolveVendorEntitlements, toVendorEntitlementResponse } from './billing/entitlements';
 import { isPaymentProviderConfigured } from './billing/provider';
-import { vendorSubscriptions } from '../drizzle/schema';
+import {
+  getEnquiryUsage, getVendorCategories, listEligibleRfqs, openQualifiedEnquiry,
+} from './billing/enquiries';
+import {
+  getVendorTargetingDiagnostics, listDirectoryCategories, listDirectoryVendors,
+} from './vendorDirectory';
+import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
+import { vendorCategories, vendorSubscriptions } from '../drizzle/schema';
 
 const scryptAsync = promisify(scryptCallback);
 
@@ -401,6 +408,19 @@ const projectsRouter = router({
 
 // ── Marketplace Router ─────────────────────────────────────────────────────
 const marketplaceRouter = router({
+  // ── Real vendor directory (Phase 4B.3) ──────────────────────────────────
+  // Replaces the static mock list that previously backed /marketplace/vendors.
+  // Explicit column allowlist, organic ordering only - a paid plan is never
+  // read here and never affects position.
+  vendors: publicProcedure
+    .input(z.object({
+      category: z.string().optional(),
+      location: z.string().optional(),
+      search: z.string().optional(),
+      limit: z.number().int().positive().max(100).optional(),
+    }).optional())
+    .query(async ({ input }) => listDirectoryVendors(input ?? {})),
+  vendorCategories: publicProcedure.query(async () => listDirectoryCategories()),
   list: publicProcedure
     .input(z.object({ category: z.string().optional(), search: z.string().optional(), limit: z.number().default(24) }))
     .query(async ({ input }) => {
@@ -636,6 +656,46 @@ const rfqRouter = router({
       };
     });
   }),
+  // ── RFQ targeting (Phase 4B.3) ──────────────────────────────────────────
+  // Which open RFQs this vendor is eligible for, by declared-category match.
+  // Listing is free: no credit is consumed here, only by openEnquiry below.
+  eligible: approvedProviderProcedure.query(async ({ ctx }) => {
+    const [items, usage] = await Promise.all([
+      listEligibleRfqs(ctx.user.id),
+      getEnquiryUsage(ctx.user.id),
+    ]);
+    return { items, usage };
+  }),
+
+  // Open an eligible RFQ's full detail, consuming one qualified-enquiry credit
+  // the first time. Every decision - identity, declared categories, RFQ
+  // eligibility, billing entitlement - is re-derived server-side; the only
+  // caller input is which RFQ to open, so an RFQ id, category, or plan cannot
+  // be manipulated into access.
+  openEnquiry: approvedProviderProcedure
+    .input(z.object({ rfqId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await openQualifiedEnquiry(ctx.user.id, input.rfqId);
+      switch (result.outcome) {
+        case 'not_found':
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
+        case 'not_eligible':
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: result.reason === 'unclassified_rfq'
+              ? 'This request has no recognised service category, so it is not offered as a qualified enquiry.'
+              : 'This request does not match any of your declared service categories.',
+          });
+        case 'limit_reached':
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            // Enough for the UI to explain the limit; no other vendor's data.
+            message: `You have used all ${result.usage.allowance} qualified enquiries for this month. Your allowance resets on ${result.usage.resetsAt.toISOString().slice(0, 10)}.`,
+          });
+        case 'granted':
+          return { rfq: result.rfq, alreadyConsumed: result.alreadyConsumed, usage: result.usage };
+      }
+    }),
   submitQuotation: approvedProviderProcedure
     .input(z.object({
       rfqId: z.number(),
@@ -891,6 +951,51 @@ const profileRouter = router({
     await db.update(users).set({ bio: input.bio, location: input.location }).where(eq(users.id, ctx.user.id));
     return { success: true };
   }),
+  // ── Vendor service categories (Phase 4B.3) ──────────────────────────────
+  // A vendor declares which of the nine shared RFQ categories describe their
+  // work. This is what makes RFQ targeting possible without BuildHub guessing
+  // a role-to-category mapping. Self-scoped by construction: no userId input.
+  myCategories: approvedProviderProcedure.query(async ({ ctx }) => {
+    const [categories, resolution] = await Promise.all([
+      getVendorCategories(ctx.user.id),
+      resolveVendorEntitlements(ctx.user.id),
+    ]);
+    return {
+      categories,
+      available: RFQ_CATEGORIES,
+      limit: resolution.entitlements.serviceCategoryLimit,
+    };
+  }),
+  setMyCategories: approvedProviderProcedure
+    .input(z.object({ categories: z.array(z.string()).max(RFQ_CATEGORIES.length) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      // Only values from the shared taxonomy - a client cannot invent one.
+      const unique = Array.from(new Set(input.categories));
+      const invalid = unique.filter(category => !isRfqCategory(category));
+      if (invalid.length > 0) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `Unknown service category: ${invalid.join(', ')}` });
+      }
+
+      // The per-plan cap comes from the Phase 4B.2 resolver, never duplicated here.
+      const resolution = await resolveVendorEntitlements(ctx.user.id);
+      const limit = resolution.entitlements.serviceCategoryLimit;
+      if (limit !== null && unique.length > limit) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `Your plan allows up to ${limit} service categories. Upgrade to declare more.`,
+        });
+      }
+
+      // Replace the vendor's own declarations only - scoped to ctx.user.id.
+      await db.delete(vendorCategories).where(eq(vendorCategories.userId, ctx.user.id));
+      if (unique.length > 0) {
+        await db.insert(vendorCategories).values(unique.map(category => ({ userId: ctx.user.id, category })));
+      }
+      return { categories: unique };
+    }),
   // Same self-only guarantee as update: writes only to ctx.user.id's row.
   uploadAvatar: protectedProcedure.input(z.object({
     contentType: z.string().refine(isAllowedAvatarType, 'Only image files are supported'),
@@ -1227,6 +1332,16 @@ const adminRouter = router({
       events: await getBillingEvents(input.userId, 50),
     };
   }),
+  // Phase 4B.3: troubleshooting view for vendor targeting - declared
+  // categories, and which RFQs consumed a qualified-enquiry credit. Contains
+  // no payment information of any kind.
+  vendorTargeting: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+    const [diagnostics, usage] = await Promise.all([
+      getVendorTargetingDiagnostics(input.userId),
+      getEnquiryUsage(input.userId),
+    ]);
+    return { ...diagnostics, usage };
+  }),
   accountAudit: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
@@ -1515,6 +1630,12 @@ const billingRouter = router({
   myPlan: protectedProcedure.query(async ({ ctx }) => {
     const resolution = await resolveVendorEntitlements(ctx.user.id);
     return { plan: resolution.effectivePlan, isPaid: resolution.isPaid };
+  }),
+
+  // Phase 4B.3: the vendor's own qualified-enquiry consumption this month.
+  // Self-scoped - no input, reads ctx.user.id only.
+  myEnquiryUsage: protectedProcedure.query(async ({ ctx }) => {
+    return getEnquiryUsage(ctx.user.id);
   }),
 });
 

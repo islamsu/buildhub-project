@@ -16,6 +16,8 @@ import { toast } from 'sonner';
 import VendorProfileCard from '@/components/VendorProfileCard';
 import VendorReputation from '@/components/VendorReputation';
 import VendorAnalytics from '@/components/VendorAnalytics';
+import VendorServiceCategories from '@/components/VendorServiceCategories';
+import QualifiedEnquiries from '@/components/QualifiedEnquiries';
 import {
   ArrowUpRight, BarChart3, BriefcaseBusiness, Camera, CheckCircle2, ClipboardList,
   Clock3, DollarSign, FileText, FolderKanban, KanbanSquare, Layers3, MapPin, MessageSquare,
@@ -220,6 +222,21 @@ export default function RolePlatform() {
           <ArchitectWorkspace rfqs={matchingRfqs} projects={projectDirectory} t={t} lang={lang} navigate={navigate} onQuote={(rfqId: number) => { setQuoteForm(form => ({ ...form, rfqId })); setQuoteDialogOpen(true); }} />
         ) : (
           <ProjectManagerWorkspace projects={projectDirectory} rfqs={matchingRfqs} t={t} lang={lang} />
+        )}
+
+        {/* Phase 4B.3: service-category declaration + the qualified-enquiry
+            inbox. Placed in the vendor's own reachable workspace, the same
+            surface Phase 4A.6.4 established as the real vendor dashboard. */}
+        {isProfessional && (
+          <section id="role-enquiries">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{lang === 'ar' ? 'الطلبات وفئات الخدمة' : 'Enquiries & service categories'}</h2>
+            </div>
+            <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+              <VendorServiceCategories />
+              <QualifiedEnquiries />
+            </div>
+          </section>
         )}
 
         {isProfessional && (

@@ -152,10 +152,18 @@ export const PLANS: Readonly<Record<PlanId, PlanDefinition>> = {
  * entitlement key appears here.
  */
 export const ENTITLEMENT_ENFORCEMENT: Readonly<Record<keyof PlanEntitlements, string>> = {
+  // Enforced as of Phase 4B.3: server/billing/enquiries.ts caps monthly
+  // qualified-enquiry consumption, transactionally.
   qualifiedEnquiriesPerMonth: 'phase-4b.3',
-  visibilityLevel: 'phase-4b.3',
+  // NOT enforced. The real vendor directory built in Phase 4B.3 ranks
+  // organically only - a paid plan must never buy a higher position there
+  // (Phase 4B.3 brief §13). Paid visibility is a separate, clearly-labelled
+  // concept that belongs with featured placement in Phase 4B.6.
+  visibilityLevel: 'phase-4b.6',
   analyticsLevel: 'phase-4b.2',
   portfolioLevel: 'not-implemented',
+  // Enforced as of Phase 4B.3: profile.setMyCategories caps how many service
+  // categories a vendor may declare.
   serviceCategoryLimit: 'phase-4b.3',
   promotionalCapability: 'not-implemented',
   featuredPlacementEligible: 'phase-4b.6',

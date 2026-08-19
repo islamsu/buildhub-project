@@ -1,198 +1,191 @@
+import { useState } from 'react';
+import { useLocation } from 'wouter';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { trpc } from '@/lib/trpc';
 import Navbar from '@/components/Navbar';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useLocation, useRoute } from 'wouter';
-import { useMemo, useState } from 'react';
-import MarketplaceProfileSheet from '@/components/MarketplaceProfileSheet';
-import { toast } from 'sonner';
-import { Search, Star, BadgeCheck, MapPin, Clock, Truck, Award, ArrowLeft, ArrowRight, Store, MessageSquare, FileText, LayoutGrid, List } from 'lucide-react';
-import { VENDORS, type Vendor } from '@/lib/marketplaceData';
+import { rfqCategoryLabel } from '@shared/rfqCategories';
+import { Search, Star, BadgeCheck, MapPin, Store, ChevronLeft, ChevronRight } from 'lucide-react';
 
+/**
+ * Phase 4B.3: the real, database-backed vendor directory.
+ *
+ * This page previously rendered a hard-coded array of fictional vendors from
+ * client/src/lib/marketplaceData.ts. It now reads genuine provider accounts
+ * through marketplace.vendors, which returns an explicit server-side column
+ * allowlist - no private account fields ever reach this page.
+ *
+ * Every value shown is real: reputation is the same live AVG/COUNT over
+ * verified reviews used everywhere else in BuildHub, and categories are the
+ * vendor's own declarations from the shared RFQ taxonomy. Nothing is
+ * fabricated - fields the mock used to invent (order counts, years in
+ * business, delivery coverage, "recommended" badges) simply do not exist for
+ * real accounts and are therefore not displayed.
+ *
+ * Ordering is organic only. A paid plan does not buy a higher position here;
+ * paid placement is a separate, clearly-labelled concept for a later phase.
+ */
 export default function VendorsDirectory() {
   const { lang, t } = useLanguage();
   const ar = lang === 'ar';
   const [, navigate] = useLocation();
-  const [, params] = useRoute('/marketplace/vendors/:id');
   const [search, setSearch] = useState('');
-  const [catFilter, setCatFilter] = useState('all');
-  const [locFilter, setLocFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('featured');
-  const [profile, setProfile] = useState<Vendor | null>(null);
-  const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [category, setCategory] = useState('all');
+  const [location, setLocation] = useState('');
 
-  const selected: Vendor | undefined = params?.id ? VENDORS.find(v => v.id === Number(params.id)) : undefined;
+  const { data: vendors = [], isLoading } = trpc.marketplace.vendors.useQuery({
+    search: search.trim() || undefined,
+    category: category === 'all' ? undefined : category,
+    location: location.trim() || undefined,
+  });
+  const { data: categories = [] } = trpc.marketplace.vendorCategories.useQuery();
 
-  const categories = useMemo(() => Array.from(new Set(VENDORS.map(v => v.category))), []);
-  const locations = useMemo(() => Array.from(new Set(VENDORS.map(v => v.location))), []);
-
-  const filtered = useMemo(() => {
-    let list = VENDORS.filter(v => {
-      const q = search.trim().toLowerCase();
-      const matchQ = !q || v.name.toLowerCase().includes(q) || v.nameAr.includes(q) || v.category.toLowerCase().includes(q) || v.categoryAr.includes(q);
-      const matchCat = catFilter === 'all' || v.category === catFilter;
-      const matchLoc = locFilter === 'all' || v.location === locFilter;
-      return matchQ && matchCat && matchLoc;
-    });
-    switch (sortBy) {
-      case 'rating': list = [...list].sort((a, b) => b.rating - a.rating); break;
-      case 'orders': list = [...list].sort((a, b) => b.completedOrders - a.completedOrders); break;
-      case 'years': list = [...list].sort((a, b) => b.yearsInBusiness - a.yearsInBusiness); break;
-      default: list = [...list].sort((a, b) => Number(b.featured) - Number(a.featured) || b.rating - a.rating);
-    }
-    return list;
-  }, [search, catFilter, locFilter, sortBy]);
-
-  const Back = ar ? ArrowRight : ArrowLeft;
-
-  const badges = (v: Vendor) => (
-    <div className="flex flex-wrap gap-1">
-      {v.verified && <Badge className="bg-emerald-100 text-emerald-700 border-0 text-xs"><BadgeCheck className="w-3 h-3 me-0.5" />{t('common.verified')}</Badge>}
-      {v.topRated && <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">⭐ {t('vendorsDir.badgeTopRated')}</Badge>}
-      {v.recommended && <Badge className="bg-blue-100 text-blue-700 border-0 text-xs">👍 {t('vendorsDir.badgeRecommended')}</Badge>}
-      {v.isNew && <Badge className="bg-violet-100 text-violet-700 border-0 text-xs">✨ {t('vendorsDir.badgeNew')}</Badge>}
-    </div>
-  );
+  const Back = ar ? ChevronRight : ChevronLeft;
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <div className="pt-16">
-        <div className="bg-gradient-to-br from-emerald-700 to-teal-600 text-white py-12">
-          <div className="container">
-            <button className="flex items-center gap-1 text-white/80 hover:text-white text-sm mb-4" onClick={() => navigate('/marketplace')}>
-              <Back className="w-4 h-4" /> {t('common.back_to_marketplace')}
-            </button>
-            <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center gap-3"><Store className="w-8 h-8" /> {t('vendorsDir.title')}</h1>
-            <p className="text-white/80 max-w-2xl">{t('vendorsDir.subtitle')}</p>
-          </div>
+      <main className="container max-w-6xl pt-24 pb-16">
+        <Button variant="ghost" size="sm" className="mb-4 gap-1.5" onClick={() => navigate('/marketplace')}>
+          <Back className="w-4 h-4" />{t('common.back_to_marketplace')}
+        </Button>
+
+        <div className="mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold">{t('vendorsDir.title')}</h1>
+          <p className="text-muted-foreground mt-1 text-sm sm:text-base">{t('vendorsDir.subtitle')}</p>
         </div>
 
-        <div className="container py-8">
-          {/* Filters */}
-          <div className="flex flex-col md:flex-row gap-3 mb-6">
-            <div className="relative flex-1">
-              <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input className="ps-9" placeholder={t('vendorsDir.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} />
-            </div>
-            <Select value={catFilter} onValueChange={setCatFilter}>
-              <SelectTrigger className="w-full md:w-52"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('vendorsDir.allCategories')}</SelectItem>
-                {categories.map(c => <SelectItem key={c} value={c}>{ar ? (VENDORS.find(v => v.category === c)?.categoryAr ?? c) : c}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={locFilter} onValueChange={setLocFilter}>
-              <SelectTrigger className="w-full md:w-44"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('vendorsDir.allLocations')}</SelectItem>
-                {locations.map(l => <SelectItem key={l} value={l}>{ar ? (VENDORS.find(v => v.location === l)?.locationAr ?? l) : l}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-full md:w-44"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="featured">{t('vendorsDir.sortFeatured')}</SelectItem>
-                <SelectItem value="rating">{t('vendorsDir.sortRating')}</SelectItem>
-                <SelectItem value="orders">{t('vendorsDir.sortOrders')}</SelectItem>
-                <SelectItem value="years">{t('vendorsDir.sortExperience')}</SelectItem>
-              </SelectContent>
-            </Select>
-            <div className="flex gap-1 border border-border rounded-md p-0.5">
-              <Button size="icon" variant={view === 'grid' ? 'secondary' : 'ghost'} className="h-8 w-8" onClick={() => setView('grid')}><LayoutGrid className="w-4 h-4" /></Button>
-              <Button size="icon" variant={view === 'list' ? 'secondary' : 'ghost'} className="h-8 w-8" onClick={() => setView('list')}><List className="w-4 h-4" /></Button>
-            </div>
+        {/* Filters */}
+        <div className="grid gap-3 sm:grid-cols-3 mb-6">
+          <div className="relative sm:col-span-1">
+            <Search className="absolute top-1/2 -translate-y-1/2 start-3 w-4 h-4 text-muted-foreground" />
+            <Input
+              className="ps-9"
+              aria-label={t('vendorsDir.searchLabel')}
+              placeholder={t('vendorsDir.searchPlaceholder')}
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+            />
           </div>
-
-          <p className="text-sm text-muted-foreground mb-4">{filtered.length} {t('vendorsDir.countSuffix')}</p>
-
-          <div className={view === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5' : 'space-y-4'}>
-            {filtered.map(v => (
-              <Card key={v.id} className="p-5 cursor-pointer hover:shadow-xl transition-all hover:-translate-y-0.5" onClick={() => setProfile(v)}>
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center text-2xl flex-shrink-0">{v.logo}</div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-bold truncate">{ar ? v.nameAr : v.name}</h3>
-                    <p className="text-xs text-muted-foreground">{ar ? v.categoryAr : v.category}</p>
-                  </div>
-                  <div className="flex items-center gap-1 text-sm flex-shrink-0">
-                    <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-                    <span className="font-semibold">{v.rating}</span>
-                    <span className="text-muted-foreground text-xs">({v.reviewCount})</span>
-                  </div>
-                </div>
-                <div className="mb-3">{badges(v)}</div>
-                <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{ar ? v.descriptionAr : v.description}</p>
-                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {ar ? v.locationAr : v.location} · {v.branches} {t('vendorsDir.branchesSuffix')}</span>
-                  <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {t('vendorsDir.responds')} {v.responseTime}</span>
-                  <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> {ar ? v.deliveryCoverageAr : v.deliveryCoverage}</span>
-                  <span className="flex items-center gap-1"><Award className="w-3.5 h-3.5" /> {v.completedOrders.toLocaleString()} {t('vendorsDir.ordersSuffix')}</span>
-                </div>
-              </Card>
-            ))}
-          </div>
+          <Select value={category} onValueChange={setCategory}>
+            <SelectTrigger aria-label={t('vendorsDir.allCategories')}>
+              <SelectValue placeholder={t('vendorsDir.allCategories')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('vendorsDir.allCategories')}</SelectItem>
+              {categories.map(item => (
+                <SelectItem key={item} value={item}>{rfqCategoryLabel(item, lang)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            aria-label={t('common.location')}
+            placeholder={t('vendorsDir.locationPlaceholder')}
+            value={location}
+            onChange={event => setLocation(event.target.value)}
+          />
         </div>
-      </div>
 
-      {/* Vendor profile dialog */}
-      <Dialog open={!!selected} onOpenChange={open => { if (!open) navigate('/marketplace/vendors'); }}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          {selected && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-3">
-                  <span className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center text-2xl">{selected.logo}</span>
-                  <span>
-                    {ar ? selected.nameAr : selected.name}
-                    <span className="block text-sm font-normal text-muted-foreground">{ar ? selected.categoryAr : selected.category}</span>
-                  </span>
-                </DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-1">{badges(selected)}</div>
-                <p className="text-sm">{ar ? selected.descriptionAr : selected.description}</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
-                  {[
-                    { v: selected.rating, l: t('common.rating') },
-                    { v: selected.completedOrders.toLocaleString(), l: t('vendorsDir.dialogStatOrders') },
-                    { v: selected.yearsInBusiness, l: t('vendorsDir.dialogStatYears') },
-                    { v: selected.branches, l: t('vendorsDir.dialogStatBranches') },
-                  ].map((s, i) => (
-                    <div key={i} className="bg-muted rounded-lg p-3">
-                      <div className="text-lg font-bold">{s.v}</div>
-                      <div className="text-xs text-muted-foreground">{s.l}</div>
-                    </div>
-                  ))}
+        {/* Organic ordering is a commitment, so it is stated plainly rather
+            than left implicit: nothing on this page is bought. */}
+        {!isLoading && vendors.length > 0 && (
+          <p className="text-xs text-muted-foreground mb-4">
+            {vendors.length} {t('vendorsDir.countSuffix')} · {t('vendorsDir.organicNote')}
+          </p>
+        )}
+
+        {isLoading && (
+          <div className="py-16 text-center text-muted-foreground">{t('common.loading')}</div>
+        )}
+
+        {!isLoading && vendors.length === 0 && (
+          <div className="rounded-xl border border-dashed py-16 text-center">
+            <Store className="w-10 h-10 mx-auto mb-3 opacity-20" />
+            <p className="font-medium">{t('vendorsDir.emptyTitle')}</p>
+            <p className="text-sm text-muted-foreground mt-1">{t('vendorsDir.emptyHint')}</p>
+          </div>
+        )}
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {vendors.map(vendor => (
+            <Card
+              key={vendor.id}
+              role="button"
+              tabIndex={0}
+              className="p-4 card-hover cursor-pointer transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              onClick={() => navigate(`/vendor/${vendor.id}`)}
+              onKeyDown={event => { if (event.key === 'Enter') navigate(`/vendor/${vendor.id}`); }}
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
+                  {(vendor.name ?? '?').charAt(0).toUpperCase()}
                 </div>
-                <div className="text-sm space-y-2">
-                  <p className="flex items-center gap-2"><MapPin className="w-4 h-4 text-muted-foreground" /> {ar ? selected.locationAr : selected.location}</p>
-                  <p className="flex items-center gap-2"><Truck className="w-4 h-4 text-muted-foreground" /> {ar ? selected.deliveryCoverageAr : selected.deliveryCoverage}</p>
-                  <p className="flex items-center gap-2"><Clock className="w-4 h-4 text-muted-foreground" /> {t('vendorsDir.respondsWithin')} {selected.responseTime}</p>
-                </div>
-                {selected.certifications.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-semibold mb-1.5">{t('vendorsDir.certifications')}</h4>
-                    <div className="flex flex-wrap gap-1.5">
-                      {selected.certifications.map(c => <Badge key={c} variant="outline">{c}</Badge>)}
-                    </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-semibold truncate">{vendor.name}</span>
+                    {vendor.verified && (
+                      <Badge className="bg-emerald-100 text-emerald-700 border-0 text-xs">
+                        <BadgeCheck className="w-3 h-3 me-0.5" />{t('common.verified')}
+                      </Badge>
+                    )}
                   </div>
-                )}
-                <div className="flex gap-2 pt-2">
-                  <Button className="flex-1" onClick={() => navigate('/rfq')}><FileText className="w-4 h-4 me-1.5" /> {t('common.request_quote')}</Button>
-                  <Button variant="outline" className="flex-1" onClick={() => toast.info(t('common.messaging_after_signin'))}><MessageSquare className="w-4 h-4 me-1.5" /> {t('common.message')}</Button>
+                  <div className="text-xs text-muted-foreground capitalize mt-0.5">
+                    {(vendor.userRole ?? '').replace('_', ' ')}
+                  </div>
+                  {vendor.location && (
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                      <MapPin className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{vendor.location}</span>
+                    </div>
+                  )}
                 </div>
               </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-      <MarketplaceProfileSheet entity={profile ? { kind: 'vendor', data: profile } : null} onClose={() => setProfile(null)} />
+
+              {/* Reputation - live from verified reviews, never a stored aggregate. */}
+              <div className="flex items-center gap-1.5 mt-3" aria-label={t('vendorsDir.ratingLabel')}>
+                {[1, 2, 3, 4, 5].map(star => (
+                  <Star
+                    key={star}
+                    className={`w-3.5 h-3.5 ${
+                      vendor.averageRating !== null && star <= Math.round(vendor.averageRating)
+                        ? 'fill-amber-400 text-amber-400'
+                        : 'text-muted-foreground/30'
+                    }`}
+                  />
+                ))}
+                <span className="text-xs text-muted-foreground">
+                  {vendor.averageRating === null
+                    ? t('vendorsDir.noRating')
+                    : `${vendor.averageRating.toFixed(1)} · ${vendor.reviewCount} ${t('vendorsDir.reviewsSuffix')}`}
+                </span>
+              </div>
+
+              {vendor.bio && (
+                <p className="text-sm text-muted-foreground mt-3 line-clamp-2 leading-relaxed">{vendor.bio}</p>
+              )}
+
+              {vendor.categories.length > 0 && (
+                <div className="mt-3">
+                  <span className="sr-only">{t('vendorsDir.categoriesLabel')}</span>
+                  <div className="flex flex-wrap gap-1">
+                    {vendor.categories.map(item => (
+                      <Badge key={item} variant="outline" className="text-[10px]">
+                        {rfqCategoryLabel(item, lang)}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-3 text-xs text-primary font-medium">{t('vendorsDir.viewProfile')}</div>
+            </Card>
+          ))}
+        </div>
+      </main>
     </div>
   );
 }
-

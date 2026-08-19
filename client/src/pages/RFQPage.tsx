@@ -18,11 +18,11 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import QuotationComparison from '@/components/QuotationComparison';
 import { parseRfqAttachments } from '@shared/rfqAttachments';
+import { RFQ_CATEGORIES as rfqCategories, rfqCategoryLabel } from '@shared/rfqCategories';
 
-const CATEGORIES = [
-  'Materials', 'Labor', 'Complete Project', 'Engineering', 'Design',
-  'Furniture', 'Maintenance', 'Renovation', 'Custom Services',
-];
+// Phase 4B.3: the category list now comes from the shared taxonomy that RFQ
+// targeting also matches against, so the two sides can never drift apart.
+const CATEGORIES = rfqCategories;
 
 const STATUS_STYLES: Record<string, string> = {
   open:    'bg-blue-100 text-blue-700 border-blue-200',
@@ -215,7 +215,7 @@ export default function RFQPage() {
                   <Select onValueChange={v => setForm(f => ({ ...f, category: v }))}>
                     <SelectTrigger><SelectValue placeholder={t('rfq.category')} /></SelectTrigger>
                     <SelectContent>
-                      {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      {CATEGORIES.map(c => <SelectItem key={c} value={c}>{rfqCategoryLabel(c, lang)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <div className="grid grid-cols-2 gap-3">
@@ -392,7 +392,7 @@ export default function RFQPage() {
                       <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                         {rfq.category && (
                           <span className="flex items-center gap-1">
-                            <FileText className="w-3.5 h-3.5" />{rfq.category}
+                            <FileText className="w-3.5 h-3.5" />{rfqCategoryLabel(rfq.category, lang)}
                           </span>
                         )}
                         {rfq.budget && (

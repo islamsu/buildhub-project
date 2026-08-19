@@ -523,6 +523,64 @@ export const billingEvents = mysqlTable('billingEvents', {
   actorIdIdx: index('billingEvents_actorId_idx').on(table.actorId),
 }));
 
+// ── Vendor Service Categories (Phase 4B.3) ─────────────────────────────────
+// A vendor's own declaration of which service categories they work in, drawn
+// from the exact nine-value RFQ taxonomy in shared/rfqCategories.ts. This is
+// what makes RFQ → vendor targeting possible without inventing a role-to-
+// category mapping: BuildHub does not guess what an "engineer" does, each
+// vendor states it.
+//
+// A vendor may declare many categories (one row each). RESTRICT on delete
+// follows the Phase 3C convention; the unique index makes a duplicate
+// declaration impossible at the database level rather than by application
+// convention.
+export const vendorCategories = mysqlTable('vendorCategories', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  category:  varchar('category', { length: 100 }).notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  userCategoryUnique: uniqueIndex('vendorCategories_userId_category_unique').on(table.userId, table.category),
+  // Drives the eligibility lookup in the RFQ → vendor direction.
+  categoryIdx: index('vendorCategories_category_idx').on(table.category),
+}));
+
+// ── Qualified Enquiries (Phase 4B.3) ───────────────────────────────────────
+// One row per qualified enquiry a vendor has consumed: the vendor opened the
+// full detail of an RFQ they were genuinely eligible for.
+//
+// The UNIQUE (userId, rfqId) index is the load-bearing part of the design. It
+// is what makes a credit idempotent per vendor+RFQ *at the database level*: a
+// page refresh, a second browser tab, a duplicate API call, or a retry can
+// never consume a second credit for the same opportunity, because the second
+// insert is rejected by the constraint rather than by application logic that
+// could race with itself. The uniqueness is deliberately NOT scoped by month -
+// re-opening an RFQ in a later month must not charge the vendor again for a
+// lead they already paid for.
+//
+// `yearMonth` is the UTC allowance period (Phase 4B.2's allowancePeriodFor),
+// denormalised so the monthly count is a single indexed lookup and so history
+// survives forever: rows are never deleted when a month rolls over, keeping
+// the full record available for audit and analytics.
+export const qualifiedEnquiries = mysqlTable('qualifiedEnquiries', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  rfqId:     int('rfqId').notNull().references(() => rfqs.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /** 'YYYY-MM', UTC. The allowance period this credit was consumed in. */
+  yearMonth: varchar('yearMonth', { length: 7 }).notNull(),
+  /** The plan in force when the credit was consumed, for audit. Never re-read for enforcement. */
+  planAtConsumption: varchar('planAtConsumption', { length: 20 }),
+  /** The RFQ category that made this vendor eligible, for audit and troubleshooting. */
+  matchedCategory: varchar('matchedCategory', { length: 100 }),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  userRfqUnique: uniqueIndex('qualifiedEnquiries_userId_rfqId_unique').on(table.userId, table.rfqId),
+  // The range this phase's FOR UPDATE lock is taken over, and the index the
+  // monthly count reads - see server/billing/enquiries.ts.
+  userMonthIdx: index('qualifiedEnquiries_userId_yearMonth_idx').on(table.userId, table.yearMonth),
+  rfqIdIdx: index('qualifiedEnquiries_rfqId_idx').on(table.rfqId),
+}));
+
 // ── Types ──────────────────────────────────────────────────────────────────
 export type User        = typeof users.$inferSelect;
 export type InsertUser  = typeof users.$inferInsert;
@@ -542,6 +600,8 @@ export type Dispute     = typeof disputes.$inferSelect;
 export type AdminSetting= typeof adminSettings.$inferSelect;
 export type DailyLog    = typeof dailyLogs.$inferSelect;
 export type Expense     = typeof expenses.$inferSelect;
+export type VendorCategory = typeof vendorCategories.$inferSelect;
+export type QualifiedEnquiry = typeof qualifiedEnquiries.$inferSelect;
 export type VendorSubscription = typeof vendorSubscriptions.$inferSelect;
 export type InsertVendorSubscription = typeof vendorSubscriptions.$inferInsert;
 export type BillingEvent = typeof billingEvents.$inferSelect;
