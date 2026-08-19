@@ -555,9 +555,20 @@ const rfqRouter = router({
       rfqStatus: rfqs.status,
     }).from(quotations).leftJoin(rfqs, eq(quotations.rfqId, rfqs.id)).where(eq(quotations.providerId, ctx.user.id)).orderBy(desc(quotations.createdAt));
   }),
+  // SECURITY (Phase 4A final gate): quotations on an RFQ include each bidding
+  // vendor's email, exact price, timeline, and notes - competitive-intelligence
+  // and contact-info exposure if any authenticated user (including a rival
+  // vendor) could pull them for an RFQ they don't own, not just the homeowner
+  // legitimately comparing bids on their own request. This ownership check
+  // matches the same pattern already used by every other project/RFQ-scoped
+  // query in this file (projects.get, projects.expenses, projects.dailyLogs).
   quotations: protectedProcedure.input(z.object({ rfqId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
+    const [rfq] = await db.select({ requesterId: rfqs.requesterId }).from(rfqs).where(eq(rfqs.id, input.rfqId));
+    if (!rfq || rfq.requesterId !== ctx.user.id) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this RFQ' });
+    }
     const rows = await db
       .select({
         id:               quotations.id,

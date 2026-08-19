@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   FileText, Plus, Clock, MapPin, DollarSign, Send,
-  BarChart3, ChevronRight, Users, Paperclip, X, FileUp, Loader2,
+  BarChart3, Users, Paperclip, X, FileUp, Loader2,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import QuotationComparison from '@/components/QuotationComparison';
@@ -434,7 +434,7 @@ export default function RFQPage() {
 
                     {/* CTA */}
                     <div className="flex flex-col items-end gap-2 shrink-0">
-                      {isOwner ? (
+                      {isOwner && (
                         <Button
                           variant="default"
                           size="sm"
@@ -442,15 +442,6 @@ export default function RFQPage() {
                           onClick={() => setCompareRfq(rfq)}
                         >
                           <BarChart3 className="w-4 h-4" /> {t('rfq.compare')}
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5"
-                          onClick={() => setCompareRfq(rfq)}
-                        >
-                          {t('rfq.view_details')} <ChevronRight className="w-3.5 h-3.5" />
                         </Button>
                       )}
                     </div>

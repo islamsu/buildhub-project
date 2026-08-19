@@ -41,12 +41,23 @@ function makeAnonCtx(): TrpcContext {
   return { user: null, req: { protocol: 'https', headers: {} } as TrpcContext['req'], res: {} as TrpcContext['res'] };
 }
 
-/** Mocks the two-query shape rfq.quotations now issues: quotations+users join, then a reviews aggregate. */
-function mockDb(quotationRows: unknown[], aggregateRows: unknown[]) {
+/**
+ * Mocks the three-query shape rfq.quotations now issues: the ownership check
+ * (Phase 4A final gate), then the quotations+users join, then a reviews
+ * aggregate. `requesterId` defaults to 1 to match makeCtx()'s default caller,
+ * so every reputation-focused test below - written before the ownership
+ * check existed - keeps testing exactly what it always tested (reputation
+ * computation), not authorization.
+ */
+function mockDb(quotationRows: unknown[], aggregateRows: unknown[], requesterId: number | null = 1) {
   let call = 0;
   const select = vi.fn().mockImplementation(() => {
     call++;
     if (call === 1) {
+      // ownership check: .from(rfqs).where() -> [{ requesterId }] or []
+      return { from: () => ({ where: () => Promise.resolve(requesterId == null ? [] : [{ requesterId }]) }) };
+    }
+    if (call === 2) {
       // quotations join: .from().leftJoin().where().orderBy()
       return { from: () => ({ leftJoin: () => ({ where: () => ({ orderBy: () => Promise.resolve(quotationRows) }) }) }) };
     }
@@ -149,6 +160,25 @@ describe('rfq.quotations - dynamic reputation (Phase 4A.6.9)', () => {
   it('an unauthenticated caller is rejected (existing authorization unchanged)', async () => {
     const caller = appRouter.createCaller(makeAnonCtx());
     await expect(caller.rfq.quotations({ rfqId: 5 })).rejects.toThrow();
+  });
+
+  it('SECURITY (Phase 4A final gate): a caller who does not own the RFQ is rejected with FORBIDDEN, even though they are authenticated - closes an IDOR that exposed every bidding vendor\'s email, price, and notes to any logged-in user', async () => {
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(mockDb([], [], 999)); // RFQ belongs to user 999, caller is user 1
+    const caller = appRouter.createCaller(makeCtx(1));
+    await expect(caller.rfq.quotations({ rfqId: 5 })).rejects.toThrow(/do not own/i);
+  });
+
+  it('a request for an RFQ id that does not exist is also rejected, not silently returning an empty list', async () => {
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(mockDb([], [], null)); // no matching rfq row
+    const caller = appRouter.createCaller(makeCtx(1));
+    await expect(caller.rfq.quotations({ rfqId: 999999 })).rejects.toThrow(/do not own/i);
+  });
+
+  it('the RFQ owner succeeds (regression: the ownership check does not accidentally block the legitimate caller)', async () => {
+    const rows = [{ id: 1, rfqId: 5, providerId: 20, price: '1000', currency: 'EGP', timeline: 10, warranty: null, paymentTerms: null, notes: null, status: 'pending', createdAt: new Date(), providerName: 'Vendor A', providerEmail: 'a@test.com', providerVerified: true, providerRole: 'contractor', providerLocation: 'Cairo' }];
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(mockDb(rows, [], 1)); // RFQ belongs to caller (id 1)
+    const caller = appRouter.createCaller(makeCtx(1));
+    await expect(caller.rfq.quotations({ rfqId: 5 })).resolves.toHaveLength(1);
   });
 
   it('the rfqId is taken only from validated input, never from an unvalidated client-controlled vendor/provider identity field - there is no providerId/vendorId in the input schema', () => {
