@@ -437,6 +437,92 @@ export const expenses = mysqlTable('expenses', {
   projectIdIdx: index('expenses_projectId_idx').on(table.projectId),
 }));
 
+// ── Vendor Subscriptions (Phase 4B.1) ──────────────────────────────────────
+// Per-vendor commercial state. The plan CATALOGUE (prices, intervals,
+// entitlements) deliberately does NOT live here - it is in shared/billing.ts,
+// the single source of truth for every commercial value. This table holds only
+// what is genuinely per-vendor and mutable.
+//
+// Exactly one row per vendor (userId is unique): the row is a live state
+// machine that transitions in place, with the append-only audit trail in
+// `billingEvents` below carrying the history. This is what makes "one founder
+// offer per vendor, never retroactive, never re-granted" structurally
+// enforceable rather than a rule that application code has to remember -
+// `founderPriceUsedAt` is written once and never cleared, so a cancel-and-
+// resubscribe cycle cannot silently re-award the offer.
+//
+// onDelete RESTRICT (the Phase 3C convention, not the CASCADE used by
+// revokedSessions): a subscription is a financial record. Unlike a session
+// revocation, it must not silently disappear with its user - deletion should
+// be blocked and dealt with deliberately, exactly as it is for projects,
+// quotations, and every other business row.
+//
+// Provider references are all NULLABLE and provider-agnostic by name: no
+// Paymob/Stripe-specific column exists, so swapping or adding a provider is a
+// new adapter (Phase 4B.5), not a migration. NO card, token, or credential
+// data is stored here or anywhere else in BuildHub - provider-hosted checkout
+// keeps that out of this system entirely.
+export const vendorSubscriptions = mysqlTable('vendorSubscriptions', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  plan:      mysqlEnum('plan', ['free', 'professional', 'premium']).default('free').notNull(),
+  // 'free' is the resting state for any vendor without paid access, including
+  // after a trial lapses, a cancellation completes, or a grace period expires.
+  status:    mysqlEnum('status', ['free', 'trialing', 'active', 'past_due', 'canceled', 'expired']).default('free').notNull(),
+  billingInterval: mysqlEnum('billingInterval', ['month', 'year']),
+  currency:  varchar('currency', { length: 3 }).default('EGP').notNull(),
+  // Price snapshot at the moment of subscription, so a later catalogue change
+  // never retroactively rewrites what a vendor actually agreed to pay.
+  priceAmount: decimal('priceAmount', { precision: 10, scale: 2 }),
+  isFounderPrice: boolean('isFounderPrice').default(false).notNull(),
+  // Set once, never cleared - the one-time-use guard described above.
+  founderPriceUsedAt: timestamp('founderPriceUsedAt'),
+  // When the discounted founder window ends and standard pricing takes over.
+  founderPriceEndsAt: timestamp('founderPriceEndsAt'),
+  trialEndsAt: timestamp('trialEndsAt'),
+  currentPeriodStart: timestamp('currentPeriodStart'),
+  currentPeriodEnd: timestamp('currentPeriodEnd'),
+  cancelAtPeriodEnd: boolean('cancelAtPeriodEnd').default(false).notNull(),
+  canceledAt: timestamp('canceledAt'),
+  // Set when a renewal payment fails; downgrade happens once this passes.
+  gracePeriodEndsAt: timestamp('gracePeriodEndsAt'),
+  provider:  varchar('provider', { length: 40 }),
+  providerCustomerRef: varchar('providerCustomerRef', { length: 191 }),
+  providerSubscriptionRef: varchar('providerSubscriptionRef', { length: 191 }),
+  providerPriceRef: varchar('providerPriceRef', { length: 191 }),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  userIdUnique: uniqueIndex('vendorSubscriptions_userId_unique').on(table.userId),
+  statusIdx: index('vendorSubscriptions_status_idx').on(table.status),
+  // The three columns the scheduled lifecycle sweeps (Phase 4B.4) scan on.
+  currentPeriodEndIdx: index('vendorSubscriptions_currentPeriodEnd_idx').on(table.currentPeriodEnd),
+  trialEndsAtIdx: index('vendorSubscriptions_trialEndsAt_idx').on(table.trialEndsAt),
+  gracePeriodEndsAtIdx: index('vendorSubscriptions_gracePeriodEndsAt_idx').on(table.gracePeriodEndsAt),
+}));
+
+// Append-only billing audit trail. Deliberately mirrors userAccountAuditEvents
+// (nullable userId + SET NULL, not RESTRICT): like an account audit trail, a
+// billing history must be able to outlive its subject, and RESTRICT here would
+// make a user with any billing event undeletable forever.
+export const billingEvents = mysqlTable('billingEvents', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  subscriptionId: int('subscriptionId').references(() => vendorSubscriptions.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  action:    varchar('action', { length: 80 }).notNull(),
+  fromStatus: varchar('fromStatus', { length: 40 }),
+  toStatus:  varchar('toStatus', { length: 40 }),
+  // 'system' (scheduled lifecycle sweep), 'provider' (webhook), 'admin', 'vendor'.
+  source:    varchar('source', { length: 40 }),
+  actorId:   int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  note:      text('note'),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  userIdIdx: index('billingEvents_userId_idx').on(table.userId),
+  subscriptionIdIdx: index('billingEvents_subscriptionId_idx').on(table.subscriptionId),
+  actorIdIdx: index('billingEvents_actorId_idx').on(table.actorId),
+}));
+
 // ── Types ──────────────────────────────────────────────────────────────────
 export type User        = typeof users.$inferSelect;
 export type InsertUser  = typeof users.$inferInsert;
@@ -456,3 +542,6 @@ export type Dispute     = typeof disputes.$inferSelect;
 export type AdminSetting= typeof adminSettings.$inferSelect;
 export type DailyLog    = typeof dailyLogs.$inferSelect;
 export type Expense     = typeof expenses.$inferSelect;
+export type VendorSubscription = typeof vendorSubscriptions.$inferSelect;
+export type InsertVendorSubscription = typeof vendorSubscriptions.$inferInsert;
+export type BillingEvent = typeof billingEvents.$inferSelect;

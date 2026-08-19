@@ -23,6 +23,16 @@ import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } fr
 import { promisify } from 'node:util';
 import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, type ComplianceDocumentStatus } from '../shared/compliance';
 import { sdk, type AuthenticatedUser } from './_core/sdk';
+import {
+  BILLING_CURRENCY, FOUNDER_OFFER_ENDS_AT_SETTING_KEY, FOUNDER_OFFER_MONTHS, GRACE_PERIOD_DAYS,
+  PLAN_IDS, PLANS, TRIAL_DAYS, annualSavings,
+} from '@shared/billing';
+import {
+  ADMIN_SUBSCRIPTION_COLUMNS, checkFounderEligibility, getBillingState, getBillingEvents, getSubscription,
+} from './billing/service';
+import { deriveBillingState } from './billing/domain';
+import { isPaymentProviderConfigured } from './billing/provider';
+import { vendorSubscriptions } from '../drizzle/schema';
 
 const scryptAsync = promisify(scryptCallback);
 
@@ -989,6 +999,13 @@ const DEFAULT_ADMIN_SETTINGS: Record<string, string> = {
   commissionPercent: '5',
   reviewApprovalRequired: 'true',
   spamSensitivity: 'medium',
+  // Phase 4B.1: founder-offer cut-off, as an ISO date string. Empty = the
+  // offer is closed, which is the safe default (getFounderOfferEndsAt treats
+  // absent/unparseable as "no offer"). Listed here so an administrator can
+  // actually set it through the existing admin.updateSetting endpoint, which
+  // rejects any key not defined in this record - without this entry the
+  // founder offer would not be configurable at all.
+  [FOUNDER_OFFER_ENDS_AT_SETTING_KEY]: '',
 };
 
 // SECURITY (Phase 4A cumulative final audit): explicit allowlist for the
@@ -1174,6 +1191,30 @@ const adminRouter = router({
       throw err;
     }
     return { success: true };
+  }),
+  // Phase 4B.1 minimal administrative billing visibility. Deliberately a
+  // single-vendor lookup, not a dashboard - §10 of the phase brief. Returns the
+  // explicit ADMIN_SUBSCRIPTION_COLUMNS allowlist (no provider references, and
+  // BuildHub stores no card/token/credential data anywhere to begin with).
+  vendorBilling: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return null;
+    const [row] = await db
+      .select(ADMIN_SUBSCRIPTION_COLUMNS)
+      .from(vendorSubscriptions)
+      .where(eq(vendorSubscriptions.userId, input.userId))
+      .limit(1);
+    const full = await getSubscription(input.userId);
+    const state = deriveBillingState(full);
+    return {
+      subscription: row ?? null,
+      effectivePlan: state.effectivePlan,
+      isPaid: state.isPaid,
+      inTrial: state.inTrial,
+      inGracePeriod: state.inGracePeriod,
+      awaitingRenewalSync: state.awaitingRenewalSync,
+      events: await getBillingEvents(input.userId, 50),
+    };
   }),
   accountAudit: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
     const db = await getDb();
@@ -1397,6 +1438,61 @@ const aiRouter = router({
     }),
 });
 
+// ── Billing Router (Phase 4B.1) ────────────────────────────────────────────
+// READ-ONLY by design. There is deliberately no vendor-callable mutation that
+// changes a plan, price, or subscription status anywhere in this router: plan
+// changes are driven by verified payment-provider events (Phase 4B.5), never
+// by a client request. That is what structurally prevents a vendor from
+// upgrading themselves by manipulating a payload - there is no such endpoint
+// to manipulate, not merely a check that could be bypassed.
+const billingRouter = router({
+  // The public commercial catalogue, straight from shared/billing.ts - the one
+  // source of truth. Prices are never duplicated into the client bundle.
+  plans: publicProcedure.query(() => ({
+    currency: BILLING_CURRENCY,
+    trialDays: TRIAL_DAYS,
+    gracePeriodDays: GRACE_PERIOD_DAYS,
+    founderOfferMonths: FOUNDER_OFFER_MONTHS,
+    plans: PLAN_IDS.map(id => ({
+      id,
+      paid: PLANS[id].paid,
+      standard: PLANS[id].standard,
+      founder: PLANS[id].founder,
+      entitlements: PLANS[id].entitlements,
+      annualSavings: annualSavings(id),
+    })),
+  })),
+
+  // A vendor's own billing state. Self-scoped by construction: there is no
+  // userId input, so there is no field a caller could populate to read another
+  // vendor's billing information.
+  mySubscription: protectedProcedure.query(async ({ ctx }) => {
+    const [state, founderEligible] = await Promise.all([
+      getBillingState(ctx.user.id),
+      checkFounderEligibility(ctx.user.id),
+    ]);
+    return {
+      plan: state.effectivePlan,
+      status: state.status,
+      isPaid: state.isPaid,
+      inTrial: state.inTrial,
+      trialEndsAt: state.trialEndsAt,
+      inGracePeriod: state.inGracePeriod,
+      gracePeriodEndsAt: state.gracePeriodEndsAt,
+      cancelAtPeriodEnd: state.cancelAtPeriodEnd,
+      currentPeriodEnd: state.currentPeriodEnd,
+      founderPriceActive: state.founderPriceActive,
+      founderPriceEndsAt: state.founderPriceEndsAt,
+      founderEligible,
+      entitlements: state.entitlements,
+      // Phase 4B.1 has no payment provider wired; the vendor-facing upgrade
+      // flow arrives with it in Phase 4B.5. Surfaced honestly rather than
+      // rendering a purchase button that cannot work.
+      checkoutAvailable: isPaymentProviderConfigured(),
+    };
+  }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -1410,6 +1506,7 @@ export const appRouter = router({
   analytics: analyticsRouter,
   admin: adminRouter,
   compliance: registrationRouter,
+  billing: billingRouter,
   ai: aiRouter,
 });
 
