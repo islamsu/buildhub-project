@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import VendorReputation from '@/components/VendorReputation';
 import { trpc } from '@/lib/trpc';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -200,6 +201,11 @@ export default function ProviderDashboard() {
                     </p>
                   </div>
                 )}
+
+                <div className="border-t pt-4">
+                  <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Star className="w-3.5 h-3.5" /> {t('reputation.title')}</h3>
+                  <VendorReputation userId={ownProfile.id} />
+                </div>
               </div>
             )}
           </CardContent>

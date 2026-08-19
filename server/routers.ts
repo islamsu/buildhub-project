@@ -667,6 +667,50 @@ const reviewsRouter = router({
     if (!db) return [];
     return db.select().from(reviews).where(and(eq(reviews.revieweeId, input.userId), eq(reviews.verified, true))).orderBy(desc(reviews.createdAt));
   }),
+  // Dynamic/computed rating (Phase 4A.4 decision): always derived live from the
+  // reviews table, never a stored aggregate - so it can never drift out of sync
+  // the way users.rating/reviewCount already have. Same access level and same
+  // `verified: true` filter as `forUser` above, since this is an aggregate over
+  // exactly the same public-by-design data, not a new/competing calculation.
+  statsForUser: publicProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { averageRating: null as number | null, reviewCount: 0 };
+    const [row] = await db.select({
+      avg: sql<string | null>`avg(${reviews.rating})`,
+      count: sql<number>`count(*)`,
+    }).from(reviews).where(and(eq(reviews.revieweeId, input.userId), eq(reviews.verified, true)));
+    const reviewCount = Number(row?.count ?? 0);
+    const averageRating = reviewCount > 0 && row?.avg != null ? Math.round(Number(row.avg) * 10) / 10 : null;
+    return { averageRating, reviewCount };
+  }),
+  // Lists who the caller can currently leave a review for on this project, and
+  // whether they already have. Reuses the exact same "verified participant"
+  // definition as `submit` below (accepted-quotation providers on RFQs linked
+  // to this project) rather than a second, competing eligibility rule - only
+  // covers the RFQ-linked case, not `submit`'s older-project role-based
+  // fallback, since that fallback has no well-defined, enumerable participant
+  // list to safely offer as UI choices.
+  eligibleReviewees: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const [project] = await db.select().from(projects).where(and(eq(projects.id, input.projectId), eq(projects.status, 'completed')));
+    if (!project || project.ownerId !== ctx.user.id) return [];
+    const awardedProviders = await db.select({ providerId: quotations.providerId, name: users.name })
+      .from(quotations)
+      .innerJoin(rfqs, eq(quotations.rfqId, rfqs.id))
+      .innerJoin(users, eq(quotations.providerId, users.id))
+      .where(and(eq(rfqs.projectId, input.projectId), eq(quotations.status, 'accepted')));
+    const existingReviews = await db.select({ revieweeId: reviews.revieweeId }).from(reviews).where(and(eq(reviews.projectId, input.projectId), eq(reviews.reviewerId, ctx.user.id)));
+    const reviewedIds = new Set(existingReviews.map(r => r.revieweeId));
+    const seen = new Set<number>();
+    const result: { providerId: number; name: string | null; alreadyReviewed: boolean }[] = [];
+    for (const p of awardedProviders) {
+      if (seen.has(p.providerId)) continue;
+      seen.add(p.providerId);
+      result.push({ providerId: p.providerId, name: p.name, alreadyReviewed: reviewedIds.has(p.providerId) });
+    }
+    return result;
+  }),
   submit: protectedProcedure
     .input(z.object({ projectId: z.number(), revieweeId: z.number(), rating: z.number().min(1).max(5), comment: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {

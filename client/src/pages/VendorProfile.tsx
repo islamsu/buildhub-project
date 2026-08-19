@@ -6,8 +6,9 @@ import { trpc } from '@/lib/trpc';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Calendar, MapPin, Store } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import VendorReputation from '@/components/VendorReputation';
+import { ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Calendar, MapPin, Star, Store } from 'lucide-react';
 
 function initials(name: string | null | undefined) {
   if (!name) return '?';
@@ -103,6 +104,15 @@ export default function VendorProfile() {
               <p className="text-sm text-muted-foreground italic">{t('profile.empty_bio')}</p>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base"><Star className="w-4 h-4" /> {t('reputation.title')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <VendorReputation userId={userId} />
         </CardContent>
       </Card>
     </Shell>

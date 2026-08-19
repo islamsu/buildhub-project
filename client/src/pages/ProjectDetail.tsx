@@ -13,12 +13,13 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useState } from 'react';
 import ProjectDetailEnhancements from '@/components/ProjectDetailEnhancements';
+import ReviewSubmissionPanel from '@/components/ReviewSubmissionPanel';
 import { toast } from 'sonner';
 import { Link, useParams } from 'wouter';
 import {
   ArrowLeft, Plus, CheckCircle2, Clock, AlertCircle, Calendar,
   DollarSign, Users, FileText, BarChart3, Wrench, Flag,
-  TrendingUp, MapPin, Bot, ClipboardList, BookOpen
+  TrendingUp, MapPin, Bot, ClipboardList, BookOpen, Star
 } from 'lucide-react';
 
 export default function ProjectDetail() {
@@ -154,6 +155,7 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                 <TabsTrigger value="logs" className="gap-1.5"><BookOpen className="w-4 h-4" /> {t('project.daily_logs')}</TabsTrigger>
                 <TabsTrigger value="documents" className="gap-1.5"><FileText className="w-4 h-4" /> {t('project.documents')}</TabsTrigger>
                 <TabsTrigger value="operations" className="gap-1.5"><BarChart3 className="w-4 h-4" /> {lang === 'ar' ? 'عمليات المشروع' : 'Project Operations'}</TabsTrigger>
+                <TabsTrigger value="reviews" className="gap-1.5"><Star className="w-4 h-4" /> {t('review.tab_label')}</TabsTrigger>
               </TabsList>
 
               {/* Tasks */}
@@ -381,6 +383,10 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
 
               <TabsContent value="operations">
                 <ProjectDetailEnhancements projectId={projectId} lang={lang} />
+              </TabsContent>
+
+              <TabsContent value="reviews">
+                <ReviewSubmissionPanel projectId={projectId} isCompleted={project?.status === 'completed'} />
               </TabsContent>
             </Tabs>
           </>
