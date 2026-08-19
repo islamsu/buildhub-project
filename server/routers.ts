@@ -912,6 +912,32 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+// SECURITY (Phase 4A.6.7): `users` also holds passwordHash, invitationToken, and
+// other private/internal fields. admin.users MUST always use this explicit
+// allowlist - never `select().from(users)` - so a future edit to this file
+// cannot silently start leaking a private column to the admin User Management
+// screen. Every field here is independently traced to real, current consumption
+// in client/src/pages/AdminDashboard.tsx (row display, group filter/counts,
+// frozen/verified/dummy/invite badges, and the freeze/audit/dummy-password
+// dialogs) - see BUILDHUB_PHASE4A67_ADMIN_USER_DATA_SECURITY.md for the
+// field-by-field trace. Adding a new users column later does NOT expose it here
+// automatically; it must be added to this list deliberately.
+const ADMIN_USER_LIST_COLUMNS = {
+  id: users.id,
+  name: users.name,
+  email: users.email,
+  username: users.username,
+  role: users.role,
+  userRole: users.userRole,
+  accountStatus: users.accountStatus,
+  frozenReason: users.frozenReason,
+  verified: users.verified,
+  isDummy: users.isDummy,
+  accountSource: users.accountSource,
+  invitationStatus: users.invitationStatus,
+  createdAt: users.createdAt,
+} as const;
+
 const DEFAULT_ADMIN_SETTINGS: Record<string, string> = {
   maintenanceMode: 'false',
   registrationEnabled: 'true',
@@ -947,7 +973,7 @@ const adminRouter = router({
   users: adminProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(users).orderBy(desc(users.createdAt)).limit(250);
+    return db.select(ADMIN_USER_LIST_COLUMNS).from(users).orderBy(desc(users.createdAt)).limit(250);
   }),
   createUser: adminProcedure.input(z.object({
     username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/),
