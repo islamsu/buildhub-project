@@ -709,6 +709,84 @@ const reviewsRouter = router({
     }),
 });
 
+// ── Vendor Profile Router ─────────────────────────────────────────────────
+// SECURITY: `users` also holds passwordHash, invitationToken, email, phone,
+// frozenReason, and other private account fields. The public/self profile
+// selects below MUST always use an explicit column allowlist - never
+// `select().from(users)` - so a future edit to this file cannot silently
+// start leaking a private column through these endpoints.
+const PUBLIC_PROFILE_COLUMNS = {
+  id: users.id,
+  name: users.name,
+  bio: users.bio,
+  avatar: users.avatar,
+  location: users.location,
+  userRole: users.userRole,
+  verified: users.verified,
+  createdAt: users.createdAt,
+} as const;
+const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
+function isAllowedAvatarType(contentType: string): boolean {
+  return contentType.startsWith('image/');
+}
+async function completedProjectCount(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, userId: number) {
+  const [row] = await db.select({ count: sql<number>`count(*)` }).from(quotations).where(and(eq(quotations.providerId, userId), eq(quotations.status, 'accepted')));
+  return Number(row?.count ?? 0);
+}
+
+const profileRouter = router({
+  // Public vendor profile. Requires authentication (the safer of the two options
+  // left open by Phase 4A.5 - fully logged-out access was explicitly flagged as
+  // an unresolved owner decision and is deliberately NOT chosen here; see
+  // BUILDHUB_PHASE4A61_VENDOR_PROFILE_IMPLEMENTATION.md). Scoped to provider-role
+  // accounts only - this endpoint answers "what does this vendor look like,"
+  // not "what does any BuildHub user look like."
+  getPublic: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [target] = await db.select(PUBLIC_PROFILE_COLUMNS).from(users).where(eq(users.id, input.userId));
+    if (!target || !providerRoles.includes(target.userRole as typeof providerRoles[number])) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor profile not found' });
+    }
+    return { ...target, completedProjects: await completedProjectCount(db, target.id) };
+  }),
+  // A vendor's own profile, for the edit form. Identical field set to getPublic
+  // (no additional private data) - self-scoping comes entirely from using
+  // ctx.user.id, never a client-supplied id.
+  getOwn: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [target] = await db.select(PUBLIC_PROFILE_COLUMNS).from(users).where(eq(users.id, ctx.user.id));
+    if (!target) throw new TRPCError({ code: 'NOT_FOUND' });
+    return { ...target, completedProjects: await completedProjectCount(db, ctx.user.id) };
+  }),
+  // Self-only by construction: there is no userId (or any other target-account
+  // identifier) anywhere in this input schema, so there is no field a client
+  // could ever populate to modify a different account's profile.
+  update: protectedProcedure.input(z.object({
+    bio: z.string().max(1000).optional(),
+    location: z.string().max(255).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    await db.update(users).set({ bio: input.bio, location: input.location }).where(eq(users.id, ctx.user.id));
+    return { success: true };
+  }),
+  // Same self-only guarantee as update: writes only to ctx.user.id's row.
+  uploadAvatar: protectedProcedure.input(z.object({
+    contentType: z.string().refine(isAllowedAvatarType, 'Only image files are supported'),
+    base64: z.string().min(1),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const bytes = Buffer.from(input.base64, 'base64');
+    if (bytes.length === 0 || bytes.length > MAX_AVATAR_SIZE) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Avatar images must be between 1 byte and 2MB' });
+    const { url } = await storagePut(`avatars/${ctx.user.id}/${Date.now()}-avatar`, bytes, input.contentType);
+    await db.update(users).set({ avatar: url }).where(eq(users.id, ctx.user.id));
+    return { url };
+  }),
+});
+
 // ── Admin Router ───────────────────────────────────────────────────────────
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN' });
@@ -1119,6 +1197,7 @@ export const appRouter = router({
   messages: messagesRouter,
   notifications: notificationsRouter,
   reviews: reviewsRouter,
+  profile: profileRouter,
   admin: adminRouter,
   compliance: registrationRouter,
   ai: aiRouter,

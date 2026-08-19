@@ -6,13 +6,32 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { trpc } from '@/lib/trpc';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { FileText, DollarSign, Clock, MapPin, Send, Star, TrendingUp, CheckCircle2, Bot } from 'lucide-react';
+import { FileText, DollarSign, Clock, MapPin, Send, Star, TrendingUp, CheckCircle2, Bot, Pencil, Camera, BadgeCheck } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
+
+function fileToBase64(file: File): Promise<{ base64: string; contentType: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve({ base64: result.split(',')[1] ?? '', contentType: file.type });
+    };
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function initials(name: string | null | undefined) {
+  if (!name) return '?';
+  return name.trim().split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase() ?? '').join('') || '?';
+}
 
 export default function ProviderDashboard() {
   const { t, lang } = useLanguage();
@@ -26,6 +45,31 @@ export default function ProviderDashboard() {
     onSuccess: () => { toast.success(lang === 'ar' ? 'تم تقديم العرض!' : 'Quotation submitted!'); setQuoteOpen(false); },
     onError: (e: { message: string }) => toast.error(e.message),
   });
+
+  const { data: ownProfile, isLoading: profileLoading, error: profileError, refetch: refetchProfile } = trpc.profile.getOwn.useQuery();
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({ bio: '', location: '' });
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ownProfile) setProfileForm({ bio: ownProfile.bio ?? '', location: ownProfile.location ?? '' });
+  }, [ownProfile]);
+  const updateProfile = trpc.profile.update.useMutation({
+    onSuccess: () => { toast.success(t('profile.save_success')); setEditingProfile(false); refetchProfile(); },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
+  const uploadAvatar = trpc.profile.uploadAvatar.useMutation({
+    onSuccess: () => refetchProfile(),
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error(t('profile.avatar_invalid_type')); return; }
+    if (file.size > 2 * 1024 * 1024) { toast.error(t('profile.avatar_too_large')); return; }
+    const { base64, contentType } = await fileToBase64(file);
+    uploadAvatar.mutate({ base64, contentType });
+  };
 
   const userRole = (user as any)?.userRole ?? 'contractor';
   useEffect(() => {
@@ -76,6 +120,90 @@ export default function ProviderDashboard() {
             </Card>
           ))}
         </div>
+
+        {/* Vendor Profile */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <Camera className="w-5 h-5" /> {t('profile.title')}
+              </CardTitle>
+              {!profileLoading && ownProfile && !editingProfile && (
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setEditingProfile(true)}>
+                  <Pencil className="w-3.5 h-3.5" /> {t('common.edit')}
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {profileLoading ? (
+              <div className="text-center py-8 text-muted-foreground">{t('common.loading')}</div>
+            ) : profileError || !ownProfile ? (
+              <div className="text-center py-8 text-muted-foreground">{t('profile.load_error')}</div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <Avatar className="size-16">
+                      {ownProfile.avatar && <AvatarImage src={ownProfile.avatar} alt={ownProfile.name ?? ''} />}
+                      <AvatarFallback className="text-lg font-semibold">{initials(ownProfile.name)}</AvatarFallback>
+                    </Avatar>
+                    {editingProfile && (
+                      <button
+                        type="button"
+                        onClick={() => avatarInputRef.current?.click()}
+                        disabled={uploadAvatar.isPending}
+                        className="absolute -bottom-1 -end-1 flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground shadow"
+                        aria-label={t('profile.avatar_change')}
+                      >
+                        <Camera className="w-3 h-3" />
+                      </button>
+                    )}
+                    <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold truncate">{ownProfile.name || '—'}</p>
+                      {ownProfile.verified && <Badge variant="secondary" className="gap-1"><BadgeCheck className="w-3.5 h-3.5" />{t('profile.verified_badge')}</Badge>}
+                    </div>
+                    {uploadAvatar.isPending && <p className="text-xs text-muted-foreground">{t('profile.avatar_uploading')}</p>}
+                  </div>
+                </div>
+
+                {editingProfile ? (
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="vendor-bio">{t('profile.bio_label')}</Label>
+                      <Textarea id="vendor-bio" rows={4} maxLength={1000} placeholder={t('profile.bio_placeholder')} value={profileForm.bio} onChange={e => setProfileForm(f => ({ ...f, bio: e.target.value }))} className="mt-1" />
+                    </div>
+                    <div>
+                      <Label htmlFor="vendor-location">{t('profile.location_label')}</Label>
+                      <Input id="vendor-location" maxLength={255} placeholder={t('profile.location_placeholder')} value={profileForm.location} onChange={e => setProfileForm(f => ({ ...f, location: e.target.value }))} className="mt-1" />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={() => updateProfile.mutate({ bio: profileForm.bio, location: profileForm.location })} disabled={updateProfile.isPending}>
+                        {updateProfile.isPending ? t('common.loading') : t('common.save')}
+                      </Button>
+                      <Button variant="outline" onClick={() => { setEditingProfile(false); setProfileForm({ bio: ownProfile.bio ?? '', location: ownProfile.location ?? '' }); }}>
+                        {t('common.cancel')}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2 text-sm">
+                      <div className="flex items-center gap-2 text-muted-foreground"><MapPin className="w-4 h-4 flex-shrink-0" /><span className="truncate">{ownProfile.location || '—'}</span></div>
+                      <div className="flex items-center gap-2 text-muted-foreground"><CheckCircle2 className="w-4 h-4 flex-shrink-0" /><span>{ownProfile.completedProjects} {t('profile.completed_projects')}</span></div>
+                    </div>
+                    <p className="text-sm text-muted-foreground leading-6 whitespace-pre-wrap">
+                      {ownProfile.bio || t('profile.no_bio_own')}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Available RFQs */}
         <Card>

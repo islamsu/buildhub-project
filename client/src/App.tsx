@@ -22,6 +22,7 @@ import MessagesPage from "./pages/MessagesPage";
 import AIAssistantPage from "./pages/AIAssistantPage";
 import CompliancePage from "./pages/CompliancePage";
 import PasswordSetupPage from "./pages/PasswordSetupPage";
+import VendorProfile from "./pages/VendorProfile";
 
 function Router() {
   return (
@@ -30,6 +31,7 @@ function Router() {
       <Route path={"/auth"} component={AuthPage} />
       <Route path={"/dashboard"} component={HomeownerDashboard} />
       <Route path={"/provider"} component={ProviderDashboard} />
+      <Route path={"/vendor/:id"} component={VendorProfile} />
       <Route path={"/platform/:role"} component={RolePlatform} />
       <Route path={"/admin/:section"} component={AdminDashboard} />
       <Route path={"/admin"} component={AdminDashboard} />
