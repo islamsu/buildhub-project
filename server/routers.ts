@@ -573,8 +573,6 @@ const rfqRouter = router({
         createdAt:        quotations.createdAt,
         providerName:     users.name,
         providerEmail:    users.email,
-        providerRating:   users.rating,
-        providerReviews:  users.reviewCount,
         providerVerified: users.verified,
         providerRole:     users.userRole,
         providerLocation: users.location,
@@ -583,7 +581,38 @@ const rfqRouter = router({
       .leftJoin(users, eq(quotations.providerId, users.id))
       .where(eq(quotations.rfqId, input.rfqId))
       .orderBy(quotations.price);
-    return rows;
+
+    // Phase 4A.6.9: reputation must come from the same dynamic AVG/COUNT
+    // definition already approved in reviews.statsForUser (Phase 4A.6.2) -
+    // never the stale users.rating/reviewCount columns, which nothing in
+    // the codebase writes to and which would always show 0 here regardless
+    // of a vendor's real reviews. This keeps the homeowner's quote-comparison
+    // view consistent with the same vendor's profile/dashboard reputation.
+    const providerIds = Array.from(new Set(rows.map(row => row.providerId).filter((id): id is number => id != null)));
+    const reputationByProvider = new Map<number, { averageRating: number | null; reviewCount: number }>();
+    if (providerIds.length > 0) {
+      const aggregateRows = await db.select({
+        revieweeId: reviews.revieweeId,
+        avg: sql<string | null>`avg(${reviews.rating})`,
+        count: sql<number>`count(*)`,
+      }).from(reviews).where(and(inArray(reviews.revieweeId, providerIds), eq(reviews.verified, true))).groupBy(reviews.revieweeId);
+      for (const row of aggregateRows) {
+        const reviewCount = Number(row.count ?? 0);
+        reputationByProvider.set(row.revieweeId, {
+          averageRating: reviewCount > 0 && row.avg != null ? Math.round(Number(row.avg) * 10) / 10 : null,
+          reviewCount,
+        });
+      }
+    }
+
+    return rows.map(row => {
+      const reputation = row.providerId != null ? reputationByProvider.get(row.providerId) : undefined;
+      return {
+        ...row,
+        providerRating: reputation?.averageRating ?? null,
+        providerReviews: reputation?.reviewCount ?? 0,
+      };
+    });
   }),
   submitQuotation: approvedProviderProcedure
     .input(z.object({

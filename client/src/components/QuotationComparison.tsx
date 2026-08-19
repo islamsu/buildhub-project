@@ -37,7 +37,7 @@ type QuotationRow = {
   createdAt: Date;
   providerName: string | null;
   providerEmail: string | null;
-  providerRating: string | null;
+  providerRating: number | null;
   providerReviews: number | null;
   providerVerified: boolean | null;
   providerRole: string | null;
@@ -61,7 +61,7 @@ function computeScore(q: QuotationRow, all: QuotationRow[], rfqBudget?: number):
   const timeline = q.timeline ?? maxTimeline;
   const timelineScore = maxTimeline === minTimeline ? 100 : ((maxTimeline - timeline) / (maxTimeline - minTimeline)) * 100;
 
-  const rating = parseFloat(q.providerRating ?? '0');
+  const rating = q.providerRating ?? 0;
   const ratingScore = (rating / 5) * 100;
 
   const verifiedBonus = q.providerVerified ? 10 : 0;
@@ -151,7 +151,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
     let diff = 0;
     if (sortKey === 'price') diff = parseFloat(a.price) - parseFloat(b.price);
     else if (sortKey === 'score') diff = b.score - a.score;
-    else if (sortKey === 'rating') diff = parseFloat(b.providerRating ?? '0') - parseFloat(a.providerRating ?? '0');
+    else if (sortKey === 'rating') diff = (b.providerRating ?? 0) - (a.providerRating ?? 0);
     else if (sortKey === 'timeline') diff = (a.timeline ?? 9999) - (b.timeline ?? 9999);
     return sortAsc ? diff : -diff;
   });
@@ -287,7 +287,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                     <ScoreBadge score={q.score} />
                   </div>
                   <StarRating
-                    rating={parseFloat(q.providerRating ?? '0')}
+                    rating={q.providerRating ?? 0}
                     count={q.providerReviews ?? 0}
                   />
                 </CardHeader>
@@ -466,7 +466,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                   </td>
                   {sorted.map(q => (
                     <td key={q.id} className="text-center py-2.5 px-3">
-                      <StarRating rating={parseFloat(q.providerRating ?? '0')} count={q.providerReviews ?? 0} />
+                      <StarRating rating={q.providerRating ?? 0} count={q.providerReviews ?? 0} />
                     </td>
                   ))}
                 </tr>
