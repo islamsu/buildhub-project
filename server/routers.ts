@@ -831,6 +831,57 @@ const profileRouter = router({
   }),
 });
 
+// ── Vendor Analytics Router ────────────────────────────────────────────────
+// Phase 4A.6.3. Exactly 4 approved metrics, one self-scoped query, no
+// vendorId/userId input field anywhere in this router (structural isolation,
+// same pattern as profileRouter.getOwn/update - a client literally cannot
+// name another vendor's account here). "RFQs received" is intentionally NOT
+// implemented: rfq.list/rfqRouter has no per-vendor targeting (any provider
+// can quote on any open RFQ), so there is no honest "received" count to
+// report. Quotation acceptance has no timestamp of its own (quotations has
+// only `createdAt`, no `updatedAt`/`acceptedAt`), so "time to acceptance"
+// cannot be computed either - response time here is instead defined as the
+// time between an RFQ being posted and this vendor's own quotation on it
+// being submitted (rfqs.createdAt -> quotations.createdAt), which both
+// existing NOT NULL/defaultNow() columns fully support.
+const analyticsRouter = router({
+  myStats: approvedProviderProcedure.query(async ({ ctx }) => {
+    if (!providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Provider access required' });
+    }
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+    // Single aggregate query, scoped to ctx.user.id only: submitted/accepted counts
+    // and average response time in one pass, so there is exactly one definition of
+    // "accepted" in this router (status = 'accepted', the only accepted state the
+    // schema defines) rather than two calculations that could drift apart.
+    const [row] = await db.select({
+      submitted: sql<number>`count(*)`,
+      accepted: sql<number>`sum(case when ${quotations.status} = 'accepted' then 1 else 0 end)`,
+      avgResponseSeconds: sql<string | null>`avg(timestampdiff(second, ${rfqs.createdAt}, ${quotations.createdAt}))`,
+    })
+      .from(quotations)
+      .innerJoin(rfqs, eq(quotations.rfqId, rfqs.id))
+      .where(eq(quotations.providerId, ctx.user.id));
+
+    const quotationsSubmitted = Number(row?.submitted ?? 0);
+    const quotationsAccepted = Number(row?.accepted ?? 0);
+    // Division-by-zero guard: 0 submitted -> null win rate, never NaN/Infinity/0-as-a-lie.
+    const winRate = quotationsSubmitted > 0
+      ? Math.round((quotationsAccepted / quotationsSubmitted) * 1000) / 10
+      : null;
+    // Every quotations/rfqs row has a NOT NULL defaultNow() createdAt, so a submitted
+    // quotation can never be missing a timestamp - null here means zero data, not
+    // missing data.
+    const avgResponseTimeHours = quotationsSubmitted > 0 && row?.avgResponseSeconds != null
+      ? Math.round((Number(row.avgResponseSeconds) / 3600) * 10) / 10
+      : null;
+
+    return { quotationsSubmitted, quotationsAccepted, winRate, avgResponseTimeHours };
+  }),
+});
+
 // ── Admin Router ───────────────────────────────────────────────────────────
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN' });
@@ -1242,6 +1293,7 @@ export const appRouter = router({
   notifications: notificationsRouter,
   reviews: reviewsRouter,
   profile: profileRouter,
+  analytics: analyticsRouter,
   admin: adminRouter,
   compliance: registrationRouter,
   ai: aiRouter,

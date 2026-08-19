@@ -10,10 +10,11 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import VendorReputation from '@/components/VendorReputation';
+import VendorAnalytics from '@/components/VendorAnalytics';
 import { trpc } from '@/lib/trpc';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { FileText, DollarSign, Clock, MapPin, Send, Star, TrendingUp, CheckCircle2, Bot, Pencil, Camera, BadgeCheck } from 'lucide-react';
+import { FileText, DollarSign, Clock, MapPin, Send, Star, TrendingUp, CheckCircle2, Bot, Pencil, Camera, BadgeCheck, BarChart3 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
 
@@ -205,6 +206,11 @@ export default function ProviderDashboard() {
                 <div className="border-t pt-4">
                   <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Star className="w-3.5 h-3.5" /> {t('reputation.title')}</h3>
                   <VendorReputation userId={ownProfile.id} />
+                </div>
+
+                <div className="border-t pt-4">
+                  <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><BarChart3 className="w-3.5 h-3.5" /> {t('analytics.title')}</h3>
+                  <VendorAnalytics />
                 </div>
               </div>
             )}
