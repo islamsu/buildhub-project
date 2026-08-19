@@ -267,7 +267,7 @@ export default function AuthPage() {
             <div className="space-y-2.5">
               <Input placeholder={lang === 'ar' ? 'اسم المستخدم التجريبي' : 'Dummy username'} value={dummyUsername} onChange={event => setDummyUsername(event.target.value)} autoComplete="username" />
               <Input type="password" placeholder={lang === 'ar' ? 'كلمة المرور' : 'Password'} value={dummyPassword} onChange={event => setDummyPassword(event.target.value)} autoComplete="current-password" />
-              <Button type="button" variant="outline" className="w-full border-amber-300 bg-white/80 hover:bg-white" onClick={handleDummySignIn} disabled={signInDummy.isPending || dummyUsername.trim().length < 3 || dummyPassword.length < 8}>
+              <Button type="button" variant="outline" className="w-full border-amber-300 bg-white/80 hover:bg-white" onClick={handleDummySignIn} disabled={signInDummy.isPending || dummyUsername.trim().length < 3}>
                 {signInDummy.isPending ? t('common.loading') : (lang === 'ar' ? 'تسجيل الدخول كمستخدم تجريبي' : 'Sign in as dummy')}
               </Button>
             </div>
