@@ -31,6 +31,7 @@ import {
   ADMIN_SUBSCRIPTION_COLUMNS, checkFounderEligibility, getBillingState, getBillingEvents, getSubscription,
 } from './billing/service';
 import { deriveBillingState } from './billing/domain';
+import { resolveVendorEntitlements, toVendorEntitlementResponse } from './billing/entitlements';
 import { isPaymentProviderConfigured } from './billing/provider';
 import { vendorSubscriptions } from '../drizzle/schema';
 
@@ -1209,10 +1210,20 @@ const adminRouter = router({
     return {
       subscription: row ?? null,
       effectivePlan: state.effectivePlan,
+      storedPlan: state.storedPlan,
       isPaid: state.isPaid,
       inTrial: state.inTrial,
+      trialEndsAt: state.trialEndsAt,
+      cancelAtPeriodEnd: state.cancelAtPeriodEnd,
+      currentPeriodEnd: state.currentPeriodEnd,
       inGracePeriod: state.inGracePeriod,
+      gracePeriodEndsAt: state.gracePeriodEndsAt,
+      founderPriceActive: state.founderPriceActive,
+      founderPriceEndsAt: state.founderPriceEndsAt,
       awaitingRenewalSync: state.awaitingRenewalSync,
+      // Surfaced so support can SEE a corrupt row rather than being silently
+      // told the vendor is on FREE with no explanation.
+      dataIntegrityIssue: state.dataIntegrityIssue,
       events: await getBillingEvents(input.userId, 50),
     };
   }),
@@ -1490,6 +1501,20 @@ const billingRouter = router({
       // rendering a purchase button that cannot work.
       checkoutAvailable: isPaymentProviderConfigured(),
     };
+  }),
+
+  // Phase 4B.2: the vendor's full effective entitlement set, resolved through
+  // the one central engine. Self-scoped by construction - no input at all, so
+  // no request shape can name another vendor.
+  myEntitlements: protectedProcedure.query(async ({ ctx }) => {
+    const resolution = await resolveVendorEntitlements(ctx.user.id);
+    return toVendorEntitlementResponse(resolution);
+  }),
+
+  // Just the effective plan id, for callers that need nothing else.
+  myPlan: protectedProcedure.query(async ({ ctx }) => {
+    const resolution = await resolveVendorEntitlements(ctx.user.id);
+    return { plan: resolution.effectivePlan, isPaid: resolution.isPaid };
   }),
 });
 

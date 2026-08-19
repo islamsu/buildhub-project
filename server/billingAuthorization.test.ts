@@ -209,6 +209,57 @@ describe('admin billing visibility (Phase 4B.1)', () => {
   });
 });
 
+describe('entitlement API - server authority (Phase 4B.2)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('billing.myEntitlements rejects an unauthenticated caller', async () => {
+    const caller = appRouter.createCaller(makeAnonCtx());
+    await expect(caller.billing.myEntitlements()).rejects.toThrow();
+  });
+
+  it('billing.myPlan rejects an unauthenticated caller', async () => {
+    const caller = appRouter.createCaller(makeAnonCtx());
+    await expect(caller.billing.myPlan()).rejects.toThrow();
+  });
+
+  it('resolves FREE for a vendor with no billing record', async () => {
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(mockDbWithSubscription(null));
+    const caller = appRouter.createCaller(makeCtx(10));
+    const result = await caller.billing.myEntitlements();
+    expect(result.plan).toBe('free');
+    expect(result.qualifiedEnquiryAllowance).toBe(5);
+  });
+
+  it('CROSS-VENDOR: neither entitlement endpoint accepts a userId, so none can target another vendor', () => {
+    for (const name of ['myEntitlements:', 'myPlan:']) {
+      const start = billingRouterBlock.indexOf(name);
+      const proc = billingRouterBlock.slice(start, billingRouterBlock.indexOf('}),', start));
+      expect(proc, name).not.toMatch(/\.input\(/);
+      expect(proc, name).toContain('ctx.user.id');
+    }
+  });
+
+  it('CLIENT MANIPULATION: a forged plan/entitlement payload is ignored - the response comes from server state', async () => {
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(mockDbWithSubscription(null));
+    const caller = appRouter.createCaller(makeCtx(10));
+    const forged = { plan: 'premium', entitlements: { qualifiedEnquiriesPerMonth: 9999 }, isPaid: true, founderPriceActive: true };
+    const result = await (caller.billing.myEntitlements as unknown as (a: unknown) => Promise<{ plan: string; qualifiedEnquiryAllowance: number | null; isPaid: boolean }>)(forged);
+    expect(result.plan).toBe('free');
+    expect(result.qualifiedEnquiryAllowance).toBe(5);
+    expect(result.isPaid).toBe(false);
+  });
+
+  it('a vendor cannot upgrade themselves: the entire billing router still has no mutation', () => {
+    expect(billingRouterBlock).not.toContain('.mutation(');
+  });
+
+  it('the engine is the ONLY place plans are compared - no scattered plan checks in routers or client', () => {
+    const routers = routersSource;
+    const scattered = routers.match(/plan\s*===\s*['"](free|professional|premium)['"]/g) ?? [];
+    expect(scattered).toEqual([]);
+  });
+});
+
 describe('payment provider abstraction (Phase 4B.1)', () => {
   it('no provider is configured, and that is reported honestly', () => {
     expect(isPaymentProviderConfigured()).toBe(false);

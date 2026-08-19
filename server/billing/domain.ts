@@ -46,6 +46,16 @@ export type BillingState = {
   gracePeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: Date | null;
+  billingInterval: 'month' | 'year' | null;
+  /**
+   * Set when a paid status is missing the timestamp that governs it (e.g. a
+   * `trialing` row with no `trialEndsAt`). Such a row is malformed: every
+   * domain transition always writes the governing timestamp, so this can only
+   * arise from corrupt data - a manual edit, a partial write, or a future
+   * provider-sync bug. The state fails CLOSED to FREE and reports the problem
+   * here rather than granting unbounded paid access off bad data.
+   */
+  dataIntegrityIssue: string | null;
   /** True when the founder discount is currently applied to this subscription. */
   founderPriceActive: boolean;
   founderPriceEndsAt: Date | null;
@@ -71,6 +81,8 @@ const FREE_STATE: BillingState = {
   gracePeriodEndsAt: null,
   cancelAtPeriodEnd: false,
   currentPeriodEnd: null,
+  billingInterval: null,
+  dataIntegrityIssue: null,
   founderPriceActive: false,
   founderPriceEndsAt: null,
   awaitingRenewalSync: false,
@@ -99,6 +111,7 @@ export function deriveBillingState(
     gracePeriodEndsAt: subscription.gracePeriodEndsAt,
     cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
     currentPeriodEnd: subscription.currentPeriodEnd,
+    billingInterval: subscription.billingInterval,
     founderPriceEndsAt: subscription.founderPriceEndsAt,
   };
 
@@ -111,14 +124,23 @@ export function deriveBillingState(
     ...extra,
   });
 
-  const lapse = (): BillingState => ({
+  const lapse = (extra: Partial<BillingState> = {}): BillingState => ({
     ...FREE_STATE,
     ...base,
     effectivePlan: DEFAULT_PLAN_ID,
     entitlements: getEntitlements(DEFAULT_PLAN_ID),
     isPaid: false,
     founderPriceActive: false,
+    ...extra,
   });
+
+  // Phase 4B.2 hardening: a paid status whose governing timestamp is missing is
+  // malformed data, not a valid entitlement. Every transition in this module
+  // writes that timestamp, so this is unreachable through normal flow and can
+  // only mean corruption - which must fail closed, never grant paid access
+  // indefinitely off a row nothing can ever expire.
+  const malformed = (field: string): BillingState =>
+    lapse({ dataIntegrityIssue: `status "${status}" without ${field}` });
 
   switch (status) {
     case 'free':
@@ -127,12 +149,14 @@ export function deriveBillingState(
       return lapse();
 
     case 'trialing':
+      if (subscription.trialEndsAt === null) return malformed('trialEndsAt');
       // A lapsed trial grants nothing, even before a sweep records it.
       return elapsed(subscription.trialEndsAt, now)
         ? lapse()
         : grant({ inTrial: true, founderPriceActive });
 
     case 'active':
+      if (subscription.currentPeriodEnd === null) return malformed('currentPeriodEnd');
       if (elapsed(subscription.currentPeriodEnd, now)) {
         // Cancellation requested and the paid-for period is over: downgrade.
         if (subscription.cancelAtPeriodEnd) return lapse();
@@ -142,6 +166,7 @@ export function deriveBillingState(
       return grant({ founderPriceActive });
 
     case 'past_due':
+      if (subscription.gracePeriodEndsAt === null) return malformed('gracePeriodEndsAt');
       // Approved policy: paid entitlements are retained through the grace
       // window, and only removed once it has fully elapsed.
       return elapsed(subscription.gracePeriodEndsAt, now)
@@ -149,7 +174,7 @@ export function deriveBillingState(
         : grant({ inGracePeriod: true, founderPriceActive });
 
     default:
-      return lapse();
+      return lapse({ dataIntegrityIssue: `unrecognised status "${status}"` });
   }
 }
 
