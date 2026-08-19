@@ -61,6 +61,24 @@ export const users = mysqlTable('users', {
   onboardingReviewedByIdx: index('users_onboardingReviewedBy_idx').on(table.onboardingReviewedBy),
 }));
 
+// Phase 4A.6.6: server-side session revocation. Each signed session JWT now
+// carries a unique `jti`; logout inserts that jti here so authenticateRequest
+// can reject a replayed post-logout token instead of only clearing the cookie
+// client-side. onDelete is CASCADE (not RESTRICT like most Phase 3C FKs, and
+// not SET NULL like userAccountAuditEvents above): unlike an audit trail,
+// a revocation record has no value once its user is gone - there is nothing
+// left to protect from replay, so it should not block user deletion.
+export const revokedSessions = mysqlTable('revokedSessions', {
+  jti:       varchar('jti', { length: 36 }).primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  revokedAt: timestamp('revokedAt').defaultNow().notNull(),
+  // The token's own exp, copied here so a future cleanup job can prune rows
+  // whose underlying JWT would already be rejected by expiry regardless.
+  expiresAt: timestamp('expiresAt').notNull(),
+}, table => ({
+  userIdIdx: index('revokedSessions_userId_idx').on(table.userId),
+}));
+
 export const userAccountAuditEvents = mysqlTable('userAccountAuditEvents', {
   id:        int('id').autoincrement().primaryKey(),
   // Nullable + SET NULL (not RESTRICT): every user gets an audit event on creation

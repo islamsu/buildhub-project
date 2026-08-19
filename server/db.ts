@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/mysql2";
 import { eq } from "drizzle-orm";
-import { InsertUser, users, userAccountAuditEvents } from "../drizzle/schema";
+import { InsertUser, users, userAccountAuditEvents, revokedSessions } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -50,6 +50,23 @@ export async function getUserByUsername(username: string) {
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.username, normalized)).limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+// Session revocation (Phase 4A.6.6). Fails open on a missing DB connection,
+// matching the graceful-degradation convention used everywhere else in this
+// file rather than locking every request out when the database is down.
+export async function isSessionRevoked(jti: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const result = await db.select({ jti: revokedSessions.jti }).from(revokedSessions).where(eq(revokedSessions.jti, jti)).limit(1);
+  return result.length > 0;
+}
+
+export async function revokeSession(jti: string, userId: number, expiresAt: Date): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(revokedSessions).values({ jti, userId, expiresAt })
+    .onDuplicateKeyUpdate({ set: { revokedAt: new Date() } });
 }
 
 export async function upsertUser(user: InsertUser): Promise<{ created: boolean; linkedExisting: boolean; userId?: number }> {

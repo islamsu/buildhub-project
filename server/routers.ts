@@ -4,7 +4,7 @@ import { getSessionCookieOptions } from './_core/cookies';
 import { systemRouter } from './_core/systemRouter';
 import { publicProcedure, protectedProcedure, router } from './_core/trpc';
 import { TRPCError } from '@trpc/server';
-import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername } from './db';
+import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername, revokeSession } from './db';
 import { invokeLLM } from './_core/llm';
 import { storagePut } from './storage';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
@@ -22,7 +22,7 @@ import { eq, desc, and, sql, inArray, notInArray } from 'drizzle-orm';
 import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, type ComplianceDocumentStatus } from '../shared/compliance';
-import { sdk } from './_core/sdk';
+import { sdk, type AuthenticatedUser } from './_core/sdk';
 
 const scryptAsync = promisify(scryptCallback);
 
@@ -43,9 +43,33 @@ async function verifyPassword(password: string, storedHash: string | null | unde
 }
 
 // ── Auth Router ────────────────────────────────────────────────────────────
+// SECURITY (Phase 4A.6.6): `users` also holds passwordHash, invitationToken, and
+// other private/internal account fields. auth.me is called by every authenticated
+// page load - it must never return the full row, only this explicit allowlist.
+// This is a plain pick from the already-authenticated ctx.user (itself already
+// fetched by sdk.authenticateRequest), not a second select().from(users) - so
+// this costs no extra query and cannot be bypassed by forgetting a `where`.
+function toPublicSessionUser(user: AuthenticatedUser) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    userRole: user.userRole,
+    onboardingStatus: user.onboardingStatus,
+  } as const;
+}
+
 const authRouter = router({
-  me: publicProcedure.query(opts => opts.ctx.user),
-  logout: publicProcedure.mutation(({ ctx }) => {
+  me: publicProcedure.query(opts => opts.ctx.user ? toPublicSessionUser(opts.ctx.user) : null),
+  logout: publicProcedure.mutation(async ({ ctx }) => {
+    // Server-side revocation (Phase 4A.6.6): without this, clearing the cookie only
+    // logs this browser out - the same token, if copied elsewhere, kept working until
+    // its natural (up to one-year) expiry. Only revoke when a jti is present (older
+    // pre-this-change tokens have none and simply aren't revocable by this mechanism).
+    if (ctx.user?.sessionJti) {
+      await revokeSession(ctx.user.sessionJti, ctx.user.id, ctx.user.sessionExpiresAt ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
+    }
     const cookieOptions = getSessionCookieOptions(ctx.req);
     ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
     return { success: true } as const;

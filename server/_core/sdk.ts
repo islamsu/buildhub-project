@@ -2,6 +2,7 @@ import { AXIOS_TIMEOUT_MS, COOKIE_NAME, ONE_YEAR_MS, decodeOAuthState } from "@s
 import { ForbiddenError } from "@shared/_core/errors";
 import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
+import { randomUUID } from "node:crypto";
 import type { Request } from "express";
 import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
@@ -186,19 +187,23 @@ class SDKServer {
     const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
     const secretKey = this.getSessionSecret();
 
+    // jti (Phase 4A.6.6): a unique id per issued token, independent of every other
+    // session for this user, so logout can revoke exactly this one session without
+    // affecting any other device/tab's active session for the same account.
     return new SignJWT({
       openId: payload.openId,
       appId: payload.appId,
       name: payload.name,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setJti(randomUUID())
       .setExpirationTime(expirationSeconds)
       .sign(secretKey);
   }
 
   async verifySession(
     cookieValue: string | undefined | null
-  ): Promise<{ openId: string; appId: string; name: string } | null> {
+  ): Promise<{ openId: string; appId: string; name: string; jti: string | null; expiresAt: Date | null } | null> {
     if (!cookieValue) {
       console.warn("[Auth] Missing session cookie");
       return null;
@@ -209,7 +214,7 @@ class SDKServer {
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],
       });
-      const { openId, appId, name } = payload as Record<string, unknown>;
+      const { openId, appId, name, jti, exp } = payload as Record<string, unknown>;
 
       if (
         !isNonEmptyString(openId) ||
@@ -224,6 +229,11 @@ class SDKServer {
         openId,
         appId,
         name,
+        // Tokens signed before this change carry no jti and are simply not
+        // revocable by this mechanism - they remain valid until their natural
+        // expiry, same as before. Not a regression: nothing was revocable before.
+        jti: isNonEmptyString(jti) ? jti : null,
+        expiresAt: typeof exp === "number" ? new Date(exp * 1000) : null,
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
@@ -276,6 +286,12 @@ class SDKServer {
       throw ForbiddenError("Invalid session cookie");
     }
 
+    // Phase 4A.6.6: reject a token that was explicitly revoked by a prior logout,
+    // even though it is still cryptographically valid and unexpired.
+    if (session.jti && (await db.isSessionRevoked(session.jti))) {
+      throw ForbiddenError("Session has been signed out");
+    }
+
     if (session.openId.startsWith(CRON_OPEN_ID_PREFIX)) {
       const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
       const taskUid = userInfo.taskUid ?? null;
@@ -318,7 +334,7 @@ class SDKServer {
       lastSignedIn: signedInAt,
     });
 
-    return user;
+    return { ...user, sessionJti: session.jti, sessionExpiresAt: session.expiresAt };
   }
 }
 
@@ -328,6 +344,10 @@ const CRON_OPEN_ID_PREFIX = "cron_";
 export type AuthenticatedUser = User & {
   taskUid?: string;
   isCron?: boolean;
+  // Phase 4A.6.6: the current request's own session identity, so authRouter.logout
+  // can revoke exactly this session without needing to re-parse the cookie itself.
+  sessionJti?: string | null;
+  sessionExpiresAt?: Date | null;
 };
 
 function buildCronUser(
