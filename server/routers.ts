@@ -951,6 +951,21 @@ const DEFAULT_ADMIN_SETTINGS: Record<string, string> = {
   spamSensitivity: 'medium',
 };
 
+// SECURITY (Phase 4A cumulative final audit): explicit allowlist for the
+// Compliance Queue / Applicant Detail endpoints - see the comment above
+// complianceQueue below for why this exists.
+const COMPLIANCE_APPLICANT_COLUMNS = {
+  id: users.id,
+  name: users.name,
+  email: users.email,
+  userRole: users.userRole,
+  onboardingStatus: users.onboardingStatus,
+  onboardingReviewNotes: users.onboardingReviewNotes,
+  onboardingReviewedAt: users.onboardingReviewedAt,
+  isDummy: users.isDummy,
+  createdAt: users.createdAt,
+} as const;
+
 const adminRouter = router({
   stats: adminProcedure.query(async () => {
     const db = await getDb();
@@ -1154,11 +1169,20 @@ const adminRouter = router({
       projects: monthlyMap[month].projects,
     }));
   }),
+  // SECURITY (Phase 4A cumulative final audit): same passwordHash/invitationToken
+  // exposure risk as ADMIN_USER_LIST_COLUMNS above, found independently in the
+  // two Compliance Queue endpoints below - both previously did a bare
+  // `select().from(users)` and spread the full row (including passwordHash and
+  // the live, still-usable invitationToken bearer credential) into the admin
+  // dashboard's Compliance Queue / Applicant Detail response. Every field here
+  // is traced to real consumption in client/src/pages/AdminDashboard.tsx's
+  // compliance queue list, registration CSV export (shared/registrationMetrics.ts),
+  // and the applicant detail dialog.
   complianceQueue: adminProcedure.input(z.object({ includeDummy: z.boolean().default(false) }).optional()).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
     const applicantFilter = input?.includeDummy ? inArray(users.userRole, providerRoles) : and(inArray(users.userRole, providerRoles), eq(users.isDummy, false));
-    const applicants = await db.select().from(users).where(applicantFilter);
+    const applicants = await db.select(COMPLIANCE_APPLICANT_COLUMNS).from(users).where(applicantFilter);
     const docs = await db.select().from(registrationDocuments).orderBy(desc(registrationDocuments.createdAt));
     return applicants.map(applicant => ({
       ...applicant,
@@ -1169,7 +1193,7 @@ const adminRouter = router({
   complianceApplicant: adminProcedure.input(z.object({ userId: z.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [applicant] = await db.select().from(users).where(eq(users.id, input.userId));
+    const [applicant] = await db.select(COMPLIANCE_APPLICANT_COLUMNS).from(users).where(eq(users.id, input.userId));
     if (!applicant || !isComplianceRole(applicant.userRole)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Compliance applicant not found' });
     const docs = await db.select().from(registrationDocuments).where(eq(registrationDocuments.userId, input.userId)).orderBy(desc(registrationDocuments.createdAt));
     const history = await db.select().from(registrationDocumentSubmissions).where(eq(registrationDocumentSubmissions.userId, input.userId)).orderBy(desc(registrationDocumentSubmissions.createdAt)).limit(100);
