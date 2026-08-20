@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import QuotationComparison from '@/components/QuotationComparison';
-import { parseRfqAttachments } from '@shared/rfqAttachments';
+import { parseProductReference, parseRfqAttachments } from '@shared/rfqAttachments';
 import { RFQ_CATEGORIES as rfqCategories, rfqCategoryLabel } from '@shared/rfqCategories';
 
 // Phase 4B.3: the category list now comes from the shared taxonomy that RFQ
@@ -53,13 +53,6 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function normalizeProductReference(value: unknown): RFQItem['productReference'] {
-  if (!value || typeof value !== 'object') return null;
-  const candidate = value as Record<string, unknown>;
-  return typeof candidate.productId === 'number' && typeof candidate.variantId === 'string' && typeof candidate.variantLabel === 'string'
-    ? { productId: candidate.productId, variantId: candidate.variantId, variantLabel: candidate.variantLabel }
-    : null;
-}
 
 export default function RFQPage() {
   const { t, lang } = useLanguage();
@@ -182,7 +175,7 @@ export default function RFQPage() {
         ...myRfqs,
         ...rfqs.filter(r => !myRfqs.some(m => m.id === r.id)),
       ]
-    : rfqs).map(rfq => ({ ...rfq, productReference: normalizeProductReference(rfq.productReference) })) as RFQItem[];
+    : rfqs).map(rfq => ({ ...rfq, productReference: parseProductReference(rfq.productReference) })) as RFQItem[];
 
   return (
     <div className="min-h-screen bg-background">
