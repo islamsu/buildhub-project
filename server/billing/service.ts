@@ -11,6 +11,8 @@
 import { desc, eq } from 'drizzle-orm';
 import { FOUNDER_OFFER_ENDS_AT_SETTING_KEY } from '@shared/billing';
 import { adminSettings, billingEvents, vendorSubscriptions, type VendorSubscription } from '../../drizzle/schema';
+import { recordEventAsync } from '../analytics/events';
+import { ANALYTICS_EVENTS, type AnalyticsEventType } from '@shared/analyticsEvents';
 import { getDb } from '../db';
 import { deriveBillingState, isFounderEligible, type BillingState, type SubscriptionPatch } from './domain';
 
@@ -140,6 +142,75 @@ export async function recordBillingEvent(event: BillingEventInput): Promise<void
     });
   } catch (error) {
     console.warn('[Billing] Failed to write billing event:', error);
+  }
+
+  // Slice 7: mirror the transition into the product analytics stream.
+  //
+  // Done HERE rather than at the eight lifecycle call sites, because this
+  // function is already the single choke point every commercial transition
+  // passes through - instrumenting the call sites instead would mean eight
+  // places to forget, and the funnel would quietly develop holes.
+  //
+  // The analytics row is a description of the transition, never the record of
+  // it: `billingEvents` above stays the audit trail, and revenue is computed
+  // from `vendorSubscriptions`, not from either log.
+  recordEventAsync({
+    type: analyticsEventFor(event),
+    userId: event.userId,
+    subjectType: 'subscription',
+    subjectId: event.subscriptionId ?? null,
+    metadata: {
+      action: event.action,
+      from: event.fromStatus ?? undefined,
+      to: event.toStatus ?? undefined,
+      source: event.source ?? 'system',
+    },
+  });
+}
+
+/** Statuses that mean the vendor is paying, for deciding what a transition was. */
+const PAID_STATUSES = new Set(['active', 'past_due']);
+const ENDED_STATUSES = new Set(['canceled', 'expired', 'free']);
+
+/**
+ * Translate a billing action into the analytics vocabulary.
+ *
+ * Two actions are ambiguous on their name alone and are resolved from the
+ * transition itself:
+ *
+ *  - `subscription_activated` fires both on a first payment and on every
+ *    renewal. Coming from an already-active status makes it a renewal, and
+ *    conflating the two would make first-purchase counts meaningless.
+ *  - `lifecycle_reconciled` is the sweep. It only counts as a lapse when it
+ *    actually moved a paying subscription to an ended state; most of the time
+ *    it changes nothing that matters commercially.
+ */
+export function analyticsEventFor(event: BillingEventInput): AnalyticsEventType {
+  const from = event.fromStatus ?? '';
+  const to = event.toStatus ?? '';
+
+  switch (event.action) {
+    case 'trial_started':
+      return ANALYTICS_EVENTS.SUBSCRIPTION_TRIAL_STARTED;
+    case 'subscription_activated':
+      return PAID_STATUSES.has(from)
+        ? ANALYTICS_EVENTS.SUBSCRIPTION_RENEWED
+        : ANALYTICS_EVENTS.SUBSCRIPTION_ACTIVATED;
+    case 'cancellation_requested':
+      return ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLATION_SCHEDULED;
+    case 'cancellation_reversed':
+      return ANALYTICS_EVENTS.SUBSCRIPTION_RESUMED;
+    case 'plan_changed':
+      return ANALYTICS_EVENTS.SUBSCRIPTION_PLAN_CHANGED;
+    case 'payment_failed':
+      return ANALYTICS_EVENTS.SUBSCRIPTION_PAYMENT_FAILED;
+    case 'payment_recovered':
+      return ANALYTICS_EVENTS.SUBSCRIPTION_PAYMENT_RECOVERED;
+    case 'lifecycle_reconciled':
+    default:
+      return PAID_STATUSES.has(from) && ENDED_STATUSES.has(to)
+        ? ANALYTICS_EVENTS.SUBSCRIPTION_LAPSED
+        : ANALYTICS_EVENTS.SUBSCRIPTION_RENEWED;
   }
 }
 

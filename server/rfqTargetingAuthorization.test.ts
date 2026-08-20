@@ -11,6 +11,7 @@ import { getDb } from './db';
 import { allowancePeriodFor } from './billing/entitlements';
 import { getEnquiryUsage, openQualifiedEnquiry } from './billing/enquiries';
 import {
+  analyticsEvents as analyticsEventsTable,
   qualifiedEnquiries as qualifiedEnquiriesTable,
   reviews as reviewsTable,
   rfqs as rfqsTable,
@@ -110,6 +111,11 @@ function fakeDb(scenario: Scenario = {}) {
     ...scenario,
   };
   const inserted: Record<string, unknown>[] = [];
+  // Slice 7 added a product-analytics write alongside the enquiry write. It is
+  // captured separately so every assertion below stays a statement about the
+  // qualifiedEnquiries table specifically - "one credit was spent" must not
+  // become true or false because an unrelated table was also written to.
+  const analyticsInserted: Record<string, unknown>[] = [];
   const deleted: unknown[] = [];
   let insertAttempts = 0;
   let transactions = 0;
@@ -167,8 +173,15 @@ function fakeDb(scenario: Scenario = {}) {
     selectDistinct: (sel?: Record<string, unknown>) => ({
       from: (table: unknown) => builder(table, sel ? Object.keys(sel) : null).from(),
     }),
-    insert: () => ({
+    insert: (table: unknown) => ({
       values: (values: Record<string, unknown> | Record<string, unknown>[]) => {
+        if (table === analyticsEventsTable) {
+          // Not counted as an insert attempt, and not subject to the
+          // duplicate-key race simulation: it is a different table on a
+          // fire-and-forget path.
+          for (const row of Array.isArray(values) ? values : [values]) analyticsInserted.push(row);
+          return Promise.resolve();
+        }
         insertAttempts++;
         if (s.insertThrows && insertAttempts === 1) return Promise.reject(s.insertThrows);
         for (const row of Array.isArray(values) ? values : [values]) {
@@ -191,6 +204,7 @@ function fakeDb(scenario: Scenario = {}) {
   return {
     db,
     get inserted() { return inserted; },
+    get analyticsEvents() { return analyticsInserted; },
     get deleted() { return deleted; },
     get insertAttempts() { return insertAttempts; },
     get transactions() { return transactions; },

@@ -11,6 +11,10 @@ import { storagePut } from './storage';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
 import { acceptQuotationSecure, rejectQuotationSecure } from './quotationWorkflow';
 import { aiChatLimiters, authLimiters, getClientIp } from './_core/rateLimit';
+import { recordEventAsync } from './analytics/events';
+import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
+import { getEventCounts, getMedianDaysToMilestone, getVendorFunnel } from './analytics/events';
+import { getChurn, getCommercialKpis } from './analytics/kpis';
 import { ENV } from './_core/env';
 import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
@@ -267,6 +271,13 @@ const authRouter = router({
       userId, actorId: userId, action: 'password_account_created', source: 'self_registered',
       note: 'Account created with an email address and password',
     });
+    // Top of the funnel. `role` is safe metadata; the email and password that
+    // arrived with this request are not, and never reach the analytics stream.
+    recordEventAsync({
+      type: ANALYTICS_EVENTS.USER_REGISTERED,
+      userId,
+      metadata: { method: 'password', role: input.userRole },
+    });
     return { success: true, userRole: input.userRole, onboardingStatus: professional ? 'not_started' : 'approved' } as const;
   }),
 
@@ -310,6 +321,7 @@ const authRouter = router({
       userId: candidate.id, actorId: candidate.id, action: 'password_signed_in', source: 'password',
       note: identifier.includes('@') ? 'Signed in with email and password' : 'Signed in with username and password',
     });
+    recordEventAsync({ type: ANALYTICS_EVENTS.USER_SIGNED_IN, userId: candidate.id, metadata: { method: 'password' } });
     return { success: true, userRole: candidate.userRole, onboardingStatus: candidate.onboardingStatus } as const;
   }),
 
@@ -431,6 +443,11 @@ const authRouter = router({
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       await db.update(users).set({ username: input.username ? normalizeUsername(input.username) : undefined, userRole: input.userRole, name: input.name, phone: input.phone, location: input.location, onboardingStatus: isComplianceRole(input.userRole) ? 'not_started' : 'approved', verified: isComplianceRole(input.userRole) ? false : true }).where(eq(users.id, ctx.user.id));
       await db.insert(userAccountAuditEvents).values({ userId: ctx.user.id, actorId: ctx.user.id, action: 'profile_role_completed', source: 'self_registered', note: `Role selected: ${input.userRole}` });
+      recordEventAsync({
+        type: ANALYTICS_EVENTS.VENDOR_PROFILE_COMPLETED,
+        userId: ctx.user.id,
+        metadata: { role: input.userRole, professional: isComplianceRole(input.userRole) },
+      });
       return { success: true };
     }),
 });
@@ -483,6 +500,16 @@ const registrationRouter = router({
     await db.insert(registrationDocumentSubmissions).values({ documentId, userId: ctx.user.id, documentType: input.documentType, fileName: input.fileName, url, fileKey: key, mimeType: input.contentType, size: bytes.length, status: 'submitted', applicantNote: input.applicantNote });
     await db.update(users).set({ onboardingStatus: 'under_review', onboardingReviewNotes: null }).where(eq(users.id, ctx.user.id));
     await db.insert(registrationReviewEvents).values({ userId: ctx.user.id, documentId, actorId: ctx.user.id, action: 'document_submitted', status: 'submitted', note: input.applicantNote });
+    // The document itself, its filename and the applicant's note stay out of
+    // the analytics stream; only the fact that a submission happened, and its
+    // type, are recorded.
+    recordEventAsync({
+      type: ANALYTICS_EVENTS.VENDOR_SUBMITTED_FOR_REVIEW,
+      userId: ctx.user.id,
+      subjectType: 'registrationDocument',
+      subjectId: documentId,
+      metadata: { documentType: input.documentType },
+    });
     return { id: documentId, key, url, status: 'submitted' as const };
   }),
 });
@@ -839,7 +866,15 @@ const rfqRouter = router({
         attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : undefined,
         productReference: productReference ?? undefined,
       });
-      return { id: Number(result[0].insertId) };
+      const rfqId = Number(result[0].insertId);
+      recordEventAsync({
+        type: ANALYTICS_EVENTS.RFQ_POSTED,
+        userId: ctx.user.id,
+        subjectType: 'rfq',
+        subjectId: rfqId,
+        metadata: { category: rest.category ?? undefined },
+      });
+      return { id: rfqId };
     }),
   uploadAttachment: protectedProcedure
     .input(z.object({
@@ -1011,12 +1046,27 @@ const rfqRouter = router({
       if (rfq) {
         await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: '/rfq' });
       }
+      // Funnel milestone: a vendor responding is the point at which the
+      // marketplace has produced value for both sides.
+      recordEventAsync({
+        type: ANALYTICS_EVENTS.QUOTATION_SUBMITTED,
+        userId: ctx.user.id,
+        subjectType: 'rfq',
+        subjectId: input.rfqId,
+      });
       return { success: true };
     }),
   acceptQuotation: protectedProcedure
     .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      return acceptQuotationSecure(input.rfqId, input.quotationId, ctx.user.id);
+      const accepted = await acceptQuotationSecure(input.rfqId, input.quotationId, ctx.user.id);
+      recordEventAsync({
+        type: ANALYTICS_EVENTS.QUOTATION_ACCEPTED,
+        userId: ctx.user.id,
+        subjectType: 'quotation',
+        subjectId: input.quotationId,
+      });
+      return accepted;
     }),
   rejectQuotation: protectedProcedure
     .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
@@ -1726,15 +1776,74 @@ const adminRouter = router({
       monthlyMap[month].projects += 1;
     }
     const sortedMonths = Object.keys(monthlyMap).sort();
-    if (sortedMonths.length === 0) {
-      return [{ month: '2026-07', users: userRows.length, projects: projectRows.length }];
-    }
+    // Slice 7: this used to return a single row labelled '2026-07' - a
+    // hardcoded month that no data supported - whenever there was nothing to
+    // aggregate. With the invented MONTHLY_USERS fallback removed in Slice 4,
+    // that fabricated label became the visible thing. An empty result is the
+    // honest answer, and the dashboard renders an explicit empty state for it.
+    if (sortedMonths.length === 0) return [];
     return sortedMonths.map(month => ({
       month,
       users: monthlyMap[month].users,
       projects: monthlyMap[month].projects,
     }));
   }),
+  /**
+   * Product analytics (Slice 7). Admin-only, no input beyond a window, and it
+   * returns aggregates - never a per-user event list, which would be a
+   * behavioural dossier on identifiable people with no operational purpose.
+   */
+  productAnalytics: adminProcedure
+    .input(z.object({
+      includeDummy: z.boolean().default(false),
+      windowDays: z.number().int().min(1).max(365).default(30),
+    }).optional())
+    .query(async ({ input }) => {
+      const includeDummy = input?.includeDummy ?? false;
+      const windowDays = input?.windowDays ?? 30;
+      const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+
+      const [funnel, eventCounts, daysToVerified, daysToFirstQuotation] = await Promise.all([
+        getVendorFunnel({ includeDummy }),
+        getEventCounts({ since }),
+        getMedianDaysToMilestone(ANALYTICS_EVENTS.VENDOR_VERIFIED, { includeDummy }),
+        getMedianDaysToMilestone(ANALYTICS_EVENTS.QUOTATION_SUBMITTED, { includeDummy }),
+      ]);
+
+      return {
+        windowDays,
+        funnel,
+        eventCounts,
+        // null means nobody has completed the milestone yet, which is a
+        // different statement from "it takes zero days".
+        medianDaysToVerified: daysToVerified,
+        medianDaysToFirstQuotation: daysToFirstQuotation,
+      };
+    }),
+
+  /**
+   * Commercial KPIs. Computed from vendorSubscriptions and priced from
+   * shared/billing.ts - never from the event stream, and never hardcoded.
+   */
+  commercialKpis: adminProcedure
+    .input(z.object({
+      includeDummy: z.boolean().default(false),
+      churnWindowDays: z.number().int().min(7).max(365).default(30),
+    }).optional())
+    .query(async ({ input }) => {
+      const includeDummy = input?.includeDummy ?? false;
+      const churnWindowDays = input?.churnWindowDays ?? 30;
+      const to = new Date();
+      const from = new Date(to.getTime() - churnWindowDays * 24 * 60 * 60 * 1000);
+
+      const [kpis, churn] = await Promise.all([
+        getCommercialKpis({ includeDummy }),
+        getChurn({ from, to, includeDummy }),
+      ]);
+
+      return { ...kpis, churn: { ...churn, windowDays: churnWindowDays } };
+    }),
+
   // SECURITY (Phase 4A cumulative final audit): same passwordHash/invitationToken
   // exposure risk as ADMIN_USER_LIST_COLUMNS above, found independently in the
   // two Compliance Queue endpoints below - both previously did a bare
@@ -1800,6 +1909,14 @@ const adminRouter = router({
     await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: new Date(), onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(eq(users.id, input.userId));
     await db.insert(registrationReviewEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'applicant_status_updated', status: input.status, note: input.note });
     await notifyUser(db, { userId: input.userId, title: 'Registration status updated', body: input.note || `Your registration is now ${input.status.replace('_', ' ')}`, type: 'compliance', link: '/compliance' });
+    // Verification is the gate for appearing in the directory at all, so it is
+    // the funnel stage where a vendor becomes able to earn anything. The
+    // reviewer's note is not recorded - it is free text about a real person.
+    recordEventAsync({
+      type: input.status === 'approved' ? ANALYTICS_EVENTS.VENDOR_VERIFIED : ANALYTICS_EVENTS.VENDOR_REVIEW_REJECTED,
+      userId: input.userId,
+      metadata: { status: input.status, role: applicant.userRole ?? undefined },
+    });
     return { success: true, onboardingStatus: input.status };
   }),
   bulkUpdateApplicantStatus: adminProcedure.input(z.object({

@@ -16,6 +16,8 @@ import { isClassifiableRfqCategory } from '@shared/rfqCategories';
 import { qualifiedEnquiries, rfqs, vendorCategories, type Rfq } from '../../drizzle/schema';
 import { getDb } from '../db';
 import { allowancePeriodFor, resolveVendorEntitlements } from './entitlements';
+import { recordEventAsync } from '../analytics/events';
+import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
 
 /** MySQL duplicate-key error, surfaced by mysql2 through drizzle's `cause`. */
 function isDuplicateKeyError(error: unknown): boolean {
@@ -191,7 +193,27 @@ export async function openQualifiedEnquiry(
   }
 
   if (limitReached) {
+    // The single clearest upgrade signal the product produces: a vendor who
+    // wanted an enquiry their plan would not give them. Recorded so the owner
+    // can see demand for the next tier rather than infer it.
+    recordEventAsync({
+      type: ANALYTICS_EVENTS.ENQUIRY_LIMIT_REACHED,
+      userId,
+      subjectType: 'rfq',
+      subjectId: rfqId,
+      plan: resolution.effectivePlan,
+    });
     return { outcome: 'limit_reached', usage: await getEnquiryUsage(userId, now) };
+  }
+  if (!duplicate) {
+    recordEventAsync({
+      type: ANALYTICS_EVENTS.ENQUIRY_OPENED,
+      userId,
+      subjectType: 'rfq',
+      subjectId: rfqId,
+      plan: resolution.effectivePlan,
+      metadata: { category: rfq.category ?? undefined },
+    });
   }
   return {
     outcome: 'granted',

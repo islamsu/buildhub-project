@@ -522,6 +522,50 @@ export const vendorSubscriptions = mysqlTable('vendorSubscriptions', {
   gracePeriodEndsAtIdx: index('vendorSubscriptions_gracePeriodEndsAt_idx').on(table.gracePeriodEndsAt),
 }));
 
+// ── Product analytics (Slice 7) ────────────────────────────────────────────
+//
+// The first general event stream in BuildHub. Until now every business metric
+// was an ad-hoc SQL aggregate over whatever timestamp column happened to be
+// nearby (users.createdAt, quotations.createdAt), which answers "how many" but
+// can never answer "how many got from here to there, and how long did it take".
+//
+// Deliberately NOT the source of truth for money. Revenue is computed from
+// vendorSubscriptions, which is the financial record; an event stream can drop
+// a write, and MRR must never be estimated from a log. Events describe
+// behaviour - the funnel, activation, time-to-first-value.
+//
+// `eventType` is constrained by shared/analyticsEvents.ts rather than by an
+// enum here: the catalogue changes far more often than the schema should, and a
+// mysqlEnum would make every new event a migration.
+//
+// PRIVACY. `metadata` holds small, non-identifying facts about the event
+// (a plan id, a category, a count). It must never carry a password, a token, an
+// email address, a phone number or a document. server/analytics/events.ts
+// enforces that at the boundary; the column is not a general dumping ground.
+export const analyticsEvents = mysqlTable('analyticsEvents', {
+  id:        int('id').autoincrement().primaryKey(),
+  // Nullable + SET NULL, the same rule as the two audit trails: an analytics
+  // history must be able to outlive its subject, and RESTRICT would make any
+  // user who ever did anything undeletable.
+  userId:    int('userId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  eventType: varchar('eventType', { length: 64 }).notNull(),
+  // What the event was about, when that is not the user themselves - e.g.
+  // ('rfq', 42) for an enquiry, ('quotation', 7) for a submitted quotation.
+  subjectType: varchar('subjectType', { length: 40 }),
+  subjectId: int('subjectId'),
+  // Denormalised so a funnel query does not have to join subscriptions for
+  // every row, and so the plan AT THE TIME survives a later plan change.
+  plan:      varchar('plan', { length: 24 }),
+  metadata:  text('metadata'),
+  occurredAt: timestamp('occurredAt').defaultNow().notNull(),
+}, table => ({
+  // The shape every funnel query uses: one event type, ordered by time.
+  typeOccurredIdx: index('analyticsEvents_type_occurredAt_idx').on(table.eventType, table.occurredAt),
+  // Per-user timelines, and the MIN(occurredAt) lookups that derive "first".
+  userTypeIdx: index('analyticsEvents_userId_eventType_idx').on(table.userId, table.eventType),
+  occurredAtIdx: index('analyticsEvents_occurredAt_idx').on(table.occurredAt),
+}));
+
 // Append-only billing audit trail. Deliberately mirrors userAccountAuditEvents
 // (nullable userId + SET NULL, not RESTRICT): like an account audit trail, a
 // billing history must be able to outlive its subject, and RESTRICT here would
