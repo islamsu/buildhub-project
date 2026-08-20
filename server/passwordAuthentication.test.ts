@@ -691,10 +691,33 @@ describe('§8 mailer adapter', () => {
   });
 
   it('the development console mailer is never registered in production', () => {
-    const source = readFileSync(new URL('./_core/index.ts', import.meta.url), 'utf8');
-    expect(source).toMatch(/if \(!ENV\.isProduction\) \{\s*\n\s*setMailer\(new ConsoleMailer\(\)\);/);
-    // The only call site is the guarded one; no unconditional registration.
-    expect(source.match(/setMailer\(/g) ?? []).toHaveLength(1);
+    // Slice 3 pinned the literal `if (!ENV.isProduction) { setMailer(...) }`
+    // shape. The SMTP work replaced that branch with resolveMailerFromEnv(),
+    // so this now asserts the same GUARANTEE against the new structure rather
+    // than the old spelling - the guarantee is what matters, and it is
+    // stronger here: the console mailer is reachable only through a branch
+    // that production can never return.
+    const startup = readFileSync(new URL('./_core/index.ts', import.meta.url), 'utf8');
+    const smtp = readFileSync(new URL('./_core/smtpMailer.ts', import.meta.url), 'utf8');
+
+    // ConsoleMailer is registered only under the 'console' branch.
+    expect(startup).toMatch(/mail\.kind === "console"\)\s*\{\s*\n\s*setMailer\(new ConsoleMailer\(\)\);/);
+    expect(startup.match(/setMailer\(new ConsoleMailer\(\)\)/g) ?? []).toHaveLength(1);
+
+    // And production can never produce that branch.
+    expect(smtp).toContain('ENV.isProduction ? { kind: "none" } : { kind: "console" }');
+    expect(smtp).not.toMatch(/kind:\s*"console"[\s\S]{0,80}isProduction\s*\?/);
+  });
+
+  it('a production deployment with no SMTP_HOST keeps NullMailer', async () => {
+    // Which is what makes auth.capabilities report password reset as
+    // unavailable, so the UI hides a button that could only ever fail.
+    vi.resetModules();
+    vi.doMock('./_core/env', () => ({ ENV: { isProduction: true } }));
+    const { resolveMailerFromEnv } = await import('./_core/smtpMailer');
+    expect(resolveMailerFromEnv({}).kind).toBe('none');
+    vi.doUnmock('./_core/env');
+    vi.resetModules();
   });
 
   it('the console mailer writes the message somewhere a developer can read it', async () => {

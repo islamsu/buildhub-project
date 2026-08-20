@@ -11,6 +11,7 @@ import { ENV, assertEnvOrExit } from "./env";
 import { registerHealthRoutes } from "./health";
 import { registerRequestLogging } from "./httpLogging";
 import { ConsoleMailer, setMailer } from "./mailer";
+import { resolveMailerFromEnv } from "./smtpMailer";
 import { registerSecurity } from "./security";
 import { serveStatic, setupVite } from "./vite";
 
@@ -70,12 +71,24 @@ async function startServer() {
     app.set("trust proxy", 1);
   }
 
-  // Outbound email. Development gets a mailer that prints to the terminal, so a
-  // developer can complete a password reset by copying the link out of the log.
-  // Production is left on NullMailer until a real provider adapter is
-  // registered: `auth.capabilities` then reports password reset as unavailable
-  // and the UI hides it, rather than promising an email nothing will send.
-  if (!ENV.isProduction) {
+  // Outbound email, resolved from the environment: a real SMTP sender when
+  // SMTP_HOST is configured, a terminal-printing mailer in development so a
+  // developer can complete a password reset by copying the link out of the log,
+  // and NullMailer otherwise. On NullMailer `auth.capabilities` reports
+  // password reset as unavailable and the UI hides it, rather than promising an
+  // email nothing will send.
+  const mail = resolveMailerFromEnv();
+  if (mail.kind === "smtp") {
+    setMailer(mail.mailer);
+    // Prove the credentials at boot rather than the first time a locked-out
+    // user asks for a reset. A failure here is logged, not fatal: the rest of
+    // BuildHub works fine without email, and taking the whole site down over a
+    // bad SMTP password would turn a degraded feature into an outage.
+    void mail.mailer.verify().then(
+      () => console.log(`[mail] SMTP ready`),
+      (error: unknown) => console.error(`[mail] SMTP credentials failed to verify:`, error),
+    );
+  } else if (mail.kind === "console") {
     setMailer(new ConsoleMailer());
   }
 
