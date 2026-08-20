@@ -31,6 +31,19 @@ import {
   ADMIN_SUBSCRIPTION_COLUMNS, checkFounderEligibility, getBillingState, getBillingEvents, getSubscription,
 } from './billing/service';
 import { deriveBillingState } from './billing/domain';
+import {
+  changeVendorPlan,
+  getLifecycleSnapshot,
+  recordPaymentFailure,
+  recordPaymentRecovery,
+  recordPaymentSucceeded,
+  reconcileDueSubscriptions,
+  reconcileSubscription,
+  requestCancellation,
+  resumeSubscription,
+  startPaidTrial,
+  type LifecycleOutcome,
+} from './billing/lifecycle';
 import { resolveVendorEntitlements, toVendorEntitlementResponse } from './billing/entitlements';
 import { isPaymentProviderConfigured } from './billing/provider';
 import {
@@ -1335,6 +1348,67 @@ const adminRouter = router({
   // Phase 4B.3: troubleshooting view for vendor targeting - declared
   // categories, and which RFQs consumed a qualified-enquiry credit. Contains
   // no payment information of any kind.
+  // ── Subscription lifecycle, admin-authorized (Phase 4B.4) ──────────────
+  //
+  // Payment OUTCOMES are recorded here rather than by the vendor, because a
+  // vendor must never be able to declare their own payment succeeded. Until
+  // Phase 4B.5 wires the provider, an administrator is the only trusted
+  // observer of a payment result; when the provider arrives it becomes the
+  // observer and calls the very same idempotent lifecycle functions.
+  //
+  // These are lifecycle operations, not a billing dashboard, and they expose
+  // no provider handle, price reference, or credential.
+
+  vendorLifecycle: adminProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .query(async ({ input }) => getLifecycleSnapshot(input.userId)),
+
+  startVendorTrial: adminProcedure
+    .input(z.object({
+      userId: z.number().int().positive(),
+      plan: z.enum(['professional', 'premium']),
+      interval: z.enum(['month', 'year']),
+    }))
+    .mutation(async ({ ctx, input }) => lifecycleResult(await startPaidTrial({
+      userId: input.userId, planId: input.plan, interval: input.interval,
+      source: 'admin', actorId: ctx.user.id,
+    }))),
+
+  changeVendorPlan: adminProcedure
+    .input(z.object({ userId: z.number().int().positive(), plan: z.enum(['professional', 'premium']) }))
+    .mutation(async ({ ctx, input }) => lifecycleResult(await changeVendorPlan({
+      userId: input.userId, targetPlan: input.plan, source: 'admin', actorId: ctx.user.id,
+    }))),
+
+  recordVendorPaymentSucceeded: adminProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => lifecycleResult(await recordPaymentSucceeded({
+      userId: input.userId, source: 'admin', actorId: ctx.user.id,
+    }))),
+
+  recordVendorPaymentFailed: adminProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => lifecycleResult(await recordPaymentFailure({
+      userId: input.userId, source: 'admin', actorId: ctx.user.id,
+    }))),
+
+  recordVendorPaymentRecovered: adminProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => lifecycleResult(await recordPaymentRecovery({
+      userId: input.userId, source: 'admin', actorId: ctx.user.id,
+    }))),
+
+  reconcileVendorBilling: adminProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => lifecycleResult(await reconcileSubscription({
+      userId: input.userId, source: 'admin', actorId: ctx.user.id,
+    }))),
+
+  // The sweep's manual trigger. BuildHub has no job runner, so this is not
+  // scheduled - and deliberately does not need to be: entitlements already
+  // lapse on time without it (Phase 4B.4 §3).
+  reconcileDueBilling: adminProcedure.mutation(async () => reconcileDueSubscriptions({})),
+
   vendorTargeting: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
     const [diagnostics, usage] = await Promise.all([
       getVendorTargetingDiagnostics(input.userId),
@@ -1571,6 +1645,37 @@ const aiRouter = router({
 // by a client request. That is what structurally prevents a vendor from
 // upgrading themselves by manipulating a payload - there is no such endpoint
 // to manipulate, not merely a check that could be bypassed.
+/**
+ * Turn a lifecycle outcome into an HTTP-shaped result.
+ *
+ * `noop` is a SUCCESS, not an error: repeating a transition the vendor already
+ * completed is exactly the idempotent behaviour Phase 4B.4 requires, and the
+ * client should see the settled state rather than a failure. Only a genuinely
+ * illegal transition is an error, and it carries the server's own reason.
+ */
+function lifecycleResult(outcome: LifecycleOutcome) {
+  if (outcome.outcome === 'rejected') {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: outcome.reason });
+  }
+  return {
+    outcome: outcome.outcome,
+    action: outcome.action,
+    lifecycleState: outcome.lifecycleState,
+    plan: outcome.state.effectivePlan,
+    status: outcome.state.status,
+    isPaid: outcome.state.isPaid,
+    inTrial: outcome.state.inTrial,
+    trialEndsAt: outcome.state.trialEndsAt,
+    currentPeriodEnd: outcome.state.currentPeriodEnd,
+    cancelAtPeriodEnd: outcome.state.cancelAtPeriodEnd,
+    inGracePeriod: outcome.state.inGracePeriod,
+    gracePeriodEndsAt: outcome.state.gracePeriodEndsAt,
+    founderPriceActive: outcome.state.founderPriceActive,
+    founderPriceEndsAt: outcome.state.founderPriceEndsAt,
+    entitlements: outcome.state.entitlements,
+  };
+}
+
 const billingRouter = router({
   // The public commercial catalogue, straight from shared/billing.ts - the one
   // source of truth. Prices are never duplicated into the client bundle.
@@ -1637,6 +1742,40 @@ const billingRouter = router({
   myEnquiryUsage: protectedProcedure.query(async ({ ctx }) => {
     return getEnquiryUsage(ctx.user.id);
   }),
+
+  // ── Subscription lifecycle (Phase 4B.4) ─────────────────────────────────
+  //
+  // The first mutations the billing router has ever carried. Every one of them
+  // is self-scoped: the vendor is identified by ctx.user.id, and no procedure
+  // below accepts a userId, plan status, price, trial, entitlement, or
+  // subscription state from the caller. The only thing a client may choose is
+  // WHICH transition to request and, where a plan is genuinely a choice, which
+  // plan - validated against the shared catalogue.
+  //
+  // None of this collects payment. Phase 4B.5 connects the provider.
+
+  myLifecycle: protectedProcedure.query(async ({ ctx }) => getLifecycleSnapshot(ctx.user.id)),
+
+  // The vendor-facing lifecycle rights, and deliberately ONLY these two.
+  //
+  // Both are subtractive-or-restorative: cancelling gives up a future renewal,
+  // resuming puts back what the vendor already had. Neither can grant access,
+  // so neither takes a plan, an interval, a price, or a status - there is no
+  // field here a client could manipulate into an upgrade.
+  //
+  // Choosing or changing a PLAN is deliberately not exposed to vendors in this
+  // phase. No payment can be collected until Phase 4B.5, so a self-service
+  // subscribe or upgrade call would hand out real paid entitlements - a
+  // 30-day trial, or PREMIUM's unlimited enquiries - for nothing. The
+  // transitions exist and are fully tested (server/billing/lifecycle.ts); they
+  // are reachable only by an administrator until the provider can charge for
+  // them, at which point Phase 4B.5 connects checkout to the same functions.
+
+  cancelSubscription: approvedProviderProcedure.mutation(async ({ ctx }) =>
+    lifecycleResult(await requestCancellation({ userId: ctx.user.id, source: 'vendor', actorId: ctx.user.id }))),
+
+  resumeSubscription: approvedProviderProcedure.mutation(async ({ ctx }) =>
+    lifecycleResult(await resumeSubscription({ userId: ctx.user.id, source: 'vendor', actorId: ctx.user.id }))),
 });
 
 export const appRouter = router({

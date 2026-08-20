@@ -62,11 +62,20 @@ export type BillingState = {
   /**
    * True when the stored state says 'active' but the billing period has already
    * elapsed and no cancellation was requested - i.e. a renewal we have not yet
-   * heard about. Entitlements are intentionally retained (a provider sync gap
-   * must not punish a paying vendor), and reconciliation belongs to the
-   * provider integration (Phase 4B.5). No downgrade deadline is invented here.
+   * heard about. Entitlements are retained for a BOUNDED reconciliation window
+   * (a provider sync gap must not punish a paying vendor), after which the
+   * state fails closed - see RENEWAL_SYNC_WINDOW_DAYS.
    */
   awaitingRenewalSync: boolean;
+  /**
+   * Phase 4B.4. True when the renewal-sync window has fully elapsed without
+   * provider confirmation. Paid entitlements are NO LONGER granted, but the
+   * subscription row is deliberately left intact so the eventual provider
+   * event (Phase 4B.5) can still reconcile it. BuildHub invents neither
+   * success nor failure here: it simply stops granting access it cannot
+   * justify, and says so.
+   */
+  reconciliationRequired: boolean;
 };
 
 const FREE_STATE: BillingState = {
@@ -86,7 +95,75 @@ const FREE_STATE: BillingState = {
   founderPriceActive: false,
   founderPriceEndsAt: null,
   awaitingRenewalSync: false,
+  reconciliationRequired: false,
 };
+
+/**
+ * Phase 4B.4 §6. How long paid access survives an elapsed billing period that
+ * the payment provider has not yet confirmed a renewal for.
+ *
+ * Phase 4B.1 left this unbounded, which meant an `active` row whose period
+ * ended years ago still resolved to full paid entitlements forever. That is
+ * the "indefinite paid access" this phase was required to remove.
+ *
+ * The bound reuses the already-approved GRACE_PERIOD_DAYS rather than
+ * inventing a second, competing number: both windows answer the same
+ * commercial question - "we do not yet know whether this vendor paid" - and
+ * the business has approved 7 days as the answer. If the owner wants a
+ * different reconciliation window, this is the single value to change.
+ */
+export const RENEWAL_SYNC_WINDOW_DAYS = GRACE_PERIOD_DAYS;
+
+/**
+ * The named lifecycle states from the Phase 4B.4 brief §2.
+ *
+ * DERIVED, never stored. The database keeps exactly one status column
+ * (`vendorSubscriptions.status`); this is a presentation of that column plus
+ * the time-dependent facts around it, so there is no second competing state
+ * system that could disagree with the first.
+ */
+export const LIFECYCLE_STATES = [
+  'FREE',
+  'TRIALING',
+  'ACTIVE',
+  'CANCELLATION_SCHEDULED',
+  'PAST_DUE',
+  'GRACE_PERIOD',
+  'AWAITING_RENEWAL_SYNC',
+  'RECONCILIATION_REQUIRED',
+  'EXPIRED',
+] as const;
+export type LifecycleState = (typeof LIFECYCLE_STATES)[number];
+
+/**
+ * Name the lifecycle state a derived BillingState represents.
+ *
+ * PAST_DUE and GRACE_PERIOD are the same stored status: BuildHub enters the
+ * grace window the instant a payment fails, so `past_due` inside the window is
+ * reported as GRACE_PERIOD and only becomes PAST_DUE-without-grace if the
+ * governing timestamp is missing (a malformed row).
+ */
+export function lifecycleStateOf(state: BillingState): LifecycleState {
+  if (state.reconciliationRequired) return 'RECONCILIATION_REQUIRED';
+  if (state.dataIntegrityIssue) return 'EXPIRED';
+
+  switch (state.status) {
+    case 'trialing':
+      return state.inTrial ? 'TRIALING' : 'EXPIRED';
+    case 'active':
+      if (state.awaitingRenewalSync) return 'AWAITING_RENEWAL_SYNC';
+      if (!state.isPaid) return 'EXPIRED';
+      return state.cancelAtPeriodEnd ? 'CANCELLATION_SCHEDULED' : 'ACTIVE';
+    case 'past_due':
+      return state.inGracePeriod ? 'GRACE_PERIOD' : 'PAST_DUE';
+    case 'canceled':
+    case 'expired':
+      return 'EXPIRED';
+    case 'free':
+    default:
+      return 'FREE';
+  }
+}
 
 function elapsed(at: Date | null, now: Date): boolean {
   return at !== null && now.getTime() >= at.getTime();
@@ -160,8 +237,12 @@ export function deriveBillingState(
       if (elapsed(subscription.currentPeriodEnd, now)) {
         // Cancellation requested and the paid-for period is over: downgrade.
         if (subscription.cancelAtPeriodEnd) return lapse();
-        // Otherwise this is a provider sync gap, not a lapse - keep access.
-        return grant({ founderPriceActive, awaitingRenewalSync: true });
+        // Otherwise this is a provider sync gap. Access is retained, but only
+        // for the bounded window below - never indefinitely (Phase 4B.4 §6).
+        const windowEndsAt = addDays(subscription.currentPeriodEnd, RENEWAL_SYNC_WINDOW_DAYS);
+        return elapsed(windowEndsAt, now)
+          ? lapse({ awaitingRenewalSync: true, reconciliationRequired: true })
+          : grant({ founderPriceActive, awaitingRenewalSync: true });
       }
       return grant({ founderPriceActive });
 
@@ -222,6 +303,7 @@ export type SubscriptionPatch = Partial<{
   isFounderPrice: boolean;
   founderPriceUsedAt: Date | null;
   founderPriceEndsAt: Date | null;
+  trialStartedAt: Date | null;
   trialEndsAt: Date | null;
   currentPeriodStart: Date | null;
   currentPeriodEnd: Date | null;
@@ -269,8 +351,17 @@ export function startTrial(params: {
     currency: BILLING_CURRENCY,
     priceAmount: price.toFixed(2),
     isFounderPrice: founder,
-    founderPriceUsedAt: founder ? now : null,
-    founderPriceEndsAt: founder ? addMonths(now, FOUNDER_OFFER_MONTHS) : null,
+    // Phase 4B.4 fix: only ever WRITE this stamp, never clear it. Emitting
+    // `founderPriceUsedAt: null` for a non-founder subscription wiped the
+    // one-time-use guard, so a vendor who had already spent the offer, then
+    // cancelled and re-subscribed at standard price, became eligible for it
+    // all over again on the next cycle. Omitting the key leaves the stored
+    // value untouched, which is what "write-once" has to mean.
+    ...(founder ? { founderPriceUsedAt: now, founderPriceEndsAt: addMonths(now, FOUNDER_OFFER_MONTHS) } : {}),
+    // The founder WINDOW is still cleared for a non-founder subscription: it
+    // describes this subscription's pricing, not the vendor's eligibility.
+    ...(founder ? {} : { founderPriceEndsAt: null }),
+    trialStartedAt: now,
     trialEndsAt: addDays(now, TRIAL_DAYS),
     currentPeriodStart: null,
     currentPeriodEnd: null,
@@ -321,6 +412,74 @@ export function recoverPayment(params: {
  */
 export function cancelAtPeriodEnd(now: Date = new Date()): SubscriptionPatch {
   return { cancelAtPeriodEnd: true, canceledAt: now };
+}
+
+/**
+ * Phase 4B.4. The vendor changed their mind before the paid period ran out.
+ *
+ * Only meaningful while paid access is still live - the caller checks that.
+ * Nothing is re-charged and no period is extended: the already-paid period
+ * simply stops being the last one.
+ */
+export function reverseCancellation(): SubscriptionPatch {
+  return { cancelAtPeriodEnd: false, canceledAt: null };
+}
+
+/**
+ * Phase 4B.4. Move an existing paid subscription to a different paid plan.
+ *
+ * Deliberately conservative, and deliberately NOT a payment operation:
+ *
+ *  - The billing period is NOT restarted. The vendor keeps the period they
+ *    already paid for; only the plan (and therefore the entitlements) changes.
+ *  - The price snapshot is re-resolved from the catalogue for the new plan at
+ *    the same interval, so `priceAmount` never describes the old plan.
+ *  - Founder pricing carries across a plan change if it is still running: the
+ *    offer is a property of the vendor's first paid subscription, not of a
+ *    particular plan, and the six-month window is not restarted or re-awarded.
+ *  - No proration, credit, or refund is computed. Money movement belongs to
+ *    the payment provider in Phase 4B.5; inventing a proration rule here would
+ *    be inventing a commercial policy nobody approved.
+ *
+ * Downgrading to FREE is NOT this function - that is a cancellation, so the
+ * vendor keeps what they paid for until the period ends (see cancelAtPeriodEnd).
+ */
+export function changePlan(params: {
+  subscription: VendorSubscription;
+  targetPlan: PlanId;
+  now?: Date;
+}): SubscriptionPatch {
+  const { subscription, targetPlan } = params;
+  const now = params.now ?? new Date();
+
+  if (targetPlan === 'free') {
+    throw new BillingDomainError(
+      'Moving to FREE is a cancellation, not a plan change: paid access must run to the end of the paid period.',
+    );
+  }
+  if (subscription.plan === targetPlan) {
+    throw new BillingDomainError(`Subscription is already on plan "${targetPlan}".`);
+  }
+
+  const interval = (subscription.billingInterval ?? 'month') as BillingInterval;
+  const founderStillRunning =
+    subscription.isFounderPrice && !elapsed(subscription.founderPriceEndsAt, now);
+
+  const price = resolvePrice(targetPlan, interval, founderStillRunning);
+  if (price === null) {
+    throw new BillingDomainError(
+      founderStillRunning
+        ? `No approved founder price exists for plan "${targetPlan}" on the "${interval}" interval.`
+        : `Plan "${targetPlan}" is not sold on the "${interval}" interval.`,
+    );
+  }
+
+  return {
+    plan: targetPlan,
+    priceAmount: price.toFixed(2),
+    // isFounderPrice / founderPriceUsedAt / founderPriceEndsAt are deliberately
+    // untouched: a plan change neither grants nor re-grants the founder offer.
+  };
 }
 
 /**

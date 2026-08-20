@@ -137,8 +137,32 @@ describe('billing.mySubscription - self-scoped vendor access (Phase 4B.1)', () =
 });
 
 describe('client manipulation cannot change a plan (Phase 4B.1)', () => {
-  it('the billing router exposes NO mutation at all - plan changes are provider-driven only', () => {
-    expect(billingRouterBlock).not.toContain('.mutation(');
+  // Phase 4B.4 introduced the first billing-router mutations, which the phase
+  // brief §10 explicitly authorizes. The property this test was protecting -
+  // that no request can upgrade a vendor - is therefore asserted directly, and
+  // more strongly, than by the absence of mutations: it now survives the
+  // mutations actually existing.
+  it('every billing-router mutation is self-scoped and takes no access-granting input', () => {
+    const mutations = billingRouterBlock.split('\n').filter(line => line.includes('.mutation('));
+    expect(mutations.length).toBeGreaterThan(0);
+
+    // The two vendor-facing lifecycle rights, and only those two.
+    expect(billingRouterBlock).toContain('cancelSubscription: approvedProviderProcedure.mutation(');
+    expect(billingRouterBlock).toContain('resumeSubscription: approvedProviderProcedure.mutation(');
+
+    // Neither takes ANY input, so there is no field to manipulate, and both
+    // are keyed by the authenticated session rather than a supplied id.
+    const lifecycleBlock = billingRouterBlock.slice(billingRouterBlock.indexOf('cancelSubscription:'));
+    expect(lifecycleBlock).not.toContain('.input(');
+    expect(lifecycleBlock).toContain('ctx.user.id');
+    expect(lifecycleBlock).not.toContain('input.userId');
+  });
+
+  it('selecting or changing a PLAN is not reachable from the vendor-facing billing router', () => {
+    // No payment can be collected before Phase 4B.5, so a vendor-callable
+    // subscribe/upgrade would hand out real paid entitlements for nothing.
+    expect(billingRouterBlock).not.toContain('startTrial:');
+    expect(billingRouterBlock).not.toContain('changePlan:');
   });
 
   it('no endpoint anywhere accepts a client-supplied plan, price, or subscription status', () => {
@@ -249,8 +273,16 @@ describe('entitlement API - server authority (Phase 4B.2)', () => {
     expect(result.isPaid).toBe(false);
   });
 
-  it('a vendor cannot upgrade themselves: the entire billing router still has no mutation', () => {
-    expect(billingRouterBlock).not.toContain('.mutation(');
+  it('a vendor cannot upgrade themselves: no billing-router mutation can raise a plan', () => {
+    // Phase 4B.4: mutations exist now, but only cancel/resume - both of which
+    // can lower or restore access, never grant it. The plan-selecting
+    // transitions live behind adminProcedure in the admin router.
+    expect(billingRouterBlock).not.toContain('startPaidTrial(');
+    expect(billingRouterBlock).not.toContain('changeVendorPlan(');
+    expect(billingRouterBlock).not.toContain('recordPaymentSucceeded(');
+    expect(billingRouterBlock).not.toContain('recordPaymentRecovery(');
+    expect(billingRouterBlock).toContain('requestCancellation(');
+    expect(billingRouterBlock).toContain('resumeSubscription(');
   });
 
   it('the engine is the ONLY place plans are compared - no scattered plan checks in routers or client', () => {

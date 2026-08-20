@@ -1,0 +1,1 @@
+ALTER TABLE `vendorSubscriptions` ADD `trialStartedAt` timestamp;

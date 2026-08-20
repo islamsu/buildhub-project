@@ -479,6 +479,10 @@ export const vendorSubscriptions = mysqlTable('vendorSubscriptions', {
   founderPriceUsedAt: timestamp('founderPriceUsedAt'),
   // When the discounted founder window ends and standard pricing takes over.
   founderPriceEndsAt: timestamp('founderPriceEndsAt'),
+  // Phase 4B.4: write-once, never cleared - the same one-time-use discipline as
+  // founderPriceUsedAt. Without it, a lapsed trial leaves the vendor unpaid and
+  // therefore eligible to start another one, forever.
+  trialStartedAt: timestamp('trialStartedAt'),
   trialEndsAt: timestamp('trialEndsAt'),
   currentPeriodStart: timestamp('currentPeriodStart'),
   currentPeriodEnd: timestamp('currentPeriodEnd'),
