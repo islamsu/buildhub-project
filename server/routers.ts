@@ -8,6 +8,7 @@ import { TRPCError } from '@trpc/server';
 import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername, revokeSession } from './db';
 import { invokeLLM } from './_core/llm';
 import { storagePut } from './storage';
+import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
 import { acceptQuotationSecure, rejectQuotationSecure } from './quotationWorkflow';
 import { aiChatLimiters, authLimiters, getClientIp } from './_core/rateLimit';
@@ -460,6 +461,26 @@ const complianceProcedure = protectedProcedure.use(({ ctx, next }) => {
 });
 
 const MAX_REGISTRATION_DOCUMENT_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Slice 9 (audit item A10). Every upload endpoint below validated only the
+ * content type the CLIENT declared, then stored the bytes under that label
+ * without ever looking at them - a check the caller controls both sides of.
+ *
+ * This turns the byte-level verification in server/_core/fileType.ts into the
+ * BAD_REQUEST the client already knows how to display. It is applied at all
+ * five upload endpoints rather than the one that looked riskiest, because the
+ * gap was identical in each.
+ */
+function assertUploadedFileMatches(
+  declaredContentType: string,
+  buffer: Buffer,
+  allowed: readonly string[],
+): void {
+  const problem = checkUploadedFile(declaredContentType, buffer, allowed);
+  if (problem) throw new TRPCError({ code: 'BAD_REQUEST', message: problem.message });
+}
+
 const isAllowedRegistrationDocumentType = (contentType: string) => contentType === 'application/pdf' || contentType.startsWith('image/');
 
 function getOverallComplianceStatus(role: string | null | undefined, docs: Array<{ documentType: string; status: string }>, requestedStatus?: string): ComplianceStatus {
@@ -494,6 +515,7 @@ const registrationRouter = router({
     if (!requirement) throw new TRPCError({ code: 'BAD_REQUEST', message: 'This document is not required for the selected role' });
     const bytes = Buffer.from(input.base64, 'base64');
     if (bytes.length === 0 || bytes.length > MAX_REGISTRATION_DOCUMENT_SIZE) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Registration documents must be between 1 byte and 10MB' });
+    assertUploadedFileMatches(input.contentType, bytes, DOCUMENT_TYPES);
     const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
     const { key, url } = await storagePut(`registration/${ctx.user.id}/${Date.now()}-${safeName}`, bytes, input.contentType);
     const result = await db.insert(registrationDocuments).values({ userId: ctx.user.id, documentType: input.documentType, displayName: requirement.name, fileName: input.fileName, url, fileKey: key, mimeType: input.contentType, size: bytes.length, status: 'submitted', applicantNote: input.applicantNote });
@@ -704,6 +726,7 @@ const projectsRouter = router({
       if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
       const buffer = Buffer.from(input.base64, 'base64');
       if (buffer.length > 8 * 1024 * 1024) throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
+      assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
       const safeName = input.name.replace(/[^\w.-]+/g, '_');
       const { key, url } = await storagePut(`project-documents/user-${ctx.user.id}/project-${input.projectId}/${safeName}`, buffer, input.contentType);
       const result = await db.insert(documents).values({ projectId: input.projectId, uploaderId: ctx.user.id, name: input.name, type: input.type, url, fileKey: key, size: buffer.length });
@@ -772,7 +795,13 @@ const marketplaceRouter = router({
   get: publicProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [product] = await db.select().from(products).where(eq(products.id, input.id));
+    // Slice 9: `active` is filtered here as well as in `list` above. A supplier
+    // who deactivates a product - delisted, discontinued, mispriced - has
+    // withdrawn it from sale, and it stayed fully readable by id to anyone who
+    // knew or guessed the number. Absent and withdrawn are the same answer to a
+    // buyer, so both are NOT_FOUND.
+    const [product] = await db.select().from(products)
+      .where(and(eq(products.id, input.id), eq(products.active, true)));
     if (!product) throw new TRPCError({ code: 'NOT_FOUND' });
     return product;
   }),
@@ -821,7 +850,19 @@ const marketplaceRouter = router({
   questions: publicProcedure.input(z.object({ productId: z.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(productQuestions).where(eq(productQuestions.productId, input.productId)).orderBy(desc(productQuestions.createdAt));
+    // Slice 9: an explicit column allowlist. This is a PUBLIC endpoint and the
+    // bare select returned `askerId`, so anyone could walk the product
+    // catalogue and collect the user id of every buyer who had asked about
+    // anything. The page renders the question, the answer and the timestamps;
+    // it has never needed to say who asked.
+    return db.select({
+      id: productQuestions.id,
+      productId: productQuestions.productId,
+      question: productQuestions.question,
+      answer: productQuestions.answer,
+      answeredAt: productQuestions.answeredAt,
+      createdAt: productQuestions.createdAt,
+    }).from(productQuestions).where(eq(productQuestions.productId, input.productId)).orderBy(desc(productQuestions.createdAt));
   }),
   askQuestion: protectedProcedure.input(z.object({ productId: z.number(), question: z.string().min(2).max(2000) })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
@@ -835,7 +876,21 @@ const marketplaceRouter = router({
 
 // ── RFQ Router ─────────────────────────────────────────────────────────────
 const rfqRouter = router({
-  list: publicProcedure.query(async () => {
+  // Slice 9. This was `publicProcedure` and returned `select().from(rfqs)` -
+  // every column of the 50 most recent RFQs, to anyone on the internet with no
+  // account at all. That included `budget`, which is the homeowner's private
+  // figure for the job, alongside requesterId, description, location and the
+  // attachment keys.
+  //
+  // Authenticated exposure IS the approved design: Phase 4B.3 documented that
+  // rfq.list and rfq.get show full RFQ detail to any signed-in user because
+  // BuildHub is an open-bidding marketplace. Anonymous exposure was never part
+  // of that, and `rfq.get` immediately below has always been protected - this
+  // was one procedure that got missed, not a policy.
+  //
+  // Both client call sites are already authenticated-only paths, and
+  // RFQPage.tsx gates its neighbouring queries on isAuthenticated already.
+  list: protectedProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
     return db.select().from(rfqs).orderBy(desc(rfqs.createdAt)).limit(50);
@@ -909,6 +964,7 @@ const rfqRouter = router({
       if (buffer.length > MAX_RFQ_ATTACHMENT_SIZE) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
       }
+      assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
       const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
       const { key, url } = await storagePut(
         `rfq-attachments/user-${ctx.user.id}/${safeName}`,
@@ -1122,8 +1178,25 @@ const messagesRouter = router({
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     if (input.type === 'quotation') {
       if (!input.quotationId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Quotation reference is required' });
-      const [quotation] = await db.select({ id: quotations.id }).from(quotations).where(eq(quotations.id, input.quotationId));
-      if (!quotation) throw new TRPCError({ code: 'NOT_FOUND', message: 'Quotation not found' });
+      // Slice 9: the sender must be a PARTY to the quotation, not merely someone
+      // who guessed a number that exists. This previously checked existence
+      // only, which made the endpoint an oracle - type ids into the "Quote ID"
+      // box and NOT_FOUND versus success tells you exactly which quotations
+      // exist and how many bids the marketplace carries.
+      //
+      // A party is the provider who submitted it, or the homeowner who owns the
+      // RFQ it answers. Those are the only two people with any reason to share
+      // one, and both already see it elsewhere in the product.
+      const [quotation] = await db
+        .select({ providerId: quotations.providerId, requesterId: rfqs.requesterId })
+        .from(quotations)
+        .innerJoin(rfqs, eq(quotations.rfqId, rfqs.id))
+        .where(eq(quotations.id, input.quotationId));
+      // Not-a-party and does-not-exist give the SAME answer, so the oracle is
+      // not simply moved one step along.
+      if (!quotation || (quotation.providerId !== ctx.user.id && quotation.requesterId !== ctx.user.id)) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Quotation not found' });
+      }
     }
     const result = await db.insert(messages).values({ ...input, senderId: ctx.user.id });
     return { id: Number(result[0].insertId), ...input, senderId: ctx.user.id };
@@ -1131,7 +1204,13 @@ const messagesRouter = router({
   uploadAttachment: protectedProcedure.input(z.object({ fileName: z.string().min(1).max(255), contentType: z.string().startsWith('image/').or(z.literal('application/pdf')), base64: z.string().max(11_000_000) })).mutation(async ({ ctx, input }) => {
     const buffer = Buffer.from(input.base64, 'base64');
     if (buffer.length > 8 * 1024 * 1024) throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
-    const safeName = input.fileName.replace(/[^\\w.-]+/g, '_');
+    assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
+    // The character class here read [^\\w.-] - a DOUBLE backslash inside a regex
+    // literal, so the negated set was {backslash, w, dot, hyphen} rather than
+    // {word characters, dot, hyphen}. Every ordinary letter was therefore
+    // replaced: "site-plan.pdf" became "_-_._". The other three upload
+    // endpoints already had this right.
+    const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
     const { key, url } = await storagePut(`message-attachments/user-${ctx.user.id}/${Date.now()}-${safeName}`, buffer, input.contentType);
     return { key, url, name: input.fileName, size: buffer.length, type: input.contentType };
   }),
@@ -1368,6 +1447,7 @@ const profileRouter = router({
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const bytes = Buffer.from(input.base64, 'base64');
     if (bytes.length === 0 || bytes.length > MAX_AVATAR_SIZE) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Avatar images must be between 1 byte and 2MB' });
+    assertUploadedFileMatches(input.contentType, bytes, IMAGE_TYPES);
     const { url } = await storagePut(`avatars/${ctx.user.id}/${Date.now()}-avatar`, bytes, input.contentType);
     await db.update(users).set({ avatar: url }).where(eq(users.id, ctx.user.id));
     return { url };

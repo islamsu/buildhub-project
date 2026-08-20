@@ -154,7 +154,12 @@ export default function RFQPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
-  const { data: rfqs = [], refetch } = trpc.rfq.list.useQuery();
+  // Gated on isAuthenticated to match its neighbours above and below. rfq.list
+  // became a protected procedure in Slice 9 - it was returning every RFQ column,
+  // including the homeowner's budget, to anonymous callers - and an UNAUTHORIZED
+  // anywhere in the app bounces the visitor to /auth. The signed-out branch of
+  // `allRfqs` below already expects an empty list.
+  const { data: rfqs = [], refetch } = trpc.rfq.list.useQuery(undefined, { enabled: isAuthenticated });
   const { data: myRfqs = [] } = trpc.rfq.myList.useQuery(undefined, { enabled: isAuthenticated });
 
   const createRfq = trpc.rfq.create.useMutation({
