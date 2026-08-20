@@ -326,3 +326,63 @@ describe('§6 smoke test', () => {
     expect(SMOKE).toContain('AbortController');
   });
 });
+
+// ── §7 The scripts the workflows call actually exist ───────────────────────
+
+describe('§7 referenced scripts exist and are executable', () => {
+  const workflows = ['ci.yml', 'deploy-staging.yml', 'deploy-production.yml']
+    .map(name => read(`../.github/workflows/${name}`)).join('\n');
+
+  it('REGRESSION: every ./*.sh the workflows invoke is present in deploy/', () => {
+    // The production workflow called ./backup-before-release.sh, which existed
+    // nowhere in the repository. The release would have failed at the step
+    // immediately before migrations - the worst possible moment to discover it.
+    const referenced = Array.from(new Set(workflows.match(/\.\/[a-z0-9-]+\.sh/g) ?? []));
+    expect(referenced.length).toBeGreaterThan(0);
+    for (const script of referenced) {
+      const name = script.replace('./', '');
+      expect(() => read(`../deploy/${name}`), `${name} is referenced but missing`).not.toThrow();
+    }
+  });
+
+  it('the backup verifies its own output rather than trusting the exit code', () => {
+    const backup = read('../deploy/backup-before-release.sh');
+    expect(backup).toContain('gzip -t');            // not corrupt
+    expect(backup).toContain('Dump completed');     // not truncated
+    expect(backup).toContain('CREATE TABLE');       // not empty
+  });
+
+  it('a restore counterpart exists — a backup nobody can restore is a rumour', () => {
+    const restore = read('../deploy/restore-backup.sh');
+    expect(restore).toContain('RESTORE_TARGET_DB');   // rehearsable against scratch
+    expect(restore).toContain('RESTORE_ASSUME_YES');  // destructive, so confirmed
+  });
+
+  it('the restore checks the archive BEFORE dropping anything', () => {
+    const restore = read('../deploy/restore-backup.sh');
+    const verifyAt = restore.indexOf('gzip -t');
+    const dropAt = restore.indexOf('DROP DATABASE');
+    expect(verifyAt).toBeGreaterThan(-1);
+    expect(dropAt).toBeGreaterThan(verifyAt);
+  });
+
+  it('both use a PINNED client image, not whatever the host has installed', () => {
+    // A host carrying MariaDB's client cannot dump a MySQL 8 server: it rejects
+    // --set-gtid-purged and --ssl-mode outright.
+    for (const name of ['backup-before-release.sh', 'restore-backup.sh']) {
+      expect(read(`../deploy/${name}`), name).toContain('MYSQL_CLIENT_IMAGE');
+    }
+  });
+
+  it('the backup does not require a privilege a managed database withholds', () => {
+    // Without --no-tablespaces, mysqldump fails on PROCESS, which the
+    // application user on a managed instance does not have.
+    expect(read('../deploy/backup-before-release.sh')).toContain('--no-tablespaces');
+  });
+
+  it('TLS is required by default on both, and overridable only for a drill', () => {
+    for (const name of ['backup-before-release.sh', 'restore-backup.sh']) {
+      expect(read(`../deploy/${name}`), name).toContain('${DB_SSL_MODE:-REQUIRED}');
+    }
+  });
+});
