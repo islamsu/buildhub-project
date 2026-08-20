@@ -3,13 +3,14 @@ import { COOKIE_NAME } from '@shared/const';
 import { getSessionCookieOptions } from './_core/cookies';
 import { systemRouter } from './_core/systemRouter';
 import { publicProcedure, protectedProcedure, router } from './_core/trpc';
+import type { TrpcContext } from './_core/context';
 import { TRPCError } from '@trpc/server';
 import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername, revokeSession } from './db';
 import { invokeLLM } from './_core/llm';
 import { storagePut } from './storage';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
 import { acceptQuotationSecure, rejectQuotationSecure } from './quotationWorkflow';
-import { aiChatLimiters, getClientIp } from './_core/rateLimit';
+import { aiChatLimiters, authLimiters, getClientIp } from './_core/rateLimit';
 import { notifyUser, notifyUsers } from './notifications';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
@@ -91,6 +92,35 @@ function toPublicSessionUser(user: AuthenticatedUser) {
   } as const;
 }
 
+/**
+ * Bound the guess rate on the two unauthenticated endpoints that accept a secret.
+ *
+ * `identifier` is the username being attempted, or null where there is nothing
+ * stable to key on (invitation completion, where varying the token IS the
+ * attack). The check runs BEFORE any credential comparison, so a blocked
+ * request never reaches the password/token verification at all.
+ *
+ * Deliberately does not distinguish "wrong password" from "no such user" in its
+ * own behaviour - that distinction is already handled by the single shared
+ * UNAUTHORIZED message below, and rate limiting must not reintroduce it as a
+ * timing or status-code oracle.
+ */
+function enforceAuthRateLimit(req: TrpcContext['req'], identifier: string | null): void {
+  const now = Date.now();
+  const ip = getClientIp(req);
+  const results = [
+    ...(ip ? [authLimiters.ipBurst.check(ip, now), authLimiters.ipSustained.check(ip, now)] : []),
+    ...(identifier ? [authLimiters.identifierSustained.check(identifier.toLowerCase(), now)] : []),
+  ];
+  const blocked = results.find(result => !result.allowed);
+  if (blocked) {
+    throw new TRPCError({
+      code: 'TOO_MANY_REQUESTS',
+      message: `Too many attempts. Try again in ${Math.ceil(blocked.retryAfterMs / 1000)}s.`,
+    });
+  }
+}
+
 const authRouter = router({
   me: publicProcedure.query(opts => opts.ctx.user ? toPublicSessionUser(opts.ctx.user) : null),
   logout: publicProcedure.mutation(async ({ ctx }) => {
@@ -109,6 +139,7 @@ const authRouter = router({
     username: z.string().trim().min(3).max(100),
     password: z.string().min(8).max(128),
   })).mutation(async ({ ctx, input }) => {
+    enforceAuthRateLimit(ctx.req, input.username);
     const target = await getUserByUsername(input.username);
     if (!target?.isDummy || target.loginMethod !== 'dummy' || !(await verifyPassword(input.password, target.passwordHash))) {
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid dummy username or password' });
@@ -1207,7 +1238,11 @@ const adminRouter = router({
     await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'invitation_resent', source: 'admin_created', note: `Resent to ${target.email}` });
     return { success: true, invitationLink: `/auth/setup-password?token=${inviteToken}` };
   }),
-  completeInvitation: publicProcedure.input(z.object({ token: z.string().min(10), password: z.string().min(6).max(128) })).mutation(async ({ input }) => {
+  completeInvitation: publicProcedure.input(z.object({ token: z.string().min(10), password: z.string().min(6).max(128) })).mutation(async ({ ctx, input }) => {
+    // Unauthenticated, and it sets a password from a bearer token - so the guess
+    // rate has to be bounded. Keyed by IP only: the token is the thing being
+    // guessed, so keying on it would bound nothing.
+    enforceAuthRateLimit(ctx.req, null);
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const [target] = await db.select().from(users).where(eq(users.invitationToken, input.token));

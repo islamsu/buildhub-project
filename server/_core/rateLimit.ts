@@ -61,3 +61,28 @@ export function resetAiChatLimiters() {
   aiChatLimiters.ipBurst.reset();
   aiChatLimiters.ipSustained.reset();
 }
+
+// Credential-guessing protection for the two unauthenticated endpoints that accept a
+// secret: password sign-in and invitation completion. Neither had any bound before -
+// scrypt makes each guess costly, but nothing capped the guess RATE.
+//
+// Two axes, because they stop different attacks:
+//  - by IP, which bounds one source spraying many accounts (or many tokens);
+//  - by identifier (the username), which bounds many sources targeting ONE account,
+//    the case an IP limit cannot see.
+//
+// The identifier window is deliberately not a lockout: it expires on its own, so an
+// attacker cannot use it to keep a real user permanently locked out of their account.
+// Invitation completion is keyed by IP only - keying it by token would be useless,
+// since varying the token is exactly what a guessing attack does.
+export const authLimiters = {
+  ipBurst: createRateLimiter({ windowMs: 60_000, max: 10 }),
+  ipSustained: createRateLimiter({ windowMs: 15 * 60_000, max: 60 }),
+  identifierSustained: createRateLimiter({ windowMs: 15 * 60_000, max: 10 }),
+};
+
+export function resetAuthLimiters() {
+  authLimiters.ipBurst.reset();
+  authLimiters.ipSustained.reset();
+  authLimiters.identifierSustained.reset();
+}

@@ -52,12 +52,22 @@ export async function getUserByUsername(username: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// Session revocation (Phase 4A.6.6). Fails open on a missing DB connection,
-// matching the graceful-degradation convention used everywhere else in this
-// file rather than locking every request out when the database is down.
+// Session revocation (Phase 4A.6.6), hardened in the Phase 4B readiness audit.
+//
+// This one deliberately does NOT follow the graceful-degradation convention
+// used elsewhere in this file. It previously returned false when the database
+// was unreachable, which meant a database blip silently re-validated every
+// revoked session - disabling the exact control logout revocation exists to
+// provide, at precisely the moment nobody is watching.
+//
+// It now fails CLOSED: an unreachable database cannot prove a session is still
+// valid, so the session is treated as revoked. The availability cost is close
+// to zero, because every authenticated operation in the app already needs the
+// database and degrades to nothing without it - so failing closed here does not
+// take down anything that was still working.
 export async function isSessionRevoked(jti: string): Promise<boolean> {
   const db = await getDb();
-  if (!db) return false;
+  if (!db) return true;
   const result = await db.select({ jti: revokedSessions.jti }).from(revokedSessions).where(eq(revokedSessions.jti, jti)).limit(1);
   return result.length > 0;
 }

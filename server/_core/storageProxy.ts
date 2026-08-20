@@ -27,6 +27,18 @@ export async function authorizeStorageKey(key: string, user: AuthenticatedUser |
     return true;
   }
 
+  // Category A (avatars): profile pictures, already shown on every public vendor
+  // profile and directory card, so any authenticated user may fetch one - the
+  // same rule as RFQ attachments above.
+  //
+  // This branch was missing entirely. Avatars are written to `avatars/` by
+  // profile.uploadAvatar, but with no case here every request fell through to
+  // the fail-closed default at the end of this function, so the proxy returned
+  // 403 to every non-admin and avatar images were simply broken.
+  if (key.startsWith('avatars/')) {
+    return true;
+  }
+
   const db = await getDb();
   if (!db) return false;
 
