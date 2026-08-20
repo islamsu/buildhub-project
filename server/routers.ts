@@ -25,8 +25,9 @@ import { promisify } from 'node:util';
 import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, type ComplianceDocumentStatus } from '../shared/compliance';
 import { sdk, type AuthenticatedUser } from './_core/sdk';
 import {
-  BILLING_CURRENCY, FOUNDER_OFFER_ENDS_AT_SETTING_KEY, FOUNDER_OFFER_MONTHS, GRACE_PERIOD_DAYS,
-  PLAN_IDS, PLANS, TRIAL_DAYS, annualSavings,
+  BILLING_CURRENCY, ENTITLEMENT_ENFORCEMENT, FOUNDER_OFFER_ENDS_AT_SETTING_KEY, FOUNDER_OFFER_MONTHS,
+  GRACE_PERIOD_DAYS, PLAN_IDS, PLANS, TRIAL_DAYS, annualSavings,
+  type PlanEntitlements,
 } from '@shared/billing';
 import {
   ADMIN_SUBSCRIPTION_COLUMNS, checkFounderEligibility, getBillingState, getBillingEvents, getSubscription,
@@ -1727,6 +1728,26 @@ const billingRouter = router({
       entitlements: PLANS[id].entitlements,
       annualSavings: annualSavings(id),
     })),
+    // Which entitlements BuildHub actually enforces TODAY, derived from the
+    // Phase 4B.1 honesty ledger - whose stated purpose is that "no report, UI,
+    // or plan-comparison page can claim a capability works when nothing
+    // enforces it". The pricing page badges everything false as "coming soon"
+    // rather than advertising it as included.
+    //
+    // Computed here rather than in the client so the catalogue stays
+    // server-owned and shared/billing.ts's PLANS table is never pulled into the
+    // browser bundle.
+    entitlementAvailability: Object.fromEntries(
+      (Object.keys(ENTITLEMENT_ENFORCEMENT) as (keyof PlanEntitlements)[])
+        .map(key => [key, !ENTITLEMENT_ENFORCEMENT[key].startsWith('phase-4b.6') && ENTITLEMENT_ENFORCEMENT[key] !== 'not-implemented']),
+    ) as Record<keyof PlanEntitlements, boolean>,
+    // Whether self-service checkout can actually run. Public because the
+    // PRICING page needs it and that page must work for signed-out visitors -
+    // reading it from the protected mySubscription instead made an anonymous
+    // visit throw UNAUTHORIZED, which the client's global handler turns into a
+    // redirect to /auth. It reveals nothing: it is one boolean about BuildHub's
+    // own configuration, not about any vendor.
+    checkoutAvailable: isPaymentProviderConfigured(),
   })),
 
   // A vendor's own billing state. Self-scoped by construction: there is no

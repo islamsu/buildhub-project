@@ -23,6 +23,7 @@ import AIAssistantPage from "./pages/AIAssistantPage";
 import CompliancePage from "./pages/CompliancePage";
 import PasswordSetupPage from "./pages/PasswordSetupPage";
 import VendorProfile from "./pages/VendorProfile";
+import Pricing from "./pages/Pricing";
 
 function Router() {
   return (
@@ -35,6 +36,7 @@ function Router() {
       <Route path={"/platform/:role"} component={RolePlatform} />
       <Route path={"/admin/:section"} component={AdminDashboard} />
       <Route path={"/admin"} component={AdminDashboard} />
+      <Route path={"/pricing"} component={Pricing} />
       <Route path={"/marketplace"} component={MarketplaceHub} />
       <Route path={"/marketplace/products"} component={Marketplace} />
       <Route path={"/marketplace/products/:id"} component={ProductDetail} />

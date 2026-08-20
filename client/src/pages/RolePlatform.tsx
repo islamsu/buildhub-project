@@ -18,6 +18,7 @@ import VendorReputation from '@/components/VendorReputation';
 import VendorAnalytics from '@/components/VendorAnalytics';
 import VendorServiceCategories from '@/components/VendorServiceCategories';
 import QualifiedEnquiries from '@/components/QualifiedEnquiries';
+import VendorBilling from '@/components/VendorBilling';
 import {
   ArrowUpRight, BarChart3, BriefcaseBusiness, Camera, CheckCircle2, ClipboardList,
   Clock3, DollarSign, FileText, FolderKanban, KanbanSquare, Layers3, MapPin, MessageSquare,
@@ -227,6 +228,18 @@ export default function RolePlatform() {
         {/* Phase 4B.3: service-category declaration + the qualified-enquiry
             inbox. Placed in the vendor's own reachable workspace, the same
             surface Phase 4A.6.4 established as the real vendor dashboard. */}
+        {/* Phase 4B Slice 2: the vendor's own plan and billing state. Placed
+            directly above the enquiry inbox, because the allowance shown there
+            is a consequence of the plan shown here. */}
+        {isProfessional && (
+          <section id="role-billing">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{lang === 'ar' ? 'الباقة والفوترة' : 'Plan & billing'}</h2>
+            </div>
+            <VendorBilling />
+          </section>
+        )}
+
         {isProfessional && (
           <section id="role-enquiries">
             <div className="mb-3 flex items-center justify-between">
