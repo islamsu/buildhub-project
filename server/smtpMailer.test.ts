@@ -128,8 +128,24 @@ describe('§3 startup', () => {
     // The rest of BuildHub works without email. Taking the site down over an
     // SMTP password turns a degraded feature into an outage.
     const block = startup.slice(startup.indexOf('const mail = resolveMailerFromEnv()'));
-    expect(block.slice(0, 700)).toContain('console.error');
-    expect(block.slice(0, 700)).not.toContain('process.exit');
+    expect(block.slice(0, 1400)).toContain('console.error');
+    expect(block.slice(0, 1400)).not.toContain('process.exit');
+  });
+
+  it('a failed verification DEREGISTERS the mailer, so the UI stops offering reset', () => {
+    // Found by the production dry run: an instance whose SMTP could not connect
+    // still reported passwordReset: true, so the UI showed a button that could
+    // only fail. Deregistering makes auth.capabilities tell the truth.
+    const block = startup.slice(startup.indexOf('mail.mailer.verify()'));
+    expect(block.slice(0, 600)).toContain('resetMailer()');
+  });
+
+  it('a deregistered mailer reports itself unconfigured', async () => {
+    const { isMailerConfigured, resetMailer, setMailer } = await import('./_core/mailer');
+    setMailer({ id: 'smtp', send: async () => {} });
+    expect(isMailerConfigured()).toBe(true);
+    resetMailer();
+    expect(isMailerConfigured()).toBe(false);
   });
 
   it('falls back to the console mailer only outside production', () => {

@@ -10,7 +10,7 @@ import { createContext } from "./context";
 import { ENV, assertEnvOrExit } from "./env";
 import { registerHealthRoutes } from "./health";
 import { registerRequestLogging } from "./httpLogging";
-import { ConsoleMailer, setMailer } from "./mailer";
+import { ConsoleMailer, resetMailer, setMailer } from "./mailer";
 import { resolveMailerFromEnv } from "./smtpMailer";
 import { registerSecurity } from "./security";
 import { serveStatic, setupVite } from "./vite";
@@ -81,12 +81,25 @@ async function startServer() {
   if (mail.kind === "smtp") {
     setMailer(mail.mailer);
     // Prove the credentials at boot rather than the first time a locked-out
-    // user asks for a reset. A failure here is logged, not fatal: the rest of
-    // BuildHub works fine without email, and taking the whole site down over a
-    // bad SMTP password would turn a degraded feature into an outage.
+    // user asks for a reset.
+    //
+    // A failure is not fatal - the rest of BuildHub works fine without email,
+    // and taking the whole site down over an SMTP password would turn a
+    // degraded feature into an outage. But it DOES deregister the mailer, so
+    // `auth.capabilities` reports password reset as unavailable and the UI
+    // hides the button instead of offering one that can only fail. Found by the
+    // production dry run: a deployment whose SMTP could not connect still
+    // advertised reset as working.
+    //
+    // The cost is that a transient blip at boot disables reset until the next
+    // restart. That is the right side to err on: a hidden button is a smaller
+    // harm than a locked-out user being told a link is on its way.
     void mail.mailer.verify().then(
       () => console.log(`[mail] SMTP ready`),
-      (error: unknown) => console.error(`[mail] SMTP credentials failed to verify:`, error),
+      (error: unknown) => {
+        console.error(`[mail] SMTP credentials failed to verify - password reset is DISABLED until restart:`, error);
+        resetMailer();
+      },
     );
   } else if (mail.kind === "console") {
     setMailer(new ConsoleMailer());
