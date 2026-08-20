@@ -1,6 +1,6 @@
 import type { Express, Request } from "express";
 import { and, eq } from "drizzle-orm";
-import { ENV } from "./env";
+import { getObjectStorage, isObjectStorageConfigured } from "./objectStorage";
 import { sdk, type AuthenticatedUser } from "./sdk";
 import { getDb } from "../db";
 import { documents, messages, projects, registrationDocumentSubmissions } from "../../drizzle/schema";
@@ -98,35 +98,24 @@ export function registerStorageProxy(app: Express) {
       return;
     }
 
-    if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
+    // Slice 5: the backend is resolved by the adapter, not hardcoded here. This
+    // block used to build a Forge presign URL inline, which meant two places in
+    // the codebase knew where files physically live and only one of them would
+    // have been migrated.
+    if (!isObjectStorageConfigured()) {
       res.status(500).send("Storage proxy not configured");
       return;
     }
 
     try {
-      const forgeUrl = new URL(
-        "v1/storage/presign/get",
-        ENV.forgeApiUrl.replace(/\/+$/, "") + "/",
-      );
-      forgeUrl.searchParams.set("path", key);
-
-      const forgeResp = await fetch(forgeUrl, {
-        headers: { Authorization: `Bearer ${ENV.forgeApiKey}` },
-      });
-
-      if (!forgeResp.ok) {
-        const body = await forgeResp.text().catch(() => "");
-        console.error(`[StorageProxy] forge error: ${forgeResp.status} ${body}`);
-        res.status(502).send("Storage backend error");
-        return;
-      }
-
-      const { url } = (await forgeResp.json()) as { url: string };
+      const url = await getObjectStorage().signedGetUrl(key);
       if (!url) {
         res.status(502).send("Empty signed URL from backend");
         return;
       }
 
+      // The signed URL is short-lived and grants access on its own, so it must
+      // never be cached by a browser or an intermediary.
       res.set("Cache-Control", "no-store");
       res.redirect(307, url);
     } catch (err) {

@@ -12,6 +12,18 @@ export const ENV = {
   // Host header: an attacker who can set that header could otherwise have a
   // password-reset link addressed to a host they control mailed to the victim.
   appBaseUrl: (process.env.APP_BASE_URL ?? "").replace(/\/+$/, ""),
+  // S3-compatible object storage (Slice 5). When a bucket is configured these
+  // take precedence over Forge, so migrating off the Manus platform is a
+  // configuration change rather than a code change. Vultr Object Storage, AWS
+  // S3, MinIO and Backblaze B2 all speak this.
+  s3Endpoint: (process.env.S3_ENDPOINT ?? "").replace(/\/+$/, ""),
+  s3Region: process.env.S3_REGION ?? "",
+  s3Bucket: process.env.S3_BUCKET ?? "",
+  s3AccessKeyId: process.env.S3_ACCESS_KEY_ID ?? "",
+  s3SecretAccessKey: process.env.S3_SECRET_ACCESS_KEY ?? "",
+  // Virtual-host addressing needs a wildcard certificate on the endpoint, which
+  // most non-AWS providers do not have. Default on; set false for AWS proper.
+  s3ForcePathStyle: (process.env.S3_FORCE_PATH_STYLE ?? "true") !== "false",
 };
 
 /**
