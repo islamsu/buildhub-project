@@ -8,7 +8,10 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { ENV, assertEnvOrExit } from "./env";
+import { registerHealthRoutes } from "./health";
+import { registerRequestLogging } from "./httpLogging";
 import { ConsoleMailer, setMailer } from "./mailer";
+import { registerSecurity } from "./security";
 import { serveStatic, setupVite } from "./vite";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -75,6 +78,14 @@ async function startServer() {
   if (!ENV.isProduction) {
     setMailer(new ConsoleMailer());
   }
+
+  // Order matters. Security headers and compression wrap every response
+  // below, and the request log has to be installed before the routes it
+  // observes. Health probes come next so a probe never waits behind a body
+  // parser sizing a 50MB upload.
+  registerSecurity(app);
+  registerRequestLogging(app);
+  registerHealthRoutes(app);
 
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));

@@ -150,7 +150,39 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+/*
+ * Slice 4: the Manus previewer runtime is a DEVELOPMENT tool and is now excluded
+ * from production builds.
+ *
+ * `vitePluginManusRuntime()` ran unconditionally and injected ~367KB of
+ * *inline* JavaScript into dist/public/index.html on every build. Reading what
+ * it contains ("manus-previewer-root", "manus-previewer-content-root",
+ * `parent.postMessage`, `manus-cookie`) makes its purpose clear: it is the
+ * in-iframe preview and editing overlay for the Manus host. A self-hosted
+ * BuildHub has no parent frame and no Manus host, so in production it was
+ * - inlined on every page load, uncacheable, and larger than the app bundle
+ * - installing a `parent.postMessage` channel nobody was listening on
+ * - guaranteed to be blocked by the Content-Security-Policy added in this
+ *   slice, since it is inline and the production script-src is 'self' only
+ *
+ * Excluded with Vite's own `apply: "serve"`, which is the only mechanism that
+ * works here. The two obvious alternatives both fail:
+ *   - `process.env.NODE_ENV === "production"` reads undefined, because
+ *     `npm run build` does not set NODE_ENV before this config is loaded.
+ *   - the `defineConfig(({ command }) => ...)` callback form turns this module's
+ *     default export into a FUNCTION, and server/_core/vite.ts does
+ *     `{ ...viteConfig }` to build the dev server - spreading a function yields
+ *     no plugins at all, silently stripping React from development.
+ *
+ * Development keeps the runtime, because the Manus preview is how this app is
+ * looked at today. Note this also removes the preview-only auto-login path in
+ * production (sdk.authenticateRequest's Authorization-header fallback reads the
+ * `manus-cookie` this runtime writes); that path only ever worked inside the
+ * previewer, and the session cookie is the real mechanism everywhere else.
+ */
+const manusRuntimeDevOnly: Plugin = { ...vitePluginManusRuntime(), apply: "serve" };
+
+const plugins = [react(), tailwindcss(), jsxLocPlugin(), manusRuntimeDevOnly, vitePluginManusDebugCollector()];
 
 export default defineConfig({
   plugins,
