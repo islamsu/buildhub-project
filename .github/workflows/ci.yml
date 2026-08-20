@@ -1,0 +1,151 @@
+# Continuous integration.
+#
+# Runs the same gate every slice of this project has been held to: TypeScript,
+# the full test suite, and both builds. Nothing here deploys anything.
+#
+# The test suite is self-contained - every test mocks server/db.ts rather than
+# talking to MySQL - so no database service is needed for it. A MariaDB service
+# IS started for the migration job below, because "the migrations apply cleanly
+# from empty" is a claim that can only be checked against a real server.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A new push supersedes an in-flight run on the same ref.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the `engines` field in package.json and the Dockerfile base.
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run check
+
+      - name: Test
+        run: pnpm run test
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Assert the production page ships no inline previewer runtime
+        # Slice 4 excluded a 367KB inline script that the Content-Security-Policy
+        # would block. This fails the build if it ever comes back.
+        run: |
+          if grep -q 'id="manus-runtime"' dist/public/index.html; then
+            echo "::error::dist/public/index.html contains the inline previewer runtime"
+            exit 1
+          fi
+          if grep -q '%VITE_' dist/public/index.html; then
+            echo "::error::dist/public/index.html contains an unsubstituted build placeholder"
+            exit 1
+          fi
+
+  migrations:
+    name: Migrations apply from empty
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: ci-root
+          MARIADB_DATABASE: buildhub_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations to an empty database
+        # `db:migrate` is apply-only. It must never be `db:push`, which would
+        # generate new migrations from the schema and could drop columns.
+        env:
+          DATABASE_URL: mysql://root:ci-root@127.0.0.1:3306/buildhub_ci
+        run: pnpm run db:migrate
+
+      - name: Applying twice is a no-op
+        # Catches a migration that is not idempotent against its own journal,
+        # which is what a re-run after a partial deploy would hit.
+        env:
+          DATABASE_URL: mysql://root:ci-root@127.0.0.1:3306/buildhub_ci
+        run: pnpm run db:migrate
+
+  docker:
+    name: Image builds and starts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t buildhub:ci .
+
+      - name: The container starts and answers its liveness probe
+        # A Dockerfile that builds but produces a container that cannot boot is
+        # a broken deploy discovered at the worst possible moment.
+        run: |
+          docker run -d --name buildhub-ci -p 3000:3000 \
+            -e JWT_SECRET=ci-only-secret-value-at-least-32-chars \
+            -e DATABASE_URL=mysql://unused:unused@127.0.0.1:3306/unused \
+            buildhub:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/healthz > /dev/null; then
+              echo "liveness ok"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::container never became live"
+          docker logs buildhub-ci
+          exit 1
+
+      - name: Stop the container
+        if: always()
+        run: docker rm -f buildhub-ci || true
