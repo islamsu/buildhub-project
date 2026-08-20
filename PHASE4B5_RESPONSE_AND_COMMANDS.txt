@@ -1,0 +1,455 @@
+================================================================================
+BUILDHUB — PHASE 4B.5
+Paymob Sandbox Integration & Provider Synchronization
+COMPLETE FINAL RESPONSE + ALL COMMANDS EXECUTED
+================================================================================
+
+Branch:      claude/phase4b5-paymob-integration
+Baseline:    54918a2eab548d5d1db60fda7c0fc95f9316539c
+             (tip of claude/phase4b4-subscription-lifecycle)
+Commit:      ebc1795  Phase 4B.5: NOT READY — Paymob sandbox access blocker
+Status:      PUSHED
+Report:      BUILDHUB_PHASE4B5_PAYMOB_INTEGRATION.md (380 lines, 22 sections)
+Date:        2026-08-20
+
+SOURCE FILES CHANGED: ZERO. The branch contains only the report.
+
+
+################################################################################
+#  PART 1 — COMPLETE FINAL MESSAGE (VERBATIM)
+################################################################################
+
+# PHASE 4B.5 — NOT READY — PROVIDER BLOCKER
+
+I stopped at verification and wrote no integration code. Two independent hard
+blockers; either alone stops this phase.
+
+--------------------------------------------------------------------------------
+## Blocker 1 — No Paymob credentials exist here
+--------------------------------------------------------------------------------
+
+Checked every place one could live, all empty:
+
+  * Process environment — only harness tokens (GH_TOKEN, AWS_*, CLAUDE_*);
+    nothing Paymob
+  * .env files — **none exist anywhere in the repo**, no templates either
+  * ~/.aws, ~/.config/paymob, /run/secrets, /var/run/secrets — none exist
+  * server/_core/env.ts — reads no payment config at all
+  * All 15 repo files matching "paymob" are documentation prose; zero
+    credentials, zero adapter
+
+--------------------------------------------------------------------------------
+## Blocker 2 — Paymob is unreachable
+--------------------------------------------------------------------------------
+
+    accept.paymob.com     → CONNECT tunnel failed, 403
+    paymob.com            → CONNECT tunnel failed, 403
+    developers.paymob.com → blocked
+    docs.paymob.com       → blocked
+
+Confirmed as **policy denial, not transient**, from the proxy's own status
+endpoint. It's an allowlist, not a Paymob ban — api.github.com and
+registry.npmjs.org answer 200 while example.com and api.stripe.com are rejected
+identically. **Even with credentials, no API call could complete here.**
+
+One correction to keep the record honest: api.github.com/orgs/PaymobAccept also
+403s — but so does /orgs/anthropics. That's a general GitHub-API restriction,
+not a Paymob signal, so I did not count it as a third blocker.
+
+--------------------------------------------------------------------------------
+## Why I wrote no adapter, not even a skeleton
+--------------------------------------------------------------------------------
+
+Building one would mean inventing the HMAC signature construction, the
+event-type names, and the payload field paths. §8 calls webhook verification
+CRITICAL — and a **guessed signature verifier is the most dangerous thing this
+phase could produce**. It looks complete, passes its own invented tests, and may
+accept forged payment events in production. Shipping that is worse than shipping
+nothing.
+
+Zero sandbox tests were run, and none is reported as run.
+
+--------------------------------------------------------------------------------
+## What is actually ready
+--------------------------------------------------------------------------------
+
+BuildHub's side is finished and waiting. The `PaymentProvider` seam exists, the
+lifecycle already has recordPaymentSucceeded / recordPaymentFailure /
+recordPaymentRecovery shaped for a provider to drive, the entitlement engine
+fails closed, and billingEvents already supports a `provider` source. **The
+billing system is ready for a provider; the provider is not available.**
+
+Baseline re-verified: 598/598 tests, tsc clean, main and every Phase 4A/4B
+branch untouched. **Zero source files changed** — the branch contains only the
+report.
+
+--------------------------------------------------------------------------------
+## To unblock
+--------------------------------------------------------------------------------
+
+  1. A real Paymob **sandbox merchant account**
+  2. Its **API key, integration ID(s), iframe ID, HMAC secret** — via
+     environment or secret store, never in source
+  3. **Network allowlist entries** for the Paymob domains
+  4. A **publicly reachable webhook endpoint** — this session isn't addressable
+     from the internet, so even a finished integration couldn't receive one
+     event
+
+Two business items also stay open: the 7-day refund window is **proposed, not
+approved** (§12 requires legal review), and whether Paymob's cancellation
+semantics match BuildHub's policy is untestable — §11 says stop on a mismatch
+rather than work around it.
+
+Pushed to `claude/phase4b5-paymob-integration` (ebc1795). Report:
+BUILDHUB_PHASE4B5_PAYMOB_INTEGRATION.md. Stopping here — 4B.6 not started.
+
+
+################################################################################
+#  PART 2 — ALL COMMANDS EXECUTED, IN ORDER
+################################################################################
+
+================================================================================
+STEP 1 — BASELINE SHA + BRANCH (§1)
+================================================================================
+
+git rev-parse HEAD && git log --oneline -6 && echo "=== branch ===" \
+  && git checkout -b claude/phase4b5-paymob-integration 2>&1 && git branch --show-current
+
+  → 54918a2eab548d5d1db60fda7c0fc95f9316539c
+  → 54918a2 Add Phase 4B.4 response and command log
+  → df6e540 Phase 4B.4: subscription lifecycle & billing state orchestration
+  → 5258035 Add Phase 4B.3 completion response summary
+  → 10a5fc7 Preserve pre-existing untracked reports from earlier sessions
+  → 01fe3b7 Phase 4B.3: real vendor directory, RFQ targeting & qualified-enquiry engine
+  → bbf4dd4 Phase 4B.2: centralized server-authoritative plan & entitlement engine
+  → Switched to a new branch 'claude/phase4b5-paymob-integration'
+
+
+================================================================================
+STEP 2 — BASELINE INTEGRITY (§1)
+================================================================================
+
+echo "=== §1 BASELINE INTEGRITY ==="
+git log --oneline -1 origin/main
+git branch -r | grep -E "phase4|claude/" | head -20
+for f in shared/billing.ts server/billing/domain.ts server/billing/service.ts \
+         server/billing/entitlements.ts server/billing/provider.ts \
+         server/billing/enquiries.ts server/billing/lifecycle.ts \
+         server/vendorDirectory.ts shared/rfqCategories.ts; do
+  printf "%-38s %s\n" "$f" "$([ -f "$f" ] && echo "present ($(wc -l < "$f") lines)" || echo MISSING)"
+done
+
+  → main: 71d891f Revert "Fix login button submission flow for dummy/test accounts"
+  → shared/billing.ts               present (218 lines)
+  → server/billing/domain.ts        present (529 lines)
+  → server/billing/service.ts       present (204 lines)
+  → server/billing/entitlements.ts  present (241 lines)
+  → server/billing/provider.ts      present (143 lines)
+  → server/billing/enquiries.ts     present (239 lines)
+  → server/billing/lifecycle.ts     present (528 lines)
+  → server/vendorDirectory.ts       present (179 lines)
+  → shared/rfqCategories.ts         present (70 lines)
+
+for b in phase4b1-billing-foundation phase4b2-entitlement-engine \
+         phase4b3-vendor-directory-targeting phase4b4-subscription-lifecycle; do
+  sha=$(git rev-parse --short "origin/claude/$b" 2>/dev/null || echo "not-found")
+  printf "%-42s %s\n" "$b" "$sha"
+done
+npx vitest run 2>&1 | grep -E "Test Files|Tests "
+npx tsc --noEmit && echo "tsc clean"
+
+  → phase4b3-vendor-directory-targeting  5258035
+  → phase4b4-subscription-lifecycle      54918a2
+  → (4B.1/4B.2 names guessed wrong — corrected below)
+  → Test Files  40 passed (40)
+  → Tests  598 passed (598)
+  → tsc clean
+
+# Correct the 4B.1/4B.2 branch names rather than reporting "not-found".
+git branch -r | grep -iE "4b1|4b2|billing-foundation|entitlement"
+git log --oneline origin/claude/phase4b3-vendor-directory-targeting | grep -iE "4B.1|4B.2"
+
+  → origin/claude/phase4b1-billing-domain-foundation
+  → origin/claude/phase4b2-plan-entitlement-engine
+  → bbf4dd4 Phase 4B.2: centralized server-authoritative plan & entitlement engine
+  → cfb1553 Phase 4B.1: provider-agnostic billing & monetization domain foundation
+
+for b in phase4b1-billing-domain-foundation phase4b2-plan-entitlement-engine; do
+  printf "%-42s %s\n" "$b" "$(git rev-parse --short origin/claude/$b)"
+done
+
+  → phase4b1-billing-domain-foundation  cfb1553
+  → phase4b2-plan-entitlement-engine    bbf4dd4
+
+
+================================================================================
+STEP 3 — PAYMOB CREDENTIAL DISCOVERY (§2)   →  BLOCKER 1
+================================================================================
+
+--- environment variables ---
+env | grep -iE "paymob|payment|merchant|hmac|integration_id|iframe" | sed 's/=.*/=<redacted>/'
+  → (no matching environment variables)
+
+env | cut -d= -f1 | grep -iE "pay|mob|secret|key|token|hmac|merchant"
+  → MAX_THINKING_TOKENS, CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR, GH_TOKEN,
+    GITHUB_TOKEN, CLOUDSDK_AUTH_ACCESS_TOKEN, AWS_SECRET_ACCESS_KEY,
+    AWS_ACCESS_KEY_ID, CLAUDE_SESSION_INGRESS_TOKEN_FILE, GIT_CONFIG_KEY_0/1/2,
+    CLAUDE_CODE_MESSAGING_TOKEN
+  → ALL harness tokens. NOTHING Paymob.
+
+--- .env files ---
+ls -la .env* 2>/dev/null || echo "(no .env files in project root)"
+find . -name ".env*" -not -path "./node_modules/*" -not -path "./.git/*"
+for f in .env.example .env.sample .env.template; do [ -f "$f" ] && cat "$f"; done
+grep -ril "paymob" --exclude-dir=node_modules --exclude-dir=.git . | head -20
+
+  → (no .env files in project root)
+  → (find returned nothing — no env file anywhere in the repo)
+  → (no templates exist)
+  → 15 files match "paymob": shared/billing.ts, server/billingAuthorization.test.ts,
+    server/billing/entitlements.ts, server/billing/provider.ts,
+    server/billing/lifecycle.ts, server/subscriptionLifecycle.test.ts,
+    drizzle/schema.ts, and 8 markdown reports.
+    ALL documentation or architecture prose. ZERO credentials. ZERO adapter.
+
+--- the provider seam itself ---
+cat server/billing/provider.ts
+
+  → Phase 4B.1 PaymentProvider interface + NullPaymentProvider.
+    Every operation throws PaymentProviderNotConfiguredError. No Paymob code.
+
+--- secret stores + app config surface ---
+ls -la ~/.aws/credentials; ls -la ~/.config/paymob; ls -la /run/secrets; ls -la /var/run/secrets
+ls -la *.json *.ts | grep -iE "config|drizzle|vite|tsconfig"
+grep -rn "process.env" server/ --include=*.ts \
+  | grep -viE "NODE_ENV|DATABASE_URL|JWT_SECRET|PORT|VITE_|OAUTH|OPENAI|STORAGE|AWS|APP_ID"
+
+  → none of the four secret locations exist
+  → config files: drizzle.config.ts, tsconfig.json, vite.config.ts, vitest.config.ts
+  → server/_core/env.ts reads ONLY: OWNER_OPEN_ID, BUILT_IN_FORGE_API_URL,
+    BUILT_IN_FORGE_API_KEY
+  → NO payment configuration of any kind
+
+  ==> BLOCKER 1 CONFIRMED: no Paymob credentials exist in this environment.
+
+
+================================================================================
+STEP 4 — PAYMOB NETWORK REACHABILITY (§2)   →  BLOCKER 2
+================================================================================
+
+for host in accept.paymob.com paymob.com; do
+  code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "https://$host/" 2>&1)
+  echo "https://$host/  →  HTTP $code"
+done
+curl -sS --max-time 20 -o .../pmprobe.txt -w "POST /api/auth/tokens → HTTP %{http_code}\n" \
+  -X POST "https://accept.paymob.com/api/auth/tokens" \
+  -H 'content-type: application/json' -d '{"api_key":""}'
+
+  → https://accept.paymob.com/  →  curl: (56) CONNECT tunnel failed, response 403
+  → https://paymob.com/         →  curl: (56) CONNECT tunnel failed, response 403
+  → POST /api/auth/tokens → HTTP 000   (never reached the host)
+
+--- confirm it is POLICY, not transient (per environment guidance) ---
+curl -sS "$HTTPS_PROXY/__agentproxy/status" | head -40
+
+  → "recentRelayFailures": [
+       { "kind": "connect_rejected",
+         "detail": "gateway answered 403 to CONNECT (policy denial or upstream failure)",
+         "host": "accept.paymob.com:443" },
+       { "kind": "connect_rejected", "host": "paymob.com:443" } ]
+  → README: "do not retry organization policy denials (403/407) — report them instead."
+
+--- is the block Paymob-specific or a general allowlist? ---
+for host in api.github.com registry.npmjs.org example.com api.stripe.com; do
+  code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 15 "https://$host/" 2>&1 | tail -1)
+  printf "  %-24s → %s\n" "$host" "$code"
+done
+
+  → api.github.com        → 200   (allowlisted)
+  → registry.npmjs.org    → 200   (allowlisted)
+  → example.com           → 000   (rejected)
+  → api.stripe.com        → 000   (rejected)
+  ==> It is an ALLOWLIST, not a Paymob-specific ban.
+
+--- can Paymob DOCUMENTATION at least be refreshed? ---
+curl -sS -o /dev/null -w "github.com/PaymobAccept → HTTP %{http_code}\n" https://github.com/PaymobAccept
+curl -sS -o /dev/null -w "api.github.com/orgs/PaymobAccept → HTTP %{http_code}\n" https://api.github.com/orgs/PaymobAccept
+for h in developers.paymob.com docs.paymob.com; do
+  printf "  %-28s → %s\n" "$h" "$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$h/" | tail -1)"
+done
+
+  → github.com/PaymobAccept          → 403
+  → api.github.com/orgs/PaymobAccept → 403
+  → developers.paymob.com            → 000
+  → docs.paymob.com                  → 000
+
+--- ACCURACY CHECK: is the GitHub 403 a Paymob signal, or general? ---
+curl -sS -o /dev/null -w '%{http_code}' https://api.github.com/orgs/anthropics
+curl -sS -o /dev/null -w '%{http_code}' https://api.github.com/orgs/PaymobAccept
+curl -sS "$HTTPS_PROXY/__agentproxy/status" | python3 -c "import sys,json;..."
+
+  → api.github.com/orgs/anthropics    → 403
+  → api.github.com/orgs/PaymobAccept  → 403
+  ==> GENERAL GitHub-API restriction, NOT a Paymob signal.
+      Reported as such; NOT counted as a third blocker.
+
+  → proxy failure log confirms the real denials:
+      accept.paymob.com:443, paymob.com:443,
+      developers.paymob.com:443, docs.paymob.com:443,
+      example.com:443, api.stripe.com:443
+
+  ==> BLOCKER 2 CONFIRMED: Paymob unreachable by organization network policy.
+
+
+================================================================================
+STEP 5 — PRIOR BLOCKER RECORD (cross-check, not trusted blindly)
+================================================================================
+
+grep -n -iE "paymob|blocker|credential|sandbox" \
+  BUILDHUB_PHASE4B_FINAL_BLOCKER_AUTHORIZATION.md | head -30
+
+  → The Phase 4B Final Blocker Authorization report already recorded:
+    "Paymob test/sandbox account access — the only hard blocker."
+    "Zero items are TEST-ACCOUNT-VERIFIED, because no test account exists."
+    "4B.5 ... Blocked on Paymob test-account access"
+  → Still unresolved. No credentials provisioned since.
+  → NEW this session: a SECOND, independent blocker — the prior pass could
+    still fetch Paymob's GitHub-hosted docs directly; this session cannot.
+
+
+================================================================================
+STEP 6 — REPORT (§24)
+================================================================================
+
+cat > /home/user/buildhub-project/BUILDHUB_PHASE4B5_PAYMOB_INTEGRATION.md <<'MDEOF'
+  # 22 sections: baseline SHA, branch, Paymob account readiness (both blockers
+  # with evidence), provider capabilities verified (ZERO test-account-verified),
+  # sections 5-15 marked NOT IMPLEMENTED with the reason, security, schema
+  # changes (none), sandbox test evidence (none), regression results,
+  # limitations, unresolved provider/business decisions, production readiness.
+MDEOF
+wc -l BUILDHUB_PHASE4B5_PAYMOB_INTEGRATION.md
+  → 380
+
+
+================================================================================
+STEP 7 — CONFIRM ZERO SOURCE CHANGES, COMMIT, PUSH
+================================================================================
+
+git status --short
+git diff --stat HEAD
+
+  → ?? BUILDHUB_PHASE4B5_PAYMOB_INTEGRATION.md
+  → (git diff --stat empty = NO source file was touched)
+
+git add BUILDHUB_PHASE4B5_PAYMOB_INTEGRATION.md && git commit -q -F - <<'MSG'
+Phase 4B.5: NOT READY — Paymob sandbox access blocker
+... (full message: both blockers with evidence, why no adapter was written
+     even as a skeleton, baseline re-verified, exact unblock prerequisites)
+MSG
+git push -u origin claude/phase4b5-paymob-integration 2>&1 | tail -4
+git log --oneline -1
+git status --short && echo "working tree clean"
+
+  → * [new branch]  claude/phase4b5-paymob-integration
+  → ebc1795 Phase 4B.5: NOT READY — Paymob sandbox access blocker
+  → working tree clean
+
+
+################################################################################
+#  PART 3 — WHAT WAS AND WAS NOT PRODUCED
+################################################################################
+
+NOT PRODUCED (deliberately, per brief §2 and §21)
+  ✗ Paymob adapter — not even a skeleton
+  ✗ Webhook endpoint or signature verifier
+  ✗ Payment initialization / checkout
+  ✗ Subscription synchronization
+  ✗ Idempotency table for provider events
+  ✗ Amount / currency / ownership validation code
+  ✗ Refund implementation
+  ✗ Reconciliation implementation
+  ✗ Any schema change or migration
+  ✗ Any sandbox test (and none reported as run)
+  ✗ Any fabricated provider response
+  ✗ Any credential
+
+REASON A SKELETON WAS ALSO WITHHELD
+  An adapter written without an account requires INVENTING the HMAC signature
+  construction, the event-type vocabulary, and the payload field paths. §8 calls
+  webhook verification CRITICAL. A guessed signature verifier is the single most
+  dangerous artifact this phase could produce: it looks complete, passes its own
+  invented tests, and may accept FORGED payment events in production.
+
+PRODUCED
+  ✓ BUILDHUB_PHASE4B5_PAYMOB_INTEGRATION.md — 380 lines, 22 sections
+  ✓ Independent baseline verification (598/598 tests, tsc clean)
+  ✓ Exhaustive credential search across 8 locations
+  ✓ Network reachability evidence incl. proxy policy confirmation
+  ✓ Exact unblock prerequisites
+
+
+################################################################################
+#  PART 4 — WHAT IS ALREADY READY ON BUILDHUB'S SIDE
+################################################################################
+
+  * PaymentProvider seam (Phase 4B.1) — a Paymob adapter drops in without
+    touching the billing domain
+  * Lifecycle transitions already shaped for a provider to drive:
+    recordPaymentSucceeded / recordPaymentFailure / recordPaymentRecovery
+  * Entitlement engine fails closed on missing, stale or malformed state
+  * billingEvents audit trail already supports source = 'provider'
+  * Provider-agnostic nullable columns already provisioned:
+    provider, providerCustomerRef, providerSubscriptionRef, providerPriceRef
+    (no card, CVV, token or credential data anywhere)
+
+  The billing system is ready for a provider. The provider is not available.
+
+
+################################################################################
+#  PART 5 — TO UNBLOCK PHASE 4B.5
+################################################################################
+
+  1. A real Paymob SANDBOX / TEST MERCHANT ACCOUNT.
+
+  2. Its credentials supplied via environment variables or a secret store,
+     NEVER in source:
+       - API key
+       - Integration ID(s)
+       - iframe ID (if required)
+       - HMAC / webhook secret
+
+  3. NETWORK ALLOWLIST ENTRIES for:
+       - accept.paymob.com
+       - paymob.com
+       - developers.paymob.com / docs.paymob.com
+
+  4. A PUBLICLY REACHABLE WEBHOOK ENDPOINT for the sandbox to deliver events to.
+     This session is not addressable from the internet, so even a fully built
+     integration could not receive a single webhook here.
+
+  OPEN BUSINESS DECISIONS (not blockers I can resolve):
+   - 7-day refund window is PROPOSED, NOT APPROVED (§12 requires legal review)
+   - Paymob cancellation semantics vs BuildHub policy: untestable; §11 requires
+     STOPPING on a mismatch rather than inventing a workaround
+   - The five Phase 4B.4 owner decisions remain open
+
+
+################################################################################
+#  PART 6 — FINAL STATUS
+################################################################################
+
+                  PHASE 4B.5 — NOT READY — PROVIDER BLOCKER
+
+  Deliberately NOT "CRITICAL — PAYMENT SECURITY ISSUE": nothing insecure was
+  built, because nothing was built. This is a provider-availability blocker,
+  exactly as the brief anticipated.
+
+  Baseline intact: 598/598 tests, tsc clean, main and every Phase 4A/4B branch
+  untouched. Zero source files changed. No secrets committed.
+
+  Phase 4B.6 NOT started. No featured placement. No pricing change. No
+  qualified-enquiry limit change. No production credentials. No deployment.
+  No merge.
+
+================================================================================
