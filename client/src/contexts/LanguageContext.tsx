@@ -658,6 +658,12 @@ const translations: Record<Language, Record<string, string>> = {
     'vendorsDir.emptyTitle': 'No matching providers',
     'vendorsDir.emptyHint': 'Try adjusting your filters.',
     'vendorsDir.organicNote': 'Results are ordered organically. A paid plan never changes a provider\u2019s position.',
+    // Deliberately the language of advertising, not of endorsement. "Sponsored"
+    // must never read as verified, rated, recommended, or vetted by BuildHub -
+    // those are separate things the vendor cannot buy.
+    'vendorsDir.sponsored': 'Sponsored',
+    'vendorsDir.sponsoredSection': 'Sponsored providers',
+    'vendorsDir.sponsoredNote': 'Paid placement. These providers also appear in the results below, in their normal position.',
     'designersDir.title': 'Design Services',
     'designersDir.subtitle': 'Professional design firms and independent designers in architecture, interiors, landscape, and more',
     'designersDir.specialtyAll': 'All',
@@ -1440,6 +1446,9 @@ const translations: Record<Language, Record<string, string>> = {
     'vendorsDir.emptyTitle': 'لا يوجد مزودون مطابقون',
     'vendorsDir.emptyHint': 'جرّب تعديل عوامل التصفية.',
     'vendorsDir.organicNote': 'الترتيب عضوي بالكامل، والاشتراك المدفوع لا يغيّر ترتيب أي مزوّد.',
+    'vendorsDir.sponsored': 'إعلان مموّل',
+    'vendorsDir.sponsoredSection': 'مزوّدون مموّلون',
+    'vendorsDir.sponsoredNote': 'مكان إعلاني مدفوع. يظهر هؤلاء المزوّدون أيضاً في النتائج أدناه بترتيبهم المعتاد.',
     'designersDir.title': 'خدمات التصميم',
     'designersDir.subtitle': 'مكاتب تصميم محترفة ومصممون مستقلون في العمارة والتصميم الداخلي واللاندسكيب وأكثر',
     'designersDir.specialtyAll': 'الكل',

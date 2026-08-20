@@ -15,7 +15,9 @@
 // later phase and must never be blended into this ordering.
 
 import { and, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
-import { qualifiedEnquiries, reviews, users, vendorCategories } from '../drizzle/schema';
+import { qualifiedEnquiries, reviews, users, vendorCategories, vendorSubscriptions } from '../drizzle/schema';
+import { deriveBillingState } from './billing/domain';
+import { getEntitlements } from '@shared/billing';
 import { getDb } from './db';
 
 /** The only user columns a public directory response may ever contain. */
@@ -101,6 +103,21 @@ export async function listDirectoryVendors(filters: DirectoryFilters = {}): Prom
     .orderBy(desc(users.verified), desc(users.createdAt))
     .limit(limit);
 
+  return enrichVendorRows(db, rows);
+}
+
+/**
+ * Attach reputation and declared categories to a set of directory rows.
+ *
+ * Factored out so featured placement reuses exactly this - a featured vendor
+ * must show the same rating, from the same source, as they do organically.
+ * Two code paths computing reputation differently is how a vendor ends up with
+ * 4.6 stars in one place and 4.8 in another.
+ */
+async function enrichVendorRows(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  rows: { id: number }[],
+): Promise<DirectoryVendor[]> {
   if (rows.length === 0) return [];
   const ids = rows.map(row => row.id);
 
@@ -136,11 +153,11 @@ export async function listDirectoryVendors(filters: DirectoryFilters = {}): Prom
   }
 
   return rows.map(row => ({
-    ...row,
+    ...(row as Record<string, unknown>),
     categories: categories.get(row.id) ?? [],
     averageRating: reputation.get(row.id)?.averageRating ?? null,
     reviewCount: reputation.get(row.id)?.reviewCount ?? 0,
-  }));
+  })) as DirectoryVendor[];
 }
 
 /** Distinct declared categories among currently-visible vendors, for filter UI. */
@@ -176,4 +193,96 @@ export async function getVendorTargetingDiagnostics(userId: number) {
     .orderBy(desc(qualifiedEnquiries.createdAt))
     .limit(100);
   return { categories, recentEnquiries };
+}
+
+// ── Featured placement (Slice 8) ───────────────────────────────────────────
+//
+// The first paid capability that affects what a customer sees. It is built as a
+// SEPARATE, LABELLED STRIP rather than as a reordering of the organic list
+// above, and that distinction is the whole design:
+//
+//  - The organic directory keeps ranking by verification and recency, exactly
+//    as before. A paid plan still cannot buy a higher position there, which is
+//    the constraint Phase 4B.3 §13 set and this slice does not relax.
+//  - Featured vendors appear in their own section, marked as sponsored. They
+//    are ALSO still present in the organic list, in their organic position -
+//    removing them would be a hidden penalty for paying.
+//
+// What featured placement must never be allowed to mean: verification, higher
+// rating, better work, or endorsement by BuildHub. It means the vendor pays for
+// a premium plan. The UI labels it as such, and `verified` remains a completely
+// separate badge driven by compliance review.
+//
+// `visibilityLevel` (boosted/top) is deliberately still NOT implemented. That
+// entitlement would buy position inside the organic ranking, which is precisely
+// what §13 forbids; implementing it would need an explicit owner decision to
+// reverse that constraint, not an inference from a plan table.
+
+/** How many sponsored slots the directory offers at once. */
+export const FEATURED_PLACEMENT_SLOTS = 6;
+
+/**
+ * Vendors currently entitled to featured placement, as a separate labelled set.
+ *
+ * Eligibility is derived from the live billing state, never from the stored
+ * plan column: a premium subscription whose period ended last month is not
+ * featured, even if a lifecycle sweep has not run yet and the row still says
+ * `premium`. Same time-derived rule that governs every other entitlement.
+ *
+ * When more vendors are eligible than there are slots, the set rotates by day.
+ * Without that, whoever registered first would own the sponsored strip
+ * permanently and every later subscriber would pay premium for nothing.
+ */
+export async function listFeaturedVendors(
+  filters: DirectoryFilters & { now?: Date } = {},
+): Promise<DirectoryVendor[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const now = filters.now ?? new Date();
+  const conditions = [directoryVisibilityFilter()];
+  if (filters.location) conditions.push(like(users.location, `%${filters.location}%`));
+  if (filters.category) {
+    conditions.push(
+      sql`${users.id} IN (SELECT ${vendorCategories.userId} FROM ${vendorCategories} WHERE ${vendorCategories.category} = ${filters.category})`,
+    );
+  }
+
+  // Only vendors who HAVE a subscription row can possibly be eligible, so the
+  // join bounds the work to that set rather than deriving state for everybody.
+  const candidates = await db
+    .select({ ...DIRECTORY_VENDOR_COLUMNS, subscription: vendorSubscriptions })
+    .from(users)
+    .innerJoin(vendorSubscriptions, eq(vendorSubscriptions.userId, users.id))
+    .where(and(...conditions));
+
+  const eligible = candidates.filter(row => {
+    const state = deriveBillingState(row.subscription, now);
+    // A malformed subscription fails closed to FREE inside deriveBillingState,
+    // so it cannot buy a slot either.
+    return getEntitlements(state.effectivePlan).featuredPlacementEligible;
+  });
+  if (eligible.length === 0) return [];
+
+  const slots = Math.min(Math.max(filters.limit ?? FEATURED_PLACEMENT_SLOTS, 1), FEATURED_PLACEMENT_SLOTS);
+  const selected = rotateFeatured(eligible, slots, now);
+
+  return enrichVendorRows(db, selected.map(({ subscription: _subscription, ...vendor }) => vendor));
+}
+
+/**
+ * Pick this day's sponsored set, fairly and deterministically.
+ *
+ * Deterministic so the strip does not reshuffle on every page load - a
+ * directory that reorders while you read it is unusable. Keyed on the day so
+ * the slots genuinely circulate rather than being owned. Vendors are ordered by
+ * id, then the window starts at an offset derived from the date, wrapping
+ * around; over enough days every eligible vendor gets the same exposure.
+ */
+export function rotateFeatured<T extends { id: number }>(eligible: T[], slots: number, now: Date): T[] {
+  const ordered = [...eligible].sort((a, b) => a.id - b.id);
+  if (ordered.length <= slots) return ordered;
+  const dayNumber = Math.floor(now.getTime() / 86_400_000);
+  const offset = ((dayNumber % ordered.length) + ordered.length) % ordered.length;
+  return Array.from({ length: slots }, (_unused, index) => ordered[(offset + index) % ordered.length]);
 }

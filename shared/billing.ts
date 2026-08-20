@@ -155,21 +155,48 @@ export const ENTITLEMENT_ENFORCEMENT: Readonly<Record<keyof PlanEntitlements, st
   // Enforced as of Phase 4B.3: server/billing/enquiries.ts caps monthly
   // qualified-enquiry consumption, transactionally.
   qualifiedEnquiriesPerMonth: 'phase-4b.3',
-  // NOT enforced. The real vendor directory built in Phase 4B.3 ranks
-  // organically only - a paid plan must never buy a higher position there
-  // (Phase 4B.3 brief §13). Paid visibility is a separate, clearly-labelled
-  // concept that belongs with featured placement in Phase 4B.6.
-  visibilityLevel: 'phase-4b.6',
+  // STILL NOT enforced, deliberately, even though featured placement now is.
+  // `visibilityLevel` would buy position INSIDE the organic ranking, which is
+  // exactly what Phase 4B.3 §13 forbids. Featured placement was implementable
+  // without touching that rule because it is a separate labelled strip;
+  // boosted visibility is not, and enabling it needs an explicit owner
+  // decision to reverse §13 rather than an inference from this plan table.
+  visibilityLevel: 'deferred-conflicts-with-organic-ranking',
   analyticsLevel: 'phase-4b.2',
   portfolioLevel: 'not-implemented',
   // Enforced as of Phase 4B.3: profile.setMyCategories caps how many service
   // categories a vendor may declare.
   serviceCategoryLimit: 'phase-4b.3',
   promotionalCapability: 'not-implemented',
-  featuredPlacementEligible: 'phase-4b.6',
+  // Enforced as of Slice 8: server/vendorDirectory.ts listFeaturedVendors
+  // returns a SEPARATE, sponsored-labelled set. It does not reorder the
+  // organic directory, so the Phase 4B.3 §13 constraint - a paid plan cannot
+  // buy a higher organic position - still holds.
+  featuredPlacementEligible: 'slice-8',
   branchLimit: 'not-implemented',
   teamMemberLimit: 'not-implemented',
 } as const;
+
+/**
+ * The markers in ENTITLEMENT_ENFORCEMENT that mean "shipped and enforced today".
+ *
+ * An ALLOWLIST, deliberately. The previous rule was a denylist - available
+ * unless the marker began 'phase-4b.6' or equalled 'not-implemented' - which
+ * meant introducing any new deferral marker silently flipped that entitlement
+ * to "available" and advertised a capability nothing enforces. This way an
+ * unrecognised marker fails closed toward honesty, and shipping enforcement is
+ * a deliberate two-line change: set the marker, list it here.
+ */
+const ENFORCED_ENTITLEMENT_MARKERS: ReadonlySet<string> = new Set([
+  'phase-4b.2',   // analyticsLevel - server/billing/entitlements.ts
+  'phase-4b.3',   // qualifiedEnquiriesPerMonth, serviceCategoryLimit
+  'slice-8',      // featuredPlacementEligible - server/vendorDirectory.ts
+]);
+
+/** Whether an entitlement is actually enforced anywhere in BuildHub today. */
+export function isEntitlementEnforced(key: keyof PlanEntitlements): boolean {
+  return ENFORCED_ENTITLEMENT_MARKERS.has(ENTITLEMENT_ENFORCEMENT[key]);
+}
 
 export const DEFAULT_PLAN_ID: PlanId = 'free';
 

@@ -135,15 +135,40 @@ describe('vendor directory field allowlist (Phase 4B.3)', () => {
     expect(filter).toContain("users.onboardingStatus, 'approved'");
   });
 
-  it('ORGANIC ONLY: the directory never reads a billing plan, subscription, or entitlement', () => {
+  it('ORGANIC ONLY: the organic directory never reads a billing plan, subscription, or entitlement', () => {
     const source = readFileSync(new URL('./vendorDirectory.ts', import.meta.url), 'utf8');
     // Paying must not buy a higher position (Phase 4B.3 §13).
+    //
+    // Scoped to listDirectoryVendors and the visibility filter it uses, rather
+    // than the whole file. Slice 8 added listFeaturedVendors further down,
+    // which legitimately reads subscriptions - it builds a SEPARATE sponsored
+    // strip and does not touch the ordering below. Keeping this as a
+    // whole-file scan would have forced a choice between deleting the §13
+    // guarantee and not building featured placement at all; scoping it keeps
+    // the guarantee exactly where it applies.
+    const organic = source.slice(
+      source.indexOf('function directoryVisibilityFilter'),
+      source.indexOf('async function enrichVendorRows'),
+    );
+    expect(organic.length).toBeGreaterThan(500);
     for (const forbidden of [
       'vendorSubscriptions', 'resolveVendorEntitlements', 'getBillingState',
-      'visibilityLevel', 'featuredPlacement', 'PLANS',
+      'visibilityLevel', 'featuredPlacement', 'PLANS', 'deriveBillingState',
     ]) {
-      expect(source, forbidden).not.toContain(forbidden);
+      expect(organic, forbidden).not.toContain(forbidden);
     }
+    // The ordering itself is verification and recency, and nothing else.
+    expect(organic).toContain('.orderBy(desc(users.verified), desc(users.createdAt))');
+  });
+
+  it('Slice 8: featured placement is a separate function that never reorders the organic list', () => {
+    const source = readFileSync(new URL('./vendorDirectory.ts', import.meta.url), 'utf8');
+    const featured = source.slice(source.indexOf('export async function listFeaturedVendors'));
+    // It derives eligibility from live billing state, not the stored plan column.
+    expect(featured).toContain('deriveBillingState(row.subscription, now)');
+    expect(featured).toContain('featuredPlacementEligible');
+    // And it does not touch the organic ordering.
+    expect(featured).not.toContain('orderBy(desc(users.verified)');
   });
 
   it('reputation comes from live verified reviews, never the dead users.rating columns', () => {

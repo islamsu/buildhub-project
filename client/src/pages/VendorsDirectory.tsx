@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { rfqCategoryLabel } from '@shared/rfqCategories';
-import { Search, Star, BadgeCheck, MapPin, Store, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Star, BadgeCheck, MapPin, Megaphone, Store, ChevronLeft, ChevronRight } from 'lucide-react';
 
 /**
  * Phase 4B.3: the real, database-backed vendor directory.
@@ -43,6 +43,14 @@ export default function VendorsDirectory() {
     location: location.trim() || undefined,
   });
   const { data: categories = [] } = trpc.marketplace.vendorCategories.useQuery();
+  // Featured placement is fetched SEPARATELY from the organic list, matching
+  // how the server exposes it. One combined query would invite rendering a paid
+  // slot as an organic result.
+  const { data: featuredData } = trpc.marketplace.featuredVendors.useQuery({
+    category: category === 'all' ? undefined : category,
+    location: location.trim() || undefined,
+  });
+  const featured = featuredData?.vendors ?? [];
 
   const Back = ar ? ChevronRight : ChevronLeft;
 
@@ -110,82 +118,139 @@ export default function VendorsDirectory() {
           </div>
         )}
 
+        {/* Sponsored strip (Slice 8). A SEPARATE, labelled section - never a
+            reordering of the organic list below, which still ranks by
+            verification and recency exactly as it did before. These vendors
+            also appear in that list, in their organic position. */}
+        {featured.length > 0 && (
+          <section className="mb-8" aria-label={t('vendorsDir.sponsoredSection')}>
+            <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+              <h2 className="text-sm font-semibold">{t('vendorsDir.sponsoredSection')}</h2>
+              <p className="text-xs text-muted-foreground">{t('vendorsDir.sponsoredNote')}</p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {featured.map(vendor => (
+                <VendorCard key={`featured-${vendor.id}`} vendor={vendor} sponsored lang={lang} t={t} onOpen={id => navigate(`/vendor/${id}`)} />
+              ))}
+            </div>
+            <div className="mt-4 h-px bg-border" />
+          </section>
+        )}
+
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {vendors.map(vendor => (
-            <Card
-              key={vendor.id}
-              role="button"
-              tabIndex={0}
-              className="p-4 card-hover cursor-pointer transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              onClick={() => navigate(`/vendor/${vendor.id}`)}
-              onKeyDown={event => { if (event.key === 'Enter') navigate(`/vendor/${vendor.id}`); }}
-            >
-              <div className="flex items-start gap-3">
-                <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
-                  {(vendor.name ?? '?').charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="font-semibold truncate">{vendor.name}</span>
-                    {vendor.verified && (
-                      <Badge className="bg-emerald-100 text-emerald-700 border-0 text-xs">
-                        <BadgeCheck className="w-3 h-3 me-0.5" />{t('common.verified')}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground capitalize mt-0.5">
-                    {(vendor.userRole ?? '').replace('_', ' ')}
-                  </div>
-                  {vendor.location && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                      <MapPin className="w-3 h-3 shrink-0" />
-                      <span className="truncate">{vendor.location}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Reputation - live from verified reviews, never a stored aggregate. */}
-              <div className="flex items-center gap-1.5 mt-3" aria-label={t('vendorsDir.ratingLabel')}>
-                {[1, 2, 3, 4, 5].map(star => (
-                  <Star
-                    key={star}
-                    className={`w-3.5 h-3.5 ${
-                      vendor.averageRating !== null && star <= Math.round(vendor.averageRating)
-                        ? 'fill-amber-400 text-amber-400'
-                        : 'text-muted-foreground/30'
-                    }`}
-                  />
-                ))}
-                <span className="text-xs text-muted-foreground">
-                  {vendor.averageRating === null
-                    ? t('vendorsDir.noRating')
-                    : `${vendor.averageRating.toFixed(1)} · ${vendor.reviewCount} ${t('vendorsDir.reviewsSuffix')}`}
-                </span>
-              </div>
-
-              {vendor.bio && (
-                <p className="text-sm text-muted-foreground mt-3 line-clamp-2 leading-relaxed">{vendor.bio}</p>
-              )}
-
-              {vendor.categories.length > 0 && (
-                <div className="mt-3">
-                  <span className="sr-only">{t('vendorsDir.categoriesLabel')}</span>
-                  <div className="flex flex-wrap gap-1">
-                    {vendor.categories.map(item => (
-                      <Badge key={item} variant="outline" className="text-[10px]">
-                        {rfqCategoryLabel(item, lang)}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-3 text-xs text-primary font-medium">{t('vendorsDir.viewProfile')}</div>
-            </Card>
+            <VendorCard key={vendor.id} vendor={vendor} lang={lang} t={t} onOpen={id => navigate(`/vendor/${id}`)} />
           ))}
         </div>
       </main>
     </div>
+  );
+}
+
+type DirectoryVendorCard = {
+  id: number;
+  name: string | null;
+  bio: string | null;
+  location: string | null;
+  userRole: string | null;
+  verified: boolean | null;
+  categories: string[];
+  averageRating: number | null;
+  reviewCount: number;
+};
+
+/**
+ * One directory card. Extracted in Slice 8 so the sponsored strip renders
+ * vendors identically to the organic list - same reputation, same categories,
+ * same layout. The ONLY visual difference is the sponsored label, which is the
+ * point: a paid slot must look like what it is, not like a better vendor.
+ */
+function VendorCard({
+  vendor, sponsored = false, lang, t, onOpen,
+}: {
+  vendor: DirectoryVendorCard;
+  sponsored?: boolean;
+  lang: string;
+  t: (key: string) => string;
+  onOpen: (id: number) => void;
+}) {
+  return (
+      <Card
+        role="button"
+        tabIndex={0}
+        className="p-4 card-hover cursor-pointer transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        onClick={() => onOpen(vendor.id)}
+        onKeyDown={event => { if (event.key === 'Enter') onOpen(vendor.id); }}
+      >
+        {sponsored && (
+          <div className="mb-2.5 flex items-center gap-1.5">
+            <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-900 text-[10px] font-medium">
+              <Megaphone className="w-2.5 h-2.5 me-1" />{t('vendorsDir.sponsored')}
+            </Badge>
+          </div>
+        )}
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
+            {(vendor.name ?? '?').charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-semibold truncate">{vendor.name}</span>
+              {vendor.verified && (
+                <Badge className="bg-emerald-100 text-emerald-700 border-0 text-xs">
+                  <BadgeCheck className="w-3 h-3 me-0.5" />{t('common.verified')}
+                </Badge>
+              )}
+            </div>
+            <div className="text-xs text-muted-foreground capitalize mt-0.5">
+              {(vendor.userRole ?? '').replace('_', ' ')}
+            </div>
+            {vendor.location && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                <MapPin className="w-3 h-3 shrink-0" />
+                <span className="truncate">{vendor.location}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Reputation - live from verified reviews, never a stored aggregate. */}
+        <div className="flex items-center gap-1.5 mt-3" aria-label={t('vendorsDir.ratingLabel')}>
+          {[1, 2, 3, 4, 5].map(star => (
+            <Star
+              key={star}
+              className={`w-3.5 h-3.5 ${
+                vendor.averageRating !== null && star <= Math.round(vendor.averageRating)
+                  ? 'fill-amber-400 text-amber-400'
+                  : 'text-muted-foreground/30'
+              }`}
+            />
+          ))}
+          <span className="text-xs text-muted-foreground">
+            {vendor.averageRating === null
+              ? t('vendorsDir.noRating')
+              : `${vendor.averageRating.toFixed(1)} · ${vendor.reviewCount} ${t('vendorsDir.reviewsSuffix')}`}
+          </span>
+        </div>
+
+        {vendor.bio && (
+          <p className="text-sm text-muted-foreground mt-3 line-clamp-2 leading-relaxed">{vendor.bio}</p>
+        )}
+
+        {vendor.categories.length > 0 && (
+          <div className="mt-3">
+            <span className="sr-only">{t('vendorsDir.categoriesLabel')}</span>
+            <div className="flex flex-wrap gap-1">
+              {vendor.categories.map(item => (
+                <Badge key={item} variant="outline" className="text-[10px]">
+                  {rfqCategoryLabel(item, lang)}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-3 text-xs text-primary font-medium">{t('vendorsDir.viewProfile')}</div>
+      </Card>
   );
 }

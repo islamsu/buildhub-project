@@ -6,7 +6,7 @@ vi.mock('./db', () => ({ getDb: vi.fn() }));
 import { appRouter } from './routers';
 import type { TrpcContext } from './_core/context';
 import { getDb } from './db';
-import { ENTITLEMENT_ENFORCEMENT, PLANS } from '@shared/billing';
+import { ENTITLEMENT_ENFORCEMENT, PLANS , isEntitlementEnforced } from '@shared/billing';
 
 // Phase 4B Slice 2. The billing engine built across 4B.1-4B.4 was complete and
 // unreachable: one trpc.billing.* call site existed in the entire client, and it
@@ -77,9 +77,31 @@ describe('billing.plans now reports what is actually enforced (Slice 2)', () => 
     for (const key of ['portfolioLevel', 'promotionalCapability', 'branchLimit', 'teamMemberLimit'] as const) {
       expect(entitlementAvailability[key], `${key} is not-implemented`).toBe(false);
     }
-    for (const key of ['visibilityLevel', 'featuredPlacementEligible'] as const) {
-      expect(entitlementAvailability[key], `${key} is deferred to 4B.6`).toBe(false);
-    }
+    // visibilityLevel remains deferred, and deliberately so: it would buy
+    // position inside the ORGANIC ranking, which Phase 4B.3 §13 forbids.
+    // Featured placement was implementable without touching that rule because
+    // it is a separate labelled strip; boosted visibility is not.
+    expect(entitlementAvailability.visibilityLevel, 'visibilityLevel conflicts with organic ranking').toBe(false);
+  });
+
+  it('featured placement is now reported as available, because Slice 8 actually enforces it', async () => {
+    const { entitlementAvailability } = await appRouter.createCaller(anonCtx()).billing.plans();
+    expect(entitlementAvailability.featuredPlacementEligible).toBe(true);
+    expect(ENTITLEMENT_ENFORCEMENT.featuredPlacementEligible).toBe('slice-8');
+  });
+
+  it('availability is an ALLOWLIST, so an unrecognised marker fails closed to unavailable', () => {
+    // The old rule was a denylist - available unless the marker began
+    // 'phase-4b.6' or equalled 'not-implemented'. Adding any new deferral
+    // marker silently flipped that entitlement to "available" and advertised a
+    // capability nothing enforced. This is exactly what happened when
+    // visibilityLevel's marker changed in Slice 8, and it was caught here.
+    expect(isEntitlementEnforced('featuredPlacementEligible')).toBe(true);
+    expect(isEntitlementEnforced('visibilityLevel')).toBe(false);
+    expect(isEntitlementEnforced('portfolioLevel')).toBe(false);
+    const source = readFileSync(new URL('../shared/billing.ts', import.meta.url), 'utf8');
+    expect(source).toContain('ENFORCED_ENTITLEMENT_MARKERS');
+    expect(source).toContain('ReadonlySet<string>');
   });
 
   it('availability tracks the ledger automatically - building a feature flips it', () => {

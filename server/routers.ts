@@ -32,7 +32,7 @@ import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, typ
 import { sdk, type AuthenticatedUser } from './_core/sdk';
 import {
   BILLING_CURRENCY, ENTITLEMENT_ENFORCEMENT, FOUNDER_OFFER_ENDS_AT_SETTING_KEY, FOUNDER_OFFER_MONTHS,
-  GRACE_PERIOD_DAYS, PLAN_IDS, PLANS, TRIAL_DAYS, annualSavings,
+  GRACE_PERIOD_DAYS, PLAN_IDS, PLANS, TRIAL_DAYS, annualSavings, isEntitlementEnforced,
   type PlanEntitlements,
 } from '@shared/billing';
 import {
@@ -58,7 +58,8 @@ import {
   getEnquiryUsage, getVendorCategories, listEligibleRfqs, openQualifiedEnquiry,
 } from './billing/enquiries';
 import {
-  getVendorTargetingDiagnostics, listDirectoryCategories, listDirectoryVendors,
+  FEATURED_PLACEMENT_SLOTS, getVendorTargetingDiagnostics, listDirectoryCategories,
+  listDirectoryVendors, listFeaturedVendors,
 } from './vendorDirectory';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSubscriptions } from '../drizzle/schema';
@@ -742,6 +743,24 @@ const marketplaceRouter = router({
     }).optional())
     .query(async ({ input }) => listDirectoryVendors(input ?? {})),
   vendorCategories: publicProcedure.query(async () => listDirectoryCategories()),
+
+  // Featured placement (Slice 8). A SEPARATE endpoint from `vendors` above, on
+  // purpose: the organic list and the sponsored strip are two different things
+  // and merging them into one response is how a client ends up rendering a paid
+  // slot as an organic result. `sponsored: true` on every row makes the
+  // labelling obligation impossible to overlook on the client side.
+  featuredVendors: publicProcedure
+    .input(z.object({
+      category: z.string().optional(),
+      location: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const vendors = await listFeaturedVendors(input ?? {});
+      return {
+        vendors: vendors.map(vendor => ({ ...vendor, sponsored: true as const })),
+        slots: FEATURED_PLACEMENT_SLOTS,
+      };
+    }),
   list: publicProcedure
     .input(z.object({ category: z.string().optional(), search: z.string().optional(), limit: z.number().default(24) }))
     .query(async ({ input }) => {
@@ -2105,7 +2124,7 @@ const billingRouter = router({
     // browser bundle.
     entitlementAvailability: Object.fromEntries(
       (Object.keys(ENTITLEMENT_ENFORCEMENT) as (keyof PlanEntitlements)[])
-        .map(key => [key, !ENTITLEMENT_ENFORCEMENT[key].startsWith('phase-4b.6') && ENTITLEMENT_ENFORCEMENT[key] !== 'not-implemented']),
+        .map(key => [key, isEntitlementEnforced(key)]),
     ) as Record<keyof PlanEntitlements, boolean>,
     // Whether self-service checkout can actually run. Public because the
     // PRICING page needs it and that page must work for signed-out visitors -
