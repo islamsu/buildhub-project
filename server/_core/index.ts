@@ -8,6 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { ENV, assertEnvOrExit } from "./env";
+import { ConsoleMailer, setMailer } from "./mailer";
 import { serveStatic, setupVite } from "./vite";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -64,6 +65,15 @@ async function startServer() {
   // any client spoof its own address.
   if (ENV.isProduction) {
     app.set("trust proxy", 1);
+  }
+
+  // Outbound email. Development gets a mailer that prints to the terminal, so a
+  // developer can complete a password reset by copying the link out of the log.
+  // Production is left on NullMailer until a real provider adapter is
+  // registered: `auth.capabilities` then reports password reset as unavailable
+  // and the UI hides it, rather than promising an email nothing will send.
+  if (!ENV.isProduction) {
+    setMailer(new ConsoleMailer());
   }
 
   // Configure body parser with larger size limit for file uploads

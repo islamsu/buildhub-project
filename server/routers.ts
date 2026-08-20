@@ -11,6 +11,8 @@ import { storagePut } from './storage';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
 import { acceptQuotationSecure, rejectQuotationSecure } from './quotationWorkflow';
 import { aiChatLimiters, authLimiters, getClientIp } from './_core/rateLimit';
+import { ENV } from './_core/env';
+import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
@@ -59,11 +61,32 @@ import { vendorCategories, vendorSubscriptions } from '../drizzle/schema';
 
 const scryptAsync = promisify(scryptCallback);
 
+/**
+ * Floor for any password BuildHub itself sets or accepts.
+ *
+ * `admin.completeInvitation` predates this and still accepts 6, which is left
+ * alone deliberately - raising it would invalidate invitation links already in
+ * flight without warning anyone.
+ */
+const PASSWORD_MIN_LENGTH = 8;
+
+/** How long a password-reset link stays usable. */
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
+
 async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString('hex');
   const derivedKey = (await scryptAsync(password, salt, 64)) as Buffer;
   return `scrypt$${salt}$${derivedKey.toString('hex')}`;
 }
+
+/**
+ * A real, well-formed scrypt hash of a value no account holds, used only so
+ * `auth.signIn` can spend the same CPU on a nonexistent account as on a real
+ * one. Verifying against it always fails; skipping verification entirely would
+ * return in microseconds and leak which usernames exist.
+ */
+const NO_SUCH_ACCOUNT_HASH =
+  'scrypt$00000000000000000000000000000000$' + '0'.repeat(128);
 
 async function verifyPassword(password: string, storedHash: string | null | undefined): Promise<boolean> {
   if (!storedHash) return false;
@@ -157,6 +180,232 @@ const authRouter = router({
     await db.insert(userAccountAuditEvents).values({ userId: target.id, actorId: target.id, action: 'dummy_user_signed_in', source: 'dummy', note: 'Dummy user signed in with a locally managed password' });
     return { success: true, userRole: target.userRole, onboardingStatus: target.onboardingStatus } as const;
   }),
+  // ── First-party password authentication (Slice 3) ───────────────────────
+  //
+  // Before this, the only way a real (non-dummy) user could ever obtain a
+  // session was `/api/oauth/callback`, which calls OAUTH_SERVER_URL - a
+  // Manus-platform service. On any infrastructure BuildHub actually controls,
+  // that host is not there, and nobody can sign in at all. `signInDummy`
+  // refuses anything without `isDummy = true`, so it is not a substitute.
+  //
+  // This also closes a defect that existed independently of hosting: an
+  // admin-created account could be invited, could set a password through
+  // `admin.completeInvitation`, and then had NO endpoint that would accept that
+  // password. `signIn` below accepts any non-dummy account holding a
+  // passwordHash, so those accounts finally work.
+  //
+  // OAuth is untouched and keeps working wherever OAUTH_SERVER_URL resolves.
+  // This is a second door, not a replacement.
+  capabilities: publicProcedure.query(() => ({
+    passwordSignIn: true,
+    oauthSignIn: ENV.oAuthServerUrl.length > 0,
+    // Both halves are required for a usable reset: something to send the mail,
+    // and a trustworthy origin to put in the link. The UI hides the flow rather
+    // than offering a button that can only fail.
+    passwordReset: isMailerConfigured() && ENV.appBaseUrl.length > 0,
+  } as const)),
+
+  signUp: publicProcedure.input(z.object({
+    username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/, 'Use letters, numbers, dots, underscores, or hyphens only'),
+    email: z.string().trim().email().max(320),
+    password: z.string().min(PASSWORD_MIN_LENGTH).max(128),
+    name: z.string().trim().min(1).max(255),
+    phone: z.string().trim().max(32).optional(),
+    // 'admin' is absent by construction. Role and privilege are separate here:
+    // `role` is pinned to 'user' below regardless of what is sent.
+    userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager']),
+  })).mutation(async ({ ctx, input }) => {
+    enforceAuthRateLimit(ctx.req, normalizeEmail(input.email));
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+    const username = normalizeUsername(input.username)!;
+    const email = normalizeEmail(input.email)!;
+    if (await getUserByUsername(username)) throw new TRPCError({ code: 'CONFLICT', message: 'Username is already in use' });
+    if (await getUserByEmail(email)) throw new TRPCError({ code: 'CONFLICT', message: 'Email is already in use' });
+
+    const professional = isComplianceRole(input.userRole);
+    const passwordHash = await hashPassword(input.password);
+    const now = new Date();
+
+    let userId: number;
+    try {
+      const result = await db.insert(users).values({
+        // `local_` marks a credential BuildHub itself owns, distinct from the
+        // `admin_`/`dummy_`/platform openIds. authenticateRequest resolves it
+        // from the database like any other, so no other code path changes.
+        openId: `local_${randomUUID()}`,
+        username, name: input.name, email, phone: input.phone || null,
+        loginMethod: 'password',
+        role: 'user',
+        userRole: input.userRole,
+        accountSource: 'self_registered',
+        isDummy: false,
+        onboardingStatus: professional ? 'not_started' : 'approved',
+        // Same rule auth.updateRole already applies to OAuth signups: a
+        // professional is unverified until compliance approves them.
+        verified: !professional,
+        passwordHash,
+        passwordSetAt: now,
+        lastSignedIn: now,
+      });
+      userId = Number(result[0]?.insertId);
+    } catch (error) {
+      // Two simultaneous signups for the same username/email both pass the
+      // checks above; the UNIQUE indexes settle it and the loser gets a plain
+      // conflict rather than a 500.
+      if (error instanceof Error && /duplicate|ER_DUP_ENTRY/i.test(error.message)) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'That username or email was just taken. Please try another.' });
+      }
+      throw error;
+    }
+
+    const [created] = await db.select({ openId: users.openId }).from(users).where(eq(users.id, userId));
+    const sessionToken = await sdk.createSessionToken(created.openId, { name: input.name });
+    ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
+    await db.insert(userAccountAuditEvents).values({
+      userId, actorId: userId, action: 'password_account_created', source: 'self_registered',
+      note: 'Account created with an email address and password',
+    });
+    return { success: true, userRole: input.userRole, onboardingStatus: professional ? 'not_started' : 'approved' } as const;
+  }),
+
+  signIn: publicProcedure.input(z.object({
+    /** Username or email address. Which one is decided here, never by the client. */
+    identifier: z.string().trim().min(3).max(320),
+    password: z.string().min(1).max(128),
+  })).mutation(async ({ ctx, input }) => {
+    enforceAuthRateLimit(ctx.req, input.identifier.toLowerCase());
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+    const identifier = input.identifier.trim().toLowerCase();
+    const target = identifier.includes('@')
+      ? await getUserByEmail(identifier)
+      : await getUserByUsername(identifier);
+
+    // Dummy accounts are excluded on purpose: they have their own endpoint with
+    // its own frozen-by-default policy, and letting them in here would route
+    // around it.
+    const candidate = target && !target.isDummy && target.passwordHash ? target : null;
+
+    // Always run one verification, even with nothing to verify against, so the
+    // response time does not distinguish "no such account" from "wrong
+    // password". The single shared message below is worthless as an
+    // anti-enumeration measure if the clock gives the answer away.
+    const passwordMatches = await verifyPassword(input.password, candidate?.passwordHash ?? NO_SUCH_ACCOUNT_HASH);
+    if (!candidate || !passwordMatches) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid username, email, or password' });
+    }
+    if (candidate.accountStatus !== 'active' || candidate.deactivatedAt) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'This account is not active. Please contact support.' });
+    }
+
+    const sessionToken = await sdk.createSessionToken(candidate.openId, {
+      name: candidate.name || candidate.username || 'BuildHub user',
+    });
+    ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
+    await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, candidate.id));
+    await db.insert(userAccountAuditEvents).values({
+      userId: candidate.id, actorId: candidate.id, action: 'password_signed_in', source: 'password',
+      note: identifier.includes('@') ? 'Signed in with email and password' : 'Signed in with username and password',
+    });
+    return { success: true, userRole: candidate.userRole, onboardingStatus: candidate.onboardingStatus } as const;
+  }),
+
+  requestPasswordReset: publicProcedure.input(z.object({
+    email: z.string().trim().email().max(320),
+  })).mutation(async ({ ctx, input }) => {
+    enforceAuthRateLimit(ctx.req, normalizeEmail(input.email));
+    // Refuses rather than returning a cheerful "check your inbox" that no
+    // message will ever follow. `auth.capabilities` lets the UI avoid ever
+    // reaching this state.
+    if (!isMailerConfigured() || ENV.appBaseUrl.length === 0) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'Password reset by email is not available on this deployment. Please contact support.',
+      });
+    }
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+    const email = normalizeEmail(input.email)!;
+    const target = await getUserByEmail(email);
+    const eligible = target && !target.isDummy && target.passwordHash
+      && target.accountStatus === 'active' && !target.deactivatedAt;
+
+    if (eligible) {
+      const token = `${randomUUID()}-${randomUUID().slice(0, 8)}`;
+      await db.update(users).set({
+        passwordResetToken: token,
+        passwordResetExpiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
+      }).where(eq(users.id, target.id));
+      try {
+        await getMailer().send({
+          to: email,
+          subject: 'Reset your BuildHub password',
+          body: `Open this link to choose a new password:\n\n${ENV.appBaseUrl}/auth/reset-password?token=${token}\n\n`
+            + `The link expires in ${Math.round(PASSWORD_RESET_TTL_MS / 60000)} minutes. `
+            + `If you did not request this, you can ignore this message - your password has not changed.`,
+        });
+      } catch (error) {
+        // Swallowed on purpose. A delivery failure that surfaced as a 500 here,
+        // while an unknown address returned 200, would turn this endpoint into
+        // an account-existence oracle.
+        console.error('[auth] Password reset email failed to send', error);
+      }
+      await db.insert(userAccountAuditEvents).values({
+        userId: target.id, actorId: target.id, action: 'password_reset_requested', source: 'password',
+        note: 'A password reset link was issued',
+      });
+    }
+
+    // Identical for a known and an unknown address.
+    return { requested: true } as const;
+  }),
+
+  resetPassword: publicProcedure.input(z.object({
+    token: z.string().trim().min(10).max(128),
+    password: z.string().min(PASSWORD_MIN_LENGTH).max(128),
+  })).mutation(async ({ ctx, input }) => {
+    // Keyed by IP only: the token is the secret being guessed, so keying the
+    // limiter on it would bound nothing.
+    enforceAuthRateLimit(ctx.req, null);
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+    const [target] = await db.select().from(users).where(eq(users.passwordResetToken, input.token));
+    if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'This reset link is invalid or has already been used' });
+    if (!target.passwordResetExpiresAt || new Date(target.passwordResetExpiresAt).getTime() < Date.now()) {
+      await db.update(users).set({ passwordResetToken: null, passwordResetExpiresAt: null }).where(eq(users.id, target.id));
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This reset link has expired. Please request a new one.' });
+    }
+
+    const now = new Date();
+    await db.update(users).set({
+      passwordHash: await hashPassword(input.password),
+      passwordSetAt: now,
+      // Single-use.
+      passwordResetToken: null,
+      passwordResetExpiresAt: null,
+      // Completing the flow proves control of the mailbox the link was sent to.
+      emailVerifiedAt: target.emailVerifiedAt ?? now,
+      // The whole point of a reset is that someone else may hold a live session.
+      // Retire every one of them, including any this account currently has.
+      sessionsInvalidBefore: now,
+    }).where(eq(users.id, target.id));
+
+    await db.insert(userAccountAuditEvents).values({
+      userId: target.id, actorId: target.id, action: 'password_reset_completed', source: 'password',
+      note: 'Password changed via reset link; all existing sessions invalidated',
+    });
+
+    // Deliberately does not sign the user in. They re-authenticate with the new
+    // password, which proves the reset worked and keeps this endpoint from
+    // being a way to obtain a session.
+    return { success: true } as const;
+  }),
+
   checkSignupAvailability: publicProcedure.input(z.object({
     username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/, 'Use letters, numbers, dots, underscores, or hyphens only'),
     email: z.string().email().optional(),

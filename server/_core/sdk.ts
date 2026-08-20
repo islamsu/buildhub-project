@@ -197,13 +197,17 @@ class SDKServer {
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setJti(randomUUID())
+      // iat (Slice 3): required to enforce users.sessionsInvalidBefore. Without
+      // an issue time there is no way to tell a session minted before a password
+      // reset from one minted by the reset itself.
+      .setIssuedAt(Math.floor(issuedAt / 1000))
       .setExpirationTime(expirationSeconds)
       .sign(secretKey);
   }
 
   async verifySession(
     cookieValue: string | undefined | null
-  ): Promise<{ openId: string; appId: string; name: string; jti: string | null; expiresAt: Date | null } | null> {
+  ): Promise<{ openId: string; appId: string; name: string; jti: string | null; expiresAt: Date | null; issuedAt: Date | null } | null> {
     if (!cookieValue) {
       console.warn("[Auth] Missing session cookie");
       return null;
@@ -214,7 +218,7 @@ class SDKServer {
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],
       });
-      const { openId, appId, name, jti, exp } = payload as Record<string, unknown>;
+      const { openId, appId, name, jti, exp, iat } = payload as Record<string, unknown>;
 
       if (
         !isNonEmptyString(openId) ||
@@ -234,6 +238,7 @@ class SDKServer {
         // expiry, same as before. Not a regression: nothing was revocable before.
         jti: isNonEmptyString(jti) ? jti : null,
         expiresAt: typeof exp === "number" ? new Date(exp * 1000) : null,
+        issuedAt: typeof iat === "number" ? new Date(iat * 1000) : null,
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
@@ -327,6 +332,27 @@ class SDKServer {
 
     if (!user) {
       throw ForbiddenError("User not found");
+    }
+
+    // Bulk invalidation (Slice 3): a password reset sets sessionsInvalidBefore,
+    // which retires every session issued before it - including one an attacker
+    // established with the stolen password the reset is meant to undo.
+    //
+    // Fails CLOSED for a token with no `iat`. Tokens minted before this change
+    // carry none, so their issue time cannot be established, and "cannot prove
+    // it was issued after the reset" has to mean rejected. The only accounts
+    // affected are those that actually reset a password, and being signed out
+    // is the outcome they just asked for.
+    if (user.sessionsInvalidBefore) {
+      // Compared at whole-second granularity on both sides. A JWT `iat` is
+      // seconds by specification and MySQL `timestamp` is seconds by default,
+      // so comparing raw milliseconds would reject the very session the reset
+      // just minted whenever the reset landed part-way through a second.
+      const cutoffSecond = Math.floor(new Date(user.sessionsInvalidBefore).getTime() / 1000);
+      const issuedSecond = session.issuedAt ? Math.floor(session.issuedAt.getTime() / 1000) : null;
+      if (issuedSecond === null || issuedSecond < cutoffSecond) {
+        throw ForbiddenError("Session was invalidated; please sign in again");
+      }
     }
 
     await db.upsertUser({

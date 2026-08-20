@@ -49,6 +49,23 @@ export const users = mysqlTable('users', {
   invitationSentAt: timestamp('invitationSentAt'),
   passwordSetAt: timestamp('passwordSetAt'),
   passwordHash: text('passwordHash'),
+  // Slice 3 (first-party authentication).
+  //
+  // Deliberately separate from the invitation columns above rather than reusing
+  // them. An admin-created account can hold a live invitation token AND request
+  // a password reset; sharing one column would let the second flow silently
+  // destroy the first.
+  passwordResetToken: varchar('passwordResetToken', { length: 128 }),
+  passwordResetExpiresAt: timestamp('passwordResetExpiresAt'),
+  // Distinct from `verified`, which means "identity/credentials checked by
+  // compliance" and drives the vendor trust badge. This one means only that the
+  // person controls the mailbox.
+  emailVerifiedAt: timestamp('emailVerifiedAt'),
+  // Bulk session invalidation. `revokedSessions` revokes one jti at a time,
+  // which cannot express "log this account out everywhere" - exactly what a
+  // password reset must do, since the whole point is that someone else may hold
+  // a valid session. Any token issued before this instant is refused.
+  sessionsInvalidBefore: timestamp('sessionsInvalidBefore'),
   rating:      decimal('rating', { precision: 3, scale: 2 }).default('0.00'),
   reviewCount: int('reviewCount').default(0),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
