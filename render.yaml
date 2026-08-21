@@ -66,11 +66,33 @@ services:
       # reachable from the internet, so TLS to the database is not required on
       # this hop; production sets DATABASE_SSL=require against a managed
       # instance reached across a network.
+      #
+      # SET ONCE IN THE DASHBOARD. Render cannot build this value, and the
+      # earlier attempt to make it do so is what broke staging.
+      #
+      # `fromService` COPIES a value; it cannot COMPOSE one. A connection URI
+      # has to interpolate the password into a larger string, and Blueprint
+      # `value:` fields are literal - there is no $VAR expansion. The previous
+      # revision set the MySQL service's own DATABASE_URL to
+      # "mysql://buildhub:$MYSQL_PASSWORD@..." and copied it here, so the app
+      # authenticated with the fifteen literal characters $MYSQL_PASSWORD and
+      # MySQL answered ER_ACCESS_DENIED_ERROR. /readyz returned 503 with
+      # {"checks":{"database":false}}.
+      #
+      # TO SET IT: read MYSQL_PASSWORD off buildhub-staging-mysql, then
+      #
+      #   mysql://buildhub:<URL-ENCODED PASSWORD>@buildhub-staging-mysql:3306/buildhub
+      #
+      # PERCENT-ENCODE THE PASSWORD. `generateValue` emits base64, which
+      # contains / + and =. A raw "/" ends the URI authority, so the string
+      # fails to parse, getDb() logs "[Database] Failed to connect: TypeError:
+      # Invalid URL" and returns null - a 503 with NO "[health] Database probe
+      # failed" line, which looks like a different bug entirely. Verified
+      # against MySQL 8: raw fails, percent-encoded connects.
+      #
+      #   node -e 'console.log(encodeURIComponent(process.argv[1]))' '<password>'
       - key: DATABASE_URL
-        fromService:
-          type: pserv
-          name: buildhub-staging-mysql
-          envVarKey: DATABASE_URL
+        sync: false
       - key: DATABASE_SSL
         value: disable
 
@@ -135,7 +157,16 @@ services:
         generateValue: true
       - key: MYSQL_ROOT_PASSWORD
         generateValue: true
-      # Assembled from the generated password so the credential exists in
-      # exactly one place. The app consumes this via fromService above.
-      - key: DATABASE_URL
-        value: mysql://buildhub:$MYSQL_PASSWORD@buildhub-staging-mysql:3306/buildhub
+      # NOTE: no DATABASE_URL here on purpose.
+      #
+      # A previous revision defined one as
+      # "mysql://buildhub:$MYSQL_PASSWORD@buildhub-staging-mysql:3306/buildhub"
+      # with a comment claiming it was "assembled from the generated password".
+      # It was not: Render does not interpolate variables in a Blueprint, so
+      # the value was that literal string. The mysql:8.0 entrypoint never reads
+      # DATABASE_URL either, so the variable did nothing here except feed a
+      # broken value to the web service. Removed rather than repaired.
+      #
+      # MYSQL_PASSWORD above stays `generateValue` and is NOT rotated by this
+      # change: Render only generates a value when the variable does not
+      # already exist, so re-syncing preserves the live password.
