@@ -1,0 +1,229 @@
+================================================================================
+BUILDHUB - RENDER STAGING /readyz 503: ROOT CAUSE INVESTIGATION
+================================================================================
+
+Date:     2026-08-21
+Repo:     github.com/islamsu/buildhub-project
+Target:   https://buildhub-staging.onrender.com
+Symptom:  readiness -- expected 200, got 503
+          {"status":"unavailable","checks":{"database":false}}
+
+NO APPLICATION CODE WAS MODIFIED. No fix applied. render.yaml is unmodified on
+the feature branch. This document reports the investigation only, as instructed.
+
+
+================================================================================
+1. THE SHORT VERSION
+================================================================================
+
+There is a DEFINITE DEFECT in render.yaml that produces exactly this symptom,
+and I wrote it.
+
+render.yaml line 141, in the buildhub-staging-mysql private service:
+
+    - key: DATABASE_URL
+      value: mysql://buildhub:$MYSQL_PASSWORD@buildhub-staging-mysql:3306/buildhub
+
+RENDER DOES NOT PERFORM VARIABLE INTERPOLATION IN render.yaml. Confirmed against
+Render's own documentation, not recalled from memory: `value:` fields are
+literal strings, and the supported ways to reference another value are
+fromService, fromDatabase and fromGroup - never $VAR.
+
+So the web service receives a connection string whose password is the literal
+sixteen characters  $MYSQL_PASSWORD  while MySQL's entrypoint created the user
+`buildhub` with the actual generateValue password. They cannot match.
+
+My own comment two lines above it reads "Assembled from the generated password
+so the credential exists in exactly one place." That sentence states the
+assumption that is wrong. This is my defect, introduced when I wrote the
+blueprint.
+
+BUT - and this matters - I could not confirm that this is what YOUR deployment
+is actually doing right now. See section 4.
+
+
+================================================================================
+2. PROVEN AGAINST REAL MYSQL 8, NOT REASONED ABOUT
+================================================================================
+
+I started MySQL 8.0 locally with MYSQL_USER=buildhub and a generated-style
+password, then drove the REAL getDb() from server/db.ts through the REAL probe
+logic from server/_core/health.ts.
+
+  SCENARIO                        DRIVER ERROR              HTTP RESPONSE
+  -----------------------------   -----------------------   -------------------
+  CONTROL - correct password      (none)                    200
+                                                            {"status":"ready",
+                                                             "checks":
+                                                             {"database":true}}
+
+  A - literal $MYSQL_PASSWORD     ER_ACCESS_DENIED_ERROR    503
+                                  errno=1045                {"status":
+                                  "Access denied for user   "unavailable",
+                                  'buildhub'@'...' (using    "checks":
+                                  password: YES)"            {"database":false}}
+
+Hypothesis A reproduces your observed response BYTE FOR BYTE.
+
+
+================================================================================
+3. THE SMOKE OUTPUT ALONE DOES NOT IDENTIFY THE CAUSE
+================================================================================
+
+This is the part I do not want to overstate. I tested four distinct failure
+modes and ALL FOUR produce the identical 503 body you saw. The response is not
+diagnostic. The LOGGED DRIVER ERROR is.
+
+  #   CAUSE                          DISTINGUISHING DRIVER ERROR
+  --  ----------------------------   ----------------------------------------
+  A   Wrong password - the literal   code=ER_ACCESS_DENIED_ERROR errno=1045
+      $MYSQL_PASSWORD                "Access denied for user 'buildhub'@'...'
+                                     (using password: YES)"
+
+  B   DATABASE_URL unset or empty    NOTHING IS LOGGED AT ALL.
+                                     getDb() returns null before any connection
+                                     is attempted, so the catch block never
+                                     runs. Silence is itself the signal.
+
+  C   MySQL service down, or the     code=ENOTFOUND errno=-3008
+      hostname is wrong              "getaddrinfo ENOTFOUND
+                                     buildhub-staging-mysql"
+
+  D   DATABASE_SSL not set while     code=HANDSHAKE_SSL_ERROR
+      NODE_ENV=production            "self-signed certificate in certificate
+                                     chain"
+
+D DESERVES ATTENTION INDEPENDENTLY. server/db.ts defaults DATABASE_SSL to
+"require" in production:
+
+    const mode = (process.env.DATABASE_SSL ?? (ENV.isProduction ? "require" : "disable"))
+
+The blueprint sets DATABASE_SSL=disable for the private hop, which is correct -
+the hop never leaves Render's network. But if the service was created BY HAND in
+the dashboard rather than from the blueprint, that variable is absent, the
+default fires, and you get D instead of A. Same 503, completely different fix.
+
+
+================================================================================
+4. WHAT I COULD NOT DO
+================================================================================
+
+You asked me to confirm three things:
+
+  - that the staging web service is using the correct database environment
+    variables / connection string
+  - that buildhub-staging-mysql is running and reachable from the web service
+  - what the actual DB connection error is, from the Render deployment logs
+
+I COULD DO NONE OF THE THREE.
+
+This sandbox's egress allowlist returns 403 CONNECT for render.com,
+api.render.com and dashboard.render.com. I cannot read your service
+configuration and I cannot read your logs. That is the same hard external
+blocker as before, and no credential changes it.
+
+So the honest statement of my finding is:
+
+  I have identified A cause that is definitely present in the blueprint and
+  that definitely produces your exact symptom.
+
+  I have NOT confirmed it is THE cause of what your deployment is doing.
+
+Those are different claims and I am not going to collapse them.
+
+
+================================================================================
+5. THE ONE LINE THAT SETTLES IT
+================================================================================
+
+server/_core/health.ts line 49 logs the real driver error to stdout, where
+Render captures it:
+
+    console.error("[health] Database probe failed:", error);
+
+STEP 1.  Render dashboard -> buildhub-staging -> Logs
+STEP 2.  Search for:   Database probe failed
+STEP 3.  Match what follows against the table in section 3.
+
+IF THAT STRING DOES NOT APPEAR AT ALL, the answer is B: DATABASE_URL is unset or
+empty, and the app never attempted a connection.
+
+ALSO WORTH CHECKING IN THE DASHBOARD:
+
+  buildhub-staging -> Environment
+    - Is DATABASE_URL present?
+    - Does its value literally contain the characters  $MYSQL_PASSWORD ?
+      If yes, that is confirmation of A on its own, without the logs.
+    - Is DATABASE_SSL=disable present? If absent, suspect D.
+
+  buildhub-staging-mysql
+    - Does the service exist at all, and is it live rather than failed?
+    - An image-based private service running mysql:8.0 listens on 3306, which is
+      not the port Render probes by default. Worth confirming it actually came
+      up rather than assuming it did.
+
+
+================================================================================
+6. A SECOND PROBLEM YOU WILL HIT NEXT, INDEPENDENT OF THIS ONE
+================================================================================
+
+Dockerfile line 65:
+
+    CMD ["node", "dist/index.js"]
+
+NOTHING RUNS MIGRATIONS AT BOOT. There is no db:migrate anywhere in the start
+path - I grepped the Dockerfile and deploy/ scripts to confirm.
+
+Consequence: once the connection is fixed, /readyz will go GREEN while the
+schema is still completely empty, because /readyz only runs SELECT 1 and that
+succeeds against a database with no tables. The gate will then fail at point 4,
+"schema reachability", and the failure will look unrelated to this one.
+
+This is a gap in the staging setup rather than a code defect, and it needs a
+decision about how migrations reach staging. Flagging it now so it does not
+arrive as a surprise after the connectivity fix.
+
+
+================================================================================
+7. ONE MORE OBSERVATION
+================================================================================
+
+The blueprint pins the web service to:
+
+    branch: claude/phase4b-readiness-audit-hardening
+
+while the Staging QA workflow now runs from main. Those are different code.
+
+Not the cause of this failure, and not urgent - but it means the thing being
+DEPLOYED and the thing being TESTED have drifted apart, and any conclusion drawn
+from the gate needs that caveat attached until they are reconciled.
+
+
+================================================================================
+8. STATUS
+================================================================================
+
+  Root cause in render.yaml       IDENTIFIED and proven to reproduce the symptom
+  Root cause on your deployment   NOT CONFIRMED - I cannot reach Render
+  Fix applied                     NONE, as instructed
+  Application code                UNTOUCHED
+  render.yaml                     UNMODIFIED on the feature branch
+  Render staging                  UNVERIFIED
+  Production readiness            NOT ESTABLISHED
+
+NEXT: paste me the "Database probe failed" line from the Render logs - or tell
+me whether DATABASE_URL in the dashboard contains the literal $MYSQL_PASSWORD.
+Either one tells me which of A-D it is, and I will write the correct fix.
+
+For A that means replacing the non-interpolated string with a value Render will
+actually resolve. Note that this is a render.yaml change AND, most likely, a
+dashboard change to the already-provisioned service, since a blueprint edit does
+not retroactively rewrite an env var that has already been materialised.
+
+SOURCES for the interpolation finding:
+  https://render.com/docs/blueprint-spec
+  https://render.com/docs/infrastructure-as-code
+
+================================================================================
+END OF DOCUMENT
+================================================================================
