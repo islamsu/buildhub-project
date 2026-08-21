@@ -26,7 +26,7 @@ import {
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, userAccountAuditEvents,
 } from '../drizzle/schema';
-import { eq, desc, and, sql, inArray, notInArray } from 'drizzle-orm';
+import { eq, desc, and, or, like, sql, inArray, notInArray } from 'drizzle-orm';
 import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, type ComplianceDocumentStatus } from '../shared/compliance';
@@ -789,8 +789,28 @@ const marketplaceRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
-      let query = db.select().from(products).where(eq(products.active, true));
-      return query.orderBy(desc(products.featured), desc(products.createdAt)).limit(input.limit);
+      // Slice 10: `category` and `search` were accepted and then silently
+      // ignored - the query built the filter variable and never used it. It
+      // went unnoticed because the products page filtered a hardcoded array on
+      // the client instead of calling this endpoint at all, so the parameters
+      // had no consumer to be wrong for.
+      const conditions = [eq(products.active, true)];
+      if (input.category && input.category !== 'All') {
+        conditions.push(eq(products.category, input.category));
+      }
+      if (input.search) {
+        const term = `%${input.search}%`;
+        conditions.push(or(
+          like(products.name, term),
+          like(products.nameAr, term),
+          like(products.brand, term),
+          like(products.category, term),
+        )!);
+      }
+      return db.select().from(products)
+        .where(and(...conditions))
+        .orderBy(desc(products.featured), desc(products.createdAt))
+        .limit(input.limit);
     }),
   get: publicProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
     const db = await getDb();

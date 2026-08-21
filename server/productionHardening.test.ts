@@ -202,6 +202,36 @@ describe('A5 - brute-force protection on auth endpoints (Phase 4B audit)', () =>
     expect(authLimiters.identifierSustained.check('bystander', t0).allowed).toBe(true);
   });
 
+  it('per-ACCOUNT brute force stays bounded at 10 per 15 minutes', () => {
+    // The limit that actually protects a password. Raising the IP budgets for
+    // shared NAT must never move this one.
+    resetAuthLimiters();
+    const t0 = Date.now();
+    for (let i = 0; i < 10; i++) {
+      expect(authLimiters.identifierSustained.check('target@example.com', t0 + i).allowed).toBe(true);
+    }
+    expect(authLimiters.identifierSustained.check('target@example.com', t0 + 11).allowed).toBe(false);
+  });
+
+  it('IP budgets tolerate a shared NAT, because an IP is not a person', () => {
+    // Egyptian mobile carriers run carrier-grade NAT: thousands of subscribers
+    // behind one address, as do offices and site offices. At 10 per minute one
+    // busy NAT locked out every legitimate user behind it - found in staging QA,
+    // where an ordinary run tripped it within seconds from one address.
+    resetAuthLimiters();
+    const t0 = Date.now();
+    for (let i = 0; i < 40; i++) {
+      expect(authLimiters.ipBurst.check('41.44.0.1', t0 + i).allowed, `attempt ${i}`).toBe(true);
+    }
+  });
+
+  it('the IP burst is still bounded — it is looser, not absent', () => {
+    resetAuthLimiters();
+    const t0 = Date.now();
+    for (let i = 0; i < 60; i++) authLimiters.ipBurst.check('41.44.0.2', t0 + i);
+    expect(authLimiters.ipBurst.check('41.44.0.2', t0 + 61).allowed).toBe(false);
+  });
+
   it('REGRESSION: both unauthenticated secret-accepting endpoints are guarded', () => {
     const source = readSource('./routers.ts');
     const signIn = source.slice(source.indexOf('signInDummy: publicProcedure'), source.indexOf('checkSignupAvailability:'));
