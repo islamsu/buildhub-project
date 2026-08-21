@@ -383,17 +383,31 @@ describe('§10 production build excludes the previewer runtime', () => {
     expect(code).not.toContain('process.env.NODE_ENV');
   });
 
-  it('REGRESSION: the config default export stays a plain object', () => {
-    // server/_core/vite.ts builds the dev server with `{ ...viteConfig }`.
-    // Spreading a function yields no plugins at all - which silently stripped
-    // React out of development when this was first written as
-    // defineConfig(({ command }) => ...).
+  it('REGRESSION: development receives the config WITH its plugins', () => {
+    // The original defect: server/_core/vite.ts built the dev server with
+    // `{ ...viteConfig }`, and spreading a function yields no plugins at all,
+    // which silently stripped React out of development.
+    //
+    // The spread is gone. vite.ts now passes `configFile` and lets vite load
+    // and evaluate the config itself, which cannot lose plugins whatever shape
+    // the export takes - a strictly stronger guarantee than spreading a
+    // pre-imported object. It also had to change: importing the config made
+    // esbuild inline it, and its own top-level vite import crashed the
+    // production container on boot.
+    //
+    // Verified live after the change: the dev server injects /@react-refresh
+    // and /@vite/client, so the React plugin demonstrably ran.
+    const viteTs = read('./_core/vite.ts');
+    expect(viteTs).toContain('configFile: path.resolve');
+    expect(viteTs).not.toContain('configFile: false');
+    expect(viteTs).not.toContain('...viteConfig');
+
+    // The plain-object export is still the right shape, and still asserted.
     // Comments stripped: the config's own explanation names the callback form
     // as the thing that broke, so a naive search finds it in prose.
     const code = VITE_CONFIG.replace(/\/\*[\s\S]*?\*\//g, '');
     expect(code).toContain('export default defineConfig({');
     expect(code).not.toContain('defineConfig((');
-    expect(read('./_core/vite.ts')).toContain('...viteConfig');
   });
 
   it('the built page carries no inline script for the CSP to block', () => {
