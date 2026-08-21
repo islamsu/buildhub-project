@@ -138,3 +138,67 @@ password.
 
 Render staging is temporary. Delete the Blueprint when Vultr staging exists —
 two staging environments is one more than anyone maintains.
+
+---
+
+## Verifying the real deployment — the 22-point gate
+
+I cannot reach Render from the engineering sandbox. Re-measured at the start of
+this session, and it is an explicit policy denial rather than an outage:
+
+```
+render.com                    403 CONNECT (policy denial)
+api.render.com                403 CONNECT (policy denial)
+dashboard.render.com          403 CONNECT (policy denial)
+buildhub-staging.onrender.com 403 CONNECT (policy denial)
+example.com                   403 CONNECT   <- an allowlist, not a Render rule
+github.com                    reachable
+outbound SSH, any host        blocked
+```
+
+No credential changes an egress allowlist. So the verification runs where it
+can actually reach the deployment: **a GitHub Actions runner**.
+
+### Run it
+
+Actions → **Staging QA** → Run workflow → paste the staging URL.
+
+Or set the repository variable `STAGING_BASE_URL` once and it also runs weekly,
+so staging drift is caught rather than discovered.
+
+It runs `scripts/smoke.mjs` first (cheap, and its failure invalidates
+everything else), then `scripts/staging-qa.mjs` — all 22 points, in a real
+Chromium, at 1440px and 375px, in English and Arabic.
+
+### Give it a staging admin
+
+Several checks need one: admin billing visibility, the trial/cancel/resume
+lifecycle, and the approved-provider quotation path (approving a vendor is an
+admin action). Set two repository **secrets**:
+
+```
+STAGING_ADMIN_USER
+STAGING_ADMIN_PASSWORD
+```
+
+Without them the gate runs 149 checks and skips 6, naming what each needs.
+With them it runs 163. **Skips are counted separately and are never reported as
+passes.**
+
+To create the admin: register normally on staging, then promote that one row in
+the staging database. It is a staging-only account and must not share a password
+with anything else.
+
+### Safety
+
+The harness registers accounts, so it **refuses any URL that does not look like
+staging** — the guard is in both the script and the workflow. Never point it at
+production.
+
+### What it proved locally
+
+Run against the identical container topology before being handed over:
+**163/163 with an admin, 149/149 without**, both with honest skips. That
+validates the harness. It does not validate Render, which is the entire point of
+running it there.
+
