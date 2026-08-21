@@ -66,8 +66,24 @@ jobs:
           echo "Target: $URL" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Playwright and its browser
+        # --legacy-peer-deps is load-bearing, not cargo cult.
+        #
+        # This runs inside the repo checkout, so npm resolves BuildHub's whole
+        # dependency tree before it can add anything. That tree has a genuine
+        # peer conflict - @builder.io/vite-plugin-jsx-loc@0.1.1 declares a peer
+        # of vite ^4 || ^5 while the project is on vite 7 - and npm's default
+        # strict peer resolution aborts with ERESOLVE before Playwright is ever
+        # fetched. The flag makes npm tolerate that pre-existing conflict for
+        # THIS install only. It changes nothing about the project's own
+        # dependencies: --no-save keeps package.json untouched and writes no
+        # package-lock.json, and pnpm-lock.yaml is not consulted at all.
+        #
+        # Fixing the peer conflict itself is an application-dependency change
+        # and deliberately out of scope for a QA harness.
+        #
+        # The version stays pinned so the harness is reproducible.
         run: |
-          npm install --no-save playwright@1.49.1
+          npm install --no-save --legacy-peer-deps playwright@1.49.1
           npx playwright install --with-deps chromium
 
       # Cheap, and it invalidates everything else if it fails - so it runs
