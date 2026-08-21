@@ -88,7 +88,7 @@ touches the actual environment.
 
 BASELINE (verified this session, from a clean tree):
 
-  Tests            1,046 passing across 55 files      PASS
+  Tests            1,046 passing across 53 files      PASS
   Type check       tsc --noEmit, zero errors          PASS
   Client build     green                              PASS
   Server build     green                              PASS
@@ -156,7 +156,7 @@ explicit rule that skipped checks are NOT passes.
 6. TESTS PASSED
 ================================================================================
 
-  1,046 / 1,046   unit + integration, across 55 files
+  1,046 / 1,046   unit + integration, across 53 files
       13 / 13     of those are the new staging-gate safety tests
        0          skipped, quarantined, weakened, or disabled
 

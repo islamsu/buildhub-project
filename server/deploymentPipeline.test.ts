@@ -237,8 +237,71 @@ describe('§5 Dockerfile', () => {
   });
 
   it('pins pnpm to the version that produced the committed lockfile', () => {
-    expect(DOCKERFILE).toContain('corepack prepare pnpm@10.4.1');
-    expect(CI_RAW).toContain('version: 10.4.1');
+    // ONE source of truth, and every consumer derives from it.
+    //
+    // The earlier version of this test asserted `CI_RAW` contained
+    // 'version: 10.4.1' - a literal pnpm version pinned a second time, in the
+    // workflow. That is precisely what pnpm/action-setup@v4 refuses: it aborts
+    // with "Multiple versions of pnpm specified" when both its `version` input
+    // and package.json's `packageManager` field are present, EVEN IF THEY
+    // AGREE. So the old assertion did not protect the pin; it pinned the
+    // failure in place. It is replaced by the guarantee it was reaching for.
+    const pinned = PACKAGE_JSON.packageManager;
+    expect(pinned).toMatch(/^pnpm@\d+\.\d+\.\d+/);
+
+    const version = pinned.slice('pnpm@'.length).split('+')[0];
+    expect(DOCKERFILE).toContain(`corepack prepare pnpm@${version}`);
+  });
+
+  it('never specifies a pnpm version twice, which pnpm/action-setup rejects', () => {
+    // Reproduces the failure mode directly: for every workflow step that uses
+    // pnpm/action-setup, assert it passes no `version` input. package.json's
+    // `packageManager` field is the pin, and the action reads it itself.
+    for (const [name, raw] of WORKFLOWS) {
+      const parsed = parseYaml(raw) as {
+        jobs?: Record<string, { steps?: { uses?: string; with?: Record<string, unknown> }[] }>;
+      };
+      for (const [jobName, job] of Object.entries(parsed.jobs ?? {})) {
+        for (const step of job.steps ?? []) {
+          if (!step.uses?.startsWith('pnpm/action-setup')) continue;
+          expect(
+            step.with?.version,
+            `${name} job "${jobName}" pins a pnpm version in the workflow as well as in ` +
+              `package.json's packageManager field. pnpm/action-setup fails the job with ` +
+              `"Multiple versions of pnpm specified" when both are set, even when they match.`,
+          ).toBeUndefined();
+        }
+      }
+    }
+  });
+
+  it('still installs pnpm in every JOB that runs a pnpm command', () => {
+    // The fix above removes an input, not the action. Guard against someone
+    // "simplifying" further by deleting the setup step and leaving `pnpm
+    // install` to fail on a runner that has no pnpm.
+    //
+    // Scoped per JOB, not per file. ci.yml has two jobs that each need their
+    // own setup step - a file-level check would stay green after one of them
+    // lost it, because the other job's step still matches.
+    let jobsChecked = 0;
+    for (const [name, raw] of WORKFLOWS) {
+      const parsed = parseYaml(raw) as {
+        jobs?: Record<string, { steps?: { uses?: string; run?: string }[] }>;
+      };
+      for (const [jobName, job] of Object.entries(parsed.jobs ?? {})) {
+        const steps = job.steps ?? [];
+        const runsPnpm = steps.some((step) => /(^|[\s&|;(])pnpm\s/.test(step.run ?? ''));
+        if (!runsPnpm) continue;
+        jobsChecked += 1;
+        expect(
+          steps.some((step) => step.uses?.startsWith('pnpm/action-setup')),
+          `${name} job "${jobName}" runs a pnpm command but never sets pnpm up`,
+        ).toBe(true);
+      }
+    }
+    // The loop above is only meaningful if it found jobs. If a refactor moves
+    // the pnpm commands somewhere this cannot see, fail rather than pass empty.
+    expect(jobsChecked).toBeGreaterThanOrEqual(3);
   });
 
   it('installs from the lockfile, so a build is reproducible', () => {
