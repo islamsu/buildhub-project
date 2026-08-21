@@ -1,0 +1,252 @@
+================================================================================
+BUILDHUB - WHY "STAGING QA" IS NOT IN THE ACTIONS LIST
+Diagnosis, correction, and recommendation. NO CHANGES MADE.
+================================================================================
+
+Date:      2026-08-21
+Repo:      github.com/islamsu/buildhub-project
+Branch:    claude/phase4b-readiness-audit-hardening  (head 62bdeae)
+main:      71d891f - UNTOUCHED
+Target:    https://buildhub-staging.onrender.com  (still UNVERIFIED)
+
+STATUS: Nothing committed. Nothing pushed. No fix applied. This document
+explains what I found and what I recommend, and stops there, as you asked.
+
+
+================================================================================
+1. WHAT I MEASURED
+================================================================================
+
+  PROBE                                          RESULT
+  --------------------------------------------   ----------------------------
+  .github/ on main (origin/main = 71d891f)       DOES NOT EXIST
+                                                 no workflows on main at all
+  Registered workflows (GitHub API)              3
+                                                   ci.yml
+                                                   deploy-production.yml
+                                                   deploy-staging.yml
+  All three registered at                        2026-08-20T20:12:13-16 +03:00
+                                                 (one single moment)
+  staging-qa.yml registered                      NO
+  Dispatch staging-qa.yml on feature branch      404 NOT FOUND
+  Dispatch ci.yml on feature branch              204, run queued
+                                                 -> run 32476470867
+                                                 -> event: workflow_dispatch
+                                                 -> head_branch: claude/phase4b-...
+                                                 -> conclusion: SUCCESS
+
+That last row is decisive, and it DISPROVES the explanation I would otherwise
+have given you.
+
+The common wisdom is "workflow_dispatch requires the file on the default
+branch." Here main has no .github directory whatsoever, and yet ci.yml
+dispatched from the feature branch and ran to completion successfully. So
+default-branch presence is NOT the gate.
+
+REGISTRATION IS THE GATE. GitHub holds no workflow entity for staging-qa.yml.
+There is nothing to list in the sidebar and nothing to dispatch - which is
+exactly the 404.
+
+
+================================================================================
+2. WHY IT NEVER REGISTERED
+================================================================================
+
+The three registered workflows share a single creation timestamp: the first
+push that created .github/workflows/. GitHub indexed the entire new directory
+in one pass. staging-qa.yml arrived a day later, in commit 56e9b90.
+
+BEST-SUPPORTED EXPLANATION: GitHub registers a workflow from a push when the
+pushed file carries a trigger that could match THAT event.
+
+  ci.yml                on: push (all branches), pull_request, workflow_dispatch
+  deploy-staging.yml    on: push [main], workflow_dispatch
+  deploy-production.yml on: workflow_dispatch ONLY
+  staging-qa.yml        on: workflow_dispatch + schedule ONLY
+
+staging-qa.yml's only two triggers - workflow_dispatch and schedule - are both
+evaluated ONLY on the default branch. So when it was pushed to a feature
+branch, there was nothing about it for GitHub to evaluate, and no workflow
+entity was created.
+
+deploy-production.yml is also dispatch-only and DID register - but it rode in
+on the initial directory-creation index, which is a different code path. That
+is consistent with all four data points.
+
+WHAT I CANNOT VERIFY: GitHub's exact indexing rule is not documented at this
+granularity. I am confident about the MECHANISM you are hitting - unregistered
+-> 404 -> absent from the list - because I measured it directly. I am INFERRING
+the reason it failed to register. The recommendation in section 4 does not
+depend on that inference being correct.
+
+
+================================================================================
+3. CORRECTING MY EARLIER INSTRUCTIONS
+================================================================================
+
+I previously told you:
+
+    Actions -> "Staging QA" -> Run workflow -> Use workflow from ->
+    claude/phase4b-readiness-audit-hardening
+
+That was wrong. "Staging QA" was never in the list to click. I gave you a click
+path I had not verified existed, and you spent time looking for a menu entry
+that could not be there. The recommendation below is what actually makes it
+clickable.
+
+
+================================================================================
+4. WHAT I RECOMMEND
+================================================================================
+
+Add THREE files to main in one small dedicated commit / PR. No feature-branch
+merge. No application code.
+
+  FILE                                  WHY
+  -----------------------------------   --------------------------------------
+  .github/workflows/staging-qa.yml      the workflow itself - registers it and
+                                        produces the "Run workflow" button
+  scripts/staging-qa.mjs                the 22-point harness
+  scripts/smoke.mjs                     the cheap pre-check the workflow runs
+                                        first
+
+I VERIFIED THESE ARE GENUINELY STANDALONE BEFORE RECOMMENDING THEM:
+
+  - scripts/staging-qa.mjs imports exactly one thing: `playwright`, which the
+    workflow installs at runtime via `npm install --no-save playwright@1.49.1`.
+  - scripts/smoke.mjs imports nothing at all.
+  - Neither reads any repo-relative path (no readFileSync, no '../', no
+    process.cwd) - checked, not assumed.
+  - Neither touches server/, client/, shared/, package.json, or the lockfile.
+
+So main gains ZERO application code, ZERO dependency changes, and ZERO
+build/test surface. Every existing file on main stays byte-identical.
+
+WHY THE DEFAULT BRANCH SPECIFICALLY:
+
+  1. Registration there is GUARANTEED rather than inferred - the default branch
+     is always indexed. This is why the fix does not rest on my section-2
+     hypothesis.
+  2. The UI "Run workflow" button only ever appears for default-branch
+     workflows. That button is the clickable thing you asked for.
+  3. Because the scripts are self-sufficient, you can run it FROM main and
+     never touch the branch selector at all. No ref-mismatch subtleties.
+
+WHAT WOULD CHANGE, EXACTLY:
+
+  Commits:   1 new commit on a new short-lived branch off main, e.g.
+             claude/staging-qa-workflow-registration, opened as its own PR
+             against main. Not a merge of the feature branch.
+  Files:     3 added. 0 modified. 0 deleted.
+  main app
+  code:      untouched
+  Business
+  rules:     untouched - pricing, subscription rules, refund policy,
+             qualified-enquiry definition all unchanged
+  Render /
+  production
+  config:    untouched
+  Paymob:    untouched
+
+
+================================================================================
+5. TWO DECISIONS I WANT FROM YOU FIRST
+================================================================================
+
+DECISION 1 - THE WEEKLY CRON.
+
+  The file currently carries:  schedule: - cron: "0 6 * * 1"
+
+  That is inert on a feature branch. It becomes LIVE the moment the file lands
+  on main. With no STAGING_BASE_URL repository variable set, my "Resolve the
+  target" step fails by design - so you would collect a red X every Monday
+  morning, forever, for a job that was never going to work.
+
+  MY RECOMMENDATION: drop `schedule:` from the copy that goes on main and keep
+  it dispatch-only. Nothing tests for it - server/stagingGate.test.ts asserts
+  on the staging-URL guard, the smoke-before-browser ordering, the runner, the
+  playwright install, and the secret handling, but never on `schedule` - so
+  removing it breaks no test, now or on a later sync. Re-add it when staging is
+  permanent and STAGING_BASE_URL is set.
+
+DECISION 2 - THE `staging` ENVIRONMENT.
+
+  The workflow declares:  environment: name: staging
+
+  If a `staging` environment WITH REQUIRED REVIEWERS already exists under
+  Settings -> Environments, the job will PAUSE for approval rather than run,
+  and it will look like nothing is happening. If no such environment exists,
+  GitHub creates it implicitly and the job proceeds normally.
+
+  Worth one glance before you run it. I would KEEP the declaration - it is what
+  scopes the STAGING_ADMIN_* secrets to this workflow.
+
+
+================================================================================
+6. ALTERNATIVES I CONSIDERED AND REJECTED
+================================================================================
+
+  DISPATCH BY API INSTEAD OF THE UI
+    Rejected - does not work. Same 404, same unregistered workflow. I tried it;
+    that is where the 404 in section 1 came from.
+
+  ADD A `push:` TRIGGER TO FORCE REGISTRATION
+    Rejected. Either the gate then runs on every push to the branch - and it
+    REGISTERS ACCOUNTS on staging each time, which is precisely what you do not
+    want happening repeatedly - or you use a never-matching branch filter,
+    which is a hack resting on the same undocumented indexing behaviour I just
+    told you I cannot verify.
+
+  MERGE THE FEATURE BRANCH INTO main
+    Rejected - ruled out by you, and unnecessary. Three tooling files achieve
+    the identical result.
+
+  SKIP GITHUB ENTIRELY - RUN THE HARNESS LOCALLY
+    Viable, and STRICTLY THE SAFEST if you would rather not touch main at all.
+    On any machine with Node 22:
+
+        npm install playwright@1.49.1
+        npx playwright install chromium
+        node scripts/smoke.mjs      https://buildhub-staging.onrender.com
+        node scripts/staging-qa.mjs https://buildhub-staging.onrender.com
+
+    ZERO commits anywhere. The tradeoff is that you would paste results back to
+    me rather than my reading the job logs from GitHub directly.
+
+
+================================================================================
+7. DISCLOSURE
+================================================================================
+
+I triggered one CI run on the feature branch as the diagnostic probe:
+
+    run 32476470867 - CI - event: workflow_dispatch - conclusion: SUCCESS
+
+It re-runs the same typecheck / test / build / docker jobs that had just
+passed. No deploy, no external effect, no production contact. That probe is
+what proved registration - rather than default-branch presence - is the gate,
+and it is the reason this recommendation differs from what I told you earlier.
+
+Beyond that run: no changes. main untouched at 71d891f.
+
+
+================================================================================
+8. WHAT HAPPENS NEXT
+================================================================================
+
+Tell me which route you want:
+
+  (A) The three-file commit to main - and whether to drop the cron
+      (I recommend dropping it). I open it as its own small PR against main,
+      containing no application code.
+
+  (B) The local-run route - zero commits, you run two commands and send me the
+      output.
+
+Either way, Render staging remains UNVERIFIED until the 22-point gate actually
+runs against https://buildhub-staging.onrender.com. Nothing in this document
+changes that, and CI being green says nothing about your deployment.
+
+================================================================================
+END OF DOCUMENT
+================================================================================
