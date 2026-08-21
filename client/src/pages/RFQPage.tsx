@@ -13,16 +13,16 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   FileText, Plus, Clock, MapPin, DollarSign, Send,
-  BarChart3, ChevronRight, Users, Paperclip, X, FileUp, Loader2,
+  BarChart3, Users, Paperclip, X, FileUp, Loader2,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import QuotationComparison from '@/components/QuotationComparison';
-import { parseRfqAttachments } from '@shared/rfqAttachments';
+import { parseProductReference, parseRfqAttachments } from '@shared/rfqAttachments';
+import { RFQ_CATEGORIES as rfqCategories, rfqCategoryLabel } from '@shared/rfqCategories';
 
-const CATEGORIES = [
-  'Materials', 'Labor', 'Complete Project', 'Engineering', 'Design',
-  'Furniture', 'Maintenance', 'Renovation', 'Custom Services',
-];
+// Phase 4B.3: the category list now comes from the shared taxonomy that RFQ
+// targeting also matches against, so the two sides can never drift apart.
+const CATEGORIES = rfqCategories;
 
 const STATUS_STYLES: Record<string, string> = {
   open:    'bg-blue-100 text-blue-700 border-blue-200',
@@ -53,13 +53,6 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function normalizeProductReference(value: unknown): RFQItem['productReference'] {
-  if (!value || typeof value !== 'object') return null;
-  const candidate = value as Record<string, unknown>;
-  return typeof candidate.productId === 'number' && typeof candidate.variantId === 'string' && typeof candidate.variantLabel === 'string'
-    ? { productId: candidate.productId, variantId: candidate.variantId, variantLabel: candidate.variantLabel }
-    : null;
-}
 
 export default function RFQPage() {
   const { t, lang } = useLanguage();
@@ -154,7 +147,12 @@ export default function RFQPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
-  const { data: rfqs = [], refetch } = trpc.rfq.list.useQuery();
+  // Gated on isAuthenticated to match its neighbours above and below. rfq.list
+  // became a protected procedure in Slice 9 - it was returning every RFQ column,
+  // including the homeowner's budget, to anonymous callers - and an UNAUTHORIZED
+  // anywhere in the app bounces the visitor to /auth. The signed-out branch of
+  // `allRfqs` below already expects an empty list.
+  const { data: rfqs = [], refetch } = trpc.rfq.list.useQuery(undefined, { enabled: isAuthenticated });
   const { data: myRfqs = [] } = trpc.rfq.myList.useQuery(undefined, { enabled: isAuthenticated });
 
   const createRfq = trpc.rfq.create.useMutation({
@@ -177,7 +175,7 @@ export default function RFQPage() {
         ...myRfqs,
         ...rfqs.filter(r => !myRfqs.some(m => m.id === r.id)),
       ]
-    : rfqs).map(rfq => ({ ...rfq, productReference: normalizeProductReference(rfq.productReference) })) as RFQItem[];
+    : rfqs).map(rfq => ({ ...rfq, productReference: parseProductReference(rfq.productReference) })) as RFQItem[];
 
   return (
     <div className="min-h-screen bg-background">
@@ -215,7 +213,7 @@ export default function RFQPage() {
                   <Select onValueChange={v => setForm(f => ({ ...f, category: v }))}>
                     <SelectTrigger><SelectValue placeholder={t('rfq.category')} /></SelectTrigger>
                     <SelectContent>
-                      {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      {CATEGORIES.map(c => <SelectItem key={c} value={c}>{rfqCategoryLabel(c, lang)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <div className="grid grid-cols-2 gap-3">
@@ -392,7 +390,7 @@ export default function RFQPage() {
                       <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                         {rfq.category && (
                           <span className="flex items-center gap-1">
-                            <FileText className="w-3.5 h-3.5" />{rfq.category}
+                            <FileText className="w-3.5 h-3.5" />{rfqCategoryLabel(rfq.category, lang)}
                           </span>
                         )}
                         {rfq.budget && (
@@ -434,7 +432,7 @@ export default function RFQPage() {
 
                     {/* CTA */}
                     <div className="flex flex-col items-end gap-2 shrink-0">
-                      {isOwner ? (
+                      {isOwner && (
                         <Button
                           variant="default"
                           size="sm"
@@ -442,15 +440,6 @@ export default function RFQPage() {
                           onClick={() => setCompareRfq(rfq)}
                         >
                           <BarChart3 className="w-4 h-4" /> {t('rfq.compare')}
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5"
-                          onClick={() => setCompareRfq(rfq)}
-                        >
-                          {t('rfq.view_details')} <ChevronRight className="w-3.5 h-3.5" />
                         </Button>
                       )}
                     </div>

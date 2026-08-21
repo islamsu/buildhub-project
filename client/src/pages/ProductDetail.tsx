@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, ArrowRight, CheckCircle2, Package, Send, ShoppingCart, Star, Truck, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
-import { DEMO_PRODUCTS, getProductVariants } from '@/lib/marketplaceCatalog';
+import { getProductVariants } from '@/lib/marketplaceCatalog';
 
 function parseList(value: string | null | undefined): string[] {
   if (!value) return [];
@@ -23,8 +23,17 @@ export default function ProductDetail() {
   const { lang } = useLanguage();
   const [question, setQuestion] = useState('');
   const [selectedVariantId, setSelectedVariantId] = useState('standard');
-  const { data: storedProduct, isLoading } = trpc.marketplace.get.useQuery({ id: productId }, { enabled: Number.isFinite(productId) && productId > 10, retry: false });
-  const product = storedProduct ?? DEMO_PRODUCTS.find(item => item.id === productId);
+  // Every product id is looked up in the database.
+  //
+  // This was `enabled: productId > 10` with a DEMO_PRODUCTS fallback - a
+  // hardcoded boundary where ids 1 to 10 were fictional products and anything
+  // above was real. A real product that happened to be assigned a low id would
+  // have rendered as whichever invented item shared its number.
+  const { data: storedProduct, isLoading } = trpc.marketplace.get.useQuery(
+    { id: productId },
+    { enabled: Number.isFinite(productId) && productId > 0, retry: false },
+  );
+  const product = storedProduct;
   const { data: questions = [], refetch: refetchQuestions } = trpc.marketplace.questions.useQuery({ productId }, { enabled: Number.isFinite(productId) && productId > 0 });
   const askQuestion = trpc.marketplace.askQuestion.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تم إرسال السؤال للمورد' : 'Question sent to supplier'); setQuestion(''); refetchQuestions(); }, onError: error => toast.error(error.message) });
   const images = useMemo(() => parseList(product?.images), [product?.images]);

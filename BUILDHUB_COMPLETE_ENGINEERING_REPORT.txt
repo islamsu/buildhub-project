@@ -1,0 +1,1128 @@
+================================================================================
+BUILDHUB - COMPLETE ENGINEERING REPORT
+From takeover to the end of the autonomous build
+================================================================================
+
+Repository ..... github.com/islamsu/buildhub-project
+Branch ......... claude/phase4b-readiness-audit-hardening
+                 (also pushed to claude/buildhub-audit-verification-vrai7l)
+Head ........... 8398720
+Base ........... main at 71d891f - never touched
+Date ........... 20 August 2026
+
+TOTALS
+  129 files changed, 44,759 insertions, 1,790 deletions
+  49 test files, 964 tests passing
+  19 database migrations, all additive
+  41 written reports
+  113 tRPC procedures, every one tier-pinned by test
+
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+  PART 1   Where it started
+  PART 2   Security phases 1-3
+  PART 3   Phase 4A - vendor product foundation
+  PART 4   Phase 4B - monetization
+  PART 5   The nine slices
+  PART 6   Complete defect register
+  PART 7   Method, and my own mistakes
+  PART 8   Current state
+  PART 9   What remains
+  PART 10  Boundaries held
+  APPENDIX A  Full commit history
+  APPENDIX B  Report index
+
+
+================================================================================
+PART 1 - WHERE IT STARTED
+================================================================================
+
+BuildHub arrived as a Manus-platform checkpoint application:
+
+  Client   React 19, Vite 7, Tailwind v4, Radix/shadcn, wouter
+  Server   Express 4, tRPC 11, a single monolithic server/routers.ts
+  Data     Drizzle ORM 0.44, mysql2, MariaDB 10.11
+  Tests    Vitest 2.1
+
+Feature surface at takeover: bilingual AR/EN throughout, six user roles
+(homeowner, contractor, engineer, architect, supplier, project manager), a
+marketplace, an RFQ engine with quotation comparison, an AI assistant, real-time
+messaging, notifications, an admin portal, and a compliance onboarding flow with
+role-specific document requirements.
+
+THE PROBLEM WITH THE STARTING POSITION
+
+Prior work had declared the platform launch-ready. The repository contained
+FINAL_LAUNCH_GATE_REPORT.md, a "50-item matrix", claims of "38/38 tests passed",
+and a frozen BUILDHUB_BASELINE.md dated 18 August 2026.
+
+That framing did not survive contact with the code. The takeover audit found
+authorization holes in the core commercial workflow, a database with no foreign
+keys, fabricated data rendered as real metrics, and credentials returned to the
+browser on the single most-called endpoint in the application.
+
+Everything that follows was verified against a running database rather than
+against the previous report. That distinction produced most of the findings in
+this document.
+
+
+================================================================================
+PART 2 - SECURITY PHASES 1-3
+================================================================================
+
+--------------------------------------------------------------------------------
+PHASE 1  fb7fd09   Quotation accept/reject IDOR and race condition
+--------------------------------------------------------------------------------
+
+The core commercial workflow - a homeowner accepting a contractor's bid - had no
+ownership check. Any authenticated user could accept or reject any quotation on
+any RFQ, including ones belonging to strangers. A concurrent-accept race could
+also mark two quotations accepted on the same RFQ.
+
+Fixed with an ownership check against the RFQ's requester plus a transactional
+guard so only one quotation can win.
+
+--------------------------------------------------------------------------------
+PHASE 2  26d2d08   Projects IDOR, storage auth, review forgery, AI abuse
+--------------------------------------------------------------------------------
+
+Four separate issues:
+
+  - Projects endpoints accepted a project id with no ownership verification.
+  - Storage downloads were reachable without authentication - any file key that
+    could be guessed or leaked returned the file.
+  - Reviews could be forged: nothing verified the reviewer had actually
+    transacted with the person being reviewed.
+  - The AI assistant had no abuse controls.
+
+--------------------------------------------------------------------------------
+PHASE 3A  30d101f   Localization, data minimization, review rules, notifications
+--------------------------------------------------------------------------------
+
+Directory endpoints returned more user data than the page needed. Review
+participation rules were tightened. Localization gaps closed. Notification
+delivery corrected.
+
+--------------------------------------------------------------------------------
+PHASE 3B.1  542760e   Infrastructure discovery (read-only)
+--------------------------------------------------------------------------------
+
+Read-only survey of what the deployment actually depends on. First identification
+of the Manus platform coupling (OAUTH_SERVER_URL, BUILT_IN_FORGE_API_*) and of
+the %VITE_ANALYTICS_ENDPOINT% template markers that a publish pipeline was
+expected to substitute and never had.
+
+--------------------------------------------------------------------------------
+PHASE 3C  ed3dc25   Database integrity
+--------------------------------------------------------------------------------
+
+THE FINDING: 42 relationships in the schema were foreign keys in intent and
+plain integers in fact. Nothing at the database level prevented a quotation
+pointing at a deleted RFQ, or a message pointing at a deleted user.
+
+THE APPROACH: the migration was written RESTRICT-favouring rather than CASCADE -
+deleting a user with history should fail loudly, not silently erase the history.
+It was then tested twice:
+
+  1. Against a database deliberately seeded WITH orphans. The migration had to
+     FAIL, safely, without partial application. It did.
+  2. Against a cleaned database. It had to succeed. It did.
+
+EXPLAIN plans were captured before and after on the heavy-query columns to
+confirm the new indexes were actually used.
+
+Deliverables: BUILDHUB_DATABASE_INTEGRITY_REPORT.md and
+BUILDHUB_DATABASE_MIGRATION_RUNBOOK.md.
+
+--------------------------------------------------------------------------------
+PHASE 3C.1  3e874f7   Real-data audit - BLOCKED
+--------------------------------------------------------------------------------
+
+The brief asked for an audit of real production data. No staging or production
+access exists, and none could be manufactured.
+
+Reported as BLOCKED rather than simulated against seed data and presented as if
+it were real. This is the first of several points in this engagement where the
+honest answer was "I cannot do this and here is exactly why".
+
+
+================================================================================
+PART 3 - PHASE 4A: VENDOR PRODUCT FOUNDATION
+================================================================================
+
+Ten sub-phases. Five built or fixed something; three were read-only design work;
+two investigated a suspected defect and found none, and said so.
+
+--------------------------------------------------------------------------------
+DISCOVERY AND DESIGN (read-only)
+--------------------------------------------------------------------------------
+
+  8196e89  4A     Monetization and payment architecture discovery
+  f5d7eb1  4A.1   Independent validation of 12 monetization decisions
+  e3e1674  4A.2   Monetization product design and value ladder
+  17211d7  4A.3   Vendor product readiness review
+  3f37c24  4A.4   Implementation-readiness spec for 3 foundation items
+  8f74357  4A.5   File-level implementation plan
+
+4A.1 is worth noting: it independently re-derived each of the twelve commercial
+decisions rather than accepting them, and flagged the ones that were owner
+decisions rather than engineering ones.
+
+--------------------------------------------------------------------------------
+IMPLEMENTATION
+--------------------------------------------------------------------------------
+
+  014f055  4A.6.1  Vendor profile foundation
+  b1ffaa9  4A.6.1  Final verification pass, no code changes
+  321c169  4A.6.2  Vendor reputation foundation
+  8ac42b1  4A.6.3  Vendor analytics foundation
+
+4A.6.2 established a rule the rest of the codebase now follows: reputation is
+computed LIVE as AVG(rating)/COUNT(*) over reviews filtered verified = true. The
+stored users.rating and users.reviewCount columns are dead and must never be
+read. Every later feature that shows a rating uses the live computation.
+
+--------------------------------------------------------------------------------
+DEFECTS FOUND AND FIXED
+--------------------------------------------------------------------------------
+
+c374420  4A.6.4  THE VENDOR DASHBOARD WAS UNREACHABLE
+
+  The whole ProviderDashboard existed and had no route into it from normal
+  navigation. It also rendered fabricated statistics. Both fixed: the vendor
+  section moved into RolePlatform, and the fake stats removed rather than
+  replaced with plausible-looking ones.
+
+  Verified by real navigation from the landing page, not by loading the route
+  directly - a test-harness shortcut would have hidden exactly the defect being
+  fixed.
+
+42ee99c  4A.6.6  auth.me RETURNED CREDENTIALS; LOGOUT DID NOT REVOKE
+
+  Two findings in the most-called endpoint in the application:
+
+    - auth.me returned the full user row. That includes passwordHash and
+      invitationToken. Every authenticated page load shipped them to the
+      browser.
+    - Logout only cleared the cookie. A token copied before logout kept working
+      until its natural expiry - up to one year.
+
+  Fixed with toPublicSessionUser() - an explicit six-field pick from the already
+  authenticated context, costing no extra query - and server-side revocation via
+  a revokedSessions table keyed on the token's jti.
+
+b67d9e7  4A.6.7  admin.users EXPOSED passwordHash AND invitationToken
+
+  Same class, different endpoint. Fixed with ADMIN_USER_LIST_COLUMNS.
+
+63e8c08  Cumulative audit  COMPLIANCE ENDPOINTS LEAKED APPLICANT DATA
+
+  Fixed with COMPLIANCE_APPLICANT_COLUMNS.
+
+7cc9ff7  4A.6.9  STALE REPUTATION IN QUOTE COMPARISON
+
+  The homeowner's side-by-side quotation comparison - the screen where the
+  hiring decision is actually made - read the dead users.rating column. A vendor
+  whose real average had moved showed the old number at the exact moment it
+  mattered most. Switched to the live computation, batched into one grouped
+  query.
+
+2cd8af3  Final gate  rfq.quotations IDOR
+
+  Closed at the final gate, along with a written classification of the remaining
+  findings into defects, accepted properties, and owner decisions.
+
+--------------------------------------------------------------------------------
+INVESTIGATED AND CLEARED (no defect)
+--------------------------------------------------------------------------------
+
+a540954  4A.6.5  Login root cause
+
+  A login failure was reported. Traced every login mode in source, reproduced
+  each one live, and established the cause was environmental (the sandbox's
+  relationship to the Manus OAuth service), not an application defect. No code
+  changed. Reported as such rather than making a speculative fix.
+
+62f34e5  4A.6.8  Account-state session re-check
+
+  Verified that a frozen or deactivated account's live session is re-checked
+  correctly. It was. No change.
+
+2568f53  Cumulative final verification
+
+  Re-confirmed every earlier Phase 4A finding from fresh evidence rather than
+  from the earlier reports.
+
+--------------------------------------------------------------------------------
+THE PATTERN ESTABLISHED IN PHASE 4A
+--------------------------------------------------------------------------------
+
+EXPLICIT COLUMN ALLOWLISTS. After three separate credential-exposure findings in
+the same shape, the rule became structural: no client-facing endpoint may use a
+bare select().from(users). Every one names its columns.
+
+  PUBLIC_PROFILE_COLUMNS        vendor profile
+  ADMIN_USER_LIST_COLUMNS       admin user table
+  COMPLIANCE_APPLICANT_COLUMNS  compliance queue
+  DIRECTORY_VENDOR_COLUMNS      vendor directory
+  ADMIN_SUBSCRIPTION_COLUMNS    admin billing view
+  VENDOR_SUBSCRIPTION_COLUMNS   vendor's own billing
+
+A column added to the schema tomorrow cannot appear in a public response by
+accident.
+
+
+================================================================================
+PART 4 - PHASE 4B: MONETIZATION
+================================================================================
+
+--------------------------------------------------------------------------------
+READINESS  c8b79fa / 46ddaa3 / c177b30
+--------------------------------------------------------------------------------
+
+Seven blockers were identified before implementation began. Five were resolved
+in the addendum. Two remained: RFQ targeting design (resolved in c177b30) and
+Paymob provider access (never resolved - see 4B.5).
+
+--------------------------------------------------------------------------------
+4B.1  cfb1553   Provider-agnostic billing domain
+--------------------------------------------------------------------------------
+
+The billing domain depends on a PaymentProvider INTERFACE and never imports a
+provider SDK. The interface is shaped from BuildHub's own approved commercial
+lifecycle - deliberately not from any single provider's API surface - so adding
+Paymob, or replacing it with Stripe or a GCC provider later, is a new file
+implementing the interface rather than a rewrite.
+
+NullPaymentProvider is the active implementation. Every operation throws
+PaymentProviderNotConfiguredError. It fails LOUDLY on purpose: a billing system
+that quietly no-ops is far more dangerous than one that refuses.
+
+shared/billing.ts became the single source of truth for every commercial value:
+
+  Professional   EGP 499/month, 4,990/year
+  Premium        EGP 999/month, 9,990/year
+  Founder        EGP 299 and 699/month, 6 months, MONTHLY ONLY
+  Trial          30 days
+  Grace period   7 days
+
+Annual founder pricing was never approved by the business, so founder.year is
+null on every plan and a founder-priced annual subscription is REJECTED rather
+than guessed at.
+
+--------------------------------------------------------------------------------
+4B.2  bbf4dd4   Server-authoritative entitlement engine
+--------------------------------------------------------------------------------
+
+Entitlements are resolved server-side from stored subscription state. Nothing a
+client sends can influence a plan, a status, an allowance, or a capability.
+
+THE ENTITLEMENT_ENFORCEMENT HONESTY LEDGER
+
+A per-entitlement record naming which phase actually implements enforcement.
+Its stated purpose, written into the file:
+
+  "so no report, UI, or plan-comparison page can claim a capability works when
+   nothing enforces it"
+
+At the end of Phase 4B.2 only three of nine entitlements were live. The pricing
+page reads this ledger and badges everything else "coming soon" rather than
+advertising it. A vendor being asked for EGP 499-999 a month is entitled to know
+which of the things on the list actually works today.
+
+--------------------------------------------------------------------------------
+4B.3  01fe3b7   Real vendor directory, RFQ targeting, qualified enquiries
+--------------------------------------------------------------------------------
+
+Replaced a hard-coded array of fictional vendors with real, database-backed
+provider accounts. Added vendor service-category declarations, RFQ targeting
+based on them, and transactional monthly metering of qualified enquiries.
+
+THE CONSTRAINT SET HERE, referred to throughout the rest of this report as
+Phase 4B.3 section 13:
+
+  A PAID PLAN MUST NEVER BUY A HIGHER ORGANIC POSITION IN THE DIRECTORY.
+
+Directory ranking reads no billing state at all. Paid placement was deferred as
+a separate, clearly-labelled concept.
+
+Two new tables (vendorCategories, qualifiedEnquiries) in migration 0015 - purely
+additive, zero ALTERs.
+
+--------------------------------------------------------------------------------
+4B.4  df6e540   Subscription lifecycle
+--------------------------------------------------------------------------------
+
+Nine lifecycle states, all transitions pure and testable, orchestration wrapped
+in transactions with SELECT ... FOR UPDATE row locks and UNIQUE constraints
+catching ER_DUP_ENTRY. Every operation returns applied / noop / rejected, and
+noop is a SUCCESS at the API layer - repeating a transition you already
+completed is the idempotent behaviour the lifecycle guarantees.
+
+TWO PRE-EXISTING DEFECTS FOUND BY PROBING, NOT BY READING
+
+  1. awaitingRenewalSync GRANTED PAID ACCESS INDEFINITELY.
+
+     Probing deriveBillingState directly showed isPaid = true TEN YEARS past
+     the period end. A subscription that stopped paying kept every paid
+     capability forever, as long as the provider sync never arrived - which,
+     with no provider connected, it never would.
+
+     Fixed with RENEWAL_SYNC_WINDOW_DAYS, reusing the already-approved 7-day
+     grace value rather than inventing a new number.
+
+  2. startTrial WIPED THE FOUNDER-PRICE STAMP.
+
+     It emitted founderPriceUsedAt: null for every non-founder subscription,
+     destroying the write-once guard that stops a vendor claiming the founder
+     offer twice. Caught by a test I wrote for a different property.
+
+     Fixed by omitting the key rather than writing null - the stamp is now
+     only ever WRITTEN, never cleared.
+
+A HOLE I NEARLY INTRODUCED MYSELF
+
+  startPaidTrial allowed unlimited repeat trials after a lapse: cancel, lapse,
+  start another 30-day trial, forever. Closed with a write-once trialStartedAt
+  before it shipped.
+
+--------------------------------------------------------------------------------
+4B.5  ebc1795   PAYMOB - NOT READY, PROVIDER BLOCKER
+--------------------------------------------------------------------------------
+
+The brief required a real Paymob sandbox / test merchant account. None exists.
+
+WHAT I DID NOT DO:
+
+  - did not fabricate provider API responses
+  - did not invent webhook payload shapes
+  - did not invent HMAC signature construction
+  - did not invent event names or subscription semantics
+  - did not create a fake provider that simulated successful payments
+  - did not disable signature verification "for convenience"
+
+Seven external blockers were enumerated with exactly what is needed to clear
+each. Status reported as NOT READY - PROVIDER BLOCKER, and the phase stopped
+there.
+
+This status was reviewed and accepted, with the instruction to hold the branch
+unchanged until credentials are provided.
+
+
+================================================================================
+PART 5 - THE NINE SLICES
+================================================================================
+
+Following the direction that the payment gateway must not block the rest of the
+platform, the work reorganised into nine slices. Each was independently
+verified, committed, and pushed.
+
+--------------------------------------------------------------------------------
+PRE-SLICE  505d5ce   Phase 4B readiness audit (inspection only, no code)
+--------------------------------------------------------------------------------
+
+A full inspection producing a prioritised list A1-A10 plus a set of honesty
+findings. Result: PASS WITH CONDITIONS.
+
+--------------------------------------------------------------------------------
+SLICE 1  472e3b4   Critical production hardening (A1-A9)
+--------------------------------------------------------------------------------
+
+A1  EMPTY JWT_SECRET BOOTED SILENTLY
+    JWT_SECRET defaulted to "" and getSessionSecret() happily returned an
+    encoded empty string. A production deployment missing the variable would
+    start normally and sign every session token with a zero-length key. Nothing
+    reported it.
+    Fixed: findEnvProblems() / assertEnvOrExit(). Production refuses to start;
+    development warns. Called from startServer(), never at module load, so
+    importing the module in tests can never throw.
+
+A2  SESSION REVOCATION FAILED OPEN
+    isSessionRevoked() returned false when the database was unreachable. A
+    database blip silently re-validated every revoked session.
+    Fixed: returns true. An unreachable database cannot prove a session is
+    still valid.
+
+A3  STACK TRACES REACHED END USERS
+    Internal errors serialised their stack into the tRPC response. Fixed with an
+    errorFormatter that strips the stack and replaces INTERNAL_SERVER_ERROR
+    messages with a generic string. The React ErrorBoundary was also rendering
+    the stack in a <pre> block for every user; it now logs to
+    componentDidCatch and shows something actionable instead.
+
+A5  NO RATE LIMITING ON AUTHENTICATION
+    Added a three-limiter scheme (IP burst, IP sustained, identifier sustained)
+    applied before any credential comparison, so a blocked request never reaches
+    password verification and cannot become a timing oracle.
+
+A6  EVERY AVATAR WAS BROKEN
+    storageProxy classified storage keys by prefix. The avatars/ branch was
+    missing entirely, so every avatar request fell through to the fail-closed
+    default and returned 403 to every non-admin.
+
+A7  COOKIE AND PROXY CORRECTNESS
+    trust proxy enabled in production; the session cookie's secure flag pinned
+    true in production rather than derived per-request, because sameSite:"none"
+    is rejected without it and one plain-HTTP-looking hop would hand back a
+    cookie the browser silently discards.
+
+A8  PORT BINDING
+    Development scans for a free port; production binds the configured port or
+    exits. Silently landing on a different port leaves health checks and routing
+    pointing at nothing.
+
+A9  Startup failures now exit non-zero.
+
+--------------------------------------------------------------------------------
+SLICE 2  91a4fea   Make the billing system reachable
+--------------------------------------------------------------------------------
+
+Phases 4B.1-4B.4 had built a complete billing engine with no way in. A vendor
+could not see which plan they were on, when it renewed, or cancel it.
+
+Added: a public /pricing catalogue, a vendor billing panel, and an admin
+read-only lookup. The admin lifecycle MUTATIONS exist on the server and are
+deliberately NOT wired to buttons - exposing them invites exactly the unaudited
+manual plan-granting the lifecycle was built to prevent.
+
+A REAL DEFECT FOUND IN LIVE VERIFICATION
+
+  The pricing page called the PROTECTED billing.mySubscription, and the app's
+  global handler turns any UNAUTHORIZED into a redirect to /auth. Every
+  signed-out visitor was bounced to the login screen from the one page that
+  exists for them.
+
+  Fixed by moving checkoutAvailable onto the public catalogue and gating the
+  protected call on isAuthenticated. This lesson recurs in Slice 9.
+
+TWO TEST BUGS, NOT PRODUCT BUGS
+
+  The Arabic page renders EGP 499 as "٤٩٩" and 4,990 as "٤٬٩٩٠" because
+  toLocaleString('ar-EG') correctly localises the digits AND uses U+066C, the
+  Arabic thousands separator, not a comma. My assertions searched for ASCII.
+  The product was right; the test was wrong.
+
+Gate: 660/660 tests, 42/42 live checks.
+
+--------------------------------------------------------------------------------
+INFRASTRUCTURE  b5d0ed2   Vultr architecture (report only, no code)
+--------------------------------------------------------------------------------
+
+All 22 requested items classified as Already available / Requires configuration /
+Requires implementation / Requires your action / Blocked.
+
+TWO FINDINGS SHAPED THE WHOLE REPORT:
+
+  A. I CANNOT PERFORM THE EGYPT LATENCY TESTING.
+     api.vultr.com, vultr.com and fra-de-ping.vultr.com all return 000 through
+     this sandbox's egress allowlist. A region recommendation presented as
+     "measured" would be fabricated. Supplied instead a ready-to-run procedure
+     with candidate regions and a decision rule, classified "requires your
+     action".
+
+  B. THE FORGE COUPLING IS ONE MODULE, NOT FIVE.
+     An earlier claim - mine - said Forge backed five subsystems. Tracing
+     importers showed four of them (imageGeneration, voiceTranscription,
+     heartbeat, _core/map) are DEAD SCAFFOLD imported by nothing. Only
+     server/storage.ts is live, with five call sites. Corrected before the
+     report shipped.
+
+Also established: zero deployment configuration existed - no Dockerfile, no
+.github directory, no engines field pinning the Node version.
+
+--------------------------------------------------------------------------------
+SLICE 3  1801fbe   First-party email and password authentication
+--------------------------------------------------------------------------------
+
+THE LAUNCH BLOCKER.
+
+Real users could not sign in without OAUTH_SERVER_URL, a Manus-platform service.
+auth.signInDummy accepts only accounts with isDummy = true. On infrastructure
+you control, with Manus gone, NOBODY COULD LOG IN.
+
+Classification: C - MIGRATION REQUIRED.
+
+The migration used primitives that already existed: scrypt hashPassword /
+verifyPassword, the users.passwordHash column, the session JWT minted by
+sdk.createSessionToken, the existing cookie helper, and the audit-event table.
+New accounts get openId = local_<uuid> so every existing consumer is untouched.
+
+The OAuth callback is unchanged and still works wherever OAUTH_SERVER_URL is
+reachable. It is simply no longer the only door.
+
+A PRE-EXISTING DEAD END, CLOSED
+
+  Admin-created accounts could set a password through the invitation flow and
+  then had NO endpoint that would accept it. signInDummy requires isDummy.
+  auth.signIn now accepts any non-dummy account holding a passwordHash, which
+  covers both self-registered and admin-invited users.
+
+SESSION INVALIDATION ON PASSWORD RESET
+
+  revokedSessions revokes one jti at a time and cannot express "log this account
+  out everywhere" - which is exactly what a reset must do, since the whole point
+  is that someone else may hold a valid session. Added
+  users.sessionsInvalidBefore, checked against the token's iat. Tokens issued
+  before a reset are refused; tokens with no iat at all fail closed.
+
+EMAIL DELIVERY
+
+  BuildHub had never sent an email. admin.createUser RETURNS the invitation link
+  in its API response for an admin to copy by hand.
+
+  Added a Mailer adapter mirroring the payment-provider seam. NullMailer throws
+  rather than resolving. auth.capabilities reports whether reset can be offered,
+  so the UI never shows "check your inbox" when no message was sent.
+
+  Configuring a real sender is one new class and your credentials.
+
+--------------------------------------------------------------------------------
+SLICE 4  9229f50   Deployability, security headers, and two dishonest surfaces
+--------------------------------------------------------------------------------
+
+  GET /healthz - a real probe: process up AND a SELECT 1 through getDb().
+  Returns 503 when the database is unreachable so a load balancer can drain the
+  instance. The pre-existing system.health was unusable as a probe: tRPC-only,
+  required a superjson-encoded timestamp input, and checked nothing.
+
+  helmet with a CSP, plus compression.
+
+  Structured JSON request logging - no bodies, no cookies, no tokens.
+
+  robots.txt, page metadata, and engines pinned to Node >= 22.
+
+TWO DISHONEST SURFACES REMOVED
+
+  1. THE ADMIN DASHBOARD INVENTED ITS OWN GROWTH CHART.
+
+     MONTHLY_USERS - Jan 120, Feb 180, Mar 250, Apr 310, May 420, Jun 580 -
+     rendered whenever the real aggregate came back empty. The owner's own
+     dashboard showed fabricated growth.
+
+  2. Removing it exposed a SECOND fabrication underneath: admin.analyticsSummary
+     returned a single row labelled '2026-07' - a hardcoded month no data
+     supported - whenever there was nothing to aggregate. Now returns empty.
+
+  Also removed the literal %VITE_ANALYTICS_ENDPOINT% script tag that was
+  shipping unsubstituted into production HTML.
+
+--------------------------------------------------------------------------------
+SLICE 5  be5728a   Portable object storage
+--------------------------------------------------------------------------------
+
+Introduced an ObjectStorage interface with two implementations: the existing
+Forge presign client, and a direct S3 client using the ALREADY-INSTALLED
+@aws-sdk/client-s3 and @aws-sdk/s3-request-presigner. Selected by environment
+variable. Vultr Object Storage is S3-compatible, so the same adapter serves it.
+
+storagePut / storageGet / storageGetSignedUrl kept their signatures, so all five
+call sites and every storageProxy authorization rule are unchanged.
+
+Deleted the dead Manus scaffold verified importer-less in the Vultr report:
+imageGeneration, voiceTranscription, heartbeat, _core/map, and the client Map
+component.
+
+--------------------------------------------------------------------------------
+SLICE 6  1063448   CI, a deployable image, a pipeline that cannot fire by accident
+--------------------------------------------------------------------------------
+
+  .github/workflows/ci.yml            tsc, vitest, both builds, against a
+                                      MariaDB service container, on every push
+                                      and pull request
+  .github/workflows/deploy-staging.yml
+  .github/workflows/deploy-production.yml
+
+  Dockerfile and .dockerignore producing a runnable image. node_modules must
+  ship because esbuild bundles with --packages=external.
+
+Production deploy is gated behind a GitHub environment approval and cannot fire
+from a feature branch. The workflows are authored and reviewed but CANNOT be
+executed from this sandbox: Vultr is unreachable, and no provisioning may happen
+without your credentials. Required secrets are enumerated; none is committed.
+
+--------------------------------------------------------------------------------
+SLICE 7  41cb5e8   Analytics event stream and commercial KPIs
+--------------------------------------------------------------------------------
+
+BuildHub had no event stream. Every business metric was an ad-hoc SQL aggregate
+over whatever timestamp column happened to be nearby - which answers "how many"
+but never "how many got from here to there". There was also no MRR, no ARR, no
+churn and no ARPV anywhere: the owner of a subscription business could not see
+the subscription business.
+
+TWO SOURCES OF TRUTH, DELIBERATELY KEPT APART
+
+  THE FUNNEL comes from the new analyticsEvents table. Eight stages:
+  registration, profile completion, submission for review, verification, first
+  enquiry, first quotation, trial, subscription. Each defined by a named event
+  in a CLOSED catalogue rather than whatever string a call site passed.
+
+  REVENUE comes from vendorSubscriptions, priced by resolvePrice from
+  shared/billing.ts. NEVER from the event stream: a stream is allowed to drop a
+  write, and an owner reporting revenue to an investor cannot be working from
+  something that is allowed to be lossy. No price literal appears anywhere in
+  the KPI module, and a test asserts that.
+
+THREE PROPERTIES THE KPI CODE IS BUILT AROUND
+
+  1. A TRIAL CONTRIBUTES ZERO TO MRR. Counting trials as revenue is the most
+     common way a subscription business lies to itself.
+  2. REVENUE IS TIME-DERIVED through deriveBillingState, so a row still marked
+     active whose period ended last month contributes nothing, and a lifecycle
+     sweep that has not run cannot inflate MRR.
+  3. EMPTY MEANS NULL, NOT ZERO. ARPV, churn rate and the median-days figures
+     return null with no basis, and the dashboard renders an em dash. "0% churn"
+     reads as perfect retention; "no paid subscriptions to measure" is what is
+     actually true.
+
+SAFETY: recordEvent swallows every failure, so a missing table or a database
+blip cannot fail a signup. Metadata is filtered against a forbidden-key list,
+nested objects dropped entirely, values truncated, key count bounded - a log is
+copied, shipped and retained far more casually than the database is.
+
+The subscription half of the funnel is emitted from recordBillingEvent, the
+single choke point every commercial transition already passes through, rather
+than from eight lifecycle call sites which would have been eight places to
+forget.
+
+LIVE PROOF: two real accounts driven through the real endpoints. A trialing
+vendor showed MRR 0 and ARPV null. Making the subscription genuinely paid moved
+MRR to 499 - matching the catalogue price read back from the API - with ARR
+5,988. Pushing the period end into the past dropped MRR to 0 while the row still
+said active. Every metadata value written during the run was printed and
+inspected: plan, role, category, status and transition names only.
+
+--------------------------------------------------------------------------------
+SLICE 8  b9c6ee7   Featured placement
+--------------------------------------------------------------------------------
+
+featuredPlacementEligible had sat in the plan table since 4B.1 granting premium
+subscribers nothing at all.
+
+THE SHAPE IS THE WHOLE DESIGN.
+
+Featured placement is a SEPARATE SPONSORED STRIP, not a reordering:
+
+  - The organic directory still ranks by verification and recency. A paid plan
+    still cannot buy a higher position there. Phase 4B.3 section 13 stands.
+  - Featured vendors appear in their own labelled section AND ALSO in the
+    organic list, in their organic position. Removing them would have been a
+    hidden penalty for paying.
+
+TWO THINGS A VENDOR STILL CANNOT BUY: trust and position. The strip is labelled
+"Sponsored" / "إعلان مموّل" with a note stating plainly that it is paid
+placement, rendered by the SAME card component as the organic list so the only
+difference is the label - not a bigger card, not a brighter border, not a
+better-looking rating. A test asserts the sponsored copy contains none of
+"verified", "trusted", "recommended", "best", "top-rated" or "endorsed".
+
+ELIGIBILITY IS TIME-DERIVED, never read off the plan column: a row still saying
+premium/active whose period ended is not featured. A malformed subscription
+fails closed to FREE and buys nothing.
+
+SLOTS ROTATE BY DAY. Ordering by id and taking the first six would have handed
+the earliest subscriber a permanent slot while later premium subscribers paid
+for nothing. Deterministic within a day - a strip that reshuffles while you read
+it is unusable - and over 40 days every vendor's appearance count stays within
+one of every other's.
+
+visibilityLevel (boosted/top) is DELIBERATELY STILL NOT ENFORCED, and its ledger
+entry now says why: it would buy position INSIDE the organic ranking, which is
+exactly what section 13 forbids. Reversing that is an owner decision, not
+something to infer from a plan table.
+
+A BUG THIS SURFACED
+
+  billing.plans decided entitlement availability with a DENYLIST - available
+  unless the marker began 'phase-4b.6' or equalled 'not-implemented'. Simply
+  REWORDING visibilityLevel's marker flipped it to "available" and would have
+  advertised, on the pricing page, to vendors being asked for EGP 999 a month,
+  a capability nothing enforces.
+
+  Replaced with isEntitlementEnforced(), an ALLOWLIST, so an unrecognised marker
+  fails closed toward honesty.
+
+--------------------------------------------------------------------------------
+SLICE 9  2077dee   Authorization sweep
+--------------------------------------------------------------------------------
+
+Six routers had no dedicated authorization test: messages, notifications,
+marketplace, profile, registration, analytics. Swept all 113 procedures for
+three rules: correct tier, ownership verified from the session rather than from
+input, and an explicit column allowlist on anything client-facing.
+
+CLEAN: notifications, profile, registration, analytics. Every one keyed on
+ctx.user.id with no target id a caller could populate.
+
+FIVE DEFECTS IN THE OTHER TWO, plus the carried-over A10. Detailed in Part 6.
+
+The new test file PINS THE TIER OF ALL 113 PROCEDURES and asserts the public
+surface as an EXPLICIT LIST, so silently downgrading a procedure from protected
+to public fails in CI rather than in production - which is precisely the mistake
+rfq.list was.
+
+
+================================================================================
+PART 6 - COMPLETE DEFECT REGISTER
+================================================================================
+
+Every defect found and fixed across the engagement, in severity order within
+each group.
+
+--------------------------------------------------------------------------------
+AUTHORIZATION / ACCESS CONTROL
+--------------------------------------------------------------------------------
+
+  Quotation accept/reject IDOR - any user could accept any bid       Phase 1
+  Projects IDOR                                                      Phase 2
+  Storage downloads reachable without authentication                 Phase 2
+  Review forgery - no transaction verification                       Phase 2
+  rfq.quotations IDOR                                                Phase 4A gate
+  rfq.list was PUBLIC and returned every column including budget     Slice 9
+  marketplace.get served deactivated/withdrawn products              Slice 9
+  messages.send accepted any quotation id that merely existed        Slice 9
+
+--------------------------------------------------------------------------------
+CREDENTIAL AND DATA EXPOSURE
+--------------------------------------------------------------------------------
+
+  auth.me returned passwordHash and invitationToken on every page    Phase 4A.6.6
+  admin.users returned passwordHash and invitationToken              Phase 4A.6.7
+  Compliance endpoints leaked applicant data                         Phase 4A cum.
+  marketplace.questions leaked askerId from a PUBLIC endpoint        Slice 9
+  Stack traces rendered to end users in the browser                  Slice 1 A3
+  Stack traces serialised into tRPC error responses                  Slice 1 A3
+
+--------------------------------------------------------------------------------
+AUTHENTICATION AND SESSION
+--------------------------------------------------------------------------------
+
+  Empty JWT_SECRET booted silently, signing tokens with a zero key   Slice 1 A1
+  Session revocation FAILED OPEN on database unavailability          Slice 1 A2
+  Logout did not revoke server-side - copied tokens worked ~1 year   Phase 4A.6.6
+  No rate limiting on any authentication endpoint                    Slice 1 A5
+  Real users could not sign in at all off the Manus platform         Slice 3
+  Admin-invited users could set a password and never use it          Slice 3
+  Password reset could not invalidate other live sessions            Slice 3
+
+--------------------------------------------------------------------------------
+BILLING CORRECTNESS
+--------------------------------------------------------------------------------
+
+  awaitingRenewalSync granted paid access INDEFINITELY               Phase 4B.4
+  startTrial wiped the write-once founder-price stamp                Phase 4B.4
+  Unlimited repeat trials after lapse (caught before shipping)       Phase 4B.4
+  Entitlement availability used a denylist - a reword advertised     Slice 8
+    a capability nothing enforces
+
+--------------------------------------------------------------------------------
+HONESTY / FABRICATED DATA
+--------------------------------------------------------------------------------
+
+  Vendor dashboard rendered fabricated statistics                    Phase 4A.6.4
+  Admin dashboard rendered an invented growth chart (120-580 users)  Slice 4
+  analyticsSummary returned a hardcoded '2026-07' month label        Slice 4
+  Stale reputation shown at the hiring-decision moment               Phase 4A.6.9
+  %VITE_ANALYTICS_ENDPOINT% shipped literally into production HTML   Slice 4
+
+--------------------------------------------------------------------------------
+FILE HANDLING
+--------------------------------------------------------------------------------
+
+  All 5 upload endpoints trusted the client's declared content type  Slice 9 A10
+    - image/svg+xml passes every startsWith('image/') check while
+      being a scriptable XML document
+  Every avatar returned 403 - a missing authorization branch         Slice 1 A6
+  messages.uploadAttachment mangled every filename                   Slice 9
+    - [^\\w.-] in a regex literal: "site-plan.pdf" became "_-_._"
+
+--------------------------------------------------------------------------------
+REACHABILITY
+--------------------------------------------------------------------------------
+
+  The entire vendor dashboard had no route from normal navigation    Phase 4A.6.4
+  The entire billing engine had no UI at all                         Slice 2
+  The pricing page bounced every signed-out visitor to /auth         Slice 2
+
+--------------------------------------------------------------------------------
+INFRASTRUCTURE
+--------------------------------------------------------------------------------
+
+  42 FK-shaped relationships had no foreign keys                     Phase 3C
+  No boot-time environment validation                                Slice 1 A1
+  Production could silently bind the wrong port                      Slice 1 A8
+  trust proxy off - cookies and rate-limit IPs both wrong behind edge Slice 1 A7
+  No Dockerfile, no CI, no .github directory, no engines pin         Slices 4, 6
+  system.health unusable as a probe                                  Slice 4
+
+
+================================================================================
+PART 7 - METHOD, AND MY OWN MISTAKES
+================================================================================
+
+--------------------------------------------------------------------------------
+THE VERIFICATION STANDARD
+--------------------------------------------------------------------------------
+
+Every phase ran the same gate: vitest with no weakened assertions, tsc --noEmit,
+both builds, then LIVE verification against a real MariaDB instance and - where
+there was a user-facing surface - a real Chromium session in English and Arabic
+at 1440px and 375px. Fixtures torn down to the exact baseline after each run.
+
+A local HTTPS terminator was built for the browser runs because the session
+cookie is SameSite=None, which Chromium rejects without Secure. Solving it that
+way rather than weakening the cookie code was deliberate.
+
+The live harness is what caught the pricing-page redirect, the awaitingRenewalSync
+indefinite grant, and the founder-stamp wipe. Unit tests missed all three.
+
+--------------------------------------------------------------------------------
+MISTAKES I MADE AND CORRECTED RATHER THAN SHIPPED
+--------------------------------------------------------------------------------
+
+  1. I rewrote VendorsDirectory.tsx using inline ar ? '...' : '...' ternaries,
+     violating an existing localization contract test. I FIXED THE UI, NOT THE
+     TEST - added 30 translation keys and removed a redundant per-page dir
+     attribute.
+
+  2. I claimed Forge backed five subsystems. Tracing importers showed four were
+     dead scaffold. Corrected the claim before the report shipped.
+
+  3. I ran an A2 end-to-end test (login, stop MariaDB, session rejected), then
+     checked whether it ISOLATED the change. It did not - getUserByOpenId also
+     fails on database loss, so auth.me would return null either way. Said so
+     plainly in the commit rather than letting the green result stand as proof.
+
+  4. A stale dev server from the previous slice still held port 3500, so the
+     first Slice 9 run was probing pre-change code and reported 12 failures
+     against fixes that were already correct. Chased it instead of accepting the
+     numbers. The harness now binds an explicitly free port and aborts on
+     fallback.
+
+  5. A harness probed registration.uploadDocument when appRouter mounts that
+     router as compliance.* - it was testing a 404 and would have reported a
+     confident pass. The mount point is now pinned by a test.
+
+  6. A browser harness set the language via localStorage 'buildhub-lang' where
+     the app reads 'buildhub_lang', so four Arabic assertions were silently
+     passing against an English page. It now asserts <html lang> matches the
+     language under test FIRST, so that class of mistake fails loudly.
+
+  7. Several times a test failed on the codebase's own explanatory comments
+     containing the forbidden string it was scanning for. Fixed the scanner, not
+     the assertion.
+
+  8. My Arabic numeral assertions searched for ASCII digits. The product was
+     correct; the test was wrong.
+
+--------------------------------------------------------------------------------
+THINGS I DECLINED TO INVENT
+--------------------------------------------------------------------------------
+
+  - Paymob API responses, webhook payloads, HMAC construction, event names
+  - Annual founder pricing (never approved - rejected rather than guessed)
+  - An Egypt latency measurement (Vultr unreachable - gave a procedure instead)
+  - A real-data audit without production access (reported BLOCKED)
+  - project.spent semantics
+  - Refund policy
+  - Business rules generally, where the answer was an owner decision
+
+
+================================================================================
+PART 8 - CURRENT STATE
+================================================================================
+
+  Branch ......... claude/phase4b-readiness-audit-hardening @ 8398720
+  Mirror ......... claude/buildhub-audit-verification-vrai7l @ 8398720
+  main ........... 71d891f, untouched
+  Working tree ... clean, everything pushed
+
+  Tests .......... 964 passing across 49 files
+  TypeScript ..... tsc --noEmit clean
+  Builds ......... client and server both green
+  Migrations ..... 19, all additive
+
+  Live check totals by slice:
+    Slice 2 ........ 42/42
+    Slice 7 ........ 35/35
+    Slice 8 ........ 38/38
+    Slice 9 ........ 24/24
+
+  ENTITLEMENT ENFORCEMENT LEDGER (current truth):
+    qualifiedEnquiriesPerMonth ..... ENFORCED  (phase-4b.3)
+    serviceCategoryLimit ........... ENFORCED  (phase-4b.3)
+    analyticsLevel ................. ENFORCED  (phase-4b.2)
+    featuredPlacementEligible ...... ENFORCED  (slice-8)
+    visibilityLevel ................ deferred, conflicts with organic ranking
+    portfolioLevel ................. not implemented
+    promotionalCapability .......... not implemented
+    branchLimit .................... not implemented
+    teamMemberLimit ................ not implemented
+
+  The pricing page badges the bottom five "coming soon" rather than advertising
+  them.
+
+
+================================================================================
+PART 9 - WHAT REMAINS
+================================================================================
+
+None of this is blocked by code. Each needs an account, a credential, or a
+decision.
+
+1. EMAIL PROVIDER
+   Password reset and email verification are built and inert. Pick a provider
+   and register an adapter implementing the Mailer interface. Until then
+   NullMailer throws and auth.capabilities tells the UI not to offer reset.
+
+2. PAYMOB
+   Still externally blocked. No provider behaviour has been invented. The
+   adapter interface is shaped from BuildHub's own lifecycle and
+   NullPaymentProvider refuses loudly. Self-service checkout does not exist and
+   the pricing page says so plainly.
+
+3. VULTR PROVISIONING
+   Compute, Managed MySQL, Object Storage, firewall, DNS, TLS, backups,
+   monitoring. The architecture report classifies all 22 items. Vultr is
+   unreachable from this sandbox, so the Egypt region recommendation is a
+   procedure for you to run, not a fabricated measurement.
+
+4. GITHUB SECRETS AND ENVIRONMENT APPROVAL
+   The three workflows are authored and reviewed. Production deploy is gated
+   behind a GitHub environment approval and cannot fire from a feature branch.
+   Required secrets are enumerated; none is committed.
+
+5. OBJECT-STORAGE CREDENTIALS
+   The S3 adapter is written and selected by environment variable. Vultr Object
+   Storage is S3-compatible.
+
+ALSO OPEN, AS PRODUCT DECISIONS RATHER THAN BLOCKERS:
+
+  - Four entitlements remain unbuilt (portfolio, promotional campaigns,
+    branches, team members).
+  - visibilityLevel needs an explicit decision to reverse Phase 4B.3 section 13
+    before it can be implemented.
+
+
+================================================================================
+PART 10 - BOUNDARIES HELD
+================================================================================
+
+  No secrets committed - no database passwords, JWT secrets, OAuth secrets,
+    Vultr credentials, storage credentials, Paymob credentials, API keys or
+    webhook secrets appear anywhere in the repository.
+  No Paymob behaviour invented.
+  No price changed.
+  No production infrastructure created.
+  No DNS modified.
+  No production database or production credentials created.
+  Nothing deployed.
+  BuildHub never exposed publicly as a live commercial service.
+  main untouched at 71d891f.
+  Every Phase 4A and 4B branch left exactly as it was.
+  No user, vendor or customer data destroyed - all 19 migrations are additive,
+    and every verification run tore its fixtures back down to the exact
+    baseline (8 users, 6 RFQs, 6 quotations, 0 events).
+  project.spent semantics not redefined.
+  No test weakened to make a change pass.
+
+
+================================================================================
+APPENDIX A - FULL COMMIT HISTORY
+================================================================================
+
+SECURITY PHASES
+  fb7fd09  Phase 1: fix quotation accept/reject IDOR and race condition
+  26d2d08  Phase 2: fix Projects IDOR, storage download auth, review forgery, AI abuse
+  30d101f  Phase 3A: localization, directory data minimization, review participation
+  542760e  Phase 3B.1: infrastructure discovery report (read-only)
+  ed3dc25  Phase 3C: add foreign keys, indexes, and orphan-safety
+  3e874f7  Phase 3C.1: real-data audit blocked - no staging/production access
+
+PHASE 4A - VENDOR PRODUCT FOUNDATION
+  8196e89  Phase 4A: monetization & payment architecture discovery (read-only)
+  f5d7eb1  Phase 4A.1: independent validation of the 12 monetization decisions
+  e3e1674  Phase 4A.2: monetization product design and value ladder (read-only)
+  17211d7  Phase 4A.3: vendor product readiness review (read-only)
+  3f37c24  Phase 4A.4: implementation-readiness spec for the 3 foundation items
+  8f74357  Phase 4A.5: file-level implementation plan
+  014f055  Phase 4A.6.1: implement the vendor profile foundation
+  b1ffaa9  Phase 4A.6.1: final vendor profile verification (no code changes)
+  321c169  Phase 4A.6.2: implement the vendor reputation foundation
+  8ac42b1  Phase 4A.6.3: implement the vendor analytics foundation
+  c374420  Phase 4A.6.4: fix vendor dashboard reachability and remove fake stats
+  a540954  Phase 4A.6.5: login root-cause investigation - no application defect
+  42ee99c  Phase 4A.6.6: close auth.me credential exposure and logout replay
+  b67d9e7  Phase 4A.6.7: close admin.users passwordHash/invitationToken exposure
+  62f34e5  Phase 4A.6.8: verify account-state session re-check, no defect found
+  63e8c08  Phase 4A cumulative final audit: close compliance-endpoint exposure
+  7cc9ff7  Phase 4A.6.9: fix stale reputation in homeowner quote comparison
+  2568f53  Phase 4A cumulative final verification: re-confirm from fresh evidence
+  2cd8af3  Phase 4A final gate: close rfq.quotations IDOR, classify findings
+
+PHASE 4B - MONETIZATION
+  c8b79fa  Phase 4B readiness & architecture: discovery only
+  46ddaa3  Phase 4B blocker resolution addendum: 5 of 7 blockers resolved
+  c177b30  Phase 4B final blocker authorization: targeting designed, Paymob gap
+  cfb1553  Phase 4B.1: provider-agnostic billing & monetization domain foundation
+  bbf4dd4  Phase 4B.2: centralized server-authoritative plan & entitlement engine
+  01fe3b7  Phase 4B.3: real vendor directory, RFQ targeting & qualified-enquiry
+  10a5fc7  Preserve pre-existing untracked reports from earlier sessions
+  5258035  Add Phase 4B.3 completion response summary
+  df6e540  Phase 4B.4: subscription lifecycle & billing state orchestration
+  54918a2  Add Phase 4B.4 response and command log
+  ebc1795  Phase 4B.5: NOT READY - Paymob sandbox access blocker
+  d93a7c8  Add Phase 4B.5 response and command log
+
+THE NINE SLICES
+  505d5ce  Phase 4B readiness audit: inspection only, no code changes
+  472e3b4  Slice 1: critical production hardening (A1-A9)
+  91a4fea  Slice 2: make the billing system reachable
+  b5d0ed2  Infrastructure readiness: GitHub to Vultr architecture (report only)
+  1801fbe  Slice 3: first-party email and password authentication
+  9229f50  Slice 4: deployability, security headers, and two dishonest surfaces
+  be5728a  Slice 5: portable object storage, remove the dead Manus scaffold
+  1063448  Slice 6: CI, a deployable image, a deploy pipeline that cannot fire
+           by accident
+  41cb5e8  Slice 7: a product analytics event stream, and commercial KPIs from
+           the financial record
+  b9c6ee7  Slice 8: featured placement as a separate, labelled, paid capability
+  2077dee  Slice 9: authorization sweep across the six unswept routers
+  8398720  Autonomous build completion report
+
+
+================================================================================
+APPENDIX B - REPORT INDEX
+================================================================================
+
+41 reports are committed in the repository root. The ones most worth reading:
+
+  BUILDHUB_AUTONOMOUS_BUILD_COMPLETION.md
+      The nine slices, condensed.
+
+  BUILDHUB_INFRASTRUCTURE_READINESS_AND_GITHUB_VULTR_ARCHITECTURE.md
+      All 22 Vultr items classified, with the deployment sequence and the
+      latency procedure you need to run from Egypt.
+
+  BUILDHUB_PHASE4B_READINESS_AUDIT.md
+      The A1-A10 list that Slices 1 and 9 worked from.
+
+  BUILDHUB_PHASE4B4_SUBSCRIPTION_LIFECYCLE.md
+      The lifecycle state machine and the two indefinite-grant defects.
+
+  BUILDHUB_PHASE4B5_PAYMOB_INTEGRATION.md
+      The seven external blockers, and exactly what each one needs.
+
+  BUILDHUB_DATABASE_INTEGRITY_REPORT.md
+  BUILDHUB_DATABASE_MIGRATION_RUNBOOK.md
+      The 42 missing foreign keys, and how to apply the fix safely.
+
+  BUILDHUB_TAKEOVER_REPORT.md
+      Where this started.
+
+================================================================================
+END OF REPORT
+================================================================================

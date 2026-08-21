@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { AlertTriangle, RotateCcw } from "lucide-react";
-import { Component, ReactNode } from "react";
+import { Component, ErrorInfo, ReactNode } from "react";
 
 interface Props {
   children: ReactNode;
@@ -21,23 +21,38 @@ class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
+  /**
+   * Previously absent, which meant every caught error was rendered to the user
+   * and then discarded - nothing was recorded anywhere. Logging to the console
+   * is the honest floor given BuildHub has no error-tracking service wired yet;
+   * when one is added, this is the single place it hooks into.
+   */
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("[ErrorBoundary] Uncaught render error:", error, errorInfo.componentStack);
+  }
+
   render() {
     if (this.state.hasError) {
       return (
         <div className="flex items-center justify-center min-h-screen p-8 bg-background">
-          <div className="flex flex-col items-center w-full max-w-2xl p-8">
+          <div className="flex flex-col items-center w-full max-w-2xl p-8 text-center">
             <AlertTriangle
               size={48}
               className="text-destructive mb-6 flex-shrink-0"
             />
 
-            <h2 className="text-xl mb-4">An unexpected error occurred.</h2>
+            <h2 className="text-xl mb-2">An unexpected error occurred.</h2>
 
-            <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
-              <pre className="text-sm text-muted-foreground whitespace-break-spaces">
-                {this.state.error?.stack}
-              </pre>
-            </div>
+            {/*
+              The stack trace used to be rendered here in a <pre> block. That put
+              file paths, function names and internal structure in front of every
+              end user in production. The stack now goes to componentDidCatch
+              only; the user gets something they can act on instead.
+            */}
+            <p className="text-sm text-muted-foreground mb-6 max-w-md">
+              Something went wrong while displaying this page. Reloading usually
+              fixes it. If it keeps happening, please contact support.
+            </p>
 
             <button
               onClick={() => window.location.reload()}

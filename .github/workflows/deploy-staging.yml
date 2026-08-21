@@ -1,0 +1,145 @@
+# Staging deployment.
+#
+# Runs on every push to the default branch, AFTER CI has passed. It is inert
+# until the required secrets exist: the gate job below checks for them and the
+# rest of the workflow skips with a notice rather than failing every push with
+# red crosses while the infrastructure is still being set up.
+#
+# Nothing here touches production. Production is a separate workflow that only
+# a human can start.
+
+name: Deploy staging
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # One staging deploy at a time; a newer commit waits rather than racing.
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  gate:
+    name: Is staging configured?
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        run: |
+          if [ -n "${{ secrets.STAGING_SSH_HOST }}" ] && [ -n "${{ secrets.STAGING_SSH_KEY }}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Staging is not configured yet. Add STAGING_SSH_HOST, STAGING_SSH_USER, STAGING_SSH_KEY and STAGING_BASE_URL to enable this workflow."
+          fi
+
+  verify:
+    name: Gate on the full CI suite
+    needs: gate
+    if: needs.gate.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # No `version:` here on purpose. package.json's `packageManager` field
+      # already pins pnpm, and pnpm/action-setup@v4 hard-fails with "Multiple
+      # versions of pnpm specified" when both are present - even when they
+      # agree. One source of truth: package.json.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check
+      - run: pnpm run test
+      - run: pnpm run build
+
+  publish:
+    name: Build and publish the image
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        # Tagged by commit SHA, never by a moving tag. A rollback needs to be
+        # able to name the exact image that was running before.
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE }}:staging
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Migrate and release
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: staging
+      url: ${{ secrets.STAGING_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Open an SSH session to the staging host
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.STAGING_SSH_KEY }}
+
+      - name: Trust the host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.STAGING_SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Apply database migrations
+        # Runs BEFORE the new image is released, and uses the apply-only
+        # `db:migrate`. It must never be `db:push`, which generates migrations
+        # from the current schema and can drop columns.
+        run: |
+          ssh "${{ secrets.STAGING_SSH_USER }}@${{ secrets.STAGING_SSH_HOST }}" \
+            "cd /srv/buildhub && docker run --rm --env-file .env \
+              ${{ env.IMAGE }}:${{ needs.publish.outputs.tag }} \
+              npx drizzle-kit migrate"
+
+      - name: Release the new image
+        run: |
+          ssh "${{ secrets.STAGING_SSH_USER }}@${{ secrets.STAGING_SSH_HOST }}" \
+            "cd /srv/buildhub && \
+             echo BUILDHUB_IMAGE=${{ env.IMAGE }}:${{ needs.publish.outputs.tag }} > .image.env && \
+             docker compose --env-file .env --env-file .image.env up -d --pull always"
+
+      - name: Smoke test the deployed instance
+        run: node scripts/smoke.mjs "${{ secrets.STAGING_BASE_URL }}"
+
+      - name: Roll back if the smoke test failed
+        if: failure()
+        run: |
+          ssh "${{ secrets.STAGING_SSH_USER }}@${{ secrets.STAGING_SSH_HOST }}" \
+            "cd /srv/buildhub && docker compose --env-file .env --env-file .image.env.previous up -d" || true
+          echo "::error::Smoke tests failed; attempted rollback to the previous image."

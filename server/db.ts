@@ -1,14 +1,56 @@
 import { drizzle } from "drizzle-orm/mysql2";
 import { eq } from "drizzle-orm";
-import { InsertUser, users, userAccountAuditEvents } from "../drizzle/schema";
+import { InsertUser, users, userAccountAuditEvents, revokedSessions } from "../drizzle/schema";
+import { readFileSync } from "node:fs";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+/**
+ * TLS options for the database connection.
+ *
+ * This path previously passed DATABASE_URL to drizzle as a bare string, which
+ * means mysql2 opens an UNENCRYPTED connection unless the URL itself carries
+ * ssl parameters. That is survivable when the database is a unix socket on the
+ * same box, and wrong the moment it is a managed instance reached across a
+ * network - either the provider refuses the connection outright, or worse it
+ * accepts it and every query, credential and customer record crosses the
+ * network in the clear.
+ *
+ * Controlled by DATABASE_SSL:
+ *
+ *   require   verify the server certificate. Managed providers issue their own
+ *             CA, so DATABASE_CA_CERT points at the PEM bundle they supply.
+ *   disable   plain connection. The local-development default, and the only
+ *             way to talk to a socket-local MariaDB without ceremony.
+ *
+ * PRODUCTION DEFAULTS TO require. A deployment that genuinely needs plain
+ * transport has to say so explicitly, because the failure it prevents is
+ * silent and total.
+ */
+function resolveSslOptions(): { ssl?: object } {
+  const mode = (process.env.DATABASE_SSL ?? (ENV.isProduction ? "require" : "disable")).toLowerCase();
+  if (mode === "disable" || mode === "false" || mode === "off") return {};
+
+  const ca = process.env.DATABASE_CA_CERT;
+  return {
+    ssl: {
+      // Never weakened to false. An unverified TLS connection stops a passive
+      // listener and does nothing at all about an active one, while looking
+      // exactly as reassuring in a config file.
+      rejectUnauthorized: true,
+      ...(ca ? { ca: ca.includes("BEGIN CERTIFICATE") ? ca : readFileSync(ca, "utf8") } : {}),
+    },
+  };
+}
+
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      const ssl = resolveSslOptions();
+      _db = Object.keys(ssl).length > 0
+        ? drizzle({ connection: { uri: process.env.DATABASE_URL, ...ssl } })
+        : drizzle(process.env.DATABASE_URL);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -50,6 +92,33 @@ export async function getUserByUsername(username: string) {
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.username, normalized)).limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+// Session revocation (Phase 4A.6.6), hardened in the Phase 4B readiness audit.
+//
+// This one deliberately does NOT follow the graceful-degradation convention
+// used elsewhere in this file. It previously returned false when the database
+// was unreachable, which meant a database blip silently re-validated every
+// revoked session - disabling the exact control logout revocation exists to
+// provide, at precisely the moment nobody is watching.
+//
+// It now fails CLOSED: an unreachable database cannot prove a session is still
+// valid, so the session is treated as revoked. The availability cost is close
+// to zero, because every authenticated operation in the app already needs the
+// database and degrades to nothing without it - so failing closed here does not
+// take down anything that was still working.
+export async function isSessionRevoked(jti: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return true;
+  const result = await db.select({ jti: revokedSessions.jti }).from(revokedSessions).where(eq(revokedSessions.jti, jti)).limit(1);
+  return result.length > 0;
+}
+
+export async function revokeSession(jti: string, userId: number, expiresAt: Date): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(revokedSessions).values({ jti, userId, expiresAt })
+    .onDuplicateKeyUpdate({ set: { revokedAt: new Date() } });
 }
 
 export async function upsertUser(user: InsertUser): Promise<{ created: boolean; linkedExisting: boolean; userId?: number }> {

@@ -18,21 +18,28 @@ import {
   TrendingUp, Settings, Search, Eye, Ban, CheckCircle2,
   MessageSquare, BarChart3, Shield, Flag, Activity, Globe, UserRound,
   UserCheck, UserX, Save, RefreshCw, ClipboardCheck, FileSearch, RotateCcw, XCircle, SendHorizontal, Download, CalendarDays, Loader2, UserPlus, Trash2, History, Power, KeyRound,
+  CreditCard,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { summarizeComplianceRegistrations } from '@shared/compliance';
 import { buildRegistrationMetricsCsv, filterRegistrationApplicants, dateKey } from '@shared/registrationMetrics';
+import AdminVendorBilling from '@/components/AdminVendorBilling';
+import AdminCommercialAnalytics from '@/components/AdminCommercialAnalytics';
 
-const MONTHLY_USERS = [
-  { month: 'Jan', users: 120, projects: 45 },
-  { month: 'Feb', users: 180, projects: 67 },
-  { month: 'Mar', users: 250, projects: 89 },
-  { month: 'Apr', users: 310, projects: 112 },
-  { month: 'May', users: 420, projects: 145 },
-  { month: 'Jun', users: 580, projects: 198 },
-];
+/*
+ * Slice 4 removed a hardcoded MONTHLY_USERS array from this file - six months
+ * of invented growth (120 users rising to 580, 45 projects rising to 198) that
+ * `admin.analyticsSummary` fell back to whenever it returned nothing.
+ *
+ * On a pre-launch platform it returns nothing constantly, so the owner's own
+ * analytics tab was showing fabricated traction as though it were measured.
+ * Numbers on an admin dashboard get read as fact and get quoted to investors.
+ *
+ * The charts now render whatever the server actually measured, and an explicit
+ * empty state when that is nothing at all.
+ */
 
 const ROLE_GROUPS = [
   { key: 'homeowner', en: 'Homeowners', ar: 'أصحاب المنازل' },
@@ -97,7 +104,7 @@ export default function AdminDashboard() {
   const [location, navigate] = useLocation();
   const adminSection = useMemo(() => {
     const section = location.split('/')[2];
-    return ['users', 'compliance', 'analytics', 'disputes', 'fraud', 'settings'].includes(section ?? '') ? section! : 'users';
+    return ['users', 'compliance', 'analytics', 'billing', 'disputes', 'fraud', 'settings'].includes(section ?? '') ? section! : 'users';
   }, [location]);
   const handleAdminSectionChange = (section: string) => {
     navigate(section === 'users' ? '/admin/users' : `/admin/${section}`);
@@ -149,7 +156,7 @@ export default function AdminDashboard() {
   const { data: complianceDetail } = trpc.admin.complianceApplicant.useQuery({ userId: activeApplicant?.id }, { enabled: isAdmin && Boolean(activeApplicant?.id) });
   const { data: auditEvents = [] } = trpc.admin.accountAudit.useQuery({ userId: auditTarget?.id }, { enabled: isAdmin && Boolean(auditTarget?.id) });
   const { data: dynamicAnalytics = [] } = trpc.admin.analyticsSummary.useQuery(complianceQueueInput, { enabled: isAdmin });
-  const analyticsData = dynamicAnalytics.length > 0 ? dynamicAnalytics : MONTHLY_USERS;
+  const analyticsData = dynamicAnalytics;
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -519,6 +526,7 @@ export default function AdminDashboard() {
             <TabsTrigger value="users" className="gap-1.5"><Users className="w-4 h-4" /> {lang === 'ar' ? 'المستخدمون' : 'Users'}</TabsTrigger>
             <TabsTrigger value="compliance" className="gap-1.5"><ClipboardCheck className="w-4 h-4" /> {lang === 'ar' ? 'التحقق من التسجيل' : 'Compliance'} ({complianceQueue.length})</TabsTrigger>
             <TabsTrigger value="analytics" className="gap-1.5"><BarChart3 className="w-4 h-4" /> {lang === 'ar' ? 'التحليلات' : 'Analytics'}</TabsTrigger>
+            <TabsTrigger value="billing" className="gap-1.5"><CreditCard className="w-4 h-4" /> {t('adminBilling.title')}</TabsTrigger>
             <TabsTrigger value="disputes" className="gap-1.5"><MessageSquare className="w-4 h-4" /> {lang === 'ar' ? 'النزاعات' : 'Disputes'} ({openDisputes})</TabsTrigger>
             <TabsTrigger value="fraud" className="gap-1.5"><Shield className="w-4 h-4" /> {lang === 'ar' ? 'كشف الاحتيال' : 'Fraud Detection'}</TabsTrigger>
             <TabsTrigger value="settings" className="gap-1.5"><Settings className="w-4 h-4" /> {lang === 'ar' ? 'الإعدادات' : 'Settings'}</TabsTrigger>
@@ -535,7 +543,13 @@ export default function AdminDashboard() {
 
           <TabsContent value="compliance"><Card><CardHeader><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><CardTitle className="flex items-center gap-2"><ClipboardCheck className="w-5 h-5" />{lang === 'ar' ? 'مراجعة المستندات القانونية' : 'Legal document review queue'}</CardTitle><Badge variant="outline">{lang === 'ar' ? 'نمط مؤسسي' : 'Enterprise onboarding'}</Badge></div><p className="mt-2 text-sm text-muted-foreground">{lang === 'ar' ? 'راجع مستندات كل منشأة، اطلب تحديث مستند محدد، وأرسل حالة التسجيل إلى مقدم الطلب.' : 'Review each business profile, request a specific document update, and send registration status updates to the applicant.'}</p><div className="mt-4 grid gap-2 sm:grid-cols-2"><Select value={complianceRoleFilter} onValueChange={setComplianceRoleFilter}><SelectTrigger><SelectValue placeholder={lang === 'ar' ? 'تصفية حسب الفئة' : 'Filter by role'} /></SelectTrigger><SelectContent><SelectItem value="all">{lang === 'ar' ? 'كل الفئات' : 'All roles'}</SelectItem>{ROLE_GROUPS.filter(group => group.key !== 'homeowner' && group.key !== 'admin').map(group => <SelectItem key={group.key} value={group.key}>{lang === 'ar' ? group.ar : group.en}</SelectItem>)}</SelectContent></Select><Select value={complianceStatusFilter} onValueChange={setComplianceStatusFilter}><SelectTrigger><SelectValue placeholder={lang === 'ar' ? 'تصفية حسب الحالة' : 'Filter by status'} /></SelectTrigger><SelectContent><SelectItem value="all">{lang === 'ar' ? 'كل الحالات' : 'All statuses'}</SelectItem><SelectItem value="not_started">{formatComplianceStatus('not_started', lang)}</SelectItem><SelectItem value="under_review">{formatComplianceStatus('under_review', lang)}</SelectItem><SelectItem value="update_required">{formatComplianceStatus('update_required', lang)}</SelectItem><SelectItem value="approved">{formatComplianceStatus('approved', lang)}</SelectItem><SelectItem value="rejected">{formatComplianceStatus('rejected', lang)}</SelectItem></SelectContent></Select></div></CardHeader><CardContent>{complianceLoading ? <div className="py-10 text-center text-muted-foreground"><RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" />{t('common.loading')}</div> : filteredComplianceQueue.length === 0 ? <EmptyState text={lang === 'ar' ? 'لا توجد ملفات مطابقة للفلاتر الحالية' : 'No registrations match the current filters'} /> : <div className="space-y-3">{filteredComplianceQueue.map(applicant => { const required = applicant.requirements.filter((item: any) => item.required).length; const approved = applicant.documents.filter((document: any) => document.status === 'approved').length; const previewDocument = applicant.documents.find((document: any) => Boolean(document.url)); const openApplicant = () => { setActiveApplicant(applicant); setComplianceStatus(applicant.onboardingStatus === 'not_started' ? 'under_review' : applicant.onboardingStatus as typeof complianceStatus); setComplianceNote(applicant.onboardingReviewNotes ?? ''); }; return <div role="button" tabIndex={0} key={applicant.id} className="w-full rounded-xl border p-4 text-start transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={openApplicant} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openApplicant(); } }}><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><div className="rounded-lg bg-primary/10 p-2 text-primary"><FileSearch className="h-5 w-5" /></div><div className="min-w-0"><p className="truncate font-semibold">{applicant.name || applicant.email || `#${applicant.id}`}</p><p className="text-xs text-muted-foreground">{labelForRole(applicant.userRole, lang)} · {applicant.email || '—'}</p></div></div><div className="flex flex-wrap items-center gap-2"><Badge className={formatComplianceStatus(applicant.onboardingStatus, lang) === (lang === 'ar' ? 'تمت الموافقة' : 'Approved') ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}>{formatComplianceStatus(applicant.onboardingStatus, lang)}</Badge><span className="text-xs text-muted-foreground">{approved}/{required} {lang === 'ar' ? 'مطلوب معتمد' : 'required approved'}</span>{previewDocument && <Button type="button" size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={event => { event.stopPropagation(); loadDocumentPreview(previewDocument); }}><Eye className="h-3 w-3" />{lang === 'ar' ? 'معاينة' : 'Quick view'}</Button>}<Eye className="h-4 w-4 text-muted-foreground" /></div></div></div>; })}</div>}</CardContent></Card></TabsContent>
 
-          <TabsContent value="analytics"><div className="grid grid-cols-1 lg:grid-cols-2 gap-6"><Card><CardHeader><CardTitle className="text-base">{lang === 'ar' ? 'نمو المستخدمين' : 'User Growth'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={220}><LineChart data={analyticsData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} /><Tooltip /><Line type="monotone" dataKey="users" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></CardContent></Card><Card><CardHeader><CardTitle className="text-base">{lang === 'ar' ? 'المشاريع المنشأة' : 'Projects Created'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={220}><BarChart data={analyticsData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} /><Tooltip /><Bar dataKey="projects" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></CardContent></Card></div></TabsContent>
+          <TabsContent value="analytics"><div className="space-y-6"><AdminCommercialAnalytics includeDummy={includeDummyRegistrations} />{analyticsData.length === 0 ? (
+            <Card><CardContent className="py-16 text-center text-sm text-muted-foreground">
+              {lang === 'ar' ? 'لا توجد بيانات كافية بعد لعرض الرسوم البيانية. ستظهر هنا فور تسجيل مستخدمين وإنشاء مشاريع.' : 'Not enough activity yet to chart. These graphs fill in as real users register and real projects are created.'}
+            </CardContent></Card>
+          ) : (<div className="grid grid-cols-1 lg:grid-cols-2 gap-6"><Card><CardHeader><CardTitle className="text-base">{lang === 'ar' ? 'نمو المستخدمين' : 'User Growth'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={220}><LineChart data={analyticsData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} /><Tooltip /><Line type="monotone" dataKey="users" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></CardContent></Card><Card><CardHeader><CardTitle className="text-base">{lang === 'ar' ? 'المشاريع المنشأة' : 'Projects Created'}</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={220}><BarChart data={analyticsData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} /><Tooltip /><Bar dataKey="projects" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></CardContent></Card></div>)}</div></TabsContent>
+
+          <TabsContent value="billing"><AdminVendorBilling /></TabsContent>
 
           <TabsContent value="disputes"><Card><CardHeader><CardTitle className="flex items-center gap-2"><MessageSquare className="w-5 h-5" />{lang === 'ar' ? 'إدارة النزاعات' : 'Dispute Management'}</CardTitle></CardHeader><CardContent>{disputesLoading ? <div className="py-10 text-center text-muted-foreground"><RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" />{t('common.loading')}</div> : disputes.length === 0 ? <EmptyState text={lang === 'ar' ? 'لا توجد نزاعات مسجلة' : 'No disputes have been filed'} /> : <div className="space-y-3">{disputes.map(dispute => <div key={dispute.id} className="rounded-xl border p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><h3 className="font-semibold text-sm">{dispute.title}</h3><Badge variant={dispute.priority === 'high' ? 'destructive' : 'outline'}>{dispute.priority}</Badge><Badge variant="secondary">{formatStatus(dispute.status, lang)}</Badge></div><p className="text-sm text-muted-foreground line-clamp-2">{dispute.description}</p><p className="mt-2 text-xs text-muted-foreground">{dispute.reporterName || `#${dispute.reporterId}`} {dispute.respondentName ? ` · ${dispute.respondentName}` : ''} · {dispute.type} · {new Date(dispute.createdAt).toLocaleDateString()}</p></div><Button size="sm" variant="outline" className="h-8 shrink-0 gap-1" onClick={() => { setActiveDispute(dispute); setDisputeStatus(dispute.status); setResolutionNotes(dispute.resolutionNotes ?? ''); }}><Eye className="w-3 h-3" />{lang === 'ar' ? 'مراجعة' : 'Review'}</Button></div></div>)}</div>}</CardContent></Card></TabsContent>
 

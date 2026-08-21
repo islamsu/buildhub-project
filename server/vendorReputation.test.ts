@@ -193,17 +193,22 @@ describe('vendor reputation localization', () => {
 });
 
 describe('vendor reputation UI wiring and responsive conventions', () => {
-  it('VendorReputation is a single reusable component, used by both VendorProfile and ProviderDashboard (no duplicate implementation)', () => {
+  it('VendorReputation is a single reusable component, used by both VendorProfile and RolePlatform (no duplicate implementation)', () => {
+    // Phase 4A.6.4: the real, reachable vendor dashboard is RolePlatform.tsx
+    // (/platform/:role) - ProviderDashboard.tsx is now a legacy redirect-only
+    // shim with no UI of its own. See BUILDHUB_PHASE4A64_DASHBOARD_INTEGRATION.md.
     const component = readFileSync(new URL('../client/src/components/VendorReputation.tsx', import.meta.url), 'utf8');
     const vendorProfile = readFileSync(new URL('../client/src/pages/VendorProfile.tsx', import.meta.url), 'utf8');
+    const rolePlatform = readFileSync(new URL('../client/src/pages/RolePlatform.tsx', import.meta.url), 'utf8');
     const providerDashboard = readFileSync(new URL('../client/src/pages/ProviderDashboard.tsx', import.meta.url), 'utf8');
     expect(component).toContain('reviews.statsForUser');
     expect(component).toContain('reviews.forUser');
     expect(vendorProfile).toContain('VendorReputation');
-    expect(providerDashboard).toContain('VendorReputation');
+    expect(rolePlatform).toContain('VendorReputation');
+    expect(providerDashboard).not.toContain('VendorReputation');
     // Only one component file defines this rating/count computation.
     expect(vendorProfile).not.toMatch(/reviews\.statsForUser\.useQuery/);
-    expect(providerDashboard).not.toMatch(/reviews\.statsForUser\.useQuery/);
+    expect(rolePlatform).not.toMatch(/reviews\.statsForUser\.useQuery/);
   });
 
   it('ReviewSubmissionPanel is wired into ProjectDetail behind a completed-project check', () => {

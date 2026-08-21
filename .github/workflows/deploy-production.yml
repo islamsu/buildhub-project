@@ -1,0 +1,140 @@
+# Production deployment.
+#
+# Manual only. There is no push trigger and no schedule: production is released
+# when a human decides to release it, by choosing an image that is already
+# running on staging.
+#
+# The approval gate is GitHub's `environment: production`. Configure that
+# environment with required reviewers and a branch restriction of `main`; with
+# that in place this workflow physically cannot deploy from a feature branch,
+# and cannot run at all without a named human approving it.
+#
+# It does NOT rebuild. The artefact deployed to production is the exact image
+# that was verified on staging, addressed by its commit SHA. Rebuilding would
+# produce a different artefact from the one that was tested.
+
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to release (12-char commit SHA, as published by the staging deploy)'
+        required: true
+        type: string
+      confirm:
+        description: 'Type DEPLOY to confirm this releases to real users'
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirmation must be explicit
+        if: inputs.confirm != 'DEPLOY'
+        run: |
+          echo "::error::Confirmation not given. Re-run and type DEPLOY."
+          exit 1
+
+      - name: Only the default branch may release
+        # Belt and braces alongside the environment's own branch restriction.
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Production releases run from main only. This ref is ${{ github.ref }}."
+          exit 1
+
+      - name: The tag must look like a published commit image
+        run: |
+          if ! echo "${{ inputs.image_tag }}" | grep -Eq '^[0-9a-f]{12}$'; then
+            echo "::error::image_tag must be the 12-character commit SHA published by the staging deploy."
+            exit 1
+          fi
+
+      - name: Staging must be configured, and production too
+        run: |
+          missing=""
+          [ -n "${{ secrets.PRODUCTION_SSH_HOST }}" ] || missing="$missing PRODUCTION_SSH_HOST"
+          [ -n "${{ secrets.PRODUCTION_SSH_KEY }}" ] || missing="$missing PRODUCTION_SSH_KEY"
+          [ -n "${{ secrets.PRODUCTION_BASE_URL }}" ] || missing="$missing PRODUCTION_BASE_URL"
+          if [ -n "$missing" ]; then
+            echo "::error::Production is not configured. Missing:$missing"
+            exit 1
+          fi
+
+  release:
+    name: Migrate and release
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # This is the approval gate. The job does not start until a required
+    # reviewer approves it in the GitHub UI.
+    environment:
+      name: production
+      url: ${{ secrets.PRODUCTION_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.PRODUCTION_SSH_KEY }}
+
+      - name: Trust the host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.PRODUCTION_SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Record the image currently running, so a rollback has a target
+        run: |
+          ssh "${{ secrets.PRODUCTION_SSH_USER }}@${{ secrets.PRODUCTION_SSH_HOST }}" \
+            "cd /srv/buildhub && cp -f .image.env .image.env.previous 2>/dev/null || true"
+
+      - name: Back up the database before migrating
+        # A migration that needs reverting is exactly when a backup taken five
+        # minutes earlier matters. Vultr Managed Databases also keep their own
+        # scheduled backups; this is the one tied to this specific release.
+        run: |
+          ssh "${{ secrets.PRODUCTION_SSH_USER }}@${{ secrets.PRODUCTION_SSH_HOST }}" \
+            "cd /srv/buildhub && ./backup-before-release.sh ${{ inputs.image_tag }}"
+
+      - name: Apply database migrations
+        run: |
+          ssh "${{ secrets.PRODUCTION_SSH_USER }}@${{ secrets.PRODUCTION_SSH_HOST }}" \
+            "cd /srv/buildhub && docker run --rm --env-file .env \
+              ${{ env.IMAGE }}:${{ inputs.image_tag }} \
+              npx drizzle-kit migrate"
+
+      - name: Release the staging-verified image
+        run: |
+          ssh "${{ secrets.PRODUCTION_SSH_USER }}@${{ secrets.PRODUCTION_SSH_HOST }}" \
+            "cd /srv/buildhub && \
+             echo BUILDHUB_IMAGE=${{ env.IMAGE }}:${{ inputs.image_tag }} > .image.env && \
+             docker compose --env-file .env --env-file .image.env up -d --pull always"
+
+      - name: Smoke test production
+        run: node scripts/smoke.mjs "${{ secrets.PRODUCTION_BASE_URL }}"
+
+      - name: Roll back on a failed smoke test
+        if: failure()
+        run: |
+          ssh "${{ secrets.PRODUCTION_SSH_USER }}@${{ secrets.PRODUCTION_SSH_HOST }}" \
+            "cd /srv/buildhub && docker compose --env-file .env --env-file .image.env.previous up -d --pull always"
+          echo "::error::Production smoke tests failed. Rolled back to the previously running image. The database migration was NOT reverted - review it against the pre-release backup."
+
+      - name: Record what was released
+        if: success()
+        run: |
+          echo "Released ${{ env.IMAGE }}:${{ inputs.image_tag }} to production" >> "$GITHUB_STEP_SUMMARY"
+          echo "Approved via the production environment gate by ${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"

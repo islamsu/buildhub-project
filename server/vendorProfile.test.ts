@@ -245,7 +245,11 @@ describe('vendor profile responsive conventions', () => {
   it('uses responsive utility classes, not fixed pixel widths, for the new profile section', () => {
     const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'); // sanity: backend has no width/layout concerns
     expect(source).toBeTruthy();
-    const page = readFileSync(new URL('../client/src/pages/ProviderDashboard.tsx', import.meta.url), 'utf8');
+    // Phase 4A.6.4: the vendor profile edit UI lives in the reusable VendorProfileCard
+    // component (rendered from RolePlatform.tsx, the real reachable vendor dashboard),
+    // not in ProviderDashboard.tsx (a legacy redirect-only shim - see
+    // BUILDHUB_PHASE4A64_DASHBOARD_INTEGRATION.md).
+    const page = readFileSync(new URL('../client/src/components/VendorProfileCard.tsx', import.meta.url), 'utf8');
     expect(page).not.toMatch(/width:\s*\d+px/);
     expect(page).toContain('sm:grid-cols-2');
   });

@@ -1,0 +1,35 @@
+# Keep the build context small and keep secrets and local state out of the image.
+
+# Never copy a real environment file into an image. .env.example is allowed
+# through deliberately - it is documentation and contains no values.
+.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+
+node_modules
+dist
+build
+
+# Local development and session artefacts.
+.manus-logs
+.pnpm-store
+.vscode
+.idea
+*.log
+
+# Reports and notes. None of this belongs in a runtime image.
+*.md
+!README.md
+*.txt
+phase*-visual-findings.md
+todo.md
+
+# Tests are not run from the image.
+**/*.test.ts
+**/*.spec.ts
+
+.DS_Store
+Thumbs.db

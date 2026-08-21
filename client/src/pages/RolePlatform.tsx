@@ -13,10 +13,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
+import VendorProfileCard from '@/components/VendorProfileCard';
+import VendorReputation from '@/components/VendorReputation';
+import VendorAnalytics from '@/components/VendorAnalytics';
+import VendorServiceCategories from '@/components/VendorServiceCategories';
+import QualifiedEnquiries from '@/components/QualifiedEnquiries';
+import VendorBilling from '@/components/VendorBilling';
 import {
-  ArrowUpRight, BarChart3, BriefcaseBusiness, CheckCircle2, ClipboardList,
+  ArrowUpRight, BarChart3, BriefcaseBusiness, Camera, CheckCircle2, ClipboardList,
   Clock3, DollarSign, FileText, FolderKanban, KanbanSquare, Layers3, MapPin, MessageSquare,
-  Package, PackagePlus, PenTool, Plus, Send, ShoppingBag, Sparkles, Users,
+  Package, PackagePlus, PenTool, Plus, Send, ShoppingBag, Sparkles, Star, Users,
 } from 'lucide-react';
 
 const PRODUCT_CATEGORIES = ['Materials', 'Furniture', 'Lighting', 'Electrical', 'Plumbing', 'HVAC', 'Paint', 'Ceramics', 'Granite', 'Marble', 'Wood', 'Doors', 'Windows', 'Roofing', 'Glass', 'Steel', 'Concrete', 'Solar', 'Smart Home'];
@@ -83,6 +89,10 @@ export default function RolePlatform() {
   const { data: rfqs = [] } = trpc.rfq.list.useQuery(undefined, { enabled: isAuthenticated });
   const { data: myQuotations = [] } = trpc.rfq.myQuotations.useQuery(undefined, { enabled: isAuthenticated && isProfessional });
   const { data: products = [] } = trpc.marketplace.myProducts.useQuery(undefined, { enabled: isAuthenticated && isSupplier });
+  // Own vendor profile, used only to pass this account's id to VendorReputation below -
+  // VendorProfileCard fetches/renders the same query itself (react-query dedupes the
+  // identical call into one request; this is not a second profile implementation).
+  const { data: ownProfile } = trpc.profile.getOwn.useQuery(undefined, { enabled: isAuthenticated && isProfessional });
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [productForm, setProductForm] = useState({ name: '', nameAr: '', category: '', description: '', brand: '', price: '', stock: '', unit: '', deliveryDays: '' });
   const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
@@ -213,6 +223,57 @@ export default function RolePlatform() {
           <ArchitectWorkspace rfqs={matchingRfqs} projects={projectDirectory} t={t} lang={lang} navigate={navigate} onQuote={(rfqId: number) => { setQuoteForm(form => ({ ...form, rfqId })); setQuoteDialogOpen(true); }} />
         ) : (
           <ProjectManagerWorkspace projects={projectDirectory} rfqs={matchingRfqs} t={t} lang={lang} />
+        )}
+
+        {/* Phase 4B.3: service-category declaration + the qualified-enquiry
+            inbox. Placed in the vendor's own reachable workspace, the same
+            surface Phase 4A.6.4 established as the real vendor dashboard. */}
+        {/* Phase 4B Slice 2: the vendor's own plan and billing state. Placed
+            directly above the enquiry inbox, because the allowance shown there
+            is a consequence of the plan shown here. */}
+        {isProfessional && (
+          <section id="role-billing">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{lang === 'ar' ? 'الباقة والفوترة' : 'Plan & billing'}</h2>
+            </div>
+            <VendorBilling />
+          </section>
+        )}
+
+        {isProfessional && (
+          <section id="role-enquiries">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{lang === 'ar' ? 'الطلبات وفئات الخدمة' : 'Enquiries & service categories'}</h2>
+            </div>
+            <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+              <VendorServiceCategories />
+              <QualifiedEnquiries />
+            </div>
+          </section>
+        )}
+
+        {isProfessional && (
+          <section id="role-performance">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{t('platform.performance')}</h2>
+            </div>
+            <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+              <Card>
+                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Camera className="h-4 w-4" /> {t('profile.title')}</CardTitle></CardHeader>
+                <CardContent><VendorProfileCard /></CardContent>
+              </Card>
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Star className="h-4 w-4" /> {t('reputation.title')}</CardTitle></CardHeader>
+                  <CardContent>{ownProfile ? <VendorReputation userId={ownProfile.id} /> : <div className="text-sm text-muted-foreground py-4">{t('common.loading')}</div>}</CardContent>
+                </Card>
+                <Card>
+                  <CardHeader><CardTitle className="flex items-center gap-2 text-base"><BarChart3 className="h-4 w-4" /> {t('analytics.title')}</CardTitle></CardHeader>
+                  <CardContent><VendorAnalytics /></CardContent>
+                </Card>
+              </div>
+            </div>
+          </section>
         )}
 
         <Dialog open={productDialogOpen} onOpenChange={setProductDialogOpen}>

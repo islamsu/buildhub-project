@@ -3,13 +3,21 @@ import { COOKIE_NAME } from '@shared/const';
 import { getSessionCookieOptions } from './_core/cookies';
 import { systemRouter } from './_core/systemRouter';
 import { publicProcedure, protectedProcedure, router } from './_core/trpc';
+import type { TrpcContext } from './_core/context';
 import { TRPCError } from '@trpc/server';
-import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername } from './db';
+import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername, revokeSession } from './db';
 import { invokeLLM } from './_core/llm';
 import { storagePut } from './storage';
+import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
 import { acceptQuotationSecure, rejectQuotationSecure } from './quotationWorkflow';
-import { aiChatLimiters, getClientIp } from './_core/rateLimit';
+import { aiChatLimiters, authLimiters, getClientIp } from './_core/rateLimit';
+import { recordEventAsync } from './analytics/events';
+import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
+import { getEventCounts, getMedianDaysToMilestone, getVendorFunnel } from './analytics/events';
+import { getChurn, getCommercialKpis } from './analytics/kpis';
+import { ENV } from './_core/env';
+import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
@@ -18,19 +26,73 @@ import {
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, userAccountAuditEvents,
 } from '../drizzle/schema';
-import { eq, desc, and, sql, inArray, notInArray } from 'drizzle-orm';
+import { eq, desc, and, or, like, sql, inArray, notInArray } from 'drizzle-orm';
 import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, type ComplianceDocumentStatus } from '../shared/compliance';
-import { sdk } from './_core/sdk';
+import { sdk, type AuthenticatedUser } from './_core/sdk';
+import {
+  BILLING_CURRENCY, ENTITLEMENT_ENFORCEMENT, FOUNDER_OFFER_ENDS_AT_SETTING_KEY, FOUNDER_OFFER_MONTHS,
+  GRACE_PERIOD_DAYS, PLAN_IDS, PLANS, TRIAL_DAYS, annualSavings, isEntitlementEnforced,
+  type PlanEntitlements,
+} from '@shared/billing';
+import {
+  ADMIN_SUBSCRIPTION_COLUMNS, checkFounderEligibility, getBillingState, getBillingEvents, getSubscription,
+} from './billing/service';
+import { deriveBillingState } from './billing/domain';
+import {
+  changeVendorPlan,
+  getLifecycleSnapshot,
+  recordPaymentFailure,
+  recordPaymentRecovery,
+  recordPaymentSucceeded,
+  reconcileDueSubscriptions,
+  reconcileSubscription,
+  requestCancellation,
+  resumeSubscription,
+  startPaidTrial,
+  type LifecycleOutcome,
+} from './billing/lifecycle';
+import { resolveVendorEntitlements, toVendorEntitlementResponse } from './billing/entitlements';
+import { isPaymentProviderConfigured } from './billing/provider';
+import {
+  getEnquiryUsage, getVendorCategories, listEligibleRfqs, openQualifiedEnquiry,
+} from './billing/enquiries';
+import {
+  FEATURED_PLACEMENT_SLOTS, getVendorTargetingDiagnostics, listDirectoryCategories,
+  listDirectoryVendors, listFeaturedVendors,
+} from './vendorDirectory';
+import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
+import { vendorCategories, vendorSubscriptions } from '../drizzle/schema';
 
 const scryptAsync = promisify(scryptCallback);
+
+/**
+ * Floor for any password BuildHub itself sets or accepts.
+ *
+ * `admin.completeInvitation` predates this and still accepts 6, which is left
+ * alone deliberately - raising it would invalidate invitation links already in
+ * flight without warning anyone.
+ */
+const PASSWORD_MIN_LENGTH = 8;
+
+/** How long a password-reset link stays usable. */
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 
 async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString('hex');
   const derivedKey = (await scryptAsync(password, salt, 64)) as Buffer;
   return `scrypt$${salt}$${derivedKey.toString('hex')}`;
 }
+
+/**
+ * A real, well-formed scrypt hash of a value no account holds, used only so
+ * `auth.signIn` can spend the same CPU on a nonexistent account as on a real
+ * one. Verifying against it always fails; skipping verification entirely would
+ * return in microseconds and leak which usernames exist.
+ */
+const NO_SUCH_ACCOUNT_HASH =
+  'scrypt$00000000000000000000000000000000$' + '0'.repeat(128);
 
 async function verifyPassword(password: string, storedHash: string | null | undefined): Promise<boolean> {
   if (!storedHash) return false;
@@ -43,9 +105,62 @@ async function verifyPassword(password: string, storedHash: string | null | unde
 }
 
 // ── Auth Router ────────────────────────────────────────────────────────────
+// SECURITY (Phase 4A.6.6): `users` also holds passwordHash, invitationToken, and
+// other private/internal account fields. auth.me is called by every authenticated
+// page load - it must never return the full row, only this explicit allowlist.
+// This is a plain pick from the already-authenticated ctx.user (itself already
+// fetched by sdk.authenticateRequest), not a second select().from(users) - so
+// this costs no extra query and cannot be bypassed by forgetting a `where`.
+function toPublicSessionUser(user: AuthenticatedUser) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    userRole: user.userRole,
+    onboardingStatus: user.onboardingStatus,
+  } as const;
+}
+
+/**
+ * Bound the guess rate on the two unauthenticated endpoints that accept a secret.
+ *
+ * `identifier` is the username being attempted, or null where there is nothing
+ * stable to key on (invitation completion, where varying the token IS the
+ * attack). The check runs BEFORE any credential comparison, so a blocked
+ * request never reaches the password/token verification at all.
+ *
+ * Deliberately does not distinguish "wrong password" from "no such user" in its
+ * own behaviour - that distinction is already handled by the single shared
+ * UNAUTHORIZED message below, and rate limiting must not reintroduce it as a
+ * timing or status-code oracle.
+ */
+function enforceAuthRateLimit(req: TrpcContext['req'], identifier: string | null): void {
+  const now = Date.now();
+  const ip = getClientIp(req);
+  const results = [
+    ...(ip ? [authLimiters.ipBurst.check(ip, now), authLimiters.ipSustained.check(ip, now)] : []),
+    ...(identifier ? [authLimiters.identifierSustained.check(identifier.toLowerCase(), now)] : []),
+  ];
+  const blocked = results.find(result => !result.allowed);
+  if (blocked) {
+    throw new TRPCError({
+      code: 'TOO_MANY_REQUESTS',
+      message: `Too many attempts. Try again in ${Math.ceil(blocked.retryAfterMs / 1000)}s.`,
+    });
+  }
+}
+
 const authRouter = router({
-  me: publicProcedure.query(opts => opts.ctx.user),
-  logout: publicProcedure.mutation(({ ctx }) => {
+  me: publicProcedure.query(opts => opts.ctx.user ? toPublicSessionUser(opts.ctx.user) : null),
+  logout: publicProcedure.mutation(async ({ ctx }) => {
+    // Server-side revocation (Phase 4A.6.6): without this, clearing the cookie only
+    // logs this browser out - the same token, if copied elsewhere, kept working until
+    // its natural (up to one-year) expiry. Only revoke when a jti is present (older
+    // pre-this-change tokens have none and simply aren't revocable by this mechanism).
+    if (ctx.user?.sessionJti) {
+      await revokeSession(ctx.user.sessionJti, ctx.user.id, ctx.user.sessionExpiresAt ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
+    }
     const cookieOptions = getSessionCookieOptions(ctx.req);
     ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
     return { success: true } as const;
@@ -54,6 +169,7 @@ const authRouter = router({
     username: z.string().trim().min(3).max(100),
     password: z.string().min(8).max(128),
   })).mutation(async ({ ctx, input }) => {
+    enforceAuthRateLimit(ctx.req, input.username);
     const target = await getUserByUsername(input.username);
     if (!target?.isDummy || target.loginMethod !== 'dummy' || !(await verifyPassword(input.password, target.passwordHash))) {
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid dummy username or password' });
@@ -70,6 +186,240 @@ const authRouter = router({
     await db.insert(userAccountAuditEvents).values({ userId: target.id, actorId: target.id, action: 'dummy_user_signed_in', source: 'dummy', note: 'Dummy user signed in with a locally managed password' });
     return { success: true, userRole: target.userRole, onboardingStatus: target.onboardingStatus } as const;
   }),
+  // ── First-party password authentication (Slice 3) ───────────────────────
+  //
+  // Before this, the only way a real (non-dummy) user could ever obtain a
+  // session was `/api/oauth/callback`, which calls OAUTH_SERVER_URL - a
+  // Manus-platform service. On any infrastructure BuildHub actually controls,
+  // that host is not there, and nobody can sign in at all. `signInDummy`
+  // refuses anything without `isDummy = true`, so it is not a substitute.
+  //
+  // This also closes a defect that existed independently of hosting: an
+  // admin-created account could be invited, could set a password through
+  // `admin.completeInvitation`, and then had NO endpoint that would accept that
+  // password. `signIn` below accepts any non-dummy account holding a
+  // passwordHash, so those accounts finally work.
+  //
+  // OAuth is untouched and keeps working wherever OAUTH_SERVER_URL resolves.
+  // This is a second door, not a replacement.
+  capabilities: publicProcedure.query(() => ({
+    passwordSignIn: true,
+    oauthSignIn: ENV.oAuthServerUrl.length > 0,
+    // Both halves are required for a usable reset: something to send the mail,
+    // and a trustworthy origin to put in the link. The UI hides the flow rather
+    // than offering a button that can only fail.
+    passwordReset: isMailerConfigured() && ENV.appBaseUrl.length > 0,
+  } as const)),
+
+  signUp: publicProcedure.input(z.object({
+    username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/, 'Use letters, numbers, dots, underscores, or hyphens only'),
+    email: z.string().trim().email().max(320),
+    password: z.string().min(PASSWORD_MIN_LENGTH).max(128),
+    name: z.string().trim().min(1).max(255),
+    phone: z.string().trim().max(32).optional(),
+    // 'admin' is absent by construction. Role and privilege are separate here:
+    // `role` is pinned to 'user' below regardless of what is sent.
+    userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager']),
+  })).mutation(async ({ ctx, input }) => {
+    enforceAuthRateLimit(ctx.req, normalizeEmail(input.email));
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+    const username = normalizeUsername(input.username)!;
+    const email = normalizeEmail(input.email)!;
+    if (await getUserByUsername(username)) throw new TRPCError({ code: 'CONFLICT', message: 'Username is already in use' });
+    if (await getUserByEmail(email)) throw new TRPCError({ code: 'CONFLICT', message: 'Email is already in use' });
+
+    const professional = isComplianceRole(input.userRole);
+    const passwordHash = await hashPassword(input.password);
+    const now = new Date();
+
+    let userId: number;
+    try {
+      const result = await db.insert(users).values({
+        // `local_` marks a credential BuildHub itself owns, distinct from the
+        // `admin_`/`dummy_`/platform openIds. authenticateRequest resolves it
+        // from the database like any other, so no other code path changes.
+        openId: `local_${randomUUID()}`,
+        username, name: input.name, email, phone: input.phone || null,
+        loginMethod: 'password',
+        role: 'user',
+        userRole: input.userRole,
+        accountSource: 'self_registered',
+        isDummy: false,
+        onboardingStatus: professional ? 'not_started' : 'approved',
+        // Same rule auth.updateRole already applies to OAuth signups: a
+        // professional is unverified until compliance approves them.
+        verified: !professional,
+        passwordHash,
+        passwordSetAt: now,
+        lastSignedIn: now,
+      });
+      userId = Number(result[0]?.insertId);
+    } catch (error) {
+      // Two simultaneous signups for the same username/email both pass the
+      // checks above; the UNIQUE indexes settle it and the loser gets a plain
+      // conflict rather than a 500.
+      if (error instanceof Error && /duplicate|ER_DUP_ENTRY/i.test(error.message)) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'That username or email was just taken. Please try another.' });
+      }
+      throw error;
+    }
+
+    const [created] = await db.select({ openId: users.openId }).from(users).where(eq(users.id, userId));
+    const sessionToken = await sdk.createSessionToken(created.openId, { name: input.name });
+    ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
+    await db.insert(userAccountAuditEvents).values({
+      userId, actorId: userId, action: 'password_account_created', source: 'self_registered',
+      note: 'Account created with an email address and password',
+    });
+    // Top of the funnel. `role` is safe metadata; the email and password that
+    // arrived with this request are not, and never reach the analytics stream.
+    recordEventAsync({
+      type: ANALYTICS_EVENTS.USER_REGISTERED,
+      userId,
+      metadata: { method: 'password', role: input.userRole },
+    });
+    return { success: true, userRole: input.userRole, onboardingStatus: professional ? 'not_started' : 'approved' } as const;
+  }),
+
+  signIn: publicProcedure.input(z.object({
+    /** Username or email address. Which one is decided here, never by the client. */
+    identifier: z.string().trim().min(3).max(320),
+    password: z.string().min(1).max(128),
+  })).mutation(async ({ ctx, input }) => {
+    enforceAuthRateLimit(ctx.req, input.identifier.toLowerCase());
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+    const identifier = input.identifier.trim().toLowerCase();
+    const target = identifier.includes('@')
+      ? await getUserByEmail(identifier)
+      : await getUserByUsername(identifier);
+
+    // Dummy accounts are excluded on purpose: they have their own endpoint with
+    // its own frozen-by-default policy, and letting them in here would route
+    // around it.
+    const candidate = target && !target.isDummy && target.passwordHash ? target : null;
+
+    // Always run one verification, even with nothing to verify against, so the
+    // response time does not distinguish "no such account" from "wrong
+    // password". The single shared message below is worthless as an
+    // anti-enumeration measure if the clock gives the answer away.
+    const passwordMatches = await verifyPassword(input.password, candidate?.passwordHash ?? NO_SUCH_ACCOUNT_HASH);
+    if (!candidate || !passwordMatches) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid username, email, or password' });
+    }
+    if (candidate.accountStatus !== 'active' || candidate.deactivatedAt) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'This account is not active. Please contact support.' });
+    }
+
+    const sessionToken = await sdk.createSessionToken(candidate.openId, {
+      name: candidate.name || candidate.username || 'BuildHub user',
+    });
+    ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
+    await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, candidate.id));
+    await db.insert(userAccountAuditEvents).values({
+      userId: candidate.id, actorId: candidate.id, action: 'password_signed_in', source: 'password',
+      note: identifier.includes('@') ? 'Signed in with email and password' : 'Signed in with username and password',
+    });
+    recordEventAsync({ type: ANALYTICS_EVENTS.USER_SIGNED_IN, userId: candidate.id, metadata: { method: 'password' } });
+    return { success: true, userRole: candidate.userRole, onboardingStatus: candidate.onboardingStatus } as const;
+  }),
+
+  requestPasswordReset: publicProcedure.input(z.object({
+    email: z.string().trim().email().max(320),
+  })).mutation(async ({ ctx, input }) => {
+    enforceAuthRateLimit(ctx.req, normalizeEmail(input.email));
+    // Refuses rather than returning a cheerful "check your inbox" that no
+    // message will ever follow. `auth.capabilities` lets the UI avoid ever
+    // reaching this state.
+    if (!isMailerConfigured() || ENV.appBaseUrl.length === 0) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'Password reset by email is not available on this deployment. Please contact support.',
+      });
+    }
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+    const email = normalizeEmail(input.email)!;
+    const target = await getUserByEmail(email);
+    const eligible = target && !target.isDummy && target.passwordHash
+      && target.accountStatus === 'active' && !target.deactivatedAt;
+
+    if (eligible) {
+      const token = `${randomUUID()}-${randomUUID().slice(0, 8)}`;
+      await db.update(users).set({
+        passwordResetToken: token,
+        passwordResetExpiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
+      }).where(eq(users.id, target.id));
+      try {
+        await getMailer().send({
+          to: email,
+          subject: 'Reset your BuildHub password',
+          body: `Open this link to choose a new password:\n\n${ENV.appBaseUrl}/auth/reset-password?token=${token}\n\n`
+            + `The link expires in ${Math.round(PASSWORD_RESET_TTL_MS / 60000)} minutes. `
+            + `If you did not request this, you can ignore this message - your password has not changed.`,
+        });
+      } catch (error) {
+        // Swallowed on purpose. A delivery failure that surfaced as a 500 here,
+        // while an unknown address returned 200, would turn this endpoint into
+        // an account-existence oracle.
+        console.error('[auth] Password reset email failed to send', error);
+      }
+      await db.insert(userAccountAuditEvents).values({
+        userId: target.id, actorId: target.id, action: 'password_reset_requested', source: 'password',
+        note: 'A password reset link was issued',
+      });
+    }
+
+    // Identical for a known and an unknown address.
+    return { requested: true } as const;
+  }),
+
+  resetPassword: publicProcedure.input(z.object({
+    token: z.string().trim().min(10).max(128),
+    password: z.string().min(PASSWORD_MIN_LENGTH).max(128),
+  })).mutation(async ({ ctx, input }) => {
+    // Keyed by IP only: the token is the secret being guessed, so keying the
+    // limiter on it would bound nothing.
+    enforceAuthRateLimit(ctx.req, null);
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+    const [target] = await db.select().from(users).where(eq(users.passwordResetToken, input.token));
+    if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'This reset link is invalid or has already been used' });
+    if (!target.passwordResetExpiresAt || new Date(target.passwordResetExpiresAt).getTime() < Date.now()) {
+      await db.update(users).set({ passwordResetToken: null, passwordResetExpiresAt: null }).where(eq(users.id, target.id));
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This reset link has expired. Please request a new one.' });
+    }
+
+    const now = new Date();
+    await db.update(users).set({
+      passwordHash: await hashPassword(input.password),
+      passwordSetAt: now,
+      // Single-use.
+      passwordResetToken: null,
+      passwordResetExpiresAt: null,
+      // Completing the flow proves control of the mailbox the link was sent to.
+      emailVerifiedAt: target.emailVerifiedAt ?? now,
+      // The whole point of a reset is that someone else may hold a live session.
+      // Retire every one of them, including any this account currently has.
+      sessionsInvalidBefore: now,
+    }).where(eq(users.id, target.id));
+
+    await db.insert(userAccountAuditEvents).values({
+      userId: target.id, actorId: target.id, action: 'password_reset_completed', source: 'password',
+      note: 'Password changed via reset link; all existing sessions invalidated',
+    });
+
+    // Deliberately does not sign the user in. They re-authenticate with the new
+    // password, which proves the reset worked and keeps this endpoint from
+    // being a way to obtain a session.
+    return { success: true } as const;
+  }),
+
   checkSignupAvailability: publicProcedure.input(z.object({
     username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/, 'Use letters, numbers, dots, underscores, or hyphens only'),
     email: z.string().email().optional(),
@@ -95,6 +445,11 @@ const authRouter = router({
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       await db.update(users).set({ username: input.username ? normalizeUsername(input.username) : undefined, userRole: input.userRole, name: input.name, phone: input.phone, location: input.location, onboardingStatus: isComplianceRole(input.userRole) ? 'not_started' : 'approved', verified: isComplianceRole(input.userRole) ? false : true }).where(eq(users.id, ctx.user.id));
       await db.insert(userAccountAuditEvents).values({ userId: ctx.user.id, actorId: ctx.user.id, action: 'profile_role_completed', source: 'self_registered', note: `Role selected: ${input.userRole}` });
+      recordEventAsync({
+        type: ANALYTICS_EVENTS.VENDOR_PROFILE_COMPLETED,
+        userId: ctx.user.id,
+        metadata: { role: input.userRole, professional: isComplianceRole(input.userRole) },
+      });
       return { success: true };
     }),
 });
@@ -106,6 +461,26 @@ const complianceProcedure = protectedProcedure.use(({ ctx, next }) => {
 });
 
 const MAX_REGISTRATION_DOCUMENT_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Slice 9 (audit item A10). Every upload endpoint below validated only the
+ * content type the CLIENT declared, then stored the bytes under that label
+ * without ever looking at them - a check the caller controls both sides of.
+ *
+ * This turns the byte-level verification in server/_core/fileType.ts into the
+ * BAD_REQUEST the client already knows how to display. It is applied at all
+ * five upload endpoints rather than the one that looked riskiest, because the
+ * gap was identical in each.
+ */
+function assertUploadedFileMatches(
+  declaredContentType: string,
+  buffer: Buffer,
+  allowed: readonly string[],
+): void {
+  const problem = checkUploadedFile(declaredContentType, buffer, allowed);
+  if (problem) throw new TRPCError({ code: 'BAD_REQUEST', message: problem.message });
+}
+
 const isAllowedRegistrationDocumentType = (contentType: string) => contentType === 'application/pdf' || contentType.startsWith('image/');
 
 function getOverallComplianceStatus(role: string | null | undefined, docs: Array<{ documentType: string; status: string }>, requestedStatus?: string): ComplianceStatus {
@@ -140,6 +515,7 @@ const registrationRouter = router({
     if (!requirement) throw new TRPCError({ code: 'BAD_REQUEST', message: 'This document is not required for the selected role' });
     const bytes = Buffer.from(input.base64, 'base64');
     if (bytes.length === 0 || bytes.length > MAX_REGISTRATION_DOCUMENT_SIZE) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Registration documents must be between 1 byte and 10MB' });
+    assertUploadedFileMatches(input.contentType, bytes, DOCUMENT_TYPES);
     const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
     const { key, url } = await storagePut(`registration/${ctx.user.id}/${Date.now()}-${safeName}`, bytes, input.contentType);
     const result = await db.insert(registrationDocuments).values({ userId: ctx.user.id, documentType: input.documentType, displayName: requirement.name, fileName: input.fileName, url, fileKey: key, mimeType: input.contentType, size: bytes.length, status: 'submitted', applicantNote: input.applicantNote });
@@ -147,6 +523,16 @@ const registrationRouter = router({
     await db.insert(registrationDocumentSubmissions).values({ documentId, userId: ctx.user.id, documentType: input.documentType, fileName: input.fileName, url, fileKey: key, mimeType: input.contentType, size: bytes.length, status: 'submitted', applicantNote: input.applicantNote });
     await db.update(users).set({ onboardingStatus: 'under_review', onboardingReviewNotes: null }).where(eq(users.id, ctx.user.id));
     await db.insert(registrationReviewEvents).values({ userId: ctx.user.id, documentId, actorId: ctx.user.id, action: 'document_submitted', status: 'submitted', note: input.applicantNote });
+    // The document itself, its filename and the applicant's note stay out of
+    // the analytics stream; only the fact that a submission happened, and its
+    // type, are recorded.
+    recordEventAsync({
+      type: ANALYTICS_EVENTS.VENDOR_SUBMITTED_FOR_REVIEW,
+      userId: ctx.user.id,
+      subjectType: 'registrationDocument',
+      subjectId: documentId,
+      metadata: { documentType: input.documentType },
+    });
     return { id: documentId, key, url, status: 'submitted' as const };
   }),
 });
@@ -340,6 +726,7 @@ const projectsRouter = router({
       if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
       const buffer = Buffer.from(input.base64, 'base64');
       if (buffer.length > 8 * 1024 * 1024) throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
+      assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
       const safeName = input.name.replace(/[^\w.-]+/g, '_');
       const { key, url } = await storagePut(`project-documents/user-${ctx.user.id}/project-${input.projectId}/${safeName}`, buffer, input.contentType);
       const result = await db.insert(documents).values({ projectId: input.projectId, uploaderId: ctx.user.id, name: input.name, type: input.type, url, fileKey: key, size: buffer.length });
@@ -366,18 +753,75 @@ const projectsRouter = router({
 
 // ── Marketplace Router ─────────────────────────────────────────────────────
 const marketplaceRouter = router({
+  // ── Real vendor directory (Phase 4B.3) ──────────────────────────────────
+  // Replaces the static mock list that previously backed /marketplace/vendors.
+  // Explicit column allowlist, organic ordering only - a paid plan is never
+  // read here and never affects position.
+  vendors: publicProcedure
+    .input(z.object({
+      category: z.string().optional(),
+      location: z.string().optional(),
+      search: z.string().optional(),
+      limit: z.number().int().positive().max(100).optional(),
+    }).optional())
+    .query(async ({ input }) => listDirectoryVendors(input ?? {})),
+  vendorCategories: publicProcedure.query(async () => listDirectoryCategories()),
+
+  // Featured placement (Slice 8). A SEPARATE endpoint from `vendors` above, on
+  // purpose: the organic list and the sponsored strip are two different things
+  // and merging them into one response is how a client ends up rendering a paid
+  // slot as an organic result. `sponsored: true` on every row makes the
+  // labelling obligation impossible to overlook on the client side.
+  featuredVendors: publicProcedure
+    .input(z.object({
+      category: z.string().optional(),
+      location: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const vendors = await listFeaturedVendors(input ?? {});
+      return {
+        vendors: vendors.map(vendor => ({ ...vendor, sponsored: true as const })),
+        slots: FEATURED_PLACEMENT_SLOTS,
+      };
+    }),
   list: publicProcedure
     .input(z.object({ category: z.string().optional(), search: z.string().optional(), limit: z.number().default(24) }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
-      let query = db.select().from(products).where(eq(products.active, true));
-      return query.orderBy(desc(products.featured), desc(products.createdAt)).limit(input.limit);
+      // Slice 10: `category` and `search` were accepted and then silently
+      // ignored - the query built the filter variable and never used it. It
+      // went unnoticed because the products page filtered a hardcoded array on
+      // the client instead of calling this endpoint at all, so the parameters
+      // had no consumer to be wrong for.
+      const conditions = [eq(products.active, true)];
+      if (input.category && input.category !== 'All') {
+        conditions.push(eq(products.category, input.category));
+      }
+      if (input.search) {
+        const term = `%${input.search}%`;
+        conditions.push(or(
+          like(products.name, term),
+          like(products.nameAr, term),
+          like(products.brand, term),
+          like(products.category, term),
+        )!);
+      }
+      return db.select().from(products)
+        .where(and(...conditions))
+        .orderBy(desc(products.featured), desc(products.createdAt))
+        .limit(input.limit);
     }),
   get: publicProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [product] = await db.select().from(products).where(eq(products.id, input.id));
+    // Slice 9: `active` is filtered here as well as in `list` above. A supplier
+    // who deactivates a product - delisted, discontinued, mispriced - has
+    // withdrawn it from sale, and it stayed fully readable by id to anyone who
+    // knew or guessed the number. Absent and withdrawn are the same answer to a
+    // buyer, so both are NOT_FOUND.
+    const [product] = await db.select().from(products)
+      .where(and(eq(products.id, input.id), eq(products.active, true)));
     if (!product) throw new TRPCError({ code: 'NOT_FOUND' });
     return product;
   }),
@@ -426,7 +870,19 @@ const marketplaceRouter = router({
   questions: publicProcedure.input(z.object({ productId: z.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(productQuestions).where(eq(productQuestions.productId, input.productId)).orderBy(desc(productQuestions.createdAt));
+    // Slice 9: an explicit column allowlist. This is a PUBLIC endpoint and the
+    // bare select returned `askerId`, so anyone could walk the product
+    // catalogue and collect the user id of every buyer who had asked about
+    // anything. The page renders the question, the answer and the timestamps;
+    // it has never needed to say who asked.
+    return db.select({
+      id: productQuestions.id,
+      productId: productQuestions.productId,
+      question: productQuestions.question,
+      answer: productQuestions.answer,
+      answeredAt: productQuestions.answeredAt,
+      createdAt: productQuestions.createdAt,
+    }).from(productQuestions).where(eq(productQuestions.productId, input.productId)).orderBy(desc(productQuestions.createdAt));
   }),
   askQuestion: protectedProcedure.input(z.object({ productId: z.number(), question: z.string().min(2).max(2000) })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
@@ -440,7 +896,21 @@ const marketplaceRouter = router({
 
 // ── RFQ Router ─────────────────────────────────────────────────────────────
 const rfqRouter = router({
-  list: publicProcedure.query(async () => {
+  // Slice 9. This was `publicProcedure` and returned `select().from(rfqs)` -
+  // every column of the 50 most recent RFQs, to anyone on the internet with no
+  // account at all. That included `budget`, which is the homeowner's private
+  // figure for the job, alongside requesterId, description, location and the
+  // attachment keys.
+  //
+  // Authenticated exposure IS the approved design: Phase 4B.3 documented that
+  // rfq.list and rfq.get show full RFQ detail to any signed-in user because
+  // BuildHub is an open-bidding marketplace. Anonymous exposure was never part
+  // of that, and `rfq.get` immediately below has always been protected - this
+  // was one procedure that got missed, not a policy.
+  //
+  // Both client call sites are already authenticated-only paths, and
+  // RFQPage.tsx gates its neighbouring queries on isAuthenticated already.
+  list: protectedProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
     return db.select().from(rfqs).orderBy(desc(rfqs.createdAt)).limit(50);
@@ -490,7 +960,15 @@ const rfqRouter = router({
         attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : undefined,
         productReference: productReference ?? undefined,
       });
-      return { id: Number(result[0].insertId) };
+      const rfqId = Number(result[0].insertId);
+      recordEventAsync({
+        type: ANALYTICS_EVENTS.RFQ_POSTED,
+        userId: ctx.user.id,
+        subjectType: 'rfq',
+        subjectId: rfqId,
+        metadata: { category: rest.category ?? undefined },
+      });
+      return { id: rfqId };
     }),
   uploadAttachment: protectedProcedure
     .input(z.object({
@@ -506,6 +984,7 @@ const rfqRouter = router({
       if (buffer.length > MAX_RFQ_ATTACHMENT_SIZE) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
       }
+      assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
       const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
       const { key, url } = await storagePut(
         `rfq-attachments/user-${ctx.user.id}/${safeName}`,
@@ -531,9 +1010,20 @@ const rfqRouter = router({
       rfqStatus: rfqs.status,
     }).from(quotations).leftJoin(rfqs, eq(quotations.rfqId, rfqs.id)).where(eq(quotations.providerId, ctx.user.id)).orderBy(desc(quotations.createdAt));
   }),
+  // SECURITY (Phase 4A final gate): quotations on an RFQ include each bidding
+  // vendor's email, exact price, timeline, and notes - competitive-intelligence
+  // and contact-info exposure if any authenticated user (including a rival
+  // vendor) could pull them for an RFQ they don't own, not just the homeowner
+  // legitimately comparing bids on their own request. This ownership check
+  // matches the same pattern already used by every other project/RFQ-scoped
+  // query in this file (projects.get, projects.expenses, projects.dailyLogs).
   quotations: protectedProcedure.input(z.object({ rfqId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
+    const [rfq] = await db.select({ requesterId: rfqs.requesterId }).from(rfqs).where(eq(rfqs.id, input.rfqId));
+    if (!rfq || rfq.requesterId !== ctx.user.id) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this RFQ' });
+    }
     const rows = await db
       .select({
         id:               quotations.id,
@@ -549,8 +1039,6 @@ const rfqRouter = router({
         createdAt:        quotations.createdAt,
         providerName:     users.name,
         providerEmail:    users.email,
-        providerRating:   users.rating,
-        providerReviews:  users.reviewCount,
         providerVerified: users.verified,
         providerRole:     users.userRole,
         providerLocation: users.location,
@@ -559,8 +1047,79 @@ const rfqRouter = router({
       .leftJoin(users, eq(quotations.providerId, users.id))
       .where(eq(quotations.rfqId, input.rfqId))
       .orderBy(quotations.price);
-    return rows;
+
+    // Phase 4A.6.9: reputation must come from the same dynamic AVG/COUNT
+    // definition already approved in reviews.statsForUser (Phase 4A.6.2) -
+    // never the stale users.rating/reviewCount columns, which nothing in
+    // the codebase writes to and which would always show 0 here regardless
+    // of a vendor's real reviews. This keeps the homeowner's quote-comparison
+    // view consistent with the same vendor's profile/dashboard reputation.
+    const providerIds = Array.from(new Set(rows.map(row => row.providerId).filter((id): id is number => id != null)));
+    const reputationByProvider = new Map<number, { averageRating: number | null; reviewCount: number }>();
+    if (providerIds.length > 0) {
+      const aggregateRows = await db.select({
+        revieweeId: reviews.revieweeId,
+        avg: sql<string | null>`avg(${reviews.rating})`,
+        count: sql<number>`count(*)`,
+      }).from(reviews).where(and(inArray(reviews.revieweeId, providerIds), eq(reviews.verified, true))).groupBy(reviews.revieweeId);
+      for (const row of aggregateRows) {
+        const reviewCount = Number(row.count ?? 0);
+        reputationByProvider.set(row.revieweeId, {
+          averageRating: reviewCount > 0 && row.avg != null ? Math.round(Number(row.avg) * 10) / 10 : null,
+          reviewCount,
+        });
+      }
+    }
+
+    return rows.map(row => {
+      const reputation = row.providerId != null ? reputationByProvider.get(row.providerId) : undefined;
+      return {
+        ...row,
+        providerRating: reputation?.averageRating ?? null,
+        providerReviews: reputation?.reviewCount ?? 0,
+      };
+    });
   }),
+  // ── RFQ targeting (Phase 4B.3) ──────────────────────────────────────────
+  // Which open RFQs this vendor is eligible for, by declared-category match.
+  // Listing is free: no credit is consumed here, only by openEnquiry below.
+  eligible: approvedProviderProcedure.query(async ({ ctx }) => {
+    const [items, usage] = await Promise.all([
+      listEligibleRfqs(ctx.user.id),
+      getEnquiryUsage(ctx.user.id),
+    ]);
+    return { items, usage };
+  }),
+
+  // Open an eligible RFQ's full detail, consuming one qualified-enquiry credit
+  // the first time. Every decision - identity, declared categories, RFQ
+  // eligibility, billing entitlement - is re-derived server-side; the only
+  // caller input is which RFQ to open, so an RFQ id, category, or plan cannot
+  // be manipulated into access.
+  openEnquiry: approvedProviderProcedure
+    .input(z.object({ rfqId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await openQualifiedEnquiry(ctx.user.id, input.rfqId);
+      switch (result.outcome) {
+        case 'not_found':
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
+        case 'not_eligible':
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: result.reason === 'unclassified_rfq'
+              ? 'This request has no recognised service category, so it is not offered as a qualified enquiry.'
+              : 'This request does not match any of your declared service categories.',
+          });
+        case 'limit_reached':
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            // Enough for the UI to explain the limit; no other vendor's data.
+            message: `You have used all ${result.usage.allowance} qualified enquiries for this month. Your allowance resets on ${result.usage.resetsAt.toISOString().slice(0, 10)}.`,
+          });
+        case 'granted':
+          return { rfq: result.rfq, alreadyConsumed: result.alreadyConsumed, usage: result.usage };
+      }
+    }),
   submitQuotation: approvedProviderProcedure
     .input(z.object({
       rfqId: z.number(),
@@ -582,12 +1141,27 @@ const rfqRouter = router({
       if (rfq) {
         await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: '/rfq' });
       }
+      // Funnel milestone: a vendor responding is the point at which the
+      // marketplace has produced value for both sides.
+      recordEventAsync({
+        type: ANALYTICS_EVENTS.QUOTATION_SUBMITTED,
+        userId: ctx.user.id,
+        subjectType: 'rfq',
+        subjectId: input.rfqId,
+      });
       return { success: true };
     }),
   acceptQuotation: protectedProcedure
     .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      return acceptQuotationSecure(input.rfqId, input.quotationId, ctx.user.id);
+      const accepted = await acceptQuotationSecure(input.rfqId, input.quotationId, ctx.user.id);
+      recordEventAsync({
+        type: ANALYTICS_EVENTS.QUOTATION_ACCEPTED,
+        userId: ctx.user.id,
+        subjectType: 'quotation',
+        subjectId: input.quotationId,
+      });
+      return accepted;
     }),
   rejectQuotation: protectedProcedure
     .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
@@ -624,8 +1198,25 @@ const messagesRouter = router({
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     if (input.type === 'quotation') {
       if (!input.quotationId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Quotation reference is required' });
-      const [quotation] = await db.select({ id: quotations.id }).from(quotations).where(eq(quotations.id, input.quotationId));
-      if (!quotation) throw new TRPCError({ code: 'NOT_FOUND', message: 'Quotation not found' });
+      // Slice 9: the sender must be a PARTY to the quotation, not merely someone
+      // who guessed a number that exists. This previously checked existence
+      // only, which made the endpoint an oracle - type ids into the "Quote ID"
+      // box and NOT_FOUND versus success tells you exactly which quotations
+      // exist and how many bids the marketplace carries.
+      //
+      // A party is the provider who submitted it, or the homeowner who owns the
+      // RFQ it answers. Those are the only two people with any reason to share
+      // one, and both already see it elsewhere in the product.
+      const [quotation] = await db
+        .select({ providerId: quotations.providerId, requesterId: rfqs.requesterId })
+        .from(quotations)
+        .innerJoin(rfqs, eq(quotations.rfqId, rfqs.id))
+        .where(eq(quotations.id, input.quotationId));
+      // Not-a-party and does-not-exist give the SAME answer, so the oracle is
+      // not simply moved one step along.
+      if (!quotation || (quotation.providerId !== ctx.user.id && quotation.requesterId !== ctx.user.id)) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Quotation not found' });
+      }
     }
     const result = await db.insert(messages).values({ ...input, senderId: ctx.user.id });
     return { id: Number(result[0].insertId), ...input, senderId: ctx.user.id };
@@ -633,7 +1224,13 @@ const messagesRouter = router({
   uploadAttachment: protectedProcedure.input(z.object({ fileName: z.string().min(1).max(255), contentType: z.string().startsWith('image/').or(z.literal('application/pdf')), base64: z.string().max(11_000_000) })).mutation(async ({ ctx, input }) => {
     const buffer = Buffer.from(input.base64, 'base64');
     if (buffer.length > 8 * 1024 * 1024) throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
-    const safeName = input.fileName.replace(/[^\\w.-]+/g, '_');
+    assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
+    // The character class here read [^\\w.-] - a DOUBLE backslash inside a regex
+    // literal, so the negated set was {backslash, w, dot, hyphen} rather than
+    // {word characters, dot, hyphen}. Every ordinary letter was therefore
+    // replaced: "site-plan.pdf" became "_-_._". The other three upload
+    // endpoints already had this right.
+    const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
     const { key, url } = await storagePut(`message-attachments/user-${ctx.user.id}/${Date.now()}-${safeName}`, buffer, input.contentType);
     return { key, url, name: input.fileName, size: buffer.length, type: input.contentType };
   }),
@@ -816,6 +1413,51 @@ const profileRouter = router({
     await db.update(users).set({ bio: input.bio, location: input.location }).where(eq(users.id, ctx.user.id));
     return { success: true };
   }),
+  // ── Vendor service categories (Phase 4B.3) ──────────────────────────────
+  // A vendor declares which of the nine shared RFQ categories describe their
+  // work. This is what makes RFQ targeting possible without BuildHub guessing
+  // a role-to-category mapping. Self-scoped by construction: no userId input.
+  myCategories: approvedProviderProcedure.query(async ({ ctx }) => {
+    const [categories, resolution] = await Promise.all([
+      getVendorCategories(ctx.user.id),
+      resolveVendorEntitlements(ctx.user.id),
+    ]);
+    return {
+      categories,
+      available: RFQ_CATEGORIES,
+      limit: resolution.entitlements.serviceCategoryLimit,
+    };
+  }),
+  setMyCategories: approvedProviderProcedure
+    .input(z.object({ categories: z.array(z.string()).max(RFQ_CATEGORIES.length) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      // Only values from the shared taxonomy - a client cannot invent one.
+      const unique = Array.from(new Set(input.categories));
+      const invalid = unique.filter(category => !isRfqCategory(category));
+      if (invalid.length > 0) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `Unknown service category: ${invalid.join(', ')}` });
+      }
+
+      // The per-plan cap comes from the Phase 4B.2 resolver, never duplicated here.
+      const resolution = await resolveVendorEntitlements(ctx.user.id);
+      const limit = resolution.entitlements.serviceCategoryLimit;
+      if (limit !== null && unique.length > limit) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `Your plan allows up to ${limit} service categories. Upgrade to declare more.`,
+        });
+      }
+
+      // Replace the vendor's own declarations only - scoped to ctx.user.id.
+      await db.delete(vendorCategories).where(eq(vendorCategories.userId, ctx.user.id));
+      if (unique.length > 0) {
+        await db.insert(vendorCategories).values(unique.map(category => ({ userId: ctx.user.id, category })));
+      }
+      return { categories: unique };
+    }),
   // Same self-only guarantee as update: writes only to ctx.user.id's row.
   uploadAvatar: protectedProcedure.input(z.object({
     contentType: z.string().refine(isAllowedAvatarType, 'Only image files are supported'),
@@ -825,6 +1467,7 @@ const profileRouter = router({
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const bytes = Buffer.from(input.base64, 'base64');
     if (bytes.length === 0 || bytes.length > MAX_AVATAR_SIZE) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Avatar images must be between 1 byte and 2MB' });
+    assertUploadedFileMatches(input.contentType, bytes, IMAGE_TYPES);
     const { url } = await storagePut(`avatars/${ctx.user.id}/${Date.now()}-avatar`, bytes, input.contentType);
     await db.update(users).set({ avatar: url }).where(eq(users.id, ctx.user.id));
     return { url };
@@ -888,6 +1531,32 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+// SECURITY (Phase 4A.6.7): `users` also holds passwordHash, invitationToken, and
+// other private/internal fields. admin.users MUST always use this explicit
+// allowlist - never `select().from(users)` - so a future edit to this file
+// cannot silently start leaking a private column to the admin User Management
+// screen. Every field here is independently traced to real, current consumption
+// in client/src/pages/AdminDashboard.tsx (row display, group filter/counts,
+// frozen/verified/dummy/invite badges, and the freeze/audit/dummy-password
+// dialogs) - see BUILDHUB_PHASE4A67_ADMIN_USER_DATA_SECURITY.md for the
+// field-by-field trace. Adding a new users column later does NOT expose it here
+// automatically; it must be added to this list deliberately.
+const ADMIN_USER_LIST_COLUMNS = {
+  id: users.id,
+  name: users.name,
+  email: users.email,
+  username: users.username,
+  role: users.role,
+  userRole: users.userRole,
+  accountStatus: users.accountStatus,
+  frozenReason: users.frozenReason,
+  verified: users.verified,
+  isDummy: users.isDummy,
+  accountSource: users.accountSource,
+  invitationStatus: users.invitationStatus,
+  createdAt: users.createdAt,
+} as const;
+
 const DEFAULT_ADMIN_SETTINGS: Record<string, string> = {
   maintenanceMode: 'false',
   registrationEnabled: 'true',
@@ -899,7 +1568,29 @@ const DEFAULT_ADMIN_SETTINGS: Record<string, string> = {
   commissionPercent: '5',
   reviewApprovalRequired: 'true',
   spamSensitivity: 'medium',
+  // Phase 4B.1: founder-offer cut-off, as an ISO date string. Empty = the
+  // offer is closed, which is the safe default (getFounderOfferEndsAt treats
+  // absent/unparseable as "no offer"). Listed here so an administrator can
+  // actually set it through the existing admin.updateSetting endpoint, which
+  // rejects any key not defined in this record - without this entry the
+  // founder offer would not be configurable at all.
+  [FOUNDER_OFFER_ENDS_AT_SETTING_KEY]: '',
 };
+
+// SECURITY (Phase 4A cumulative final audit): explicit allowlist for the
+// Compliance Queue / Applicant Detail endpoints - see the comment above
+// complianceQueue below for why this exists.
+const COMPLIANCE_APPLICANT_COLUMNS = {
+  id: users.id,
+  name: users.name,
+  email: users.email,
+  userRole: users.userRole,
+  onboardingStatus: users.onboardingStatus,
+  onboardingReviewNotes: users.onboardingReviewNotes,
+  onboardingReviewedAt: users.onboardingReviewedAt,
+  isDummy: users.isDummy,
+  createdAt: users.createdAt,
+} as const;
 
 const adminRouter = router({
   stats: adminProcedure.query(async () => {
@@ -923,7 +1614,7 @@ const adminRouter = router({
   users: adminProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(users).orderBy(desc(users.createdAt)).limit(250);
+    return db.select(ADMIN_USER_LIST_COLUMNS).from(users).orderBy(desc(users.createdAt)).limit(250);
   }),
   createUser: adminProcedure.input(z.object({
     username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/),
@@ -966,7 +1657,11 @@ const adminRouter = router({
     await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'invitation_resent', source: 'admin_created', note: `Resent to ${target.email}` });
     return { success: true, invitationLink: `/auth/setup-password?token=${inviteToken}` };
   }),
-  completeInvitation: publicProcedure.input(z.object({ token: z.string().min(10), password: z.string().min(6).max(128) })).mutation(async ({ input }) => {
+  completeInvitation: publicProcedure.input(z.object({ token: z.string().min(10), password: z.string().min(6).max(128) })).mutation(async ({ ctx, input }) => {
+    // Unauthenticated, and it sets a password from a bearer token - so the guess
+    // rate has to be bounded. Keyed by IP only: the token is the thing being
+    // guessed, so keying on it would bound nothing.
+    enforceAuthRateLimit(ctx.req, null);
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const [target] = await db.select().from(users).where(eq(users.invitationToken, input.token));
@@ -1070,6 +1765,111 @@ const adminRouter = router({
     }
     return { success: true };
   }),
+  // Phase 4B.1 minimal administrative billing visibility. Deliberately a
+  // single-vendor lookup, not a dashboard - §10 of the phase brief. Returns the
+  // explicit ADMIN_SUBSCRIPTION_COLUMNS allowlist (no provider references, and
+  // BuildHub stores no card/token/credential data anywhere to begin with).
+  vendorBilling: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return null;
+    const [row] = await db
+      .select(ADMIN_SUBSCRIPTION_COLUMNS)
+      .from(vendorSubscriptions)
+      .where(eq(vendorSubscriptions.userId, input.userId))
+      .limit(1);
+    const full = await getSubscription(input.userId);
+    const state = deriveBillingState(full);
+    return {
+      subscription: row ?? null,
+      effectivePlan: state.effectivePlan,
+      storedPlan: state.storedPlan,
+      isPaid: state.isPaid,
+      inTrial: state.inTrial,
+      trialEndsAt: state.trialEndsAt,
+      cancelAtPeriodEnd: state.cancelAtPeriodEnd,
+      currentPeriodEnd: state.currentPeriodEnd,
+      inGracePeriod: state.inGracePeriod,
+      gracePeriodEndsAt: state.gracePeriodEndsAt,
+      founderPriceActive: state.founderPriceActive,
+      founderPriceEndsAt: state.founderPriceEndsAt,
+      awaitingRenewalSync: state.awaitingRenewalSync,
+      // Surfaced so support can SEE a corrupt row rather than being silently
+      // told the vendor is on FREE with no explanation.
+      dataIntegrityIssue: state.dataIntegrityIssue,
+      events: await getBillingEvents(input.userId, 50),
+    };
+  }),
+  // Phase 4B.3: troubleshooting view for vendor targeting - declared
+  // categories, and which RFQs consumed a qualified-enquiry credit. Contains
+  // no payment information of any kind.
+  // ── Subscription lifecycle, admin-authorized (Phase 4B.4) ──────────────
+  //
+  // Payment OUTCOMES are recorded here rather than by the vendor, because a
+  // vendor must never be able to declare their own payment succeeded. Until
+  // Phase 4B.5 wires the provider, an administrator is the only trusted
+  // observer of a payment result; when the provider arrives it becomes the
+  // observer and calls the very same idempotent lifecycle functions.
+  //
+  // These are lifecycle operations, not a billing dashboard, and they expose
+  // no provider handle, price reference, or credential.
+
+  vendorLifecycle: adminProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .query(async ({ input }) => getLifecycleSnapshot(input.userId)),
+
+  startVendorTrial: adminProcedure
+    .input(z.object({
+      userId: z.number().int().positive(),
+      plan: z.enum(['professional', 'premium']),
+      interval: z.enum(['month', 'year']),
+    }))
+    .mutation(async ({ ctx, input }) => lifecycleResult(await startPaidTrial({
+      userId: input.userId, planId: input.plan, interval: input.interval,
+      source: 'admin', actorId: ctx.user.id,
+    }))),
+
+  changeVendorPlan: adminProcedure
+    .input(z.object({ userId: z.number().int().positive(), plan: z.enum(['professional', 'premium']) }))
+    .mutation(async ({ ctx, input }) => lifecycleResult(await changeVendorPlan({
+      userId: input.userId, targetPlan: input.plan, source: 'admin', actorId: ctx.user.id,
+    }))),
+
+  recordVendorPaymentSucceeded: adminProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => lifecycleResult(await recordPaymentSucceeded({
+      userId: input.userId, source: 'admin', actorId: ctx.user.id,
+    }))),
+
+  recordVendorPaymentFailed: adminProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => lifecycleResult(await recordPaymentFailure({
+      userId: input.userId, source: 'admin', actorId: ctx.user.id,
+    }))),
+
+  recordVendorPaymentRecovered: adminProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => lifecycleResult(await recordPaymentRecovery({
+      userId: input.userId, source: 'admin', actorId: ctx.user.id,
+    }))),
+
+  reconcileVendorBilling: adminProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => lifecycleResult(await reconcileSubscription({
+      userId: input.userId, source: 'admin', actorId: ctx.user.id,
+    }))),
+
+  // The sweep's manual trigger. BuildHub has no job runner, so this is not
+  // scheduled - and deliberately does not need to be: entitlements already
+  // lapse on time without it (Phase 4B.4 §3).
+  reconcileDueBilling: adminProcedure.mutation(async () => reconcileDueSubscriptions({})),
+
+  vendorTargeting: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+    const [diagnostics, usage] = await Promise.all([
+      getVendorTargetingDiagnostics(input.userId),
+      getEnquiryUsage(input.userId),
+    ]);
+    return { ...diagnostics, usage };
+  }),
   accountAudit: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
@@ -1095,20 +1895,88 @@ const adminRouter = router({
       monthlyMap[month].projects += 1;
     }
     const sortedMonths = Object.keys(monthlyMap).sort();
-    if (sortedMonths.length === 0) {
-      return [{ month: '2026-07', users: userRows.length, projects: projectRows.length }];
-    }
+    // Slice 7: this used to return a single row labelled '2026-07' - a
+    // hardcoded month that no data supported - whenever there was nothing to
+    // aggregate. With the invented MONTHLY_USERS fallback removed in Slice 4,
+    // that fabricated label became the visible thing. An empty result is the
+    // honest answer, and the dashboard renders an explicit empty state for it.
+    if (sortedMonths.length === 0) return [];
     return sortedMonths.map(month => ({
       month,
       users: monthlyMap[month].users,
       projects: monthlyMap[month].projects,
     }));
   }),
+  /**
+   * Product analytics (Slice 7). Admin-only, no input beyond a window, and it
+   * returns aggregates - never a per-user event list, which would be a
+   * behavioural dossier on identifiable people with no operational purpose.
+   */
+  productAnalytics: adminProcedure
+    .input(z.object({
+      includeDummy: z.boolean().default(false),
+      windowDays: z.number().int().min(1).max(365).default(30),
+    }).optional())
+    .query(async ({ input }) => {
+      const includeDummy = input?.includeDummy ?? false;
+      const windowDays = input?.windowDays ?? 30;
+      const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+
+      const [funnel, eventCounts, daysToVerified, daysToFirstQuotation] = await Promise.all([
+        getVendorFunnel({ includeDummy }),
+        getEventCounts({ since }),
+        getMedianDaysToMilestone(ANALYTICS_EVENTS.VENDOR_VERIFIED, { includeDummy }),
+        getMedianDaysToMilestone(ANALYTICS_EVENTS.QUOTATION_SUBMITTED, { includeDummy }),
+      ]);
+
+      return {
+        windowDays,
+        funnel,
+        eventCounts,
+        // null means nobody has completed the milestone yet, which is a
+        // different statement from "it takes zero days".
+        medianDaysToVerified: daysToVerified,
+        medianDaysToFirstQuotation: daysToFirstQuotation,
+      };
+    }),
+
+  /**
+   * Commercial KPIs. Computed from vendorSubscriptions and priced from
+   * shared/billing.ts - never from the event stream, and never hardcoded.
+   */
+  commercialKpis: adminProcedure
+    .input(z.object({
+      includeDummy: z.boolean().default(false),
+      churnWindowDays: z.number().int().min(7).max(365).default(30),
+    }).optional())
+    .query(async ({ input }) => {
+      const includeDummy = input?.includeDummy ?? false;
+      const churnWindowDays = input?.churnWindowDays ?? 30;
+      const to = new Date();
+      const from = new Date(to.getTime() - churnWindowDays * 24 * 60 * 60 * 1000);
+
+      const [kpis, churn] = await Promise.all([
+        getCommercialKpis({ includeDummy }),
+        getChurn({ from, to, includeDummy }),
+      ]);
+
+      return { ...kpis, churn: { ...churn, windowDays: churnWindowDays } };
+    }),
+
+  // SECURITY (Phase 4A cumulative final audit): same passwordHash/invitationToken
+  // exposure risk as ADMIN_USER_LIST_COLUMNS above, found independently in the
+  // two Compliance Queue endpoints below - both previously did a bare
+  // `select().from(users)` and spread the full row (including passwordHash and
+  // the live, still-usable invitationToken bearer credential) into the admin
+  // dashboard's Compliance Queue / Applicant Detail response. Every field here
+  // is traced to real consumption in client/src/pages/AdminDashboard.tsx's
+  // compliance queue list, registration CSV export (shared/registrationMetrics.ts),
+  // and the applicant detail dialog.
   complianceQueue: adminProcedure.input(z.object({ includeDummy: z.boolean().default(false) }).optional()).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
     const applicantFilter = input?.includeDummy ? inArray(users.userRole, providerRoles) : and(inArray(users.userRole, providerRoles), eq(users.isDummy, false));
-    const applicants = await db.select().from(users).where(applicantFilter);
+    const applicants = await db.select(COMPLIANCE_APPLICANT_COLUMNS).from(users).where(applicantFilter);
     const docs = await db.select().from(registrationDocuments).orderBy(desc(registrationDocuments.createdAt));
     return applicants.map(applicant => ({
       ...applicant,
@@ -1119,7 +1987,7 @@ const adminRouter = router({
   complianceApplicant: adminProcedure.input(z.object({ userId: z.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [applicant] = await db.select().from(users).where(eq(users.id, input.userId));
+    const [applicant] = await db.select(COMPLIANCE_APPLICANT_COLUMNS).from(users).where(eq(users.id, input.userId));
     if (!applicant || !isComplianceRole(applicant.userRole)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Compliance applicant not found' });
     const docs = await db.select().from(registrationDocuments).where(eq(registrationDocuments.userId, input.userId)).orderBy(desc(registrationDocuments.createdAt));
     const history = await db.select().from(registrationDocumentSubmissions).where(eq(registrationDocumentSubmissions.userId, input.userId)).orderBy(desc(registrationDocumentSubmissions.createdAt)).limit(100);
@@ -1160,6 +2028,14 @@ const adminRouter = router({
     await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: new Date(), onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(eq(users.id, input.userId));
     await db.insert(registrationReviewEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'applicant_status_updated', status: input.status, note: input.note });
     await notifyUser(db, { userId: input.userId, title: 'Registration status updated', body: input.note || `Your registration is now ${input.status.replace('_', ' ')}`, type: 'compliance', link: '/compliance' });
+    // Verification is the gate for appearing in the directory at all, so it is
+    // the funnel stage where a vendor becomes able to earn anything. The
+    // reviewer's note is not recorded - it is free text about a real person.
+    recordEventAsync({
+      type: input.status === 'approved' ? ANALYTICS_EVENTS.VENDOR_VERIFIED : ANALYTICS_EVENTS.VENDOR_REVIEW_REJECTED,
+      userId: input.userId,
+      metadata: { status: input.status, role: applicant.userRole ?? undefined },
+    });
     return { success: true, onboardingStatus: input.status };
   }),
   bulkUpdateApplicantStatus: adminProcedure.input(z.object({
@@ -1283,6 +2159,166 @@ const aiRouter = router({
     }),
 });
 
+// ── Billing Router (Phase 4B.1) ────────────────────────────────────────────
+// READ-ONLY by design. There is deliberately no vendor-callable mutation that
+// changes a plan, price, or subscription status anywhere in this router: plan
+// changes are driven by verified payment-provider events (Phase 4B.5), never
+// by a client request. That is what structurally prevents a vendor from
+// upgrading themselves by manipulating a payload - there is no such endpoint
+// to manipulate, not merely a check that could be bypassed.
+/**
+ * Turn a lifecycle outcome into an HTTP-shaped result.
+ *
+ * `noop` is a SUCCESS, not an error: repeating a transition the vendor already
+ * completed is exactly the idempotent behaviour Phase 4B.4 requires, and the
+ * client should see the settled state rather than a failure. Only a genuinely
+ * illegal transition is an error, and it carries the server's own reason.
+ */
+function lifecycleResult(outcome: LifecycleOutcome) {
+  if (outcome.outcome === 'rejected') {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: outcome.reason });
+  }
+  return {
+    outcome: outcome.outcome,
+    action: outcome.action,
+    lifecycleState: outcome.lifecycleState,
+    plan: outcome.state.effectivePlan,
+    status: outcome.state.status,
+    isPaid: outcome.state.isPaid,
+    inTrial: outcome.state.inTrial,
+    trialEndsAt: outcome.state.trialEndsAt,
+    currentPeriodEnd: outcome.state.currentPeriodEnd,
+    cancelAtPeriodEnd: outcome.state.cancelAtPeriodEnd,
+    inGracePeriod: outcome.state.inGracePeriod,
+    gracePeriodEndsAt: outcome.state.gracePeriodEndsAt,
+    founderPriceActive: outcome.state.founderPriceActive,
+    founderPriceEndsAt: outcome.state.founderPriceEndsAt,
+    entitlements: outcome.state.entitlements,
+  };
+}
+
+const billingRouter = router({
+  // The public commercial catalogue, straight from shared/billing.ts - the one
+  // source of truth. Prices are never duplicated into the client bundle.
+  plans: publicProcedure.query(() => ({
+    currency: BILLING_CURRENCY,
+    trialDays: TRIAL_DAYS,
+    gracePeriodDays: GRACE_PERIOD_DAYS,
+    founderOfferMonths: FOUNDER_OFFER_MONTHS,
+    plans: PLAN_IDS.map(id => ({
+      id,
+      paid: PLANS[id].paid,
+      standard: PLANS[id].standard,
+      founder: PLANS[id].founder,
+      entitlements: PLANS[id].entitlements,
+      annualSavings: annualSavings(id),
+    })),
+    // Which entitlements BuildHub actually enforces TODAY, derived from the
+    // Phase 4B.1 honesty ledger - whose stated purpose is that "no report, UI,
+    // or plan-comparison page can claim a capability works when nothing
+    // enforces it". The pricing page badges everything false as "coming soon"
+    // rather than advertising it as included.
+    //
+    // Computed here rather than in the client so the catalogue stays
+    // server-owned and shared/billing.ts's PLANS table is never pulled into the
+    // browser bundle.
+    entitlementAvailability: Object.fromEntries(
+      (Object.keys(ENTITLEMENT_ENFORCEMENT) as (keyof PlanEntitlements)[])
+        .map(key => [key, isEntitlementEnforced(key)]),
+    ) as Record<keyof PlanEntitlements, boolean>,
+    // Whether self-service checkout can actually run. Public because the
+    // PRICING page needs it and that page must work for signed-out visitors -
+    // reading it from the protected mySubscription instead made an anonymous
+    // visit throw UNAUTHORIZED, which the client's global handler turns into a
+    // redirect to /auth. It reveals nothing: it is one boolean about BuildHub's
+    // own configuration, not about any vendor.
+    checkoutAvailable: isPaymentProviderConfigured(),
+  })),
+
+  // A vendor's own billing state. Self-scoped by construction: there is no
+  // userId input, so there is no field a caller could populate to read another
+  // vendor's billing information.
+  mySubscription: protectedProcedure.query(async ({ ctx }) => {
+    const [state, founderEligible] = await Promise.all([
+      getBillingState(ctx.user.id),
+      checkFounderEligibility(ctx.user.id),
+    ]);
+    return {
+      plan: state.effectivePlan,
+      status: state.status,
+      isPaid: state.isPaid,
+      inTrial: state.inTrial,
+      trialEndsAt: state.trialEndsAt,
+      inGracePeriod: state.inGracePeriod,
+      gracePeriodEndsAt: state.gracePeriodEndsAt,
+      cancelAtPeriodEnd: state.cancelAtPeriodEnd,
+      currentPeriodEnd: state.currentPeriodEnd,
+      founderPriceActive: state.founderPriceActive,
+      founderPriceEndsAt: state.founderPriceEndsAt,
+      founderEligible,
+      entitlements: state.entitlements,
+      // Phase 4B.1 has no payment provider wired; the vendor-facing upgrade
+      // flow arrives with it in Phase 4B.5. Surfaced honestly rather than
+      // rendering a purchase button that cannot work.
+      checkoutAvailable: isPaymentProviderConfigured(),
+    };
+  }),
+
+  // Phase 4B.2: the vendor's full effective entitlement set, resolved through
+  // the one central engine. Self-scoped by construction - no input at all, so
+  // no request shape can name another vendor.
+  myEntitlements: protectedProcedure.query(async ({ ctx }) => {
+    const resolution = await resolveVendorEntitlements(ctx.user.id);
+    return toVendorEntitlementResponse(resolution);
+  }),
+
+  // Just the effective plan id, for callers that need nothing else.
+  myPlan: protectedProcedure.query(async ({ ctx }) => {
+    const resolution = await resolveVendorEntitlements(ctx.user.id);
+    return { plan: resolution.effectivePlan, isPaid: resolution.isPaid };
+  }),
+
+  // Phase 4B.3: the vendor's own qualified-enquiry consumption this month.
+  // Self-scoped - no input, reads ctx.user.id only.
+  myEnquiryUsage: protectedProcedure.query(async ({ ctx }) => {
+    return getEnquiryUsage(ctx.user.id);
+  }),
+
+  // ── Subscription lifecycle (Phase 4B.4) ─────────────────────────────────
+  //
+  // The first mutations the billing router has ever carried. Every one of them
+  // is self-scoped: the vendor is identified by ctx.user.id, and no procedure
+  // below accepts a userId, plan status, price, trial, entitlement, or
+  // subscription state from the caller. The only thing a client may choose is
+  // WHICH transition to request and, where a plan is genuinely a choice, which
+  // plan - validated against the shared catalogue.
+  //
+  // None of this collects payment. Phase 4B.5 connects the provider.
+
+  myLifecycle: protectedProcedure.query(async ({ ctx }) => getLifecycleSnapshot(ctx.user.id)),
+
+  // The vendor-facing lifecycle rights, and deliberately ONLY these two.
+  //
+  // Both are subtractive-or-restorative: cancelling gives up a future renewal,
+  // resuming puts back what the vendor already had. Neither can grant access,
+  // so neither takes a plan, an interval, a price, or a status - there is no
+  // field here a client could manipulate into an upgrade.
+  //
+  // Choosing or changing a PLAN is deliberately not exposed to vendors in this
+  // phase. No payment can be collected until Phase 4B.5, so a self-service
+  // subscribe or upgrade call would hand out real paid entitlements - a
+  // 30-day trial, or PREMIUM's unlimited enquiries - for nothing. The
+  // transitions exist and are fully tested (server/billing/lifecycle.ts); they
+  // are reachable only by an administrator until the provider can charge for
+  // them, at which point Phase 4B.5 connects checkout to the same functions.
+
+  cancelSubscription: approvedProviderProcedure.mutation(async ({ ctx }) =>
+    lifecycleResult(await requestCancellation({ userId: ctx.user.id, source: 'vendor', actorId: ctx.user.id }))),
+
+  resumeSubscription: approvedProviderProcedure.mutation(async ({ ctx }) =>
+    lifecycleResult(await resumeSubscription({ userId: ctx.user.id, source: 'vendor', actorId: ctx.user.id }))),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -1296,6 +2332,7 @@ export const appRouter = router({
   analytics: analyticsRouter,
   admin: adminRouter,
   compliance: registrationRouter,
+  billing: billingRouter,
   ai: aiRouter,
 });
 

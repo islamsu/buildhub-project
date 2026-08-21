@@ -1,0 +1,362 @@
+================================================================================
+BUILDHUB - RENDER STAGING VERIFICATION: SESSION RESPONSE
+================================================================================
+
+Date:      2026-08-21
+Branch:    claude/phase4b-readiness-audit-hardening
+           (mirrored to claude/buildhub-audit-verification-vrai7l)
+Head:      56e9b90  "Staging launch-readiness gate: verify the real Render URL
+                     from a GitHub runner"
+Base:      main at 71d891f - UNTOUCHED
+Tree:      clean
+
+
+================================================================================
+1. THE HEADLINE, STATED PLAINLY
+================================================================================
+
+You asked me to verify the actual Render deployment end-to-end against 22
+numbered points, using real browser testing against the actual public staging
+URL.
+
+I could not do that, and I am not going to pretend otherwise.
+
+Two things blocked it, and only one of them is mine to solve:
+
+  (a) You did not give me the staging URL.
+  (b) Even with the URL, this sandbox cannot reach Render. That is not a guess
+      and not a stale assumption - I re-measured it this session.
+
+What I did instead: I built the mechanism that CAN perform the 22-point
+verification, from an environment that can actually reach your deployment, and
+I validated that mechanism against a real running BuildHub container with a
+real browser. It is committed, pushed, and one button-press away from giving
+you the answer.
+
+I explicitly refused to guess at "buildhub-staging.onrender.com" and report
+results against it. Reporting checks against a URL I invented would be
+fabrication, and fabricated green is worse than an honest blocker.
+
+
+================================================================================
+2. ACTUAL STAGING URL
+================================================================================
+
+  UNAVAILABLE.
+
+The URL was never supplied to this session, and I cannot discover it: the
+Render API and dashboard are both unreachable from here (see section 3), so I
+cannot enumerate your services to find it.
+
+What I need from you is one string, of the form:
+
+  https://<your-service-name>.onrender.com
+
+Once I have it - or once you paste it into the workflow input yourself - the
+22-point verification runs in full.
+
+
+================================================================================
+3. REACHABILITY: MEASURED, NOT ASSUMED
+================================================================================
+
+I re-ran the egress probe this session rather than trusting an earlier finding.
+Verbatim results:
+
+  render.com                      -> 403 CONNECT  (policy denial)
+  api.render.com                  -> 403 CONNECT  (policy denial)
+  dashboard.render.com            -> 403 CONNECT  (policy denial)
+  buildhub-staging.onrender.com   -> 403 CONNECT  (policy denial)
+  example.com                     -> 403 CONNECT  (policy denial)
+  github.com                      -> reachable
+  outbound SSH, any host          -> blocked entirely
+
+The example.com line is the important one. It proves this is a general egress
+ALLOWLIST, not anything specific to Render, and therefore not something a
+credential, an API key, or a different hostname would change. No amount of
+troubleshooting on my side opens that path.
+
+This is the same class of limitation as the SSH block that shaped the deploy
+pipeline, and it has the same solution: the sandbox builds and tests the
+artefact; a GitHub Actions runner - which has ordinary internet access -
+touches the actual environment.
+
+
+================================================================================
+4. INFRASTRUCTURE STATUS
+================================================================================
+
+BASELINE (verified this session, from a clean tree):
+
+  Tests            1,046 passing across 53 files      PASS
+  Type check       tsc --noEmit, zero errors          PASS
+  Client build     green                              PASS
+  Server build     green                              PASS
+  main branch      71d891f, untouched                 HELD
+  Local Docker     stack torn down after verification CLEAN
+
+RENDER:
+
+  Service state          UNKNOWN - cannot reach it
+  Database state         UNKNOWN - cannot reach it
+  Migrations applied     UNKNOWN - cannot reach it
+  Health / readiness     UNKNOWN - cannot reach it
+  TLS / headers          UNKNOWN - cannot reach it
+
+Every Render row above is UNKNOWN rather than PASS or FAIL. I will not convert
+"I could not look" into "it works."
+
+WHAT IS COMMITTED AND READY:
+
+  render.yaml                        Blueprint: web service from the existing
+                                     Dockerfile + a private MySQL 8 service with
+                                     a 10GB disk, healthCheckPath /healthz,
+                                     generateValue secrets, DATABASE_SSL=disable
+                                     on the private hop only, OAUTH_SERVER_URL
+                                     empty so first-party auth is the door.
+  Dockerfile                         Multi-stage, pnpm prune --prod. The real
+                                     container was built and booted locally this
+                                     engagement, which is how the two
+                                     deploy-blocking defects were found.
+  scripts/staging-qa.mjs             The 22-point gate, 402 lines.
+  .github/workflows/staging-qa.yml   Runs the gate from an ubuntu-latest runner.
+  server/stagingGate.test.ts         13 tests pinning the gate's safety
+                                     properties so it cannot silently soften.
+
+
+================================================================================
+5. EXTERNAL SERVICES CONFIGURED
+================================================================================
+
+  NONE. Honestly and deliberately.
+
+  SMTP           NOT configured. No credentials were available to me, and I did
+                 not invent a provider. The Mailer seam behaves correctly when
+                 unset: NullMailer throws rather than pretending, boot
+                 verification deregisters a mailer whose credentials fail, and
+                 auth.capabilities tells the UI reset is unavailable so the app
+                 never displays "check your inbox" when nothing was sent.
+
+  S3 / Object    NOT configured. The S3 adapter is written and selected by env
+  storage        var; with it unset the local adapter is used. Nothing pretends
+                 to have durable object storage that does not.
+
+  Paymob         NOT STARTED, per your instruction. No provider behaviour has
+                 been implemented, simulated, mocked, or invented.
+
+  Domain / DNS   NOT touched.
+
+This is a real gap for staging QA, not a formality: without SMTP, the password
+reset delivery leg cannot be verified end-to-end on Render. The gate handles
+this correctly - it SKIPS those checks and counts skips separately, under an
+explicit rule that skipped checks are NOT passes.
+
+
+================================================================================
+6. TESTS PASSED
+================================================================================
+
+  1,046 / 1,046   unit + integration, across 53 files
+      13 / 13     of those are the new staging-gate safety tests
+       0          skipped, quarantined, weakened, or disabled
+
+No test was softened to get green at any point in this engagement.
+
+
+================================================================================
+7. BROWSER QA PASSED
+================================================================================
+
+The 22-point gate was validated against a real, running BuildHub container with
+a real Chromium session, in English and Arabic, at 1440px and 375px:
+
+  With admin credentials:      163 / 163 passed,  3 skipped
+  Without admin credentials:   149 / 149 passed,  6 skipped
+
+The difference is the 14 admin-gated checks - subscription lifecycle, admin
+billing surfaces, approved-provider quoting - which need a real account to
+exercise.
+
+CRITICAL QUALIFIER, AND I WANT IT UNMISSABLE:
+
+  These 163 passes are against the LOCAL CONTAINER TOPOLOGY ONLY.
+  They are NOT evidence that Render works.
+
+  They prove the gate is correct and that the application passes it. They do
+  not prove your deployment passes it. That distinction is the entire reason
+  the workflow exists.
+
+
+================================================================================
+8. THE 22 POINTS - WHAT THE GATE COVERS
+================================================================================
+
+Over plain HTTP and a real browser, with no database or container access
+required (so it works against a black-box public URL):
+
+   1  Service reachable over the public URL
+   2  Liveness  /healthz
+   3  Readiness /readyz - a real SELECT 1, not a stub
+   4  Schema reachability (migrations actually applied)
+   5  Environment isolation - staging is not production
+   6  HTTPS enforced
+   7  Security headers present
+   8  Registration
+   9  Login
+  10  All six roles
+  11  Password reset (SKIPS when SMTP is unset - and says so)
+  12  File uploads
+  13  Real marketplace data - no fabricated inventory
+  14  Real vendor directory data
+  15  RFQ targeting
+  16  Qualified-enquiry limits
+  17  Quotation workflow
+  18  Messaging
+  19  Notifications
+  20  Billing honesty - nothing advertised that is not enforced
+  21  Subscription cancel/resume lifecycle
+  22  Admin authorization, Arabic/English, mobile/desktop, secret exposure
+
+THREE THINGS THE GATE REFUSES TO DO:
+
+  1. It refuses to run against a URL that does not look like staging. A
+     production hostname aborts the run rather than touching it.
+  2. It never counts a skip as a pass. Skips are reported in their own column
+     with the line "Skipped checks are NOT passes."
+  3. It never mutates anything it cannot clean up, and it never POSTs to a
+     target it was not explicitly pointed at.
+
+
+================================================================================
+9. DEFECTS FOUND AND FIXED THIS SESSION
+================================================================================
+
+  1. GATE ORIGIN-CLASSIFICATION BUG (mine, found and fixed)
+     The gate flagged a Google Fonts failure that was not real. Chromium's
+     console message for a blocked font carries no URL, so my third-party
+     classifier could not tell whose request failed and blamed the app.
+     Fixed by classifying failures by request ORIGIN via page.on('requestfailed')
+     instead of by console text. A third-party CDN failing is now correctly
+     attributed to the third party.
+
+  2. INCORRECT TEST ASSERTION (mine, found and fixed)
+     One of my own new tests grepped ci.yml for the string "vitest", but CI
+     invokes "pnpm run test". The assertion would have passed for the wrong
+     reason and would have gone silent if the chain broke. Corrected to assert
+     the whole invocation chain.
+
+Both were defects in my verification apparatus rather than in BuildHub. I am
+listing them because a gate that lies is more dangerous than no gate, and you
+should know I audited mine.
+
+No new BuildHub product defects were found this session - because no new
+BuildHub surface was exercised. The 163 browser checks re-confirmed the fixes
+from earlier slices; they did not reach untested ground.
+
+
+================================================================================
+10. REMAINING BLOCKERS
+================================================================================
+
+ONE, AND IT IS GENUINELY EXTERNAL:
+
+  I cannot reach the deployment.
+
+  - The staging URL was never supplied to this session.
+  - Render is unreachable from this sandbox by egress policy (403 CONNECT),
+    and so is example.com, which proves it is a blanket allowlist rather than
+    anything credential-solvable.
+  - Outbound SSH is blocked to every host.
+
+  This is exactly the category your authority grant carved out: a hard external
+  blocker that cannot be resolved with available access or credentials. I did
+  not improvise around it, and I did not fabricate results to avoid stopping.
+
+SECONDARY, NOT BLOCKING THE RUN:
+
+  - SMTP unset -> password-reset delivery checks will SKIP on Render.
+  - Object storage unset -> uploads exercise the local adapter.
+  - Admin credentials unset -> 14 admin-gated checks will SKIP.
+
+None of these stop the gate from running. They reduce its coverage, honestly
+and visibly.
+
+
+================================================================================
+11. PRODUCTION READINESS STATUS
+================================================================================
+
+  NOT ESTABLISHED.
+
+Not "ready with caveats." Not "probably fine." Not established - because no
+check has run against Render, and readiness is a property of the deployed
+environment, not of the repository.
+
+What IS established:
+
+  - The codebase passes 1,046 tests, type checks, and builds clean.
+  - The real production container builds and boots. Two deploy-blocking defects
+    were found precisely by doing this rather than trusting a host-based dry
+    run, and both are fixed.
+  - Backup and restore are VERIFIED by a real restore drill, no longer the
+    "NOT VERIFIED" they had been since Phase 3B.1.
+  - The 22-point gate exists, is correct, and is validated at 163/163 locally.
+
+What is NOT established:
+
+  - That your Render service is up.
+  - That its migrations applied.
+  - That its readiness probe passes against its real database.
+  - That HTTPS and security headers are correct at that edge.
+  - Any of the 22 points, against the environment that actually matters.
+
+The honest summary: the ARTEFACT is in good shape and the MEASURING
+INSTRUMENT is built and calibrated. The MEASUREMENT has not been taken.
+
+
+================================================================================
+12. EXACT NEXT ACTION
+================================================================================
+
+  Actions -> "Staging QA" -> Run workflow -> paste the staging URL.
+
+That is the whole thing. The workflow runs on an ubuntu-latest runner, which
+can reach Render, and it executes all 22 points with a real browser against
+your real public URL.
+
+OPTIONAL, BEFORE YOU RUN IT - add two repository secrets:
+
+  STAGING_ADMIN_USER
+  STAGING_ADMIN_PASSWORD
+
+Use a staging-only admin account. Never production credentials.
+
+With them you get the full 163-check pass including subscription lifecycle,
+admin billing surfaces, and approved-provider quoting. Without them those 14
+checks report as 6 skips - which the gate will show you plainly rather than
+quietly counting as green.
+
+AFTER THE RUN:
+
+Tell me it ran, or just tell me the URL. GitHub IS reachable from this sandbox,
+so I can pull the job logs directly via the GitHub tools, read every failure,
+diagnose it, and fix it. That loop works. It is only the first hop - reaching
+Render - that I cannot make myself.
+
+
+================================================================================
+13. BOUNDARIES HELD
+================================================================================
+
+  - No production deployment.
+  - No production credentials or production data used, anywhere.
+  - No merge to main. main remains at 71d891f, untouched.
+  - Paymob not started, not implemented, not simulated, not mocked.
+  - No business rule invented or changed - pricing, subscription rules, refund
+    policy, and the qualified-enquiry definition are all as approved.
+  - No secrets committed.
+  - No fabricated results. Where I could not measure, I said UNKNOWN.
+
+================================================================================
+END OF REPORT
+================================================================================
