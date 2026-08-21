@@ -386,3 +386,58 @@ describe('§7 referenced scripts exist and are executable', () => {
     }
   });
 });
+
+// ── §8 The runtime image can actually start ────────────────────────────────
+
+describe('§8 defects only a real pruned container reveals', () => {
+  const packageJson = JSON.parse(read('../package.json'));
+  const dockerfile = read('../Dockerfile');
+
+  it('the Dockerfile drops devDependencies, so anything the deploy runs must not be one', () => {
+    expect(dockerfile).toContain('pnpm prune --prod');
+  });
+
+  it('REGRESSION: drizzle-kit is a RUNTIME dependency', () => {
+    // Both deploy workflows run `npx drizzle-kit migrate` inside the runtime
+    // image. As a devDependency it was pruned out, so npx tried to DOWNLOAD it
+    // at deploy time - which fails without internet, and otherwise applies
+    // migrations to a production database using an unpinned version that may
+    // not be the one that generated them.
+    expect(packageJson.dependencies).toHaveProperty('drizzle-kit');
+    expect(packageJson.devDependencies ?? {}).not.toHaveProperty('drizzle-kit');
+  });
+
+  it('every tool the deploy workflows invoke inside the image is a runtime dependency', () => {
+    const workflows = ['deploy-staging.yml', 'deploy-production.yml']
+      .map(name => read(`../.github/workflows/${name}`)).join('\n');
+    for (const [, tool] of workflows.matchAll(/npx ([a-z0-9-]+)/g)) {
+      expect(packageJson.dependencies, `${tool} is run inside the image`).toHaveProperty(tool);
+    }
+  });
+
+  it('REGRESSION: vite is never resolved at startup', () => {
+    // `import ... from "vite"` at the top of vite.ts survived esbuild's
+    // --packages=external into dist/index.js, so Node resolved it the instant
+    // the process started - in production too, where prune has removed it. The
+    // container crashed with ERR_MODULE_NOT_FOUND before binding a port, and
+    // it was invisible from the host because node_modules there still has vite.
+    const source = read('./_core/vite.ts');
+    expect(source).not.toMatch(/^import .*from "vite";/m);
+    expect(source).toContain('await import("vite")');
+  });
+
+  it('the server bundle does not import the vite config either', () => {
+    // Importing it made esbuild inline vite.config.ts, whose own top-level
+    // `import { defineConfig } from "vite"` reappeared as a static import and
+    // reintroduced the identical crash.
+    const source = read('./_core/vite.ts');
+    expect(source).not.toContain('from "../../vite.config"');
+    expect(source).not.toContain('await import("../../vite.config")');
+    expect(source).toContain('configFile: path.resolve');
+  });
+
+  it('serveStatic stays reachable in production', () => {
+    // It lives in the same module; only setupVite is deferred.
+    expect(read('./_core/index.ts')).toContain('serveStatic(app)');
+  });
+});
