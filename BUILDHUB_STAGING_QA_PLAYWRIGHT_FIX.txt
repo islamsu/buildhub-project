@@ -1,0 +1,273 @@
+================================================================================
+BUILDHUB - STAGING QA: PLAYWRIGHT INSTALL FAILURE FIXED (PR #3)
+================================================================================
+
+Date:    2026-08-21
+Repo:    github.com/islamsu/buildhub-project
+Target:  https://buildhub-staging.onrender.com   -- STILL UNVERIFIED
+
+STATUS:  PR #3 OPEN. NOT MERGED.
+
+
+================================================================================
+1. THE FACTS
+================================================================================
+
+  PR NUMBER      #3
+  PR URL         https://github.com/islamsu/buildhub-project/pull/3
+  BRANCH         claude/staging-qa-playwright-install-fix
+  COMMIT         30f4e33591c0edbb52d684b14b057047df878690
+  BASE           main (d82f14e, which now carries PR #2)
+  FILES CHANGED  .github/workflows/staging-qa.yml
+                 1 modified, 0 added, 0 deleted
+                 +17 / -1  (one functional line; the rest is a comment)
+
+Your diagnosis was exactly right. I reproduced it in a clean clone of main
+rather than take it on trust, and the ERESOLVE came back identical to the
+runner's.
+
+
+================================================================================
+2. THE FAILURE, CONFIRMED FROM THE RUN LOGS
+================================================================================
+
+Run 32478659001 died in "Install Playwright and its browser", before the smoke
+test or any of the 22 points executed. Verbatim from the job log:
+
+    npm error code ERESOLVE
+    npm error ERESOLVE unable to resolve dependency tree
+    npm error While resolving: buildhub@1.0.0
+    npm error Found: vite@7.3.6
+    npm error node_modules/vite
+    npm error   dev vite@"^7.1.7" from the root project
+    npm error
+    npm error Could not resolve dependency:
+    npm error peer vite@"^4.0.0 || ^5.0.0" from @builder.io/vite-plugin-jsx-loc@0.1.1
+    npm error   dev @builder.io/vite-plugin-jsx-loc@"^0.1.1" from the root project
+    ##[error]Process completed with exit code 1.
+
+WHY IT HAPPENS: the install runs inside the repo checkout, so npm resolves
+BuildHub's whole dependency tree before it can add anything. That tree carries
+a genuine peer conflict - @builder.io/vite-plugin-jsx-loc@0.1.1 declares a peer
+of vite ^4 || ^5 while the project is on vite 7 - and npm's default strict peer
+resolution aborts before Playwright is ever fetched.
+
+Two earlier steps DID succeed, which is worth noting: "Resolve the target"
+accepted the URL you passed (with its trailing slash) and the job was running
+within 7 seconds of dispatch.
+
+
+================================================================================
+3. THE CHANGE - ONE FLAG, ONE LINE
+================================================================================
+
+    -   npm install --no-save playwright@1.49.1
+    +   npm install --no-save --legacy-peer-deps playwright@1.49.1
+
+        npx playwright install --with-deps chromium      (UNCHANGED)
+
+The version stays pinned at 1.49.1. The browser step is untouched.
+
+The remaining +16 lines are a comment above the step explaining that the flag
+is load-bearing - which conflict it tolerates, why it changes nothing about the
+project's own dependencies, and that fixing the peer conflict itself is an
+application-dependency matter deliberately out of scope. Without that, the flag
+reads as noise and someone removes it in six months.
+
+
+================================================================================
+4. YOUR SIX VERIFICATION POINTS
+================================================================================
+
+  #   CHECK                          RESULT
+  --  ---------------------------    ---------------------------------------
+  1   Playwright installs            PASS - added 667 packages in 44s, exit 0
+                                     (was: ERESOLVE, exit 1)
+  2   Chromium installs              PARTIAL - browser LAUNCHED and rendered a
+                                     page; the DOWNLOAD could not be exercised
+                                     here. See section 6.
+  3   Smoke test actually runs       PASS - executed all 9 checks and reported
+                                     real results
+  4   22-point gate actually starts  PASS - 151 checks across all 13 sections
+  5   Nothing else changed           PASS - see section 5
+  6   Relevant tests run             PASS - 12/13, unchanged from baseline
+
+REPRODUCTION, in a clean --depth 1 clone of main with no node_modules, which is
+what a fresh runner looks like:
+
+    BEFORE   npm install --no-save playwright@1.49.1
+             -> npm error code ERESOLVE ... exit 1
+             -> identical to the runner, including the same two package names
+
+    AFTER    npm install --no-save --legacy-peer-deps playwright@1.49.1
+             -> added 667 packages, and audited 668 packages in 44s
+             -> exit 0
+             -> node_modules/playwright/package.json reports version 1.49.1
+             -> npx playwright --version reports "Version 1.49.1"
+
+POINT 3 - THE SMOKE TEST NOW RUNS. Executed against a stub HTTP target:
+
+    FAIL  liveness
+    FAIL  readiness
+    FAIL  landing page
+    FAIL  static assets
+    FAIL  public API
+    FAIL  billing catalogue
+    FAIL  security headers
+    FAIL  protected API refuses anonymous callers
+    FAIL  storage proxy refuses anonymous callers
+    9 smoke test(s) FAILED
+
+  Those FAILs are the CORRECT result - the stub is not BuildHub. The point is
+  that all nine checks EXECUTED. Before the fix, none of them were reached.
+
+POINT 4 - THE 22-POINT GATE NOW STARTS AND RUNS TO COMPLETION.
+151 checks executed, across every section:
+
+    1-3, 6.   Service, health, readiness, HTTPS
+    4.        Migrations
+    7-8.      Registration, login, all six roles
+    5, 21.    Isolation and exposure
+    11-12.    Marketplace and directory use real data
+    16.       Billing and pricing
+    9.        Password reset / email
+    10.       Object storage uploads
+    13-14.    RFQ, enquiry limits, quotations
+    15.       Messaging and notifications
+    17-18.    Admin authorization and the billing lifecycle
+    19-20.    Arabic/English, mobile/desktop
+    21.       Secret exposure
+
+  Reaching sections 19-20 matters specifically: those are browser-driven, so
+  Chromium launched INSIDE the harness, not merely in an isolated probe.
+
+
+================================================================================
+5. REQUIREMENT 5 - NOTHING ELSE CHANGED
+================================================================================
+
+Checked in the clean clone AFTER the install ran:
+
+    git status --porcelain      (empty - no tracked file modified)
+    package.json                unchanged
+    pnpm-lock.yaml              unchanged
+    package-lock.json           NOT created
+
+--no-save already suppresses the lockfile, so no extra flag was needed. I
+checked that before adding one, rather than defensively piling on
+--no-package-lock and calling it caution.
+
+And in the committed diff itself:
+
+    git diff --name-status origin/main
+    M   .github/workflows/staging-qa.yml
+
+    guard for server/ client/ shared/ drizzle/ deploy/ scripts/ package.json
+    pnpm-lock.yaml package-lock.json render.yaml Dockerfile docker-compose .env
+      -> clean, only the workflow file
+
+    grep -i paymob over the diff
+      -> no matches
+
+  No application code. No dependency change. No Render configuration. No
+  production configuration. No Paymob. No pricing, subscription rule, refund
+  policy or qualified-enquiry definition touched.
+
+UNCHANGED SAFETY PROPERTIES, re-verified on the edited file:
+
+    on keys: ["workflow_dispatch"]      -- no push, no pull_request, no schedule
+    step order: checkout -> setup-node -> Resolve the target ->
+                Install Playwright -> Smoke test -> gate -> publish -> artifact
+
+  Smoke still runs before the browser pass, so the expensive stage still never
+  starts against a dead deploy.
+
+TESTS: 12 of the 13 staging-gate safety tests pass against the edited file. The
+13th fails ENOENT on .github/workflows/ci.yml, which main intentionally does not
+carry. That is identical to the result before this change, so the edit
+introduced no regression.
+
+
+================================================================================
+6. WHAT I COULD NOT VERIFY
+================================================================================
+
+CHROMIUM'S DOWNLOAD. This sandbox's egress allowlist blocks it:
+
+    Downloading Chromium 131.0.6778.33 (playwright build v1148)
+      from https://playwright.azureedge.net/builds/chromium/1148/chromium-linux.zip
+    Error: Download failed: server returned code 403 body 'request blocked:
+      no rule or allowlist entry allows host "playwright.azureedge.net"'
+
+  Same class of block that stops this sandbox reaching Render. A GitHub runner
+  has ordinary internet access, and `npx playwright install --with-deps
+  chromium` is the standard documented command - but I did not execute the
+  fetch, so I will not tick it.
+
+  What I DID prove is that browser LAUNCH works with the Playwright the fixed
+  command installs: I pointed it at a preinstalled Chromium, launched it,
+  rendered a page and read text back. So only the fetch is unexercised, not the
+  browser.
+
+
+================================================================================
+7. TWO THINGS WORTH KNOWING
+================================================================================
+
+(a) YOUR `staging` ENVIRONMENT HAS NO REQUIRED REVIEWERS.
+
+    This closes the one item I could not check before you merged PR #2. The
+    failed run began executing within 7 seconds of dispatch - no approval wait,
+    no "Review deployments" pause. Nothing is gating the job.
+
+(b) A LATENT WEAKNESS IN THE HARNESS, WHICH I DID NOT TOUCH.
+
+    Against the stub target, two checks passed trivially:
+
+      PASS  7. the enumeration check is testing auth, not rate limiting
+      PASS  7. wrong password and unknown user are indistinguishable
+
+    They passed because the stub returns identical HTML for every request, so
+    "indistinguishable" was satisfied by two identical non-answers. Against real
+    BuildHub the responses differ, so this will NOT produce a false green on
+    your actual staging.
+
+    But it is the same false-pass shape I found and fixed earlier in this
+    engagement, and it deserves a follow-up. You scoped this task to the
+    workflow only, so I flagged it rather than widening the change. Say the word
+    and I will harden it as its own small PR.
+
+
+================================================================================
+8. STATUS AND NEXT STEP
+================================================================================
+
+  PR #3                        OPEN, not merged
+  main                         d82f14e (carries PR #2)
+  Playwright install           FIXED and verified
+  Smoke test                   reaches execution
+  22-point gate                reaches execution
+  Render staging deployment    UNVERIFIED
+  Production readiness         NOT ESTABLISHED
+
+STAGING IS NOT VERIFIED. This fix only gets the gate to the point where it can
+answer that question. Nothing has yet run the 22 points against
+https://buildhub-staging.onrender.com.
+
+NEXT:
+
+  1. Merge PR #3
+  2. Actions -> "Staging QA" -> "Run workflow"
+  3. Paste  https://buildhub-staging.onrender.com
+  4. Tell me it ran
+
+  Optional, to unlock the 14 admin-gated checks instead of 6 skips:
+  add STAGING_ADMIN_USER and STAGING_ADMIN_PASSWORD as repository secrets,
+  using a staging-only admin account, never production credentials.
+
+Once it runs I can pull the job logs directly from GitHub, diagnose each
+failing point and push fixes. That loop works.
+
+================================================================================
+END OF DOCUMENT
+================================================================================

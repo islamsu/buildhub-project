@@ -22,7 +22,9 @@ import MessagesPage from "./pages/MessagesPage";
 import AIAssistantPage from "./pages/AIAssistantPage";
 import CompliancePage from "./pages/CompliancePage";
 import PasswordSetupPage from "./pages/PasswordSetupPage";
+import PasswordResetPage from "./pages/PasswordResetPage";
 import VendorProfile from "./pages/VendorProfile";
+import Pricing from "./pages/Pricing";
 
 function Router() {
   return (
@@ -35,6 +37,7 @@ function Router() {
       <Route path={"/platform/:role"} component={RolePlatform} />
       <Route path={"/admin/:section"} component={AdminDashboard} />
       <Route path={"/admin"} component={AdminDashboard} />
+      <Route path={"/pricing"} component={Pricing} />
       <Route path={"/marketplace"} component={MarketplaceHub} />
       <Route path={"/marketplace/products"} component={Marketplace} />
       <Route path={"/marketplace/products/:id"} component={ProductDetail} />
@@ -49,6 +52,7 @@ function Router() {
       <Route path={"/messages"} component={MessagesPage} />
       <Route path={"/compliance"} component={CompliancePage} />
       <Route path={"/auth/setup-password"} component={PasswordSetupPage} />
+      <Route path={"/auth/reset-password"} component={PasswordResetPage} />
       <Route path={"/ai"} component={AIAssistantPage} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />

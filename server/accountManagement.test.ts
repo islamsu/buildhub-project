@@ -1,7 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { scryptSync } from 'node:crypto';
 import { filterRegistrationApplicants } from '../shared/registrationMetrics';
+
+// Two tests below opt into test-user sign-in by setting TEST_LOGIN_ENABLED.
+// It is cleared after every test so the flag cannot leak into a later one and
+// silently turn a default-denied boundary on.
+const ORIGINAL_TEST_LOGIN = process.env.TEST_LOGIN_ENABLED;
+afterEach(() => {
+  if (ORIGINAL_TEST_LOGIN === undefined) delete process.env.TEST_LOGIN_ENABLED;
+  else process.env.TEST_LOGIN_ENABLED = ORIGINAL_TEST_LOGIN;
+});
 
 vi.mock('./db', () => ({
   getDb: vi.fn(),
@@ -148,6 +157,9 @@ describe('admin account management', () => {
     const sessionTokenSpy = vi.spyOn(sdk, 'createSessionToken').mockResolvedValue('dummy-session-token');
     const ctx = makeCtx();
 
+    // signInDummy is now gated on TEST_LOGIN_ENABLED and denies by default, so a
+    // test of the SIGN-IN behaviour has to opt in. Restored in afterEach.
+    process.env.TEST_LOGIN_ENABLED = 'true';
     await expect(appRouter.createCaller(ctx).auth.signInDummy({ username: 'DUMMY.TESTER', password: 'DummyLogin123!' })).resolves.toEqual({ success: true, userRole: 'homeowner', onboardingStatus: 'approved' });
 
     expect(sessionTokenSpy).toHaveBeenCalledWith('dummy-open-id-88', expect.objectContaining({ name: 'Dummy Tester' }));
@@ -171,6 +183,7 @@ describe('admin account management', () => {
       onboardingStatus: 'approved',
     });
 
+    process.env.TEST_LOGIN_ENABLED = 'true';
     await expect(appRouter.createCaller(makeCtx()).auth.signInDummy({ username: 'dummy.locked', password: 'WrongPass123!' })).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
     await expect(appRouter.createCaller(makeCtx()).auth.signInDummy({ username: 'dummy.locked', password: 'CorrectPass123!' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
@@ -222,9 +235,16 @@ describe('dummy account isolation and UI wiring', () => {
     expect(router).toContain("action: 'dummy_user_signed_in'");
     expect(router).toContain('signInDummy: publicProcedure');
     expect(dashboard).toContain('Password (optional)');
-    expect(authPage).toContain('Dummy / Test user sign-in');
-    expect(authPage).toContain('signInDummy');
-    expect(authPage).toContain('No verification code is required');
+    // These three previously asserted the PUBLIC test-user panel was present on
+    // /auth. It was removed: it advertised a test-login pathway to every
+    // visitor on the page real users sign up on. The capability itself is not
+    // gone - it moved behind a server-side, default-denied flag - so the
+    // assertions are inverted rather than deleted.
+    const authPageCode = authPage.replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+    expect(authPageCode).not.toContain('Dummy / Test user sign-in');
+    expect(authPageCode).not.toContain('trpc.auth.signInDummy');
+    expect(authPageCode).not.toContain('No verification code is required');
+    expect(router).toContain('isTestLoginEnabled()');
     expect(authPage).toContain("!isDummyMode &&");
     expect(dashboard).toContain('setDummyUserPassword');
     expect(router).toContain("action: 'dummy_user_deleted'");
@@ -252,6 +272,9 @@ describe('dummy account isolation and UI wiring', () => {
     const authPage = readFileSync(new URL('../client/src/pages/AuthPage.tsx', import.meta.url), 'utf8');
     expect(authPage).toContain('isLoginMode');
     expect(authPage).toContain('Sign in with BuildHub');
-    expect(authPage).toContain('No verification code is required');
+    // Was 'No verification code is required' - a string that belonged to the
+    // removed test-user panel and was only incidental to login routing. The
+    // real subject of this test is that /auth?mode=login is the entry point.
+    expect(authPage).toContain("mode=login");
   });
 });

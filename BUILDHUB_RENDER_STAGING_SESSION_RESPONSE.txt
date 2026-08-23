@@ -1,0 +1,394 @@
+================================================================================
+BUILDHUB - RENDER STAGING DEPLOYMENT & EXHAUSTIVE QA
+Session response
+================================================================================
+
+Branch ....... claude/phase4b-readiness-audit-hardening
+               (mirrored to claude/buildhub-audit-verification-vrai7l)
+Head ......... 324e9dd
+main ......... 71d891f, untouched
+Date ......... 21 August 2026
+
+GATE
+  1,033 tests across 54 files ..... all passing
+  tsc --noEmit .................... clean
+  client + server builds .......... green
+  Staging QA ...................... 127/127
+  Post-deploy smoke ............... 9/9
+  Public routes ................... zero failed requests
+
+
+================================================================================
+1. THE ONE THING I COULD NOT DO
+================================================================================
+
+Render is unreachable from this sandbox. Measured, not assumed:
+
+  api.render.com ............ 000
+  dashboard.render.com ...... 000
+  render.com ................ 000
+  example.com ............... 000   (a strict allowlist, not a Render rule)
+  github.com ................ reachable
+  outbound SSH, any host .... BLOCKED
+
+So I could not create the account, authorise GitHub, or call Render's API - and
+credentials would not have changed that. I also cannot reach a deployed
+onrender.com URL to test it afterwards.
+
+WHAT I DID INSTEAD
+
+Built the exact artefact Render will build, and ran it in the exact topology
+render.yaml declares: the real Docker image, a private MySQL 8 on its own
+container network, migrations applied from inside the image, HTTPS terminated in
+front, and 127 browser QA checks against the running result.
+
+Everything in this document is verified against that. The genuinely unverified
+part is Render's own platform behaviour - its builder, its TLS, its private
+networking, its disks.
+
+Your remaining work is four dashboard steps, written out in
+BUILDHUB_RENDER_STAGING_RUNBOOK.md.
+
+
+================================================================================
+2. FIVE DEFECTS - THREE OF THEM DEPLOY-BLOCKING
+================================================================================
+
+Building the container rather than reasoning about it was the whole difference.
+Three of these would have broken the first deploy on EITHER Render or Vultr.
+
+--------------------------------------------------------------------------------
+2.1  THE CONTAINER COULD NOT START AT ALL              [deploy-blocking]
+--------------------------------------------------------------------------------
+
+server/_core/vite.ts imported `vite` at the top level. esbuild bundles the
+server with --packages=external, so `import ... from "vite"` survived into
+dist/index.js and Node resolved it the instant the process started - in every
+environment, including production, where `pnpm prune --prod` has removed vite
+from the image.
+
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'vite'
+      imported from /app/dist/index.js
+
+The container crashed before binding a port. Render and Vultr would both have
+crash-looped on the first deploy.
+
+WHY IT WAS INVISIBLE: my earlier "production dry run" executed
+`node dist/index.js` on the host, where node_modules still contains vite. Only a
+genuinely pruned container shows this. It is the entire argument for building
+and running the artefact instead of reasoning about it.
+
+THE FIX TOOK TWO ATTEMPTS. Deferring the import into setupVite (called only when
+NODE_ENV=development) was not enough: the config was still pulled in via
+`await import("../../vite.config")`, and because that is a relative path esbuild
+inlined the file, whose own `import { defineConfig } from "vite"` reappeared as
+a static import and reintroduced the identical crash. vite now loads its own
+config from disk, which is also the idiomatic way to do it. dist/index.js
+contains no static vite import at all.
+
+--------------------------------------------------------------------------------
+2.2  MIGRATIONS DOWNLOADED THEMSELVES AT DEPLOY TIME    [deploy-blocking]
+--------------------------------------------------------------------------------
+
+drizzle-kit was a devDependency, so prune removed it from the runtime image -
+but both deploy workflows run `npx drizzle-kit migrate` inside that image. npx
+therefore tried to fetch it from npm mid-deploy.
+
+Three problems, in ascending order of seriousness:
+  - fails outright without internet
+  - fails if npm is having a bad day, in the middle of a release
+  - applies migrations to a PRODUCTION DATABASE using an unpinned version that
+    need not be the one that generated them
+
+Moved to dependencies, pinned at 0.31.4. Migrations now apply from the image
+with no network at all - verified.
+
+A general regression test now asserts that every tool the deploy workflows
+invoke inside the image is a runtime dependency, so the next `npx something` in
+a workflow cannot reintroduce the class.
+
+--------------------------------------------------------------------------------
+2.3  THE PUBLIC MARKETPLACE SHOWED FICTIONAL INVENTORY
+--------------------------------------------------------------------------------
+
+The QA noticed every product card had a broken image - /manus-storage/ assets
+returning 401 to signed-out visitors. Chasing that led somewhere worse.
+
+The products page rendered DEMO_PRODUCTS: ten hardcoded fictional products with
+invented brands (Cleopatra, Carrara, Carrier, SunPower, IKEA), invented prices,
+invented stock levels and invented ratings - "4.8 stars, 124 reviews" on
+inventory that does not exist. It never called marketplace.list at all.
+
+The broken images were a symptom: those fictional products referenced Manus-era
+assets that the storage proxy refuses to anonymous callers.
+
+This is the same defect class as the vendor dashboard's fabricated statistics
+(Phase 4A.6.4) and the admin dashboard's invented growth chart (Slice 4). The
+vendor DIRECTORY was moved onto real data in Phase 4B.3; the product catalogue
+was simply left behind - and would have gone live showing fake goods with fake
+reviews on a public commercial site.
+
+ProductDetail.tsx also carried `enabled: productId > 10` - a hardcoded boundary
+where ids 1 to 10 were fictional and anything above was real. A genuine product
+assigned a low id would have rendered as whichever invented item shared its
+number.
+
+Both pages now read the database. The variant helpers stay; they are real and
+the RFQ handoff uses them.
+
+--------------------------------------------------------------------------------
+2.4  marketplace.list IGNORED ITS OWN INPUTS
+--------------------------------------------------------------------------------
+
+It accepted `category` and `search` and applied neither - the query built a
+filter variable and never used it.
+
+Nothing noticed because the page was filtering a hardcoded array on the client
+instead of calling the endpoint. A dead parameter has no consumer to be wrong
+for. Both are now applied server-side, search covering the Arabic name too,
+since the marketplace is bilingual.
+
+--------------------------------------------------------------------------------
+2.5  THE RATE LIMITER WOULD HAVE LOCKED OUT REAL USERS
+--------------------------------------------------------------------------------
+
+Authentication was capped at 10 attempts per minute per IP. That is a sensible
+number if an IP means a person, and in Egypt it very often does not.
+
+Mobile carriers here run carrier-grade NAT: thousands of subscribers share one
+public IPv4. So do offices, universities, and the site offices BuildHub's
+contractors actually work from. At 10 per minute, one busy NAT locks out every
+legitimate user behind it - and the people it fails are exactly the vendors
+trying to sign in.
+
+An ordinary automated QA run tripped it within seconds from a single address.
+
+  ipBurst ................ 10/min    ->  60/min
+  ipSustained ............ 60/15min  ->  300/15min
+  identifierSustained .... 10/15min  ->  UNCHANGED
+
+The per-account limit is the one that actually protects a password: ten attempts
+per fifteen minutes against a single username or email makes guessing useless no
+matter how many addresses an attacker has. The IP budgets do a different job -
+stopping one host exhausting the server or enumerating wholesale - and can be
+looser without weakening account security. Tests pin both halves.
+
+
+================================================================================
+3. TWO MISTAKES I MADE
+================================================================================
+
+3.1  I COMMITTED WITH A FAILING TEST
+
+I ran the gate and the commit in a single command, so the commit landed despite
+a failure. Careless. Fixed in the very next commit.
+
+The failing test was Slice 4's, asserting server/_core/vite.ts contains
+`...viteConfig`. It guards a real defect: spreading a config that is a FUNCTION
+yields no plugins at all, which once silently stripped React out of development.
+
+Before touching it I checked whether the guarantee survived my change, by
+starting the dev server and looking at what it actually serves - it injects
+/@react-refresh and /@vite/client, which only appear if the React plugin ran.
+The test now asserts the guarantee against the new mechanism, and asserts it
+more strongly: `configFile` must be a real path, and both `configFile: false`
+and `...viteConfig` are now forbidden.
+
+3.2  MY QA HARNESS HAD A FALSE PASS
+
+"Wrong password and unknown user give the same message" ran late enough in the
+harness that it compared two RATE-LIMIT messages. Identical, so it passed - while
+testing nothing at all.
+
+It now runs FIRST, on a freshly restarted container, and asserts that neither
+response is a rate-limit message before comparing them. The property does hold:
+identical 401, identical text, "Invalid username, email, or password".
+
+Also worth recording: I overwrote Slice 6's existing smoke script before checking
+whether one existed. Its own test caught it, because it asserts the script
+contains no POST anywhere - so it CANNOT mutate whatever it is pointed at. That
+is a stronger guarantee than the opt-in write flag I had added, since nobody can
+accidentally pass a flag that does not exist. Slice 6's version is restored
+unchanged.
+
+
+================================================================================
+4. ONE QA FAILURE THAT WAS NOT A DEFECT
+================================================================================
+
+Google Fonts (fonts.googleapis.com) is unreachable from this sandbox, surfacing
+as ERR_CONNECTION_RESET in the browser console.
+
+Checked rather than assumed: the CSP explicitly allows fonts.googleapis.com
+under style-src and fonts.gstatic.com under font-src, and the CSS carries a
+sans-serif fallback. Fonts will load on real staging.
+
+Excluded from the QA by HOST, not by muting the whole console check - the check
+still fails on any application error.
+
+
+================================================================================
+5. THE RENDER BLUEPRINT, AND THE DECISIONS IN IT
+================================================================================
+
+render.yaml declares the environment rather than clicking it together. Render
+reads it directly: New -> Blueprint, pick the repo and branch.
+
+MYSQL IS A PRIVATE SERVICE, NOT A MANAGED DATABASE
+
+Render's managed offering is PostgreSQL. BuildHub is MySQL - 19 migrations and a
+schema verified against 8.0.46. Porting to Postgres would be the architecture
+redesign this deployment exists to avoid, and would make staging a test of
+something production will never run.
+
+The trade-off is stated in the file rather than glossed: a private service with
+a disk has no managed backups, no failover and no patching. Acceptable for a
+temporary staging environment holding test data; NOT acceptable for production,
+which is why production stays on Vultr Managed Databases.
+
+healthCheckPath IS /healthz, NOT /readyz
+
+Liveness, deliberately. A database blip must not make Render kill and restart
+the container - it would restart forever while the database is the thing that is
+down. /readyz does the real SELECT 1 and is what the smoke suite checks.
+
+This distinction caught me out during the dry run: I probed /healthz, read 200,
+and briefly concluded the database was fine. It is deliberately DB-free.
+
+DATABASE_SSL=disable ON THIS HOP ONLY
+
+The database is a private service that never leaves Render's network. Production
+sets `require` against a managed instance reached across a network, and that
+default is enforced in code.
+
+SECRETS ARE GENERATED BY RENDER, NOT CHOSEN BY ME
+
+JWT_SECRET and the MySQL passwords use generateValue, so nobody ever holds them
+and a staging secret cannot be reused in production.
+
+OAUTH_SERVER_URL IS DELIBERATELY EMPTY
+
+auth.capabilities then reports OAuth as unavailable and the UI hides that door.
+First-party email and password sign-in has been the primary path since Slice 3.
+
+ISOLATION
+
+Its own database, its own secrets, its own bucket, its own data. No production
+credential appears in the file and none should ever be added.
+
+
+================================================================================
+6. WHAT THE QA ACTUALLY COVERED - 127 CHECKS
+================================================================================
+
+Against the running container, through HTTPS, with real Chromium.
+
+AUTHENTICATION (15)
+  All six roles registered - homeowner, contractor, engineer, architect,
+  supplier, project manager. Duplicate username 409. Duplicate email 409. Weak
+  password 400. Sign in by username and by email. Wrong password and unknown
+  user indistinguishable (401, identical text, verified not rate-limited).
+  Repeated failures rate limited.
+
+AUTHORIZATION (6)
+  Anonymous refused on rfq.list, admin.commercialKpis, billing.myLifecycle,
+  notifications.list. Non-admin refused admin.users (403). Unapproved provider
+  refused vendor analytics (403).
+
+RFQ AND QUOTATIONS (8)
+  Homeowner posts an RFQ with a budget. The budget does not reach anonymous
+  callers. Two vendors submit competing quotations. A stranger cannot accept a
+  quotation on someone else's RFQ (403). The owner can. Accepting one rejects
+  the others. A second accept is refused (409).
+
+UPLOADS (4)
+  SVG avatar refused. SVG relabelled image/png refused. HTML relabelled
+  image/png refused. A genuine PNG passes the type check.
+
+MESSAGING AND NOTIFICATIONS (6)
+  Message delivered. Recipient sees it. A third party does not. A non-party
+  cannot share a quotation. Notifications and unread count load.
+
+BILLING (5)
+  Three plans. Professional EGP 499/month. Checkout honestly reported
+  unavailable. Unbuilt entitlements not advertised. Vendor state defaults FREE.
+
+MARKETPLACE (6)
+  Product detail loads. A withdrawn product 404s. Questions readable without
+  exposing who asked. Approved vendor in the directory. No credential or email
+  leaked.
+
+ERROR HANDLING (2)
+  Unknown routes leak no filesystem path. Validation errors carry no stack.
+
+BROWSER - 2 widths x 2 languages x 6 public routes (69)
+  1440px and 375px, English and Arabic, across /, /pricing, /marketplace,
+  /marketplace/products, /marketplace/vendors, /auth. No signed-out visitor
+  bounced to /auth. html lang and dir correct. No horizontal overflow at 375px.
+  No application console errors.
+
+SIGNED-IN JOURNEY (6)
+  All six roles render the landing page without hitting an error boundary.
+
+
+================================================================================
+7. WHAT STAGING STILL CANNOT TELL YOU
+================================================================================
+
+  UPLOADS ........... until S3_* is set against a staging bucket. The adapter is
+                      written; no bucket is attached. Endpoints fail loudly
+                      rather than silently pretending to store anything.
+
+  PASSWORD RESET .... until SMTP_* is set. Unset means NullMailer, and
+                      auth.capabilities reports reset as unavailable so the UI
+                      hides it rather than offering a button that can only fail.
+
+  EGYPT LATENCY ..... Render's Frankfurt is the nearest region. The Vultr region
+                      decision still needs the measurement procedure in the
+                      infrastructure report, run from Egypt.
+
+  PAYMENTS .......... Paymob is not started. Nothing simulates it, and no
+                      provider behaviour has been invented.
+
+  RENDER ITSELF ..... its builder, TLS, private networking and disks are the
+                      genuinely unverified part, because I cannot reach it.
+
+
+================================================================================
+8. COMMITS THIS SESSION
+================================================================================
+
+  915232b  Database portability: verify MySQL 8, fix the JSON handoff,
+           encrypt the connection
+  2d5fd7a  SMTP mailer: password reset now actually sends
+  db0612f  Production dry run: prove the TLS fix, and stop advertising email
+           that cannot send
+  6145584  Backup and restore: write the script the pipeline was already
+           calling, and drill it
+  6b4fecc  Staging QA checklist: 98 checks against the real routes, roles
+           and plans
+  b18712b  Render staging blueprint, and two defects that only a real
+           container revealed
+  d7d7d1d  Fix the test my vite change broke, after verifying the guarantee
+           still holds
+  697a365  Staging QA: the public marketplace was showing fictional inventory
+  324e9dd  Render staging runbook
+
+
+================================================================================
+9. BOUNDARIES HELD
+================================================================================
+
+  No production deployment.
+  No production credentials or production data used.
+  No Paymob work of any kind - not implemented, simulated, mocked or invented.
+  The Vultr production architecture is unchanged and unreplaced.
+  Staging is isolated: own database, own secrets, own storage, test data only.
+  No secret committed - Render generates JWT_SECRET and the MySQL passwords.
+  No architecture redesign; MySQL stays MySQL.
+  main untouched at 71d891f.
+  The local staging stack was torn down after verification.
+
+================================================================================
+END
+================================================================================

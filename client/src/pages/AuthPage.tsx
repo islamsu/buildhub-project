@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { startLogin } from '@/const';
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, Link } from 'wouter';
 import LanguageToggle from '@/components/LanguageToggle';
 import { toast } from 'sonner';
@@ -33,26 +33,75 @@ export default function AuthPage() {
   const isDummyMode = authMode === 'dummy';
   const isLoginMode = authMode === 'login';
   const isOAuthMode = authMode === 'oauth';
+  // A QA sign-in link lands here as /auth?qaToken=... The token is read once,
+  // redeemed, and the query string is stripped from history immediately so it
+  // does not sit in the address bar, get bookmarked, or leak through a
+  // Referer header on the next navigation. It is single-use server-side
+  // regardless - this just avoids leaving a spent credential lying around.
+  const qaToken = new URLSearchParams(window.location.search).get('qaToken');
+  const qaRedeemed = useRef(false);
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [username, setUsername] = useState('');
-  const [dummyUsername, setDummyUsername] = useState('');
-  const [dummyPassword, setDummyPassword] = useState('');
   const [step, setStep] = useState<'role' | 'details' | 'done'>('role');
 
-  const checkSignupAvailability = trpc.auth.checkSignupAvailability.useMutation();
-  const signInDummy = trpc.auth.signInDummy.useMutation({
+  // Slice 3: first-party credentials. `capabilities` decides which doors are
+  // shown - OAuth only appears where OAUTH_SERVER_URL is actually configured,
+  // and "forgot password" only where email delivery exists. Neither is assumed.
+  const { data: capabilities } = trpc.auth.capabilities.useQuery();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [signInIdentifier, setSignInIdentifier] = useState('');
+  const [signInPassword, setSignInPassword] = useState('');
+
+  const goAfterAuth = (userRole?: string | null, onboardingStatus?: string | null) => {
+    if (!userRole) {
+      navigate('/');
+      return;
+    }
+    navigate(PROFESSIONAL_ROLES.includes(userRole as UserRole) && onboardingStatus !== 'approved'
+      ? '/compliance'
+      : getRolePlatformPath(userRole as UserRole));
+  };
+
+  const signIn = trpc.auth.signIn.useMutation({
     onSuccess: result => {
-      toast.success(lang === 'ar' ? 'تم تسجيل الدخول كمستخدم تجريبي' : 'Signed in as a dummy user');
-      if (!result.userRole) {
-        navigate('/');
-        return;
-      }
-      navigate(PROFESSIONAL_ROLES.includes(result.userRole as UserRole) && result.onboardingStatus !== 'approved' ? '/compliance' : getRolePlatformPath(result.userRole as UserRole));
+      toast.success(t('auth.signedIn'));
+      goAfterAuth(result.userRole, result.onboardingStatus);
     },
     onError: (error: { message: string }) => toast.error(error.message),
   });
+
+  const signUp = trpc.auth.signUp.useMutation({
+    onSuccess: result => {
+      toast.success(t('auth.signedUp'));
+      goAfterAuth(result.userRole, result.onboardingStatus);
+    },
+    onError: (error: { message: string }) => toast.error(error.message),
+  });
+
+  const checkSignupAvailability = trpc.auth.checkSignupAvailability.useMutation();
+  const redeemQaLink = trpc.auth.redeemTestLoginLink.useMutation({
+    onSuccess: result => {
+      toast.success(lang === 'ar' ? 'تم تسجيل الدخول كحساب اختباري' : 'Signed in as a QA test account');
+      if (!result.userRole) { navigate('/'); return; }
+      navigate(PROFESSIONAL_ROLES.includes(result.userRole as UserRole) && result.onboardingStatus !== 'approved'
+        ? '/compliance'
+        : getRolePlatformPath(result.userRole as UserRole));
+    },
+    // Deliberately generic. The server gives one message for unknown, expired,
+    // spent and revoked links; surfacing it verbatim keeps that property.
+    onError: (error: { message: string }) => toast.error(error.message),
+  });
+
+  useEffect(() => {
+    if (!qaToken || qaRedeemed.current) return;
+    qaRedeemed.current = true;
+    window.history.replaceState({}, '', '/auth');
+    redeemQaLink.mutate({ token: qaToken });
+  }, [qaToken]);
   const updateRole = trpc.auth.updateRole.useMutation({
     onSuccess: (_result, variables) => {
       toast.success(lang === 'ar' ? 'تم إعداد الملف الشخصي بنجاح!' : 'Profile set up successfully!');
@@ -88,35 +137,69 @@ export default function AuthPage() {
     }
   }, [step, selectedRole]);
 
-  const handleDummySignIn = () => {
-    const normalizedUsername = dummyUsername.trim().toLowerCase();
-    if (!normalizedUsername || !dummyPassword) return;
-    signInDummy.mutate({ username: normalizedUsername, password: dummyPassword });
+  const handleSignUp = () => {
+    if (!selectedRole) return;
+    const normalizedUsername = username.trim().toLowerCase();
+    if (!/^[a-z0-9._-]{3,100}$/.test(normalizedUsername)) {
+      toast.error(t('auth.username.hint'));
+      return;
+    }
+    if (password.length < 8) {
+      toast.error(t('auth.pw.tooShort'));
+      return;
+    }
+    if (password !== confirmPassword) {
+      toast.error(t('auth.pw.mismatch'));
+      return;
+    }
+    signUp.mutate({
+      username: normalizedUsername,
+      email: email.trim(),
+      password,
+      name: name.trim() || normalizedUsername,
+      phone: phone.trim() || undefined,
+      userRole: selectedRole,
+    });
+  };
+
+  /**
+   * The OAuth signup path, kept for deployments where OAUTH_SERVER_URL still
+   * resolves. Unchanged from before Slice 3 - it is now one option rather than
+   * the only one.
+   */
+  const handleOAuthSignUp = () => {
+    if (!selectedRole) return;
+    const normalizedUsername = username.trim().toLowerCase();
+    if (!/^[a-z0-9._-]{3,100}$/.test(normalizedUsername)) {
+      toast.error(t('auth.username.hint'));
+      return;
+    }
+    checkSignupAvailability.mutate({ username: normalizedUsername }, {
+      onSuccess: availability => {
+        if (!availability.usernameAvailable || availability.hasExistingAccount) {
+          toast.error(t('auth.account.exists'));
+          return;
+        }
+        localStorage.setItem('pending_role', selectedRole);
+        localStorage.setItem('pending_username', normalizedUsername);
+        startLogin({ type: 'signUp', returnTo: '/auth?mode=signup', username: normalizedUsername });
+      },
+      onError: error => toast.error(error.message),
+    });
   };
 
   const handleContinue = () => {
     if (!selectedRole) return;
     if (!isAuthenticated) {
-      const normalizedUsername = username.trim().toLowerCase();
-      if (!/^[a-z0-9._-]{3,100}$/.test(normalizedUsername)) {
-        toast.error(t('auth.username.hint'));
-        return;
-      }
-      checkSignupAvailability.mutate({ username: normalizedUsername }, {
-        onSuccess: availability => {
-          if (!availability.usernameAvailable || availability.hasExistingAccount) {
-            toast.error(t('auth.account.exists'));
-            return;
-          }
-          localStorage.setItem('pending_role', selectedRole);
-          localStorage.setItem('pending_username', normalizedUsername);
-          startLogin({ type: 'signUp', returnTo: '/auth?mode=signup', username: normalizedUsername });
-        },
-        onError: error => toast.error(error.message),
-      });
+      handleSignUp();
       return;
     }
     updateRole.mutate({ userRole: selectedRole, name: name || undefined, phone: phone || undefined, username: username.trim() || undefined });
+  };
+
+  const handlePasswordSignIn = () => {
+    if (signInIdentifier.trim().length < 3 || !signInPassword) return;
+    signIn.mutate({ identifier: signInIdentifier.trim(), password: signInPassword });
   };
 
   const roleLabels: Record<UserRole, string> = {
@@ -185,10 +268,42 @@ export default function AuthPage() {
 
           {isLoginMode && (
             <div className="mb-6 space-y-3">
-              <Button type="button" variant="outline" className="w-full" onClick={() => navigate('/auth?mode=oauth')}>
-                {lang === 'ar' ? 'تسجيل الدخول لمستخدم حقيقي' : 'Real-user sign in'}
-              </Button>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" /><span>{lang === 'ar' ? 'أو' : 'or'}</span><span className="h-px flex-1 bg-border" /></div>
+              {/* The primary door since Slice 3. It works on any deployment,
+                  with no external identity service reachable. */}
+              <form
+                className="space-y-2.5"
+                onSubmit={event => { event.preventDefault(); handlePasswordSignIn(); }}
+              >
+                <Input
+                  placeholder={t('auth.identifier')} autoComplete="username"
+                  value={signInIdentifier} onChange={event => setSignInIdentifier(event.target.value)}
+                />
+                <Input
+                  type="password" placeholder={t('auth.password')} autoComplete="current-password"
+                  value={signInPassword} onChange={event => setSignInPassword(event.target.value)}
+                />
+                <Button
+                  type="submit" className="w-full"
+                  disabled={signIn.isPending || signInIdentifier.trim().length < 3 || !signInPassword}
+                >
+                  {signIn.isPending ? t('common.loading') : t('auth.signin')}
+                </Button>
+              </form>
+              {capabilities?.passwordReset && (
+                <button
+                  type="button"
+                  className="w-full text-center text-xs text-primary hover:underline"
+                  onClick={() => navigate('/auth/reset-password')}
+                >
+                  {t('auth.forgot')}
+                </button>
+              )}
+              {capabilities?.oauthSignIn && (
+                <Button type="button" variant="outline" className="w-full" onClick={() => navigate('/auth?mode=oauth')}>
+                  {t('auth.oauthOption')}
+                </Button>
+              )}
+              <div className="flex items-center gap-3 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" /><span>{t('auth.or.divider')}</span><span className="h-px flex-1 bg-border" /></div>
             </div>
           )}
 
@@ -228,7 +343,20 @@ export default function AuthPage() {
           {/* Step 2: Details */}
           {selectedRole && (
             <div className="mb-6 space-y-3">
-              {!isAuthenticated && <div><Input placeholder={t('auth.username')} value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" /><p className="mt-1 text-xs text-muted-foreground">{t('auth.username.hint')}</p></div>}
+              {!isAuthenticated && <>
+                <div>
+                  <Input placeholder={t('auth.username')} value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" />
+                  <p className="mt-1 text-xs text-muted-foreground">{t('auth.username.hint')}</p>
+                </div>
+                <Input type="email" placeholder={t('auth.email')} value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
+                <Input placeholder={t('auth.name')} value={name} onChange={e => setName(e.target.value)} autoComplete="name" />
+                <Input placeholder={t('auth.phone')} value={phone} onChange={e => setPhone(e.target.value)} autoComplete="tel" />
+                <div>
+                  <Input type="password" placeholder={t('auth.password')} value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" />
+                  <p className="mt-1 text-xs text-muted-foreground">{t('auth.pw.tooShort')}</p>
+                </div>
+                <Input type="password" placeholder={t('auth.pw.confirm')} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" />
+              </>}
               {isAuthenticated && <><Input placeholder={t('auth.name')} value={name} onChange={e => setName(e.target.value)} /><Input placeholder={t('auth.phone')} value={phone} onChange={e => setPhone(e.target.value)} /></>}
             </div>
           )}
@@ -238,12 +366,25 @@ export default function AuthPage() {
           {!isLoginMode && !isOAuthMode && <Button
             className="w-full gap-2"
             size="lg"
-            disabled={!selectedRole || updateRole.isPending || checkSignupAvailability.isPending || (!isAuthenticated && username.trim().length < 3)}
+            disabled={!selectedRole || updateRole.isPending || signUp.isPending
+              || (!isAuthenticated && (username.trim().length < 3 || !email.trim() || password.length < 8))}
             onClick={handleContinue}
           >
-            {updateRole.isPending || checkSignupAvailability.isPending ? t('common.loading') : isAuthenticated ? t('auth.complete_setup') : t('auth.continue')}
+            {updateRole.isPending || signUp.isPending ? t('common.loading') : isAuthenticated ? t('auth.complete_setup') : t('auth.pw.createAccount')}
             <ChevronRight className="w-4 h-4" />
           </Button>}
+
+          {/* Secondary, and only where the identity service is actually
+              configured. Previously this was the only way to create an account. */}
+          {!isLoginMode && !isOAuthMode && !isAuthenticated && capabilities?.oauthSignIn && (
+            <Button
+              variant="outline" className="mt-3 w-full"
+              disabled={!selectedRole || checkSignupAvailability.isPending || username.trim().length < 3}
+              onClick={handleOAuthSignUp}
+            >
+              {checkSignupAvailability.isPending ? t('common.loading') : t('auth.oauthOption')}
+            </Button>
+          )}
 
           {!isDummyMode && !isLoginMode && !isOAuthMode && (
             <p className="text-center text-sm text-muted-foreground mt-4">
@@ -256,22 +397,20 @@ export default function AuthPage() {
 
           {(isLoginMode || isOAuthMode) && <p className="mb-6 text-center text-sm text-muted-foreground">{lang === 'ar' ? 'ليس لديك حساب؟' : 'New to BuildHub?'}{' '}<button onClick={() => navigate('/auth?mode=signup')} className="font-medium text-primary hover:underline">{lang === 'ar' ? 'إنشاء حساب' : 'Create an account'}</button></p>}
 
-          {!isOAuthMode && <div className="mt-6 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 p-4">
-            <div className="mb-3 flex items-start gap-2">
-              <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
-              <div>
-                <p className="text-sm font-semibold text-amber-950">{lang === 'ar' ? 'تسجيل دخول مستخدم تجريبي' : 'Dummy / Test user sign-in'}</p>
-                <p className="mt-1 text-xs text-amber-900/70">{lang === 'ar' ? 'استخدم بيانات الدخول التي حددها المسؤول لهذا الحساب التجريبي. لا حاجة إلى رمز تحقق.' : 'Use the credentials set by an administrator for this test account. No verification code is required.'}</p>
-              </div>
-            </div>
-            <div className="space-y-2.5">
-              <Input placeholder={lang === 'ar' ? 'اسم المستخدم التجريبي' : 'Dummy username'} value={dummyUsername} onChange={event => setDummyUsername(event.target.value)} autoComplete="username" />
-              <Input type="password" placeholder={lang === 'ar' ? 'كلمة المرور' : 'Password'} value={dummyPassword} onChange={event => setDummyPassword(event.target.value)} autoComplete="current-password" />
-              <Button type="button" variant="outline" className="w-full border-amber-300 bg-white/80 hover:bg-white" onClick={handleDummySignIn} disabled={signInDummy.isPending || dummyUsername.trim().length < 3 || dummyPassword.length < 8}>
-                {signInDummy.isPending ? t('common.loading') : (lang === 'ar' ? 'تسجيل الدخول كمستخدم تجريبي' : 'Sign in as dummy')}
-              </Button>
-            </div>
-          </div>}
+          {/* The public test-user sign-in panel was REMOVED here.
+              It advertised a test-login pathway to every visitor - an empty
+              username/password form headed "Dummy / Test user sign-in" - on
+              the same page real users sign up on.
+
+              The capability itself is NOT deleted. auth.signInDummy still
+              exists and is now gated server-side on ENV.testLoginEnabled,
+              default-denied, so it answers NOT_FOUND anywhere the flag is not
+              explicitly "true". Removing this panel is the cosmetic half; the
+              server boundary is the half that matters, and hiding a control
+              was never going to be the protection.
+
+              The replacement is admin-issued, expiring, revocable test-login
+              links reachable only from the admin area - not a public form. */}
         </div>
       </div>
     </div>

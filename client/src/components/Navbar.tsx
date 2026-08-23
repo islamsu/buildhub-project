@@ -35,6 +35,7 @@ export default function Navbar() {
     { label: t('nav.home'), href: '/' },
     { label: t('nav.marketplace'), href: '/marketplace' },
     { label: t('nav.rfq'), href: '/rfq' },
+    { label: t('nav.pricing'), href: '/pricing' },
   ];
 
   return (

@@ -1,0 +1,58 @@
+# Runtime composition for a single BuildHub host.
+#
+# Intentionally minimal, because the pieces that are NOT here are managed
+# services rather than containers:
+#   - MySQL is Vultr Managed Databases, so backups, failover and patching are
+#     not this file's problem. DATABASE_URL points at it.
+#   - Object storage is Vultr Object Storage, addressed over S3 (see the S3_*
+#     variables in .env.example).
+#   - TLS terminates at the edge (a Vultr Load Balancer, or Caddy/nginx on the
+#     host). The app sets `trust proxy` in production and reads
+#     x-forwarded-proto to decide the session cookie's Secure flag.
+#
+# Every value comes from the environment. No secret is written in this file, and
+# none should ever be committed into it.
+
+services:
+  app:
+    image: ${BUILDHUB_IMAGE:?set BUILDHUB_IMAGE to the tagged image to run}
+    restart: unless-stopped
+    # Bound to loopback: the edge proxy reaches it, the public internet does not.
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      APP_BASE_URL: ${APP_BASE_URL:?}
+      DATABASE_URL: ${DATABASE_URL:?}
+      JWT_SECRET: ${JWT_SECRET:?}
+      VITE_APP_ID: ${VITE_APP_ID:-buildhub}
+      OWNER_OPEN_ID: ${OWNER_OPEN_ID:-}
+      # Optional. Sign-in works without it since Slice 3; auth.capabilities
+      # reports OAuth as unavailable and the UI hides that door.
+      OAUTH_SERVER_URL: ${OAUTH_SERVER_URL:-}
+      # Object storage. S3 wins when a bucket is set; Forge is the fallback.
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      BUILT_IN_FORGE_API_URL: ${BUILT_IN_FORGE_API_URL:-}
+      BUILT_IN_FORGE_API_KEY: ${BUILT_IN_FORGE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    healthcheck:
+      # Liveness only. /readyz also checks the database, and a database outage
+      # must not make Docker restart the app in a loop - the app is not the
+      # thing that is broken.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      # The app emits one JSON object per request in production; keep enough to
+      # investigate an incident without filling the disk.
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

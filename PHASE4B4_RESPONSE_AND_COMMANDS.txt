@@ -1,0 +1,635 @@
+================================================================================
+BUILDHUB — PHASE 4B.4
+Subscription Lifecycle & Billing State Orchestration
+COMPLETE FINAL RESPONSE + ALL COMMANDS EXECUTED
+================================================================================
+
+Branch:      claude/phase4b4-subscription-lifecycle
+Baseline:    5258035 (tip of claude/phase4b3-vendor-directory-targeting)
+Commit:      df6e540  Phase 4B.4: subscription lifecycle & billing state orchestration
+Status:      PUSHED
+Report:      BUILDHUB_PHASE4B4_SUBSCRIPTION_LIFECYCLE.md (574 lines, 22 sections)
+Date:        2026-08-20
+
+
+################################################################################
+#  PART 1 — COMPLETE FINAL MESSAGE (VERBATIM)
+################################################################################
+
+Phase 4B.4 is complete and pushed to `claude/phase4b4-subscription-lifecycle`.
+
+--------------------------------------------------------------------------------
+## Two pre-existing defects found by probing the source
+--------------------------------------------------------------------------------
+
+**1. `awaitingRenewalSync` granted paid access indefinitely.** I executed the
+real function rather than trusting the 4B.1 report:
+
+    1 day after period end    effectivePlan=premium  isPaid=true
+    10 years after            effectivePlan=premium  isPaid=true
+
+An `active` row whose paid period ended a decade ago still resolved to full
+PREMIUM — unlimited qualified enquiries, forever. This is exactly what §6 said
+must not happen. Paid access is now bounded by `RENEWAL_SYNC_WINDOW_DAYS`, which
+**reuses the approved 7-day grace period rather than inventing a second number**
+— both windows answer the same question ("we don't know whether this vendor
+paid"). Past the bound it fails closed to FREE and reports
+`RECONCILIATION_REQUIRED`, **preserving the row** so a late provider event can
+still settle it. Neither success nor failure is invented.
+
+**2. `startTrial` wiped the founder one-time-use stamp.** It emitted
+`founderPriceUsedAt: null` for non-founder subscriptions, so a vendor who spent
+the offer, cancelled, and re-subscribed became founder-eligible again on the next
+cycle. Caught by a test I wrote for §16, confirmed live in scenario M.
+
+--------------------------------------------------------------------------------
+## A hole I nearly introduced, and closed
+--------------------------------------------------------------------------------
+
+`startPaidTrial` required `!isPaid` — but a lapsed trial leaves a vendor unpaid,
+so they could chain **unlimited free 30-day paid-plan trials**. Closed with a
+write-once `trialStartedAt` column (additive migration 0016). I've flagged "one
+trial per vendor" as a rule I made explicit, not one I was handed.
+
+--------------------------------------------------------------------------------
+## A scope judgment worth your attention
+--------------------------------------------------------------------------------
+
+I did **not** expose plan selection to vendors. No payment can be collected until
+4B.5, so `billing.startTrial` / `billing.changePlan` would have handed out real
+paid entitlements — including PREMIUM's unlimited enquiries — for nothing. The
+transitions are built and fully tested; they're admin-authorized until checkout
+exists. Vendors get exactly two mutations, `cancelSubscription` and
+`resumeSubscription`, both taking **no input at all**.
+
+--------------------------------------------------------------------------------
+## Verification
+--------------------------------------------------------------------------------
+
+  * 73 new tests; full suite **598/598**, tsc clean, both builds green
+  * **74/74 live checks** across scenarios A–O against real MariaDB and real
+    HTTP; **7/7** renewal-sync bound checks
+  * 8 concurrent cancellations → exactly 1 applied, 1 audit event; racing plan
+    changes settled on one coherent plan+price
+  * Downgrade preserved every business table (identical counts); the append-only
+    audit trail correctly grew
+  * Fixtures torn down; database at baseline
+
+**Two existing assertions changed, neither weakened.** Both encoded the 4B.1-era
+"billing router has no mutation at all" — which §10 explicitly authorizes
+changing. I replaced each with the stronger property it was protecting (survives
+mutations existing). The pre-existing "no client-supplied plan/status/price"
+assertion **passed unchanged**.
+
+--------------------------------------------------------------------------------
+## Five owner decisions in the report
+--------------------------------------------------------------------------------
+
+Renewal-sync window = 7 days · one trial per vendor · founder-eligible vendor
+choosing annual pays standard annual (4B.1 blocked the sale entirely) ·
+grace-period entitlements are full paid entitlements · proration policy for
+mid-period changes.
+
+                  PHASE 4B.4 — PASS — READY FOR PHASE 4B.5
+
+Stopping here as instructed. No Paymob, no Stripe, no checkout, no credentials —
+enforced by tests that scan executable code. Report:
+`BUILDHUB_PHASE4B4_SUBSCRIPTION_LIFECYCLE.md`.
+
+
+################################################################################
+#  PART 2 — ALL COMMANDS EXECUTED, IN ORDER
+################################################################################
+
+================================================================================
+STEP 1 — BRANCH CREATION
+================================================================================
+
+git rev-parse HEAD && git checkout -b claude/phase4b4-subscription-lifecycle 2>&1 && git branch --show-current
+
+  → 525803507b214a33a64483950023e97708f019ec
+  → Switched to a new branch 'claude/phase4b4-subscription-lifecycle'
+
+
+================================================================================
+STEP 2 — SOURCE-OF-TRUTH REVIEW (§1)
+================================================================================
+
+ls server/billing/ && echo "=== shared/billing.ts ===" && cat shared/billing.ts
+
+cat server/billing/domain.ts
+
+cat server/billing/service.ts
+
+cat server/billing/entitlements.ts | head -160
+
+grep -n "billingEvents\|userAccountAuditEvents" -A 16 drizzle/schema.ts \
+  | grep -A 16 "export const billingEvents" | head -20
+sed -n "$(grep -n 'const billingRouter' server/routers.ts | cut -d: -f1),+60p" server/routers.ts
+
+grep -n "export const vendorSubscriptions" -A 30 drizzle/schema.ts \
+  | grep -E "uniqueIndex|index\(|userId" | head
+ls server/billing*.test.ts
+grep -rn "export async function notifyUser" -A 6 server/*.ts | head -12
+
+sed -n 460,500p drizzle/schema.ts
+
+grep -rn "applySubscriptionPatch" --include=*.ts . | grep -v node_modules
+
+sed -n 138,165p server/billingAuthorization.test.ts
+
+grep -n "awaitingRenewalSync" -B 4 -A 10 server/billingDomain.test.ts \
+  server/billingEntitlementEngine.test.ts | head -60
+
+
+--------------------------------------------------------------------------------
+DEFECT PROBE — awaitingRenewalSync over time
+--------------------------------------------------------------------------------
+
+# Temporary probe test written to server/__probe.test.ts, exercising
+# deriveBillingState() at 1 day / 30 days / 1 year / 10 years past period end.
+
+npx vitest run server/__probe.test.ts 2>&1 | grep -E "effectivePlan|Tests"
+
+  → 1 day after period end   effectivePlan=premium isPaid=true awaitingRenewalSync=true
+  → 30 days after            effectivePlan=premium isPaid=true awaitingRenewalSync=true
+  → 1 year after             effectivePlan=premium isPaid=true awaitingRenewalSync=true
+  → 10 years after           effectivePlan=premium isPaid=true awaitingRenewalSync=true
+  → CONFIRMED DEFECT: indefinite paid access
+
+rm server/__probe.test.ts
+
+
+================================================================================
+STEP 3 — DOMAIN CHANGES (§2, §6)
+================================================================================
+
+# 3a. Bound awaitingRenewalSync; add reconciliationRequired to BillingState.
+python3 - <<'PY'
+p='server/billing/domain.ts'
+# - BillingState gains `reconciliationRequired: boolean`
+# - FREE_STATE gains the new field
+# - the `active` case gains a bounded window:
+#     const windowEndsAt = addDays(subscription.currentPeriodEnd, RENEWAL_SYNC_WINDOW_DAYS);
+#     return elapsed(windowEndsAt, now)
+#       ? lapse({ awaitingRenewalSync: true, reconciliationRequired: true })
+#       : grant({ founderPriceActive, awaitingRenewalSync: true });
+PY
+
+# 3b. Add RENEWAL_SYNC_WINDOW_DAYS + LIFECYCLE_STATES + lifecycleStateOf().
+python3 - <<'PY'
+p='server/billing/domain.ts'
+# export const RENEWAL_SYNC_WINDOW_DAYS = GRACE_PERIOD_DAYS;
+# export const LIFECYCLE_STATES = ['FREE','TRIALING','ACTIVE','CANCELLATION_SCHEDULED',
+#   'PAST_DUE','GRACE_PERIOD','AWAITING_RENEWAL_SYNC','RECONCILIATION_REQUIRED','EXPIRED'];
+# export function lifecycleStateOf(state: BillingState): LifecycleState { ... }
+PY
+
+# 3c. Add reverseCancellation() and changePlan() transitions.
+python3 - <<'PY'
+p='server/billing/domain.ts'
+# export function reverseCancellation(): SubscriptionPatch
+# export function changePlan({ subscription, targetPlan, now }): SubscriptionPatch
+#   - refuses targetPlan === 'free' (that is a cancellation)
+#   - re-resolves price from the catalogue for the new plan
+#   - never restarts the period, never re-awards founder pricing
+#   - no proration / credit / refund
+PY
+
+npx tsc --noEmit 2>&1 | head -10; echo "TSC done"     → clean
+
+
+================================================================================
+STEP 4 — ORCHESTRATION LAYER (§10, §11, §12, §15)
+================================================================================
+
+cat > /home/user/buildhub-project/server/billing/lifecycle.ts <<'TSEOF'
+  # New module. Key contents:
+  #   withSubscriptionLock()  - db.transaction + SELECT ... FOR UPDATE row lock,
+  #                             decision made from the row re-read under the lock
+  #   ensureSubscriptionRow() - insert-then-catch ER_DUP_ENTRY (UNIQUE(userId))
+  #   startPaidTrial()        - 30-day trial, founder eligibility under the lock
+  #   requestCancellation()   - cancel at period end, idempotent
+  #   resumeSubscription()    - cancellation reversal, idempotent
+  #   changeVendorPlan()      - PROFESSIONAL <-> PREMIUM, idempotent
+  #   recordPaymentFailure()  - opens the 7-day grace window, never extends it
+  #   recordPaymentRecovery() - clears grace, starts a fresh period
+  #   recordPaymentSucceeded()- TRIALING -> ACTIVE, also the renewal path
+  #   reconcileSubscription() - converges stored state to a fixed point
+  #   findSubscriptionsNeedingReconciliation() / reconcileDueSubscriptions()
+  #   getLifecycleSnapshot()  - admin/vendor read model (§14)
+  # All operations return: applied | noop | rejected
+TSEOF
+
+npx tsc --noEmit 2>&1 | head -20; echo "TSC done"     → clean
+
+
+================================================================================
+STEP 5 — ROUTER ENDPOINTS (§10, §14)
+================================================================================
+
+grep -n "myEnquiryUsage: protectedProcedure" -A 6 server/routers.ts
+grep -n "from './billing/" server/routers.ts
+
+# 5a. Imports + lifecycleResult() helper + vendor lifecycle endpoints.
+python3 - <<'PY'
+p='server/routers.ts'
+# - import { changeVendorPlan, getLifecycleSnapshot, recordPaymentFailure,
+#     recordPaymentRecovery, recordPaymentSucceeded, reconcileDueSubscriptions,
+#     reconcileSubscription, requestCancellation, resumeSubscription,
+#     startPaidTrial, type LifecycleOutcome } from './billing/lifecycle';
+# - function lifecycleResult(outcome) : noop is a SUCCESS, rejected -> BAD_REQUEST
+# - billing.myLifecycle / startTrial / cancelSubscription / resumeSubscription / changePlan
+PY
+
+npx tsc --noEmit 2>&1 | head; echo TSC_OK             → clean
+
+# 5b. Admin-authorized lifecycle operations.
+python3 - <<'PY'
+p='server/routers.ts'
+# admin.vendorLifecycle / recordVendorPaymentSucceeded / recordVendorPaymentFailed
+# admin.recordVendorPaymentRecovered / reconcileVendorBilling / reconcileDueBilling
+PY
+
+npx tsc --noEmit 2>&1 | head; echo TSC_OK             → clean
+
+
+================================================================================
+STEP 6 — CLOSING THE UNLIMITED-TRIALS HOLE
+================================================================================
+
+grep -n "if (current.inTrial && locked.plan === planId) return null;" -A 4 -B 2 \
+  server/billing/lifecycle.ts
+
+  → CONFIRMED: after a trial lapses, isPaid is false, so a NEW trial starts.
+  → Unlimited free 30-day PREMIUM trials.
+
+# 6a. Add write-once trialStartedAt to the schema + domain patch type + startTrial.
+python3 - <<'PY'
+p='drizzle/schema.ts'      # trialStartedAt: timestamp('trialStartedAt'),
+PY
+python3 - <<'PY'
+p='server/billing/domain.ts'   # SubscriptionPatch gains trialStartedAt; startTrial writes it
+PY
+grep -n "trialStartedAt" server/billing/domain.ts drizzle/schema.ts
+
+# 6b. Enforce one trial per vendor in the orchestrator.
+python3 - <<'PY'
+p='server/billing/lifecycle.ts'
+# if (locked.trialStartedAt !== null) {
+#   return { reject: 'This vendor has already used their trial...' };
+# }
+PY
+
+npx tsc --noEmit 2>&1 | head; echo TSC_OK             → clean
+
+
+================================================================================
+STEP 7 — RESTRICTING PLAN SELECTION TO ADMIN (SCOPE JUDGMENT)
+================================================================================
+
+python3 - <<'PY'
+p='server/routers.ts'
+# REMOVED from the vendor billing router: startTrial, changePlan
+#   (no payment can be collected before 4B.5, so a vendor-callable subscribe
+#    would hand out real paid entitlements for nothing)
+# KEPT on the vendor router: cancelSubscription, resumeSubscription (no input)
+# MOVED to the admin router: startVendorTrial, changeVendorPlan
+PY
+
+npx tsc --noEmit 2>&1 | head; echo TSC_OK             → clean
+
+
+================================================================================
+STEP 8 — MIGRATION (§20)
+================================================================================
+
+npx drizzle-kit generate 2>&1 | tail -8
+  → FAILED: DATABASE_URL is required to run drizzle commands
+
+DATABASE_URL="mysql://buildhub:buildhub@localhost:3306/buildhub_verify" \
+  npx drizzle-kit generate 2>&1 | tail -6 && cat drizzle/0016_*.sql
+
+  → [✓] drizzle/0016_remarkable_rhodey.sql
+  → ALTER TABLE `vendorSubscriptions` ADD `trialStartedAt` timestamp;
+
+# Apply against the live database, verifying data preservation.
+service mariadb start >/dev/null 2>&1; sleep 3
+mysql -uroot -e "ALTER USER 'buildhub'@'localhost' IDENTIFIED BY 'buildhub'; FLUSH PRIVILEGES;"
+mysql -ubuildhub -pbuildhub buildhub_verify -e "SELECT (SELECT COUNT(*) FROM users) users,(SELECT COUNT(*) FROM rfqs) rfqs,(SELECT COUNT(*) FROM quotations) q,(SELECT COUNT(*) FROM reviews) r;"
+DATABASE_URL="mysql://buildhub:buildhub@localhost:3306/buildhub_verify" \
+  npx drizzle-kit migrate 2>&1 | tail -4
+mysql -ubuildhub -pbuildhub buildhub_verify -e "SELECT ...; SHOW COLUMNS FROM vendorSubscriptions LIKE 'trialStartedAt';"
+
+  → before: 8 users, 6 rfqs, 6 quotations, 2 reviews
+  → migrations applied successfully
+  → after:  8 users, 6 rfqs, 6 quotations, 2 reviews    (identical)
+  → trialStartedAt  timestamp  YES  NULL
+
+
+================================================================================
+STEP 9 — EXISTING TESTS THAT ENCODED A SUPERSEDED 4B.1 FACT
+================================================================================
+
+npx vitest run server/billingAuthorization.test.ts server/billingDomain.test.ts \
+  server/billingEntitlementEngine.test.ts 2>&1 | grep -E "✓|×|FAIL|Tests " | head -20
+
+  → billingDomain.test.ts             42 passed
+  → billingEntitlementEngine.test.ts  36 passed
+  → × 'the billing router exposes NO mutation at all'
+  → × 'a vendor cannot upgrade themselves: the entire billing router still has no mutation'
+  → NOTE: the `plan: z.` security assertion PASSED — moving plan selection to
+    admin preserved the property it was protecting.
+
+grep -n "the entire billing router still has no mutation" -B 8 -A 12 \
+  server/billingAuthorization.test.ts
+
+python3 - <<'PY'
+p='server/billingAuthorization.test.ts'
+# Replaced BOTH with the STRONGER properties they were protecting (not weakened):
+#  1. 'every billing-router mutation is self-scoped and takes no access-granting input'
+#     + 'selecting or changing a PLAN is not reachable from the vendor-facing billing router'
+#  2. 'a vendor cannot upgrade themselves: no billing-router mutation can raise a plan'
+PY
+
+npx vitest run server/billingAuthorization.test.ts 2>&1 | grep -E "FAIL|Tests "
+  → Tests  29 passed (29)
+
+
+================================================================================
+STEP 10 — PHASE 4B.4 TEST SUITE (§16)
+================================================================================
+
+cat > /home/user/buildhub-project/server/subscriptionLifecycle.test.ts <<'TSEOF'
+  # 73 tests across:
+  #   lifecycle state model            - all 9 states derived from ONE status column
+  #   trial behaviour                  - 30 days, valid, expired, one-per-vendor
+  #   cancellation                     - scheduled, period end, reversal, refusal
+  #   payment failure / 7-day grace    - entitlements retained, window never extended
+  #   awaitingRenewalSync bound        - REGRESSION test at 7/30/365/3650 days
+  #   plan changes                     - price re-resolve, period preserved, no proration
+  #   founder lifecycle                - 299/699, 6 months, reuse prevention, annual
+  #   idempotency                      - 6 repeated-operation guarantees
+  #   concurrency                      - transaction + lock + serialised fake
+  #   missing / stale / malformed state - fail closed
+  #   entitlement integration          - allowance per lifecycle state
+  #   data preservation                - zero .delete() in any billing module
+  #   auditability                     - actor/from/to/source/note, no second framework
+  #   authorization                    - anon / homeowner / cross-vendor / manipulation
+  #   no payment provider              - executable-code scan
+TSEOF
+
+npx vitest run server/subscriptionLifecycle.test.ts 2>&1 | tail -40
+  → Tests  6 failed | 67 passed (73)
+
+npx vitest run server/subscriptionLifecycle.test.ts 2>&1 | grep -E "^\s+×|FAIL " | head -12
+
+npx vitest run server/subscriptionLifecycle.test.ts -t "FOUNDER REUSE" 2>&1 \
+  | grep -A 12 "AssertionError\|→" | head -25
+
+  → AssertionError: expected null to deeply equal 2026-02-01T00:00:00.000Z
+  → REAL DEFECT FOUND: startTrial sets founderPriceUsedAt: null when the vendor
+    is NOT founder-eligible, wiping the write-once one-time-use guard.
+
+
+--------------------------------------------------------------------------------
+DEFECT FIX — founder stamp + annual founder handling
+--------------------------------------------------------------------------------
+
+python3 - <<'PY'
+p='server/billing/domain.ts'
+# startTrial now OMITS the key instead of nulling it:
+#   ...(founder ? { founderPriceUsedAt: now, founderPriceEndsAt: addMonths(now, 6) } : {}),
+#   ...(founder ? {} : { founderPriceEndsAt: null }),
+PY
+
+python3 - <<'PY'
+p='server/billing/lifecycle.ts'
+# Orchestrator asks for founder pricing only where an approved price exists:
+#   const founder = isFounderEligible(locked, offerEndsAt, at)
+#     && isFounderPriceAvailable(planId, interval);
+# (4B.1 THREW for founder+annual, blocking the sale entirely; an eligible
+#  vendor choosing annual now simply pays the approved standard annual price.)
+PY
+
+npx tsc --noEmit 2>&1 | head; echo TSC_OK             → clean
+
+
+--------------------------------------------------------------------------------
+TEST-HARNESS FIXES (my own errors, not product defects)
+--------------------------------------------------------------------------------
+
+python3 - <<'PY'
+p='server/subscriptionLifecycle.test.ts'
+# 1. Fake transaction now SERIALISES via a promise queue, modelling the real
+#    FOR UPDATE lock. A fake running them in parallel would quietly pass code
+#    that races in production.
+# 2. Provider-name scans filter comment lines — these files' own comments name
+#    Paymob/Stripe in prose precisely to record they are NOT integrated.
+# 3. 'no retroactive credits' now asserts no WRITE to qualifiedEnquiries,
+#    rather than the absence of a substring that legitimately appears in a read.
+# 4. Annual founder expectation corrected to 'applied' + standard annual price.
+# 5. Removed a leftover guard stub in the admin test.
+PY
+
+npx vitest run server/subscriptionLifecycle.test.ts 2>&1 | grep -E "^\s+×|Tests " | head
+  → Tests  73 passed (73)
+
+npx vitest run 2>&1 | grep -E "^\s+×|FAIL |Tests |Test Files " | head -20
+  → Test Files  40 passed (40)
+  → Tests  598 passed (598)
+
+
+================================================================================
+STEP 11 — LIVE VERIFICATION (§17)
+================================================================================
+
+mysql -ubuildhub -pbuildhub buildhub_verify -e "SELECT id,username,role,userRole,onboardingStatus FROM users ORDER BY id;"
+
+nohup env DATABASE_URL="mysql://buildhub:buildhub@localhost:3306/buildhub_verify" \
+  JWT_SECRET="test-secret-for-manual-qa-only" VITE_APP_ID="buildhub-qa-local" \
+  PORT=3000 NODE_ENV=development npx tsx server/_core/index.ts > .../server4b4.log 2>&1 &
+sleep 6; curl -s -o /dev/null -w "server: %{http_code}\n" http://localhost:3000/
+  → server: 200
+
+
+--------------------------------------------------------------------------------
+LIVE SCRIPT — scenarios A through O
+--------------------------------------------------------------------------------
+
+cat > .../scratchpad/lifecycle.mjs <<'EOF'
+  # Real HTTP through /api/trpc with real authenticated sessions (superjson).
+  # Time travel by ageing STORED timestamps — the real mechanism the server
+  # derives from (stored state + wall clock). The clock itself is never faked.
+  #   A. FREE -> PROFESSIONAL trial          I. Payment recovery before expiry
+  #   B. Trial still valid                   J. PROFESSIONAL -> PREMIUM
+  #   C. Trial expired -> FREE               K. PREMIUM -> PROFESSIONAL
+  #   C2. One trial per vendor               L. Founder -> six-month expiry
+  #   D. Cancellation scheduled              M. Founder cancel -> re-subscribe
+  #   D2. Cancellation reversal              N. Repeated transitions
+  #   E. Cancellation period ends            O. Concurrent transitions
+  #   F/G. Payment failure -> grace          + Authorization / Audit / Data preservation
+  #   H. Grace expiration -> FREE
+EOF
+
+node .../scratchpad/lifecycle.mjs 2>&1 | tail -80
+  → A through K all PASS
+  → FAILED at section L: adminSettings INSERT (missing NOT NULL column updatedBy)
+
+mysql -ubuildhub -pbuildhub buildhub_verify -e "DESCRIBE adminSettings;" | awk '{print $1,$2,$3,$4,$5}'
+  → updatedBy int(11) NO MUL NULL      (NOT NULL — script bug, not a product bug)
+
+python3 - <<'PY'
+p='lifecycle.mjs'   # openOffer() now supplies updatedBy=7
+PY
+node lifecycle.mjs 2>&1 | sed -n '/── L\./,$p' | head -70
+  → L, M, N, O, Authorization all PASS
+  → 2 FAILURES, both my script's own errors:
+      'audit records multiple distinct lifecycle actions'  (script resets events
+        between sections, so a cumulative count over survivors is meaningless)
+      'DOWNGRADE preserves every business table'  (billingEvents is APPEND-ONLY
+        and must GROW on a downgrade; it should not have been in the invariant)
+
+python3 - <<'PY'
+p='lifecycle.mjs'
+# 1. Accumulate actions into seenActions before each reset, then assert all 8
+#    required lifecycle actions were recorded across the whole run.
+# 2. Business-table invariant excludes billingEvents; assert separately that the
+#    audit trail GREW.
+PY
+
+node lifecycle.mjs 2>&1 | sed -n '/── Audit trail/,$p'
+
+  → actions recorded across the run: cancellation_requested, cancellation_reversed,
+    lifecycle_reconciled, payment_failed, payment_recovered, plan_changed,
+    subscription_activated, trial_started
+  → PASS  every lifecycle transition in the brief was recorded  — 8 distinct actions
+  → PASS  DOWNGRADE preserves every business table — 8 6 6 2 1 1 0 2 2  vs  identical
+  → PASS  the downgrade itself is recorded in the audit trail  — 5 → 6
+  → 74/74 live checks passed
+
+
+--------------------------------------------------------------------------------
+LIVE SCRIPT — the headline awaitingRenewalSync fix (§6)
+--------------------------------------------------------------------------------
+
+cat > .../scratchpad/renewalsync.mjs <<'EOF'
+  # An ACTIVE premium subscription whose period elapsed, with NO cancellation,
+  # probed at 1 / 6 / 8 / 60 days and 5 years past period end.
+EOF
+
+node .../scratchpad/renewalsync.mjs 2>&1 | tail -25
+
+  → PASS  1 day past period end    → AWAITING_RENEWAL_SYNC    plan=premium  allowance=null
+  → PASS  6 days past period end   → AWAITING_RENEWAL_SYNC    plan=premium  allowance=null
+  → PASS  8 days past period end   → RECONCILIATION_REQUIRED  plan=free     allowance=5
+  → PASS  60 days past period end  → RECONCILIATION_REQUIRED  plan=free     allowance=5
+  → PASS  5 years past period end  → RECONCILIATION_REQUIRED  plan=free     allowance=5
+  → PASS  reconciliation leaves the unresolved row untouched (outcome noop)
+  → PASS  late confirmation restores ACTIVE premium
+  → 7/7 renewal-sync checks passed
+
+
+================================================================================
+STEP 12 — CLEANUP + FINAL VERIFICATION GATE (§20)
+================================================================================
+
+mysql -ubuildhub -pbuildhub buildhub_verify <<'SQL'
+DELETE FROM billingEvents;
+DELETE FROM vendorSubscriptions;
+DELETE FROM qualifiedEnquiries;
+DELETE FROM vendorCategories;
+DELETE FROM adminSettings WHERE settingKey='founderOfferEndsAt';
+SELECT ...;
+SQL
+  → 8 users, 6 rfqs, 6 quotations, 2 reviews, 0 subs, 0 events, 0 cats, 0 enq
+
+npx vitest run 2>&1 | grep -E "Test Files|Tests "
+  → Test Files  40 passed (40)
+  → Tests  598 passed (598)
+
+npx tsc --noEmit && echo clean
+  → clean
+
+npm run build 2>&1 | tail -3
+  → dist/index.js  215.4kb   ✓ built
+
+git log --oneline -1 origin/main
+  → 71d891f Revert "Fix login button submission flow for dummy/test accounts"  (UNTOUCHED)
+git branch --show-current
+  → claude/phase4b4-subscription-lifecycle
+git status --short
+git diff --stat
+  → 5 files changed, 352 insertions(+), 11 deletions(-)
+
+
+================================================================================
+STEP 13 — REPORT, COMMIT, PUSH (§21)
+================================================================================
+
+cat > /home/user/buildhub-project/BUILDHUB_PHASE4B4_SUBSCRIPTION_LIFECYCLE.md <<'MDEOF'
+  # 22 sections: baseline SHA, branch, source-of-truth findings, lifecycle state
+  # model, trial, cancellation, payment-failure/grace, awaitingRenewalSync
+  # treatment, plan changes, founder lifecycle, entitlement integration,
+  # idempotency, concurrency, auditability, security model, data preservation,
+  # schema change, tests, live verification, regression, Paymob deferral,
+  # limitations & owner decisions, final status.
+MDEOF
+wc -l BUILDHUB_PHASE4B4_SUBSCRIPTION_LIFECYCLE.md
+  → 574
+
+# NOTE: the first commit attempt combined `pkill -f "tsx server/_core/index.ts"`
+# with the commit; pkill matched the shell's own process line and killed the
+# shell before git ran (exit 144). Re-run without it.
+
+git log --oneline -1; git status --short | head
+  → 5258035 Add Phase 4B.3 completion response summary   (commit had NOT run)
+
+git add -A && git commit -q -F - <<'MSG'
+Phase 4B.4: subscription lifecycle & billing state orchestration
+... (full message: two pre-existing defects, orchestration, one-time trial,
+     security posture, verification, the two updated assertions)
+MSG
+git log --oneline -1
+  → df6e540 Phase 4B.4: subscription lifecycle & billing state orchestration
+
+git push -u origin claude/phase4b4-subscription-lifecycle 2>&1 | tail -4
+  → * [new branch]  claude/phase4b4-subscription-lifecycle
+git status --short && echo "working tree clean"
+  → working tree clean
+
+
+################################################################################
+#  PART 3 — FILES CHANGED
+################################################################################
+
+NEW
+  server/billing/lifecycle.ts                        orchestration layer
+  server/subscriptionLifecycle.test.ts               73 tests
+  drizzle/0016_remarkable_rhodey.sql                 additive migration
+  drizzle/meta/0016_snapshot.json
+  BUILDHUB_PHASE4B4_SUBSCRIPTION_LIFECYCLE.md        574-line report
+
+MODIFIED
+  server/billing/domain.ts        +173  bounded renewal sync, lifecycle states,
+                                        reverseCancellation, changePlan,
+                                        founder-stamp fix, trialStartedAt
+  server/routers.ts               +139  vendor + admin lifecycle endpoints,
+                                        lifecycleResult() helper
+  drizzle/schema.ts                 +4  trialStartedAt column
+  server/billingAuthorization.test.ts +40  two superseded assertions replaced
+                                           with stronger ones
+  drizzle/meta/_journal.json        +7
+
+
+################################################################################
+#  PART 4 — FINAL STATUS
+################################################################################
+
+                  PHASE 4B.4 — PASS — READY FOR PHASE 4B.5
+
+Stopped as instructed. Phase 4B.5 not started. No Paymob, no Stripe, no
+checkout, no production payment credentials, no featured placement, no billing
+admin dashboard, no pricing change, no qualified-enquiry limit change.
+
+================================================================================

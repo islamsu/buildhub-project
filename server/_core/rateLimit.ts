@@ -61,3 +61,50 @@ export function resetAiChatLimiters() {
   aiChatLimiters.ipBurst.reset();
   aiChatLimiters.ipSustained.reset();
 }
+
+// Credential-guessing protection for the two unauthenticated endpoints that accept a
+// secret: password sign-in and invitation completion. Neither had any bound before -
+// scrypt makes each guess costly, but nothing capped the guess RATE.
+//
+// Two axes, because they stop different attacks:
+//  - by IP, which bounds one source spraying many accounts (or many tokens);
+//  - by identifier (the username), which bounds many sources targeting ONE account,
+//    the case an IP limit cannot see.
+//
+// The identifier window is deliberately not a lockout: it expires on its own, so an
+// attacker cannot use it to keep a real user permanently locked out of their account.
+// Invitation completion is keyed by IP only - keying it by token would be useless,
+// since varying the token is exactly what a guessing attack does.
+/**
+ * Two different jobs, deliberately given very different budgets.
+ *
+ * `identifierSustained` is the one that protects an ACCOUNT. Ten attempts per
+ * fifteen minutes against a single username or email makes password guessing
+ * useless no matter how many addresses the attacker has. It is unchanged, and
+ * should stay tight.
+ *
+ * The IP limiters do a different job: stopping one host from exhausting the
+ * server or enumerating accounts wholesale. They were set to 10 per minute,
+ * which is a sensible number if an IP means a person - and in Egypt it very
+ * often does not. Mobile carriers here run carrier-grade NAT, so thousands of
+ * subscribers share one public IPv4; so do offices, universities, and the site
+ * offices BuildHub's contractors actually work from. At 10 per minute, one
+ * busy NAT locks out every legitimate user behind it, and the people it fails
+ * are exactly the vendors trying to sign in.
+ *
+ * Raising them does not weaken account security, because per-account brute
+ * force is bounded by `identifierSustained` regardless of how many IP attempts
+ * are permitted. Found during staging QA, where a normal automated run tripped
+ * the limit within seconds from a single address.
+ */
+export const authLimiters = {
+  ipBurst: createRateLimiter({ windowMs: 60_000, max: 60 }),
+  ipSustained: createRateLimiter({ windowMs: 15 * 60_000, max: 300 }),
+  identifierSustained: createRateLimiter({ windowMs: 15 * 60_000, max: 10 }),
+};
+
+export function resetAuthLimiters() {
+  authLimiters.ipBurst.reset();
+  authLimiters.ipSustained.reset();
+  authLimiters.identifierSustained.reset();
+}

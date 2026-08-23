@@ -11,7 +11,6 @@ import { useState } from 'react';
 import { Search, SlidersHorizontal, Star, Package, ShoppingCart, Zap, ArrowLeft, ArrowRight, Heart, Scale, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
-import { DEMO_PRODUCTS } from '@/lib/marketplaceCatalog';
 
 const CATEGORY_ICONS: Record<string, string> = {
   'Materials': '🧱', 'Furniture': '🛋️', 'Lighting': '💡', 'Electrical': '⚡',
@@ -73,10 +72,23 @@ export default function Marketplace() {
 
   const allCategories = ['All', ...(categories ?? [])];
 
-  const filtered = DEMO_PRODUCTS.filter(p => {
-    const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.brand.toLowerCase().includes(search.toLowerCase());
-    const matchCat = selectedCategory === 'All' || p.category === selectedCategory;
-    return matchSearch && matchCat;
+  // Real products from the database, filtered server-side.
+  //
+  // This page previously rendered DEMO_PRODUCTS: ten hardcoded fictional
+  // products with invented brands, prices, stock levels and ratings - "4.8,
+  // 124 reviews" on inventory that does not exist. It never called
+  // marketplace.list at all. That is the same fabricated-data defect removed
+  // from the vendor dashboard in Phase 4A.6.4 and the admin dashboard in
+  // Slice 4, and the vendor DIRECTORY was moved onto real data in Phase 4B.3
+  // while the product catalogue was left behind.
+  //
+  // It also broke images: the fictional products referenced Manus-era
+  // /manus-storage/ assets, which the storage proxy refuses to anonymous
+  // callers, so every card on the public marketplace showed a broken image.
+  const { data: filtered = [], isLoading: productsLoading } = trpc.marketplace.list.useQuery({
+    category: selectedCategory === 'All' ? undefined : selectedCategory,
+    search: search.trim() || undefined,
+    limit: 48,
   });
 
   return (
@@ -256,7 +268,8 @@ export default function Marketplace() {
                 <tr>
                   <th className="p-2 text-start text-muted-foreground font-medium">{lang === 'ar' ? 'الخاصية' : 'Attribute'}</th>
                   {compareIds.map(id => {
-                    const p = DEMO_PRODUCTS.find(x => x.id === id)!;
+                    const p = filtered.find(x => x.id === id);
+                    if (!p) return null;
                     return (
                       <th key={id} className="p-2 text-start">
                         <div className="w-28">
@@ -271,7 +284,7 @@ export default function Marketplace() {
               <tbody>
                 {([
                   { key: 'price', label: lang === 'ar' ? 'السعر' : 'Price', render: (p: any) => `${p.price.toLocaleString()} ${lang === 'ar' ? 'جنيه' : 'EGP'}${p.unit ? '/' + p.unit : ''}` },
-                  { key: 'rating', label: lang === 'ar' ? 'التقييم' : 'Rating', render: (p: any) => `${p.rating} ★ (${p.reviews})` },
+                  { key: 'rating', label: lang === 'ar' ? 'التقييم' : 'Rating', render: (p: any) => p.reviewCount > 0 ? `${p.rating} ★ (${p.reviewCount})` : (lang === 'ar' ? 'لا تقييمات' : 'No ratings') },
                   { key: 'brand', label: lang === 'ar' ? 'العلامة التجارية' : 'Brand', render: (p: any) => p.brand },
                   { key: 'origin', label: lang === 'ar' ? 'بلد المنشأ' : 'Origin', render: (p: any) => p.origin },
                   { key: 'category', label: lang === 'ar' ? 'الفئة' : 'Category', render: (p: any) => lang === 'ar' ? (CATEGORY_AR[p.category] ?? p.category) : p.category },
@@ -280,7 +293,8 @@ export default function Marketplace() {
                   <tr key={row.key} className="border-t">
                     <td className="p-2 font-medium text-muted-foreground">{row.label}</td>
                     {compareIds.map(id => {
-                      const p = DEMO_PRODUCTS.find(x => x.id === id)!;
+                      const p = filtered.find(x => x.id === id);
+                      if (!p) return null;
                       return <td key={id} className="p-2">{row.render(p)}</td>;
                     })}
                   </tr>

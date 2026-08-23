@@ -1,0 +1,98 @@
+================================================================================
+BUILDHUB — PHASE 4B.3 COMPLETION RESPONSE
+Real Vendor Directory, RFQ Targeting & Qualified-Enquiry Engine
+================================================================================
+
+Branch:  claude/phase4b3-vendor-directory-targeting
+Commits: 01fe3b7  Phase 4B.3: real vendor directory, RFQ targeting & qualified-
+                  enquiry engine
+         10a5fc7  Preserve pre-existing untracked reports from earlier sessions
+Status:  PUSHED
+Report:  BUILDHUB_PHASE4B3_VENDOR_DIRECTORY_TARGETING.md (592 lines, 21 sections)
+
+Phase 4B.3 is complete and pushed to claude/phase4b3-vendor-directory-targeting.
+
+
+================================================================================
+WHAT WAS BUILT (the five authorized items, nothing else)
+================================================================================
+
+REAL VENDOR DIRECTORY
+  /marketplace/vendors no longer renders a hard-coded array of fictional
+  companies. server/vendorDirectory.ts reads genuine provider accounts through
+  an explicit column allowlist. Mock-only fields (order counts, years in
+  business, "recommended" badges) were removed rather than fabricated for real
+  accounts.
+
+SHARED TAXONOMY + VENDOR DECLARATIONS
+  shared/rfqCategories.ts promotes the nine category values the RFQ form
+  already used, so creation and targeting can't drift. Vendors self-declare;
+  no role-to-category mapping was invented.
+
+DETERMINISTIC TARGETING
+  Exact-match OR eligibility. An unclassifiable RFQ is eligible for NOBODY: it
+  stays visible in the ordinary listing but never becomes a targeted qualified
+  enquiry. Six of the eight RFQs in the verification DB have category = NULL,
+  so this fallback isn't hypothetical.
+
+COUNTING + LIMITS
+  Listing is free; only opening a lead spends a credit, once ever per
+  vendor+RFQ. FREE 5 / PROFESSIONAL 30 / PREMIUM unlimited, enforced from the
+  authenticated user inside the transaction.
+
+
+================================================================================
+VERIFICATION
+================================================================================
+
+  * 71 new tests; full suite 524/524, tsc clean, both builds green
+
+  * LIVE, REAL HTTP: 32/32 targeting+authorization,
+    24/24 allowance+concurrency+boundary.
+    12 genuinely parallel requests on a FREE plan granted exactly 5 — 5 rows in
+    the database, cap never exceeded. 10 simultaneous requests for the same RFQ
+    all succeeded on ONE credit.
+
+  * BROWSER: 50/50 across EN/AR at 1440px and 375px. A real click on
+    "View details" persisted:
+        userId=1  rfqId=12  yearMonth=2026-08
+        planAtConsumption=free  matchedCategory=Materials
+
+  * Fixtures torn down; DB back to its 8-user / 6-RFQ baseline.
+
+
+================================================================================
+THREE THINGS WORTH FLAGGING
+================================================================================
+
+1. AN EXISTING CONTRACT TEST CAUGHT A REAL REGRESSION IN MY OWN WORK.
+   marketplaceDirectoriesLocalization.test.ts requires directory pages to route
+   static copy through t(); my directory rewrite used inline ternaries. I fixed
+   the UI (and migrated both new components) rather than touching the test.
+
+2. I CORRECTED A FALSE CLAIM IN shared/billing.ts.
+   visibilityLevel was marked as enforced in phase-4b.3, but paid ranking is
+   explicitly forbidden this phase. It now reads phase-4b.6.
+
+3. A HARNESS LIMITATION, DISCLOSED RATHER THAN WORKED AROUND.
+   The session cookie is SameSite=None, which Chromium correctly rejects
+   without Secure, so authenticated browsing is impossible over the plain-HTTP
+   dev server. That's pre-existing platform behaviour from an earlier phase and
+   out of scope here — so I put a local TLS terminator in front of the
+   UNMODIFIED server rather than changing cookie code to suit a test.
+
+Also committed separately: four documentation-only reports left untracked by
+earlier sessions, so they survive the ephemeral container without muddying the
+phase commit.
+
+
+================================================================================
+FINAL STATUS
+================================================================================
+
+                  PHASE 4B.3 — PASS — READY FOR PHASE 4B.4
+
+Stopping here as instructed; I have not started 4B.4. The report is at
+BUILDHUB_PHASE4B3_VENDOR_DIRECTORY_TARGETING.md.
+
+================================================================================

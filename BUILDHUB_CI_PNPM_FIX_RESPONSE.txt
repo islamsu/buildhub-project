@@ -1,0 +1,313 @@
+================================================================================
+BUILDHUB - GITHUB ACTIONS pnpm VERSION CONFLICT: FIX AND VERIFICATION
+================================================================================
+
+Date:      2026-08-21
+Branch:    claude/phase4b-readiness-audit-hardening
+           (mirrored to claude/buildhub-audit-verification-vrai7l)
+Commit:    b13f062  "CI: stop specifying the pnpm version twice"
+Base:      main at 71d891f - UNTOUCHED
+Staging:   https://buildhub-staging.onrender.com  (reported live; STILL UNVERIFIED)
+
+
+================================================================================
+1. WHAT WAS ACTUALLY WRONG
+================================================================================
+
+pnpm/action-setup@v4 aborts with "Multiple versions of pnpm specified" when it
+is given a `version` input AND package.json carries a `packageManager` field -
+EVEN WHEN THE TWO AGREE. Here they did agree: 10.4.1 in both places. The action
+refuses regardless, because it cannot know which declaration is authoritative
+and will not guess.
+
+Three workflow steps carried the redundant pin:
+
+  .github/workflows/ci.yml              2 steps  (both failing jobs)
+  .github/workflows/deploy-staging.yml  1 step   (would have failed the same way)
+
+Why "Image builds and starts" PASSED while the other two failed: that job never
+uses pnpm/action-setup at all. It builds the Docker image, and the Dockerfile
+pins pnpm through corepack (`corepack prepare pnpm@10.4.1 --activate`). It was
+never exposed to the conflict.
+
+NOT AFFECTED: .github/workflows/staging-qa.yml uses npm, not pnpm, and never
+invokes pnpm/action-setup. The 22-point gate was never touched by this bug.
+
+
+================================================================================
+2. THE FIX
+================================================================================
+
+Remove the `version:` input from all three steps. package.json's
+`packageManager` field becomes the single source of truth - the action reads it
+itself, which is the documented supported usage.
+
+  BEFORE                              AFTER
+  - uses: pnpm/action-setup@v4        - uses: pnpm/action-setup@v4
+    with:
+      version: 10.4.1
+
+Nothing else changes: same pnpm 10.4.1, same lockfile, same install, same
+resolution. A comment now sits above each step explaining why there is no
+version pin there, so nobody helpfully re-adds one.
+
+
+================================================================================
+3. A TEST OF MINE WAS PINNING THE BUG IN PLACE
+================================================================================
+
+This is the part worth reading.
+
+server/deploymentPipeline.test.ts contained:
+
+    it('pins pnpm to the version that produced the committed lockfile', () => {
+      expect(DOCKERFILE).toContain('corepack prepare pnpm@10.4.1');
+      expect(CI_RAW).toContain('version: 10.4.1');        <-- THIS
+    });
+
+That second assertion was reaching for "pnpm is pinned." What it actually
+REQUIRED was the literal second declaration that breaks the job. The test did
+not protect the pin - it protected the defect, and would have failed any
+correct fix.
+
+Replaced with the guarantee it was aiming at, plus two that reproduce the
+failure mode directly:
+
+  1. packageManager parses as a pinned version, and the Dockerfile's
+     `corepack prepare` uses THAT SAME version - derived from packageManager,
+     not restated as a literal, so the two cannot drift apart silently.
+
+  2. No workflow step passes a `version` input to pnpm/action-setup.
+     Walks the parsed YAML of every workflow, every job, every step.
+
+  3. Every JOB that runs a pnpm command has its own pnpm/action-setup step.
+     Scoped per JOB, not per file - see the mutation table below for why.
+
+MUTATION-TESTED. A test that cannot fail is not a test, so each was proven to
+catch the thing it claims to catch:
+
+  MUTATION                                      RESULT
+  ------------------------------------------    ---------------------------
+  Re-add `version: 10.4.1` to ci.yml            FAILS - correct
+    -> "ci.yml job \"verify\" pins a pnpm version in the workflow as well as
+        in package.json's packageManager field."
+  Delete ONE of ci.yml's two setup steps        FAILS - correct
+    -> "ci.yml job \"verify\" runs a pnpm command but never sets pnpm up"
+  Drift the Dockerfile pin to 10.9.9            FAILS - correct
+
+The middle one matters. My FIRST version of that third test was file-level -
+it asserted the workflow file contained the string 'pnpm/action-setup'. It
+PASSED the mutation, because ci.yml has two such steps and deleting one leaves
+the other still matching. Caught it by running the mutation, rewrote it to walk
+jobs individually, re-ran, and it now fails correctly. A file-level check would
+have been a decoration.
+
+
+================================================================================
+4. SAFETY CHECKS RE-RUN LOCALLY
+================================================================================
+
+  Tests        1,048 passing across 53 files      PASS
+               (1,046 baseline + the 2 new ones)
+               0 skipped, 0 quarantined, 0 weakened
+  Typecheck    tsc --noEmit, zero errors          PASS
+  Client build green                              PASS
+  Server build green                              PASS
+  Workflow YAML  all four files parse             PASS
+                 ci.yml               jobs: verify, migrations, docker
+                 deploy-production.yml jobs: preflight, release
+                 deploy-staging.yml    jobs: gate, verify, publish, deploy
+                 staging-qa.yml        jobs: gate
+
+ONE CORRECTION: the previous report said "1,046 tests across 55 files." The
+test count was right; the file count was not. There are 53 test files, and
+there always were. Corrected in
+BUILDHUB_RENDER_STAGING_VERIFICATION_RESPONSE.txt and noted in the commit.
+
+
+================================================================================
+5. VERIFIED ON A REAL RUNNER - NOT JUST BY INSPECTION
+================================================================================
+
+A fix that looks right is not a fix that works. CI ran on the pushed commit and
+I pulled the result from GitHub:
+
+  RUN 32475509308  (push)          commit b13f0621   conclusion: SUCCESS
+  RUN 32475512725  (pull_request)  commit b13f0621   conclusion: SUCCESS
+
+  PREVIOUS, for contrast:
+  RUN 32471280700  (push)          commit b639ff0e   conclusion: FAILURE
+  RUN 32471282236  (pull_request)  commit b639ff0e   conclusion: FAILURE
+
+All three jobs green on b13f0621:
+
+  JOB                          CONCLUSION   NOTE
+  --------------------------   ----------   ------------------------------
+  Typecheck, test, build       SUCCESS      was FAILING
+  Migrations apply from empty  SUCCESS      was FAILING
+  Image builds and starts      SUCCESS      was already passing
+
+And specifically, in both previously-failing jobs, the step that used to abort:
+
+  "Run pnpm/action-setup@v4"    SUCCESS
+
+Step-level detail on "Typecheck, test, build":
+
+  Run pnpm/action-setup@v4                                    success
+  Run actions/setup-node@v4                                   success
+  Install dependencies                                        success
+  Typecheck                                                   success
+  Test                                                        success
+  Build                                                       success
+  Assert the production page ships no inline previewer runtime success
+
+Step-level detail on "Migrations apply from empty":
+
+  Run pnpm/action-setup@v4                                    success
+  Install dependencies                                        success
+  Apply migrations to an empty database                       success
+  Applying twice is a no-op                                   success
+
+
+================================================================================
+6. SCOPE - WHAT WAS AND WAS NOT TOUCHED
+================================================================================
+
+CHANGED (4 files, 79 insertions, 10 deletions):
+
+  .github/workflows/ci.yml                          removed 2 version inputs
+  .github/workflows/deploy-staging.yml              removed 1 version input
+  server/deploymentPipeline.test.ts                 replaced 1 test with 3
+  BUILDHUB_RENDER_STAGING_VERIFICATION_RESPONSE.txt 55 -> 53 file count
+
+NOT TOUCHED, per your instruction:
+
+  - BuildHub application architecture
+  - Business logic
+  - Business rules - pricing, subscription rules, refund policy, the
+    qualified-enquiry definition: all unchanged
+  - Render infrastructure and render.yaml
+  - Production configuration
+  - Paymob - not started, not implemented, not simulated, not mocked
+  - main branch - still at 71d891f
+
+LEFT ALONE DELIBERATELY, AND YOU SHOULD KNOW ABOUT IT:
+
+  package.json carries `"pnpm": "^10.15.1"` as a DEVDEPENDENCY. That is a third
+  latent pnpm version specifier, and it disagrees with the 10.4.1 pin.
+
+  It is NOT the cause of this failure. pnpm/action-setup reads only its own
+  `version` input and the `packageManager` field - it never looks at
+  dependencies. And no package.json script shells out to `pnpm`, so the
+  node_modules/.bin/pnpm shim it installs never shadows the corepack binary at
+  runtime. I verified both before concluding this.
+
+  It looks accidental - it sits next to `"add": "^2.0.6"`, which is the classic
+  residue of someone typing `npm install add pnpm`. Worth removing eventually,
+  but removing it regenerates the lockfile, which perturbs the dependency graph:
+  a materially wider blast radius than "fix the pnpm-version conflict only."
+  Flagging it rather than doing it. Say the word and I will clean it up as its
+  own change, with the full gate re-run behind it.
+
+
+================================================================================
+7. A CLARIFICATION ABOUT WHICH WORKFLOW FAILED
+================================================================================
+
+You said you ran the staging launch-readiness workflow. The three job names you
+saw - "Typecheck, test, build", "Migrations apply from empty", "Image builds and
+starts" - are all from ci.yml, which runs automatically on every push. They are
+not the staging QA workflow.
+
+"Staging QA" is a SEPARATE, manually-triggered workflow. It has not run yet. It
+uses npm rather than pnpm, so the version conflict never affected it - it is
+simply waiting to be launched, and section 8 is how.
+
+
+================================================================================
+8. RENDER STAGING: STILL UNVERIFIED
+================================================================================
+
+  https://buildhub-staging.onrender.com
+
+I am NOT claiming this is verified. No check of any kind has yet run against it.
+CI going green proves the repository builds and tests clean on a runner; it says
+nothing about your deployment.
+
+Everything in sections 1-6 is about the CI pipeline. The 22-point verification -
+service, health, readiness, migrations, isolation, HTTPS, headers, registration,
+login, six roles, password reset, uploads, real marketplace and directory data,
+RFQ targeting, enquiry limits, quotations, messaging, notifications, billing
+honesty, subscription lifecycle, admin authorization, Arabic/English,
+mobile/desktop, secret exposure - has not been run against Render.
+
+I still cannot run it from here. Re-measured this session and unchanged: this
+sandbox's egress allowlist answers 403 CONNECT for every Render host, and for
+example.com too, which proves it is a blanket allowlist rather than anything a
+credential would change. That is why the gate runs from a GitHub runner.
+
+
+================================================================================
+9. EXACTLY WHAT TO CLICK
+================================================================================
+
+  1. Go to  github.com/islamsu/buildhub-project  ->  Actions  tab
+
+  2. In the left sidebar, click  "Staging QA"
+
+  3. Click the  "Run workflow"  dropdown (top right of the run list)
+
+  4. Set  "Use workflow from"  ->  claude/phase4b-readiness-audit-hardening
+
+  5. In the  "Staging base URL"  box, paste exactly:
+
+         https://buildhub-staging.onrender.com
+
+  6. Click the green  "Run workflow"  button
+
+OPTIONAL, BEFORE STEP 1 - unlocks 14 admin-gated checks instead of 6 skips
+(subscription lifecycle, admin billing surfaces, approved-provider quoting):
+
+  Settings -> Secrets and variables -> Actions -> New repository secret
+
+    STAGING_ADMIN_USER
+    STAGING_ADMIN_PASSWORD
+
+  Use a staging-only admin account. NEVER production credentials.
+
+WHAT THE WORKFLOW DOES ONCE LAUNCHED:
+
+  - Refuses any URL that does not look like staging, because it registers
+    accounts and must never point at production
+  - Runs the cheap smoke test FIRST, so the expensive browser pass never starts
+    against a dead deploy
+  - Runs all 22 points in a real Chromium session, English and Arabic,
+    1440px and 375px
+  - Counts skips in their own column under the line "Skipped checks are NOT
+    passes"
+  - Uploads the full log as an artifact, retained 30 days
+
+AFTER IT RUNS:
+
+  Tell me it ran. GitHub IS reachable from here - I just pulled this CI result
+  the same way - so I can read the job logs directly, diagnose every failing
+  point, fix it, and push. That loop works end to end. Reaching Render is the
+  only hop I cannot make myself.
+
+
+================================================================================
+10. STATUS SUMMARY
+================================================================================
+
+  CI pipeline                    GREEN, verified on a real runner
+  pnpm version conflict          FIXED and regression-tested
+  Local gate                     1,048 tests / tsc / both builds - all pass
+  Staging QA workflow            READY, accepts the real URL, not yet run
+  Render staging deployment      UNVERIFIED - no check has run against it
+  Production readiness           NOT ESTABLISHED
+  Next action                    Actions -> Staging QA -> Run workflow ->
+                                 paste https://buildhub-staging.onrender.com
+
+================================================================================
+END OF REPORT
+================================================================================

@@ -1,0 +1,248 @@
+================================================================================
+BUILDHUB - CURRENT-STATE AUDIT: SESSION RESPONSE
+================================================================================
+
+Date:     2026-08-21
+Commit:   24e3db1  (plan document)
+Branch:   claude/phase4b-readiness-audit-hardening
+          (mirrored to claude/buildhub-audit-verification-vrai7l)
+Staging:  https://buildhub-staging.onrender.com
+
+AUDIT ONLY. NO CODE CHANGED.
+
+The full plan is BUILDHUB_PRODUCTION_READINESS_PLAN.txt (411 lines, all ten
+sections you asked for). This document is the summary of what the audit found
+and what I intend to do next.
+
+
+================================================================================
+1. THE FINDING THAT REORDERS EVERYTHING
+================================================================================
+
+Your section 14 branch-drift concern is WORSE AND BETTER than stated, and both
+halves matter.
+
+WORSE - main and the deployed branch are not variants. They are different
+applications:
+
+    git diff --stat origin/main origin/claude/phase4b-readiness-audit-hardening
+    118 files changed, 39726 insertions(+), 1864 deletions(-)
+
+main is the pre-Phase-4B application plus four CI/QA files. It is NOT
+deployable as BuildHub.
+
+BETTER - THE DRIFT DID NOT CORRUPT YOUR GATE RESULT. Verified, not assumed:
+
+  - scripts/staging-qa.mjs and scripts/smoke.mjs are BYTE-IDENTICAL on both
+    branches (sha256 compared). The harness is a black-box HTTP client, so
+    which branch it ran from does not change which checks executed.
+
+  - Render serves the FEATURE branch. Proven rather than inferred: the gate
+    PASSED checks against vendorSubscriptions and commercialKpis, which exist
+    only on that branch. Had main been deployed, those checks could not have
+    passed.
+
+        Deployed:  claude/phase4b-readiness-audit-hardening (render.yaml:36)
+        Tested:    the same running service
+        Harness:   byte-identical either way
+
+SO THE 150/150 MEASURED THE RIGHT APPLICATION. That milestone stands intact.
+
+WHAT IS GENUINELY BROKEN IS PROVENANCE:
+
+    render.yaml:37   autoDeploy: true
+    grep for RENDER_GIT_COMMIT, GIT_COMMIT, BUILD_SHA, APP_VERSION across
+    server/ shared/ client/ Dockerfile render.yaml  ->  NOTHING
+
+Render redeploys on every push to that branch - including the report commits I
+have pushed all session - and nothing records or exposes which commit is live.
+The result is TRUSTWORTHY but NOT REPRODUCIBLE.
+
+That is blocker B1, and it outranks all five skips.
+
+
+================================================================================
+2. THREE OF YOUR FIVE SKIPS ARE ONE BUG
+================================================================================
+
+Verified in source:
+
+    server/routers.ts:1619   createUser: adminProcedure
+    server/routers.ts:1708   createDummyUser: adminProcedure
+    registration never sets role:'admin'          (grep: zero matches)
+    no ADMIN_EMAIL / BOOTSTRAP_ADMIN / SEED_ADMIN, no first-user rule
+
+CREATING AN ADMIN REQUIRES AN EXISTING ADMIN. On a freshly migrated database
+there is no path to the first admin at all.
+
+That is not a staging inconvenience. It is a PRODUCTION COLD-START DEFECT
+wearing a staging costume, and it blocks skips 14, 17 and 18 together.
+
+Storage couples further than expected: provider compliance documents go through
+uploadDocument (complianceProcedure, routers.ts:504) into registrationDocuments.
+So the realistic provider-approval path behind skip 14 needs S3 as well.
+
+
+================================================================================
+3. BLOCKERS
+================================================================================
+
+  B1  Deployment provenance unknown      BLOCKER - invalidates reproducibility
+  B2  No admin possible on a fresh DB    BLOCKER - 3 skips + production cold
+                                         start
+  B3  Migrations are a manual ritual     BLOCKER - will be skipped under
+                                         pressure
+  B4  Object storage non-functional      BLOCKER if uploads are in scope; they
+                                         are
+  H1  Password reset unavailable         HIGH - your call, see Q2
+  M1  main is not the production
+      codebase                           MEDIUM - unrehearsed merge
+  M2  0 products / 0 vendors in staging  MEDIUM - marketplace checks pass
+                                         NEGATIVELY
+
+ON M2, worth being precise: "no fabricated product names present" is trivially
+true of an empty table. Those checks are not wrong, but they are weaker
+evidence than they look, and I would rather say so than let them carry more
+weight than they earned.
+
+ON B4: server/_core/objectStorage.ts throws ObjectStorageNotConfiguredError -
+there is no silent local fallback - and the web service has NO DISK in
+render.yaml. Every upload path fails, in staging and in production alike.
+
+
+================================================================================
+4. RECOMMENDED ORDER OF WORK
+================================================================================
+
+  1  B1  Deployment provenance      expose commit, pin the deploy
+  2  B3  Migration strategy         preDeployCommand
+  3  B2  Admin bootstrap            unblocks SKIP 14, 17, 18
+  4  B4  Object storage             unblocks SKIP 10, completes SKIP 14
+  5  H1  SMTP                       unblocks SKIP 9
+  6  M2  Staging fixtures           makes marketplace claims meaningful
+  7  M1  main reconciliation        the actual production path
+  8  L1  CI action modernisation    separate, low risk
+
+1 and 2 make every later result reproducible and every later deploy safe. 3
+unblocks three skips at once. 4 unblocks a fourth and is a prerequisite for a
+realistic version of the fifth.
+
+
+================================================================================
+5. MIGRATION DECISION - EXPLICIT, AS YOU ASKED
+================================================================================
+
+RENDER preDeployCommand. NOT THE START COMMAND.
+
+    preDeployCommand: "./node_modules/.bin/drizzle-kit migrate"
+
+Start-command migration fails on four counts:
+
+    CONCURRENCY   every instance runs the start command; scale to 2 and two
+                  processes race the same migration. Drizzle journals applied
+                  migrations but takes no advisory lock, so the race is real.
+    RESTARTS      a crash-looping container re-runs migrations every restart.
+    FAILURE MODE  a failed migration yields a container that will not start -
+                  the deploy fails AND the old version is already gone.
+    ROLLBACK      you can never deploy the image without also migrating.
+
+preDeployCommand runs once per deploy rather than once per instance, and A
+FAILURE HALTS THE DEPLOY WITH THE OLD VERSION STILL SERVING. That single
+property is what makes it correct: it converts a broken migration from an
+outage into a refused deploy.
+
+It is also exactly what was done by hand in the Render shell, so it FORMALISES
+the verified state rather than changing behaviour. Available on paid instance
+types; plan: starter qualifies.
+
+THREE THINGS IT DOES NOT SOLVE, stated rather than glossed:
+
+    a) EXPANSION/CONTRACTION DISCIPLINE. The command runs before the new code
+       is live, so during a deploy the OLD code runs against the NEW schema.
+       Every migration must be backward compatible with the previous release:
+       add columns nullable, never drop or rename in the same release that
+       stops using them. This is a review rule, not a tool guarantee.
+    b) SCHEMA ROLLBACK. Rolling the image back does not roll the schema back.
+       With (a) held, image rollback stays safe. Without it, it does not.
+    c) LONG MIGRATIONS. A migration that locks a large table blocks the deploy.
+       Theoretical at current volumes; not theoretical after launch.
+
+Staging first, several deploys, before this goes anywhere near production. I am
+not proposing to change production deploy behaviour in the same step.
+
+
+================================================================================
+6. TWO DECISIONS I WILL NOT MAKE SILENTLY
+================================================================================
+
+Q1 - ADMIN BOOTSTRAP.
+
+  Every convenient fix is a backdoor. An env-var auto-admin, a "first user
+  becomes admin" rule, or a bootstrap endpoint are each a privilege-escalation
+  primitive that ships to production and stays there.
+
+  MY RECOMMENDATION is the boring one: a one-time, operator-run, idempotent
+  script executed out-of-band against the database, creating exactly one admin,
+  password supplied at run time, never stored in the repo. It leaves NO code
+  path in the running application that can mint an admin.
+
+  Do you accept that, or do you want something in-application?
+
+Q2 - IS PASSWORD RESET IN LAUNCH SCOPE?
+
+  If YES, H1 becomes a blocker and I need staging SMTP credentials
+  (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM, plus
+  APP_BASE_URL - auth.capabilities gates on both).
+
+  If NO, I record it as a named, accepted production-readiness gap with an
+  owner, rather than letting it sit as a quiet SKIP.
+
+  The token machinery already exists and is correct: passwordResetToken +
+  passwordResetExpiresAt, cleared on use (routers.ts:354, 391-403). Only
+  credentials are missing. Nothing is faked.
+
+
+================================================================================
+7. PROCEEDING
+================================================================================
+
+Unless you redirect me, I start on B1 - deployment provenance. Expose a build
+identifier, pin the deploy, and make the gate assert that what it tested is
+what you meant to test.
+
+It is small, and it is the prerequisite that makes every later result mean
+something. Q1 and Q2 do not block it.
+
+VERIFY STEP NOTE: there is no `lint` script in this repository. The honest
+equivalent of your step 6 is:
+
+    pnpm check     (tsc --noEmit)
+    pnpm test      (vitest run)
+    pnpm build
+
+followed by the staging gate.
+
+
+================================================================================
+8. STATUS
+================================================================================
+
+  Staging gate                150 executed checks passed + 5 skipped
+                              (never 155/155)
+  Gate measured               the correct application - verified
+  Deployment provenance       UNKNOWN - blocker B1
+  Admin bootstrap             IMPOSSIBLE on a fresh database - blocker B2
+  Migration strategy          RECOMMENDED, not yet applied - blocker B3
+  Object storage              NON-FUNCTIONAL - blocker B4
+  Password reset              UNAVAILABLE - pending your Q2
+  main                        NOT the production codebase
+  Render staging              VERIFIED
+  PRODUCTION READINESS        NOT ESTABLISHED
+
+SOURCES
+  https://render.com/docs/blueprint-spec
+  https://render.com/docs/infrastructure-as-code
+
+================================================================================
+END OF DOCUMENT
+================================================================================

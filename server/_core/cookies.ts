@@ -1,4 +1,5 @@
 import type { CookieOptions, Request } from "express";
+import { ENV } from "./env";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
@@ -43,6 +44,12 @@ export function getSessionCookieOptions(
     httpOnly: true,
     path: "/",
     sameSite: "none",
-    secure: isSecureRequest(req),
+    // Production pins this true rather than deriving it per request. `sameSite:
+    // "none"` is rejected by browsers without `Secure`, so a single request that
+    // looked plain-HTTP - a misconfigured proxy hop, a health check, a stray
+    // internal call - would hand back a cookie the browser silently discards,
+    // logging the user out for no visible reason. Production is HTTPS by
+    // definition; derivation is kept only for local HTTP development.
+    secure: ENV.isProduction ? true : isSecureRequest(req),
   };
 }

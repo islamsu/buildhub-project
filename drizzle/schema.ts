@@ -49,6 +49,23 @@ export const users = mysqlTable('users', {
   invitationSentAt: timestamp('invitationSentAt'),
   passwordSetAt: timestamp('passwordSetAt'),
   passwordHash: text('passwordHash'),
+  // Slice 3 (first-party authentication).
+  //
+  // Deliberately separate from the invitation columns above rather than reusing
+  // them. An admin-created account can hold a live invitation token AND request
+  // a password reset; sharing one column would let the second flow silently
+  // destroy the first.
+  passwordResetToken: varchar('passwordResetToken', { length: 128 }),
+  passwordResetExpiresAt: timestamp('passwordResetExpiresAt'),
+  // Distinct from `verified`, which means "identity/credentials checked by
+  // compliance" and drives the vendor trust badge. This one means only that the
+  // person controls the mailbox.
+  emailVerifiedAt: timestamp('emailVerifiedAt'),
+  // Bulk session invalidation. `revokedSessions` revokes one jti at a time,
+  // which cannot express "log this account out everywhere" - exactly what a
+  // password reset must do, since the whole point is that someone else may hold
+  // a valid session. Any token issued before this instant is refused.
+  sessionsInvalidBefore: timestamp('sessionsInvalidBefore'),
   rating:      decimal('rating', { precision: 3, scale: 2 }).default('0.00'),
   reviewCount: int('reviewCount').default(0),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
@@ -59,6 +76,24 @@ export const users = mysqlTable('users', {
   emailUnique: uniqueIndex('users_email_unique').on(table.email),
   createdByIdx: index('users_createdBy_idx').on(table.createdBy),
   onboardingReviewedByIdx: index('users_onboardingReviewedBy_idx').on(table.onboardingReviewedBy),
+}));
+
+// Phase 4A.6.6: server-side session revocation. Each signed session JWT now
+// carries a unique `jti`; logout inserts that jti here so authenticateRequest
+// can reject a replayed post-logout token instead of only clearing the cookie
+// client-side. onDelete is CASCADE (not RESTRICT like most Phase 3C FKs, and
+// not SET NULL like userAccountAuditEvents above): unlike an audit trail,
+// a revocation record has no value once its user is gone - there is nothing
+// left to protect from replay, so it should not block user deletion.
+export const revokedSessions = mysqlTable('revokedSessions', {
+  jti:       varchar('jti', { length: 36 }).primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  revokedAt: timestamp('revokedAt').defaultNow().notNull(),
+  // The token's own exp, copied here so a future cleanup job can prune rows
+  // whose underlying JWT would already be rejected by expiry regardless.
+  expiresAt: timestamp('expiresAt').notNull(),
+}, table => ({
+  userIdIdx: index('revokedSessions_userId_idx').on(table.userId),
 }));
 
 export const userAccountAuditEvents = mysqlTable('userAccountAuditEvents', {
@@ -419,10 +454,240 @@ export const expenses = mysqlTable('expenses', {
   projectIdIdx: index('expenses_projectId_idx').on(table.projectId),
 }));
 
+// ── Vendor Subscriptions (Phase 4B.1) ──────────────────────────────────────
+// Per-vendor commercial state. The plan CATALOGUE (prices, intervals,
+// entitlements) deliberately does NOT live here - it is in shared/billing.ts,
+// the single source of truth for every commercial value. This table holds only
+// what is genuinely per-vendor and mutable.
+//
+// Exactly one row per vendor (userId is unique): the row is a live state
+// machine that transitions in place, with the append-only audit trail in
+// `billingEvents` below carrying the history. This is what makes "one founder
+// offer per vendor, never retroactive, never re-granted" structurally
+// enforceable rather than a rule that application code has to remember -
+// `founderPriceUsedAt` is written once and never cleared, so a cancel-and-
+// resubscribe cycle cannot silently re-award the offer.
+//
+// onDelete RESTRICT (the Phase 3C convention, not the CASCADE used by
+// revokedSessions): a subscription is a financial record. Unlike a session
+// revocation, it must not silently disappear with its user - deletion should
+// be blocked and dealt with deliberately, exactly as it is for projects,
+// quotations, and every other business row.
+//
+// Provider references are all NULLABLE and provider-agnostic by name: no
+// Paymob/Stripe-specific column exists, so swapping or adding a provider is a
+// new adapter (Phase 4B.5), not a migration. NO card, token, or credential
+// data is stored here or anywhere else in BuildHub - provider-hosted checkout
+// keeps that out of this system entirely.
+export const vendorSubscriptions = mysqlTable('vendorSubscriptions', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  plan:      mysqlEnum('plan', ['free', 'professional', 'premium']).default('free').notNull(),
+  // 'free' is the resting state for any vendor without paid access, including
+  // after a trial lapses, a cancellation completes, or a grace period expires.
+  status:    mysqlEnum('status', ['free', 'trialing', 'active', 'past_due', 'canceled', 'expired']).default('free').notNull(),
+  billingInterval: mysqlEnum('billingInterval', ['month', 'year']),
+  currency:  varchar('currency', { length: 3 }).default('EGP').notNull(),
+  // Price snapshot at the moment of subscription, so a later catalogue change
+  // never retroactively rewrites what a vendor actually agreed to pay.
+  priceAmount: decimal('priceAmount', { precision: 10, scale: 2 }),
+  isFounderPrice: boolean('isFounderPrice').default(false).notNull(),
+  // Set once, never cleared - the one-time-use guard described above.
+  founderPriceUsedAt: timestamp('founderPriceUsedAt'),
+  // When the discounted founder window ends and standard pricing takes over.
+  founderPriceEndsAt: timestamp('founderPriceEndsAt'),
+  // Phase 4B.4: write-once, never cleared - the same one-time-use discipline as
+  // founderPriceUsedAt. Without it, a lapsed trial leaves the vendor unpaid and
+  // therefore eligible to start another one, forever.
+  trialStartedAt: timestamp('trialStartedAt'),
+  trialEndsAt: timestamp('trialEndsAt'),
+  currentPeriodStart: timestamp('currentPeriodStart'),
+  currentPeriodEnd: timestamp('currentPeriodEnd'),
+  cancelAtPeriodEnd: boolean('cancelAtPeriodEnd').default(false).notNull(),
+  canceledAt: timestamp('canceledAt'),
+  // Set when a renewal payment fails; downgrade happens once this passes.
+  gracePeriodEndsAt: timestamp('gracePeriodEndsAt'),
+  provider:  varchar('provider', { length: 40 }),
+  providerCustomerRef: varchar('providerCustomerRef', { length: 191 }),
+  providerSubscriptionRef: varchar('providerSubscriptionRef', { length: 191 }),
+  providerPriceRef: varchar('providerPriceRef', { length: 191 }),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  userIdUnique: uniqueIndex('vendorSubscriptions_userId_unique').on(table.userId),
+  statusIdx: index('vendorSubscriptions_status_idx').on(table.status),
+  // The three columns the scheduled lifecycle sweeps (Phase 4B.4) scan on.
+  currentPeriodEndIdx: index('vendorSubscriptions_currentPeriodEnd_idx').on(table.currentPeriodEnd),
+  trialEndsAtIdx: index('vendorSubscriptions_trialEndsAt_idx').on(table.trialEndsAt),
+  gracePeriodEndsAtIdx: index('vendorSubscriptions_gracePeriodEndsAt_idx').on(table.gracePeriodEndsAt),
+}));
+
+// ── Product analytics (Slice 7) ────────────────────────────────────────────
+//
+// The first general event stream in BuildHub. Until now every business metric
+// was an ad-hoc SQL aggregate over whatever timestamp column happened to be
+// nearby (users.createdAt, quotations.createdAt), which answers "how many" but
+// can never answer "how many got from here to there, and how long did it take".
+//
+// Deliberately NOT the source of truth for money. Revenue is computed from
+// vendorSubscriptions, which is the financial record; an event stream can drop
+// a write, and MRR must never be estimated from a log. Events describe
+// behaviour - the funnel, activation, time-to-first-value.
+//
+// `eventType` is constrained by shared/analyticsEvents.ts rather than by an
+// enum here: the catalogue changes far more often than the schema should, and a
+// mysqlEnum would make every new event a migration.
+//
+// PRIVACY. `metadata` holds small, non-identifying facts about the event
+// (a plan id, a category, a count). It must never carry a password, a token, an
+// email address, a phone number or a document. server/analytics/events.ts
+// enforces that at the boundary; the column is not a general dumping ground.
+export const analyticsEvents = mysqlTable('analyticsEvents', {
+  id:        int('id').autoincrement().primaryKey(),
+  // Nullable + SET NULL, the same rule as the two audit trails: an analytics
+  // history must be able to outlive its subject, and RESTRICT would make any
+  // user who ever did anything undeletable.
+  userId:    int('userId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  eventType: varchar('eventType', { length: 64 }).notNull(),
+  // What the event was about, when that is not the user themselves - e.g.
+  // ('rfq', 42) for an enquiry, ('quotation', 7) for a submitted quotation.
+  subjectType: varchar('subjectType', { length: 40 }),
+  subjectId: int('subjectId'),
+  // Denormalised so a funnel query does not have to join subscriptions for
+  // every row, and so the plan AT THE TIME survives a later plan change.
+  plan:      varchar('plan', { length: 24 }),
+  metadata:  text('metadata'),
+  occurredAt: timestamp('occurredAt').defaultNow().notNull(),
+}, table => ({
+  // The shape every funnel query uses: one event type, ordered by time.
+  typeOccurredIdx: index('analyticsEvents_type_occurredAt_idx').on(table.eventType, table.occurredAt),
+  // Per-user timelines, and the MIN(occurredAt) lookups that derive "first".
+  userTypeIdx: index('analyticsEvents_userId_eventType_idx').on(table.userId, table.eventType),
+  occurredAtIdx: index('analyticsEvents_occurredAt_idx').on(table.occurredAt),
+}));
+
+// Append-only billing audit trail. Deliberately mirrors userAccountAuditEvents
+// (nullable userId + SET NULL, not RESTRICT): like an account audit trail, a
+// billing history must be able to outlive its subject, and RESTRICT here would
+// make a user with any billing event undeletable forever.
+export const billingEvents = mysqlTable('billingEvents', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  subscriptionId: int('subscriptionId').references(() => vendorSubscriptions.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  action:    varchar('action', { length: 80 }).notNull(),
+  fromStatus: varchar('fromStatus', { length: 40 }),
+  toStatus:  varchar('toStatus', { length: 40 }),
+  // 'system' (scheduled lifecycle sweep), 'provider' (webhook), 'admin', 'vendor'.
+  source:    varchar('source', { length: 40 }),
+  actorId:   int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  note:      text('note'),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  userIdIdx: index('billingEvents_userId_idx').on(table.userId),
+  subscriptionIdIdx: index('billingEvents_subscriptionId_idx').on(table.subscriptionId),
+  actorIdIdx: index('billingEvents_actorId_idx').on(table.actorId),
+}));
+
+// ── Vendor Service Categories (Phase 4B.3) ─────────────────────────────────
+// A vendor's own declaration of which service categories they work in, drawn
+// from the exact nine-value RFQ taxonomy in shared/rfqCategories.ts. This is
+// what makes RFQ → vendor targeting possible without inventing a role-to-
+// category mapping: BuildHub does not guess what an "engineer" does, each
+// vendor states it.
+//
+// A vendor may declare many categories (one row each). RESTRICT on delete
+// follows the Phase 3C convention; the unique index makes a duplicate
+// declaration impossible at the database level rather than by application
+// convention.
+export const vendorCategories = mysqlTable('vendorCategories', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  category:  varchar('category', { length: 100 }).notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  userCategoryUnique: uniqueIndex('vendorCategories_userId_category_unique').on(table.userId, table.category),
+  // Drives the eligibility lookup in the RFQ → vendor direction.
+  categoryIdx: index('vendorCategories_category_idx').on(table.category),
+}));
+
+// ── Qualified Enquiries (Phase 4B.3) ───────────────────────────────────────
+// One row per qualified enquiry a vendor has consumed: the vendor opened the
+// full detail of an RFQ they were genuinely eligible for.
+//
+// The UNIQUE (userId, rfqId) index is the load-bearing part of the design. It
+// is what makes a credit idempotent per vendor+RFQ *at the database level*: a
+// page refresh, a second browser tab, a duplicate API call, or a retry can
+// never consume a second credit for the same opportunity, because the second
+// insert is rejected by the constraint rather than by application logic that
+// could race with itself. The uniqueness is deliberately NOT scoped by month -
+// re-opening an RFQ in a later month must not charge the vendor again for a
+// lead they already paid for.
+//
+// `yearMonth` is the UTC allowance period (Phase 4B.2's allowancePeriodFor),
+// denormalised so the monthly count is a single indexed lookup and so history
+// survives forever: rows are never deleted when a month rolls over, keeping
+// the full record available for audit and analytics.
+export const qualifiedEnquiries = mysqlTable('qualifiedEnquiries', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  rfqId:     int('rfqId').notNull().references(() => rfqs.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /** 'YYYY-MM', UTC. The allowance period this credit was consumed in. */
+  yearMonth: varchar('yearMonth', { length: 7 }).notNull(),
+  /** The plan in force when the credit was consumed, for audit. Never re-read for enforcement. */
+  planAtConsumption: varchar('planAtConsumption', { length: 20 }),
+  /** The RFQ category that made this vendor eligible, for audit and troubleshooting. */
+  matchedCategory: varchar('matchedCategory', { length: 100 }),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  userRfqUnique: uniqueIndex('qualifiedEnquiries_userId_rfqId_unique').on(table.userId, table.rfqId),
+  // The range this phase's FOR UPDATE lock is taken over, and the index the
+  // monthly count reads - see server/billing/enquiries.ts.
+  userMonthIdx: index('qualifiedEnquiries_userId_yearMonth_idx').on(table.userId, table.yearMonth),
+  rfqIdIdx: index('qualifiedEnquiries_rfqId_idx').on(table.rfqId),
+}));
+
 // ── Types ──────────────────────────────────────────────────────────────────
 export type User        = typeof users.$inferSelect;
 export type InsertUser  = typeof users.$inferInsert;
 export type Project     = typeof projects.$inferSelect;
+/**
+ * Admin-issued, single-use, expiring sign-in links for QA test personas.
+ *
+ * Replaces the public "Dummy / Test user sign-in" form that used to sit on
+ * /auth. That form advertised a test-login pathway to every visitor and had no
+ * environment boundary at all.
+ *
+ * ONLY THE HASH IS STORED. The raw token is returned to the issuing admin
+ * exactly once and never persisted, so a dump of this table yields nothing an
+ * attacker can redeem. Same reasoning as storing a password hash rather than a
+ * password - a link IS a credential.
+ */
+export const testLoginTokens = mysqlTable('testLoginTokens', {
+  id:        int('id').primaryKey().autoincrement(),
+  // sha256 of the raw token, hex. Unique so redemption is a single indexed
+  // lookup rather than a scan-and-compare over live rows.
+  tokenHash: varchar('tokenHash', { length: 64 }).notNull().unique(),
+  // The QA persona this link signs in as. Enforced to be isDummy at issue time
+  // AND re-checked at redemption, because the account could change in between.
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  // Who issued it. An admin-only capability needs an audit trail naming a
+  // person, not just a timestamp.
+  issuedBy:  int('issuedBy').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  expiresAt: timestamp('expiresAt').notNull(),
+  // Set on first successful redemption. Single-use: a link that has been used
+  // is dead even before it expires, so a leaked URL in a chat log or browser
+  // history cannot be replayed.
+  usedAt:    timestamp('usedAt'),
+  // Set when an admin kills the link early. Distinct from usedAt so the audit
+  // trail distinguishes "consumed" from "withdrawn".
+  revokedAt: timestamp('revokedAt'),
+  revokedBy: int('revokedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+}, table => ({
+  userIdIdx:    index('testLoginTokens_userId_idx').on(table.userId),
+  expiresAtIdx: index('testLoginTokens_expiresAt_idx').on(table.expiresAt),
+}));
+
 export type Milestone   = typeof milestones.$inferSelect;
 export type Task        = typeof tasks.$inferSelect;
 export type Document    = typeof documents.$inferSelect;
@@ -438,3 +703,9 @@ export type Dispute     = typeof disputes.$inferSelect;
 export type AdminSetting= typeof adminSettings.$inferSelect;
 export type DailyLog    = typeof dailyLogs.$inferSelect;
 export type Expense     = typeof expenses.$inferSelect;
+export type VendorCategory = typeof vendorCategories.$inferSelect;
+export type QualifiedEnquiry = typeof qualifiedEnquiries.$inferSelect;
+export type VendorSubscription = typeof vendorSubscriptions.$inferSelect;
+export type InsertVendorSubscription = typeof vendorSubscriptions.$inferInsert;
+export type BillingEvent = typeof billingEvents.$inferSelect;
+export type TestLoginToken = typeof testLoginTokens.$inferSelect;

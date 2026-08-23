@@ -1,0 +1,28 @@
+# BuildHub — https://buildhub.eg
+#
+# The public marketplace is meant to be indexed: that is how a homeowner
+# searching for a contractor in Cairo finds a BuildHub vendor at all.
+# Everything behind a session is not, and is listed explicitly rather than
+# relying on those routes being unguessable.
+
+User-agent: *
+Allow: /
+
+# Authenticated surfaces. These already require a session server-side; keeping
+# them out of the index also keeps them out of search results where a stale
+# snapshot could expose a page title that named a project or a vendor.
+Disallow: /admin
+Disallow: /auth
+Disallow: /compliance
+Disallow: /dashboard
+Disallow: /messages
+Disallow: /platform
+Disallow: /projects
+Disallow: /provider
+Disallow: /ai
+
+# Upload proxy. Every request here is authorized individually server-side;
+# crawling it would only produce 403s.
+Disallow: /manus-storage
+
+Sitemap: https://buildhub.eg/sitemap.xml

@@ -1,0 +1,278 @@
+================================================================================
+BUILDHUB - RENDER BLUEPRINT DATABASE WIRING: FIXED AT THE BLUEPRINT LEVEL
+================================================================================
+
+Date:     2026-08-21
+Repo:     github.com/islamsu/buildhub-project
+Branch:   claude/phase4b-readiness-audit-hardening
+          (mirrored to claude/buildhub-audit-verification-vrai7l)
+Commit:   894ddea
+Files:    render.yaml ONLY
+Target:   https://buildhub-staging.onrender.com   -- STILL UNVERIFIED
+
+
+================================================================================
+1. THE EXACT CHANGE
+================================================================================
+
+WEB SERVICE - DATABASE_URL stops being a fromService copy:
+
+    -      - key: DATABASE_URL
+    -        fromService:
+    -          type: pserv
+    -          name: buildhub-staging-mysql
+    -          envVarKey: DATABASE_URL
+    +      - key: DATABASE_URL
+    +        sync: false
+
+MYSQL SERVICE - the fictional variable is deleted outright:
+
+    -      # Assembled from the generated password so the credential exists in
+    -      # exactly one place. The app consumes this via fromService above.
+    -      - key: DATABASE_URL
+    -        value: mysql://buildhub:$MYSQL_PASSWORD@buildhub-staging-mysql:3306/buildhub
+
+UNTOUCHED:
+    MYSQL_PASSWORD: generateValue: true      (NOT rotated - see section 3)
+    MYSQL_ROOT_PASSWORD: generateValue: true
+    DATABASE_SSL: value: disable
+    everything else in both service definitions
+
+The rest of the diff (+39 / -8) is comment: the composition recipe and the
+encoding requirement, written beside the variable so the next person does not
+have to rediscover any of this.
+
+
+================================================================================
+2. HOW THE WEB SERVICE GETS THE REAL PASSWORD
+================================================================================
+
+IT CANNOT GET IT AUTOMATICALLY. fromService IS THE WRONG TOOL AND THERE IS NO
+RIGHT ONE.
+
+You asked me to determine the correct fromService wiring. The honest answer is
+that it does not exist for this case, and I would rather say so than ship a
+second clever-looking construction that also does not work.
+
+  fromService COPIES a value. It cannot COMPOSE one.
+
+Render's own documentation shows fromService copying a password verbatim into a
+password variable - the MinIO example:
+
+    - key: MINIO_PASSWORD
+      fromService:
+        name: minio
+        type: pserv
+        envVarKey: MINIO_ROOT_PASSWORD
+
+That works because both sides are the bare secret. A connection URI is
+different: the password has to be INTERPOLATED INTO A LARGER STRING, and no
+field in the Blueprint spec performs string composition. `value:` is literal.
+There is no $VAR expansion. fromService/fromDatabase/fromGroup all copy whole
+values.
+
+WHY THE OLD WIRING LOOKED PLAUSIBLE AND WAS NOT. The previous revision papered
+over the gap by defining a DATABASE_URL on the MySQL service and copying it
+across with fromService. The copy mechanism was fine. The value being copied was
+the same non-interpolated fiction. And the mysql:8.0 entrypoint never reads
+DATABASE_URL at all, so that variable did nothing whatsoever except feed a
+broken string to the web service.
+
+That is why it is DELETED rather than repaired: repairing it would have required
+the same impossible interpolation, one service further away.
+
+SO THE PASSWORD REACHES THE APP THROUGH A ONE-TIME DASHBOARD ENTRY, and the
+blueprint now says so plainly instead of pretending otherwise:
+
+    mysql://buildhub:<URL-ENCODED PASSWORD>@buildhub-staging-mysql:3306/buildhub
+
+THE ALTERNATIVE I CONSIDERED AND REJECTED: pass the password to the web service
+as its own variable via fromService - which IS supported - and compose the URI
+at container start. That genuinely works. But it means changing either
+server/db.ts, which reads process.env.DATABASE_URL, or the Dockerfile
+entrypoint. Application code and production configuration respectively, both of
+which you excluded. So it is recorded here as an option rather than taken.
+
+
+================================================================================
+3. A SECOND DEFECT FOUND WHILE TESTING THE FIX
+================================================================================
+
+This one would have burned another deploy cycle, so it is worth stopping on.
+
+generateValue EMITS BASE64, WHICH CONTAINS  /  +  AND  = .
+
+A raw "/" terminates the authority section of a URI. Embedding the generated
+password directly does not merely fail to authenticate - THE STRING FAILS TO
+PARSE, and it fails in a way that looks like a completely different bug.
+
+Verified against real MySQL 8 through the actual getDb() from server/db.ts,
+using a password of exactly the shape generateValue produces:
+
+  PASSWORD IN URI            RESULT
+  ------------------------   -------------------------------------------------
+  raw base64                 [Database] Failed to connect: TypeError: Invalid
+                             URL   (code ERR_INVALID_URL)
+                             getDb() returns null
+                             -> 503, AND NO "[health] Database probe failed"
+                                LINE AT ALL
+
+  percent-encoded            200 {"status":"ready","checks":{"database":true}}
+
+Note the asymmetry in the logs. The wrong-password failure logs
+"[health] Database probe failed: ... ER_ACCESS_DENIED_ERROR". The unencoded-URL
+failure logs "[Database] Failed to connect: TypeError: Invalid URL" and never
+reaches the health probe's catch block. Same 503, same JSON body, different
+cause, different log line.
+
+TO PRODUCE THE ENCODED VALUE:
+
+    node -e 'console.log(encodeURIComponent(process.argv[1]))' '<the password>'
+
+This requirement is written into render.yaml beside the variable, not left in a
+commit message, precisely because the failure it prevents is so misleading.
+
+
+================================================================================
+4. WILL SYNCING THE BLUEPRINT UPDATE THE EXISTING VARIABLE?
+================================================================================
+
+NO. A ONE-TIME DASHBOARD UPDATE IS REQUIRED.
+
+From Render's Blueprint documentation, verbatim:
+
+    "When you update an existing Blueprint, Render ignores any environment
+     variables with sync: false. Render prompts you for these values only
+     during the initial Blueprint creation flow."
+
+Your blueprint already exists. The current broken DATABASE_URL will therefore
+sit there untouched no matter how many times you sync. Pushing this commit alone
+changes nothing on the running service.
+
+SET IT BY HAND:
+
+  1. Render -> buildhub-staging-mysql -> Environment
+     Copy the MYSQL_PASSWORD value.
+
+  2. Percent-encode it:
+     node -e 'console.log(encodeURIComponent(process.argv[1]))' '<password>'
+
+  3. Render -> buildhub-staging -> Environment
+     Set DATABASE_URL to:
+     mysql://buildhub:<ENCODED>@buildhub-staging-mysql:3306/buildhub
+
+  4. Save. Render redeploys automatically.
+
+THIS DOES NOT ROTATE THE PASSWORD. Render generates a value for a
+`generateValue` variable only when that variable does not already exist, so the
+live password survives every re-sync. Step 1 READS it; nothing replaces it. That
+was your requirement 5 and it is met by construction, not by care.
+
+
+================================================================================
+5. BLUEPRINT SYNTAX VERIFICATION
+================================================================================
+
+Parsed the file and checked every variable's shape:
+
+    YAML parses: OK
+
+    service: buildhub-staging | type: web | runtime: docker
+        DATABASE_URL          sync=false
+        DATABASE_SSL          value="disable"
+
+    service: buildhub-staging-mysql | type: pserv | runtime: image
+        MYSQL_DATABASE        value="buildhub"
+        MYSQL_USER            value="buildhub"
+        MYSQL_PASSWORD        generateValue=true
+        MYSQL_ROOT_PASSWORD   generateValue=true
+
+    ENV VAR SHAPES: all valid
+    databases key: []
+
+Every envVar carries EXACTLY ONE valid source field - value, generateValue,
+sync, fromService, fromDatabase or fromGroup. No ambiguity, no unknown keys.
+
+    $VAR in any live field       none - the remaining occurrences are all
+                                 inside comments explaining the old bug
+    credential committed         none - grep for an embedded password finds
+                                 nothing
+    files changed                render.yaml only
+
+SCOPE HELD: no application code, no business logic, no package dependencies, no
+Paymob, no production configuration, no unrelated infrastructure.
+
+
+================================================================================
+6. WHAT I COULD NOT DO
+================================================================================
+
+DEPLOY STAGING, AND VERIFY /readyz RETURNS 200.
+
+Render remains 403 CONNECT from this sandbox. The dashboard step in section 4 is
+yours, and so is confirming the result:
+
+    GET https://buildhub-staging.onrender.com/readyz
+    expect: 200  {"status":"ready","checks":{"database":true}}
+
+IF IT IS STILL 503, the log line identifies which failure it is:
+
+    ER_ACCESS_DENIED_ERROR ............. the password is wrong
+    TypeError: Invalid URL, no [health]
+      line at all ...................... the percent-encoding step was skipped
+    ENOTFOUND buildhub-staging-mysql ... the MySQL service is down or renamed
+    no log line at all ................. DATABASE_URL is empty
+
+
+================================================================================
+7. THE MIGRATION ISSUE - STILL OPEN, AND NOT SILENTLY CHANGED
+================================================================================
+
+Dockerfile line 65 is:
+
+    CMD ["node", "dist/index.js"]
+
+No migrations anywhere in the start path. I have NOT touched this, because
+adding a migration step to the image start command would change production
+deploy behaviour, and you told me not to do that silently.
+
+SO EXPECT THIS: once /readyz goes green, THE SCHEMA WILL STILL BE EMPTY.
+/readyz only runs SELECT 1, which succeeds perfectly well against a database
+with zero tables. The gate will then fail at point 4, "schema reachability", and
+it will look like an unrelated new problem.
+
+CONFIRM BEFORE RUNNING THE GATE:
+
+    GET https://buildhub-staging.onrender.com/api/trpc/billing.plans
+
+    real data  -> migrations have run
+    500        -> they have not
+
+When you get there, tell me, and I will lay out the options for applying
+migrations to staging as a decision for you rather than a change I make on my
+own initiative.
+
+
+================================================================================
+8. STATUS
+================================================================================
+
+  Blueprint defect             FIXED at the Blueprint level, commit 894ddea
+  Second defect (URL encoding) FOUND, verified, and documented in the file
+  Password rotation            NONE - generateValue preserved
+  Dashboard step               REQUIRED, and it is yours to perform
+  /readyz                      NOT YET GREEN
+  Schema migrated              UNKNOWN - check before the gate
+  Render staging               UNVERIFIED
+  Production readiness         NOT ESTABLISHED
+
+DO NOT RUN THE 22-POINT GATE UNTIL /readyz IS GREEN.
+
+SOURCES
+  https://render.com/docs/blueprint-spec
+  https://render.com/docs/infrastructure-as-code
+  https://render.com/docs/configure-environment-variables
+
+================================================================================
+END OF DOCUMENT
+================================================================================

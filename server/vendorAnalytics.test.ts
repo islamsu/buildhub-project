@@ -267,10 +267,15 @@ describe('vendor analytics UI wiring and responsive conventions (items 16-23)', 
     expect(component).not.toMatch(/>Quotations Submitted</);
   });
 
-  it('is wired into ProviderDashboard next to Vendor Reputation (same dashboard, not a duplicate/competing surface)', () => {
+  it('is wired into RolePlatform next to Vendor Reputation (the real reachable vendor dashboard, not a duplicate/competing surface)', () => {
+    // Phase 4A.6.4: moved from ProviderDashboard.tsx (unreachable via normal
+    // navigation) to RolePlatform.tsx (/platform/:role, where AuthPage.tsx
+    // actually sends every provider). See BUILDHUB_PHASE4A64_DASHBOARD_INTEGRATION.md.
+    const rolePlatform = readFileSync(new URL('../client/src/pages/RolePlatform.tsx', import.meta.url), 'utf8');
     const providerDashboard = readFileSync(new URL('../client/src/pages/ProviderDashboard.tsx', import.meta.url), 'utf8');
-    expect(providerDashboard).toContain('VendorAnalytics');
-    expect(providerDashboard).toContain('VendorReputation');
+    expect(rolePlatform).toContain('VendorAnalytics');
+    expect(rolePlatform).toContain('VendorReputation');
+    expect(providerDashboard).not.toContain('VendorAnalytics');
   });
 
   it('21/22/23. avoids fixed pixel widths and uses a responsive grid (375/768/1280 verified live, see final report)', () => {

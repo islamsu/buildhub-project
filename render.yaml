@@ -1,0 +1,230 @@
+# ── BuildHub staging on Render ─────────────────────────────────────────────
+#
+# A TEMPORARY, ISOLATED STAGING ENVIRONMENT. It does not replace the planned
+# Vultr production architecture and shares nothing with it: its own database,
+# its own secrets, its own bucket, its own data. No production credential
+# appears here and none should ever be added.
+#
+# Render reads this file directly. In the dashboard: New -> Blueprint, pick this
+# repository and the branch, and it provisions everything below. Nothing is
+# clicked together by hand, so the environment is reproducible and reviewable.
+#
+# WHY MYSQL IS A PRIVATE SERVICE RATHER THAN A MANAGED DATABASE
+#
+# Render's managed database offering is PostgreSQL. BuildHub is MySQL - drizzle
+# via mysql2, 19 migrations, and a schema verified against MySQL 8.0.46. Porting
+# to Postgres would be exactly the architecture redesign this deployment is meant
+# to avoid, and it would make staging a test of something production will never
+# run. So MySQL 8 runs as a private service with a persistent disk: reachable
+# only from inside the Render network, never from the internet.
+#
+# The trade-off is stated plainly: a private service with a disk has no managed
+# backups, no failover and no patching. That is acceptable for a temporary
+# staging environment holding only test data, and is NOT acceptable for
+# production - which is why production stays on Vultr Managed Databases.
+
+databases: []
+
+services:
+  # ── The application ──────────────────────────────────────────────────────
+  - type: web
+    name: buildhub-staging
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: frankfurt          # Closest of Render's regions to Egypt.
+    branch: claude/phase4b-readiness-audit-hardening
+    autoDeploy: true
+
+    # Liveness, deliberately - not /readyz. A database blip must not make Render
+    # kill and restart the container; it would restart forever while the
+    # database is the thing that is down. /readyz exists for load-balancer
+    # draining and is checked by the smoke suite instead.
+    healthCheckPath: /healthz
+
+    # ── Migrations run HERE, not in the start command ────────────────────────
+    #
+    # Render runs preDeployCommand after the build and before the start
+    # command, ONCE PER DEPLOY rather than once per instance, and if it fails
+    # it HALTS THE DEPLOY AND KEEPS THE OLD VERSION SERVING. That last property
+    # is the whole reason: it turns a broken migration from an outage into a
+    # refused deploy.
+    #
+    # Putting `drizzle-kit migrate` in the start command instead would break in
+    # four ways, all of them real rather than theoretical:
+    #   - every instance runs the start command, so scaling to 2 races two
+    #     processes through the same migration. Drizzle journals what it has
+    #     applied but takes no advisory lock, so the race is genuine.
+    #   - a crash-looping container re-runs migrations on every restart.
+    #   - a failed migration yields a container that will not start, so the
+    #     deploy fails AND the old version is already gone.
+    #   - the image could never be deployed without also migrating.
+    #
+    # Everything this needs is already in the image: drizzle-kit is a real
+    # dependency (not dev), and the Dockerfile ships node_modules, drizzle/ and
+    # drizzle.config.ts. The config reads DATABASE_URL from the environment,
+    # which is present here. This was already run by hand in the Render shell
+    # and succeeded, so this formalises a verified step rather than introducing
+    # an unproven one.
+    #
+    # WHAT THIS DOES NOT DO, and must not be assumed to:
+    #
+    #   MIGRATIONS MUST BE BACKWARD COMPATIBLE WITH THE PREVIOUS RELEASE.
+    #   The command runs BEFORE the new code is live, so during a deploy the
+    #   OLD code is running against the NEW schema. Add columns nullable. Never
+    #   drop or rename a column in the same release that stops using it - the
+    #   drop belongs in a LATER release, once no running code refers to it.
+    #   Nothing enforces this; it is a review rule.
+    #
+    #   ROLLBACK DOES NOT UNDO A MIGRATION. Rolling the image back leaves the
+    #   newer schema in place. With the rule above held that is safe, because
+    #   the old code still works against it. Without it, it is not.
+    #   deploy/restore-backup.sh is the backstop.
+    #
+    #   A MIGRATION THAT LOCKS A LARGE TABLE BLOCKS THE DEPLOY. Theoretical at
+    #   current volumes. It stops being theoretical after launch.
+    #
+    # Staging only for now. Production deploy behaviour is deliberately
+    # unchanged until this has run here across several deploys.
+    preDeployCommand: "./node_modules/.bin/drizzle-kit migrate"
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render injects PORT. The app binds exactly it in production or exits,
+      # rather than scanning upward and leaving health checks pointed at nothing.
+      - key: PORT
+        value: 3000
+
+      # Signs session JWTs. Generated by Render and never seen by anyone -
+      # there is no way for a staging secret to be reused in production because
+      # nobody ever holds it.
+      - key: JWT_SECRET
+        generateValue: true
+
+      - key: APP_BASE_URL
+        fromService:
+          type: web
+          name: buildhub-staging
+          envVarKey: RENDER_EXTERNAL_URL
+
+      # Points at the private MySQL service by its internal hostname. Not
+      # reachable from the internet, so TLS to the database is not required on
+      # this hop; production sets DATABASE_SSL=require against a managed
+      # instance reached across a network.
+      #
+      # SET ONCE IN THE DASHBOARD. Render cannot build this value, and the
+      # earlier attempt to make it do so is what broke staging.
+      #
+      # `fromService` COPIES a value; it cannot COMPOSE one. A connection URI
+      # has to interpolate the password into a larger string, and Blueprint
+      # `value:` fields are literal - there is no $VAR expansion. The previous
+      # revision set the MySQL service's own DATABASE_URL to
+      # "mysql://buildhub:$MYSQL_PASSWORD@..." and copied it here, so the app
+      # authenticated with the fifteen literal characters $MYSQL_PASSWORD and
+      # MySQL answered ER_ACCESS_DENIED_ERROR. /readyz returned 503 with
+      # {"checks":{"database":false}}.
+      #
+      # TO SET IT: read MYSQL_PASSWORD off buildhub-staging-mysql, then
+      #
+      #   mysql://buildhub:<URL-ENCODED PASSWORD>@buildhub-staging-mysql:3306/buildhub
+      #
+      # PERCENT-ENCODE THE PASSWORD. `generateValue` emits base64, which
+      # contains / + and =. A raw "/" ends the URI authority, so the string
+      # fails to parse, getDb() logs "[Database] Failed to connect: TypeError:
+      # Invalid URL" and returns null - a 503 with NO "[health] Database probe
+      # failed" line, which looks like a different bug entirely. Verified
+      # against MySQL 8: raw fails, percent-encoded connects.
+      #
+      #   node -e 'console.log(encodeURIComponent(process.argv[1]))' '<password>'
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: disable
+
+      # Test-user sign-in (auth.signInDummy). STAGING ONLY.
+      #
+      # PRODUCTION MUST NEVER SET THIS. The server compares it to the exact
+      # string "true" and denies otherwise, so absent, empty, "1", "yes" and
+      # "TRUE" all mean OFF - a misconfiguration fails closed.
+      #
+      # It cannot be inferred from NODE_ENV: this staging service runs
+      # NODE_ENV=production (above), so an isProduction check would either kill
+      # test login here or leave it live in production. Hence an explicit flag.
+      - key: TEST_LOGIN_ENABLED
+        value: "true"
+
+      - key: VITE_APP_ID
+        value: buildhub-staging
+
+      # Left unset on purpose. auth.capabilities then reports OAuth as
+      # unavailable and the UI hides that door - first-party email and password
+      # sign-in has been the primary path since Slice 3.
+      - key: OAUTH_SERVER_URL
+        value: ""
+
+      # Object storage. Set these in the dashboard against a STAGING bucket to
+      # exercise uploads; leave them empty and upload endpoints fail loudly
+      # rather than silently pretending to store anything.
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_REGION
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+
+      # Outbound email. Unset means NullMailer: auth.capabilities reports
+      # password reset as unavailable and the UI hides it, rather than offering
+      # a button that can only fail.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+
+      - key: OPENAI_API_KEY
+        sync: false
+
+  # ── MySQL 8, private ─────────────────────────────────────────────────────
+  - type: pserv
+    name: buildhub-staging-mysql
+    runtime: image
+    image:
+      url: docker.io/library/mysql:8.0
+    plan: starter
+    region: frankfurt
+    disk:
+      name: mysql-data
+      mountPath: /var/lib/mysql
+      sizeGB: 10
+    envVars:
+      - key: MYSQL_DATABASE
+        value: buildhub
+      - key: MYSQL_USER
+        value: buildhub
+      - key: MYSQL_PASSWORD
+        generateValue: true
+      - key: MYSQL_ROOT_PASSWORD
+        generateValue: true
+      # NOTE: no DATABASE_URL here on purpose.
+      #
+      # A previous revision defined one as
+      # "mysql://buildhub:$MYSQL_PASSWORD@buildhub-staging-mysql:3306/buildhub"
+      # with a comment claiming it was "assembled from the generated password".
+      # It was not: Render does not interpolate variables in a Blueprint, so
+      # the value was that literal string. The mysql:8.0 entrypoint never reads
+      # DATABASE_URL either, so the variable did nothing here except feed a
+      # broken value to the web service. Removed rather than repaired.
+      #
+      # MYSQL_PASSWORD above stays `generateValue` and is NOT rotated by this
+      # change: Render only generates a value when the variable does not
+      # already exist, so re-syncing preserves the live password.

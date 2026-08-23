@@ -1,0 +1,267 @@
+================================================================================
+BUILDHUB - ROUTE A COMPLETE: STAGING QA WORKFLOW PR IS OPEN AND AWAITING YOU
+================================================================================
+
+Date:    2026-08-21
+Repo:    github.com/islamsu/buildhub-project
+
+STATUS:  PR OPEN. NOT MERGED. Stopped for your approval, as instructed.
+
+
+================================================================================
+1. THE FACTS YOU ASKED FOR
+================================================================================
+
+  PR NUMBER      #2
+  PR URL         https://github.com/islamsu/buildhub-project/pull/2
+  BRANCH         claude/staging-qa-workflow-registration
+  COMMIT         b43df97bd1ab591c8c98f77ba5af1d845a10431a
+  BASE           main
+  FILES CHANGED  3 added, 0 modified, 0 deleted
+                 656 insertions, 0 DELETIONS
+  main           71d891ffd6f654323ec7b54954b9a18cb63bb7a5
+                 UNTOUCHED - byte-verified by hash comparison after the push
+
+The branch contains exactly ONE commit off main. No feature-branch history
+rode along with it:
+
+    $ git log --oneline origin/main..HEAD
+    b43df97 Register the Staging QA workflow so it can be dispatched
+
+FILES:
+
+    A   .github/workflows/staging-qa.yml
+    A   scripts/smoke.mjs
+    A   scripts/staging-qa.mjs
+
+Every entry is "A" - added. Nothing on main was modified or deleted, which is
+why the diff shows 0 deletions.
+
+
+================================================================================
+2. VERIFICATION RESULTS
+================================================================================
+
+  CHECK                             RESULT
+  -------------------------------   ------------------------------------------
+  main remains at 71d891f           PASS - hash compared after all work
+  No application code               PASS - pattern guard over the diff for
+                                    server/ client/ shared/ drizzle/ deploy/
+                                    returned no hits
+  No package.json or lockfile       PASS - same guard, no hits
+  No production configuration       PASS - no Dockerfile, docker-compose or
+                                    .env in the diff
+  No Render configuration           PASS - render.yaml not in the diff
+  No Paymob                         PASS - case-insensitive grep over the
+                                    entire diff, zero occurrences
+  Files byte-for-byte intended      PASS - see section 3
+  Accepts the staging URL           PASS - guard EXECUTED, see section 4
+  Cannot target production          PASS - two independent guards, both
+                                    EXECUTED, see section 4
+  Does not run automatically        PASS - parsed triggers are
+                                    ["workflow_dispatch"] only
+  Playwright/Chromium install       PASS - see section 6
+  staging environment inspected     NOT DONE - see section 7. This is the one
+                                    item on your list I could not complete.
+
+
+================================================================================
+3. BYTE-FOR-BYTE CONFIRMATION
+================================================================================
+
+The two scripts were compared with `cmp` against the copies on
+claude/phase4b-readiness-audit-hardening:
+
+    IDENTICAL   scripts/smoke.mjs
+    IDENTICAL   scripts/staging-qa.mjs
+
+SHA-256, source and committed copy alike:
+
+    a71222263aef6f575268960d832c9b261ff3ad421198754f5eb3217b135067e6  smoke.mjs
+    60089112115cca4292cb2a77bb5cd25d8b0548f0c67a1e9a7afb43dcf2f33111  staging-qa.mjs
+
+The workflow differs from the feature-branch copy by EXACTLY ONE EDIT - the
+schedule removal you asked for, and nothing else:
+
+    -  # Also available on a schedule so staging drift is caught rather than
+    -  # discovered. Uses the STAGING_BASE_URL variable when no input is given.
+    -  schedule:
+    -    - cron: "0 6 * * 1"
+    +  # DISPATCH ONLY - deliberately no `schedule:` trigger.
+    +  #
+    +  # This copy lives on the default branch so the workflow registers with
+    +  # GitHub and gets a "Run workflow" button. A cron here would therefore be
+    +  # live, and with no STAGING_BASE_URL repository variable set it would fail
+    +  # every week by design (see "Resolve the target"), producing a standing red
+    +  # X for a job that was never going to work. Add the schedule back when
+    +  # staging is permanent and STAGING_BASE_URL is set.
+
+Parsed triggers on the committed file:
+
+    on keys:      ["workflow_dispatch"]
+    has push:     false
+    has pull_request: false
+    has schedule: false
+    inputs:       base_url (required: true, type: string)
+
+It cannot run automatically. There is no event that starts it except a person
+clicking Run workflow.
+
+
+================================================================================
+4. THE GUARDS, EXECUTED RATHER THAN READ
+================================================================================
+
+GUARD 1 - the workflow's "Resolve the target" step. Its `case` logic run
+verbatim against real URLs:
+
+    https://buildhub-staging.onrender.com         -> ACCEPT
+    https://buildhub-staging.onrender.com/        -> ACCEPT
+    https://buildhub.com                          -> REJECT
+    https://www.buildhub.com                      -> REJECT
+    https://api.buildhub.com                      -> REJECT
+    https://buildhub-production.example.com       -> REJECT
+    http://localhost:3000                         -> REJECT
+    (empty)                                       -> REJECT
+
+GUARD 2 - the harness's own refusal, independent of the workflow. Run for real
+against a byte-identical copy with playwright resolvable:
+
+    https://buildhub.com          Refusing to run: ... does not look like a
+                                  staging URL.
+    https://api.buildhub.com      Refusing to run: ...
+    https://buildhub.example.org  Refusing to run: ...
+    https://prod.buildhub.eg      Refusing to run: ...
+    (no argument)                 usage: node scripts/staging-qa.mjs <url>
+                                  exit=2
+
+Both exit before a browser is ever opened. Two guards, both must pass, so a
+mistake in one does not expose production.
+
+KNOWN LIMITATION, STATED HONESTLY: both guards key on the strings "staging",
+"onrender", "localhost" and "127.0.0.1". A production host containing one of
+those would slip through. BuildHub's planned production is Vultr on a real
+domain, so neither marker is a production signal here - but if that ever
+changes, the guards need tightening, and I would rather you knew the shape of
+the check than trusted the word "cannot".
+
+ALSO CONFIRMED:
+
+  - scripts/smoke.mjs issues no POST, PUT, PATCH or DELETE. It is read-only by
+    construction and cannot mutate whatever it is pointed at.
+  - The only absolute URL anywhere in the harness is http://www.w3.org - the
+    SVG namespace inside a deliberately malicious upload payload that the
+    harness expects the server to REJECT. Not a network call.
+
+
+================================================================================
+5. TESTS
+================================================================================
+
+12 of the 13 staging-gate safety tests pass against the exact committed files.
+
+The 13th fails with ENOENT on .github/workflows/ci.yml - a file this branch
+intentionally does not carry, because the whole point of Route A is that only
+three files land on main. That is the intended scope, not a defect.
+
+I ran that test from a temporary copy and deleted it afterwards. It is NOT part
+of the PR. The authoritative suite continues to live on the feature branch.
+
+
+================================================================================
+6. PLAYWRIGHT AND CHROMIUM
+================================================================================
+
+The workflow installs them at runtime rather than depending on the repo:
+
+    npm install --no-save playwright@1.49.1
+    npx playwright install --with-deps chromium
+
+  - Version pinned, not floating.
+  - `--no-save`, so it cannot touch package.json or any lockfile.
+  - `--with-deps` pulls the system libraries Chromium needs on ubuntu-latest.
+  - I confirmed playwright@1.49.1 installs cleanly from npm during this
+    session, so the pin is a real published version and not a typo.
+  - The smoke test runs BEFORE the browser pass, so the expensive stage never
+    starts against a dead deploy.
+
+
+================================================================================
+7. THE staging ENVIRONMENT - I COULD NOT INSPECT IT
+================================================================================
+
+This is the one item on your list I did not complete, and I would rather say so
+than paper over it.
+
+The GitHub tools available to this session have no environments endpoint, and
+the session is explicitly configured without the gh CLI or direct GitHub API
+access. I am not going to go hunting for a credential to work around that
+boundary.
+
+CHECK IT YOURSELF:  Settings -> Environments -> staging
+
+  IF IT DOES NOT EXIST
+    GitHub creates it implicitly on the first run and the job proceeds
+    normally. Nothing to do.
+
+  IF IT EXISTS WITH REQUIRED REVIEWERS
+    The run will show "Waiting" with a "Review deployments" button instead of
+    starting. That is the symptom to expect - it will look stuck when it is
+    actually asking for approval.
+
+I made NO modification to any environment setting, as you instructed.
+
+
+================================================================================
+8. WHY THIS WAS NEEDED AT ALL - THE ONE-PARAGRAPH VERSION
+================================================================================
+
+GitHub held no workflow entity for staging-qa.yml, so it was absent from the
+Actions list and dispatching it returned 404. Measured rather than assumed:
+dispatching ci.yml on a feature branch returns 204 and runs to completion even
+though main carries no .github directory at all - which rules out the usual
+"workflow_dispatch needs the default branch" explanation. Registration is the
+gate. A workflow file on the default branch is always indexed, and the UI "Run
+workflow" button only ever appears for default-branch workflows.
+
+
+================================================================================
+9. AFTER YOU MERGE
+================================================================================
+
+  1. Actions tab -> "Staging QA" in the left sidebar
+  2. "Run workflow" dropdown
+  3. Paste:  https://buildhub-staging.onrender.com
+  4. Green "Run workflow" button
+
+OPTIONAL, BEFORE RUNNING - unlocks 14 admin-gated checks instead of 6 skips:
+
+    Settings -> Secrets and variables -> Actions -> New repository secret
+      STAGING_ADMIN_USER
+      STAGING_ADMIN_PASSWORD
+
+    Staging-only account. NEVER production credentials.
+
+Then tell me it ran. GitHub is reachable from here, so I can pull the job logs
+directly, diagnose every failing point, fix it and push.
+
+
+================================================================================
+10. STANDING STATUS
+================================================================================
+
+  PR #2                        OPEN, NOT MERGED, awaiting your approval
+  main                         71d891f - untouched
+  Staging QA workflow          registered once this merges; runnable, not run
+  Render staging deployment    UNVERIFIED
+  Production readiness         NOT ESTABLISHED
+
+Merging this makes the gate RUNNABLE. It does not run it, and it proves nothing
+about your deployment. Render staging stays UNVERIFIED until the 22 points
+actually execute against https://buildhub-staging.onrender.com.
+
+Stopping here, as you asked.
+
+================================================================================
+END OF DOCUMENT
+================================================================================
