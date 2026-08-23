@@ -24,10 +24,10 @@ import {
   projects, milestones, tasks, documents, products,
   rfqs, quotations, messages, notifications, reviews,
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
-  registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, userAccountAuditEvents,
+  registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, userAccountAuditEvents,
 } from '../drizzle/schema';
-import { eq, desc, and, or, like, sql, inArray, notInArray } from 'drizzle-orm';
-import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { and, desc, eq, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
+import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, type ComplianceDocumentStatus } from '../shared/compliance';
 import { sdk, type AuthenticatedUser } from './_core/sdk';
@@ -78,6 +78,31 @@ const PASSWORD_MIN_LENGTH = 8;
 
 /** How long a password-reset link stays usable. */
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * ── Admin-issued QA sign-in links (Phases 7-9) ─────────────────────────────
+ *
+ * The replacement for the public "Dummy / Test user sign-in" form. That form
+ * advertised a test-login pathway to every visitor and had no environment
+ * boundary; this is admin-only to issue, staging-only to redeem, expiring,
+ * single-use and revocable.
+ *
+ * A LINK IS A CREDENTIAL, so it is treated like one: 32 random bytes, and only
+ * its sha256 is stored. The raw token is returned to the issuing admin exactly
+ * once and never persisted, so a dump of testLoginTokens yields nothing
+ * redeemable.
+ *
+ * sha256 with no salt is correct HERE and would be wrong for a password: the
+ * input is 256 bits of CSPRNG output, not a human-chosen secret, so there is
+ * no dictionary to attack and nothing for a salt to defend against. The unique
+ * index on the hash is what makes redemption one indexed lookup instead of a
+ * scan.
+ */
+const TEST_LOGIN_TOKEN_BYTES = 32;
+const TEST_LOGIN_TTL_MINUTES_DEFAULT = 60;
+const TEST_LOGIN_TTL_MINUTES_MAX = 24 * 60;
+
+const hashTestLoginToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString('hex');
@@ -221,6 +246,70 @@ const authRouter = router({
   //
   // OAuth is untouched and keeps working wherever OAUTH_SERVER_URL resolves.
   // This is a second door, not a replacement.
+  /**
+   * Redeem an admin-issued QA sign-in link.
+   *
+   * Every guarantee the design promises is enforced HERE, because this is the
+   * only place a token turns into a session. The checks are ordered so the
+   * cheapest and most absolute come first.
+   */
+  redeemTestLoginLink: publicProcedure.input(z.object({
+    token: z.string().min(16).max(256),
+  })).mutation(async ({ ctx, input }) => {
+    // 1. The environment boundary, before anything else. A production
+    //    deployment must look like this endpoint does not exist.
+    if (!isTestLoginEnabled()) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Not found' });
+    }
+    // 2. Rate limited on the token itself, so a leaked-but-expired link cannot
+    //    be used to grind for a live one.
+    enforceAuthRateLimit(ctx.req, 'test-login-link');
+
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+    // 3. Look up by HASH. The raw token is never stored, so a database dump
+    //    yields nothing redeemable.
+    const [row] = await db.select().from(testLoginTokens)
+      .where(eq(testLoginTokens.tokenHash, hashTestLoginToken(input.token)));
+
+    // One message for every rejection below. A link that is unknown, expired,
+    // spent or withdrawn must be indistinguishable: telling the holder WHICH
+    // it was tells them whether they found a real token.
+    const reject = () => new TRPCError({ code: 'UNAUTHORIZED', message: 'This sign-in link is not valid' });
+    if (!row) throw reject();
+    if (row.revokedAt) throw reject();
+    if (row.usedAt) throw reject();
+    if (row.expiresAt.getTime() <= Date.now()) throw reject();
+
+    // 4. Re-check the account. It could have been frozen, deleted or promoted
+    //    since the link was issued - issue-time validation is not enough.
+    const [target] = await db.select().from(users).where(eq(users.id, row.userId));
+    if (!target?.isDummy) throw reject();
+    if (target.accountStatus !== 'active' || target.deactivatedAt) throw reject();
+
+    // 5. Burn it BEFORE issuing the session, and only if it is still unused.
+    //    The `isNull(usedAt)` predicate makes this the atomic step: two
+    //    simultaneous redemptions of the same link race here, and MySQL lets
+    //    exactly one of them match a row. Marking it used after issuing the
+    //    session would leave a window where both requests get one.
+    const burn = await db.update(testLoginTokens)
+      .set({ usedAt: new Date() })
+      .where(and(eq(testLoginTokens.id, row.id), isNull(testLoginTokens.usedAt)));
+    const affected = (burn as unknown as { rowsAffected?: number })?.rowsAffected
+      ?? (Array.isArray(burn) ? (burn[0] as { affectedRows?: number })?.affectedRows : undefined);
+    if (affected === 0) throw reject();
+
+    const sessionToken = await sdk.createSessionToken(target.openId, { name: target.name || target.username || 'QA user' });
+    ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
+    await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, target.id));
+    await db.insert(userAccountAuditEvents).values({
+      userId: target.id, actorId: row.issuedBy, action: 'test_login_link_redeemed', source: 'admin',
+      note: 'QA persona signed in through an admin-issued link',
+    });
+    return { success: true, userRole: target.userRole, onboardingStatus: target.onboardingStatus } as const;
+  }),
+
   capabilities: publicProcedure.query(() => ({
     // Reported so the UI never renders a control the server will refuse, and
     // so the staging gate can assert this is OFF on a production-shaped
@@ -1750,6 +1839,74 @@ const adminRouter = router({
     await db.insert(userAccountAuditEvents).values({ userId, actorId: ctx.user.id, action: 'dummy_user_created', source: 'dummy', note: input.note || 'Created for testing' });
     return { success: true, userId, username, email };
   }),
+  // ── QA sign-in links ────────────────────────────────────────────────────
+  issueTestLoginLink: adminProcedure.input(z.object({
+    userId: z.number().int().positive(),
+    expiresInMinutes: z.number().int().min(1).max(TEST_LOGIN_TTL_MINUTES_MAX).default(TEST_LOGIN_TTL_MINUTES_DEFAULT),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+    // QA personas only. A link that could sign in as a real user would be a
+    // password-less backdoor into a real account, which is the entire thing
+    // this design exists to avoid.
+    const [target] = await db.select().from(users).where(eq(users.id, input.userId));
+    if (!target?.isDummy) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Sign-in links can only be issued for test accounts' });
+    }
+    if (target.accountStatus !== 'active' || target.deactivatedAt) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This test account is not active' });
+    }
+
+    const raw = randomBytes(TEST_LOGIN_TOKEN_BYTES).toString('base64url');
+    await db.insert(testLoginTokens).values({
+      tokenHash: hashTestLoginToken(raw),
+      userId: target.id,
+      issuedBy: ctx.user.id,
+      expiresAt: new Date(Date.now() + input.expiresInMinutes * 60_000),
+    });
+    await db.insert(userAccountAuditEvents).values({
+      userId: target.id, actorId: ctx.user.id, action: 'test_login_link_issued', source: 'admin',
+      note: `Expires in ${input.expiresInMinutes} minute(s)`,
+    });
+
+    // The only time the raw token ever leaves this function. Not logged, not
+    // stored, not recoverable - reissue if it is lost.
+    return { token: raw, expiresInMinutes: input.expiresInMinutes } as const;
+  }),
+
+  testLoginLinks: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    // Explicit column list: tokenHash must never reach a client. Selecting the
+    // whole row would ship it to every admin screen that renders this.
+    return db.select({
+      id: testLoginTokens.id,
+      createdAt: testLoginTokens.createdAt,
+      expiresAt: testLoginTokens.expiresAt,
+      usedAt: testLoginTokens.usedAt,
+      revokedAt: testLoginTokens.revokedAt,
+      issuedBy: testLoginTokens.issuedBy,
+    }).from(testLoginTokens)
+      .where(eq(testLoginTokens.userId, input.userId))
+      .orderBy(desc(testLoginTokens.createdAt))
+      .limit(50);
+  }),
+
+  revokeTestLoginLink: adminProcedure.input(z.object({ tokenId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [row] = await db.select().from(testLoginTokens).where(eq(testLoginTokens.id, input.tokenId));
+    if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such sign-in link' });
+    await db.update(testLoginTokens)
+      .set({ revokedAt: new Date(), revokedBy: ctx.user.id })
+      .where(eq(testLoginTokens.id, input.tokenId));
+    await db.insert(userAccountAuditEvents).values({
+      userId: row.userId, actorId: ctx.user.id, action: 'test_login_link_revoked', source: 'admin',
+    });
+    return { success: true } as const;
+  }),
+
   setDummyUserPassword: adminProcedure.input(z.object({
     userId: z.number().int().positive(),
     password: z.string().min(8).max(128),

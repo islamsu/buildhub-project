@@ -650,6 +650,44 @@ export const qualifiedEnquiries = mysqlTable('qualifiedEnquiries', {
 export type User        = typeof users.$inferSelect;
 export type InsertUser  = typeof users.$inferInsert;
 export type Project     = typeof projects.$inferSelect;
+/**
+ * Admin-issued, single-use, expiring sign-in links for QA test personas.
+ *
+ * Replaces the public "Dummy / Test user sign-in" form that used to sit on
+ * /auth. That form advertised a test-login pathway to every visitor and had no
+ * environment boundary at all.
+ *
+ * ONLY THE HASH IS STORED. The raw token is returned to the issuing admin
+ * exactly once and never persisted, so a dump of this table yields nothing an
+ * attacker can redeem. Same reasoning as storing a password hash rather than a
+ * password - a link IS a credential.
+ */
+export const testLoginTokens = mysqlTable('testLoginTokens', {
+  id:        int('id').primaryKey().autoincrement(),
+  // sha256 of the raw token, hex. Unique so redemption is a single indexed
+  // lookup rather than a scan-and-compare over live rows.
+  tokenHash: varchar('tokenHash', { length: 64 }).notNull().unique(),
+  // The QA persona this link signs in as. Enforced to be isDummy at issue time
+  // AND re-checked at redemption, because the account could change in between.
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  // Who issued it. An admin-only capability needs an audit trail naming a
+  // person, not just a timestamp.
+  issuedBy:  int('issuedBy').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  expiresAt: timestamp('expiresAt').notNull(),
+  // Set on first successful redemption. Single-use: a link that has been used
+  // is dead even before it expires, so a leaked URL in a chat log or browser
+  // history cannot be replayed.
+  usedAt:    timestamp('usedAt'),
+  // Set when an admin kills the link early. Distinct from usedAt so the audit
+  // trail distinguishes "consumed" from "withdrawn".
+  revokedAt: timestamp('revokedAt'),
+  revokedBy: int('revokedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+}, table => ({
+  userIdIdx:    index('testLoginTokens_userId_idx').on(table.userId),
+  expiresAtIdx: index('testLoginTokens_expiresAt_idx').on(table.expiresAt),
+}));
+
 export type Milestone   = typeof milestones.$inferSelect;
 export type Task        = typeof tasks.$inferSelect;
 export type Document    = typeof documents.$inferSelect;
@@ -670,3 +708,4 @@ export type QualifiedEnquiry = typeof qualifiedEnquiries.$inferSelect;
 export type VendorSubscription = typeof vendorSubscriptions.$inferSelect;
 export type InsertVendorSubscription = typeof vendorSubscriptions.$inferInsert;
 export type BillingEvent = typeof billingEvents.$inferSelect;
+export type TestLoginToken = typeof testLoginTokens.$inferSelect;

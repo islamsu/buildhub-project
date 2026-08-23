@@ -103,6 +103,13 @@ describe('§1 every procedure is pinned to a tier', () => {
       'auth.checkSignupAvailability',
       'auth.logout',
       'auth.me',
+      // Phases 7-9. Public because the holder of a QA sign-in link has no
+      // session yet - that is what they are redeeming. It is not unguarded:
+      // ENV.testLoginEnabled gates it before any work, so it answers NOT_FOUND
+      // anywhere the flag is not exactly "true"; the token is 32 CSPRNG bytes
+      // matched by hash; and it is single-use, expiring and revocable.
+      // Added to this list deliberately, which is the point of the list.
+      'auth.redeemTestLoginLink',
       'auth.requestPasswordReset',
       'auth.resetPassword',
       'auth.signIn',
