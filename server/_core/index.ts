@@ -8,7 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { ENV, assertEnvOrExit } from "./env";
-import { registerHealthRoutes } from "./health";
+import { buildCommit, registerHealthRoutes } from "./health";
 import { registerRequestLogging } from "./httpLogging";
 import { ConsoleMailer, resetMailer, setMailer } from "./mailer";
 import { resolveMailerFromEnv } from "./smtpMailer";
@@ -111,6 +111,10 @@ async function startServer() {
   // parser sizing a 50MB upload.
   registerSecurity(app);
   registerRequestLogging(app);
+  // Stamped in the log at boot as well as served at /version. The log line is
+  // for a human reading Render's output; the endpoint is for the staging gate,
+  // which cannot read logs.
+  console.log(`[build] commit ${buildCommit()}`);
   registerHealthRoutes(app);
 
   // Configure body parser with larger size limit for file uploads

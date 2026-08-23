@@ -37,6 +37,9 @@ if (!/staging|onrender|localhost|127\.0\.0\.1/i.test(BASE)) {
 
 const ADMIN_USER = process.env.STAGING_ADMIN_USER;
 const ADMIN_PASSWORD = process.env.STAGING_ADMIN_PASSWORD;
+// Optional. When set, the gate asserts the deployment is serving this commit
+// instead of merely reporting whatever it found.
+const EXPECT_COMMIT = (process.env.STAGING_EXPECT_COMMIT ?? '').trim();
 
 let pass = 0, fail = 0, skipped = 0;
 const failures = [];
@@ -82,6 +85,34 @@ const signUp = async (role, tag = role.slice(0, 4)) => {
 
 try {
   // ══ 1-3, 6. THE DEPLOYMENT ITSELF ═════════════════════════════════════
+  section('0. Provenance - WHICH build is being tested');
+
+  // A passing suite against an unidentified deployment is not evidence of
+  // anything. Everything below this point is only meaningful once we can name
+  // the commit that answered it.
+  const version = await fetch(`${BASE}/version`, { signal: AbortSignal.timeout(30_000) });
+  const deployed = version.status === 200 ? (await version.json().catch(() => ({})))?.commit : undefined;
+  check(version.status === 200, '0. /version identifies the build', `http ${version.status}`);
+  check(
+    typeof deployed === 'string' && /^[0-9a-f]{7,40}$/i.test(deployed),
+    '0. the deployment reports a real commit SHA',
+    deployed ?? '(none)',
+  );
+  console.log(`\n>>> DEPLOYED COMMIT: ${deployed ?? 'UNKNOWN'}\n`);
+
+  // When the caller says which commit it meant to test, a mismatch is a
+  // FAILURE, not a note. Testing yesterday's build and reporting it as today's
+  // is the exact failure this section exists to prevent.
+  if (EXPECT_COMMIT) {
+    check(
+      typeof deployed === 'string' && deployed.startsWith(EXPECT_COMMIT.slice(0, 7)),
+      '0. the deployed commit is the one under test',
+      `expected ${EXPECT_COMMIT.slice(0, 12)}, serving ${deployed ?? 'unknown'}`,
+    );
+  } else {
+    skip('0. deployed commit matches the commit under test', 'no STAGING_EXPECT_COMMIT supplied');
+  }
+
   section('1-3, 6. Service, health, readiness, HTTPS');
 
   check(BASE.startsWith('https://') || BASE.includes('127.0.0.1'), '6. the staging URL is HTTPS', BASE);

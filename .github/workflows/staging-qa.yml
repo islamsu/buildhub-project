@@ -22,10 +22,18 @@ on:
         description: "Staging base URL, e.g. https://buildhub-staging.onrender.com"
         required: true
         type: string
-  # Also available on a schedule so staging drift is caught rather than
-  # discovered. Uses the STAGING_BASE_URL variable when no input is given.
-  schedule:
-    - cron: "0 6 * * 1"
+      expect_commit:
+        description: "Optional: the commit SHA staging should be serving. Set it and a mismatch FAILS the gate instead of being reported."
+        required: false
+        type: string
+  # DISPATCH ONLY - deliberately no `schedule:` trigger.
+  #
+  # This copy lives on the default branch so the workflow registers with
+  # GitHub and gets a "Run workflow" button. A cron here would therefore be
+  # live, and with no STAGING_BASE_URL repository variable set it would fail
+  # every week by design (see "Resolve the target"), producing a standing red
+  # X for a job that was never going to work. Add the schedule back when
+  # staging is permanent and STAGING_BASE_URL is set.
 
 concurrency:
   group: staging-qa
@@ -62,8 +70,24 @@ jobs:
           echo "Target: $URL" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Playwright and its browser
+        # --legacy-peer-deps is load-bearing, not cargo cult.
+        #
+        # This runs inside the repo checkout, so npm resolves BuildHub's whole
+        # dependency tree before it can add anything. That tree has a genuine
+        # peer conflict - @builder.io/vite-plugin-jsx-loc@0.1.1 declares a peer
+        # of vite ^4 || ^5 while the project is on vite 7 - and npm's default
+        # strict peer resolution aborts with ERESOLVE before Playwright is ever
+        # fetched. The flag makes npm tolerate that pre-existing conflict for
+        # THIS install only. It changes nothing about the project's own
+        # dependencies: --no-save keeps package.json untouched and writes no
+        # package-lock.json, and pnpm-lock.yaml is not consulted at all.
+        #
+        # Fixing the peer conflict itself is an application-dependency change
+        # and deliberately out of scope for a QA harness.
+        #
+        # The version stays pinned so the harness is reproducible.
         run: |
-          npm install --no-save playwright@1.49.1
+          npm install --no-save --legacy-peer-deps playwright@1.49.1
           npx playwright install --with-deps chromium
 
       # Cheap, and it invalidates everything else if it fails - so it runs
@@ -75,7 +99,27 @@ jobs:
         env:
           STAGING_ADMIN_USER: ${{ secrets.STAGING_ADMIN_USER }}
           STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+          # Optional. Supplied -> a mismatch fails the gate. Absent -> the gate
+          # still REPORTS the commit it tested, so the result is attributable
+          # either way.
+          STAGING_EXPECT_COMMIT: ${{ inputs.expect_commit }}
         run: node scripts/staging-qa.mjs "${{ steps.target.outputs.url }}" | tee qa-output.txt
+
+      # Provenance belongs at the top of the summary, not buried in a log. A
+      # green result against an unnamed build is not evidence of anything.
+      - name: Record which build was tested
+        if: always()
+        run: |
+          DEPLOYED=$(grep -oP '(?<=>>> DEPLOYED COMMIT: ).*' qa-output.txt | head -1 || true)
+          {
+            echo "### Build under test"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Deployed commit (reported by /version) | \`${DEPLOYED:-unknown}\` |"
+            echo "| Expected commit (input) | \`${{ inputs.expect_commit || 'not supplied' }}\` |"
+            echo "| Harness commit (this checkout) | \`${GITHUB_SHA}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish the result
         if: always()

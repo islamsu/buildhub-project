@@ -67,6 +67,44 @@ describe('§3 it classifies third-party failures by origin, not by message', () 
   });
 });
 
+describe('§0 provenance - the gate names the build it tested', () => {
+  it('asks the deployment which commit it is, before anything else', () => {
+    // A passing suite against an unidentified deployment is not evidence. The
+    // provenance section must come FIRST so nothing below it is reported
+    // against an unknown build.
+    const provenance = GATE.indexOf('0. Provenance');
+    const firstRealCheck = GATE.indexOf('1-3, 6. Service, health, readiness');
+    expect(provenance).toBeGreaterThan(-1);
+    expect(provenance).toBeLessThan(firstRealCheck);
+    expect(GATE).toContain('/version');
+  });
+
+  it('prints the deployed commit where a human and a log will both see it', () => {
+    expect(GATE).toContain('DEPLOYED COMMIT');
+  });
+
+  it('treats a commit mismatch as a FAILURE, never as a note', () => {
+    // The whole point: testing yesterday's build and reporting it as today's
+    // is the failure this section exists to prevent. It must reach check(),
+    // which counts failures, and not skip() or a bare console.log.
+    const block = GATE.slice(GATE.indexOf('if (EXPECT_COMMIT)'), GATE.indexOf('} else {'));
+    expect(block).toContain('check(');
+    expect(block).not.toContain('skip(');
+  });
+
+  it('skips rather than silently passing when no expected commit is given', () => {
+    // Not knowing is not the same as matching. With nothing to compare
+    // against, this must land in the skip column, which the summary reports
+    // separately from passes.
+    const elseBlock = GATE.slice(GATE.indexOf('} else {', GATE.indexOf('if (EXPECT_COMMIT)')));
+    expect(elseBlock.slice(0, 400)).toContain('skip(');
+  });
+
+  it('requires a real SHA - "unknown" is never acceptable as an identity', () => {
+    expect(GATE).toMatch(/\/\^\[0-9a-f\]\{7,40\}\$\/i/);
+  });
+});
+
 describe('§4 it covers the agreed 22 points', () => {
   const points = new Set(
     (GATE.match(/'(\d+)(?:\/\d+)?\. /g) ?? []).map(m => Number(m.match(/\d+/)![0])),
