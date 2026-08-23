@@ -37,6 +37,9 @@ if (!/staging|onrender|localhost|127\.0\.0\.1/i.test(BASE)) {
 
 const ADMIN_USER = process.env.STAGING_ADMIN_USER;
 const ADMIN_PASSWORD = process.env.STAGING_ADMIN_PASSWORD;
+// Optional. When set, the gate asserts the deployment is serving this commit
+// instead of merely reporting whatever it found.
+const EXPECT_COMMIT = (process.env.STAGING_EXPECT_COMMIT ?? '').trim();
 
 let pass = 0, fail = 0, skipped = 0;
 const failures = [];
@@ -82,6 +85,34 @@ const signUp = async (role, tag = role.slice(0, 4)) => {
 
 try {
   // ══ 1-3, 6. THE DEPLOYMENT ITSELF ═════════════════════════════════════
+  section('0. Provenance - WHICH build is being tested');
+
+  // A passing suite against an unidentified deployment is not evidence of
+  // anything. Everything below this point is only meaningful once we can name
+  // the commit that answered it.
+  const version = await fetch(`${BASE}/version`, { signal: AbortSignal.timeout(30_000) });
+  const deployed = version.status === 200 ? (await version.json().catch(() => ({})))?.commit : undefined;
+  check(version.status === 200, '0. /version identifies the build', `http ${version.status}`);
+  check(
+    typeof deployed === 'string' && /^[0-9a-f]{7,40}$/i.test(deployed),
+    '0. the deployment reports a real commit SHA',
+    deployed ?? '(none)',
+  );
+  console.log(`\n>>> DEPLOYED COMMIT: ${deployed ?? 'UNKNOWN'}\n`);
+
+  // When the caller says which commit it meant to test, a mismatch is a
+  // FAILURE, not a note. Testing yesterday's build and reporting it as today's
+  // is the exact failure this section exists to prevent.
+  if (EXPECT_COMMIT) {
+    check(
+      typeof deployed === 'string' && deployed.startsWith(EXPECT_COMMIT.slice(0, 7)),
+      '0. the deployed commit is the one under test',
+      `expected ${EXPECT_COMMIT.slice(0, 12)}, serving ${deployed ?? 'unknown'}`,
+    );
+  } else {
+    skip('0. deployed commit matches the commit under test', 'no STAGING_EXPECT_COMMIT supplied');
+  }
+
   section('1-3, 6. Service, health, readiness, HTTPS');
 
   check(BASE.startsWith('https://') || BASE.includes('127.0.0.1'), '6. the staging URL is HTTPS', BASE);
@@ -165,7 +196,25 @@ try {
   section('5, 21. Isolation and exposure');
   const dirAll = await get('marketplace.vendors', {});
   const prodAll = await get('marketplace.list', { limit: 48 });
+  const catsAll = await get('marketplace.vendorCategories', {});
+  const featAll = await get('marketplace.featuredVendors', {});
   const combined = dirAll.t + prodAll.t;
+
+  // THE STATUS CODE, ASSERTED. Everything downstream parses these bodies with
+  // `json(t) ?? []`, and on a tRPC 500 that yields [] - which Array.isArray()
+  // happily calls a list. So a 500 used to read as a PASS: the gate reported
+  // "the product listing is database-backed" while the endpoint was failing.
+  // Render's logs showed 500s on exactly these four procedures and the gate
+  // said nothing, because it never once looked at the status.
+  for (const [name, r] of [
+    ['marketplace.list', prodAll],
+    ['marketplace.vendors', dirAll],
+    ['marketplace.vendorCategories', catsAll],
+    ['marketplace.featuredVendors', featAll],
+  ]) {
+    check(r.s === 200, `11. ${name} responds without a server error`, `http ${r.s}`);
+    check(!/\"error\"/.test(r.t.slice(0, 200)), `11. ${name} returns data, not a tRPC error`, r.t.slice(0, 120));
+  }
   check(!/passwordHash|invitationToken|providerCustomerRef|providerSubscriptionRef/.test(combined),
     '21. no credential or provider handle in public responses');
   check(!/@(gmail|hotmail|yahoo|outlook)\.com/i.test(combined),
@@ -178,12 +227,52 @@ try {
   for (const invention of ['Cleopatra', 'Carrara', 'SunPower', 'Premium Ceramic Floor Tiles', 'Italian Marble Slabs']) {
     check(!combined.includes(invention), `11. no fabricated product: ${invention}`);
   }
+  // Array.isArray([]) is true, so the previous version of these two checks
+  // PASSED against an empty catalogue while claiming the listing was
+  // "database-backed". That is a false positive of exactly the kind this gate
+  // exists to prevent: it proved the endpoint returns an array, and nothing
+  // else. An empty catalogue is now a SKIP - honest about knowing nothing -
+  // and a populated one is checked for real.
   const prods = json(prodAll.t) ?? [];
-  check(Array.isArray(prods), '11. the product listing is database-backed', `${prods.length} product(s)`);
   const dir = json(dirAll.t) ?? [];
-  check(Array.isArray(dir), '12. the vendor directory is database-backed', `${dir.length} vendor(s)`);
+  check(Array.isArray(prods), '11. the product endpoint answers with a list', `${prods.length} product(s)`);
+  check(Array.isArray(dir), '12. the vendor endpoint answers with a list', `${dir.length} vendor(s)`);
+
+  const dbBacked = (rows, label, fields) => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      skip(label, 'the staging catalogue is empty - nothing to verify, so nothing is claimed');
+      return;
+    }
+    const bad = rows.filter((r) => !fields.every((f) => r?.[f] !== undefined && r?.[f] !== null));
+    check(bad.length === 0, label, `${rows.length} row(s), ${bad.length} missing ${fields.join('/')}`);
+  };
+  dbBacked(prods, '11. every product carries real database columns', ['id', 'name', 'category']);
+  dbBacked(dir, '12. every directory vendor carries real database columns', ['id']);
+
+  // Category filtering used to be asserted as `http 200`. That would have
+  // passed the Slice 10 defect verbatim - `category` was accepted by the input
+  // schema and then silently ignored, so every filtered request returned the
+  // full catalogue with a cheerful 200. Assert the FILTER, not the status.
   const filtered = await get('marketplace.list', { category: 'Materials', limit: 48 });
-  check(filtered.s === 200, '11. category filtering is applied server-side', `http ${filtered.s}`);
+  check(filtered.s === 200, '11. the filtered listing responds', `http ${filtered.s}`);
+  const filteredRows = json(filtered.t) ?? [];
+  if (!Array.isArray(prods) || prods.length === 0) {
+    skip('11. category filtering actually filters', 'the staging catalogue is empty - a filter over nothing proves nothing');
+  } else {
+    const offCategory = filteredRows.filter((r) => r?.category && r.category !== 'Materials');
+    check(
+      offCategory.length === 0,
+      '11. category filtering actually filters, server-side',
+      `${filteredRows.length} row(s) returned, ${offCategory.length} outside "Materials"`,
+    );
+    const nonsense = await get('marketplace.list', { category: 'NoSuchCategory-' + STAMP, limit: 48 });
+    const nonsenseRows = json(nonsense.t) ?? [];
+    check(
+      Array.isArray(nonsenseRows) && nonsenseRows.length === 0,
+      '11. an unmatched category returns nothing, rather than everything',
+      `${nonsenseRows.length} row(s)`,
+    );
+  }
 
   // ══ 16. BILLING AND PRICING HONESTY ═══════════════════════════════════
   section('16. Billing and pricing');
