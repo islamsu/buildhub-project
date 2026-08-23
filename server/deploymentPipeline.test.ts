@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
 
 /**
@@ -228,6 +228,42 @@ describe('§4 secrets live in GitHub and on the host, never in the repository', 
 });
 
 // ── §5 The image ───────────────────────────────────────────────────────────
+
+describe('§4b GitHub Actions runtime', () => {
+  // Every workflow file on disk, not just the deploy trio in WORKFLOWS -
+  // staging-qa.yml is the only one that uses upload-artifact, so leaving it out
+  // made the version assertion below match nothing and pass vacuously.
+  const WORKFLOW_SOURCES = readdirSync(new URL('../.github/workflows/', import.meta.url))
+    .filter(name => name.endsWith('.yml'))
+    .map(name => read(`../.github/workflows/${name}`))
+    .join('\n');
+
+  it('runs no action still pinned to the Node 20 runtime', () => {
+    // GitHub forces Node 24 from 2026-06-02 and removes Node 20 on
+    // 2026-09-16. Until these were bumped every run carried:
+    //   "Node.js 20 is deprecated. The following actions target Node.js 20
+    //    but are being forced to run on Node.js 24"
+    expect(WORKFLOW_SOURCES).not.toContain('actions/checkout@v4');
+    expect(WORKFLOW_SOURCES).not.toContain('actions/setup-node@v4');
+    expect(WORKFLOW_SOURCES).not.toContain('actions/upload-artifact@v4');
+  });
+
+  it('uses upload-artifact v6 or later, NOT v5', () => {
+    // The trap in this upgrade. checkout and setup-node move to Node 24 at
+    // v5, but upload-artifact v5 still DEFAULTS to Node 20 - only v6 changes
+    // the runtime. A uniform "bump everything to v5" leaves the deprecation
+    // warning exactly where it was and looks like it fixed something.
+    const versions = [...WORKFLOW_SOURCES.matchAll(/actions\/upload-artifact@v(\d+)/g)].map(m => Number(m[1]));
+    expect(versions.length).toBeGreaterThan(0);
+    for (const v of versions) expect(v).toBeGreaterThanOrEqual(6);
+  });
+
+  it('does not bump third-party actions that were never implicated', () => {
+    // pnpm/action-setup was not in the deprecation warning. Changing it here
+    // would be an unrelated risk riding along in a maintenance commit.
+    expect(WORKFLOW_SOURCES).toContain('pnpm/action-setup@v4');
+  });
+});
 
 describe('§5 Dockerfile', () => {
   it('pins the same Node major as engines and CI', () => {

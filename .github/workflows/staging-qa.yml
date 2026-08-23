@@ -48,9 +48,9 @@ jobs:
       name: staging
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -133,7 +133,7 @@ jobs:
 
       - name: Keep the full log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: staging-qa-output
           path: qa-output.txt

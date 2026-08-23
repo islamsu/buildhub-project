@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # No `version:` here on purpose. package.json's `packageManager` field
       # already pins pnpm, and pnpm/action-setup@v4 hard-fails with "Multiple
@@ -39,7 +39,7 @@ jobs:
       # agree. One source of truth: package.json.
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # Matches the `engines` field in package.json and the Dockerfile base.
           node-version: 22
@@ -90,7 +90,7 @@ jobs:
           --health-retries=10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # No `version:` here on purpose. package.json's `packageManager` field
       # already pins pnpm, and pnpm/action-setup@v4 hard-fails with "Multiple
@@ -98,7 +98,7 @@ jobs:
       # agree. One source of truth: package.json.
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -126,7 +126,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build the image
         run: docker build -t buildhub:ci .
