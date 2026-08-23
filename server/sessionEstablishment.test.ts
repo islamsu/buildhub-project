@@ -191,3 +191,45 @@ describe('signing in must refresh the cached session before navigating', () => {
     }
   });
 });
+
+describe('a metric label must survive the narrowest screen we support', () => {
+  const rolePlatform = () => require('node:fs').readFileSync(
+    new URL('../client/src/pages/RolePlatform.tsx', import.meta.url), 'utf8');
+
+  /**
+   * The <p> that renders `expression`, found by matching the element itself.
+   *
+   * An earlier version of this sliced a window around
+   * indexOf('{metric.label}') - which matched `<Card key={metric.label}>` a
+   * hundred characters earlier, so the window never contained the className at
+   * all and the test passed whatever the code said. It survived its own
+   * mutation test. Hence matching the element, and asserting it was found.
+   */
+  const paragraphRendering = (expression: string): string => {
+    const found = rolePlatform().match(
+      new RegExp(`<p className="([^"]*)">\\{${expression}\\}</p>`));
+    expect(found, `no <p> renders {${expression}} - this test would otherwise be vacuous`).not.toBeNull();
+    return found![1];
+  };
+
+  it('does not truncate the label that names the number', () => {
+    // Measured in a real browser at 375px: the two-column grid minus a fixed
+    // 44px icon, the gap and the padding left ~63px, while "Total Projects"
+    // needed 72px and "Active Projects" 79px. English degraded to a guessable
+    // "Total Projec..."; Arabic degraded to "إجمالي ال...", which names nothing.
+    expect(paragraphRendering('metric\\.label')).not.toContain('truncate');
+  });
+
+  it('still truncates the VALUE, which is short and must stay on one line', () => {
+    expect(paragraphRendering('metric\\.value')).toContain('truncate');
+  });
+
+  it('stacks the icon above the text before the row gets too narrow', () => {
+    // The other half of the fix: without this the label still only gets the
+    // width the icon leaves behind, and merely wraps into a thin column.
+    const source = rolePlatform();
+    const card = source.slice(source.indexOf('{metrics.map(metric => ('), source.indexOf('{metrics.map(metric => (') + 1400);
+    expect(card).toContain('flex-col');
+    expect(card).toContain('sm:flex-row');
+  });
+});
