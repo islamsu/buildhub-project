@@ -1,0 +1,320 @@
+================================================================================
+BUILDHUB - FOUR DEFECTS THAT 1,139 PASSING TESTS COULD NOT SEE
+Session report - 2026-08-23
+================================================================================
+
+SUMMARY
+
+PR #1 and PR #5 are merged. main is at b437d30.
+
+Four defects were found and fixed. Every one of them survived a suite of 1,139
+passing tests, a green CI pipeline, and a 160/160 staging QA gate. Every one was
+found by driving the real thing - a real browser, a real database, the real
+GitHub API - rather than by reading code.
+
+The common thread is worth stating plainly, because it is the actionable lesson:
+every test near each defect asserted on SOURCE TEXT or on SHAPE, not on
+behaviour. A test that greps a file cannot tell you the file is rejected by the
+system that consumes it. A test that parses YAML cannot tell you the workflow
+never starts. A test that checks a procedure's tier cannot tell you the tier is
+the wrong question.
+
+Gate at the end: tsc 0 · 1160/1160 tests, 61 files · build 0
+Live: 44/44 role journeys · 36/36 marketplace funnel against real MariaDB
+
+--------------------------------------------------------------------------------
+1. THE DEPLOY WORKFLOWS HAD NEVER ONCE STARTED
+--------------------------------------------------------------------------------
+
+Both deploy workflows read ${{ secrets.*_BASE_URL }} in environment.url. GitHub
+does not expose the `secrets` context to that field. The workflow therefore
+failed validation AT STARTUP: zero jobs, zero seconds, and - the part that let it
+hide for 83 runs - NO CHECK RUN AT ALL, so it never appeared in a PR's checks.
+
+  PR #1 reported 9/9 green while merging a deploy pipeline that had failed on
+  every single push to date.
+
+EVIDENCE - two consecutive pushes to the same branch:
+
+  ab302f2 (before)   ci.yml, deploy-production.yml FAIL 0s, deploy-staging.yml FAIL 0s
+  0fae67d (after)    ci.yml only
+
+An invalid workflow produces a run on every push regardless of branch filters,
+because GitHub cannot evaluate `on:` on a file it cannot validate. Once valid,
+`branches: [main]` applies again and a feature-branch push correctly produces no
+deploy run.
+
+CONFIRMED ON main AFTER MERGE - run #84, "Deploy staging", success in 7s:
+
+  Is staging configured?        success   (step: if [ -n "" ] && [ -n "" ])
+  Gate on the full CI suite     skipped
+  Build and publish the image   skipped
+  Migrate and release           skipped
+
+Run #83 by contrast was displayed under its raw file path rather than its name -
+GitHub shows the path when it cannot parse the `name:` field. That difference in
+the run list was the visible symptom nobody read.
+
+It failed CLOSED, so nothing shipped that should not have. The real cost is that
+the pipeline had never executed once, and would not have begun working the moment
+someone added the secrets it appeared to be waiting for.
+
+FIX: base URLs are repository VARIABLES. That is the field's actual contract, and
+a deployment hostname is not secret material. staging-qa.yml and
+BUILDHUB_RENDER_STAGING_RUNBOOK.md already called STAGING_BASE_URL a repository
+variable, so this settles a split brain rather than inventing a convention. SSH
+host, user and key stay secrets.
+
+New deploymentPipeline §4c walks every workflow for context interpolations and
+checks each against an ALLOWLIST of fields GitHub actually exposes that context
+to, so an unanticipated position fails closed.
+
+--------------------------------------------------------------------------------
+2. A SUCCESSFUL SIGN-IN HANDED BACK A SESSION NOTHING WOULD ACCEPT
+--------------------------------------------------------------------------------
+
+Three independent defects sat between "sign-up succeeded" and "the next request
+knows who you are".
+
+2a. THE COOKIE BROWSERS REFUSE TO KEEP
+
+    sameSite:"none" was pinned while `secure` was derived per request. Over plain
+    HTTP that emits:
+
+      Set-Cookie: app_session_id=...; Path=/; HttpOnly; SameSite=None
+
+    SameSite=None is legal only alongside Secure. Browsers reject the pairing
+    outright rather than downgrading it. Observed in Chromium: sign-up returned
+    success, the server sent that header, THE BROWSER KEPT ZERO COOKIES.
+
+    Local development could not authenticate in any browser.
+
+    Note: productionHardening A7 already describes this exact hazard in its
+    comment - and then pins the production half, which was correct. The broken
+    half was the one it did not assert.
+
+2b. THE SERVER REJECTED THE TOKEN IT HAD JUST MINTED
+
+    createSessionToken stamps `appId: ENV.appId`; ENV.appId falls back to "".
+    verifySession required appId to be a NON-EMPTY string while never comparing
+    it to anything - so the check delivered none of the isolation its presence
+    implied, and rejected every session the server issued:
+
+      {"openId":"local_...","appId":"","name":"Debug User"}
+      [Auth] Session payload missing required fields
+
+    Render staging sets VITE_APP_ID and was unaffected. That is precisely why
+    this survived: .env.example ships VITE_APP_ID empty, so the documented local
+    setup could authenticate nobody, and staging QA's authenticated checks were
+    among the SKIPs.
+
+    FIX: appId is checked by COMPARISON when configured - strictly stronger, a
+    token minted for another app under a shared secret is now rejected rather
+    than accepted - and skipped when there is nothing to compare against.
+    JWT_SECRET remains the trust boundary either way. `name` no longer gates
+    validity; requiring it made createSessionToken(openId), the usage sdk.ts
+    documents as its own example, mint a token that could never be redeemed.
+
+2c. SIGN-UP LANDED ON THE LOGIN SCREEN
+
+    useAuth reads auth.me from the React Query cache, still holding the `null`
+    fetched when /auth loaded anonymously. goAfterAuth navigated straight to a
+    protected route, whose guard saw an anonymous user and bounced to
+    /auth?mode=login via window.location.href - a full page load, which discarded
+    the refetch too.
+
+    The account existed and a manual reload landed correctly, which is exactly
+    what made it look like a login bug rather than a stale-cache one.
+
+    logout already invalidated this query. Sign-in, sign-up and QA-link
+    redemption did not.
+
+VERIFIED AFTER FIX, real browser, real MariaDB: registration lands on
+/platform/homeowner, the browser keeps the cookie, auth.me returns the user.
+
+--------------------------------------------------------------------------------
+3. "PROTECTED" IS NOT "AUTHORIZED" - THE PAID ENQUIRY GATE WAS OPTIONAL
+--------------------------------------------------------------------------------
+
+The qualified-enquiry model gates an RFQ's full detail behind approval, declared
+categories, a billing entitlement, and one credit per lead enforced by a unique
+index in the database. Two procedures beside it handed the same detail out free.
+
+PROVEN with one brand-new, unapproved, free contractor account - one sign-up, no
+approval, no payment:
+
+  rfq.eligible      BLOCKED   FORBIDDEN
+  rfq.openEnquiry   BLOCKED   FORBIDDEN
+  rfq.list          ALLOWED   50 rows, every column
+  rfq.get(id)       ALLOWED   any RFQ, entire row
+
+rfq.get had no ownership check at all and no callers in the client. It is now
+scoped by requesterId, returning NOT_FOUND rather than FORBIDDEN so it does not
+confirm an id exists to someone who cannot see it.
+
+rfq.list keeps its browse role but drops `attachments` and takes an explicit
+column allowlist instead of select().from(rfqs). `attachments` holds the URLs of
+the requester's own uploads - drawings, BOQs, site photos - and RFQPage renders
+them inline for every RFQ in the feed, so every signed-in account held direct
+links to every requester's files. Owners still get their own through myList,
+which is scoped by requesterId, and parseRfqAttachments treats the absent field
+as "none", so the page degrades exactly right.
+
+THIS IS HALF OF A FIX I MADE MYSELF. Slice 9 moved rfq.list from public to
+protected because it was serving every column to anonymous callers, and the sweep
+stopped there - the comment I left in RFQPage even names the column exposure. The
+§2 test asserted the tier and called rfq.get safe because it "had always been
+protected", which is precisely the assumption that was wrong.
+
+>>> AWAITING YOUR DECISION - deliberately not made for you:
+    rfq.list still returns `description` and the exact `budget`. Whether the free
+    browse feed should show those at all is a pricing question -
+    openQualifiedEnquiry charges a credit for "full detail" - and narrowing it
+    changes what the product gives away. That is an owner's call, not something
+    to infer from a table. Say the word and I will narrow it to a teaser.
+
+--------------------------------------------------------------------------------
+4. METRIC LABELS WERE UNREADABLE ON A PHONE, AND WORSE IN ARABIC
+--------------------------------------------------------------------------------
+
+The role platform's stat cards sit in a two-column grid below `sm`. Minus a fixed
+44px icon, the gap and the padding, the text column got about 63px - and the
+label carried `truncate`. Measured in a real browser at 375px:
+
+  "Total Projects"    wanted 72px, had 63px
+  "Active Projects"   wanted 79px, had 63px
+  "Total Budget"      wanted 67px, had 63px
+
+English degraded to a guessable "Total Projec...". Arabic degraded to
+"إجمالي ال..." and "مشاريع ن..." - longer words, and the label is the only thing
+naming the number, so what is left identifies nothing.
+
+FIX: the card stacks the icon above the text below `sm` and the label wraps.
+Re-measured: zero clipped text nodes in either language, the only remaining one
+being the sr-only "Toggle Sidebar", which is meant to be invisible. Arabic now
+reads in full: إجمالي المشاريع · مشاريع نشطة · الميزانية الإجمالية · إجمالي الإنفاق
+
+--------------------------------------------------------------------------------
+TWO OF MY OWN MISTAKES, CORRECTED IN PLACE
+--------------------------------------------------------------------------------
+
+Reporting these because they are the same failure mode as the defects above.
+
+A VACUOUS TEST THAT SURVIVED ITS OWN MUTATION TEST. The first version of the
+truncation regression sliced a window around indexOf('{metric.label}'), which
+matched `<Card key={metric.label}>` a hundred characters earlier. The window
+never contained the className, so the test passed whatever the code said. I
+caught it only because I ran the mutation and it did NOT fail. It now matches the
+element by regex and asserts the match was found, so it cannot go vacuous
+silently.
+
+A DETECTOR THAT FAILED FOR ITS OWN REASONS. The journey harness's crash detector
+matched page.content(), which hit React's minified internals
+("errorBoundary:e.tag===1?...") inside the bundle and reported a crash on every
+healthy page - 8 uniform failures that were entirely my instrumentation. Uniform
+failure across cases that obviously work is a signal to doubt the detector. It
+reads visible text now.
+
+--------------------------------------------------------------------------------
+VERIFICATION PERFORMED
+--------------------------------------------------------------------------------
+
+ROLE JOURNEYS - 44/44, real Chromium, real MariaDB
+  All six roles register, establish a session, persist their role and land where
+  they should: homeowner on /platform/homeowner, the five professional roles on
+  /compliance with onboardingStatus=not_started. EN and AR, 1440px and 375px. No
+  error states, no uncaught page errors, real content rendered.
+
+MARKETPLACE FUNNEL - 36/36, real MariaDB
+  homeowner creates a project and an RFQ; an unapproved contractor is refused the
+  RFQ feed, the enquiry and the provider directory; anonymous callers are refused
+  every protected procedure; a homeowner is refused every admin surface; public
+  marketplace endpoints return 200 with real bodies; then the contractor is
+  approved, declares Engineering, sees the feed, opens the enquiry (credit
+  consumed, 5 remaining), submits a quotation, the homeowner sees and accepts it;
+  a third party cannot accept that quotation, read the RFQ, or read the project;
+  messaging and notifications flow between the two parties.
+
+COMPLIANCE ONBOARDING - 13/13
+  Five of six roles land on /compliance immediately after registering, so a
+  break there would strand most of the user base at the door. Verified: the
+  requirements load for all five professional roles and are correctly
+  differentiated -
+
+    contractor        identity, tax_card, commercial_registration,
+                      professional_license, insurance_certificate
+    engineer          identity, tax_card, professional_license,
+                      tax_registration, portfolio
+    architect         identity, tax_card, professional_license,
+                      tax_registration, portfolio
+    supplier          identity, tax_card, commercial_registration,
+                      bank_certificate, product_catalogue
+    project_manager   identity, tax_card, professional_certificate,
+                      experience_record, insurance_certificate
+
+  A homeowner is refused the compliance surface (FORBIDDEN), and an upload of a
+  document type not required for the caller's role is rejected (BAD_REQUEST)
+  rather than stored. The page itself renders complete: status chips, an honest
+  0% progress meter, Required/Optional badges with descriptions, and a review
+  timeline whose empty state says so rather than inventing history.
+
+  The upload itself is the one step not exercised: it needs an S3-compatible
+  backend, which is not configured locally. With none present it returns a
+  generic 500 that leaks nothing. That gap is the S3 credentials item below,
+  not a defect in the flow.
+
+  Caught while writing this: my first version of these checks called
+  `registration.*`, but the router is mounted as `compliance`. Three of them
+  reported PASS - for NOT_FOUND on a path that did not exist. A test that
+  passes because the thing under test is absent is the same failure as a test
+  that passes because it read the wrong window.
+
+MUTATION TESTING - every fix
+  Reverting each fix fails its own test. The rejections that MUST survive are
+  asserted alongside: wrong secret, expired token, missing openId, foreign appId,
+  anonymous caller, non-owner, downgraded procedure tier.
+
+--------------------------------------------------------------------------------
+OPEN ITEMS
+--------------------------------------------------------------------------------
+
+NEEDS YOU - operator actions I cannot perform:
+  · PRODUCTION_BASE_URL must be a repository VARIABLE, not a secret, if it was
+    ever added as one. STAGING_BASE_URL already is.
+  · TEST_LOGIN_ENABLED=true on the Render staging service, to make the QA
+    sign-in links live there.
+  · STAGING_ADMIN_USER / STAGING_ADMIN_PASSWORD secrets - converts three staging
+    QA skips into executed evidence.
+  · SMTP_* and S3_* credentials - password reset and uploads are unexercised
+    against real services.
+
+NEEDS YOUR DECISION:
+  · Whether rfq.list's free browse feed should keep showing `description` and the
+    exact `budget` (see section 3).
+
+WATCH ITEM:
+  · pnpm/action-setup has the Node 24 runtime on master but has not released a
+    tag carrying it. GitHub removes Node 20 on 2026-09-16. Pinning CI to a
+    mutable branch is worse than the warning, so this waits for an upstream
+    release.
+
+NOT YET DONE:
+  · Staging still runs the pre-fix build. These fixes reach it on the next Render
+    deploy from main; I cannot reach Render from this environment (egress returns
+    403 CONNECT for all Render hosts) to confirm.
+  · Controlled staging fixtures, so the marketplace content checks execute rather
+    than SKIP. Blocked on the credentials above.
+
+--------------------------------------------------------------------------------
+A NOTE ON WHAT "GREEN" MEANT HERE
+--------------------------------------------------------------------------------
+
+Before today: 1,139 tests passing, CI green on every commit, staging QA 160/160.
+
+Also true before today: the deploy pipeline had never executed, first-party login
+did not work anywhere VITE_APP_ID was unset, the paid enquiry gate could be
+walked around by any free account, and the mobile dashboard's labels were stubs.
+
+Green tests are evidence that the things you thought to check still hold. They
+are not evidence that the system works. The only thing that told me any of this
+was pointing a browser at it and watching what actually happened.

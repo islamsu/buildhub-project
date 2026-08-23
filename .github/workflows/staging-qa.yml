@@ -53,6 +53,21 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          # OFF, and load-bearing. setup-node@v5 turns package-manager caching
+          # ON by default, then auto-detects the manager from package.json's
+          # `packageManager` field - which says pnpm. This harness deliberately
+          # never installs pnpm: it is standalone, and uses plain npm for the
+          # one Playwright install below. So the action found pnpm in the
+          # manifest, went looking for the binary, and failed the job before it
+          # ever reached staging:
+          #
+          #   Unable to locate executable file: pnpm
+          #
+          # v4 did not cache unless asked, which is why the v4 -> v5 bump landed
+          # green: this workflow has no push trigger, so nothing exercised it
+          # until it was dispatched from main afterwards. ci.yml and
+          # deploy-staging.yml are unaffected - both run pnpm/action-setup first.
+          package-manager-cache: false
 
       - name: Resolve the target
         id: target
