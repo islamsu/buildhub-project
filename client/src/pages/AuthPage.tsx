@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { startLogin } from '@/const';
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, Link } from 'wouter';
 import LanguageToggle from '@/components/LanguageToggle';
 import { toast } from 'sonner';
@@ -33,6 +33,13 @@ export default function AuthPage() {
   const isDummyMode = authMode === 'dummy';
   const isLoginMode = authMode === 'login';
   const isOAuthMode = authMode === 'oauth';
+  // A QA sign-in link lands here as /auth?qaToken=... The token is read once,
+  // redeemed, and the query string is stripped from history immediately so it
+  // does not sit in the address bar, get bookmarked, or leak through a
+  // Referer header on the next navigation. It is single-use server-side
+  // regardless - this just avoids leaving a spent credential lying around.
+  const qaToken = new URLSearchParams(window.location.search).get('qaToken');
+  const qaRedeemed = useRef(false);
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -76,6 +83,25 @@ export default function AuthPage() {
   });
 
   const checkSignupAvailability = trpc.auth.checkSignupAvailability.useMutation();
+  const redeemQaLink = trpc.auth.redeemTestLoginLink.useMutation({
+    onSuccess: result => {
+      toast.success(lang === 'ar' ? 'تم تسجيل الدخول كحساب اختباري' : 'Signed in as a QA test account');
+      if (!result.userRole) { navigate('/'); return; }
+      navigate(PROFESSIONAL_ROLES.includes(result.userRole as UserRole) && result.onboardingStatus !== 'approved'
+        ? '/compliance'
+        : getRolePlatformPath(result.userRole as UserRole));
+    },
+    // Deliberately generic. The server gives one message for unknown, expired,
+    // spent and revoked links; surfacing it verbatim keeps that property.
+    onError: (error: { message: string }) => toast.error(error.message),
+  });
+
+  useEffect(() => {
+    if (!qaToken || qaRedeemed.current) return;
+    qaRedeemed.current = true;
+    window.history.replaceState({}, '', '/auth');
+    redeemQaLink.mutate({ token: qaToken });
+  }, [qaToken]);
   const updateRole = trpc.auth.updateRole.useMutation({
     onSuccess: (_result, variables) => {
       toast.success(lang === 'ar' ? 'تم إعداد الملف الشخصي بنجاح!' : 'Profile set up successfully!');

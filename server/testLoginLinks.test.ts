@@ -126,3 +126,45 @@ describe('issuing is admin-only and QA-only', () => {
     expect(SCHEMA).toContain("int('revokedBy')");
   });
 });
+
+describe('the admin UI shows the token once and never re-offers it', () => {
+  const ADMIN_UI = read('../client/src/pages/AdminDashboard.tsx');
+  const AUTH_PAGE = read('../client/src/pages/AuthPage.tsx');
+
+  it('lives in the admin area, not on any public page', () => {
+    expect(ADMIN_UI).toContain('trpc.admin.issueTestLoginLink');
+    expect(ADMIN_UI).toContain('trpc.admin.revokeTestLoginLink');
+    // The public auth page may REDEEM a link, but must never issue one.
+    expect(AUTH_PAGE).not.toContain('issueTestLoginLink');
+  });
+
+  it('holds the raw token only in component state, never persisted', () => {
+    // No localStorage/sessionStorage: the server cannot show it again, so a
+    // copy left in browser storage would outlive the only place it exists.
+    const dialog = ADMIN_UI.slice(ADMIN_UI.indexOf('issuedToken'), ADMIN_UI.indexOf('dummyPasswordTarget)}'));
+    expect(dialog).not.toContain('localStorage');
+    expect(dialog).not.toContain('sessionStorage');
+    expect(ADMIN_UI).toContain('setIssuedToken(null)');
+  });
+
+  it('tells the admin plainly that the token will not be shown again', () => {
+    expect(ADMIN_UI).toContain('it will never be shown again');
+  });
+
+  it('warns when the capability is switched off rather than offering a dead link', () => {
+    expect(ADMIN_UI).toContain('capabilities.data?.testLogin === true');
+    expect(ADMIN_UI).toContain('will be refused when redeemed');
+  });
+
+  it('strips the token from the URL as soon as it is read', () => {
+    // Otherwise a spent credential sits in the address bar, in history, and in
+    // the Referer header of the next navigation.
+    expect(AUTH_PAGE).toContain("window.history.replaceState({}, '', '/auth')");
+    const effect = AUTH_PAGE.slice(AUTH_PAGE.indexOf('if (!qaToken || qaRedeemed.current) return;'));
+    expect(effect.indexOf('replaceState')).toBeLessThan(effect.indexOf('redeemQaLink.mutate'));
+  });
+
+  it('redeems at most once per page load', () => {
+    expect(AUTH_PAGE).toContain('qaRedeemed.current = true');
+  });
+});
