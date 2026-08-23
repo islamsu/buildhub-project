@@ -258,10 +258,25 @@ describe('§4b GitHub Actions runtime', () => {
     for (const v of versions) expect(v).toBeGreaterThanOrEqual(6);
   });
 
-  it('does not bump third-party actions that were never implicated', () => {
-    // pnpm/action-setup was not in the deprecation warning. Changing it here
-    // would be an unrelated risk riding along in a maintenance commit.
-    expect(WORKFLOW_SOURCES).toContain('pnpm/action-setup@v4');
+  it('leaves pnpm/action-setup alone, for a reason that is NOT "it is fine"', () => {
+    // CORRECTION. An earlier version of this test claimed pnpm/action-setup
+    // "was never in the deprecation warning". That was wrong. It was absent
+    // from the warning the staging-qa job emits - that job does not use pnpm -
+    // but once the three actions/* were upgraded, the CI job's warning read:
+    //
+    //   Node.js 20 is deprecated. The following actions target Node.js 20 but
+    //   are being forced to run on Node.js 24: pnpm/action-setup@v4
+    //
+    // Verified against the action's own manifest rather than inferred:
+    //   pnpm/action-setup@master -> runs.using: node24
+    //   pnpm/action-setup@v4     -> runs.using: node20
+    //
+    // So upstream has the fix on master but has NOT released a tag carrying
+    // it. Pinning CI to a mutable branch, or to an unreleased commit, is worse
+    // than living with a warning for an action GitHub already force-runs on
+    // Node 24. This asserts only that a version is pinned at all - it must not
+    // block the upgrade the moment a real tag ships.
+    expect(WORKFLOW_SOURCES).toMatch(/pnpm\/action-setup@v\d+/);
   });
 });
 

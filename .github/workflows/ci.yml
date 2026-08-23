@@ -33,6 +33,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # pnpm/action-setup stays on v4 deliberately, and NOT because it is
+      # clean: it targets node20, and this job's log says so. Upstream has
+      # node24 on master (runs.using: node24) but has not tagged a release
+      # carrying it - v4 is still node20. Pinning CI to a mutable branch is a
+      # worse trade than a warning for an action GitHub already force-runs on
+      # Node 24. Revisit when pnpm/action-setup ships a node24 tag; the Node 20
+      # runtime is removed on 2026-09-16.
+      #
       # No `version:` here on purpose. package.json's `packageManager` field
       # already pins pnpm, and pnpm/action-setup@v4 hard-fails with "Multiple
       # versions of pnpm specified" when both are present - even when they
@@ -92,6 +100,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # pnpm/action-setup stays on v4 deliberately, and NOT because it is
+      # clean: it targets node20, and this job's log says so. Upstream has
+      # node24 on master (runs.using: node24) but has not tagged a release
+      # carrying it - v4 is still node20. Pinning CI to a mutable branch is a
+      # worse trade than a warning for an action GitHub already force-runs on
+      # Node 24. Revisit when pnpm/action-setup ships a node24 tag; the Node 20
+      # runtime is removed on 2026-09-16.
+      #
       # No `version:` here on purpose. package.json's `packageManager` field
       # already pins pnpm, and pnpm/action-setup@v4 hard-fails with "Multiple
       # versions of pnpm specified" when both are present - even when they
