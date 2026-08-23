@@ -79,7 +79,7 @@ const PASSWORD_MIN_LENGTH = 8;
 /** How long a password-reset link stays usable. */
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 
-async function hashPassword(password: string): Promise<string> {
+export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString('hex');
   const derivedKey = (await scryptAsync(password, salt, 64)) as Buffer;
   return `scrypt$${salt}$${derivedKey.toString('hex')}`;
@@ -94,7 +94,7 @@ async function hashPassword(password: string): Promise<string> {
 const NO_SUCH_ACCOUNT_HASH =
   'scrypt$00000000000000000000000000000000$' + '0'.repeat(128);
 
-async function verifyPassword(password: string, storedHash: string | null | undefined): Promise<boolean> {
+export async function verifyPassword(password: string, storedHash: string | null | undefined): Promise<boolean> {
   if (!storedHash) return false;
   const [algorithm, salt, encodedKey] = storedHash.split('$');
   if (algorithm !== 'scrypt' || !salt || !encodedKey || !/^[a-f0-9]+$/i.test(encodedKey)) return false;
