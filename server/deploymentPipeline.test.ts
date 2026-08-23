@@ -397,6 +397,59 @@ describe('§4c contexts are used where GitHub actually makes them available', ()
   });
 });
 
+describe('§4d setup-node must not go looking for a package manager that is absent', () => {
+  // setup-node@v5 turns package-manager caching ON by default and auto-detects
+  // the manager from package.json's `packageManager` field. Any workflow that
+  // does NOT install that manager therefore fails inside setup-node itself:
+  //
+  //   Unable to locate executable file: pnpm
+  //
+  // staging-qa.yml is standalone by design - it uses plain npm for one
+  // Playwright install and never touches pnpm - so the v4 -> v5 bump broke it.
+  // It has no push trigger, so nothing exercised it until it was dispatched
+  // from main afterwards, and the bump landed green.
+  const PARSED: [string, Record<string, any>][] = readdirSync(new URL('../.github/workflows/', import.meta.url))
+    .filter(name => name.endsWith('.yml'))
+    .map(name => [name, parseYaml(read(`../.github/workflows/${name}`))]);
+
+  const setupNodeSteps = (workflow: Record<string, any>) =>
+    Object.entries(workflow.jobs ?? {}).flatMap(([job, definition]) =>
+      ((definition as { steps?: { uses?: string; with?: Record<string, unknown> }[] }).steps ?? [])
+        .map((step, index) => ({ job, index, step }))
+        .filter(({ step }) => String(step.uses ?? '').includes('actions/setup-node')));
+
+  it('every setup-node either has its package manager installed, or caching off', () => {
+    let checked = 0;
+    for (const [name, workflow] of PARSED) {
+      for (const { job, step } of setupNodeSteps(workflow)) {
+        checked += 1;
+        const steps = (workflow.jobs[job].steps ?? []) as { uses?: string }[];
+        const installsPnpm = steps.some(other => String(other.uses ?? '').includes('pnpm/action-setup'));
+        const cachingOff = step.with?.['package-manager-cache'] === false;
+        expect(
+          installsPnpm || cachingOff,
+          `${name}: job "${job}" runs setup-node without pnpm/action-setup and without package-manager-cache:false - setup-node will look for pnpm and fail the job`,
+        ).toBe(true);
+      }
+    }
+    // Guard against the sweep silently matching nothing.
+    expect(checked, 'no setup-node steps found - this test would be vacuous').toBeGreaterThan(0);
+  });
+
+  it('names the two that must each stay on their own side of that rule', () => {
+    // Stated explicitly so a future edit has to confront the difference rather
+    // than "tidy" the harness into looking like CI.
+    const qa = PARSED.find(([name]) => name === 'staging-qa.yml')![1];
+    const ci = PARSED.find(([name]) => name === 'ci.yml')![1];
+    for (const { step } of setupNodeSteps(qa)) {
+      expect(step.with?.['package-manager-cache'], 'the QA harness installs no pnpm').toBe(false);
+    }
+    const ciJobs = Object.values(ci.jobs ?? {}) as { steps?: { uses?: string }[] }[];
+    const ciUsesPnpm = ciJobs.some(job => (job.steps ?? []).some(s => String(s.uses ?? '').includes('pnpm/action-setup')));
+    expect(ciUsesPnpm, 'CI is expected to install pnpm and cache normally').toBe(true);
+  });
+});
+
 describe('§5 Dockerfile', () => {
   it('pins the same Node major as engines and CI', () => {
     expect(DOCKERFILE).toContain('FROM node:22-bookworm-slim');
