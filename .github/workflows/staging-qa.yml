@@ -22,6 +22,10 @@ on:
         description: "Staging base URL, e.g. https://buildhub-staging.onrender.com"
         required: true
         type: string
+      expect_commit:
+        description: "Optional: the commit SHA staging should be serving. Set it and a mismatch FAILS the gate instead of being reported."
+        required: false
+        type: string
   # DISPATCH ONLY - deliberately no `schedule:` trigger.
   #
   # This copy lives on the default branch so the workflow registers with
@@ -95,7 +99,27 @@ jobs:
         env:
           STAGING_ADMIN_USER: ${{ secrets.STAGING_ADMIN_USER }}
           STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+          # Optional. Supplied -> a mismatch fails the gate. Absent -> the gate
+          # still REPORTS the commit it tested, so the result is attributable
+          # either way.
+          STAGING_EXPECT_COMMIT: ${{ inputs.expect_commit }}
         run: node scripts/staging-qa.mjs "${{ steps.target.outputs.url }}" | tee qa-output.txt
+
+      # Provenance belongs at the top of the summary, not buried in a log. A
+      # green result against an unnamed build is not evidence of anything.
+      - name: Record which build was tested
+        if: always()
+        run: |
+          DEPLOYED=$(grep -oP '(?<=>>> DEPLOYED COMMIT: ).*' qa-output.txt | head -1 || true)
+          {
+            echo "### Build under test"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Deployed commit (reported by /version) | \`${DEPLOYED:-unknown}\` |"
+            echo "| Expected commit (input) | \`${{ inputs.expect_commit || 'not supplied' }}\` |"
+            echo "| Harness commit (this checkout) | \`${GITHUB_SHA}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish the result
         if: always()
