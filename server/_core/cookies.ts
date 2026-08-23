@@ -40,16 +40,33 @@ export function getSessionCookieOptions(
   //       ? hostname
   //       : undefined;
 
+  // Production pins this true rather than deriving it per request. A single
+  // request that looked plain-HTTP - a misconfigured proxy hop, a health check,
+  // a stray internal call - would otherwise hand back a cookie the browser
+  // discards, logging the user out for no visible reason. Production is HTTPS
+  // by definition; derivation is kept only for local HTTP development.
+  const secure = ENV.isProduction ? true : isSecureRequest(req);
+
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
-    // Production pins this true rather than deriving it per request. `sameSite:
-    // "none"` is rejected by browsers without `Secure`, so a single request that
-    // looked plain-HTTP - a misconfigured proxy hop, a health check, a stray
-    // internal call - would hand back a cookie the browser silently discards,
-    // logging the user out for no visible reason. Production is HTTPS by
-    // definition; derivation is kept only for local HTTP development.
-    secure: ENV.isProduction ? true : isSecureRequest(req),
+    // `SameSite=None` is only legal ALONGSIDE `Secure`. Browsers do not
+    // downgrade the pairing, they reject the cookie outright - so pinning
+    // "none" here while `secure` derived to false emitted:
+    //
+    //   Set-Cookie: app_session_id=...; Path=/; HttpOnly; SameSite=None
+    //
+    // which Chrome, Firefox and Safari all drop on the floor. Verified with a
+    // real browser against a local HTTP server: sign-up succeeded, the account
+    // was created, the server sent that header, the browser kept ZERO cookies,
+    // auth.me returned null and the user was bounced back to the login screen.
+    // Local development could not authenticate at all, in any browser.
+    //
+    // "lax" is the correct pairing for an insecure origin and is strictly the
+    // safer of the two. Production and any HTTPS deployment keep "none", so
+    // cross-site embedding is unaffected - the only behaviour that changes is
+    // the plain-HTTP case that was previously broken outright.
+    sameSite: secure ? "none" : "lax",
+    secure,
   };
 }

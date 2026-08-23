@@ -49,6 +49,7 @@ export default function AuthPage() {
   // Slice 3: first-party credentials. `capabilities` decides which doors are
   // shown - OAuth only appears where OAUTH_SERVER_URL is actually configured,
   // and "forgot password" only where email delivery exists. Neither is assumed.
+  const utils = trpc.useUtils();
   const { data: capabilities } = trpc.auth.capabilities.useQuery();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -56,7 +57,25 @@ export default function AuthPage() {
   const [signInIdentifier, setSignInIdentifier] = useState('');
   const [signInPassword, setSignInPassword] = useState('');
 
-  const goAfterAuth = (userRole?: string | null, onboardingStatus?: string | null) => {
+  /**
+   * Refresh the cached session BEFORE navigating anywhere.
+   *
+   * `useAuth` reads auth.me out of the React Query cache, which still holds the
+   * `null` it fetched when this page loaded as an anonymous visitor. Navigating
+   * straight to a protected route let that route's guard see an anonymous user
+   * and bounce to `/auth?mode=login` through `window.location.href` - a full
+   * page load, which also threw away any refetch already in flight.
+   *
+   * So a successful sign-up ended on the login screen while holding a perfectly
+   * valid session cookie. The account existed and a manual reload landed on the
+   * right page, which is exactly what made it look like a login bug rather than
+   * a stale-cache one.
+   *
+   * `logout` already invalidated this query. Sign-in, sign-up and QA-link
+   * redemption did not - awaiting it here closes that asymmetry for all three.
+   */
+  const goAfterAuth = async (userRole?: string | null, onboardingStatus?: string | null) => {
+    await utils.auth.me.invalidate();
     if (!userRole) {
       navigate('/');
       return;
@@ -69,7 +88,7 @@ export default function AuthPage() {
   const signIn = trpc.auth.signIn.useMutation({
     onSuccess: result => {
       toast.success(t('auth.signedIn'));
-      goAfterAuth(result.userRole, result.onboardingStatus);
+      void goAfterAuth(result.userRole, result.onboardingStatus);
     },
     onError: (error: { message: string }) => toast.error(error.message),
   });
@@ -77,7 +96,7 @@ export default function AuthPage() {
   const signUp = trpc.auth.signUp.useMutation({
     onSuccess: result => {
       toast.success(t('auth.signedUp'));
-      goAfterAuth(result.userRole, result.onboardingStatus);
+      void goAfterAuth(result.userRole, result.onboardingStatus);
     },
     onError: (error: { message: string }) => toast.error(error.message),
   });
@@ -86,10 +105,7 @@ export default function AuthPage() {
   const redeemQaLink = trpc.auth.redeemTestLoginLink.useMutation({
     onSuccess: result => {
       toast.success(lang === 'ar' ? 'تم تسجيل الدخول كحساب اختباري' : 'Signed in as a QA test account');
-      if (!result.userRole) { navigate('/'); return; }
-      navigate(PROFESSIONAL_ROLES.includes(result.userRole as UserRole) && result.onboardingStatus !== 'approved'
-        ? '/compliance'
-        : getRolePlatformPath(result.userRole as UserRole));
+      void goAfterAuth(result.userRole, result.onboardingStatus);
     },
     // Deliberately generic. The server gives one message for unknown, expired,
     // spent and revoked links; surfacing it verbatim keeps that property.
