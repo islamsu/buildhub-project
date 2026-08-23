@@ -1022,20 +1022,68 @@ const rfqRouter = router({
   //
   // Both client call sites are already authenticated-only paths, and
   // RFQPage.tsx gates its neighbouring queries on isAuthenticated already.
+  // The browse feed. An explicit column allowlist, NOT `select().from(rfqs)`.
+  //
+  // Slice 9 moved this from public to protected because it was handing every
+  // RFQ column to anonymous callers. That closed the anonymous hole and stopped
+  // there: any authenticated account still received the whole row, and a free
+  // account costs one sign-up. Verified against a live server with a brand-new
+  // unapproved contractor - rfq.eligible FORBIDDEN, rfq.openEnquiry FORBIDDEN,
+  // rfq.list ALLOWED, full rows.
+  //
+  // `attachments` is the part that had to go. It holds the URLs of the
+  // requester's own uploads - drawings, BOQs, site photos - and the feed
+  // rendered them inline for every RFQ, so every signed-in account had direct
+  // links to every requester's files. A browse card needs none of that to
+  // decide whether a lead is worth opening. Owners still get their own
+  // attachments through `myList`, which is scoped by requesterId, and
+  // parseRfqAttachments treats the absent field as "none".
+  //
+  // NOTE for the owner, deliberately not decided here: `description` and the
+  // exact `budget` are still returned. Whether the free feed should show those
+  // at all is a pricing question - openQualifiedEnquiry charges a credit for
+  // "full detail" - and narrowing it would change what the product gives away.
+  // That is a call for you, not something to infer from a table.
   list: protectedProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(rfqs).orderBy(desc(rfqs.createdAt)).limit(50);
+    return db.select({
+      id: rfqs.id,
+      requesterId: rfqs.requesterId,
+      projectId: rfqs.projectId,
+      title: rfqs.title,
+      description: rfqs.description,
+      category: rfqs.category,
+      budget: rfqs.budget,
+      location: rfqs.location,
+      deadline: rfqs.deadline,
+      productReference: rfqs.productReference,
+      status: rfqs.status,
+      createdAt: rfqs.createdAt,
+    }).from(rfqs).orderBy(desc(rfqs.createdAt)).limit(50);
   }),
   myList: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
     return db.select().from(rfqs).where(eq(rfqs.requesterId, ctx.user.id)).orderBy(desc(rfqs.createdAt));
   }),
+  // The requester's own RFQ, in full. Scoped by requesterId in the WHERE clause.
+  //
+  // This had no ownership check at all: any authenticated caller could read any
+  // RFQ's entire row by id, attachments included. It is the same detail that
+  // openQualifiedEnquiry gates behind approval, declared categories, a billing
+  // entitlement and one credit per lead enforced by a unique index - so this one
+  // procedure made that whole mechanism optional for anyone willing to guess an
+  // integer. It has no callers in the client.
+  //
+  // A provider who wants this detail goes through openEnquiry, which is what the
+  // credit buys. NOT_FOUND rather than FORBIDDEN so it does not confirm that an
+  // id exists to someone who cannot see it.
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [rfq] = await db.select().from(rfqs).where(eq(rfqs.id, input.id));
+    const [rfq] = await db.select().from(rfqs)
+      .where(and(eq(rfqs.id, input.id), eq(rfqs.requesterId, ctx.user.id)));
     if (!rfq) throw new TRPCError({ code: 'NOT_FOUND' });
     return rfq;
   }),

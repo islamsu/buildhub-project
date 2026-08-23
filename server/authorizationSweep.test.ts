@@ -185,6 +185,44 @@ describe('§2 rfq.list — the one that mattered', () => {
     expect(TIERS.get('rfq.myList')).toBe('protectedProcedure');
   });
 
+  it('REGRESSION: being protected was never enough - the feed drops `attachments`', () => {
+    // "Protected" only means "has an account", and an account costs one sign-up.
+    // Proven against a live server with a brand-new unapproved contractor:
+    //   rfq.eligible     FORBIDDEN
+    //   rfq.openEnquiry  FORBIDDEN
+    //   rfq.list         ALLOWED - 50 rows, every column
+    //
+    // `attachments` holds the URLs of the requester's own uploads - drawings,
+    // BOQs, site photos - and RFQPage renders them inline for every RFQ in the
+    // feed, so every signed-in account held direct links to every requester's
+    // files. Owners still receive their own through myList, which is scoped by
+    // requesterId.
+    const body = procedureBody('rfq.list');
+    expect(body, 'rfq.list must not select whole rows').not.toMatch(/select\(\)\s*\.from\(rfqs\)/);
+    expect(body, 'the feed is back to leaking attachment URLs').not.toContain('attachments');
+    // Guard: if this stops looking like an allowlist the assertions above go vacuous.
+    expect(body, 'rfq.list no longer uses a column allowlist').toContain('title: rfqs.title');
+  });
+
+  it('REGRESSION: rfq.get is scoped to the requester, not merely to "logged in"', () => {
+    // It had no ownership check at all - any authenticated caller could read any
+    // RFQ's entire row by id, attachments included. That is the same detail
+    // openQualifiedEnquiry gates behind approval, declared categories, a billing
+    // entitlement and one credit per lead enforced by a unique index, so this
+    // single procedure made the whole mechanism optional for anyone willing to
+    // guess an integer. It had no callers in the client.
+    const body = procedureBody('rfq.get');
+    expect(body).toContain('eq(rfqs.requesterId, ctx.user.id)');
+    expect(body).toContain('NOT_FOUND');
+  });
+
+  it('the paid enquiry path is still the only way to full detail', () => {
+    // If a future change re-widens rfq.get or rfq.list, the credit stops meaning
+    // anything. openEnquiry must remain approval-gated.
+    expect(TIERS.get('rfq.openEnquiry')).toBe('approvedProviderProcedure');
+    expect(TIERS.get('rfq.eligible')).toBe('approvedProviderProcedure');
+  });
+
   it('the client gates the query so signed-out visitors are not bounced to /auth', () => {
     // The lesson from the Slice 2 pricing page: an UNAUTHORIZED anywhere in the
     // app triggers a global redirect, so a protected query on a page a
