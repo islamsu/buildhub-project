@@ -191,9 +191,17 @@ export default function RolePlatform() {
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {metrics.map(metric => (
             <Card key={metric.label}>
-              <CardContent className="flex items-center gap-3 p-5">
+              {/* Stacks below `sm`. Two columns minus a fixed 44px icon, the gap
+                  and the padding left about 63px for the label, and `truncate`
+                  then clipped it: measured at 375px, "Total Projects" wanted
+                  72px, "Active Projects" 79px. English degraded to a guessable
+                  "Total Projec...", but Arabic - longer words, and the label is
+                  the only thing naming the number - degraded to "إجمالي ال...",
+                  which identifies nothing. A metric whose label is unreadable is
+                  not a metric. The label now wraps instead of clipping. */}
+              <CardContent className="flex flex-col items-start gap-3 p-5 sm:flex-row sm:items-center">
                 <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${metric.tone}`}><metric.icon className="h-5 w-5" /></div>
-                <div className="min-w-0"><p className="truncate text-lg font-bold">{metric.value}</p><p className="truncate text-xs text-muted-foreground">{metric.label}</p></div>
+                <div className="w-full min-w-0"><p className="truncate text-lg font-bold">{metric.value}</p><p className="text-xs text-muted-foreground">{metric.label}</p></div>
               </CardContent>
             </Card>
           ))}

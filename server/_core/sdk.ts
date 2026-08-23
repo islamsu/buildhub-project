@@ -220,19 +220,51 @@ class SDKServer {
       });
       const { openId, appId, name, jti, exp, iat } = payload as Record<string, unknown>;
 
-      if (
-        !isNonEmptyString(openId) ||
-        !isNonEmptyString(appId) ||
-        !isNonEmptyString(name)
-      ) {
-        console.warn("[Auth] Session payload missing required fields");
+      // openId identifies the account. Without it the token means nothing, so
+      // this is the one field whose mere presence is genuinely required.
+      if (!isNonEmptyString(openId)) {
+        console.warn("[Auth] Session payload has no openId");
+        return null;
+      }
+
+      // appId is checked by COMPARISON, not by presence.
+      //
+      // This previously required appId to be a non-empty string while never
+      // comparing it to anything - so it provided none of the isolation its
+      // presence implied, and rejected every token this server itself mints
+      // whenever VITE_APP_ID is unset. createSessionToken stamps
+      // `appId: ENV.appId`, and ENV.appId falls back to "". The result was a
+      // server that issued a session cookie on a successful sign-up, returned
+      // success, and then treated that very cookie as invalid on every
+      // subsequent request. Nothing surfaced: sign-up reported success, the
+      // cookie was set, and the user was silently anonymous.
+      //
+      // Verified against a live server: sign-up returned
+      // {"success":true,"userRole":"homeowner"}, the browser stored the cookie,
+      // auth.me returned null, and the log read "Session payload missing
+      // required fields" for a token whose payload was
+      // {"openId":"local_...","appId":"","name":"Debug User"}.
+      //
+      // Render staging sets VITE_APP_ID and so was unaffected, which is exactly
+      // why this survived: .env.example ships VITE_APP_ID empty, so the
+      // documented local setup could not authenticate anyone.
+      //
+      // Comparing when configured is strictly stronger than the old check - a
+      // token minted for a different app under a shared secret is now rejected
+      // rather than accepted. When it is unconfigured there is nothing to
+      // compare against, and JWT_SECRET remains the actual trust boundary.
+      if (ENV.appId && appId !== ENV.appId) {
+        console.warn("[Auth] Session was issued for a different app");
         return null;
       }
 
       return {
         openId,
-        appId,
-        name,
+        appId: isNonEmptyString(appId) ? appId : "",
+        // A display name, never a security property. Requiring it made
+        // `createSessionToken(openId)` - the usage this file documents as its
+        // own example - mint a token that could never be redeemed.
+        name: isNonEmptyString(name) ? name : "",
         // Tokens signed before this change carry no jti and are simply not
         // revocable by this mechanism - they remain valid until their natural
         // expiry, same as before. Not a regression: nothing was revocable before.
