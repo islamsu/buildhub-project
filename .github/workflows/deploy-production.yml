@@ -68,7 +68,7 @@ jobs:
           missing=""
           [ -n "${{ secrets.PRODUCTION_SSH_HOST }}" ] || missing="$missing PRODUCTION_SSH_HOST"
           [ -n "${{ secrets.PRODUCTION_SSH_KEY }}" ] || missing="$missing PRODUCTION_SSH_KEY"
-          [ -n "${{ secrets.PRODUCTION_BASE_URL }}" ] || missing="$missing PRODUCTION_BASE_URL"
+          [ -n "${{ vars.PRODUCTION_BASE_URL }}" ] || missing="$missing PRODUCTION_BASE_URL"
           if [ -n "$missing" ]; then
             echo "::error::Production is not configured. Missing:$missing"
             exit 1
@@ -81,9 +81,17 @@ jobs:
     timeout-minutes: 30
     # This is the approval gate. The job does not start until a required
     # reviewer approves it in the GitHub UI.
+    # `vars`, NOT `secrets`, and this is load-bearing. GitHub does not make the
+    # `secrets` context available to `environment.url`; a workflow that uses it
+    # there fails validation at STARTUP - zero jobs, zero seconds, and no check
+    # run at all, so it is invisible in pull request checks while every push
+    # shows a red cross. That is exactly how this file behaved for its first 83
+    # runs. A deployment base URL is a public hostname, not secret material, so
+    # it belongs in a repository variable anyway - which is where
+    # staging-qa.yml and the Render runbook already look for it.
     environment:
       name: production
-      url: ${{ secrets.PRODUCTION_BASE_URL }}
+      url: ${{ vars.PRODUCTION_BASE_URL }}
     steps:
       - uses: actions/checkout@v5
 
@@ -124,7 +132,7 @@ jobs:
              docker compose --env-file .env --env-file .image.env up -d --pull always"
 
       - name: Smoke test production
-        run: node scripts/smoke.mjs "${{ secrets.PRODUCTION_BASE_URL }}"
+        run: node scripts/smoke.mjs "${{ vars.PRODUCTION_BASE_URL }}"
 
       - name: Roll back on a failed smoke test
         if: failure()

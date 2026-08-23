@@ -307,6 +307,96 @@ describe('§4b GitHub Actions runtime', () => {
   });
 });
 
+describe('§4c contexts are used where GitHub actually makes them available', () => {
+  // Valid YAML is not a valid workflow. Every other test in this file parses
+  // these files and asserts on the resulting object, which is why this class of
+  // defect walked straight through the whole suite:
+  //
+  //   jobs.deploy.environment.url: ${{ secrets.STAGING_BASE_URL }}
+  //
+  // GitHub does not make the `secrets` context available to `environment.url`.
+  // A workflow that uses it there fails validation at STARTUP. That failure
+  // creates NO jobs, takes ZERO seconds, and - the part that let it hide -
+  // produces no check run, so it never appears in a pull request's checks. Both
+  // deploy workflows had failed on every single push for 83 runs while the PR
+  // they were merged through reported 9/9 green.
+  //
+  // It failed closed, so nothing deployed that should not have. But it also
+  // meant the deploy pipeline had never once executed, and would not have begun
+  // working the moment someone added the secrets it was waiting for.
+  const PARSED: [string, Record<string, any>][] = readdirSync(new URL('../.github/workflows/', import.meta.url))
+    .filter(name => name.endsWith('.yml'))
+    .map(name => [name, parseYaml(read(`../.github/workflows/${name}`))]);
+
+  /** Every dotted path whose string value interpolates the named context. */
+  const pathsUsing = (context: string, node: unknown, path = ''): string[] => {
+    if (typeof node === 'string') {
+      return new RegExp(`\\$\\{\\{[^}]*\\b${context}\\.`).test(node) ? [path] : [];
+    }
+    if (Array.isArray(node)) {
+      return node.flatMap((child, i) => pathsUsing(context, child, `${path}.${i}`));
+    }
+    if (node && typeof node === 'object') {
+      return Object.entries(node).flatMap(([key, child]) =>
+        pathsUsing(context, child, path ? `${path}.${key}` : key));
+    }
+    return [];
+  };
+
+  // An ALLOWLIST, so a context used somewhere unanticipated fails closed rather
+  // than being waved through by a denylist that never heard of it.
+  const SECRETS_MAY_APPEAR_IN = [
+    /^jobs\.[^.]+\.steps\.\d+\.run$/,
+    /^jobs\.[^.]+\.steps\.\d+\.with(\..+)?$/,
+    /^jobs\.[^.]+\.steps\.\d+\.env\..+$/,
+    /^jobs\.[^.]+\.env\..+$/,
+    /^jobs\.[^.]+\.(container|services)\..+$/,
+  ];
+
+  it('never reads the secrets context from a field that cannot see it', () => {
+    for (const [name, workflow] of PARSED) {
+      for (const path of pathsUsing('secrets', workflow)) {
+        const permitted = SECRETS_MAY_APPEAR_IN.some(allowed => allowed.test(path));
+        expect(permitted, `${name}: \${{ secrets.* }} at "${path}" - GitHub does not expose the secrets context there, and the workflow will fail at startup with no jobs and no check run`).toBe(true);
+      }
+    }
+  });
+
+  it('pins the exact field that was broken, by name', () => {
+    // Named separately from the sweep above so the regression reads as itself
+    // rather than as a generic allowlist miss.
+    for (const [name, workflow] of PARSED) {
+      for (const [job, definition] of Object.entries(workflow.jobs ?? {})) {
+        const url = (definition as { environment?: { url?: string } }).environment?.url;
+        if (url === undefined) continue;
+        expect(url, `${name}: jobs.${job}.environment.url`).not.toContain('secrets.');
+      }
+    }
+  });
+
+  it('resolves the deployment base URLs as repository variables, one name each', () => {
+    // staging-qa.yml and BUILDHUB_RENDER_STAGING_RUNBOOK.md already called
+    // STAGING_BASE_URL a repository variable. The deploy workflows were the only
+    // place treating it as a secret, so this also settles a genuine split brain:
+    // one name, one kind, one place to set it.
+    const staging = PARSED.find(([name]) => name === 'deploy-staging.yml')![1];
+    const production = PARSED.find(([name]) => name === 'deploy-production.yml')![1];
+    expect(staging.jobs.deploy.environment.url).toBe('${{ vars.STAGING_BASE_URL }}');
+    expect(production.jobs.release.environment.url).toBe('${{ vars.PRODUCTION_BASE_URL }}');
+  });
+
+  it('still keeps the credentials themselves in secrets, not variables', () => {
+    // The fix moves a public hostname to `vars`. It must not have dragged
+    // anything that authenticates along with it.
+    for (const [name, workflow] of PARSED) {
+      const named = [...JSON.stringify(workflow).matchAll(/vars\.(\w+)/g)].map(match => match[1]);
+      for (const variable of named) {
+        expect(variable, `${name} reads vars.${variable}`).toMatch(/^(STAGING|PRODUCTION)_BASE_URL$/);
+      }
+    }
+  });
+});
+
 describe('§5 Dockerfile', () => {
   it('pins the same Node major as engines and CI', () => {
     expect(DOCKERFILE).toContain('FROM node:22-bookworm-slim');

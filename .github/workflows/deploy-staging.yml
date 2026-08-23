@@ -40,7 +40,7 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Staging is not configured yet. Add STAGING_SSH_HOST, STAGING_SSH_USER, STAGING_SSH_KEY and STAGING_BASE_URL to enable this workflow."
+            echo "::notice::Staging is not configured yet. Add the STAGING_SSH_HOST, STAGING_SSH_USER and STAGING_SSH_KEY secrets, and the STAGING_BASE_URL repository variable, to enable this workflow."
           fi
 
   verify:
@@ -101,9 +101,17 @@ jobs:
     needs: publish
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # `vars`, NOT `secrets`, and this is load-bearing. GitHub does not make the
+    # `secrets` context available to `environment.url`; a workflow that uses it
+    # there fails validation at STARTUP - zero jobs, zero seconds, and no check
+    # run at all, so it is invisible in pull request checks while every push
+    # shows a red cross. That is exactly how this file behaved for its first 83
+    # runs. A deployment base URL is a public hostname, not secret material, so
+    # it belongs in a repository variable anyway - which is where
+    # staging-qa.yml and the Render runbook already look for it.
     environment:
       name: staging
-      url: ${{ secrets.STAGING_BASE_URL }}
+      url: ${{ vars.STAGING_BASE_URL }}
     steps:
       - uses: actions/checkout@v5
 
@@ -135,7 +143,7 @@ jobs:
              docker compose --env-file .env --env-file .image.env up -d --pull always"
 
       - name: Smoke test the deployed instance
-        run: node scripts/smoke.mjs "${{ secrets.STAGING_BASE_URL }}"
+        run: node scripts/smoke.mjs "${{ vars.STAGING_BASE_URL }}"
 
       - name: Roll back if the smoke test failed
         if: failure()
