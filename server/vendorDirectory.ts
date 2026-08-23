@@ -19,6 +19,7 @@ import { qualifiedEnquiries, reviews, users, vendorCategories, vendorSubscriptio
 import { deriveBillingState } from './billing/domain';
 import { getEntitlements } from '@shared/billing';
 import { getDb } from './db';
+import { isTestLoginEnabled } from './_core/env';
 
 /** The only user columns a public directory response may ever contain. */
 export const DIRECTORY_VENDOR_COLUMNS = {
@@ -45,19 +46,41 @@ export type DirectoryFilters = {
 /**
  * Which accounts may appear in a customer-facing directory:
  *  - a provider role (not homeowners or admins)
- *  - not a dummy/test account
+ *  - not a dummy/test account, EXCEPT on a test deployment - see below
  *  - account is active (excludes frozen)
  *  - not deactivated
  *  - onboarding approved - an unvetted applicant is not yet discoverable
+ *
+ * WHY THE DUMMY EXCLUSION IS CONDITIONAL.
+ *
+ * Hiding test accounts from a customer-facing directory is obviously right in
+ * production: nobody browsing for a contractor should be shown a QA persona.
+ *
+ * But on staging it made the directory untestable with QA personas. A QA
+ * Contractor could hold a session, quote, message and edit a profile - and
+ * then not exist in the one listing that makes a provider discoverable. Half
+ * their journey was unreachable, which is the "artificial dummy permission
+ * level" this project set out not to have.
+ *
+ * So the exclusion is tied to the SAME switch that gates test-user sign-in,
+ * rather than to a new concept. Production leaves TEST_LOGIN_ENABLED unset, so
+ * the filter behaves exactly as before - this changes nothing there. A
+ * deployment that has deliberately turned test login on is by definition a
+ * test deployment, and showing its test personas is the point.
+ *
+ * This does not widen the blast radius of that flag: a deployment with it set
+ * already accepts password-less sign-in as a QA persona, which is a far larger
+ * concession than listing one.
  */
 function directoryVisibilityFilter() {
-  return and(
+  const conditions = [
     inArray(users.userRole, PROVIDER_ROLES as readonly ProviderRole[]),
-    eq(users.isDummy, false),
     eq(users.accountStatus, 'active'),
     isNull(users.deactivatedAt),
     eq(users.onboardingStatus, 'approved'),
-  );
+  ];
+  if (!isTestLoginEnabled()) conditions.push(eq(users.isDummy, false));
+  return and(...conditions);
 }
 
 export type DirectoryVendor = {
