@@ -86,6 +86,33 @@ describe('§1b staging is inert until it is configured', () => {
     expect(STAGING.jobs.verify.if).toContain("needs.gate.outputs.configured == 'true'");
   });
 
+  it('keeps publish and deploy behind that gate TRANSITIVELY, via needs', () => {
+    // Only `verify` carries the `if:`. publish and deploy are held back solely
+    // because a skipped `needs` skips its dependents - which is real, but
+    // invisible: delete `needs: verify` from publish while "tidying up" and
+    // every push to main would build and ship an image, with nothing failing
+    // to say so. This pins the chain that actually does the work.
+    expect(STAGING.jobs.publish.needs).toBe('verify');
+    expect(STAGING.jobs.deploy.needs).toBe('publish');
+  });
+
+  it('has no deploy job reachable without passing through the gate', () => {
+    // Walk each job back to `gate`. Any job that performs a deploy-ish action
+    // and cannot reach the gate is a hole, whatever its `if:` says.
+    const reachesGate = (name: string, seen = new Set<string>()): boolean => {
+      if (name === 'gate') return true;
+      if (seen.has(name)) return false;
+      seen.add(name);
+      const needs = STAGING.jobs[name]?.needs;
+      const parents = Array.isArray(needs) ? needs : needs ? [needs] : [];
+      return parents.length > 0 && parents.every(parent => reachesGate(parent, seen));
+    };
+    for (const name of Object.keys(STAGING.jobs)) {
+      if (name === 'gate') continue;
+      expect(reachesGate(name), `job "${name}" can run without the staging gate`).toBe(true);
+    }
+  });
+
   it('runs only from the default branch', () => {
     expect((STAGING[true] ?? STAGING.on).push.branches).toEqual(['main']);
   });
