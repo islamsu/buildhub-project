@@ -235,6 +235,40 @@ MARKETPLACE FUNNEL - 36/36, real MariaDB
   a third party cannot accept that quotation, read the RFQ, or read the project;
   messaging and notifications flow between the two parties.
 
+COMPLIANCE ONBOARDING - 13/13
+  Five of six roles land on /compliance immediately after registering, so a
+  break there would strand most of the user base at the door. Verified: the
+  requirements load for all five professional roles and are correctly
+  differentiated -
+
+    contractor        identity, tax_card, commercial_registration,
+                      professional_license, insurance_certificate
+    engineer          identity, tax_card, professional_license,
+                      tax_registration, portfolio
+    architect         identity, tax_card, professional_license,
+                      tax_registration, portfolio
+    supplier          identity, tax_card, commercial_registration,
+                      bank_certificate, product_catalogue
+    project_manager   identity, tax_card, professional_certificate,
+                      experience_record, insurance_certificate
+
+  A homeowner is refused the compliance surface (FORBIDDEN), and an upload of a
+  document type not required for the caller's role is rejected (BAD_REQUEST)
+  rather than stored. The page itself renders complete: status chips, an honest
+  0% progress meter, Required/Optional badges with descriptions, and a review
+  timeline whose empty state says so rather than inventing history.
+
+  The upload itself is the one step not exercised: it needs an S3-compatible
+  backend, which is not configured locally. With none present it returns a
+  generic 500 that leaks nothing. That gap is the S3 credentials item below,
+  not a defect in the flow.
+
+  Caught while writing this: my first version of these checks called
+  `registration.*`, but the router is mounted as `compliance`. Three of them
+  reported PASS - for NOT_FOUND on a path that did not exist. A test that
+  passes because the thing under test is absent is the same failure as a test
+  that passes because it read the wrong window.
+
 MUTATION TESTING - every fix
   Reverting each fix fails its own test. The rejections that MUST survive are
   asserted alongside: wrong secret, expired token, missing openId, foreign appId,
