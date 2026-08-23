@@ -16,7 +16,7 @@ import { recordEventAsync } from './analytics/events';
 import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
 import { getEventCounts, getMedianDaysToMilestone, getVendorFunnel } from './analytics/events';
 import { getChurn, getCommercialKpis } from './analytics/kpis';
-import { ENV } from './_core/env';
+import { ENV, isTestLoginEnabled } from './_core/env';
 import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
@@ -169,6 +169,25 @@ const authRouter = router({
     username: z.string().trim().min(3).max(100),
     password: z.string().min(8).max(128),
   })).mutation(async ({ ctx, input }) => {
+    // ── The environment boundary ────────────────────────────────────────
+    //
+    // Before this check, signInDummy was a publicProcedure with NO environment
+    // gate at all: it behaved identically in staging and in production. The
+    // only thing standing in front of a production session was account state -
+    // dummy accounts are created frozen and deactivated - so an admin who
+    // unfroze one in production would have opened a password-only door with no
+    // second factor and no environment restriction.
+    //
+    // This must be checked FIRST, before the rate limiter and before any
+    // database read, so a disabled deployment does no work and reveals nothing
+    // about which usernames exist.
+    //
+    // NOT_FOUND rather than FORBIDDEN, deliberately: where the capability is
+    // switched off the endpoint should look like it does not exist, rather
+    // than confirming there is a test-login mechanism to go hunting for.
+    if (!isTestLoginEnabled()) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Not found' });
+    }
     enforceAuthRateLimit(ctx.req, input.username);
     const target = await getUserByUsername(input.username);
     if (!target?.isDummy || target.loginMethod !== 'dummy' || !(await verifyPassword(input.password, target.passwordHash))) {
@@ -203,6 +222,10 @@ const authRouter = router({
   // OAuth is untouched and keeps working wherever OAUTH_SERVER_URL resolves.
   // This is a second door, not a replacement.
   capabilities: publicProcedure.query(() => ({
+    // Reported so the UI never renders a control the server will refuse, and
+    // so the staging gate can assert this is OFF on a production-shaped
+    // deployment. False everywhere unless TEST_LOGIN_ENABLED is exactly "true".
+    testLogin: isTestLoginEnabled(),
     passwordSignIn: true,
     oauthSignIn: ENV.oAuthServerUrl.length > 0,
     // Both halves are required for a usable reset: something to send the mail,

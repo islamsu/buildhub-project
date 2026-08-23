@@ -142,6 +142,18 @@ services:
       - key: DATABASE_SSL
         value: disable
 
+      # Test-user sign-in (auth.signInDummy). STAGING ONLY.
+      #
+      # PRODUCTION MUST NEVER SET THIS. The server compares it to the exact
+      # string "true" and denies otherwise, so absent, empty, "1", "yes" and
+      # "TRUE" all mean OFF - a misconfiguration fails closed.
+      #
+      # It cannot be inferred from NODE_ENV: this staging service runs
+      # NODE_ENV=production (above), so an isProduction check would either kill
+      # test login here or leave it live in production. Hence an explicit flag.
+      - key: TEST_LOGIN_ENABLED
+        value: "true"
+
       - key: VITE_APP_ID
         value: buildhub-staging
 

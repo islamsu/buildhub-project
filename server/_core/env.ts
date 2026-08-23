@@ -5,6 +5,20 @@ export const ENV = {
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
   isProduction: process.env.NODE_ENV === "production",
+  // Test-user sign-in (auth.signInDummy), OFF unless explicitly switched on.
+  //
+  // It cannot be gated on isProduction: staging runs NODE_ENV=production too
+  // (render.yaml sets it), so that check would either disable test login on
+  // staging - the one place it is meant to work - or leave it live in
+  // production. Neither is acceptable, so the switch is its own explicit,
+  // default-denied flag.
+  //
+  // Compared against the exact string "true": an unset, empty, misspelt or
+  // truthy-looking value ("1", "yes", "TRUE") all mean OFF. A misconfiguration
+  // must fail closed, and this is the flag standing between a production
+  // deployment and a password-less session.
+  //
+  // PRODUCTION MUST NEVER SET THIS.
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   // Public origin of this deployment, e.g. https://buildhub.eg. Used to build
@@ -100,4 +114,26 @@ export function assertEnvOrExit(env = ENV, log: Pick<Console, "error" | "warn"> 
       `Set these before starting in production. See .env.example.`,
   );
   process.exit(1);
+}
+
+/**
+ * Is test-user sign-in (auth.signInDummy) switched on for this deployment?
+ *
+ * Read at CALL TIME rather than baked into ENV at import, so the boundary is
+ * exercisable by tests without module-reset gymnastics. A flag nobody can test
+ * is a flag nobody should trust, and this one stands between a production
+ * deployment and a password-only session.
+ *
+ * It cannot be derived from isProduction: staging runs NODE_ENV=production too
+ * (render.yaml sets it), so that check would either disable test login on
+ * staging - the one place it is meant to work - or leave it live in
+ * production.
+ *
+ * Compared against the exact string "true". Unset, empty, "1", "yes", "TRUE"
+ * and " true" all mean OFF: a misconfiguration must fail closed.
+ *
+ * PRODUCTION MUST NEVER SET THIS.
+ */
+export function isTestLoginEnabled(): boolean {
+  return process.env.TEST_LOGIN_ENABLED === "true";
 }

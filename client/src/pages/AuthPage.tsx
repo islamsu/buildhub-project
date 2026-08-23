@@ -37,8 +37,6 @@ export default function AuthPage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [username, setUsername] = useState('');
-  const [dummyUsername, setDummyUsername] = useState('');
-  const [dummyPassword, setDummyPassword] = useState('');
   const [step, setStep] = useState<'role' | 'details' | 'done'>('role');
 
   // Slice 3: first-party credentials. `capabilities` decides which doors are
@@ -78,17 +76,6 @@ export default function AuthPage() {
   });
 
   const checkSignupAvailability = trpc.auth.checkSignupAvailability.useMutation();
-  const signInDummy = trpc.auth.signInDummy.useMutation({
-    onSuccess: result => {
-      toast.success(lang === 'ar' ? 'تم تسجيل الدخول كمستخدم تجريبي' : 'Signed in as a dummy user');
-      if (!result.userRole) {
-        navigate('/');
-        return;
-      }
-      navigate(PROFESSIONAL_ROLES.includes(result.userRole as UserRole) && result.onboardingStatus !== 'approved' ? '/compliance' : getRolePlatformPath(result.userRole as UserRole));
-    },
-    onError: (error: { message: string }) => toast.error(error.message),
-  });
   const updateRole = trpc.auth.updateRole.useMutation({
     onSuccess: (_result, variables) => {
       toast.success(lang === 'ar' ? 'تم إعداد الملف الشخصي بنجاح!' : 'Profile set up successfully!');
@@ -123,12 +110,6 @@ export default function AuthPage() {
       navigate(getRolePlatformPath(selectedRole));
     }
   }, [step, selectedRole]);
-
-  const handleDummySignIn = () => {
-    const normalizedUsername = dummyUsername.trim().toLowerCase();
-    if (!normalizedUsername || !dummyPassword) return;
-    signInDummy.mutate({ username: normalizedUsername, password: dummyPassword });
-  };
 
   const handleSignUp = () => {
     if (!selectedRole) return;
@@ -390,22 +371,20 @@ export default function AuthPage() {
 
           {(isLoginMode || isOAuthMode) && <p className="mb-6 text-center text-sm text-muted-foreground">{lang === 'ar' ? 'ليس لديك حساب؟' : 'New to BuildHub?'}{' '}<button onClick={() => navigate('/auth?mode=signup')} className="font-medium text-primary hover:underline">{lang === 'ar' ? 'إنشاء حساب' : 'Create an account'}</button></p>}
 
-          {!isOAuthMode && <div className="mt-6 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 p-4">
-            <div className="mb-3 flex items-start gap-2">
-              <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
-              <div>
-                <p className="text-sm font-semibold text-amber-950">{lang === 'ar' ? 'تسجيل دخول مستخدم تجريبي' : 'Dummy / Test user sign-in'}</p>
-                <p className="mt-1 text-xs text-amber-900/70">{lang === 'ar' ? 'استخدم بيانات الدخول التي حددها المسؤول لهذا الحساب التجريبي. لا حاجة إلى رمز تحقق.' : 'Use the credentials set by an administrator for this test account. No verification code is required.'}</p>
-              </div>
-            </div>
-            <div className="space-y-2.5">
-              <Input placeholder={lang === 'ar' ? 'اسم المستخدم التجريبي' : 'Dummy username'} value={dummyUsername} onChange={event => setDummyUsername(event.target.value)} autoComplete="username" />
-              <Input type="password" placeholder={lang === 'ar' ? 'كلمة المرور' : 'Password'} value={dummyPassword} onChange={event => setDummyPassword(event.target.value)} autoComplete="current-password" />
-              <Button type="button" variant="outline" className="w-full border-amber-300 bg-white/80 hover:bg-white" onClick={handleDummySignIn} disabled={signInDummy.isPending || dummyUsername.trim().length < 3 || dummyPassword.length < 8}>
-                {signInDummy.isPending ? t('common.loading') : (lang === 'ar' ? 'تسجيل الدخول كمستخدم تجريبي' : 'Sign in as dummy')}
-              </Button>
-            </div>
-          </div>}
+          {/* The public test-user sign-in panel was REMOVED here.
+              It advertised a test-login pathway to every visitor - an empty
+              username/password form headed "Dummy / Test user sign-in" - on
+              the same page real users sign up on.
+
+              The capability itself is NOT deleted. auth.signInDummy still
+              exists and is now gated server-side on ENV.testLoginEnabled,
+              default-denied, so it answers NOT_FOUND anywhere the flag is not
+              explicitly "true". Removing this panel is the cosmetic half; the
+              server boundary is the half that matters, and hiding a control
+              was never going to be the protection.
+
+              The replacement is admin-issued, expiring, revocable test-login
+              links reachable only from the admin area - not a public form. */}
         </div>
       </div>
     </div>
