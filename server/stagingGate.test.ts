@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { ADMIN_ROLES, ADMIN_ROLE_PERMISSIONS } from '@shared/adminRoles';
 
 /**
  * The staging launch-readiness gate.
@@ -105,6 +106,22 @@ describe('§0 provenance - the gate names the build it tested', () => {
   });
 });
 
+/**
+ * Section 25's source, sliced by real anchors.
+ *
+ * Throws when either anchor is missing rather than returning '', because a
+ * slice that collapses to the empty string makes every assertion over it pass
+ * vacuously - the failure mode these tests exist to prevent.
+ */
+const section25 = () => {
+  const start = GATE.indexOf("section('25.");
+  const end = GATE.indexOf('18. ADMIN AUTHORIZATION', start);
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('section 25 could not be located in staging-qa.mjs - rewire these tests');
+  }
+  return GATE.slice(start, end);
+};
+
 describe('§4 it covers the agreed 22 points', () => {
   const points = new Set(
     (GATE.match(/'(\d+)(?:\/\d+)?\. /g) ?? []).map(m => Number(m.match(/\d+/)![0])),
@@ -138,6 +155,98 @@ describe('§4 it covers the agreed 22 points', () => {
       .toContain("signUp('homeowner', 'rate')");
     expect(section).not.toContain('users.contractor.cookie');
     expect(section).not.toContain('users.homeowner.cookie');
+  });
+
+  it('25 is the sub-admin lifecycle, and it is genuinely covered', () => {
+    expect(points.has(25), 'the sub-admin lifecycle section is missing from the gate').toBe(true);
+
+    // ONLY the executed branch. The skip branch names the same five claims so
+    // an unsupplied credential still reports what is missing - which means a
+    // toContain over the whole section matches the SKIP LIST and passes even if
+    // the real check is deleted. Caught by mutation testing: removing the
+    // single-use check left this test green until it was sliced this way.
+    const executed = section25().slice(section25().indexOf('} else {'));
+    expect(executed.length, 'the executed branch of section 25 could not be isolated').toBeGreaterThan(0);
+
+    for (const claim of [
+      'a Super Admin can invite a sub-administrator',
+      'the invitee redeems the invitation and sets a password',
+      'the invitation is single-use',
+      'the new sub-administrator signs in at /admin/login',
+      'a deactivated administrator can no longer sign in',
+    ]) {
+      const at = executed.indexOf(claim);
+      expect(at, `section 25 no longer mentions: ${claim}`).toBeGreaterThan(-1);
+      expect(
+        executed.slice(Math.max(0, at - 400), at),
+        `"${claim}" is no longer the subject of a check() - deleting the check while ` +
+          'leaving the name in the skip list must not read as coverage',
+      ).toContain('check(');
+    }
+
+    // Every management endpoint the harness had zero coverage of before, pinned
+    // at the exact CALL SITE. `toContain('admin.setAdminRole')` was not enough:
+    // the string also appears in the self-elevation attempt, so breaking the
+    // role ROTATION left it green.
+    expect(executed, 'the sub-admin is no longer created')
+      .toContain("post('admin.createAdmin'");
+    expect(executed, 'the invitation is no longer redeemed')
+      .toContain("post('auth.completeAdminInvitation', { token, password: subPassword })");
+    expect(executed, 'the role is no longer ROTATED by a Super Admin')
+      .toContain("post('admin.setAdminRole', { userId: subId, adminRole: role }, SUPER)");
+    expect(executed, 'self-elevation is no longer attempted')
+      .toContain("post('admin.setAdminRole', { userId: subId, adminRole: 'SUPER_ADMIN' }, SUB)");
+    expect(executed, 'the invitation audit is no longer read')
+      .toContain("get('admin.adminInvitations'");
+    expect(executed, 'the QA sub-admin is no longer deactivated at the end')
+      .toContain("post('admin.setAdminActive', { userId: subId, active: false }, SUPER)");
+  });
+
+  it('the role matrix is DISCRIMINATING, checked against the real permission map', () => {
+    // The failure this exists to prevent: a permitted/forbidden pair chosen from
+    // permissions every role happens to share, so the test passes for all four
+    // roles and proves nothing about any of them. `users.read` is the trap -
+    // all five roles hold it - so a matrix using admin.users as its permitted
+    // probe would be green and worthless.
+    //
+    // Parsed out of the harness and cross-checked against ADMIN_ROLE_PERMISSIONS,
+    // so weakening the matrix fails HERE rather than passing silently on staging.
+    const rows = [...GATE.matchAll(
+      /\{\s*role:\s*'([A-Z_]+)',\s*allow:\s*\[[^\]]*?'([a-z.]+)'\s*\],\s*deny:\s*\[[^\]]*?'([a-z.]+)'\s*\]/g,
+    )].map(m => ({ role: m[1], allow: m[2], deny: m[3] }));
+
+    expect(rows.length, 'the role matrix could not be parsed - rewire this test').toBe(4);
+    expect(rows.map(r => r.role).sort())
+      .toEqual(['BILLING_ADMIN', 'MARKETPLACE_ADMIN', 'SUPPORT_ADMIN', 'USER_ADMIN']);
+
+    for (const { role, allow, deny } of rows) {
+      const held = ADMIN_ROLE_PERMISSIONS[role as keyof typeof ADMIN_ROLE_PERMISSIONS];
+      expect(held, `${role} is not a real role`).toBeDefined();
+      expect(held, `${role} does NOT hold ${allow}, so the permitted probe would fail for the wrong reason`)
+        .toContain(allow);
+      expect(held, `${role} DOES hold ${deny}, so the forbidden probe would pass for the wrong reason`)
+        .not.toContain(deny);
+    }
+
+    // And the trap itself, stated as an assertion rather than a comment.
+    const universal = ADMIN_ROLES.filter(r => ADMIN_ROLE_PERMISSIONS[r].includes('users.read'));
+    expect(universal.length, 'users.read is meant to be held by every role').toBe(ADMIN_ROLES.length);
+    expect(rows.map(r => r.allow), 'a permission every role holds cannot discriminate between roles')
+      .not.toContain('users.read');
+  });
+
+  it('the sub-admin section never prints the token or the password', () => {
+    const body = section25();
+
+    // `check` prints its third argument. No detail may be derived from the
+    // credential itself; a length is fine, the value never is.
+    const details = [...body.matchAll(/check\([^;]*?,\s*`([^`]*)`\s*\)/gs)].map(m => m[1]);
+    for (const d of details) {
+      expect(d, `a check detail interpolates a credential: ${d}`).not.toMatch(/\$\{\s*token\s*\}/);
+      expect(d, `a check detail interpolates a credential: ${d}`).not.toMatch(/\$\{\s*subPassword\s*\}/);
+      expect(d, `a check detail interpolates a credential: ${d}`).not.toMatch(/\$\{\s*inviteLink\s*\}/);
+    }
+    expect(body, 'the token must never be console.logged').not.toMatch(/console\.log\([^)]*token/);
   });
 
   it('23 is the administrator door, and it is genuinely covered', () => {
