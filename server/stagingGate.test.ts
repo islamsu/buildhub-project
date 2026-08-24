@@ -113,7 +113,20 @@ describe('§4 it covers the agreed 22 points', () => {
   it('every one of the 22 numbered requirements has at least one check', () => {
     const missing = Array.from({ length: 22 }, (_, i) => i + 1).filter(n => !points.has(n));
     // 22 is the regression suite, which runs in CI rather than against a URL.
+    //
+    // This caught a real collision: the administrator checks were first numbered
+    // 22, which made the gate LOOK like it covered the CI regression suite from
+    // a URL - something it cannot do. They are 23 now, and 22 stays reserved.
     expect(missing).toEqual([22]);
+  });
+
+  it('23 is the administrator door, and it is genuinely covered', () => {
+    // Numbered beyond the original 22 because administrator authentication is a
+    // new concern, not one of the agreed points. Pinned so it cannot quietly
+    // disappear the way an unnumbered section could.
+    expect(points.has(23), 'the administrator section is missing from the gate').toBe(true);
+    expect(GATE).toContain('a customer CANNOT sign in at the administrator door');
+    expect(GATE).toContain('INDISTINGUISHABLE from an unknown account');
   });
 
   it('the regression suite is the CI job, not something the URL gate claims', () => {
