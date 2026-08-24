@@ -40,6 +40,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── TEMPORARY DIAGNOSTIC — branch-only, never to be merged ────────────────
+  #
+  # Run #17 was dispatched with STAGING_ADMIN_USER/PASSWORD reported as
+  # configured, and the harness still printed "no STAGING_ADMIN_USER/PASSWORD
+  # supplied" for all four admin checks. That means the env var was EMPTY
+  # inside the runner, not that the harness ignored it.
+  #
+  # Two jobs, identical except that one declares `environment: staging` and the
+  # other declares none. That is the only variable, so the comparison answers
+  # the question directly: if the no-environment job sees the secret and the
+  # environment job does not, the secret is scoped to the wrong environment (or
+  # an environment-level secret of the same name is shadowing the repository
+  # one). If NEITHER sees it, the secret does not exist under that name for this
+  # repository at all.
+  #
+  # PRINTS NO SECRET VALUE. Only whether each is non-empty, plus the character
+  # length of the USERNAME - never the password's length, never either value.
+  probe-no-environment:
+    name: Secret probe (no environment)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Is the secret resolvable without an environment?
+        env:
+          U: ${{ secrets.STAGING_ADMIN_USER }}
+          P: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+        run: |
+          echo "STAGING_ADMIN_USER     : $([ -n "$U" ] && echo SET || echo EMPTY)"
+          echo "STAGING_ADMIN_USER len : ${#U}"
+          echo "STAGING_ADMIN_PASSWORD : $([ -n "$P" ] && echo SET || echo EMPTY)"
+
+  probe-staging-environment:
+    name: "Secret probe (staging environment)"
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+    steps:
+      - name: Is the secret resolvable inside the staging environment?
+        env:
+          U: ${{ secrets.STAGING_ADMIN_USER }}
+          P: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+        run: |
+          echo "STAGING_ADMIN_USER     : $([ -n "$U" ] && echo SET || echo EMPTY)"
+          echo "STAGING_ADMIN_USER len : ${#U}"
+          echo "STAGING_ADMIN_PASSWORD : $([ -n "$P" ] && echo SET || echo EMPTY)"
+
   gate:
     name: 22-point staging gate
     runs-on: ubuntu-latest
