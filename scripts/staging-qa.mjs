@@ -68,6 +68,35 @@ const get = async (proc, input, cookie) => {
 const json = t => { try { return JSON.parse(t)?.result?.data?.json; } catch { return undefined; } };
 const errMsg = t => { try { return JSON.parse(t)?.error?.json?.message; } catch { return t; } };
 
+/**
+ * ONE administrator sign-in per run, reused everywhere.
+ *
+ * The gate used to call auth.adminSignIn from sections 23, 25, 18 and 26, plus
+ * a browser form sign-in - five attempts against the SAME identifier every run.
+ * `authLimiters.identifierSustained` allows ten per fifteen minutes, so two
+ * back-to-back runs were fine and three were not: run #25 collapsed with
+ * `http 429` and 41 downstream failures that looked like a broken admin UI and
+ * were nothing of the kind.
+ *
+ * The limiter was right; the harness was greedy. Signing in once and sharing the
+ * cookie takes a run from five attempts to two - this one and the deliberate
+ * browser-form sign-in in section 26, which has to be a real form submission
+ * because proving the form works is the point of it.
+ *
+ * Cached rather than re-requested, so a section that runs after a rotation still
+ * gets the same Super Admin session; nothing in the gate changes that account.
+ */
+let adminSessionCookie;
+let adminSignInStatus;
+const superAdminCookie = async () => {
+  if (adminSessionCookie === undefined) {
+    const r = await post('auth.adminSignIn', { identifier: ADMIN_USER, password: ADMIN_PASSWORD });
+    adminSignInStatus = r.s;
+    adminSessionCookie = r.s === 200 ? r.c : null;
+  }
+  return adminSessionCookie;
+};
+
 const STAMP = Date.now().toString().slice(-8);
 const PW = `Staging-QA-${STAMP}!`;
 const ROLES = ['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager'];
@@ -469,10 +498,10 @@ try {
   check(forgedInvite.s !== 200, '23. a forged administrator invitation is refused', `http ${forgedInvite.s}`);
 
   if (ADMIN_USER && ADMIN_PASSWORD) {
-    const supered = await post('auth.adminSignIn', { identifier: ADMIN_USER, password: ADMIN_PASSWORD });
-    check(supered.s === 200, '23. the supplied staging administrator signs in at /admin/login', `http ${supered.s}`);
-    if (supered.s === 200) {
-      const me = await get('admin.me', undefined, supered.c);
+    const supered = await superAdminCookie();
+    check(adminSignInStatus === 200, '23. the supplied staging administrator signs in at /admin/login', `http ${adminSignInStatus}`);
+    if (supered) {
+      const me = await get('admin.me', undefined, supered);
       const m = json(me.t);
       check(me.s === 200 && typeof m?.adminRole === 'string', '23. admin.me reports a role', `role=${m?.adminRole}`);
       check(Array.isArray(m?.permissions) && m.permissions.length > 0, '23. and a non-empty permission set', `${m?.permissions?.length} permissions`);
@@ -512,11 +541,11 @@ try {
       '25. a sub-administrator cannot elevate itself',
     ]) skip(name, 'no STAGING_ADMIN_USER/PASSWORD supplied - set ADMIN_BOOTSTRAP_* on the service, then these secrets');
   } else {
-    const su = await post('auth.adminSignIn', { identifier: ADMIN_USER, password: ADMIN_PASSWORD });
-    if (su.s !== 200) {
-      check(false, '25. the Super Admin signs in', `http ${su.s}`);
+    const SUPER_COOKIE = await superAdminCookie();
+    if (!SUPER_COOKIE) {
+      check(false, '25. the Super Admin session is available', `sign-in http ${adminSignInStatus}`);
     } else {
-      const SUPER = su.c;
+      const SUPER = SUPER_COOKIE;
 
       // ── A. The administrators page, from a Super Admin session ──────────
       const adminsPage = await get('admin.admins', undefined, SUPER);
@@ -682,12 +711,12 @@ try {
   }
 
   if (ADMIN_USER && ADMIN_PASSWORD) {
-    const adminLogin = await post('auth.signIn', { identifier: ADMIN_USER, password: ADMIN_PASSWORD });
-    if (adminLogin.s !== 200) {
-      check(false, '18. the supplied staging admin can sign in', `http ${adminLogin.s}`);
+    const adminCookie = await superAdminCookie();
+    if (!adminCookie) {
+      check(false, '18. an administrator session is available', `sign-in http ${adminSignInStatus}`);
     } else {
-      const admin = adminLogin.c;
-      check(true, '18. the staging admin signed in');
+      const admin = adminCookie;
+      check(true, '18. the staging admin session is in force');
       const kpis = await get('admin.commercialKpis', { includeDummy: false }, admin);
       const k = json(kpis.t);
       check(kpis.s === 200, '18. commercial KPIs load for an admin', `http ${kpis.s}`);
@@ -790,6 +819,235 @@ try {
   const arText = await pAr.locator('body').innerText().catch(() => '');
   check(/[٠-٩]/.test(arText), '19. Arabic pricing renders Arabic-Indic numerals');
   await ctxAr.close();
+
+  // ══ 26. AUTHENTICATED ADMIN UI, IN A REAL BROWSER ═════════════════════
+  //
+  // Sections 23 and 25 drive the admin API. Everything they prove is about
+  // tRPC responses. The rendered admin SPA behind authentication had never been
+  // opened by anything, which is a different claim: a screen can be broken,
+  // blank, or leaking while every endpoint behind it answers correctly.
+  //
+  // So this signs in through the FORM, navigates like a person, and reads what
+  // is actually on screen. It also watches first-party console errors and failed
+  // requests for the authenticated routes, which the public browser pass above
+  // cannot reach.
+  //
+  // NOTHING SECRET IS PRINTED. The password is typed into a field and the token
+  // is only ever compared against captured output; no check detail is derived
+  // from either.
+  section('26. Authenticated admin UI (browser)');
+
+  if (!ADMIN_USER || !ADMIN_PASSWORD) {
+    for (const name of [
+      '26. the Super Admin signs in through the browser form',
+      '26. the Admin Control Panel renders its statistics and navigation',
+      '26. /admin/admins renders the administrator table',
+      '26. a sub-administrator is refused /admin/admins in the browser',
+    ]) skip(name, 'no STAGING_ADMIN_USER/PASSWORD supplied');
+  } else {
+    const adminCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: BASE.includes('127.0.0.1') });
+    const ap = await adminCtx.newPage();
+    const adminErrors = [];
+    const consoleText = [];
+    ap.on('requestfailed', r => {
+      if (r.url().startsWith(BASE)) adminErrors.push(`${r.failure()?.errorText} ${r.url().replace(BASE, '')}`);
+    });
+    ap.on('console', m => {
+      consoleText.push(m.text());
+      if (m.type() !== 'error') return;
+      const origin = m.location()?.url ?? '';
+      if (origin && !origin.startsWith(BASE)) return;
+      if (/Failed to load resource/.test(m.text())) return;
+      adminErrors.push(m.text().slice(0, 90));
+    });
+
+    // ── A. The administrator door, as a person meets it ────────────────
+    await ap.goto(`${BASE}/admin/login`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+    const loginText = await ap.locator('body').innerText().catch(() => '');
+    check(loginText.includes('Administrator sign-in'), '26. /admin/login renders the administrator sign-in form');
+    check(loginText.includes('Customer accounts sign in at /auth'),
+      '26. the door tells staff it is not the customer door');
+
+    await ap.fill('input[placeholder="Username or email"]', ADMIN_USER);
+    await ap.fill('input[type="password"]', ADMIN_PASSWORD);
+    await ap.click('button:has-text("Sign in")');
+    await ap.waitForURL(/\/admin$/, { timeout: 30_000 }).catch(() => {});
+    await ap.waitForTimeout(2_000);
+    check(/\/admin$/.test(ap.url()), '26. the Super Admin signs in through the browser form',
+      ap.url().replace(BASE, ''));
+
+    // ── B. The Admin Control Panel, as rendered ────────────────────────
+    const dash = await ap.locator('body').innerText().catch(() => '');
+    check(!dash.includes('Access Denied'), '26. the authenticated Super Admin is NOT shown Access Denied');
+    for (const stat of ['Total Users', 'Active Projects', 'Products Listed', 'Open Disputes']) {
+      check(dash.includes(stat), `26. the dashboard renders the "${stat}" statistic`);
+    }
+    for (const tab of ['Users', 'Compliance', 'Analytics', 'Vendor billing', 'Disputes', 'Fraud Detection', 'Settings']) {
+      check(dash.includes(tab), `26. the dashboard navigation offers "${tab}"`);
+    }
+    check(dash.includes('User Management by Group'), '26. the Users tab renders the user-management surface');
+    check(!/scrypt\$|passwordHash|tokenHash/.test(dash),
+      '26/21. the rendered dashboard carries no credential material');
+
+    // ── C. /admin/admins, as rendered ──────────────────────────────────
+    await ap.goto(`${BASE}/admin/admins`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+    await ap.waitForTimeout(1_500);
+    const adminsText = await ap.locator('body').innerText().catch(() => '');
+    check(adminsText.includes('Administrators'), '26. /admin/admins renders the administrator table');
+    check(!adminsText.includes('Super Admin only'),
+      '26. a real Super Admin is not shown the Super-Admin-only refusal');
+    // CASE-INSENSITIVE, and that is the point rather than laziness. The header
+    // row carries Tailwind's `uppercase`, and innerText returns RENDERED text,
+    // so the DOM says "Username" while the browser reports "USERNAME". A
+    // case-sensitive includes() reported four missing columns that are present
+    // and correct - a harness bug that would have read as a UI defect.
+    const adminsUpper = adminsText.toUpperCase();
+    for (const column of ['Name', 'Username', 'Email', 'Role', 'Status', 'Created', 'Last login', 'Actions']) {
+      check(adminsUpper.includes(column.toUpperCase()),
+        `26. the administrator table shows the "${column}" column`);
+    }
+    check(adminsText.includes('Super Admin'), '26. the bootstrapped administrator displays its role');
+    check(adminsText.includes('Active'), '26. the bootstrapped administrator displays its status');
+    check(adminsText.includes('Invite administrator'), '26. the "Invite administrator" control is visible');
+    check(!/scrypt\$|passwordHash|tokenHash/.test(adminsText),
+      '26/21. the administrator table renders no credential material');
+
+    // The invitation modal and its role selector.
+    await ap.click('button:has-text("Invite administrator")').catch(() => {});
+    await ap.waitForTimeout(800);
+    const modal = await ap.locator('body').innerText().catch(() => '');
+    check(modal.includes('Invite an administrator'), '26. the invitation modal opens');
+    // Asserted as PLACEHOLDER ATTRIBUTES, not as text. These fields carry no
+    // visible label - the prompt is the placeholder - and a placeholder is never
+    // part of innerText. Reading them from the DOM is the only way to prove the
+    // form asks for them; the first draft looked for body text and reported
+    // three fields missing that were on screen the whole time.
+    for (const field of ['Full name', 'Username', 'Email']) {
+      const count = await ap.locator(`input[placeholder="${field}"]`).count().catch(() => 0);
+      check(count === 1, `26. the invitation form asks for "${field}"`, `${count} field(s)`);
+    }
+    check(modal.includes('Create and issue link'), '26. the invitation form offers to issue a one-time link');
+    check(modal.includes('They receive a one-time link and choose their own password'),
+      '26. the form states the Super Admin will never see the password');
+
+    // The role selector, and that it offers exactly the five real roles.
+    //
+    // SCOPED TO THE DIALOG. Every row of the administrator table behind the
+    // modal renders its own role Select, so a bare button[role="combobox"]
+    // matches several and Playwright's strict mode refuses to click any of
+    // them - which cost a 30-second timeout and six failures that looked like
+    // a missing selector rather than an ambiguous one. The options themselves
+    // are portalled outside the dialog, so they are queried globally.
+    await ap.locator('[role="dialog"] button[role="combobox"]').first().click().catch(() => {});
+    await ap.waitForTimeout(800);
+    const roleOptions = await ap.locator('[role="option"]').allInnerTexts().catch(() => []);
+    check(roleOptions.length === 5, '26. the role selector renders every administrator role',
+      `${roleOptions.length} option(s)`);
+    for (const label of ['Super Admin', 'User Admin', 'Marketplace Admin', 'Support Admin', 'Billing Admin']) {
+      check(roleOptions.some(o => o.trim() === label), `26. the role selector offers "${label}"`);
+    }
+    await ap.keyboard.press('Escape').catch(() => {});
+    await ap.keyboard.press('Escape').catch(() => {});
+
+    // ── D. A QA sub-administrator, in the browser ──────────────────────
+    //
+    // Its own identity, separate from section 25's, so the two cannot interfere
+    // whichever order they run in.
+    const su2c = await superAdminCookie();
+    const uiUser = `qaui${STAMP}`;
+    const uiPassword = `Sub-Admin-UI-${STAMP}!`;
+    const madeUi = await post('admin.createAdmin', {
+      name: `QA UI Sub Admin ${STAMP}`,
+      email: `qaui${STAMP}@staging-qa.invalid`,
+      username: uiUser,
+      adminRole: 'SUPPORT_ADMIN',
+    }, su2c);
+    const uiId = json(madeUi.t)?.userId;
+    const uiToken = (json(madeUi.t)?.invitationLink ?? '').split('token=')[1] ?? '';
+    check(madeUi.s === 200 && Boolean(uiId), '26. a QA sub-administrator is created for the UI pass', `http ${madeUi.s}`);
+
+    if (uiId && uiToken) {
+      const redeemed = await post('auth.completeAdminInvitation', { token: uiToken, password: uiPassword });
+      check(redeemed.s === 200, '26. the QA sub-administrator redeems its invitation', `http ${redeemed.s}`);
+
+      // Sign in through the FORM, as that administrator would.
+      const subCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: BASE.includes('127.0.0.1') });
+      const sp = await subCtx.newPage();
+      const subErrors = [];
+      sp.on('requestfailed', r => { if (r.url().startsWith(BASE)) subErrors.push(r.url().replace(BASE, '')); });
+      sp.on('console', m => {
+        consoleText.push(m.text());
+        if (m.type() !== 'error') return;
+        const origin = m.location()?.url ?? '';
+        if (origin && !origin.startsWith(BASE)) return;
+        if (/Failed to load resource/.test(m.text())) return;
+        subErrors.push(m.text().slice(0, 90));
+      });
+
+      await sp.goto(`${BASE}/admin/login`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+      await sp.fill('input[placeholder="Username or email"]', uiUser);
+      await sp.fill('input[type="password"]', uiPassword);
+      await sp.click('button:has-text("Sign in")');
+      await sp.waitForURL(/\/admin$/, { timeout: 30_000 }).catch(() => {});
+      await sp.waitForTimeout(2_000);
+      check(/\/admin$/.test(sp.url()), '26. the sub-administrator signs in through the browser form',
+        sp.url().replace(BASE, ''));
+      const subDash = await sp.locator('body').innerText().catch(() => '');
+      check(!subDash.includes('Access Denied'),
+        '26. a SUPPORT_ADMIN reaches the admin surface rather than Access Denied');
+
+      // Direct navigation to a Super-Admin-only URL, typed rather than clicked.
+      await sp.goto(`${BASE}/admin/admins`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+      await sp.waitForTimeout(1_500);
+      const refused = await sp.locator('body').innerText().catch(() => '');
+      check(refused.includes('Super Admin only'),
+        '26. a sub-administrator is refused /admin/admins in the browser');
+      check(!refused.includes('Invite administrator'),
+        '26. the sub-administrator is not offered the invite control');
+
+      // A role change must reach the BROWSER too, on the same session.
+      const promoted = await post('admin.setAdminRole', { userId: uiId, adminRole: 'SUPER_ADMIN' }, su2c);
+      check(promoted.s === 200, '26. a Super Admin promotes the QA sub-administrator', `http ${promoted.s}`);
+      await sp.goto(`${BASE}/admin/admins`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+      await sp.waitForTimeout(1_500);
+      const nowAllowed = await sp.locator('body').innerText().catch(() => '');
+      check(nowAllowed.includes('Administrators') && !nowAllowed.includes('Super Admin only'),
+        '26. the promotion reaches the existing browser session with no re-login');
+
+      const demoted = await post('admin.setAdminRole', { userId: uiId, adminRole: 'BILLING_ADMIN' }, su2c);
+      check(demoted.s === 200, '26. a Super Admin demotes the QA sub-administrator', `http ${demoted.s}`);
+      await sp.goto(`${BASE}/admin/admins`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+      await sp.waitForTimeout(1_500);
+      const refusedAgain = await sp.locator('body').innerText().catch(() => '');
+      check(refusedAgain.includes('Super Admin only'),
+        '26. the demotion reaches the browser immediately - access is withdrawn, not deferred');
+
+      check(subErrors.length === 0, '26. no first-party console or request errors on the sub-admin surface',
+        subErrors.slice(0, 3).join(' | '));
+
+      // ── E. Cleanup, asserted rather than assumed ────────────────────
+      const off = await post('admin.setAdminActive', { userId: uiId, active: false }, su2c);
+      check(off.s === 200, '26. the QA UI sub-administrator is deactivated', `http ${off.s}`);
+      await sp.goto(`${BASE}/admin/login`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+      await sp.fill('input[placeholder="Username or email"]', uiUser);
+      await sp.fill('input[type="password"]', uiPassword);
+      await sp.click('button:has-text("Sign in")');
+      await sp.waitForTimeout(2_500);
+      check(!/\/admin$/.test(sp.url()),
+        '26. the deactivated administrator cannot sign in through the browser', sp.url().replace(BASE, ''));
+      await subCtx.close();
+    }
+
+    // ── F. Nothing secret reached the console ──────────────────────────
+    const consoleBlob = consoleText.join('\n');
+    check(!consoleBlob.includes(uiPassword) && !consoleBlob.includes(ADMIN_PASSWORD),
+      '26/21. no administrator password appears in browser console output');
+    check(uiToken.length === 0 || !consoleBlob.includes(uiToken),
+      '26/21. no raw invitation token appears in browser console output');
+    check(adminErrors.length === 0, '26. no first-party console or request errors on the admin surface',
+      adminErrors.slice(0, 3).join(' | '));
+    await adminCtx.close();
+  }
 
   // ══ 21. NOTHING SENSITIVE IN THE DELIVERED PAGE ═══════════════════════
   section('21. Secret exposure');
