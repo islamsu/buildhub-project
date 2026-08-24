@@ -65,6 +65,11 @@ import { sdk } from './_core/sdk';
 import { COOKIE_NAME } from '@shared/const';
 
 const ROUTERS_SOURCE = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+// hashPassword, verifyPassword and NO_SUCH_ACCOUNT_HASH moved here when the
+// administrator bootstrap needed to hash a password without importing the whole
+// router graph. routers.ts re-exports all three, so behaviour is unchanged -
+// but assertions that read the SOURCE have to read the file it now lives in.
+const PASSWORDS_SOURCE = readFileSync(new URL('./passwords.ts', import.meta.url), 'utf8');
 const SDK_SOURCE = readFileSync(new URL('./_core/sdk.ts', import.meta.url), 'utf8');
 
 function anonCtx() {
@@ -313,7 +318,7 @@ describe('§3 signIn refusals', () => {
   });
 
   it('the constant decoy hash never validates any password', async () => {
-    const decoy = ROUTERS_SOURCE.match(/const NO_SUCH_ACCOUNT_HASH =\s*\n?\s*'([^']+)'\s*\+\s*'0'\.repeat\(128\)/);
+    const decoy = PASSWORDS_SOURCE.match(/NO_SUCH_ACCOUNT_HASH =\s*\n?\s*'([^']+)'\s*\+\s*'0'\.repeat\(128\)/);
     expect(decoy).not.toBeNull();
     makeDb();
     (db.getUserByUsername as ReturnType<typeof vi.fn>).mockResolvedValue({

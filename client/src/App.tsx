@@ -14,6 +14,9 @@ import HomeownerDashboard from "./pages/HomeownerDashboard";
 import ProviderDashboard from "./pages/ProviderDashboard";
 import RolePlatform from "./pages/RolePlatform";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminLogin from "./pages/AdminLogin";
+import AdminAcceptInvitation from "./pages/AdminAcceptInvitation";
+import AdminAdmins from "./pages/AdminAdmins";
 import Marketplace from "./pages/Marketplace";
 import ProductDetail from "./pages/ProductDetail";
 import ProjectDetail from "./pages/ProjectDetail";
@@ -35,6 +38,13 @@ function Router() {
       <Route path={"/provider"} component={ProviderDashboard} />
       <Route path={"/vendor/:id"} component={VendorProfile} />
       <Route path={"/platform/:role"} component={RolePlatform} />
+      {/* ORDER MATTERS. wouter takes the first match, and "/admin/:section"
+          matches "/admin/login" - so these three have to come first or the
+          admin sign-in page would render the dashboard's Access Denied screen
+          to the very people trying to sign in. */}
+      <Route path={"/admin/login"} component={AdminLogin} />
+      <Route path={"/admin/accept-invitation"} component={AdminAcceptInvitation} />
+      <Route path={"/admin/admins"} component={AdminAdmins} />
       <Route path={"/admin/:section"} component={AdminDashboard} />
       <Route path={"/admin"} component={AdminDashboard} />
       <Route path={"/pricing"} component={Pricing} />

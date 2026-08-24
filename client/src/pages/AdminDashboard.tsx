@@ -148,14 +148,24 @@ export default function AdminDashboard() {
   const utilsTrpc = trpc.useUtils();
   const complianceQueueInput = useMemo(() => ({ includeDummy: includeDummyRegistrations }), [includeDummyRegistrations]);
 
-  const { data: stats } = trpc.admin.stats.useQuery(undefined, { enabled: isAdmin });
-  const { data: allUsers = [], isLoading: usersLoading } = trpc.admin.users.useQuery(undefined, { enabled: isAdmin });
-  const { data: disputes = [], isLoading: disputesLoading } = trpc.admin.disputes.useQuery(undefined, { enabled: isAdmin });
-  const { data: settings } = trpc.admin.settings.useQuery(undefined, { enabled: isAdmin });
-  const { data: complianceQueue = [], isLoading: complianceLoading } = trpc.admin.complianceQueue.useQuery(complianceQueueInput, { enabled: isAdmin });
-  const { data: complianceDetail } = trpc.admin.complianceApplicant.useQuery({ userId: activeApplicant?.id }, { enabled: isAdmin && Boolean(activeApplicant?.id) });
-  const { data: auditEvents = [] } = trpc.admin.accountAudit.useQuery({ userId: auditTarget?.id }, { enabled: isAdmin && Boolean(auditTarget?.id) });
-  const { data: dynamicAnalytics = [] } = trpc.admin.analyticsSummary.useQuery(complianceQueueInput, { enabled: isAdmin });
+  // WHO this administrator is, and therefore what they may load.
+  //
+  // Every query below is gated on the PERMISSION its endpoint requires, not
+  // merely on "is an admin". Without that, a Sub-Admin opening this page would
+  // fire eight requests, collect a 403 from most of them, and be shown a
+  // dashboard full of errors for working as designed. `can()` returns false
+  // while admin.me is still loading, so nothing is requested speculatively.
+  const { data: adminMe } = trpc.admin.me.useQuery(undefined, { enabled: isAdmin, retry: false });
+  const can = (permission: string) => adminMe?.permissions.includes(permission as never) ?? false;
+
+  const { data: stats } = trpc.admin.stats.useQuery(undefined, { enabled: can('users.read') });
+  const { data: allUsers = [], isLoading: usersLoading } = trpc.admin.users.useQuery(undefined, { enabled: can('users.read') });
+  const { data: disputes = [], isLoading: disputesLoading } = trpc.admin.disputes.useQuery(undefined, { enabled: can('support.manage') });
+  const { data: settings } = trpc.admin.settings.useQuery(undefined, { enabled: can('settings.manage') });
+  const { data: complianceQueue = [], isLoading: complianceLoading } = trpc.admin.complianceQueue.useQuery(complianceQueueInput, { enabled: can('marketplace.manage') });
+  const { data: complianceDetail } = trpc.admin.complianceApplicant.useQuery({ userId: activeApplicant?.id }, { enabled: can('marketplace.manage') && Boolean(activeApplicant?.id) });
+  const { data: auditEvents = [] } = trpc.admin.accountAudit.useQuery({ userId: auditTarget?.id }, { enabled: can('users.read') && Boolean(auditTarget?.id) });
+  const { data: dynamicAnalytics = [] } = trpc.admin.analyticsSummary.useQuery(complianceQueueInput, { enabled: can('audit.read') });
   const analyticsData = dynamicAnalytics;
 
   useEffect(() => {
@@ -377,7 +387,11 @@ export default function AdminDashboard() {
           <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-destructive" />
           <h2 className="text-2xl font-bold mb-2">{lang === 'ar' ? 'غير مصرح' : 'Access Denied'}</h2>
           <p className="text-muted-foreground">{lang === 'ar' ? 'ليس لديك صلاحيات المشرف.' : 'You do not have admin privileges.'}</p>
-          <Button className="mt-4" onClick={() => navigate('/dashboard')}>{lang === 'ar' ? 'الذهاب للوحة التحكم' : 'Go to Dashboard'}</Button>
+          {/* To the ADMIN door. Someone landing here is either signed out or
+              signed in as a customer; /dashboard would be the right answer for
+              the second and useless for the first, and administrators do not
+              sign in at /auth any more. */}
+          <Button className="mt-4" onClick={() => navigate('/admin/login')}>{lang === 'ar' ? 'دخول المشرفين' : 'Administrator sign-in'}</Button>
         </div>
       </div>
     );

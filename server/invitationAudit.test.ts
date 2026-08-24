@@ -21,6 +21,7 @@ function makeAdminCtx(): TrpcContext {
       name: 'BuildHub Admin',
       loginMethod: 'test',
       role: 'admin',
+      adminRole: 'SUPER_ADMIN', // migration 0020: an admin row must now say WHICH administrator it is
       userRole: 'admin',
       accountStatus: 'active',
       isDummy: false,

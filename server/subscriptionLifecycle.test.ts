@@ -149,6 +149,8 @@ function makeCtx(userId: number, role: 'user' | 'admin' = 'user', userRole = 'co
     user: {
       id: userId, openId: `u-${userId}`, email: `u${userId}@t.com`, name: `U${userId}`,
       loginMethod: 'dummy', role, userRole, accountStatus: 'active', onboardingStatus: 'approved',
+      // migration 0020: an admin row must now say WHICH administrator it is.
+      adminRole: role === 'admin' ? 'SUPER_ADMIN' : null,
       createdAt: NOW, updatedAt: NOW, lastSignedIn: NOW,
     } as TrpcContext['user'],
     req: { protocol: 'https', headers: {} } as TrpcContext['req'],

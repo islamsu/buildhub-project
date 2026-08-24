@@ -7,6 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+import { runAdminBootstrap } from "../adminBootstrap";
 import { ENV, assertEnvOrExit } from "./env";
 import { buildCommit, registerHealthRoutes } from "./health";
 import { registerRequestLogging } from "./httpLogging";
@@ -104,6 +105,16 @@ async function startServer() {
   } else if (mail.kind === "console") {
     setMailer(new ConsoleMailer());
   }
+
+  // The first administrator, from ADMIN_BOOTSTRAP_* if they are set and no
+  // administrator exists yet. Idempotent, and awaited BEFORE routes are
+  // registered so /admin/login is never briefly reachable on a platform whose
+  // Super Admin is still being created.
+  //
+  // Never fatal: a bad bootstrap must degrade to "no admin account", not to a
+  // boot loop that takes the whole site down. runAdminBootstrap swallows and
+  // reports its own failures for exactly that reason.
+  await runAdminBootstrap();
 
   // Order matters. Security headers and compression wrap every response
   // below, and the request log has to be installed before the routes it

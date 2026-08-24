@@ -508,11 +508,17 @@ describe('§7 emission points exist', () => {
 // ── §8 The admin surface ───────────────────────────────────────────────────
 
 describe('§8 exposure', () => {
-  it('both analytics procedures are admin-only', () => {
-    for (const procedure of ['productAnalytics:', 'commercialKpis:']) {
+  it('both analytics procedures are admin-only, each on the permission that fits it', () => {
+    // They no longer share a tier: product analytics is marketplace work and
+    // commercial KPIs are revenue. Asserting the SPECIFIC permission catches an
+    // endpoint moved to the wrong one, which "is admin-gated" could not.
+    for (const [procedure, permission] of [
+      ['productAnalytics:', "adminWith('marketplace.manage')"],
+      ['commercialKpis:', "adminWith('billing.read')"],
+    ] as const) {
       const index = ROUTERS_SOURCE.indexOf(procedure);
-      expect(index).toBeGreaterThan(-1);
-      expect(ROUTERS_SOURCE.slice(index, index + 60)).toContain('adminProcedure');
+      expect(index, procedure).toBeGreaterThan(-1);
+      expect(ROUTERS_SOURCE.slice(index, index + 60), procedure).toContain(permission);
     }
   });
 

@@ -106,8 +106,8 @@ describe('requireUser source wiring is intact (Phase 4A.6.8 regression guard)', 
   it('admin.setDummyUserActive and admin.setUserFrozen still exist and drive accountStatus, unmodified by this phase', () => {
     const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
     const adminBlock = source.slice(source.indexOf('const adminRouter = router({'), source.indexOf('// ── AI Router'));
-    expect(adminBlock).toContain('setDummyUserActive: adminProcedure');
-    expect(adminBlock).toContain('setUserFrozen: adminProcedure');
+    expect(adminBlock).toContain("setDummyUserActive: adminWith('qa.manage')");
+    expect(adminBlock).toContain("setUserFrozen: adminWith('users.manage')");
     expect(adminBlock).toContain("input.userId === ctx.user.id");
   });
 });

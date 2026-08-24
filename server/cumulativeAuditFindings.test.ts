@@ -9,6 +9,23 @@ import { appRouter } from './routers';
 import type { TrpcContext } from './_core/context';
 import { getDb } from './db';
 
+/**
+ * Where `name:` is declared in the router source, whatever tier follows it.
+ *
+ * Anchors used to read `name: adminProcedure`. Endpoints now sit behind the
+ * permission they need - `adminWith('marketplace.manage')` - so a literal anchor
+ * silently matched nothing, indexOf returned -1, and slice produced ''. Every
+ * `expect(block).not.toMatch(...)` on that empty string then passed vacuously.
+ * This throws instead, so a moved procedure breaks the test rather than hollowing
+ * it out.
+ */
+function declarationOf(source: string, name: string): number {
+  const at = source.search(new RegExp(`\\n\\s*${name}:\\s*(?:\\w+Procedure|adminWith\\()`));
+  if (at === -1) throw new Error(`procedure ${name} not found in the router source`);
+  return at;
+}
+
+
 // Phase 4A cumulative final audit: a source sweep for `select().from(users)`
 // found two admin-only endpoints (admin.complianceQueue, admin.complianceApplicant)
 // that were doing a bare full-row select and spreading it (including passwordHash
@@ -26,6 +43,7 @@ function makeAdminCtx(): TrpcContext {
       name: 'Admin',
       loginMethod: 'manus',
       role: 'admin',
+      adminRole: 'SUPER_ADMIN', // migration 0020: an admin row must now say WHICH administrator it is
       userRole: 'homeowner',
       accountStatus: 'active',
       createdAt: new Date(),
@@ -42,7 +60,7 @@ describe('admin.complianceQueue - no full-row exposure (Phase 4A cumulative audi
 
   it('never issues a bare select().from(users) - uses an explicit column allowlist', () => {
     const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-    const block = source.slice(source.indexOf('complianceQueue: adminProcedure'), source.indexOf('complianceApplicant: adminProcedure'));
+    const block = source.slice(declarationOf(source, 'complianceQueue'), declarationOf(source, 'complianceApplicant'));
     expect(block).not.toMatch(/select\(\)\.from\(users\)/);
     expect(block).toContain('COMPLIANCE_APPLICANT_COLUMNS');
   });
@@ -79,7 +97,7 @@ describe('admin.complianceApplicant - no full-row exposure (Phase 4A cumulative 
 
   it('never issues a bare select().from(users) - uses an explicit column allowlist', () => {
     const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-    const block = source.slice(source.indexOf('complianceApplicant: adminProcedure'), source.indexOf('reviewComplianceDocument: adminProcedure'));
+    const block = source.slice(declarationOf(source, 'complianceApplicant'), declarationOf(source, 'reviewComplianceDocument'));
     expect(block).not.toMatch(/select\(\)\.from\(users\)/);
     expect(block).toContain('COMPLIANCE_APPLICANT_COLUMNS');
   });

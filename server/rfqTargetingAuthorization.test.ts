@@ -35,7 +35,7 @@ const NEXT_MONTH = allowancePeriodFor(NEXT_MONTH_DATE).key;
 
 function makeCtx(
   userId: number,
-  overrides: Partial<{ role: 'user' | 'admin'; userRole: string; onboardingStatus: string; accountStatus: string }> = {},
+  overrides: Partial<{ role: 'user' | 'admin'; adminRole: string; userRole: string; onboardingStatus: string; accountStatus: string }> = {},
 ): TrpcContext {
   return {
     user: {
@@ -45,6 +45,8 @@ function makeCtx(
       name: `User ${userId}`,
       loginMethod: 'dummy',
       role: overrides.role ?? 'user',
+      // migration 0020: an admin row must now say WHICH administrator it is.
+      adminRole: overrides.adminRole ?? (overrides.role === 'admin' ? 'SUPER_ADMIN' : null),
       userRole: overrides.userRole ?? 'contractor',
       accountStatus: overrides.accountStatus ?? 'active',
       onboardingStatus: overrides.onboardingStatus ?? 'approved',
@@ -739,7 +741,7 @@ describe('sensitive-field leakage (Phase 4B.3 §15)', () => {
     });
     vi.mocked(getDb).mockResolvedValue(fake.db as never);
 
-    const result = await appRouter.createCaller(makeCtx(7, { role: 'admin' })).admin.vendorTargeting({ userId: 11 });
+    const result = await appRouter.createCaller(makeCtx(7, { role: 'admin', adminRole: 'SUPER_ADMIN' })).admin.vendorTargeting({ userId: 11 });
     const serialised = JSON.stringify(result);
 
     for (const forbidden of ['passwordHash', 'providerCustomerRef', 'providerSubscriptionRef', 'providerPriceRef', 'invitationToken', 'priceAmount']) {

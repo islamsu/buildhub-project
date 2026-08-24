@@ -2,6 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 /**
+ * Where `name:` is declared in the router source, whatever tier follows it.
+ *
+ * Anchors used to read `name: adminProcedure`. Endpoints now sit behind the
+ * permission they need - `adminWith('marketplace.manage')` - so a literal anchor
+ * silently matched nothing, indexOf returned -1, and slice produced ''. Every
+ * `expect(block).not.toMatch(...)` on that empty string then passed vacuously.
+ * This throws instead, so a moved procedure breaks the test rather than hollowing
+ * it out.
+ */
+function declarationOf(source: string, name: string): number {
+  const at = source.search(new RegExp(`\\n\\s*${name}:\\s*(?:\\w+Procedure|adminWith\\()`));
+  if (at === -1) throw new Error(`procedure ${name} not found in the router source`);
+  return at;
+}
+
+
+/**
  * Admin-issued QA sign-in links (Phases 7-9).
  *
  * The replacement for the public "Dummy / Test user sign-in" form, which
@@ -20,8 +37,8 @@ const redeem = () => ROUTERS.slice(
   ROUTERS.indexOf('capabilities: publicProcedure'),
 );
 const issue = () => ROUTERS.slice(
-  ROUTERS.indexOf('issueTestLoginLink: adminProcedure'),
-  ROUTERS.indexOf('testLoginLinks: adminProcedure'),
+  declarationOf(ROUTERS, 'issueTestLoginLink'),
+  declarationOf(ROUTERS, 'testLoginLinks'),
 );
 
 describe('the token is treated as a credential', () => {
@@ -45,7 +62,7 @@ describe('the token is treated as a credential', () => {
   it('never returns the hash to a client', () => {
     // An explicit column list, because select().from() would ship tokenHash to
     // every admin screen that renders this.
-    const list = ROUTERS.slice(ROUTERS.indexOf('testLoginLinks: adminProcedure'), ROUTERS.indexOf('revokeTestLoginLink:'));
+    const list = ROUTERS.slice(declarationOf(ROUTERS, 'testLoginLinks'), ROUTERS.indexOf('revokeTestLoginLink:'));
     expect(list).toContain('db.select({');
     expect(list).not.toContain('tokenHash: testLoginTokens.tokenHash');
   });
@@ -102,9 +119,9 @@ describe('redemption enforces every promise', () => {
 
 describe('issuing is admin-only and QA-only', () => {
   it('requires an admin', () => {
-    expect(ROUTERS).toContain('issueTestLoginLink: adminProcedure');
-    expect(ROUTERS).toContain('revokeTestLoginLink: adminProcedure');
-    expect(ROUTERS).toContain('testLoginLinks: adminProcedure');
+    expect(ROUTERS).toContain("issueTestLoginLink: adminWith('qa.manage')");
+    expect(ROUTERS).toContain("revokeTestLoginLink: adminWith('qa.manage')");
+    expect(ROUTERS).toContain("testLoginLinks: adminWith('qa.manage')");
   });
 
   it('refuses to mint a link for a real account', () => {

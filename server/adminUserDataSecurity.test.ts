@@ -9,6 +9,23 @@ import { appRouter } from './routers';
 import type { TrpcContext } from './_core/context';
 import { getDb } from './db';
 
+/**
+ * Where `name:` is declared in the router source, whatever tier follows it.
+ *
+ * Anchors used to read `name: adminProcedure`. Endpoints now sit behind the
+ * permission they need - `adminWith('marketplace.manage')` - so a literal anchor
+ * silently matched nothing, indexOf returned -1, and slice produced ''. Every
+ * `expect(block).not.toMatch(...)` on that empty string then passed vacuously.
+ * This throws instead, so a moved procedure breaks the test rather than hollowing
+ * it out.
+ */
+function declarationOf(source: string, name: string): number {
+  const at = source.search(new RegExp(`\\n\\s*${name}:\\s*(?:\\w+Procedure|adminWith\\()`));
+  if (at === -1) throw new Error(`procedure ${name} not found in the router source`);
+  return at;
+}
+
+
 function makeCtx(userId: number, role: 'user' | 'admin' = 'user', userRole = 'homeowner'): TrpcContext {
   return {
     user: {
@@ -18,6 +35,8 @@ function makeCtx(userId: number, role: 'user' | 'admin' = 'user', userRole = 'ho
       name: `User ${userId}`,
       loginMethod: 'manus',
       role,
+      // migration 0020: an admin row must now say WHICH administrator it is.
+      adminRole: role === 'admin' ? 'SUPER_ADMIN' : null,
       userRole,
       accountStatus: 'active',
       createdAt: new Date(),
@@ -124,7 +143,7 @@ describe('admin.users - response shape (Phase 4A.6.7)', () => {
 
   it('never uses select().from(users) with no column list for the admin user list query', () => {
     const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-    const usersProcBlock = source.slice(source.indexOf('users: adminProcedure.query'), source.indexOf('createUser: adminProcedure'));
+    const usersProcBlock = source.slice(declarationOf(source, 'users'), declarationOf(source, 'createUser'));
     expect(usersProcBlock).toContain('ADMIN_USER_LIST_COLUMNS');
     expect(usersProcBlock).not.toMatch(/select\(\)\.from\(users\)/);
   });
@@ -163,7 +182,7 @@ describe('admin.users - authorization (Phase 4A.6.7)', () => {
 
   it('takes no input parameter - there is no way to target or filter by another id, so this cannot become an IDOR', () => {
     const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-    const usersProcBlock = source.slice(source.indexOf('users: adminProcedure.query'), source.indexOf('createUser: adminProcedure'));
+    const usersProcBlock = source.slice(declarationOf(source, 'users'), declarationOf(source, 'createUser'));
     expect(usersProcBlock).not.toMatch(/\.input\(/);
   });
 
@@ -181,14 +200,14 @@ describe('admin user-management workflows still work unmodified (Phase 4A.6.7 re
   it('setUserFrozen, setDummyUserActive, and deleteDummyUser are untouched (still present and adminProcedure-gated)', () => {
     const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
     const adminBlock = source.slice(source.indexOf('const adminRouter = router({'), source.indexOf('// ── AI Router'));
-    expect(adminBlock).toContain('setUserFrozen: adminProcedure');
-    expect(adminBlock).toContain('setDummyUserActive: adminProcedure');
-    expect(adminBlock).toContain('deleteDummyUser: adminProcedure');
-    expect(adminBlock).toContain('setDummyUserPassword: adminProcedure');
+    expect(adminBlock).toContain('setUserFrozen: adminWith(');
+    expect(adminBlock).toContain('setDummyUserActive: adminWith(');
+    expect(adminBlock).toContain('deleteDummyUser: adminWith(');
+    expect(adminBlock).toContain("setDummyUserPassword: adminWith('qa.manage')");
   });
 
   it('accountAudit (the audit trail query) is untouched', () => {
     const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-    expect(source).toContain('accountAudit: adminProcedure');
+    expect(source).toContain('accountAudit: adminWith(');
   });
 });

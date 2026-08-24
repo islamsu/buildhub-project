@@ -1,0 +1,193 @@
+================================================================================
+BUILDHUB - STAGING VERIFICATION CLOSE-OUT
+Evidence: Staging QA run #10, dispatched 2026-08-24 07:23:48 UTC against
+https://buildhub-staging.onrender.com. Result: 160/160 passed, 9 skipped.
+Cross-checked against run #9 (2026-08-23 15:42 UTC), identical outcome.
+================================================================================
+
+HOW THIS WAS VERIFIED, AND ONE THING TO KNOW ABOUT IT
+
+This container cannot reach Render. Re-tested at the start of this task:
+
+  CONNECT buildhub-staging.onrender.com:443 -> HTTP/1.1 403 Forbidden
+
+The egress allowlist blocks it. Every staging fact below therefore comes from
+the Staging QA workflow, which runs on GitHub runners that CAN reach Render.
+Nothing here is inferred from source code.
+
+CORRECTION TO MY PREVIOUS REPORT. I previously wrote that the GitHub API was
+"serving heavily cached responses" and that a CI job appeared stuck for 13
+minutes. That diagnosis was wrong. Foreground `sleep` is a no-op in this
+harness - measured: `sleep 120` elapsed 0 seconds - so my polls were landing
+milliseconds apart while I believed minutes were passing. The API was fine
+throughout. Waits in this task used a real elapsed-time loop instead.
+
+--------------------------------------------------------------------------------
+1. HAS RENDER DEPLOYED a0218bc?   NO - it is serving 27a14b9
+--------------------------------------------------------------------------------
+
+  >>> DEPLOYED COMMIT: 27a14b95804fd71a54f8e92261c531a504e084d8
+
+Reported by /version at 07:24:56 today, and identically at 15:44 yesterday, so
+Render has not redeployed in ~16 hours.
+
+THE CODE IS NEVERTHELESS CURRENT. a0218bc is the merge commit for PR #6 and
+27a14b9 is its second parent:
+
+  a0218bc parents:  b437d30 27a14b9
+  a0218bc tree:     47087f6da345e4efd9d894604a90da62e6a5c6b9
+  27a14b9 tree:     47087f6da345e4efd9d894604a90da62e6a5c6b9
+  git diff 27a14b9 origin/main -> empty
+
+27a14b9 is an ancestor of main. So staging runs byte-identical code to main;
+only the label differs. RENDER_GIT_COMMIT is set by Render, not by render.yaml,
+so why Render names the parent rather than the merge commit is a question for
+its deploy settings. I did not guess at a cause and did not change anything.
+
+If you want the label to match, dispatch Staging QA with expect_commit set -
+that turns provenance into a hard assertion instead of a report.
+
+--------------------------------------------------------------------------------
+2. IS /readyz HEALTHY?   YES
+--------------------------------------------------------------------------------
+
+  PASS  3. /readyz confirms database connectivity  — http 200
+  PASS  3. /readyz reports the database check passing
+        — {"status":"ready","checks":{"database":true}}
+  PASS  2. /healthz responds  — http 200
+
+A real SELECT 1 against the staging database, not a static string.
+
+--------------------------------------------------------------------------------
+3. DOES auth.signUp WORK ON LIVE STAGING?   YES - all six roles
+--------------------------------------------------------------------------------
+
+  PASS  8. register homeowner        — http 200
+  PASS  8. register contractor       — http 200
+  PASS  8. register engineer         — http 200
+  PASS  8. register architect        — http 200
+  PASS  8. register supplier         — http 200
+  PASS  8. register project_manager  — http 200
+  PASS  8. all six roles hold a session
+
+"Hold a session" is the important one: it is the appId defect proving fixed on
+the live deployment. Before the fix the server minted a token and then rejected
+it on the next request.
+
+--------------------------------------------------------------------------------
+4. DOES auth.signIn WORK ON LIVE STAGING?   YES
+--------------------------------------------------------------------------------
+
+  PASS  7. sign in with username  — http 200
+  PASS  7. sign in with email     — http 200
+  PASS  7. the session authenticates  — http 200
+  PASS  21. the session cookie is HttpOnly
+  PASS  21. the session cookie is Secure
+        — Path=/; HttpOnly; Secure; SameSite=None
+
+That cookie line is the SameSite fix behaving correctly on HTTPS: `secure` is
+true, so sameSite stays "none". The "lax" fallback applies only to plain-HTTP
+local development, exactly as intended.
+
+Also confirmed: wrong password and unknown user are indistinguishable (401,
+one shared message) - no user enumeration.
+
+--------------------------------------------------------------------------------
+5. ARE THE MARKETPLACE 500s GONE?   YES - all four endpoints
+--------------------------------------------------------------------------------
+
+  PASS  11. marketplace.list             http 200  {"result":{"data":{"json":[]}}}
+  PASS  11. marketplace.vendors          http 200  {"result":{"data":{"json":[]}}}
+  PASS  11. marketplace.vendorCategories http 200  {"result":{"data":{"json":[]}}}
+  PASS  11. marketplace.featuredVendors  http 200
+        {"result":{"data":{"json":{"vendors":[],"slots":6}}}}
+
+Both the status AND the body are asserted. That distinction matters: the
+original 150/150 green run was wrong precisely because `json(t) ?? []` yields
+[] on a 500 and Array.isArray([]) is true, so a server error scored as a pass.
+These are real result envelopes, not error envelopes.
+
+The empty arrays are an empty catalogue, not a failure - 0 products, 0 vendors
+on staging. That is also what three of the nine skips are about.
+
+RFQ authorization fixes are live too:
+  PASS  21. rfq.list refuses anonymous callers  — http 401
+  PASS  21. the homeowner's budget does not reach anonymous callers
+
+--------------------------------------------------------------------------------
+6. STAGING QA RUN #9's ACTUAL FINAL RESULT
+--------------------------------------------------------------------------------
+
+  Run #9   id 32649416356   conclusion SUCCESS   completed 2026-08-23 15:45:14
+           160/160 checks passed, 9 skipped
+           every step green, including "Staging launch-readiness gate"
+
+It had already finished when I last reported it as unknown. My waits were not
+waiting (see the correction above), so I stopped polling ~90 seconds in while
+believing ~25 minutes had passed.
+
+Run #10 today reproduces it exactly: 160/160, 9 skipped, same deployed commit.
+
+--------------------------------------------------------------------------------
+7. WHAT REMAINS UNCONFIGURED
+--------------------------------------------------------------------------------
+
+TEST_LOGIN_ENABLED          CONFIGURED - it is now ON
+    INFO capabilities: {"testLogin":true,"passwordSignIn":true,
+                        "oauthSignIn":false,"passwordReset":false}
+    This changed since my last report. QA sign-in links are live on staging.
+
+SMTP                        NOT CONFIGURED
+    SKIP 9. password reset — auth.capabilities reports it unavailable —
+    SMTP_HOST unset or credentials failed to verify at boot
+    Corroborated by capabilities: passwordReset:false.
+    Blocks: password reset, invitation email, any notification email.
+
+S3                          NOT CONFIGURED
+    SKIP 10. end-to-end upload to the staging bucket — S3_* not configured
+    Blocks: compliance document upload, RFQ attachments, avatars, message
+    attachments. Note the type checks still PASS - SVG refused, SVG-as-PNG
+    refused, HTML-as-PNG refused - so only the storage write is missing.
+
+STAGING ADMIN SECRETS       NOT CONFIGURED
+    SKIP 17. subscription lifecycle (trial, cancel, resume)
+             — no STAGING_ADMIN_USER/PASSWORD supplied
+    SKIP 18. admin billing visibility
+             — no STAGING_ADMIN_USER/PASSWORD supplied
+    SKIP 14. approved-provider quotation flow
+             — needs an admin to approve the vendor
+    These three are the skips that convert to real evidence the moment the
+    secrets exist.
+
+PRODUCTION_BASE_URL         UNVERIFIED - I could not check it
+    I have no tool that reads repository variables or secrets, and no gh CLI.
+    The only way to make the workflow report it is to dispatch
+    deploy-production, whose `release` job carries `environment: production`.
+    You told me not to touch production, and probing config is not a good
+    enough reason to start a production workflow, so I did not.
+    Please confirm in Settings -> Secrets and variables -> Actions that
+    PRODUCTION_BASE_URL exists under VARIABLES, not Secrets. If it was ever
+    added as a secret, delete it there and re-add it as a variable.
+
+One further fact, from deploy-staging run #84's gate step, whose rendered name
+was `if [ -n "" ] && [ -n "" ]`:
+    STAGING_SSH_HOST and STAGING_SSH_KEY are both EMPTY. The staging deploy
+    pipeline is still correctly inert.
+
+THE NINE SKIPS IN FULL
+    1  provenance vs expect_commit   no STAGING_EXPECT_COMMIT supplied
+    2  product columns               empty catalogue
+    3  vendor directory columns      empty catalogue
+    4  category filtering            empty catalogue
+    5  password reset                SMTP
+    6  end-to-end upload             S3
+    7  subscription lifecycle        admin secrets
+    8  admin billing visibility      admin secrets
+    9  approved-provider quotations  admin secrets
+    Skips are not passes. Nothing above is claimed as verified.
+
+--------------------------------------------------------------------------------
+NOT DONE, AS INSTRUCTED
+--------------------------------------------------------------------------------
+No Admin/Sub-Admin work. No new features. No production change. No code change
+of any kind in this task - it was verification only. main remains a0218bc.
