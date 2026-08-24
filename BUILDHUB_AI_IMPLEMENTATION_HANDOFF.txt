@@ -1,0 +1,513 @@
+BUILDHUB AI IMPLEMENTATION HANDOFF
+
+DATE: 2026-08-24
+
+CURRENT MAIN SHA: e85341d01f616e2ffe95f8bd10dd4fa072f1c5cc
+
+CURRENT STAGING SHA: e85341d01f616e2ffe95f8bd10dd4fa072f1c5cc
+  Asserted, not assumed:
+    PASS  0. the deployed commit is the one under test
+          - expected e85341d01f61, serving e85341d01f616e2ffe95f8bd10dd4fa072f1c5cc
+
+============================================================
+A. PROVIDER
+============================================================
+
+Provider:
+  OpenAI, directly. No gateway, no proxy, no intermediary.
+
+Model:
+  gpt-5.6-luna, via ENV.openAiModel (OPENAI_MODEL), which defaults to that
+  value when unset.
+
+  The explicit Luna id is used deliberately: the bare "gpt-5.6" alias routes
+  to Sol, a different and more expensive model. Luna is the cost/performance
+  tier documented for high-volume workloads, which is what BuildHub AI is.
+
+  I did not substitute a different model. The one you specified is what is
+  configured and what the request sends.
+
+API architecture:
+  The Responses API, through the official `openai` npm SDK (7.5.0, current
+  latest). Responses rather than Chat Completions because that is the
+  interface OpenAI documents for reasoning models - Chat Completions still
+  works but is no longer where the model behaviour is best.
+
+  Request shape actually sent:
+    model              ENV.openAiModel
+    instructions       BuildHub's system prompt (the system-role messages)
+    input              the conversation turns
+    max_output_tokens  4096
+    reasoning          { effort: 'low' }
+    NO temperature     (see B)
+
+  Response read via the SDK's `output_text` helper, which concatenates the
+  text out of the typed output array. Reading that rather than indexing
+  output[0] matters: a response whose first item is a reasoning item would
+  otherwise read as empty.
+
+Active endpoint:
+  https://api.openai.com/v1/responses
+  Authorization: Bearer $OPENAI_API_KEY, server-side only.
+  OPENAI_BASE_URL exists but is unset, so the official endpoint is used.
+
+Two details verified against the official documentation rather than assumed.
+Both would have broken the feature:
+
+  1. GPT-5 family models are REASONING models and reject `temperature`.
+     Sending it turns every request into a 400. Nothing sends it, and a test
+     fails if anything starts to.
+
+  2. Reasoning tokens are billed as output tokens and counted INSIDE
+     max_output_tokens. Set the ceiling too low and the model can spend the
+     whole budget thinking, returning status "incomplete" with an EMPTY
+     output_text - billed, with nothing to show the user. That case is
+     classified as a failure, never returned as an empty success.
+
+  A note on how this was verified: platform.openai.com and
+  developers.openai.com are both blocked by this environment's egress proxy,
+  so I could not fetch the docs pages directly. The details above come from
+  official-documentation search results (developers.openai.com,
+  platform.openai.com, openai.com), and the SDK version from the npm registry.
+  I am flagging that rather than implying I read the pages.
+
+============================================================
+B. ROOT CAUSE / MIGRATION
+============================================================
+
+Old provider:
+  The Manus Forge gateway. `invokeLLM` in server/_core/llm.ts posted to
+  ${BUILT_IN_FORGE_API_URL}/v1/chat/completions, defaulting to
+  https://forge.manus.im/v1/chat/completions, authenticated with
+  BUILT_IN_FORGE_API_KEY.
+
+Why it was removed:
+  BUILT_IN_FORGE_API_KEY was never set on staging, so the assistant failed
+  for every user. BuildHub has otherwise migrated off the Manus platform, and
+  you decided not to obtain a Forge credential. Keeping a dependency on the
+  platform the project left - for its most visible feature - was the thing
+  being removed, not merely a missing variable.
+
+New provider:
+  OpenAI direct, as above.
+
+Why this architecture was chosen:
+  A single provider boundary, because this is the SECOND provider this
+  feature has had and there will probably be a third. The first version put
+  the provider inside the router: URL construction, auth header, retry loop
+  and response parsing all sat next to the tRPC procedure. That is why the
+  original failure was hard to see and why migrating meant touching the
+  router at all.
+
+  Now server/_core/ai.ts owns everything about talking to a model and exposes
+  exactly one function - generateAIResponse({ messages }) -> { text } - plus
+  isAiConfigured(). The router has no URL, no header, no SDK, no key and no
+  provider-specific parsing. Changing provider again is a change to one file.
+
+============================================================
+C. IMPLEMENTATION
+============================================================
+
+Files changed:
+
+  ADDED
+    server/_core/ai.ts                 the provider boundary
+    server/openAiProvider.test.ts      28 tests
+  DELETED
+    server/_core/llm.ts                the Forge gateway client
+    server/openaiIntegration.ts        an unimported direct-OpenAI sketch
+    server/openai.test.ts              its test
+  MODIFIED
+    server/routers.ts                  ai.chat calls the boundary; adds the
+                                       category -> user-message mapping;
+                                       auth.capabilities.aiAssistant now means
+                                       "OpenAI is configured"
+    server/_core/env.ts                openAiApiKey / openAiModel / openAiBaseUrl
+    render.yaml                        declares OPENAI_API_KEY (sync: false),
+                                       OPENAI_MODEL (value: gpt-5.6-luna),
+                                       OPENAI_BASE_URL
+    .env.example                       documents all three truthfully
+    deploy/docker-compose.yml          passes all three through
+    scripts/staging-qa.mjs             section 27 rewritten, section 28 added
+    server/stagingGate.test.ts         the gate's own honesty properties
+    server/aiAvailability.test.ts      retargeted at OpenAI config
+    server/aiChatSecurity.test.ts      mocks the new boundary
+    server/passwordAuthentication.test.ts  its mocked ENV needed the new fields
+    package.json / pnpm-lock.yaml      openai 7.5.0
+
+Environment variables required:
+
+  NAME             REQUIRED  PRESENT ON STAGING  PURPOSE
+  OPENAI_API_KEY   YES       ABSENT              the only thing that decides
+                                                 whether the feature exists
+  OPENAI_MODEL     no        (defaults)          gpt-5.6-luna when unset
+  OPENAI_BASE_URL  no        ABSENT              only for a compatible gateway
+
+  NO LONGER REQUIRED BY THE AI PATH:
+    BUILT_IN_FORGE_API_KEY, BUILT_IN_FORGE_API_URL
+
+  No secret value appears in git, render.yaml, .env.example, source, workflow
+  files, or this document. render.yaml declares OPENAI_API_KEY with
+  `sync: false`, which means Render prompts for the value in the dashboard.
+  A test fails if a key-shaped literal ever appears in render.yaml.
+
+Dead Manus/Forge paths removed or classified:
+
+  REMOVED
+    server/_core/llm.ts          the Forge chat client. Deleted.
+    server/openaiIntegration.ts  a half-written direct-OpenAI path that
+                                 nothing imported. Deleted rather than
+                                 refactored: it used Chat Completions and
+                                 gpt-4o-mini, so refactoring it would have
+                                 meant rewriting every line. Keeping it would
+                                 have left two competing AI integrations,
+                                 which you explicitly ruled out.
+    server/openai.test.ts        tested only the above. Deleted.
+
+  ACTIVE, and legitimately so - none of these is on the AI path:
+    server/_core/objectStorage.ts   ForgeObjectStorage is the storage fallback
+                                    used only when no S3 bucket is set
+    server/_core/notification.ts    notifyOwner posts to the Forge endpoint;
+                                    reached from server/_core/systemRouter.ts
+    server/_core/env.ts             forgeApiUrl / forgeApiKey, now commented
+                                    as storage-and-notifications only
+
+  LEGACY URL SHAPE, load-bearing, deliberately unchanged:
+    server/storage.ts, server/_core/storageProxy.ts, server/_core/security.ts,
+    client/src/pages/Marketplace.tsx
+    The `/manus-storage/{key}` path is the URL shape already written into
+    database rows. It is served by BuildHub's own authorizing proxy and has
+    nothing to do with Manus at runtime. Renaming it would invalidate stored
+    URLs; that is a separate migration, not part of this task.
+
+  DEAD, left alone:
+    server/_core/dataApi.ts         reads BUILT_IN_FORGE_*; NO importers
+                                    anywhere in server/, client/ or shared/.
+                                    Not deleted because it is unrelated to the
+                                    AI path and removing it is outside this
+                                    task's scope. Flagged for a future cleanup.
+
+  DOCUMENTATION
+    server/_core/trpc.ts carries one comment naming the Forge variables while
+    explaining why internal error messages are masked. Accurate history.
+
+  TEST
+    storagePortability, storageProxy, productionHardening and
+    passwordAuthentication reference the Forge variables in a STORAGE context.
+    Correct and unchanged.
+
+  THE ACTIVE AI PATH CONTAINS ZERO FORGE DEPENDENCY. A test asserts that
+  server/_core/ai.ts names no Forge variable and no Manus host, and that
+  ./_core/llm and ./openaiIntegration can no longer be imported.
+
+============================================================
+D. AI FUNCTIONALITY
+============================================================
+
+Tool                | Status                          | Evidence
+--------------------|---------------------------------|-------------------------
+Cost Estimator      | RENDERED, provider NOT PROVEN   | browser + shared path
+Quantity Surveyor   | RENDERED, provider NOT PROVEN   | browser + shared path
+Material Advisor    | RENDERED, provider NOT PROVEN   | browser + shared path
+Project Manager     | RENDERED, provider NOT PROVEN   | browser + shared path
+Risk Detector       | RENDERED, provider NOT PROVEN   | browser + shared path
+Procurement         | RENDERED, provider NOT PROVEN   | browser + shared path
+Maintenance         | RENDERED, provider NOT PROVEN   | browser + shared path
+General Consultant  | RENDERED, provider NOT PROVEN   | browser + shared path
+
+  All eight are the same trpc.ai.chat mutation with a different opening
+  prompt - AI_MODES is a list of {icon, label, prompt}. There is one AI
+  procedure in the codebase. One live call would prove all eight; zero live
+  calls prove none of them.
+
+  RENDERED is a real, executed result: section 28 opened /ai in Chromium and
+  asserted each of the eight tools by name.
+
+    PASS  28. the "Cost Estimator" tool is offered
+    PASS  28. the "Quantity Surveyor" tool is offered
+    …all eight…
+
+  "provider NOT PROVEN" is the honest status of every row, and it has ONE
+  cause: OPENAI_API_KEY is not set on staging, so no request has ever reached
+  OpenAI. I am not marking any tool working.
+
+============================================================
+E. LIVE AI TEST
+============================================================
+
+Live provider request:
+  NOT EXECUTED - the deployment has no credential.
+
+  The gate declined to send it rather than sending it doomed:
+
+    INFO  27. aiAssistant capability: false
+    INFO  27. ai.chat -> http 503 SERVICE_UNAVAILABLE in 156ms
+    SKIP  27. the provider answers a real question - OPENAI_API_KEY is not
+          configured on this deployment - the provider round trip is NOT
+          proven. Set OPENAI_API_KEY (and optionally OPENAI_MODEL, default
+          gpt-5.6-luna).
+
+HTTP result:
+  503 SERVICE_UNAVAILABLE in 156 ms, from BuildHub - not from OpenAI. The
+  refusal is deliberate and typed, and it short-circuits before the SDK
+  client is even constructed.
+
+Response received:
+  NO
+
+Response rendered in browser:
+  NO. What the browser renders instead was verified: the honest unavailable
+  banner, eight inert tool cards, and a disabled composer.
+
+    PASS  28. the honest unavailable banner is shown when AI is unconfigured
+    PASS  28. all eight tool cards are inert rather than clickable - 8 inert
+    PASS  28. the message composer refuses input
+
+English:
+  UNIT TEST ONLY for the provider round trip. The English UI is verified live.
+
+Arabic:
+  UNIT TEST ONLY for the provider round trip. The Arabic UI is verified live:
+
+    PASS  28. the AI page switches to right-to-left in Arabic - dir=rtl, lang=ar
+    PASS  28. the AI page renders Arabic text
+    PASS  28. the unavailable notice is translated into Arabic
+
+  Worth recording, because the first version of this check was wrong and
+  passed anyway. It wrote localStorage 'lang'; LanguageContext reads
+  'buildhub_lang'. The page stayed in English and the assertion - "some
+  Arabic characters are present" - passed on the navbar's own language
+  toggle, which is labelled العربية. Run #30 printed the contradiction in its
+  own detail field: "PASS 28. the AI page renders Arabic — dir=ltr". It now
+  asserts dir === 'rtl', and a negative control fails if that is weakened.
+
+  Language handling itself needs no code: the conversation is passed through
+  unchanged, and the system prompt already instructs the model to answer in
+  the language asked. That is untested against a live model and is stated as
+  such.
+
+============================================================
+F. SECURITY
+============================================================
+
+Confirmed, each by an executed check:
+
+  - API key never exposed
+      The delivered /ai page contains no OPENAI_API_KEY, no api.openai.com,
+      no "Bearer ", and no API-key-shaped string. The client bundle was also
+      grepped after build: no api.openai.com, no OPENAI_API_KEY, no
+      openAiApiKey anywhere under dist/public.
+  - API key never logged
+      The error classifier logs a category and a numeric status and never the
+      underlying message. A test throws an APIError whose message embeds a
+      fake key and asserts the log line contains neither the key nor "Bearer".
+  - Authorization header never logged
+      Constructed by the SDK, never touched by application code, never
+      rendered, returned or logged.
+  - Stack trace never exposed
+      The error formatter strips shape.data.stack unconditionally; section 21
+      asserts errors carry no stack trace or filesystem path.
+  - Prompt not logged
+      Deliberate: the provider error string interpolates the response body,
+      and a provider that echoes the request would put project details and
+      budgets into the deployment log. Two tests assert this using a fixture
+      containing a fake budget figure.
+  - Provider errors sanitized
+      Ten categories, each mapped to a sentence written for the caller. A
+      test throws "Incorrect API key provided: sk-test-SECRET123" and asserts
+      the surfaced message contains none of it.
+  - Browser contains no secret
+      PASS 28/13 × 4 leak checks, plus no credential in console output.
+
+  One honest note on method: an initial bundle grep for the bare substring
+  "sk-" matched dist/public assets. Inspected rather than assumed: the hits
+  were Tailwind mask-image custom properties ("sk-image-conic-from-pos") and
+  emacs-lisp grammar symbols ("sk-user-about-large-file"). No credential. The
+  browser check now uses a key SHAPE (/\bsk-[A-Za-z0-9]{20,}/) instead, because
+  a false alarm on this exact check is how a real one gets ignored.
+
+============================================================
+G. TESTS
+============================================================
+
+Typecheck:   npx tsc --noEmit -> exit 0
+Tests:       npx vitest run -> 1338/1338 across 68 files
+Build:       npm run build -> exit 0
+AI tests:    openAiProvider.test.ts      28
+             aiAvailability.test.ts      11
+             aiChatSecurity.test.ts      10
+             trpcErrorLog.test.ts        15
+             stagingGate.test.ts §6       9 (the gate's own honesty)
+Mutation:    9 applied, 9 killed
+               N1 send temperature                       -> 1 fails
+               N2 return empty text as success           -> 3 fail
+               N3 leak the provider body into the error  -> 1 fails
+               N4 unbounded retries                      -> 1 fails
+               N5 hard-code the model                    -> 1 fails (see below)
+               N6 soften a configured failure into a skip-> 2 fail
+               N7 a second paid call in the browser pass -> 1 fails
+               N8 the live question becomes an obedience test -> 1 fails
+               N9 weaken the Arabic check to a constant  -> 1 fails
+CI:          PR #15 6/6 SUCCESS, PR #16 6/6 SUCCESS
+
+  N5 SURVIVED on first run and that is worth recording. Hard-coding the model
+  passed every test, because the test asserted aiModelName() - the getter -
+  rather than the model in the request body. The getter reported the
+  configured model while the request asked for a different one. The test now
+  asserts the request, and N5 dies.
+
+============================================================
+H. STAGING QA
+============================================================
+
+Total:    347 executed
+Passed:   342
+Failed:   0
+Skipped:  5
+
+  Verbatim:
+    342/342 checks passed, 5 skipped, against https://buildhub-staging.onrender.com
+    Skipped checks are NOT passes.
+
+AI checks (sections 27 and 28):
+Passed:   36
+Failed:   0
+Skipped:  1
+
+  The single skip is the provider round trip, and it is the whole point of
+  this handoff. The other five skips are unchanged: SMTP, S3, empty
+  catalogue, category filtering.
+
+  CRITICAL PROPERTY, and it is enforced by test rather than by intention:
+  the gate skips the provider call ONLY when OPENAI_API_KEY is absent. Once
+  the key is set, aiConfigured becomes true and the configured branch runs -
+  which contains no skip() at all. A 401, 429, 500, timeout or empty answer
+  from a CONFIGURED provider is a FAILURE and turns the run red. Mutation N6
+  proves the tests catch any attempt to soften that.
+
+Exact deployed SHA:
+  e85341d01f616e2ffe95f8bd10dd4fa072f1c5cc
+
+Exact GitHub Actions run:
+  https://github.com/islamsu/buildhub-project/actions/runs/32771926147
+  (run #31, job 97573997442, conclusion SUCCESS)
+
+============================================================
+I. PRODUCTION IMPACT
+============================================================
+
+Production touched: NO
+
+Confirm:
+  - no production DB           nothing created, migrated, read or written
+  - no production host         no service or deployment target created
+  - no production S3           no bucket or credential created
+  - no production SMTP         no credential created
+  - no production payments     Paymob untouched, not implemented, not simulated
+  - no production domain       no DNS record, no TLS certificate
+  - no production credentials  none created, retrieved, printed or logged
+
+  Also unchanged: pricing and plans, RFQ visibility (full description and
+  exact budget remain in the free feed), admin permissions, vendor approval.
+  auth.capabilities gained ONE ADDITIVE FIELD; every existing field and
+  behaviour is untouched. No Render environment variable was added, changed
+  or read on any environment.
+
+============================================================
+J. REMAINING BLOCKERS
+============================================================
+
+ONE, and it is yours:
+
+  OPENAI_API_KEY is not set on Render staging.
+
+  This is the only thing standing between the current state and a working
+  assistant. All code work is complete: nothing further needs to be built,
+  merged or deployed for the assistant to work once the key exists.
+
+  EXACTLY WHAT TO DO:
+
+    1. Render dashboard -> the buildhub-staging web service -> Environment.
+    2. Add:
+         OPENAI_API_KEY = <your OpenAI API key>
+       Optionally also:
+         OPENAI_MODEL   = gpt-5.6-luna
+       (omit it and the application uses gpt-5.6-luna anyway)
+    3. Save. Render restarts the service automatically.
+    4. Tell me it is set. Do NOT paste the key to me - I neither need nor
+       want the value, and I will confirm only PRESENT/ABSENT by reading
+       auth.capabilities.
+
+  The key must belong to an OpenAI account with billing active and access to
+  gpt-5.6-luna. If billing is not set up, the request will return 429 with an
+  insufficient_quota code, which the gate reports as provider-quota and FAILS
+  - it will not be quietly skipped.
+
+  Cost: one request per staging QA run, with a 4096-token output ceiling.
+
+  What happens next, with no further development:
+    auth.capabilities reports aiAssistant: true
+      -> /ai drops the unavailable banner and enables all eight tools
+      -> section 27 takes the configured branch and makes one real request
+      -> the gate proves the assistant answers, or fails with the exact
+         category if it does not
+
+The production infrastructure blockers are unchanged and are NOT AI issues:
+  P1 domain/DNS/TLS · P2 database · P3 host · P4 backups+tested restore ·
+  P5 S3 · P6 SMTP - all OPEN.
+
+============================================================
+K. DECISION
+============================================================
+
+AI STAGING:  BLOCKED
+
+  Not "broken" and not "unverified work". The integration is written, tested,
+  merged, deployed and verified as far as it can be verified without a
+  credential. The model has not answered a question, so I will not call it
+  GO. One owner action unblocks it.
+
+OVERALL STAGING:  NO-GO
+
+  Your rule from the previous task still applies: staging is not green until
+  AI works. Everything else is green at 342/342 with zero failures. The only
+  thing between this and GO is the item in section J.
+
+PRODUCTION:  NO-GO
+
+  P1 through P6 all open. No production infrastructure exists.
+
+============================================================
+L. NEXT ACTION
+============================================================
+
+AI does not yet work, so per your instruction I am stating exactly what
+external owner action remains:
+
+  SET OPENAI_API_KEY ON RENDER STAGING (section J has the steps).
+
+  Then say so, and I will re-run the staging gate against the same SHA. That
+  run either proves the assistant answers - one real request, English, with
+  the eight tools enabled in the browser - or names the exact failure
+  category. No further development is required either way.
+
+I have NOT started the production infrastructure phase and have not started
+any other phase.
+
+Classification:
+  VERIFIED        the migration; the provider boundary; the request shape;
+                  the ten-category failure taxonomy; honest degradation on
+                  live staging; all eight tools rendered in a browser; Arabic
+                  RTL and translated notice; secret safety in page, bundle,
+                  console and logs; 342/342 with 0 failures; tsc, 1338 tests,
+                  build; 9 mutations killed
+  NOT VERIFIED    that OpenAI answers a BuildHub question. No request has
+                  reached the provider from this deployment, and none is
+                  claimed. Language behaviour of the model itself is likewise
+                  unproven against a live model
+  DEFERRED        Paymob/payments; F-2 object deletion; monitoring/alerting;
+                  removing the dead server/_core/dataApi.ts
+  USER DECISION   supplying OPENAI_API_KEY; whether OVERALL STAGING may be
+     REQUIRED     re-declared GO once the assistant answers
+
+STOP. No further development phase is authorized by this task.
