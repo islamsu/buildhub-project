@@ -154,6 +154,30 @@ services:
       - key: TEST_LOGIN_ENABLED
         value: "true"
 
+      # ── First administrator ────────────────────────────────────────────
+      #
+      # Declared here so the Blueprint records that this deployment needs them,
+      # with NO VALUE committed - `sync: false` means Render asks for it in the
+      # dashboard and keeps it there. A password in this file would be a
+      # password in git.
+      #
+      # Set all three in the Render dashboard, deploy once, then CLEAR them.
+      # The bootstrap only ever creates the FIRST administrator: once one
+      # exists these are inert, so leaving them set cannot reset anybody - but
+      # clearing them means the platform holds no standing admin credential in
+      # its environment at all.
+      #
+      # NEVER prefix these VITE_. Vite inlines VITE_-prefixed variables into the
+      # client bundle at build time, which would publish the password to every
+      # visitor - and the staging QA gate greps the delivered page for exactly
+      # that class of mistake.
+      - key: ADMIN_BOOTSTRAP_EMAIL
+        sync: false
+      - key: ADMIN_BOOTSTRAP_USERNAME
+        sync: false
+      - key: ADMIN_BOOTSTRAP_PASSWORD
+        sync: false
+
       - key: VITE_APP_ID
         value: buildhub-staging
 
