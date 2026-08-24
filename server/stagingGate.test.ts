@@ -235,6 +235,45 @@ describe('§4 it covers the agreed 22 points', () => {
       .not.toContain('users.read');
   });
 
+  it('the role matrix is CHAINED, so each rotation is also a demotion check', () => {
+    // Each role's permitted probe is deliberately the NEXT role's forbidden
+    // one. That is what makes the forbidden probe do double duty: after a
+    // rotation it is the endpoint the PREVIOUS role could reach, refused on the
+    // very same cookie - which is the evidence that authority narrows the
+    // instant the role changes, with no re-login and no session teardown.
+    //
+    // Break the chain and the section still passes, but it stops proving
+    // demotion. So the chain is pinned here.
+    const rows = [...section25().matchAll(
+      /\{ role: '([A-Z_]+)',\s*allow: \['([a-zA-Z.]+)', '[a-z.]+'\],\s*deny: \['([a-zA-Z.]+)', '[a-z.]+'\]/g,
+    )].map(m => ({ role: m[1], allowEndpoint: m[2], denyEndpoint: m[3] }));
+
+    expect(rows.length, 'the role matrix could not be parsed - rewire this test').toBe(4);
+    for (let i = 1; i < rows.length; i++) {
+      expect(
+        rows[i].denyEndpoint,
+        `${rows[i].role}'s forbidden probe must be ${rows[i - 1].role}'s permitted probe, ` +
+          'or the rotation stops proving that the previous role lost its access',
+      ).toBe(rows[i - 1].allowEndpoint);
+    }
+  });
+
+  it('a role change is asserted to keep the session and change the authority', () => {
+    // Recording the correction, as an assertion. The first draft asserted the
+    // target's session DIES on a role change; it failed three times against live
+    // staging because setAdminRole deliberately does not touch
+    // sessionsInvalidBefore. authenticateRequest re-reads the user row every
+    // request, so the role is always live and demotion takes effect at once
+    // without logging anyone out.
+    const body = section25();
+    expect(body, 'the harness must not re-assert that a role change kills the session')
+      .not.toContain('the previous session dies');
+    expect(body, 'the live-authority property is no longer asserted')
+      .toContain('carries ${role} immediately, with no re-login');
+    expect(body, 'the assertion must read the role back from admin.me on the OLD cookie')
+      .toContain("get('admin.me', undefined, SUB)");
+  });
+
   it('the sub-admin section never prints the token or the password', () => {
     const body = section25();
 

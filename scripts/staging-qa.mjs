@@ -577,7 +577,7 @@ try {
         // ── E. The sub-administrator signs in at the administrator door ───
         const subLogin = await post('auth.adminSignIn', { identifier: subUser, password: subPassword });
         check(subLogin.s === 200, '25. the new sub-administrator signs in at /admin/login', `http ${subLogin.s}`);
-        let SUB = subLogin.c;
+        const SUB = subLogin.c;
 
         // ── F. Role coverage and permission boundaries ────────────────────
         //
@@ -597,14 +597,32 @@ try {
           if (role !== 'USER_ADMIN') {
             const rotated = await post('admin.setAdminRole', { userId: subId, adminRole: role }, SUPER);
             check(rotated.s === 200, `25. a Super Admin assigns ${role}`, `http ${rotated.s}`);
-            // Changing a role revokes the target's sessions, so the old cookie
-            // must stop working before a new one is taken. This is the check
-            // that would catch a role change that leaves stale authority live.
-            const stale = await get('admin.me', undefined, SUB);
-            check(stale.s !== 200, `25. the previous session dies when the role changes to ${role}`, `http ${stale.s}`);
-            const reLogin = await post('auth.adminSignIn', { identifier: subUser, password: subPassword });
-            check(reLogin.s === 200, `25. the sub-administrator signs in again as ${role}`, `http ${reLogin.s}`);
-            SUB = reLogin.c;
+
+            // THE PROPERTY THAT MATTERS, and it is not "the session dies".
+            //
+            // A first draft of this section asserted that the target's existing
+            // cookie stops working after a role change. It ran against live
+            // staging and failed three times - correctly, because that is not
+            // how BuildHub works and never was. setAdminRole updates the row and
+            // writes an audit event; it does not touch sessionsInvalidBefore
+            // (only deactivation, session revocation and password reset do).
+            //
+            // That is sound, because authenticateRequest re-reads the user row
+            // from the database on EVERY request, so ctx.user.adminRole is
+            // always live. The session survives; the AUTHORITY changes at once.
+            // Demoting somebody should narrow what they can do, not log them out
+            // mid-task.
+            //
+            // So the assertion is the security property itself: on the SAME
+            // cookie, the new role is in force immediately and the endpoint the
+            // PREVIOUS role could reach is now refused. This is what would catch
+            // a regression that cached the role in the token - the failure mode
+            // where a demoted administrator keeps their old powers until the JWT
+            // expires, which here could be up to a year.
+            const carried = await get('admin.me', undefined, SUB);
+            check(carried.s === 200 && json(carried.t)?.adminRole === role,
+              `25. the existing session carries ${role} immediately, with no re-login`,
+              `http ${carried.s}, role=${json(carried.t)?.adminRole}`);
           }
 
           const me = await get('admin.me', undefined, SUB);
@@ -618,6 +636,10 @@ try {
           const permitted = await get(allow[0], allow[0] === 'admin.complianceQueue' ? {} : undefined, SUB);
           check(permitted.s === 200, `25. ${role} may call ${allow[0]}`, `http ${permitted.s}`);
 
+          // The matrix is CHAINED: each role's permitted probe is exactly the
+          // next role's forbidden one. So on every rotation after the first,
+          // this same call is also the demotion check - the endpoint the
+          // previous role could reach, refused on the very same cookie.
           const forbidden = await get(deny[0], deny[0] === 'admin.complianceQueue' ? {} : undefined, SUB);
           check(forbidden.s === 403 || forbidden.t.includes('FORBIDDEN'),
             `25. ${role} is REFUSED ${deny[0]}`, `http ${forbidden.s}`);
