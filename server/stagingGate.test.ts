@@ -149,6 +149,49 @@ describe('§4 it covers the agreed 22 points', () => {
     expect(GATE).toContain('INDISTINGUISHABLE from an unknown account');
   });
 
+  it('a failed check actually fails the workflow', () => {
+    // The gate exits 1 on a failed check and always has. But the workflow piped
+    // it into `tee`, and a pipeline's exit status is the LAST command's - tee
+    // always succeeds - so the step exited 0 regardless. `bash -e` does not
+    // change that; only `pipefail` does.
+    //
+    // Invisible until a run was genuinely red: run #13 published two named
+    // FAILURES and "171/173 checks passed" under a green tick. Pinned here
+    // because the failure mode is silent by construction - the only symptom is
+    // a gate that never goes red, which looks exactly like a healthy one.
+    const wf = read('../.github/workflows/staging-qa.yml');
+    const step = wf.slice(wf.indexOf('Staging launch-readiness gate'));
+    const block = step.slice(0, step.indexOf('Record which build was tested'));
+    expect(block.length, 'the gate step could not be isolated - rewire this test').toBeGreaterThan(0);
+
+    // COMMENTS STRIPPED FIRST, and that is the whole point of this line. The
+    // first version of this test asserted `toContain('set -o pipefail')` over
+    // the raw block - which matched the COMMENT explaining pipefail, so
+    // deleting the actual command left the test green. Caught by mutation
+    // testing. Only executable lines may satisfy an assertion about behaviour.
+    const commands = block
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0 && !line.startsWith('#'));
+
+    expect(commands, 'the gate is piped into tee').toContain(
+      'node scripts/staging-qa.mjs "${{ steps.target.outputs.url }}" | tee qa-output.txt',
+    );
+    expect(
+      commands,
+      'piping the gate into tee without pipefail throws away its exit code',
+    ).toContain('set -o pipefail');
+    expect(
+      commands.indexOf('set -o pipefail'),
+      'pipefail must be set BEFORE the pipeline it protects',
+    ).toBeLessThan(commands.findIndex(line => line.startsWith('node scripts/staging-qa.mjs')));
+  });
+
+  it('the harness itself still exits non-zero on a failed check', () => {
+    // The other half. pipefail only helps if there is a failure to propagate.
+    expect(GATE).toContain('process.exit(fail === 0 ? 0 : 1)');
+  });
+
   it('the regression suite is the CI job, not something the URL gate claims', () => {
     // CI invokes it as `pnpm run test`, so assert the whole chain rather than
     // grepping for a tool name the workflow never spells out.
