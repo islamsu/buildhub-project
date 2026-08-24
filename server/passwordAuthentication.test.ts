@@ -36,6 +36,11 @@ const mocks = vi.hoisted(() => ({
     forgeApiUrl: '',
     forgeApiKey: '',
     appBaseUrl: '',
+    // The AI assistant's config participates in auth.capabilities, so a mocked
+    // ENV that omits it makes isAiConfigured() read undefined.trim().
+    openAiApiKey: '',
+    openAiModel: 'gpt-5.6-luna',
+    openAiBaseUrl: '',
   },
 }));
 
