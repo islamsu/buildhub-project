@@ -119,6 +119,24 @@ const ADMIN_INVITE_TTL_HOURS = 48;
 const ADMIN_PASSWORD_MIN_LENGTH = 12;
 const hashAdminToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
+/**
+ * The `sessionsInvalidBefore` cutoff for an operation that KILLS sessions
+ * without minting a replacement - deactivation, revocation, an admin-initiated
+ * reset.
+ *
+ * One second in the future, deliberately. authenticateRequest compares whole
+ * seconds with `issuedSecond < cutoffSecond`, and that strict `<` is correct
+ * where it is: a password reset mints a new session in the very same second it
+ * sets the cutoff, and `<=` would log out the person who just reset. But it
+ * leaves a one-second window, and where nothing legitimate is being minted that
+ * window is pure loss.
+ *
+ * Caught by driving it live: a sub-admin signed in and was deactivated inside
+ * the same second, and their session kept working. Rounding the cutoff up
+ * closes it without touching the reset path that needs the tolerance.
+ */
+const revocationCutoff = () => new Date(Date.now() + 1000);
+
 export { hashPassword, verifyPassword, NO_SUCH_ACCOUNT_HASH } from './passwords';
 
 // ── Auth Router ────────────────────────────────────────────────────────────
@@ -2674,7 +2692,7 @@ const adminRouter = router({
       accountStatus: input.active ? 'active' : 'frozen',
       deactivatedAt: input.active ? null : new Date(),
       // Kills every existing session for this account when deactivating.
-      ...(input.active ? {} : { sessionsInvalidBefore: new Date() }),
+      ...(input.active ? {} : { sessionsInvalidBefore: revocationCutoff() }),
     }).where(eq(users.id, input.userId));
 
     await db.insert(userAccountAuditEvents).values({
@@ -2695,7 +2713,7 @@ const adminRouter = router({
     const [target] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, input.userId));
     if (!target || target.role !== 'admin') throw new TRPCError({ code: 'NOT_FOUND', message: 'No such administrator' });
 
-    await db.update(users).set({ sessionsInvalidBefore: new Date() }).where(eq(users.id, input.userId));
+    await db.update(users).set({ sessionsInvalidBefore: revocationCutoff() }).where(eq(users.id, input.userId));
     await db.insert(userAccountAuditEvents).values({
       userId: input.userId, actorId: ctx.user.id, action: 'admin_sessions_revoked', source: 'admin_management',
       note: 'All sessions revoked',
@@ -2735,7 +2753,7 @@ const adminRouter = router({
       invitedBy: ctx.user.id,
       expiresAt,
     });
-    await db.update(users).set({ sessionsInvalidBefore: new Date() }).where(eq(users.id, input.userId));
+    await db.update(users).set({ sessionsInvalidBefore: revocationCutoff() }).where(eq(users.id, input.userId));
     await db.insert(userAccountAuditEvents).values({
       userId: input.userId, actorId: ctx.user.id, action: 'admin_password_reset_requested', source: 'admin_management',
       note: 'One-time password reset link issued; existing sessions revoked',
