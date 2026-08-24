@@ -466,6 +466,9 @@ describe('§6 the AI section cannot claim an AI that was never exercised', () =>
       expect(BODY).toContain(tool);
     }
     expect(BODY).toContain('the delivered AI page contains no');
-    expect(BODY).toContain('the AI page renders Arabic');
+    // dir=rtl, not "Arabic characters appear somewhere". The navbar's language
+    // toggle is labelled العربية, so a presence check passes on an English page.
+    expect(BODY).toContain("dir === 'rtl'");
+    expect(BODY).toContain("localStorage.setItem('buildhub_lang', 'ar')");
   });
 });
