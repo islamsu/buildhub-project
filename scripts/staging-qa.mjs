@@ -368,6 +368,76 @@ try {
   check((await get('notifications.list', undefined, users.contractor.cookie)).s === 200, '15. notifications load');
   check((await get('notifications.unreadCount', undefined, users.contractor.cookie)).s === 200, '15. unread count loads');
 
+  // ══ 22. THE ADMINISTRATOR DOOR ════════════════════════════════════════
+  //
+  // Everything here is verifiable WITHOUT an administrator credential, which
+  // matters because staging has none unless ADMIN_BOOTSTRAP_* is set. What can
+  // be proved from outside is that the door exists, that it is a different door
+  // from /auth, and that it refuses everyone who is not an administrator.
+  //
+  // Signing a real Super Admin in is a separate claim, and it is SKIPPED rather
+  // than assumed - see the skip below.
+  section('22. Administrator authentication');
+
+  // The SPA serves index.html for every route, so a 200 here proves the route
+  // is served, not that the page renders. The rendering claim is the browser
+  // check further down, which asserts the admin form is actually present.
+  const adminLoginPage = await fetch(`${BASE}/admin/login`).catch(() => null);
+  check(adminLoginPage?.status === 200, '22. /admin/login is served', `http ${adminLoginPage?.status}`);
+
+  // A real customer account, at the administrator door.
+  const customerAtAdminDoor = await post('auth.adminSignIn', {
+    identifier: users.homeowner.username, password: PW,
+  });
+  check(customerAtAdminDoor.s !== 200, '22. a customer CANNOT sign in at the administrator door', `http ${customerAtAdminDoor.s}`);
+
+  // ...and the refusal must be indistinguishable from an account that does not
+  // exist, or the endpoint becomes an oracle for which accounts are admins.
+  const ghostAtAdminDoor = await post('auth.adminSignIn', {
+    identifier: `nosuch${Date.now()}`, password: 'whatever-this-is-wrong',
+  });
+  const customerMessage = json(customerAtAdminDoor.t)?.message ?? customerAtAdminDoor.t;
+  const ghostMessage = json(ghostAtAdminDoor.t)?.message ?? ghostAtAdminDoor.t;
+  check(
+    customerAtAdminDoor.s === ghostAtAdminDoor.s && customerMessage === ghostMessage,
+    '22. that refusal is INDISTINGUISHABLE from an unknown account',
+    `${customerAtAdminDoor.s} vs ${ghostAtAdminDoor.s}`,
+  );
+
+  // The administrator management surface, from a normal customer session.
+  for (const proc of ['admin.me', 'admin.admins']) {
+    const anon = await get(proc, {});
+    check(anon.s === 401 || anon.t.includes('UNAUTHORIZED'), `22. anonymous refused: ${proc}`, `http ${anon.s}`);
+    const customer = await get(proc, {}, users.homeowner.cookie);
+    check(customer.s === 403 || customer.t.includes('FORBIDDEN'), `22. a customer is refused: ${proc}`, `http ${customer.s}`);
+  }
+  const customerCreate = await post('admin.createAdmin', {
+    name: 'Should Not Exist', email: `nope${Date.now()}@example.test`,
+    username: `nope${Date.now()}`.slice(0, 18), adminRole: 'SUPER_ADMIN',
+  }, users.homeowner.cookie);
+  check(customerCreate.s !== 200, '22. a customer cannot create an administrator', `http ${customerCreate.s}`);
+
+  // Redeeming an invitation with a token nobody issued.
+  const forgedInvite = await post('auth.completeAdminInvitation', {
+    token: 'f'.repeat(43), password: 'a-long-enough-password',
+  });
+  check(forgedInvite.s !== 200, '22. a forged administrator invitation is refused', `http ${forgedInvite.s}`);
+
+  if (ADMIN_USER && ADMIN_PASSWORD) {
+    const supered = await post('auth.adminSignIn', { identifier: ADMIN_USER, password: ADMIN_PASSWORD });
+    check(supered.s === 200, '22. the supplied staging administrator signs in at /admin/login', `http ${supered.s}`);
+    if (supered.s === 200) {
+      const me = await get('admin.me', undefined, supered.c);
+      const m = json(me.t);
+      check(me.s === 200 && typeof m?.adminRole === 'string', '22. admin.me reports a role', `role=${m?.adminRole}`);
+      check(Array.isArray(m?.permissions) && m.permissions.length > 0, '22. and a non-empty permission set', `${m?.permissions?.length} permissions`);
+      check(!me.t.includes('passwordHash') && !me.t.includes('scrypt$'), '22/21. admin.me carries no credential material');
+    }
+  } else {
+    skip('22. a real administrator signs in and loads the admin surface',
+         'no STAGING_ADMIN_USER/PASSWORD supplied - set ADMIN_BOOTSTRAP_* on the service, then these secrets');
+  }
+
   // ══ 18. ADMIN AUTHORIZATION ═══════════════════════════════════════════
   section('17-18. Admin authorization and the billing lifecycle');
   for (const proc of ['admin.users', 'admin.commercialKpis', 'admin.productAnalytics']) {
