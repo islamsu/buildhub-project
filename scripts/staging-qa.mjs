@@ -791,6 +791,202 @@ try {
   check(/[٠-٩]/.test(arText), '19. Arabic pricing renders Arabic-Indic numerals');
   await ctxAr.close();
 
+  // ══ 26. AUTHENTICATED ADMIN UI, IN A REAL BROWSER ═════════════════════
+  //
+  // Sections 23 and 25 drive the admin API. Everything they prove is about
+  // tRPC responses. The rendered admin SPA behind authentication had never been
+  // opened by anything, which is a different claim: a screen can be broken,
+  // blank, or leaking while every endpoint behind it answers correctly.
+  //
+  // So this signs in through the FORM, navigates like a person, and reads what
+  // is actually on screen. It also watches first-party console errors and failed
+  // requests for the authenticated routes, which the public browser pass above
+  // cannot reach.
+  //
+  // NOTHING SECRET IS PRINTED. The password is typed into a field and the token
+  // is only ever compared against captured output; no check detail is derived
+  // from either.
+  section('26. Authenticated admin UI (browser)');
+
+  if (!ADMIN_USER || !ADMIN_PASSWORD) {
+    for (const name of [
+      '26. the Super Admin signs in through the browser form',
+      '26. the Admin Control Panel renders its statistics and navigation',
+      '26. /admin/admins renders the administrator table',
+      '26. a sub-administrator is refused /admin/admins in the browser',
+    ]) skip(name, 'no STAGING_ADMIN_USER/PASSWORD supplied');
+  } else {
+    const adminCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: BASE.includes('127.0.0.1') });
+    const ap = await adminCtx.newPage();
+    const adminErrors = [];
+    const consoleText = [];
+    ap.on('requestfailed', r => {
+      if (r.url().startsWith(BASE)) adminErrors.push(`${r.failure()?.errorText} ${r.url().replace(BASE, '')}`);
+    });
+    ap.on('console', m => {
+      consoleText.push(m.text());
+      if (m.type() !== 'error') return;
+      const origin = m.location()?.url ?? '';
+      if (origin && !origin.startsWith(BASE)) return;
+      if (/Failed to load resource/.test(m.text())) return;
+      adminErrors.push(m.text().slice(0, 90));
+    });
+
+    // ── A. The administrator door, as a person meets it ────────────────
+    await ap.goto(`${BASE}/admin/login`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+    const loginText = await ap.locator('body').innerText().catch(() => '');
+    check(loginText.includes('Administrator sign-in'), '26. /admin/login renders the administrator sign-in form');
+    check(loginText.includes('Customer accounts sign in at /auth'),
+      '26. the door tells staff it is not the customer door');
+
+    await ap.fill('input[placeholder="Username or email"]', ADMIN_USER);
+    await ap.fill('input[type="password"]', ADMIN_PASSWORD);
+    await ap.click('button:has-text("Sign in")');
+    await ap.waitForURL(/\/admin$/, { timeout: 30_000 }).catch(() => {});
+    await ap.waitForTimeout(2_000);
+    check(/\/admin$/.test(ap.url()), '26. the Super Admin signs in through the browser form',
+      ap.url().replace(BASE, ''));
+
+    // ── B. The Admin Control Panel, as rendered ────────────────────────
+    const dash = await ap.locator('body').innerText().catch(() => '');
+    check(!dash.includes('Access Denied'), '26. the authenticated Super Admin is NOT shown Access Denied');
+    for (const stat of ['Total Users', 'Active Projects', 'Products Listed', 'Open Disputes']) {
+      check(dash.includes(stat), `26. the dashboard renders the "${stat}" statistic`);
+    }
+    for (const tab of ['Users', 'Compliance', 'Analytics', 'Vendor billing', 'Disputes', 'Fraud Detection', 'Settings']) {
+      check(dash.includes(tab), `26. the dashboard navigation offers "${tab}"`);
+    }
+    check(dash.includes('User Management by Group'), '26. the Users tab renders the user-management surface');
+    check(!/scrypt\$|passwordHash|tokenHash/.test(dash),
+      '26/21. the rendered dashboard carries no credential material');
+
+    // ── C. /admin/admins, as rendered ──────────────────────────────────
+    await ap.goto(`${BASE}/admin/admins`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+    await ap.waitForTimeout(1_500);
+    const adminsText = await ap.locator('body').innerText().catch(() => '');
+    check(adminsText.includes('Administrators'), '26. /admin/admins renders the administrator table');
+    check(!adminsText.includes('Super Admin only'),
+      '26. a real Super Admin is not shown the Super-Admin-only refusal');
+    for (const column of ['Username', 'Role', 'Status', 'Last login']) {
+      check(adminsText.includes(column), `26. the administrator table shows the "${column}" column`);
+    }
+    check(adminsText.includes('Super Admin'), '26. the bootstrapped administrator displays its role');
+    check(adminsText.includes('Active'), '26. the bootstrapped administrator displays its status');
+    check(adminsText.includes('Invite administrator'), '26. the "Invite administrator" control is visible');
+    check(!/scrypt\$|passwordHash|tokenHash/.test(adminsText),
+      '26/21. the administrator table renders no credential material');
+
+    // The invitation modal and its role selector.
+    await ap.click('button:has-text("Invite administrator")').catch(() => {});
+    await ap.waitForTimeout(800);
+    const modal = await ap.locator('body').innerText().catch(() => '');
+    check(modal.includes('Invite an administrator'), '26. the invitation modal opens');
+    for (const field of ['Full name', 'Username', 'Email']) {
+      check(modal.includes(field), `26. the invitation form asks for "${field}"`);
+    }
+    check(modal.includes('Create and issue link'), '26. the invitation form offers to issue a one-time link');
+    await ap.keyboard.press('Escape').catch(() => {});
+
+    // ── D. A QA sub-administrator, in the browser ──────────────────────
+    //
+    // Its own identity, separate from section 25's, so the two cannot interfere
+    // whichever order they run in.
+    const su2 = await post('auth.adminSignIn', { identifier: ADMIN_USER, password: ADMIN_PASSWORD });
+    const uiUser = `qaui${STAMP}`;
+    const uiPassword = `Sub-Admin-UI-${STAMP}!`;
+    const madeUi = await post('admin.createAdmin', {
+      name: `QA UI Sub Admin ${STAMP}`,
+      email: `qaui${STAMP}@staging-qa.invalid`,
+      username: uiUser,
+      adminRole: 'SUPPORT_ADMIN',
+    }, su2.c);
+    const uiId = json(madeUi.t)?.userId;
+    const uiToken = (json(madeUi.t)?.invitationLink ?? '').split('token=')[1] ?? '';
+    check(madeUi.s === 200 && Boolean(uiId), '26. a QA sub-administrator is created for the UI pass', `http ${madeUi.s}`);
+
+    if (uiId && uiToken) {
+      const redeemed = await post('auth.completeAdminInvitation', { token: uiToken, password: uiPassword });
+      check(redeemed.s === 200, '26. the QA sub-administrator redeems its invitation', `http ${redeemed.s}`);
+
+      // Sign in through the FORM, as that administrator would.
+      const subCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: BASE.includes('127.0.0.1') });
+      const sp = await subCtx.newPage();
+      const subErrors = [];
+      sp.on('requestfailed', r => { if (r.url().startsWith(BASE)) subErrors.push(r.url().replace(BASE, '')); });
+      sp.on('console', m => {
+        consoleText.push(m.text());
+        if (m.type() !== 'error') return;
+        const origin = m.location()?.url ?? '';
+        if (origin && !origin.startsWith(BASE)) return;
+        if (/Failed to load resource/.test(m.text())) return;
+        subErrors.push(m.text().slice(0, 90));
+      });
+
+      await sp.goto(`${BASE}/admin/login`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+      await sp.fill('input[placeholder="Username or email"]', uiUser);
+      await sp.fill('input[type="password"]', uiPassword);
+      await sp.click('button:has-text("Sign in")');
+      await sp.waitForURL(/\/admin$/, { timeout: 30_000 }).catch(() => {});
+      await sp.waitForTimeout(2_000);
+      check(/\/admin$/.test(sp.url()), '26. the sub-administrator signs in through the browser form',
+        sp.url().replace(BASE, ''));
+      const subDash = await sp.locator('body').innerText().catch(() => '');
+      check(!subDash.includes('Access Denied'),
+        '26. a SUPPORT_ADMIN reaches the admin surface rather than Access Denied');
+
+      // Direct navigation to a Super-Admin-only URL, typed rather than clicked.
+      await sp.goto(`${BASE}/admin/admins`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+      await sp.waitForTimeout(1_500);
+      const refused = await sp.locator('body').innerText().catch(() => '');
+      check(refused.includes('Super Admin only'),
+        '26. a sub-administrator is refused /admin/admins in the browser');
+      check(!refused.includes('Invite administrator'),
+        '26. the sub-administrator is not offered the invite control');
+
+      // A role change must reach the BROWSER too, on the same session.
+      const promoted = await post('admin.setAdminRole', { userId: uiId, adminRole: 'SUPER_ADMIN' }, su2.c);
+      check(promoted.s === 200, '26. a Super Admin promotes the QA sub-administrator', `http ${promoted.s}`);
+      await sp.goto(`${BASE}/admin/admins`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+      await sp.waitForTimeout(1_500);
+      const nowAllowed = await sp.locator('body').innerText().catch(() => '');
+      check(nowAllowed.includes('Administrators') && !nowAllowed.includes('Super Admin only'),
+        '26. the promotion reaches the existing browser session with no re-login');
+
+      const demoted = await post('admin.setAdminRole', { userId: uiId, adminRole: 'BILLING_ADMIN' }, su2.c);
+      check(demoted.s === 200, '26. a Super Admin demotes the QA sub-administrator', `http ${demoted.s}`);
+      await sp.goto(`${BASE}/admin/admins`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+      await sp.waitForTimeout(1_500);
+      const refusedAgain = await sp.locator('body').innerText().catch(() => '');
+      check(refusedAgain.includes('Super Admin only'),
+        '26. the demotion reaches the browser immediately - access is withdrawn, not deferred');
+
+      check(subErrors.length === 0, '26. no first-party console or request errors on the sub-admin surface',
+        subErrors.slice(0, 3).join(' | '));
+
+      // ── E. Cleanup, asserted rather than assumed ────────────────────
+      const off = await post('admin.setAdminActive', { userId: uiId, active: false }, su2.c);
+      check(off.s === 200, '26. the QA UI sub-administrator is deactivated', `http ${off.s}`);
+      await sp.goto(`${BASE}/admin/login`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+      await sp.fill('input[placeholder="Username or email"]', uiUser);
+      await sp.fill('input[type="password"]', uiPassword);
+      await sp.click('button:has-text("Sign in")');
+      await sp.waitForTimeout(2_500);
+      check(!/\/admin$/.test(sp.url()),
+        '26. the deactivated administrator cannot sign in through the browser', sp.url().replace(BASE, ''));
+      await subCtx.close();
+    }
+
+    // ── F. Nothing secret reached the console ──────────────────────────
+    const consoleBlob = consoleText.join('\n');
+    check(!consoleBlob.includes(uiPassword) && !consoleBlob.includes(ADMIN_PASSWORD),
+      '26/21. no administrator password appears in browser console output');
+    check(uiToken.length === 0 || !consoleBlob.includes(uiToken),
+      '26/21. no raw invitation token appears in browser console output');
+    check(adminErrors.length === 0, '26. no first-party console or request errors on the admin surface',
+      adminErrors.slice(0, 3).join(' | '));
+    await adminCtx.close();
+  }
+
   // ══ 21. NOTHING SENSITIVE IN THE DELIVERED PAGE ═══════════════════════
   section('21. Secret exposure');
   for (const secret of ['JWT_SECRET', 'DATABASE_URL', 'SMTP_PASSWORD', 'S3_SECRET', 'mysql://', 'BEGIN PRIVATE KEY']) {
