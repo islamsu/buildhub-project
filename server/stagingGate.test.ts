@@ -120,6 +120,26 @@ describe('§4 it covers the agreed 22 points', () => {
     expect(missing).toEqual([22]);
   });
 
+  it('24 is the content abuse controls, and it is genuinely covered', () => {
+    // Also beyond the original 22, for the same reason: authenticated content
+    // rate limiting is a new concern. Pinned so a section that costs real time
+    // to run cannot be quietly dropped to make the gate faster.
+    expect(points.has(24), 'the abuse-control section is missing from the gate').toBe(true);
+    expect(GATE).toContain('upload flooding is refused');
+    expect(GATE).toContain('RFQ flooding is refused');
+    // The half that stops this becoming a test of "the limit is set to zero".
+    expect(GATE).toContain('the limit does not block legitimate posting');
+  });
+
+  it('the abuse probe uses its own account, so it cannot make other sections order-dependent', () => {
+    const section = GATE.slice(GATE.indexOf("section('24."), GATE.indexOf('13-14. RFQ'));
+    expect(section.length, 'section 24 could not be isolated - rewire this test').toBeGreaterThan(0);
+    expect(section, 'the probe must sign up its own user rather than burn a shared persona')
+      .toContain("signUp('homeowner', 'rate')");
+    expect(section).not.toContain('users.contractor.cookie');
+    expect(section).not.toContain('users.homeowner.cookie');
+  });
+
   it('23 is the administrator door, and it is genuinely covered', () => {
     // Numbered beyond the original 22 because administrator authentication is a
     // new concern, not one of the agreed points. Pinned so it cannot quietly

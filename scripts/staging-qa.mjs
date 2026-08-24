@@ -329,6 +329,51 @@ try {
     skip('10. end-to-end upload to the staging bucket', `S3_* not configured: ${errMsg(realPng.t)?.slice(0, 70)}`);
   }
 
+  // ══ 24. ABUSE CONTROLS ON AUTHENTICATED CONTENT ═══════════════════════
+  //
+  // Sign-in was rate limited; what an account could DO once signed in was not,
+  // so one authenticated caller could flood the RFQ feed or fill the bucket.
+  // The limits are unit-tested, but "wired in the source" and "enforced by the
+  // running deployment" are different claims - a build that tree-shook the call
+  // or a stale image would pass the first and fail the second.
+  //
+  // Probed with a DEDICATED throwaway account so the budget it burns belongs to
+  // nobody else: the other sections upload and post as the shared personas, and
+  // a shared limiter would make this check order-dependent.
+  section('24. Rate limits on authenticated content');
+  const abuser = await signUp('homeowner', 'rate');
+  if (!abuser.cookie) {
+    skip('24. authenticated content rate limits', 'the probe account could not be created');
+  } else {
+    // Upload burst is 10/min. Fire 12 refusable payloads: the type check
+    // rejects each one anyway, so nothing reaches storage, and what we are
+    // measuring is whether the LIMIT arrives before the type check stops
+    // mattering.
+    let uploadLimited = 0;
+    let uploadAttempts = 0;
+    for (let i = 0; i < 12; i++) {
+      const r = await post('profile.uploadAvatar', { fileName: `x${i}.png`, contentType: 'image/png', base64: HTMLF }, abuser.cookie);
+      uploadAttempts++;
+      if (r.s === 429 || r.t.includes('Too many requests')) { uploadLimited++; break; }
+    }
+    check(uploadLimited > 0, '24. upload flooding is refused', `limited after ${uploadAttempts} attempts (burst allows 10/min)`);
+
+    // RFQ burst is 3/min. The first few succeed and are real rows - acceptable
+    // on staging, and they carry the QA stamp so they are identifiable.
+    let rfqLimited = 0;
+    let rfqCreated = 0;
+    for (let i = 0; i < 6; i++) {
+      const r = await post('rfq.create', {
+        title: `QA rate-limit probe ${STAMP} #${i}`, description: 'abuse-control probe', category: 'Materials',
+        location: 'Cairo',
+      }, abuser.cookie);
+      if (r.s === 429 || r.t.includes('Too many requests')) { rfqLimited++; break; }
+      if (r.s === 200) rfqCreated++;
+    }
+    check(rfqLimited > 0, '24. RFQ flooding is refused', `${rfqCreated} accepted, then limited (burst allows 3/min)`);
+    check(rfqCreated > 0, '24. the limit does not block legitimate posting', `${rfqCreated} accepted before the limit`);
+  }
+
   // ══ 13, 14. RFQ, TARGETING, QUOTATIONS ════════════════════════════════
   section('13-14. RFQ, enquiry limits, quotations');
   const rfq = await post('rfq.create', {

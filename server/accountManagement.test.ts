@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import { scryptSync } from 'node:crypto';
 import { filterRegistrationApplicants } from '../shared/registrationMetrics';
 
-// Two tests below opt into test-user sign-in by setting TEST_LOGIN_ENABLED.
+// Several tests below opt into the staging-only QA-persona machinery by setting
+// TEST_LOGIN_ENABLED - both the sign-in paths and, since the environment gate
+// was extended to the creation side, admin.createDummyUser.
 // It is cleared after every test so the flag cannot leak into a later one and
 // silently turn a default-denied boundary on.
 const ORIGINAL_TEST_LOGIN = process.env.TEST_LOGIN_ENABLED;
@@ -83,6 +85,11 @@ describe('admin account management', () => {
   });
 
   it('creates a frozen dummy account with a test marker and audit event', async () => {
+    // createDummyUser is now gated on TEST_LOGIN_ENABLED as well as on the
+    // qa.manage permission, so production cannot accumulate QA personas. This
+    // test is about WHAT gets created, so it opts into the staging behaviour;
+    // the gate itself is covered in qaPersonaEnvironmentGate.test.ts.
+    process.env.TEST_LOGIN_ENABLED = 'true';
     (getUserByUsername as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     const valuesMock = vi.fn().mockResolvedValueOnce([{ insertId: 55 }]).mockResolvedValueOnce([]);
     const db = { insert: vi.fn().mockReturnValue({ values: valuesMock }) };
@@ -97,6 +104,7 @@ describe('admin account management', () => {
   });
 
   it('hashes a manually supplied password during dummy-user creation', async () => {
+    process.env.TEST_LOGIN_ENABLED = 'true';
     (getUserByUsername as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     const valuesMock = vi.fn().mockResolvedValueOnce([{ insertId: 56 }]).mockResolvedValueOnce([]);
     const db = { insert: vi.fn().mockReturnValue({ values: valuesMock }) };

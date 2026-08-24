@@ -3,7 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { getObjectStorage, isObjectStorageConfigured } from "./objectStorage";
 import { sdk, type AuthenticatedUser } from "./sdk";
 import { getDb } from "../db";
-import { documents, messages, projects, registrationDocumentSubmissions } from "../../drizzle/schema";
+import { documents, messages, projects, qualifiedEnquiries, registrationDocumentSubmissions, rfqs } from "../../drizzle/schema";
+import { parseRfqAttachments } from "../../shared/rfqAttachments";
 
 async function authenticateStorageRequest(req: Request): Promise<AuthenticatedUser | null> {
   try {
@@ -20,16 +21,10 @@ export async function authorizeStorageKey(key: string, user: AuthenticatedUser |
   if (!user) return false;
   if (user.role === 'admin') return true; // Admins already have full user-data visibility elsewhere (compliance review, audit reports).
 
-  // Category B (RFQ attachments): rfq.get/rfq.list already expose full RFQ detail - including
-  // these attachments - to any authenticated user by design (open-bidding marketplace), so the
-  // same rule applies here rather than inventing a stricter one the rest of the app doesn't have.
-  if (key.startsWith('rfq-attachments/')) {
-    return true;
-  }
-
   // Category A (avatars): profile pictures, already shown on every public vendor
-  // profile and directory card, so any authenticated user may fetch one - the
-  // same rule as RFQ attachments above.
+  // profile and directory card, so any authenticated user may fetch one. This is
+  // now the ONLY blanket-allow category below admin - RFQ attachments used to
+  // share it and no longer do.
   //
   // This branch was missing entirely. Avatars are written to `avatars/` by
   // profile.uploadAvatar, but with no case here every request fell through to
@@ -41,6 +36,50 @@ export async function authorizeStorageKey(key: string, user: AuthenticatedUser |
 
   const db = await getDb();
   if (!db) return false;
+
+  // Category B: RFQ attachments - the requester, plus any provider who has PAID
+  // to open a qualified enquiry on that RFQ.
+  //
+  // This branch used to `return true` for every authenticated caller. Its
+  // justification was that "rfq.get/rfq.list already expose full RFQ detail -
+  // including these attachments - to any authenticated user by design", and
+  // that was true when it was written. Slice 9 made it false: rfq.list now uses
+  // a column allowlist that omits `attachments`, and rfq.get is scoped
+  // `WHERE requesterId = ctx.user.id`. So the proxy became the LOOSEST surface
+  // rather than the matching one - the drawings, BOQs and site photos behind a
+  // paid enquiry were reachable by anyone who could name the key.
+  //
+  // Key unpredictability was never the authorization and is not relied on here
+  // either: the 8 hex characters storagePut appends are 32 bits, and the rest of
+  // the path is a small integer and the original filename.
+  //
+  // The uploader id is read from the key rather than searched for, because
+  // rfq.uploadAttachment writes exactly `rfq-attachments/user-<id>/...` and that
+  // is the only writer. Candidate RFQs are then scoped to that same user, which
+  // has a second effect worth stating: an attacker who learns a key cannot
+  // reference it from an RFQ of their own to grant themselves access, because
+  // the lookup only ever considers RFQs owned by the ACTUAL uploader.
+  //
+  // Matched by exact string comparison in JS, not by SQL LIKE. `_` is a
+  // wildcard in LIKE and a legal character in these keys (the filename
+  // sanitiser produces it), so a LIKE would quietly match a DIFFERENT file.
+  if (key.startsWith('rfq-attachments/')) {
+    const uploaderId = Number(/^rfq-attachments\/user-(\d+)\//.exec(key)?.[1]);
+    if (!Number.isInteger(uploaderId)) return false;
+    // The requester's own file. No query needed, and it is the common case.
+    if (uploaderId === user.id) return true;
+
+    const owning = await db.select({ id: rfqs.id, attachments: rfqs.attachments })
+      .from(rfqs)
+      .where(eq(rfqs.requesterId, uploaderId));
+    const match = owning.find(row => parseRfqAttachments(row.attachments).some(a => a.key === key));
+    if (!match) return false;
+
+    const [enquiry] = await db.select({ id: qualifiedEnquiries.id })
+      .from(qualifiedEnquiries)
+      .where(and(eq(qualifiedEnquiries.rfqId, match.id), eq(qualifiedEnquiries.userId, user.id)));
+    return !!enquiry;
+  }
 
   // Category D: compliance/registration documents - owner only (+ admin above).
   if (key.startsWith('registration/')) {
