@@ -902,8 +902,15 @@ try {
       '26. the form states the Super Admin will never see the password');
 
     // The role selector, and that it offers exactly the five real roles.
-    await ap.click('button[role="combobox"]').catch(() => {});
-    await ap.waitForTimeout(600);
+    //
+    // SCOPED TO THE DIALOG. Every row of the administrator table behind the
+    // modal renders its own role Select, so a bare button[role="combobox"]
+    // matches several and Playwright's strict mode refuses to click any of
+    // them - which cost a 30-second timeout and six failures that looked like
+    // a missing selector rather than an ambiguous one. The options themselves
+    // are portalled outside the dialog, so they are queried globally.
+    await ap.locator('[role="dialog"] button[role="combobox"]').first().click().catch(() => {});
+    await ap.waitForTimeout(800);
     const roleOptions = await ap.locator('[role="option"]').allInnerTexts().catch(() => []);
     check(roleOptions.length === 5, '26. the role selector renders every administrator role',
       `${roleOptions.length} option(s)`);
