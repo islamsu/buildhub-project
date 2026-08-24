@@ -1192,12 +1192,32 @@ try {
     }
 
     // Arabic. Free: this is the same page under the other language.
-    await aiPageB.evaluate(() => { try { localStorage.setItem('lang', 'ar'); } catch { /* storage blocked */ } });
-    await aiPageB.reload({ waitUntil: 'domcontentloaded', timeout: 45_000 });
-    await aiPageB.waitForTimeout(2000);
-    const arText = await aiPageB.locator('body').innerText();
-    const dir = await aiPageB.evaluate(() => document.documentElement.getAttribute('dir'));
-    check(/[؀-ۿ]/.test(arText), '28. the AI page renders Arabic', dir ? `dir=${dir}` : '');
+    //
+    // The key is `buildhub_lang` - LanguageContext reads exactly that - and the
+    // assertion is `dir=rtl`, not "some Arabic characters are present". The
+    // first draft of this check wrote the wrong key and asserted the latter: the
+    // page stayed in English and the check passed anyway, because the navbar's
+    // language toggle is itself labelled العربية. A check that passes on the
+    // control that would SWITCH the language proves nothing about the page.
+    const arCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: BASE.includes('127.0.0.1') });
+    const arPage = await arCtx.newPage();
+    try {
+      await arPage.addInitScript(() => localStorage.setItem('buildhub_lang', 'ar'));
+      await arPage.goto(`${BASE}/ai`, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+      await arPage.waitForTimeout(2500);
+      const dir = await arPage.evaluate(() => document.documentElement.getAttribute('dir'));
+      const arLang = await arPage.evaluate(() => document.documentElement.getAttribute('lang'));
+      check(dir === 'rtl', '28. the AI page switches to right-to-left in Arabic', `dir=${dir}, lang=${arLang}`);
+      const arBody = await arPage.locator('body').innerText();
+      check(/[؀-ۿ]/.test(arBody), '28. the AI page renders Arabic text');
+      if (!aiConfigured) {
+        // The unavailable notice must be translated too - an English-only
+        // fallback is exactly the hard-coded behaviour this must not have.
+        check(/غير متاح/.test(arBody), '28. the unavailable notice is translated into Arabic');
+      }
+    } finally {
+      await arCtx.close();
+    }
 
     // The credential must not be anywhere the browser can see it.
     const delivered = await aiPageB.content();
