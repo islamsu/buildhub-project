@@ -5,6 +5,11 @@ vi.mock('./db', () => ({
 }));
 vi.mock('./_core/llm', () => ({
   invokeLLM: vi.fn(),
+  // This suite is about authorization, rate limiting and payload handling on a
+  // deployment that HAS a provider. ai.chat now refuses before invoking when
+  // none is configured, so the mock has to say which of the two worlds these
+  // tests live in. The unconfigured world is covered by aiAvailability.test.ts.
+  isLlmConfigured: () => true,
 }));
 
 import { appRouter } from './routers';

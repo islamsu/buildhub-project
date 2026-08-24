@@ -217,9 +217,23 @@ const resolveApiUrl = () =>
     ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
     : "https://forge.manus.im/v1/chat/completions";
 
+/**
+ * Whether this deployment can talk to an LLM at all.
+ *
+ * Exported so callers can ASK before they try. Without it the only way to
+ * discover the answer was to make a request and read an exception, which is
+ * how /ai came to render eight working-looking tools on a deployment that
+ * could not answer a single one of them.
+ */
+export const isLlmConfigured = (): boolean => ENV.forgeApiKey.trim().length > 0;
+
 const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+  if (!isLlmConfigured()) {
+    // Name the variable this actually reads. It used to say
+    // "OPENAI_API_KEY is not configured" while checking BUILT_IN_FORGE_API_KEY,
+    // which sent configuration effort at the wrong variable - render.yaml still
+    // carries an OPENAI_API_KEY entry that nothing on this path consumes.
+    throw new Error("BUILT_IN_FORGE_API_KEY is not configured");
   }
 };
 

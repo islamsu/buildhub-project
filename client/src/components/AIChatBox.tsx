@@ -22,6 +22,13 @@ export type AIChatBoxProps = {
   messages: Message[];
 
   /**
+   * Hard-disables composing. Distinct from `isLoading`: loading means "wait",
+   * disabled means "this deployment cannot answer at all", so the composer
+   * stays inert rather than accepting text that is guaranteed to fail.
+   */
+  disabled?: boolean;
+
+  /**
    * Callback when user sends a message.
    * Typically you'll call a tRPC mutation here to invoke the LLM.
    */
@@ -114,6 +121,7 @@ export function AIChatBox({
   messages,
   onSendMessage,
   isLoading = false,
+  disabled = false,
   placeholder = "Type your message...",
   className,
   height = "600px",
@@ -212,7 +220,7 @@ export function AIChatBox({
                     <button
                       key={index}
                       onClick={() => onSendMessage(prompt)}
-                      disabled={isLoading}
+                      disabled={isLoading || disabled}
                       className="rounded-lg border border-border bg-card px-4 py-2 text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {prompt}
@@ -314,13 +322,14 @@ export function AIChatBox({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
+          disabled={disabled}
           className="flex-1 max-h-32 resize-none min-h-9"
           rows={1}
         />
         <Button
           type="submit"
           size="icon"
-          disabled={!input.trim() || isLoading}
+          disabled={!input.trim() || isLoading || disabled}
           className="shrink-0 h-[38px] w-[38px]"
         >
           {isLoading ? (

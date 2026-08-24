@@ -370,3 +370,69 @@ describe('§5 the workflow runs somewhere that can reach staging', () => {
     expect(WORKFLOW).toContain('upload-artifact');
   });
 });
+
+describe('§6 the AI section cannot claim an AI that was never exercised', () => {
+  // Section 27 exists because the gate ran 306 green checks against a
+  // deployment whose AI assistant was broken for every user. Its own honesty
+  // is the thing worth pinning: a section that reports success on an
+  // unconfigured deployment would recreate exactly the blind spot it was
+  // added to close.
+  const SECTION = (() => {
+    const start = GATE.indexOf("section('27. AI Assistant')");
+    const end = GATE.indexOf("section('21. Secret exposure')");
+    if (start === -1 || end === -1 || end < start) {
+      throw new Error('section 27 anchors not found - this test is no longer reading the AI section');
+    }
+    return GATE.slice(start, end);
+  })();
+
+  // Comments explain the reasoning and mention the very strings some of these
+  // assertions forbid, so every check below reads executable lines only.
+  const EXECUTABLE = SECTION.split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
+
+  // Anchored by offset, not by first occurrence: there are TWO `} else {` in
+  // this section - the session-missing fallback and the configured/unconfigured
+  // split - and taking the first one silently yields an empty slice, which
+  // makes every assertion below vacuous rather than failing.
+  const IF_CONFIGURED = EXECUTABLE.indexOf('if (aiConfigured) {');
+  const ELSE_BRANCH = EXECUTABLE.indexOf('} else {', IF_CONFIGURED);
+  const BOTH_STATES = EXECUTABLE.indexOf("check(!(ai.s !== 200", ELSE_BRANCH);
+  if (IF_CONFIGURED === -1 || ELSE_BRANCH === -1 || BOTH_STATES === -1) {
+    throw new Error('section 27 branch anchors not found - this test is no longer reading the branches');
+  }
+  const CONFIGURED = EXECUTABLE.slice(IF_CONFIGURED, ELSE_BRANCH);
+  const UNCONFIGURED = EXECUTABLE.slice(ELSE_BRANCH, BOTH_STATES);
+
+  it('only the configured branch asserts that the provider answered', () => {
+    expect(CONFIGURED).toContain('the provider returns renderable content');
+    expect(UNCONFIGURED).not.toContain('the provider returns renderable content');
+    expect(UNCONFIGURED).not.toContain('an authenticated AI request succeeds');
+  });
+
+  it('the unconfigured branch SKIPS the provider round trip instead of passing it', () => {
+    expect(UNCONFIGURED).toContain("skip('27. the provider answers a real question'");
+    // A skip that does not say what it needs is a shrug, not a finding.
+    expect(UNCONFIGURED).toContain('BUILT_IN_FORGE_API_KEY');
+  });
+
+  it('the unconfigured branch still proves the refusal is deliberate', () => {
+    expect(UNCONFIGURED).toContain('SERVICE_UNAVAILABLE');
+    expect(UNCONFIGURED).toContain('Something went wrong. Please try again.');
+  });
+
+  it('it makes at most one provider call per run', () => {
+    // Cost control. Eight tools, one shared mutation, one request.
+    expect(EXECUTABLE.match(/post\('ai\.chat'/g) ?? []).toHaveLength(2); // anonymous refusal + the one real call
+  });
+
+  it('the AI error is checked for credential leakage', () => {
+    for (const leak of ['BUILT_IN_FORGE', 'OPENAI_API_KEY', 'forge.manus.im', 'Bearer ']) {
+      expect(EXECUTABLE).toContain(leak);
+    }
+    expect(EXECUTABLE).toContain('27/21. the AI error exposes no');
+  });
+
+  it('a failed AI request can never be rendered as a successful one', () => {
+    expect(EXECUTABLE).toContain('a failed AI request never returns a content payload');
+  });
+});

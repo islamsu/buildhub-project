@@ -1056,13 +1056,24 @@ try {
   // Project Manager, Risk Detector, Procurement, Maintenance, General
   // Consultant - is the same `trpc.ai.chat` mutation with a different opening
   // prompt. One live provider call therefore proves the provider integration
-  // for all eight; the per-tool routing is unit-tested with no provider call
-  // at all. That is deliberate: this section makes exactly ONE paid request
-  // per run.
+  // for all eight, and this section makes at most ONE paid request per run.
+  // Per-tool routing is unit-tested with no provider call at all.
+  //
+  // The section branches on what the deployment says about itself. It never
+  // reports a working AI assistant on a deployment that has no provider
+  // credential: in that state the live round trip is SKIPPED, explicitly, and
+  // what gets asserted instead is that the application says so honestly rather
+  // than offering eight tools that cannot answer.
   section('27. AI Assistant');
 
   const aiPage = await fetch(`${BASE}/ai`, { redirect: 'follow', signal: AbortSignal.timeout(30_000) });
   check(aiPage.status === 200, '27. the AI Assistant page is reachable', `http ${aiPage.status}`);
+
+  const aiCaps = json((await get('auth.capabilities')).t);
+  const aiConfigured = aiCaps?.aiAssistant === true;
+  check(typeof aiCaps?.aiAssistant === 'boolean',
+    '27. the deployment declares whether AI is available', `aiAssistant: ${aiCaps?.aiAssistant}`);
+  console.log(`INFO  27. aiAssistant capability: ${aiCaps?.aiAssistant}`);
 
   // Free (no provider call): anonymous use must be refused, and refused with
   // the login message rather than the generic internal one - if this ever
@@ -1073,10 +1084,9 @@ try {
   check(aiAnon.s === 401, '27. anonymous AI use is refused', `http ${aiAnon.s}`);
   check(/10001/.test(anonMsg), '27. the refusal is an auth refusal, not a masked internal error', anonMsg.slice(0, 60));
 
-  // THE single live provider call.
   const aiUser = users.homeowner;
   if (!aiUser?.cookie) {
-    skip('27. a real AI request reaches the provider', 'no signed-in user session available in this run');
+    skip('27. the AI request path is exercised', 'no signed-in user session available in this run');
   } else {
     const t0 = Date.now();
     const ai = await post('ai.chat', { messages: [{ role: 'user', content: 'Reply with the single word: ok' }] }, aiUser.cookie);
@@ -1086,15 +1096,29 @@ try {
     let code = '';
     try { code = JSON.parse(ai.t)?.error?.json?.data?.code ?? ''; } catch { /* not an error envelope */ }
 
-    // Reported unconditionally so a failing run still says WHICH failure it was.
+    // Printed unconditionally so a failing run says WHICH failure it was. The
+    // latency matters: a config refusal returns before any network call, while
+    // any provider-side failure costs at least 3.75s of retry backoff.
     console.log(`INFO  27. ai.chat -> http ${ai.s}${code ? ` ${code}` : ''} in ${elapsed}ms`);
 
-    check(ai.s === 200, '27. an authenticated AI request succeeds', `http ${ai.s}${code ? ` ${code}` : ''} in ${elapsed}ms`);
-    check(typeof body?.content === 'string' && body.content.trim().length > 0,
-      '27. the provider returns renderable content', body?.content ? `${String(body.content).trim().slice(0, 40)}…` : `no content; ${code || 'no code'}`);
+    if (aiConfigured) {
+      check(ai.s === 200, '27. an authenticated AI request succeeds', `http ${ai.s}${code ? ` ${code}` : ''} in ${elapsed}ms`);
+      check(typeof body?.content === 'string' && body.content.trim().length > 0,
+        '27. the provider returns renderable content',
+        body?.content ? `${String(body.content).trim().slice(0, 40)}…` : `no content; ${code || 'no code'}`);
+    } else {
+      skip('27. the provider answers a real question',
+        'no AI provider credential is configured on this deployment - the provider round trip is NOT proven. Set BUILT_IN_FORGE_API_KEY (and BUILT_IN_FORGE_API_URL if not using the default gateway).');
+      // What IS provable in this state: the refusal is deliberate and typed,
+      // not the masked INTERNAL_SERVER_ERROR that made this incident opaque.
+      check(ai.s === 503 && code === 'SERVICE_UNAVAILABLE',
+        '27. an unconfigured deployment refuses deliberately, not with a masked internal error',
+        `http ${ai.s} ${code || 'no code'} in ${elapsed}ms`);
+      check(message !== 'Something went wrong. Please try again.',
+        '27. the caller is told the feature is unavailable, not that something broke', message.slice(0, 70));
+    }
 
-    // A failure must not be dressed up as a success. tRPC returns the error
-    // envelope, never `result.data`, so a client cannot render a false answer.
+    // True in both states: a failure must never be dressed up as a success.
     check(!(ai.s !== 200 && body?.content), '27. a failed AI request never returns a content payload');
 
     // Secret-safe errors: whatever went wrong, the browser must not learn the
