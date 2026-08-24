@@ -483,6 +483,195 @@ try {
          'no STAGING_ADMIN_USER/PASSWORD supplied - set ADMIN_BOOTSTRAP_* on the service, then these secrets');
   }
 
+  // ══ 25. SUB-ADMIN LIFECYCLE ═══════════════════════════════════════════
+  //
+  // Everything section 23 proves is NEGATIVE: the administrator door refuses
+  // customers, anonymous callers and forged tokens. That leaves the entire
+  // positive path unproven on live staging - creating an administrator,
+  // redeeming the invitation, choosing a role, and each role being confined to
+  // its own permissions. Those are the operations that actually grant authority,
+  // so they are the ones worth proving against a running deployment.
+  //
+  // ONE sub-admin account per run, rotated through all four specialist roles
+  // rather than four accounts created and abandoned. That covers role selection
+  // AND role change, and leaves staging one identifiable, deactivated row
+  // instead of four.
+  //
+  // NOTHING SECRET IS EVER PRINTED. The invitation token and the sub-admin
+  // password exist only as local constants; every check below reports a status
+  // code, a role name or a boolean. `check` prints its detail argument, so no
+  // detail argument anywhere in this section is derived from either value.
+  section('25. Sub-admin lifecycle: invitation, acceptance, roles, boundaries');
+
+  if (!ADMIN_USER || !ADMIN_PASSWORD) {
+    for (const name of [
+      '25. a Super Admin reaches the administrators page',
+      '25. a Super Admin can invite a sub-administrator',
+      '25. the invitation is single-use',
+      '25. each administrator role is confined to its own permissions',
+      '25. a sub-administrator cannot elevate itself',
+    ]) skip(name, 'no STAGING_ADMIN_USER/PASSWORD supplied - set ADMIN_BOOTSTRAP_* on the service, then these secrets');
+  } else {
+    const su = await post('auth.adminSignIn', { identifier: ADMIN_USER, password: ADMIN_PASSWORD });
+    if (su.s !== 200) {
+      check(false, '25. the Super Admin signs in', `http ${su.s}`);
+    } else {
+      const SUPER = su.c;
+
+      // ── A. The administrators page, from a Super Admin session ──────────
+      const adminsPage = await get('admin.admins', undefined, SUPER);
+      const adminRows = json(adminsPage.t);
+      check(adminsPage.s === 200, '25. a Super Admin reaches the administrators page', `http ${adminsPage.s}`);
+      check(Array.isArray(adminRows) && adminRows.length > 0,
+        '25. the administrators page lists at least the bootstrapped Super Admin', `${adminRows?.length} row(s)`);
+      check(!/passwordHash|scrypt\$|tokenHash/.test(adminsPage.t),
+        '25/21. the administrators page carries no credential material');
+
+      // ── B. Invite a sub-administrator ───────────────────────────────────
+      const subUser = `qasub${STAMP}`;
+      const subPassword = `Sub-Admin-QA-${STAMP}!`;
+      const created = await post('admin.createAdmin', {
+        name: `QA Sub Admin ${STAMP}`,
+        email: `qasub${STAMP}@staging-qa.invalid`,
+        username: subUser,
+        adminRole: 'USER_ADMIN',
+      }, SUPER);
+      const createdBody = json(created.t);
+      check(created.s === 200, '25. a Super Admin can invite a sub-administrator', `http ${created.s}`);
+
+      const subId = createdBody?.userId;
+      // Held locally, never printed. Every check below reports only shape.
+      const inviteLink = createdBody?.invitationLink ?? '';
+      const token = inviteLink.split('token=')[1] ?? '';
+      check(inviteLink.startsWith('/admin/accept-invitation?token='),
+        '25. the invitation link is returned once, to the inviter only');
+      check(token.length >= 40, '25. the invitation token is long enough to be unguessable',
+        `${token.length} characters`);
+      const ttlHours = createdBody?.expiresAt
+        ? Math.round((new Date(createdBody.expiresAt) - Date.now()) / 3_600_000) : -1;
+      check(ttlHours > 0 && ttlHours <= 48, '25. the invitation expires within 48 hours', `~${ttlHours}h`);
+
+      if (created.s === 200 && subId && token) {
+        // ── C. Invitation metadata must not carry the credential ──────────
+        const invs = await get('admin.adminInvitations', { userId: subId }, SUPER);
+        check(invs.s === 200, '25. a Super Admin can audit outstanding invitations', `http ${invs.s}`);
+        check(!invs.t.includes(token) && !/tokenHash/.test(invs.t),
+          '25/21. the invitation audit exposes neither the raw token nor its hash');
+        check(json(invs.t)?.[0]?.usedAt === null, '25. the invitation is recorded as unused before redemption');
+
+        // A customer must not reach the invitation audit at all.
+        const customerInvs = await get('admin.adminInvitations', { userId: subId }, users.homeowner.cookie);
+        check(customerInvs.s === 403 || customerInvs.t.includes('FORBIDDEN'),
+          '25. a customer cannot read administrator invitations', `http ${customerInvs.s}`);
+
+        // ── D. Redeem, then prove it cannot be redeemed twice ─────────────
+        const accepted = await post('auth.completeAdminInvitation', { token, password: subPassword });
+        check(accepted.s === 200, '25. the invitee redeems the invitation and sets a password', `http ${accepted.s}`);
+        const replay = await post('auth.completeAdminInvitation', { token, password: `Replayed-${STAMP}!` });
+        check(replay.s !== 200, '25. the invitation is single-use', `replay http ${replay.s}`);
+
+        const afterUse = await get('admin.adminInvitations', { userId: subId }, SUPER);
+        check(typeof json(afterUse.t)?.[0]?.usedAt === 'string',
+          '25. redemption is recorded, so a used invitation is auditable');
+
+        // ── E. The sub-administrator signs in at the administrator door ───
+        const subLogin = await post('auth.adminSignIn', { identifier: subUser, password: subPassword });
+        check(subLogin.s === 200, '25. the new sub-administrator signs in at /admin/login', `http ${subLogin.s}`);
+        const SUB = subLogin.c;
+
+        // ── F. Role coverage and permission boundaries ────────────────────
+        //
+        // Each pair is DISCRIMINATING: the permitted endpoint needs a permission
+        // only this role holds, and the forbidden one needs a permission it does
+        // not. `admin.users` is deliberately NOT used as a permitted probe -
+        // every role holds users.read, so it would pass for all four and prove
+        // nothing about the role.
+        const matrix = [
+          { role: 'USER_ADMIN',        allow: ['admin.fullAuditReport', 'audit.read'],        deny: ['admin.commercialKpis', 'billing.read'] },
+          { role: 'MARKETPLACE_ADMIN', allow: ['admin.complianceQueue', 'marketplace.manage'], deny: ['admin.fullAuditReport', 'audit.read'] },
+          { role: 'SUPPORT_ADMIN',     allow: ['admin.disputes', 'support.manage'],            deny: ['admin.complianceQueue', 'marketplace.manage'] },
+          { role: 'BILLING_ADMIN',     allow: ['admin.commercialKpis', 'billing.read'],        deny: ['admin.disputes', 'support.manage'] },
+        ];
+
+        for (const { role, allow, deny } of matrix) {
+          if (role !== 'USER_ADMIN') {
+            const rotated = await post('admin.setAdminRole', { userId: subId, adminRole: role }, SUPER);
+            check(rotated.s === 200, `25. a Super Admin assigns ${role}`, `http ${rotated.s}`);
+
+            // THE PROPERTY THAT MATTERS, and it is not "the session dies".
+            //
+            // A first draft of this section asserted that the target's existing
+            // cookie stops working after a role change. It ran against live
+            // staging and failed three times - correctly, because that is not
+            // how BuildHub works and never was. setAdminRole updates the row and
+            // writes an audit event; it does not touch sessionsInvalidBefore
+            // (only deactivation, session revocation and password reset do).
+            //
+            // That is sound, because authenticateRequest re-reads the user row
+            // from the database on EVERY request, so ctx.user.adminRole is
+            // always live. The session survives; the AUTHORITY changes at once.
+            // Demoting somebody should narrow what they can do, not log them out
+            // mid-task.
+            //
+            // So the assertion is the security property itself: on the SAME
+            // cookie, the new role is in force immediately and the endpoint the
+            // PREVIOUS role could reach is now refused. This is what would catch
+            // a regression that cached the role in the token - the failure mode
+            // where a demoted administrator keeps their old powers until the JWT
+            // expires, which here could be up to a year.
+            const carried = await get('admin.me', undefined, SUB);
+            check(carried.s === 200 && json(carried.t)?.adminRole === role,
+              `25. the existing session carries ${role} immediately, with no re-login`,
+              `http ${carried.s}, role=${json(carried.t)?.adminRole}`);
+          }
+
+          const me = await get('admin.me', undefined, SUB);
+          const mine = json(me.t);
+          check(mine?.adminRole === role, `25. admin.me reports ${role}`, `role=${mine?.adminRole}`);
+          check(Array.isArray(mine?.permissions) && mine.permissions.includes(allow[1]),
+            `25. ${role} holds ${allow[1]}`);
+          check(Array.isArray(mine?.permissions) && !mine.permissions.includes(deny[1]),
+            `25. ${role} does NOT hold ${deny[1]}`);
+
+          const permitted = await get(allow[0], allow[0] === 'admin.complianceQueue' ? {} : undefined, SUB);
+          check(permitted.s === 200, `25. ${role} may call ${allow[0]}`, `http ${permitted.s}`);
+
+          // The matrix is CHAINED: each role's permitted probe is exactly the
+          // next role's forbidden one. So on every rotation after the first,
+          // this same call is also the demotion check - the endpoint the
+          // previous role could reach, refused on the very same cookie.
+          const forbidden = await get(deny[0], deny[0] === 'admin.complianceQueue' ? {} : undefined, SUB);
+          check(forbidden.s === 403 || forbidden.t.includes('FORBIDDEN'),
+            `25. ${role} is REFUSED ${deny[0]}`, `http ${forbidden.s}`);
+
+          // Super-Admin-only surface, refused for every specialist role.
+          const mgmt = await get('admin.admins', undefined, SUB);
+          check(mgmt.s === 403 || mgmt.t.includes('FORBIDDEN'),
+            `25. ${role} cannot reach the administrators page`, `http ${mgmt.s}`);
+
+          // Self-elevation, the operation that would make every boundary above
+          // pointless if it worked.
+          const elevate = await post('admin.setAdminRole', { userId: subId, adminRole: 'SUPER_ADMIN' }, SUB);
+          check(elevate.s !== 200, `25. ${role} cannot elevate itself to SUPER_ADMIN`, `http ${elevate.s}`);
+          // The status code alone is weak evidence: this call is refused by the
+          // permission gate AND by setAdminRole's own self-target check, so a
+          // non-200 proves only that something said no. What matters is that
+          // the authority did not actually move, so read it back.
+          const stillScoped = json((await get('admin.me', undefined, SUB)).t);
+          check(stillScoped?.adminRole === role,
+            `25. ${role} still holds exactly ${role} after attempting to elevate`,
+            `role=${stillScoped?.adminRole}`);
+        }
+
+        // ── G. Cleanup, which is itself an assertion ──────────────────────
+        const deactivated = await post('admin.setAdminActive', { userId: subId, active: false }, SUPER);
+        check(deactivated.s === 200, '25. the QA sub-administrator is deactivated after the run', `http ${deactivated.s}`);
+        const deadLogin = await post('auth.adminSignIn', { identifier: subUser, password: subPassword });
+        check(deadLogin.s !== 200, '25. a deactivated administrator can no longer sign in', `http ${deadLogin.s}`);
+      }
+    }
+  }
+
   // ══ 18. ADMIN AUTHORIZATION ═══════════════════════════════════════════
   section('17-18. Admin authorization and the billing lifecycle');
   for (const proc of ['admin.users', 'admin.commercialKpis', 'admin.productAnalytics']) {

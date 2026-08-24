@@ -1,0 +1,318 @@
+================================================================================
+BUILDHUB — FINAL LIVE STAGING VERIFICATION
+================================================================================
+
+Date       : 2026-08-24
+Target     : https://buildhub-staging.onrender.com
+main       : c77c409f4b08846854690329c4dd4d863e6a086e
+Evidence   : Staging QA run #14 (32726752164, job 97429661217) — conclusion SUCCESS
+             Staging QA run #15 (32727132708, job 97430865420) — conclusion FAILURE,
+             a deliberate negative control described in section 4.
+
+No application code was changed. No production change. No payment activation.
+No Render environment variable was changed - none was needed, because no check
+failed.
+
+--------------------------------------------------------------------------------
+1. RESULT
+--------------------------------------------------------------------------------
+
+    174/174 checks passed, 8 skipped
+
+    Total executable checks : 174
+    Passed                  : 174
+    Failed                  : 0
+    Skipped                 : 8   (skips are NOT passes - see section 5)
+
+--------------------------------------------------------------------------------
+2. DEPLOYED COMMIT — EXACT MATCH, ASSERTED NOT ASSUMED
+--------------------------------------------------------------------------------
+
+    PASS  0. /version identifies the build  — http 200
+    PASS  0. the deployment reports a real commit SHA
+              — c77c409f4b08846854690329c4dd4d863e6a086e
+    >>> DEPLOYED COMMIT: c77c409f4b08846854690329c4dd4d863e6a086e
+    PASS  0. the deployed commit is the one under test
+              — expected c77c409f4b08, serving c77c409f4b08846854690329c4dd4d863e6a086e
+
+This run was dispatched WITH expect_commit supplied, so provenance is an
+assertion rather than the SKIP it was in every previous run. That is the single
+skip that cleared between run #13 (9 skips) and run #14 (8 skips).
+
+ON THE SHA REPRESENTATION. The verification request quotes
+`c77c409f4b08846854690329c4dd4d863e` (34 characters). That is a truncation of
+the full 40-character SHA `c77c409f4b08846854690329c4dd4d863e6a086e`, not a
+different commit - the 34 characters are a prefix of the 40. I passed the full
+40-character SHA to the gate; it echoes the expected value truncated to 12 for
+display and compares by prefix. Serving SHA, expected SHA and main all agree.
+
+--------------------------------------------------------------------------------
+3. SECTION-BY-SECTION
+--------------------------------------------------------------------------------
+
+/readyz AND DATABASE CONNECTIVITY
+    PASS  2. /healthz responds  — http 200
+    PASS  3. /readyz confirms database connectivity  — http 200
+    PASS  3. /readyz reports the database check passing
+              — {"status":"ready","checks":{"database":true}}
+    PASS  4. billing schema reachable (vendorSubscriptions)  — http 200
+    PASS  4. vendor directory schema reachable (vendorCategories, 0015)  — http 200
+  Migration 0020 (adminRole + adminInvitations) is implicitly confirmed by the
+  administrator endpoints in section 23 answering rather than erroring.
+
+auth.signUp — ALL SIX ROLES
+    PASS  8. register homeowner         — http 200
+    PASS  8. register contractor        — http 200
+    PASS  8. register engineer          — http 200
+    PASS  8. register architect         — http 200
+    PASS  8. register supplier          — http 200
+    PASS  8. register project_manager   — http 200
+    PASS  8. all six roles hold a session
+
+auth.signIn
+    PASS  7. sign in with username  — http 200
+    PASS  7. sign in with email     — http 200
+    PASS  7. the session authenticates  — http 200
+    PASS  7. wrong password and unknown user are indistinguishable
+              — 401 / Invalid username, email, or password
+    PASS  7. the enumeration check is testing auth, not rate limiting
+
+SESSION / COOKIE BEHAVIOUR
+    PASS  21. the session cookie is HttpOnly
+    PASS  21. the session cookie is Secure
+              — Path=/; HttpOnly; Secure; SameSite=None
+    PASS  21. auth.me returns no credential material
+  SameSite=None paired with Secure, which is the only legal pairing and the
+  exact defect found earlier in this engagement.
+
+MARKETPLACE ENDPOINTS
+    PASS  11. marketplace.list responds without a server error  — http 200
+    PASS  11. marketplace.list returns data, not a tRPC error
+    PASS  11. marketplace.vendors responds without a server error  — http 200
+    PASS  11. marketplace.vendors returns data, not a tRPC error
+    PASS  11. marketplace.vendorCategories responds without a server error
+    PASS  11. marketplace.vendorCategories returns data, not a tRPC error
+    PASS  11. marketplace.featuredVendors responds without a server error
+    PASS  11. marketplace.featuredVendors returns data, not a tRPC error
+    PASS  11. the filtered listing responds  — http 200
+    PASS  11. the product endpoint answers with a list  — 0 product(s)
+    PASS  12. the vendor endpoint answers with a list  — 45 vendor(s)
+    PASS  12. every directory vendor carries real database columns
+              — 45 row(s), 0 missing id
+    PASS  11. no fabricated product: Cleopatra / Carrara / SunPower /
+              Premium Ceramic Floor Tiles / Italian Marble Slabs
+  The earlier marketplace 500s are gone: all four procedures return 200 with a
+  real payload, not a tRPC error shape.
+
+AUTHORIZATION / SECURITY
+    PASS  21. rfq.list refuses anonymous callers  — http 401
+    PASS  21. the homeowner's budget does not reach anonymous callers
+    PASS  15/21. a third party does NOT see that conversation
+    PASS  14. an UNAPPROVED provider cannot quote  — http 403
+    PASS  13. the qualified-enquiry counter is readable  — http 200
+    PASS  13. enquiry usage reports a real count
+              — {"used":0,"allowance":5,"remaining":5,...}
+    PASS  18. anonymous refused: admin.users / commercialKpis / productAnalytics — 401
+    PASS  18. non-admin refused: admin.users / commercialKpis / productAnalytics — 403
+    PASS  10. SVG upload refused  — http 400
+    PASS  10. SVG relabelled as PNG refused
+    PASS  10. HTML relabelled as PNG refused
+    PASS  6. HSTS is set  — max-age=63072000; includeSubDomains; preload
+    PASS  6. plain HTTP redirects to HTTPS  — http 301
+    PASS  6. security header: CSP / nosniff / frame protection
+    PASS  21. the server does not advertise its stack
+
+ABUSE CONTROLS (section 24, new, live for the first time)
+    PASS  24. upload flooding is refused  — limited after 11 attempts (burst allows 10/min)
+    PASS  24. RFQ flooding is refused     — 3 accepted, then limited (burst allows 3/min)
+    PASS  24. the limit does not block legitimate posting — 3 accepted before the limit
+  These three FAILED in run #13 against the previous deployment and pass now.
+  That is the clearest single confirmation that staging is serving the new code.
+  The third check exists so a limit accidentally set to zero cannot read as a pass.
+
+SECRET EXPOSURE
+    PASS  21. the delivered page contains no JWT_SECRET
+    PASS  21. the delivered page contains no DATABASE_URL
+    PASS  21. the delivered page contains no SMTP_PASSWORD
+    PASS  21. the delivered page contains no S3_SECRET
+    PASS  21. the delivered page contains no mysql://
+    PASS  21. the delivered page contains no BEGIN PRIVATE KEY
+    PASS  21. errors carry no stack trace or filesystem path
+    PASS  21. no credential or provider handle in public responses
+    PASS  5.  no real personal email addresses in public data
+    PASS  5.  no legacy seeded/dummy accounts visible
+
+MOBILE AND BILINGUAL (real Chromium, EN + AR, 1440px + 375px)
+    PASS  19. html lang correct, direction correct — all four combinations
+    PASS  20. reachable + renders content — 6 routes x 4 combinations
+    PASS  20. no horizontal overflow — every mobile375 route, -6px
+    PASS  20. no first-party request or console errors on any public route
+    PASS  19. Arabic pricing renders Arabic-Indic numerals
+
+ADMIN
+    PASS  23. /admin/login is served  — http 200
+    PASS  23. a customer CANNOT sign in at the administrator door  — http 401
+    PASS  23. that refusal is INDISTINGUISHABLE from an unknown account — 401 vs 401
+    PASS  22. anonymous refused: admin.me      — http 401
+    PASS  22. a customer is refused: admin.me  — http 403
+    PASS  22. anonymous refused: admin.admins      — http 401
+    PASS  22. a customer is refused: admin.admins  — http 403
+    PASS  23. a customer cannot create an administrator  — http 403
+    PASS  23. a forged administrator invitation is refused  — http 400
+    SKIP  23. a real administrator signs in and loads the admin surface
+
+TEST-LOGIN
+    INFO  capabilities: {"testLogin":true,"passwordSignIn":true,
+                         "oauthSignIn":false,"passwordReset":false}
+  `testLogin: true` is CORRECT for staging and is what the spec requires. It is
+  server-side compared against the exact string "true", so production leaving it
+  unset means OFF. Stated plainly: the gate confirms the capability is ADVERTISED
+  as on; it does not exercise a dummy sign-in, because no QA persona exists -
+  creating one needs an administrator, which is the same blocker as the SKIPs.
+  Since this deployment, both the CREATION side (admin.createDummyUser,
+  admin.issueTestLoginLink) and the sign-in side are gated on that flag.
+
+BILLING (payments deliberately inactive)
+    PASS  16. three plans in the catalogue  — 3
+    PASS  16. professional is EGP 499/month
+    PASS  16. premium is EGP 999/month
+    PASS  16. checkout is honestly reported unavailable
+    PASS  16. unbuilt entitlement not advertised: portfolioLevel /
+              promotionalCapability / branchLimit / teamMemberLimit / visibilityLevel
+    PASS  16. enforced entitlements ARE advertised
+
+--------------------------------------------------------------------------------
+4. THE PIPEFAIL FIX, EXERCISED
+--------------------------------------------------------------------------------
+
+A green run does not prove a gate can go red. So the fix was tested directly,
+with a negative control that touches nothing on staging: run #15 dispatched the
+same workflow against the same deployment with expect_commit deliberately set to
+forty zeroes.
+
+    RUN #15  (32727132708, job 97430865420)
+    FAIL  0. the deployed commit is the one under test
+              — expected 000000000000, serving c77c409f4b08846854690329c4dd4d863e6a086e
+    173/174 checks passed, 8 skipped
+    FAILURES:
+      - 0. the deployed commit is the one under test
+
+    Step 7 "Staging launch-readiness gate"  : conclusion FAILURE
+    Run conclusion                          : FAILURE
+
+The A/B, on the same workflow and the same harness:
+
+    RUN #13  before the fix   2 failures  →  run conclusion SUCCESS   (wrong)
+    RUN #15  after the fix    1 failure   →  run conclusion FAILURE   (correct)
+    RUN #14  after the fix    0 failures  →  run conclusion SUCCESS   (correct)
+
+CONCLUSION: the workflow now reports SUCCESS if and only if the QA script has
+zero failures. Verified in both directions, not asserted.
+
+Note also that the ONLY failure in run #15 was the one injected. Every other
+check still passed, so the negative control confirms the fix without casting any
+doubt on staging's health.
+
+--------------------------------------------------------------------------------
+5. EVERY SKIPPED CHECK, AND EXACTLY WHAT ENABLES IT
+--------------------------------------------------------------------------------
+
+Eight skips. None is a failure, and none is hidden - the harness prints
+"Skipped checks are NOT passes" at the end of every run.
+
+ 1. 9.  password reset
+        Reason : auth.capabilities reports it unavailable - SMTP_HOST unset
+        Enable : set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD and
+                 SMTP_FROM on the Render service. SMTP_FROM is REQUIRED once
+                 SMTP_HOST is set - the server throws at boot without it - and
+                 must be on a domain with SPF, DKIM and DMARC published.
+                 APP_BASE_URL must also be set, or the reset link has no host.
+
+ 2. 10. end-to-end upload to the staging bucket
+        Reason : S3_* not configured
+        Enable : set S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY_ID and
+                 S3_SECRET_ACCESS_KEY against a STAGING bucket.
+        Note   : the byte-level type checks around it all PASS - SVG refused,
+                 SVG-as-PNG refused, HTML-as-PNG refused. Only the round trip
+                 to real storage is unproven.
+
+ 3. 23. a real administrator signs in and loads the admin surface
+ 4. 17. subscription lifecycle (trial, cancel, resume)
+ 5. 18. admin billing visibility
+        Reason : no STAGING_ADMIN_USER / STAGING_ADMIN_PASSWORD supplied
+        Enable : TWO STEPS, IN THIS ORDER.
+                 (a) Render dashboard: set ADMIN_BOOTSTRAP_EMAIL,
+                     ADMIN_BOOTSTRAP_USERNAME, ADMIN_BOOTSTRAP_PASSWORD
+                     (min 12 chars). Redeploy. Confirm the log line
+                     "[bootstrap] Created the first administrator". Sign in at
+                     /admin/login. Then CLEAR all three.
+                 (b) GitHub repository secrets: STAGING_ADMIN_USER and
+                     STAGING_ADMIN_PASSWORD, matching that account.
+                 Doing (b) first gives the gate credentials for an account that
+                 does not exist.
+
+ 6. 14. approved-provider quotation flow
+        Reason : needs an admin to approve the vendor
+        Enable : clears automatically once (3) is done - an administrator can
+                 then approve a provider and the quotation path becomes testable.
+
+ 7. 11. every product carries real database columns
+ 8. 11. category filtering actually filters
+        Reason : the staging catalogue is empty - nothing to verify, so nothing
+                 is claimed; a filter over nothing proves nothing
+        Enable : create at least one real vendor product on staging. This is
+                 business data, not configuration. Note the vendor side is NOT
+                 skipped - 45 directory vendors were verified against real
+                 database columns.
+
+--------------------------------------------------------------------------------
+6. FINAL STAGING GO / NO-GO
+--------------------------------------------------------------------------------
+
+    STAGING: GO
+
+Every executable check passes against the exact commit on main, the gate can
+now genuinely fail, and the three abuse-control checks that were red on the
+previous deployment are green on this one. Nothing in this verification requires
+an application code change, and none was made.
+
+    PRODUCTION: NO-GO — unchanged, and nothing here moves it.
+
+REMAINING BLOCKERS. All infrastructure or configuration; none is a code defect.
+
+  STAGING (would turn the 8 skips into passes; not blocking staging itself)
+    S1  ADMIN_BOOTSTRAP_* on Render, then STAGING_ADMIN_USER/PASSWORD as GitHub
+        secrets. Clears 4 skips (23, 17, 18, and 14 by consequence).
+    S2  SMTP credentials + APP_BASE_URL. Clears 1 skip.
+    S3  Staging S3 bucket + credentials. Clears 1 skip.
+    S4  One real product in the staging catalogue. Clears 2 skips.
+
+  PRODUCTION (the six from the readiness inventory, all still open)
+    P1  No production domain. Blocks APP_BASE_URL, TLS, cookie behaviour, and
+        every emailed link.
+    P2  No production database. No Vultr instance, no DATABASE_URL, no CA cert.
+    P3  No production host. deploy-production.yml releases over SSH to
+        /srv/buildhub on a machine that does not exist; PRODUCTION_SSH_HOST,
+        _USER, _KEY and the PRODUCTION_BASE_URL variable are all unset.
+    P4  No verified backups. The pre-release script has never run and NO RESTORE
+        HAS EVER BEEN TESTED. This is the highest-risk open item.
+    P5  No production S3. Professional onboarding cannot complete without it, so
+        the supply side of the marketplace cannot be recruited.
+    P6  No production SMTP. Password reset is manual, which is not viable for a
+        public consumer launch.
+
+  NON-BLOCKING, carried forward
+    F-2 Uploaded objects are never deleted (cost, and right-to-erasure later).
+    No monitoring or alerting exists. /healthz, /readyz and /version are there
+    to be polled; nothing polls them.
+
+--------------------------------------------------------------------------------
+7. WHAT THIS RUN LEFT ON STAGING
+--------------------------------------------------------------------------------
+
+Stated so the next run's numbers are not a surprise. Each QA run registers six
+role personas plus one rate-limit probe account, and section 24 posts up to
+three RFQs before the limiter stops it. The directory vendor count has risen
+across runs (0 → 39 → 45) purely from accumulated QA registrations. All carry
+the QA stamp and the @staging-qa.invalid domain. Staging only; production is
+untouched.
