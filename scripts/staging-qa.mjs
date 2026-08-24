@@ -1050,6 +1050,60 @@ try {
   }
 
   // ══ 21. NOTHING SENSITIVE IN THE DELIVERED PAGE ═══════════════════════
+  // ── 27. AI Assistant ─────────────────────────────────────────────────────
+  //
+  // Every tool on /ai - Cost Estimator, Quantity Surveyor, Material Advisor,
+  // Project Manager, Risk Detector, Procurement, Maintenance, General
+  // Consultant - is the same `trpc.ai.chat` mutation with a different opening
+  // prompt. One live provider call therefore proves the provider integration
+  // for all eight; the per-tool routing is unit-tested with no provider call
+  // at all. That is deliberate: this section makes exactly ONE paid request
+  // per run.
+  section('27. AI Assistant');
+
+  const aiPage = await fetch(`${BASE}/ai`, { redirect: 'follow', signal: AbortSignal.timeout(30_000) });
+  check(aiPage.status === 200, '27. the AI Assistant page is reachable', `http ${aiPage.status}`);
+
+  // Free (no provider call): anonymous use must be refused, and refused with
+  // the login message rather than the generic internal one - if this ever
+  // returns the generic message it means the request got past auth and died
+  // inside the provider path instead.
+  const aiAnon = await post('ai.chat', { messages: [{ role: 'user', content: 'ping' }] });
+  const anonMsg = errMsg(aiAnon.t) ?? '';
+  check(aiAnon.s === 401, '27. anonymous AI use is refused', `http ${aiAnon.s}`);
+  check(/10001/.test(anonMsg), '27. the refusal is an auth refusal, not a masked internal error', anonMsg.slice(0, 60));
+
+  // THE single live provider call.
+  const aiUser = users.homeowner;
+  if (!aiUser?.cookie) {
+    skip('27. a real AI request reaches the provider', 'no signed-in user session available in this run');
+  } else {
+    const t0 = Date.now();
+    const ai = await post('ai.chat', { messages: [{ role: 'user', content: 'Reply with the single word: ok' }] }, aiUser.cookie);
+    const elapsed = Date.now() - t0;
+    const body = json(ai.t);
+    const message = errMsg(ai.t) ?? '';
+    let code = '';
+    try { code = JSON.parse(ai.t)?.error?.json?.data?.code ?? ''; } catch { /* not an error envelope */ }
+
+    // Reported unconditionally so a failing run still says WHICH failure it was.
+    console.log(`INFO  27. ai.chat -> http ${ai.s}${code ? ` ${code}` : ''} in ${elapsed}ms`);
+
+    check(ai.s === 200, '27. an authenticated AI request succeeds', `http ${ai.s}${code ? ` ${code}` : ''} in ${elapsed}ms`);
+    check(typeof body?.content === 'string' && body.content.trim().length > 0,
+      '27. the provider returns renderable content', body?.content ? `${String(body.content).trim().slice(0, 40)}…` : `no content; ${code || 'no code'}`);
+
+    // A failure must not be dressed up as a success. tRPC returns the error
+    // envelope, never `result.data`, so a client cannot render a false answer.
+    check(!(ai.s !== 200 && body?.content), '27. a failed AI request never returns a content payload');
+
+    // Secret-safe errors: whatever went wrong, the browser must not learn the
+    // provider, the credential variable names, or a stack trace.
+    for (const leak of ['BUILT_IN_FORGE', 'OPENAI_API_KEY', 'forge.manus.im', 'api.openai.com', 'Bearer ', 'at Object.', 'node_modules']) {
+      check(!message.includes(leak), `27/21. the AI error exposes no ${leak.trim()}`);
+    }
+  }
+
   section('21. Secret exposure');
   for (const secret of ['JWT_SECRET', 'DATABASE_URL', 'SMTP_PASSWORD', 'S3_SECRET', 'mysql://', 'BEGIN PRIVATE KEY']) {
     check(!html.includes(secret), `21. the delivered page contains no ${secret}`);
