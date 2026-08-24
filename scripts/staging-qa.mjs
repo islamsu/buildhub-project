@@ -867,8 +867,15 @@ try {
     check(adminsText.includes('Administrators'), '26. /admin/admins renders the administrator table');
     check(!adminsText.includes('Super Admin only'),
       '26. a real Super Admin is not shown the Super-Admin-only refusal');
-    for (const column of ['Username', 'Role', 'Status', 'Last login']) {
-      check(adminsText.includes(column), `26. the administrator table shows the "${column}" column`);
+    // CASE-INSENSITIVE, and that is the point rather than laziness. The header
+    // row carries Tailwind's `uppercase`, and innerText returns RENDERED text,
+    // so the DOM says "Username" while the browser reports "USERNAME". A
+    // case-sensitive includes() reported four missing columns that are present
+    // and correct - a harness bug that would have read as a UI defect.
+    const adminsUpper = adminsText.toUpperCase();
+    for (const column of ['Name', 'Username', 'Email', 'Role', 'Status', 'Created', 'Last login', 'Actions']) {
+      check(adminsUpper.includes(column.toUpperCase()),
+        `26. the administrator table shows the "${column}" column`);
     }
     check(adminsText.includes('Super Admin'), '26. the bootstrapped administrator displays its role');
     check(adminsText.includes('Active'), '26. the bootstrapped administrator displays its status');
@@ -881,10 +888,29 @@ try {
     await ap.waitForTimeout(800);
     const modal = await ap.locator('body').innerText().catch(() => '');
     check(modal.includes('Invite an administrator'), '26. the invitation modal opens');
+    // Asserted as PLACEHOLDER ATTRIBUTES, not as text. These fields carry no
+    // visible label - the prompt is the placeholder - and a placeholder is never
+    // part of innerText. Reading them from the DOM is the only way to prove the
+    // form asks for them; the first draft looked for body text and reported
+    // three fields missing that were on screen the whole time.
     for (const field of ['Full name', 'Username', 'Email']) {
-      check(modal.includes(field), `26. the invitation form asks for "${field}"`);
+      const count = await ap.locator(`input[placeholder="${field}"]`).count().catch(() => 0);
+      check(count === 1, `26. the invitation form asks for "${field}"`, `${count} field(s)`);
     }
     check(modal.includes('Create and issue link'), '26. the invitation form offers to issue a one-time link');
+    check(modal.includes('They receive a one-time link and choose their own password'),
+      '26. the form states the Super Admin will never see the password');
+
+    // The role selector, and that it offers exactly the five real roles.
+    await ap.click('button[role="combobox"]').catch(() => {});
+    await ap.waitForTimeout(600);
+    const roleOptions = await ap.locator('[role="option"]').allInnerTexts().catch(() => []);
+    check(roleOptions.length === 5, '26. the role selector renders every administrator role',
+      `${roleOptions.length} option(s)`);
+    for (const label of ['Super Admin', 'User Admin', 'Marketplace Admin', 'Support Admin', 'Billing Admin']) {
+      check(roleOptions.some(o => o.trim() === label), `26. the role selector offers "${label}"`);
+    }
+    await ap.keyboard.press('Escape').catch(() => {});
     await ap.keyboard.press('Escape').catch(() => {});
 
     // ── D. A QA sub-administrator, in the browser ──────────────────────
