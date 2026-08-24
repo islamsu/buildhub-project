@@ -68,6 +68,35 @@ const get = async (proc, input, cookie) => {
 const json = t => { try { return JSON.parse(t)?.result?.data?.json; } catch { return undefined; } };
 const errMsg = t => { try { return JSON.parse(t)?.error?.json?.message; } catch { return t; } };
 
+/**
+ * ONE administrator sign-in per run, reused everywhere.
+ *
+ * The gate used to call auth.adminSignIn from sections 23, 25, 18 and 26, plus
+ * a browser form sign-in - five attempts against the SAME identifier every run.
+ * `authLimiters.identifierSustained` allows ten per fifteen minutes, so two
+ * back-to-back runs were fine and three were not: run #25 collapsed with
+ * `http 429` and 41 downstream failures that looked like a broken admin UI and
+ * were nothing of the kind.
+ *
+ * The limiter was right; the harness was greedy. Signing in once and sharing the
+ * cookie takes a run from five attempts to two - this one and the deliberate
+ * browser-form sign-in in section 26, which has to be a real form submission
+ * because proving the form works is the point of it.
+ *
+ * Cached rather than re-requested, so a section that runs after a rotation still
+ * gets the same Super Admin session; nothing in the gate changes that account.
+ */
+let adminSessionCookie;
+let adminSignInStatus;
+const superAdminCookie = async () => {
+  if (adminSessionCookie === undefined) {
+    const r = await post('auth.adminSignIn', { identifier: ADMIN_USER, password: ADMIN_PASSWORD });
+    adminSignInStatus = r.s;
+    adminSessionCookie = r.s === 200 ? r.c : null;
+  }
+  return adminSessionCookie;
+};
+
 const STAMP = Date.now().toString().slice(-8);
 const PW = `Staging-QA-${STAMP}!`;
 const ROLES = ['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager'];
@@ -469,10 +498,10 @@ try {
   check(forgedInvite.s !== 200, '23. a forged administrator invitation is refused', `http ${forgedInvite.s}`);
 
   if (ADMIN_USER && ADMIN_PASSWORD) {
-    const supered = await post('auth.adminSignIn', { identifier: ADMIN_USER, password: ADMIN_PASSWORD });
-    check(supered.s === 200, '23. the supplied staging administrator signs in at /admin/login', `http ${supered.s}`);
-    if (supered.s === 200) {
-      const me = await get('admin.me', undefined, supered.c);
+    const supered = await superAdminCookie();
+    check(adminSignInStatus === 200, '23. the supplied staging administrator signs in at /admin/login', `http ${adminSignInStatus}`);
+    if (supered) {
+      const me = await get('admin.me', undefined, supered);
       const m = json(me.t);
       check(me.s === 200 && typeof m?.adminRole === 'string', '23. admin.me reports a role', `role=${m?.adminRole}`);
       check(Array.isArray(m?.permissions) && m.permissions.length > 0, '23. and a non-empty permission set', `${m?.permissions?.length} permissions`);
@@ -512,11 +541,11 @@ try {
       '25. a sub-administrator cannot elevate itself',
     ]) skip(name, 'no STAGING_ADMIN_USER/PASSWORD supplied - set ADMIN_BOOTSTRAP_* on the service, then these secrets');
   } else {
-    const su = await post('auth.adminSignIn', { identifier: ADMIN_USER, password: ADMIN_PASSWORD });
-    if (su.s !== 200) {
-      check(false, '25. the Super Admin signs in', `http ${su.s}`);
+    const SUPER_COOKIE = await superAdminCookie();
+    if (!SUPER_COOKIE) {
+      check(false, '25. the Super Admin session is available', `sign-in http ${adminSignInStatus}`);
     } else {
-      const SUPER = su.c;
+      const SUPER = SUPER_COOKIE;
 
       // ── A. The administrators page, from a Super Admin session ──────────
       const adminsPage = await get('admin.admins', undefined, SUPER);
@@ -682,12 +711,12 @@ try {
   }
 
   if (ADMIN_USER && ADMIN_PASSWORD) {
-    const adminLogin = await post('auth.signIn', { identifier: ADMIN_USER, password: ADMIN_PASSWORD });
-    if (adminLogin.s !== 200) {
-      check(false, '18. the supplied staging admin can sign in', `http ${adminLogin.s}`);
+    const adminCookie = await superAdminCookie();
+    if (!adminCookie) {
+      check(false, '18. an administrator session is available', `sign-in http ${adminSignInStatus}`);
     } else {
-      const admin = adminLogin.c;
-      check(true, '18. the staging admin signed in');
+      const admin = adminCookie;
+      check(true, '18. the staging admin session is in force');
       const kpis = await get('admin.commercialKpis', { includeDummy: false }, admin);
       const k = json(kpis.t);
       check(kpis.s === 200, '18. commercial KPIs load for an admin', `http ${kpis.s}`);
@@ -924,7 +953,7 @@ try {
     //
     // Its own identity, separate from section 25's, so the two cannot interfere
     // whichever order they run in.
-    const su2 = await post('auth.adminSignIn', { identifier: ADMIN_USER, password: ADMIN_PASSWORD });
+    const su2c = await superAdminCookie();
     const uiUser = `qaui${STAMP}`;
     const uiPassword = `Sub-Admin-UI-${STAMP}!`;
     const madeUi = await post('admin.createAdmin', {
@@ -932,7 +961,7 @@ try {
       email: `qaui${STAMP}@staging-qa.invalid`,
       username: uiUser,
       adminRole: 'SUPPORT_ADMIN',
-    }, su2.c);
+    }, su2c);
     const uiId = json(madeUi.t)?.userId;
     const uiToken = (json(madeUi.t)?.invitationLink ?? '').split('token=')[1] ?? '';
     check(madeUi.s === 200 && Boolean(uiId), '26. a QA sub-administrator is created for the UI pass', `http ${madeUi.s}`);
@@ -977,7 +1006,7 @@ try {
         '26. the sub-administrator is not offered the invite control');
 
       // A role change must reach the BROWSER too, on the same session.
-      const promoted = await post('admin.setAdminRole', { userId: uiId, adminRole: 'SUPER_ADMIN' }, su2.c);
+      const promoted = await post('admin.setAdminRole', { userId: uiId, adminRole: 'SUPER_ADMIN' }, su2c);
       check(promoted.s === 200, '26. a Super Admin promotes the QA sub-administrator', `http ${promoted.s}`);
       await sp.goto(`${BASE}/admin/admins`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
       await sp.waitForTimeout(1_500);
@@ -985,7 +1014,7 @@ try {
       check(nowAllowed.includes('Administrators') && !nowAllowed.includes('Super Admin only'),
         '26. the promotion reaches the existing browser session with no re-login');
 
-      const demoted = await post('admin.setAdminRole', { userId: uiId, adminRole: 'BILLING_ADMIN' }, su2.c);
+      const demoted = await post('admin.setAdminRole', { userId: uiId, adminRole: 'BILLING_ADMIN' }, su2c);
       check(demoted.s === 200, '26. a Super Admin demotes the QA sub-administrator', `http ${demoted.s}`);
       await sp.goto(`${BASE}/admin/admins`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
       await sp.waitForTimeout(1_500);
@@ -997,7 +1026,7 @@ try {
         subErrors.slice(0, 3).join(' | '));
 
       // ── E. Cleanup, asserted rather than assumed ────────────────────
-      const off = await post('admin.setAdminActive', { userId: uiId, active: false }, su2.c);
+      const off = await post('admin.setAdminActive', { userId: uiId, active: false }, su2c);
       check(off.s === 200, '26. the QA UI sub-administrator is deactivated', `http ${off.s}`);
       await sp.goto(`${BASE}/admin/login`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
       await sp.fill('input[placeholder="Username or email"]', uiUser);
