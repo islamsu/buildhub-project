@@ -23,6 +23,23 @@ export const users = mysqlTable('users', {
   phone:       varchar('phone', { length: 32 }),
   loginMethod: varchar('loginMethod', { length: 64 }),
   role:        mysqlEnum('role', ['user', 'admin']).default('user').notNull(),
+  // WHICH KIND of administrator, meaningful only where role = 'admin'.
+  //
+  // Deliberately a second column rather than more values on `role`. `role` is
+  // the privilege axis the whole codebase already branches on - protectedProcedure,
+  // adminProcedure, the frozen-account exemption - and widening it would mean
+  // re-auditing every one of those. This adds authority DETAIL without moving
+  // the boundary that already works.
+  //
+  // Nullable, and null means NO permissions rather than all of them: see
+  // hasAdminPermission, which fails closed on anything it cannot resolve. A row
+  // with role='admin' and adminRole=null can sign in nowhere useful.
+  //
+  // Values mirror shared/adminRoles.ts ADMIN_ROLES.
+  adminRole:   mysqlEnum('adminRole', [
+                 'SUPER_ADMIN', 'USER_ADMIN', 'MARKETPLACE_ADMIN',
+                 'SUPPORT_ADMIN', 'BILLING_ADMIN',
+               ]),
   accountSource: mysqlEnum('accountSource', ['self_registered', 'admin_created']).default('self_registered').notNull(),
   isDummy:     boolean('isDummy').default(false).notNull(),
   createdBy:   int('createdBy').references((): any => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
@@ -110,6 +127,55 @@ export const userAccountAuditEvents = mysqlTable('userAccountAuditEvents', {
 }, table => ({
   userIdIdx: index('userAccountAuditEvents_userId_idx').on(table.userId),
   actorIdIdx: index('userAccountAuditEvents_actorId_idx').on(table.actorId),
+}));
+
+// ── Administrator invitations ──────────────────────────────────────────────
+//
+// A separate table from users.invitationToken on purpose, twice over.
+//
+// First, that column stores the token RAW. For a normal account invitation that
+// is a pre-existing weakness; for one that mints an ADMINISTRATOR it would mean
+// anyone with read access to the users table holds a working key to the admin
+// surface. Here only sha256(token) is stored, so the database never contains
+// anything redeemable.
+//
+// Second, users.invitationToken is already in use by admin.createUser. Sharing
+// one column between two flows means the second one silently destroys the first
+// - exactly the mistake the passwordResetToken comment above records having
+// already avoided once.
+//
+// sha256 rather than scrypt is correct here and not a shortcut: the token is 32
+// bytes of CSPRNG output, not a human-chosen secret, so there is no dictionary
+// to slow down. Same reasoning as testLoginTokens.
+export const adminInvitations = mysqlTable('adminInvitations', {
+  id:        int('id').autoincrement().primaryKey(),
+  // sha256 of the raw token, hex. Unique so redemption is one indexed lookup
+  // rather than a scan over live rows.
+  tokenHash: varchar('tokenHash', { length: 64 }).notNull().unique(),
+  // The pending administrator this invitation belongs to.
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  // The role they will hold once they set a password. Recorded at issue time so
+  // the invitation cannot be pointed at a different authority later, and
+  // re-applied on redemption from THIS row rather than from client input.
+  adminRole: mysqlEnum('adminRole', [
+               'SUPER_ADMIN', 'USER_ADMIN', 'MARKETPLACE_ADMIN',
+               'SUPPORT_ADMIN', 'BILLING_ADMIN',
+             ]).notNull(),
+  // Who issued it. An authority-granting capability needs a trail naming a person.
+  invitedBy: int('invitedBy').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  expiresAt: timestamp('expiresAt').notNull(),
+  // Set on first successful redemption. Single-use: a spent link is dead even
+  // before it expires, so a leaked URL cannot be replayed.
+  usedAt:    timestamp('usedAt'),
+  // Set when a Super Admin kills the link early. Distinct from usedAt so the
+  // trail separates "consumed" from "withdrawn".
+  revokedAt: timestamp('revokedAt'),
+  revokedBy: int('revokedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+}, table => ({
+  userIdIdx:    index('adminInvitations_userId_idx').on(table.userId),
+  invitedByIdx: index('adminInvitations_invitedBy_idx').on(table.invitedBy),
+  expiresAtIdx: index('adminInvitations_expiresAt_idx').on(table.expiresAt),
 }));
 
 // ── Projects ───────────────────────────────────────────────────────────────

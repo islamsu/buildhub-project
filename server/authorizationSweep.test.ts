@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { ADMIN_ROLES, ADMIN_ROLE_PERMISSIONS } from '@shared/adminRoles';
 
 import { checkUploadedFile, sniffContentType, DOCUMENT_TYPES, IMAGE_TYPES } from './_core/fileType';
 
@@ -29,7 +30,11 @@ function procedureTiers(): Map<string, string> {
   for (const line of ROUTERS.split('\n')) {
     const routerMatch = /^const (\w+Router) = router\(\{/.exec(line);
     if (routerMatch) { router = routerMatch[1].replace(/Router$/, ''); continue; }
-    const procedureMatch = /^ {2}(\w+):\s*(publicProcedure|protectedProcedure|adminProcedure|approvedProviderProcedure|complianceProcedure)/.exec(line);
+    // `adminWith('users.manage')` is recorded as that exact string, not
+    // flattened to "adminProcedure": the permission IS the tier now, and a test
+    // that could not tell them apart would pass while an endpoint sat behind
+    // the wrong one.
+    const procedureMatch = /^ {2}(\w+):\s*(publicProcedure|protectedProcedure|adminProcedure|superAdminProcedure|approvedProviderProcedure|complianceProcedure|adminWith\('[a-z.]+'\))/.exec(line);
     if (procedureMatch && router) tiers.set(`${router}.${procedureMatch[1]}`, procedureMatch[2]);
   }
   return tiers;
@@ -56,7 +61,7 @@ function procedureBody(qualified: string): string {
   expect(start, `${qualified} not found in ${routerName}Router`).toBeGreaterThan(-1);
   // Ends at the next top-level procedure declaration, or the router's close.
   const rest = block.slice(start + 3);
-  const nextMatch = /\n {2}(?:\/\/[^\n]*\n {2})*\w+:\s*(?:public|protected|admin|approvedProvider|compliance)Procedure/.exec(rest);
+  const nextMatch = /\n {2}(?:\/\/[^\n]*\n {2})*\w+:\s*(?:(?:public|protected|admin|superAdmin|approvedProvider|compliance)Procedure|adminWith\()/.exec(rest);
   return block.slice(start, nextMatch ? start + 3 + nextMatch.index : routerEnd - routerStart);
 }
 
@@ -99,8 +104,19 @@ describe('§1 every procedure is pinned to a tier', () => {
     expect(publicProcedures).toEqual([
       // Sign-in, sign-up and recovery must work before you have a session.
       'admin.completeInvitation',
+      // Administrator sign-in. Public for the same reason auth.signIn is: you
+      // cannot hold a session before you authenticate. It is strictly NARROWER
+      // than auth.signIn - it refuses anyone who is not an administrator with a
+      // resolvable role - and returns one identical message for every rejection,
+      // so it cannot be used to discover which accounts are administrators.
+      'auth.adminSignIn',
       'auth.capabilities',
       'auth.checkSignupAvailability',
+      // Redeeming an administrator invitation or reset link. Public because the
+      // holder has no session yet. Guarded by a 32-byte CSPRNG token matched by
+      // sha256, single-use via a conditional UPDATE, expiring and revocable, and
+      // the role granted comes from the stored row rather than from the request.
+      'auth.completeAdminInvitation',
       'auth.logout',
       'auth.me',
       // Phases 7-9. Public because the holder of a QA sign-in link has no
@@ -131,12 +147,50 @@ describe('§1 every procedure is pinned to a tier', () => {
     ]);
   });
 
-  it('every admin procedure uses adminProcedure', () => {
+  it('every admin procedure is behind an administrator tier', () => {
+    // Was "every admin procedure uses adminProcedure", which described a world
+    // where admin was one all-or-nothing flag. Each endpoint now sits behind the
+    // PERMISSION it needs, so the assertion is that every one of them is behind
+    // an administrator tier of some kind - and, below, that the right one.
     const adminProcedures = Array.from(TIERS.entries()).filter(([name]) => name.startsWith('admin.'));
-    const notAdmin = adminProcedures.filter(([, tier]) => tier !== 'adminProcedure');
+    expect(adminProcedures.length).toBeGreaterThan(30);
+    const ungated = adminProcedures.filter(([, tier]) =>
+      tier !== 'adminProcedure' && tier !== 'superAdminProcedure' && !tier.startsWith('adminWith('));
     // completeInvitation is the sole exception: it is how an invited user sets
     // their first password, so it cannot require a session.
-    expect(notAdmin.map(([name]) => name)).toEqual(['admin.completeInvitation']);
+    expect(ungated.map(([name]) => name)).toEqual(['admin.completeInvitation']);
+  });
+
+  it('the endpoints that shape administrator authority are SUPER ADMIN only', () => {
+    // The whole least-privilege claim rests on this list. If any of these ever
+    // drops to a lesser tier, a sub-admin can grant themselves authority and
+    // every other guarantee in this file becomes decorative.
+    for (const name of [
+      'admin.admins', 'admin.createAdmin', 'admin.setAdminRole', 'admin.setAdminActive',
+      'admin.revokeAdminSessions', 'admin.resetAdminPassword',
+      'admin.adminInvitations', 'admin.revokeAdminInvitation',
+    ]) {
+      expect(TIERS.get(name), name).toBe('superAdminProcedure');
+    }
+  });
+
+  it('superAdminProcedure is exactly the admins.manage permission, held by one role', () => {
+    // Guards the indirection: superAdminProcedure is only meaningful because
+    // `admins.manage` belongs to SUPER_ADMIN alone. Both halves are asserted so
+    // neither can drift without this failing.
+    expect(ROUTERS).toContain("const superAdminProcedure = adminWith('admins.manage')");
+    const holders = ADMIN_ROLES.filter(role => ADMIN_ROLE_PERMISSIONS[role].includes('admins.manage'));
+    expect(holders).toEqual(['SUPER_ADMIN']);
+  });
+
+  it('an administrator may change only their OWN password, and takes no target id', () => {
+    // changeOwnPassword is adminProcedure rather than superAdminProcedure on
+    // purpose - everyone may do it for themselves. What stops it becoming a way
+    // to seize another account is that it accepts no userId at all.
+    expect(TIERS.get('admin.changeOwnPassword')).toBe('adminProcedure');
+    const body = procedureBody('admin.changeOwnPassword');
+    expect(body).toContain('eq(users.id, ctx.user.id)');
+    expect(body, 'changeOwnPassword must not accept a target').not.toMatch(/userId:\s*z\.number/);
   });
 
   it('every compliance procedure is gated on complianceProcedure', () => {

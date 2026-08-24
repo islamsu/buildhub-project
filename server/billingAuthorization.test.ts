@@ -26,6 +26,8 @@ function makeCtx(userId: number, role: 'user' | 'admin' = 'user', userRole = 'co
       name: `User ${userId}`,
       loginMethod: 'dummy',
       role,
+      // migration 0020: an admin row must now say WHICH administrator it is.
+      adminRole: role === 'admin' ? 'SUPER_ADMIN' : null,
       userRole,
       accountStatus: 'active',
       onboardingStatus: 'approved',

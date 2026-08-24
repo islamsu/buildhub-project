@@ -34,6 +34,7 @@ function makeCtx(role: 'admin' | 'user' = 'admin'): TrpcContext {
       name: 'Test Admin',
       loginMethod: 'test',
       role,
+      adminRole: 'SUPER_ADMIN', // migration 0020: an admin row must now say WHICH administrator it is
       userRole: role === 'admin' ? 'admin' : 'homeowner',
       accountStatus: 'active',
       isDummy: false,
@@ -228,9 +229,9 @@ describe('dummy account isolation and UI wiring', () => {
     expect(dashboard).toContain('Dummy / Test');
     expect(dashboard).toContain('Account audit trail');
     expect(dashboard).toContain('Include test data');
-    expect(router).toContain('createUser: adminProcedure');
-    expect(router).toContain('createDummyUser: adminProcedure');
-    expect(router).toContain('setDummyUserPassword: adminProcedure');
+    expect(router).toContain("createUser: adminWith('users.manage')");
+    expect(router).toContain("createDummyUser: adminWith('qa.manage')");
+    expect(router).toContain("setDummyUserPassword: adminWith('qa.manage')");
     expect(router).toContain("action: 'dummy_user_password_changed'");
     expect(router).toContain("action: 'dummy_user_signed_in'");
     expect(router).toContain('signInDummy: publicProcedure');

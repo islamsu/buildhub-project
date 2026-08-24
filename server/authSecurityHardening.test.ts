@@ -105,7 +105,7 @@ describe('auth.me - response shape (Phase 4A.6.6)', () => {
   });
 
   it('role, userRole, and onboardingStatus remain available - required by existing role-routing logic', async () => {
-    const caller = appRouter.createCaller(makeCtx({ role: 'admin', userRole: 'homeowner', onboardingStatus: 'under_review' }));
+    const caller = appRouter.createCaller(makeCtx({ role: 'admin', adminRole: 'SUPER_ADMIN', userRole: 'homeowner', onboardingStatus: 'under_review' }));
     const result = await caller.auth.me();
     expect(result).toMatchObject({ role: 'admin', userRole: 'homeowner', onboardingStatus: 'under_review' });
   });
@@ -128,7 +128,7 @@ describe('internal authorization still uses the full ctx.user (unaffected by the
 
   it('admin functionality (adminProcedure) still works - gated on the real ctx.user.role, not the trimmed DTO', async () => {
     (db.getDb as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-    const adminCaller = appRouter.createCaller(makeCtx({ role: 'admin' }));
+    const adminCaller = appRouter.createCaller(makeCtx({ role: 'admin', adminRole: 'SUPER_ADMIN' }));
     await expect(adminCaller.admin.settings()).resolves.toBeDefined();
 
     const nonAdminCaller = appRouter.createCaller(makeCtx({ role: 'user' }));

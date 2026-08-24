@@ -1,11 +1,16 @@
 import { z } from 'zod';
-import { COOKIE_NAME } from '@shared/const';
+import { COOKIE_NAME, NOT_ADMIN_ERR_MSG } from '@shared/const';
+import {
+  ADMIN_ROLES, isAdminRole, hasAdminPermission, permissionsForAdminRole,
+  type AdminPermission, type AdminRole,
+} from '@shared/adminRoles';
 import { getSessionCookieOptions } from './_core/cookies';
 import { systemRouter } from './_core/systemRouter';
 import { publicProcedure, protectedProcedure, router } from './_core/trpc';
 import type { TrpcContext } from './_core/context';
 import { TRPCError } from '@trpc/server';
 import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername, revokeSession } from './db';
+import { hashPassword, verifyPassword, NO_SUCH_ACCOUNT_HASH } from './passwords';
 import { invokeLLM } from './_core/llm';
 import { storagePut } from './storage';
 import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
@@ -24,7 +29,7 @@ import {
   projects, milestones, tasks, documents, products,
   rfqs, quotations, messages, notifications, reviews,
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
-  registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, userAccountAuditEvents,
+  registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
 } from '../drizzle/schema';
 import { and, desc, eq, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -104,30 +109,17 @@ const TEST_LOGIN_TTL_MINUTES_MAX = 24 * 60;
 
 const hashTestLoginToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
-export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString('hex');
-  const derivedKey = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `scrypt$${salt}$${derivedKey.toString('hex')}`;
-}
+// Administrator invitation and reset tokens. Same reasoning as the QA links
+// above: 32 bytes of CSPRNG output is not a human-chosen secret, so sha256 with
+// no salt is correct and scrypt would only slow down redemption. Only the hash
+// is ever stored, so the database holds nothing redeemable.
+const ADMIN_TOKEN_BYTES = 32;
+const ADMIN_INVITE_TTL_HOURS = 48;
+/** Longer than a customer's 8. One of these reaches the whole admin surface. */
+const ADMIN_PASSWORD_MIN_LENGTH = 12;
+const hashAdminToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
-/**
- * A real, well-formed scrypt hash of a value no account holds, used only so
- * `auth.signIn` can spend the same CPU on a nonexistent account as on a real
- * one. Verifying against it always fails; skipping verification entirely would
- * return in microseconds and leak which usernames exist.
- */
-const NO_SUCH_ACCOUNT_HASH =
-  'scrypt$00000000000000000000000000000000$' + '0'.repeat(128);
-
-export async function verifyPassword(password: string, storedHash: string | null | undefined): Promise<boolean> {
-  if (!storedHash) return false;
-  const [algorithm, salt, encodedKey] = storedHash.split('$');
-  if (algorithm !== 'scrypt' || !salt || !encodedKey || !/^[a-f0-9]+$/i.test(encodedKey)) return false;
-  const storedKey = Buffer.from(encodedKey, 'hex');
-  if (storedKey.length === 0) return false;
-  const derivedKey = (await scryptAsync(password, salt, storedKey.length)) as Buffer;
-  return derivedKey.length === storedKey.length && timingSafeEqual(derivedKey, storedKey);
-}
+export { hashPassword, verifyPassword, NO_SUCH_ACCOUNT_HASH } from './passwords';
 
 // ── Auth Router ────────────────────────────────────────────────────────────
 // SECURITY (Phase 4A.6.6): `users` also holds passwordHash, invitationToken, and
@@ -437,6 +429,130 @@ const authRouter = router({
     });
     recordEventAsync({ type: ANALYTICS_EVENTS.USER_SIGNED_IN, userId: candidate.id, metadata: { method: 'password' } });
     return { success: true, userRole: candidate.userRole, onboardingStatus: candidate.onboardingStatus } as const;
+  }),
+
+  /**
+   * Administrator sign-in, behind its own door at /admin/login.
+   *
+   * A SEPARATE ENDPOINT, not a flag on auth.signIn, for three reasons:
+   *
+   *   1. It refuses non-administrators outright. A customer who types their
+   *      own credentials into the admin form gets no session at all, rather
+   *      than a working customer session on a page that then hides itself.
+   *   2. It gives administrator sign-in its own audit action, so
+   *      `admin_signed_in` in the trail means what it says.
+   *   3. The two doors can diverge later - stricter rate limits, a second
+   *      factor - without touching the path every customer uses.
+   *
+   * What it deliberately does NOT do is re-implement credential checking. The
+   * verification below is the same shape as auth.signIn on purpose: same rate
+   * limiter, same single shared message, same constant-time decoy so a
+   * nonexistent account costs what a real one does.
+   *
+   * Note the ORDER. Credentials are verified BEFORE the role is examined, and
+   * failure produces one identical error either way. Checking "is this an
+   * admin?" first would turn this endpoint into an oracle that reveals which
+   * accounts are administrators to anyone who can type an email address.
+   */
+  adminSignIn: publicProcedure.input(z.object({
+    identifier: z.string().trim().min(3).max(320),
+    password: z.string().min(1).max(128),
+  })).mutation(async ({ ctx, input }) => {
+    enforceAuthRateLimit(ctx.req, input.identifier.toLowerCase());
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+    const identifier = input.identifier.trim().toLowerCase();
+    const target = identifier.includes('@')
+      ? await getUserByEmail(identifier)
+      : await getUserByUsername(identifier);
+
+    // QA personas can never hold administrator authority, by construction:
+    // they are excluded here before anything else is considered.
+    const candidate = target && !target.isDummy && target.passwordHash ? target : null;
+    const passwordMatches = await verifyPassword(input.password, candidate?.passwordHash ?? NO_SUCH_ACCOUNT_HASH);
+
+    // ONE message for every rejection below - wrong password, no such account,
+    // not an administrator, no role assigned, deactivated. Anything more
+    // specific tells an attacker which of those five they hit.
+    const reject = () => new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid credentials, or this account is not an administrator.' });
+
+    if (!candidate || !passwordMatches) throw reject();
+    if (candidate.role !== 'admin' || !isAdminRole(candidate.adminRole)) throw reject();
+    if (candidate.accountStatus !== 'active' || candidate.deactivatedAt) throw reject();
+
+    const sessionToken = await sdk.createSessionToken(candidate.openId, {
+      name: candidate.name || candidate.username || 'BuildHub administrator',
+    });
+    ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
+    await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, candidate.id));
+    await db.insert(userAccountAuditEvents).values({
+      userId: candidate.id, actorId: candidate.id, action: 'admin_signed_in', source: 'admin_login',
+      note: `Administrator sign-in as ${candidate.adminRole}`,
+    });
+    return {
+      success: true,
+      adminRole: candidate.adminRole as AdminRole,
+      permissions: permissionsForAdminRole(candidate.adminRole),
+    } as const;
+  }),
+
+  /**
+   * Redeem an administrator invitation and set the first password.
+   *
+   * Public because the holder has no session yet - that is what they are
+   * redeeming. It is not unguarded: the token is 32 CSPRNG bytes matched by
+   * sha256, single-use, expiring, revocable, and the role granted comes from
+   * the stored invitation row rather than from anything the caller sends.
+   */
+  completeAdminInvitation: publicProcedure.input(z.object({
+    token: z.string().min(20).max(200),
+    password: z.string().min(ADMIN_PASSWORD_MIN_LENGTH).max(128),
+  })).mutation(async ({ ctx, input }) => {
+    // Unauthenticated and it grants administrator authority, so the guess rate
+    // has to be bounded. Keyed by IP only: the token is the thing being
+    // guessed, so keying on it would bound nothing.
+    enforceAuthRateLimit(ctx.req, null);
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+    // One message for unknown, expired, spent and revoked alike.
+    const reject = () => new TRPCError({ code: 'BAD_REQUEST', message: 'This invitation link is invalid, expired, or has already been used.' });
+
+    const [row] = await db.select().from(adminInvitations)
+      .where(eq(adminInvitations.tokenHash, hashAdminToken(input.token)));
+    if (!row) throw reject();
+    if (row.usedAt || row.revokedAt) throw reject();
+    if (new Date(row.expiresAt).getTime() < Date.now()) throw reject();
+
+    // Burn the invitation FIRST, conditionally on it still being unused, so two
+    // simultaneous redemptions cannot both succeed. Same pattern as the QA
+    // sign-in links: the database decides the winner, not application logic.
+    const burn = await db.update(adminInvitations)
+      .set({ usedAt: new Date() })
+      .where(and(eq(adminInvitations.id, row.id), isNull(adminInvitations.usedAt)));
+    const affected = (burn as unknown as { affectedRows?: number }[])[0]?.affectedRows
+      ?? (burn as unknown as { affectedRows?: number }).affectedRows ?? 0;
+    if (affected === 0) throw reject();
+
+    const passwordHash = await hashPassword(input.password);
+    await db.update(users).set({
+      passwordHash,
+      passwordSetAt: new Date(),
+      // The authority comes from the invitation row, never from the request.
+      role: 'admin',
+      adminRole: row.adminRole,
+      userRole: 'admin',
+      accountStatus: 'active',
+      verified: true,
+      invitationStatus: 'password_set',
+    }).where(eq(users.id, row.userId));
+
+    await db.insert(userAccountAuditEvents).values({
+      userId: row.userId, actorId: row.userId, action: 'admin_invitation_redeemed', source: 'admin_invite',
+      note: `Administrator account activated as ${row.adminRole}`,
+    });
+    return { success: true } as const;
   }),
 
   requestPasswordReset: publicProcedure.input(z.object({
@@ -1686,10 +1802,46 @@ const analyticsRouter = router({
 });
 
 // ── Admin Router ───────────────────────────────────────────────────────────
+/**
+ * Any administrator at all.
+ *
+ * TWO conditions, not one. `role === 'admin'` is the boundary the codebase has
+ * always used; `adminRole` says WHICH administrator they are, and an admin row
+ * without one has no permissions at all (hasAdminPermission fails closed). The
+ * second check is here so such a row is refused at the door rather than passing
+ * this tier and then being refused by every endpoint behind it - a difference
+ * that matters when someone is trying to work out why their account is broken.
+ *
+ * Migration 0020 backfills every pre-existing admin to SUPER_ADMIN, so this
+ * cannot lock out an administrator who already had access.
+ */
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN' });
+  if (!isAdminRole(ctx.user.adminRole)) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'This administrator account has no role assigned.' });
+  }
   return next({ ctx });
 });
+
+/**
+ * An administrator holding a specific permission.
+ *
+ * Every sensitive admin endpoint is built on this rather than on adminProcedure,
+ * so authority is decided per capability instead of by one all-or-nothing flag.
+ * The permission is re-derived server-side from the role stored on the row, on
+ * every request - never from the client, the URL, or anything in the session
+ * token, so a stale or forged claim buys nothing.
+ */
+const adminWith = (permission: AdminPermission) =>
+  adminProcedure.use(({ ctx, next }) => {
+    if (!hasAdminPermission(ctx.user.adminRole, permission)) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: NOT_ADMIN_ERR_MSG });
+    }
+    return next({ ctx });
+  });
+
+/** Only a Super Admin may touch the authority model itself. */
+const superAdminProcedure = adminWith('admins.manage');
 
 // SECURITY (Phase 4A.6.7): `users` also holds passwordHash, invitationToken, and
 // other private/internal fields. admin.users MUST always use this explicit
@@ -1753,7 +1905,7 @@ const COMPLIANCE_APPLICANT_COLUMNS = {
 } as const;
 
 const adminRouter = router({
-  stats: adminProcedure.query(async () => {
+  stats: adminWith('users.read').query(async () => {
     const db = await getDb();
     if (!db) return { users: 0, projects: 0, products: 0, rfqs: 0, disputes: 0 };
     const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.isDummy, false));
@@ -1771,12 +1923,12 @@ const adminRouter = router({
       disputes: Number(disputeCount?.count ?? 0),
     };
   }),
-  users: adminProcedure.query(async () => {
+  users: adminWith('users.read').query(async () => {
     const db = await getDb();
     if (!db) return [];
     return db.select(ADMIN_USER_LIST_COLUMNS).from(users).orderBy(desc(users.createdAt)).limit(250);
   }),
-  createUser: adminProcedure.input(z.object({
+  createUser: adminWith('users.manage').input(z.object({
     username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/),
     email: z.string().trim().email(),
     name: z.string().trim().min(1).max(255),
@@ -1806,7 +1958,7 @@ const adminRouter = router({
     await db.insert(userAccountAuditEvents).values({ userId, actorId: ctx.user.id, action: input.sendInvitation ? 'admin_created_account_with_invite' : 'admin_created_account', source: 'admin_created', note: input.note || null });
     return { success: true, userId, invitationLink: input.sendInvitation ? `/auth/setup-password?token=${inviteToken}` : null };
   }),
-  resendInvitation: adminProcedure.input(z.object({ userId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+  resendInvitation: adminWith('users.manage').input(z.object({ userId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const [target] = await db.select().from(users).where(eq(users.id, input.userId));
@@ -1838,7 +1990,7 @@ const adminRouter = router({
     await db.insert(userAccountAuditEvents).values({ userId: target.id, actorId: target.id, action: 'password_set_via_invitation', source: 'admin_created', note: 'Password successfully configured by user' });
     return { success: true, username: target.username };
   }),
-  fullAuditReport: adminProcedure.query(async ({ ctx }) => {
+  fullAuditReport: adminWith('audit.read').query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
     const events = await db.select().from(userAccountAuditEvents).orderBy(desc(userAccountAuditEvents.createdAt)).limit(1000);
@@ -1865,7 +2017,7 @@ const adminRouter = router({
       };
     });
   }),
-  createDummyUser: adminProcedure.input(z.object({
+  createDummyUser: adminWith('qa.manage').input(z.object({
     name: z.string().trim().min(1).max(255).optional(),
     username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/).optional(),
     userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager']),
@@ -1888,7 +2040,7 @@ const adminRouter = router({
     return { success: true, userId, username, email };
   }),
   // ── QA sign-in links ────────────────────────────────────────────────────
-  issueTestLoginLink: adminProcedure.input(z.object({
+  issueTestLoginLink: adminWith('qa.manage').input(z.object({
     userId: z.number().int().positive(),
     expiresInMinutes: z.number().int().min(1).max(TEST_LOGIN_TTL_MINUTES_MAX).default(TEST_LOGIN_TTL_MINUTES_DEFAULT),
   })).mutation(async ({ ctx, input }) => {
@@ -1923,7 +2075,7 @@ const adminRouter = router({
     return { token: raw, expiresInMinutes: input.expiresInMinutes } as const;
   }),
 
-  testLoginLinks: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+  testLoginLinks: adminWith('qa.manage').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     // Explicit column list: tokenHash must never reach a client. Selecting the
@@ -1941,7 +2093,7 @@ const adminRouter = router({
       .limit(50);
   }),
 
-  revokeTestLoginLink: adminProcedure.input(z.object({ tokenId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+  revokeTestLoginLink: adminWith('qa.manage').input(z.object({ tokenId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const [row] = await db.select().from(testLoginTokens).where(eq(testLoginTokens.id, input.tokenId));
@@ -1955,7 +2107,7 @@ const adminRouter = router({
     return { success: true } as const;
   }),
 
-  setDummyUserPassword: adminProcedure.input(z.object({
+  setDummyUserPassword: adminWith('qa.manage').input(z.object({
     userId: z.number().int().positive(),
     password: z.string().min(8).max(128),
   })).mutation(async ({ ctx, input }) => {
@@ -1968,7 +2120,7 @@ const adminRouter = router({
     await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'dummy_user_password_changed', source: 'dummy', note: 'Password updated by an administrator' });
     return { success: true };
   }),
-  setDummyUserActive: adminProcedure.input(z.object({ userId: z.number().int().positive(), active: z.boolean(), note: z.string().max(500).optional() })).mutation(async ({ ctx, input }) => {
+  setDummyUserActive: adminWith('qa.manage').input(z.object({ userId: z.number().int().positive(), active: z.boolean(), note: z.string().max(500).optional() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const [target] = await db.select().from(users).where(eq(users.id, input.userId));
@@ -1977,7 +2129,7 @@ const adminRouter = router({
     await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: input.active ? 'dummy_user_activated' : 'dummy_user_deactivated', source: 'dummy', note: input.note });
     return { success: true, active: input.active };
   }),
-  deleteDummyUser: adminProcedure.input(z.object({ userId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+  deleteDummyUser: adminWith('qa.manage').input(z.object({ userId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const [target] = await db.select().from(users).where(eq(users.id, input.userId));
@@ -1997,7 +2149,7 @@ const adminRouter = router({
   // single-vendor lookup, not a dashboard - §10 of the phase brief. Returns the
   // explicit ADMIN_SUBSCRIPTION_COLUMNS allowlist (no provider references, and
   // BuildHub stores no card/token/credential data anywhere to begin with).
-  vendorBilling: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+  vendorBilling: adminWith('billing.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return null;
     const [row] = await db
@@ -2041,11 +2193,11 @@ const adminRouter = router({
   // These are lifecycle operations, not a billing dashboard, and they expose
   // no provider handle, price reference, or credential.
 
-  vendorLifecycle: adminProcedure
+  vendorLifecycle: adminWith('billing.read')
     .input(z.object({ userId: z.number().int().positive() }))
     .query(async ({ input }) => getLifecycleSnapshot(input.userId)),
 
-  startVendorTrial: adminProcedure
+  startVendorTrial: adminWith('billing.manage')
     .input(z.object({
       userId: z.number().int().positive(),
       plan: z.enum(['professional', 'premium']),
@@ -2056,31 +2208,31 @@ const adminRouter = router({
       source: 'admin', actorId: ctx.user.id,
     }))),
 
-  changeVendorPlan: adminProcedure
+  changeVendorPlan: adminWith('billing.manage')
     .input(z.object({ userId: z.number().int().positive(), plan: z.enum(['professional', 'premium']) }))
     .mutation(async ({ ctx, input }) => lifecycleResult(await changeVendorPlan({
       userId: input.userId, targetPlan: input.plan, source: 'admin', actorId: ctx.user.id,
     }))),
 
-  recordVendorPaymentSucceeded: adminProcedure
+  recordVendorPaymentSucceeded: adminWith('billing.manage')
     .input(z.object({ userId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => lifecycleResult(await recordPaymentSucceeded({
       userId: input.userId, source: 'admin', actorId: ctx.user.id,
     }))),
 
-  recordVendorPaymentFailed: adminProcedure
+  recordVendorPaymentFailed: adminWith('billing.manage')
     .input(z.object({ userId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => lifecycleResult(await recordPaymentFailure({
       userId: input.userId, source: 'admin', actorId: ctx.user.id,
     }))),
 
-  recordVendorPaymentRecovered: adminProcedure
+  recordVendorPaymentRecovered: adminWith('billing.manage')
     .input(z.object({ userId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => lifecycleResult(await recordPaymentRecovery({
       userId: input.userId, source: 'admin', actorId: ctx.user.id,
     }))),
 
-  reconcileVendorBilling: adminProcedure
+  reconcileVendorBilling: adminWith('billing.manage')
     .input(z.object({ userId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => lifecycleResult(await reconcileSubscription({
       userId: input.userId, source: 'admin', actorId: ctx.user.id,
@@ -2089,21 +2241,21 @@ const adminRouter = router({
   // The sweep's manual trigger. BuildHub has no job runner, so this is not
   // scheduled - and deliberately does not need to be: entitlements already
   // lapse on time without it (Phase 4B.4 §3).
-  reconcileDueBilling: adminProcedure.mutation(async () => reconcileDueSubscriptions({})),
+  reconcileDueBilling: adminWith('billing.manage').mutation(async () => reconcileDueSubscriptions({})),
 
-  vendorTargeting: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+  vendorTargeting: adminWith('marketplace.manage').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
     const [diagnostics, usage] = await Promise.all([
       getVendorTargetingDiagnostics(input.userId),
       getEnquiryUsage(input.userId),
     ]);
     return { ...diagnostics, usage };
   }),
-  accountAudit: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+  accountAudit: adminWith('users.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
     return db.select().from(userAccountAuditEvents).where(eq(userAccountAuditEvents.userId, input.userId)).orderBy(desc(userAccountAuditEvents.createdAt)).limit(100);
   }),
-  analyticsSummary: adminProcedure.input(z.object({ includeDummy: z.boolean().default(false) }).optional()).query(async ({ input }) => {
+  analyticsSummary: adminWith('audit.read').input(z.object({ includeDummy: z.boolean().default(false) }).optional()).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
     const dummyRows = await db.select({ id: users.id }).from(users).where(eq(users.isDummy, true));
@@ -2140,7 +2292,7 @@ const adminRouter = router({
    * returns aggregates - never a per-user event list, which would be a
    * behavioural dossier on identifiable people with no operational purpose.
    */
-  productAnalytics: adminProcedure
+  productAnalytics: adminWith('marketplace.manage')
     .input(z.object({
       includeDummy: z.boolean().default(false),
       windowDays: z.number().int().min(1).max(365).default(30),
@@ -2172,7 +2324,7 @@ const adminRouter = router({
    * Commercial KPIs. Computed from vendorSubscriptions and priced from
    * shared/billing.ts - never from the event stream, and never hardcoded.
    */
-  commercialKpis: adminProcedure
+  commercialKpis: adminWith('billing.read')
     .input(z.object({
       includeDummy: z.boolean().default(false),
       churnWindowDays: z.number().int().min(7).max(365).default(30),
@@ -2200,7 +2352,7 @@ const adminRouter = router({
   // is traced to real consumption in client/src/pages/AdminDashboard.tsx's
   // compliance queue list, registration CSV export (shared/registrationMetrics.ts),
   // and the applicant detail dialog.
-  complianceQueue: adminProcedure.input(z.object({ includeDummy: z.boolean().default(false) }).optional()).query(async ({ input }) => {
+  complianceQueue: adminWith('marketplace.manage').input(z.object({ includeDummy: z.boolean().default(false) }).optional()).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
     const applicantFilter = input?.includeDummy ? inArray(users.userRole, providerRoles) : and(inArray(users.userRole, providerRoles), eq(users.isDummy, false));
@@ -2212,7 +2364,7 @@ const adminRouter = router({
       documents: docs.filter(document => document.userId === applicant.id),
     })).filter(applicant => applicant.onboardingStatus !== 'approved' || applicant.documents.length > 0);
   }),
-  complianceApplicant: adminProcedure.input(z.object({ userId: z.number() })).query(async ({ input }) => {
+  complianceApplicant: adminWith('marketplace.manage').input(z.object({ userId: z.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const [applicant] = await db.select(COMPLIANCE_APPLICANT_COLUMNS).from(users).where(eq(users.id, input.userId));
@@ -2222,7 +2374,7 @@ const adminRouter = router({
     const events = await db.select().from(registrationReviewEvents).where(eq(registrationReviewEvents.userId, input.userId)).orderBy(desc(registrationReviewEvents.createdAt)).limit(100);
     return { applicant, requirements: getComplianceRequirements(applicant.userRole), documents: docs, history, events };
   }),
-  reviewComplianceDocument: adminProcedure.input(z.object({
+  reviewComplianceDocument: adminWith('marketplace.manage').input(z.object({
     documentId: z.number(),
     status: z.enum(['under_review', 'approved', 'rejected', 'update_required']),
     reviewerNote: z.string().max(2000).optional(),
@@ -2244,7 +2396,7 @@ const adminRouter = router({
     await notifyUser(db, { userId: applicant.id, title, body, type: 'compliance', link: '/compliance' });
     return { success: true, documentStatus: input.status, onboardingStatus: overallStatus };
   }),
-  updateApplicantStatus: adminProcedure.input(z.object({
+  updateApplicantStatus: adminWith('marketplace.manage').input(z.object({
     userId: z.number(),
     status: z.enum(['under_review', 'approved', 'rejected', 'update_required']),
     note: z.string().max(2000).optional(),
@@ -2266,7 +2418,7 @@ const adminRouter = router({
     });
     return { success: true, onboardingStatus: input.status };
   }),
-  bulkUpdateApplicantStatus: adminProcedure.input(z.object({
+  bulkUpdateApplicantStatus: adminWith('marketplace.manage').input(z.object({
     userIds: z.array(z.number().int().positive()).min(1).max(100),
     status: z.enum(['approved', 'rejected']),
     note: z.string().max(2000).optional(),
@@ -2283,13 +2435,13 @@ const adminRouter = router({
     await notifyUsers(db, applicants.map(applicant => ({ userId: applicant.id, title: input.status === 'approved' ? 'Registration approved' : 'Registration rejected', body: input.note || `Your registration is ${input.status}`, type: 'compliance', link: '/compliance' })));
     return { success: true, updatedCount: applicants.length, onboardingStatus: input.status };
   }),
-  verifyUser: adminProcedure.input(z.object({ userId: z.number(), verified: z.boolean() })).mutation(async ({ input }) => {
+  verifyUser: adminWith('users.manage').input(z.object({ userId: z.number(), verified: z.boolean() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     await db.update(users).set({ verified: input.verified }).where(eq(users.id, input.userId));
     return { success: true };
   }),
-  setUserFrozen: adminProcedure.input(z.object({ userId: z.number(), frozen: z.boolean(), reason: z.string().max(500).optional() })).mutation(async ({ ctx, input }) => {
+  setUserFrozen: adminWith('users.manage').input(z.object({ userId: z.number(), frozen: z.boolean(), reason: z.string().max(500).optional() })).mutation(async ({ ctx, input }) => {
     if (input.userId === ctx.user.id) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Administrators cannot freeze their own account' });
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
@@ -2308,7 +2460,7 @@ const adminRouter = router({
     });
     return { success: true, status: input.frozen ? 'frozen' : 'active' };
   }),
-  disputes: adminProcedure.query(async () => {
+  disputes: adminWith('support.manage').query(async () => {
     const db = await getDb();
     if (!db) return [];
     const rows = await db.select().from(disputes).orderBy(desc(disputes.createdAt));
@@ -2320,7 +2472,7 @@ const adminRouter = router({
       respondentName: row.respondentId ? names.get(row.respondentId) ?? null : null,
     }));
   }),
-  updateDispute: adminProcedure.input(z.object({
+  updateDispute: adminWith('support.manage').input(z.object({
     disputeId: z.number(),
     status: z.enum(['open', 'investigating', 'resolved', 'rejected']),
     resolutionNotes: z.string().max(2000).optional(),
@@ -2330,13 +2482,13 @@ const adminRouter = router({
     await db.update(disputes).set({ status: input.status, resolutionNotes: input.resolutionNotes }).where(eq(disputes.id, input.disputeId));
     return { success: true };
   }),
-  settings: adminProcedure.query(async () => {
+  settings: adminWith('settings.manage').query(async () => {
     const db = await getDb();
     if (!db) return DEFAULT_ADMIN_SETTINGS;
     const rows = await db.select({ settingKey: adminSettings.settingKey, value: adminSettings.value }).from(adminSettings);
     return { ...DEFAULT_ADMIN_SETTINGS, ...Object.fromEntries(rows.map(row => [row.settingKey, row.value])) };
   }),
-  updateSetting: adminProcedure.input(z.object({ key: z.string().min(1).max(120), value: z.string().max(2000) })).mutation(async ({ ctx, input }) => {
+  updateSetting: adminWith('settings.manage').input(z.object({ key: z.string().min(1).max(120), value: z.string().max(2000) })).mutation(async ({ ctx, input }) => {
     if (!(input.key in DEFAULT_ADMIN_SETTINGS)) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unknown setting key' });
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
@@ -2347,6 +2499,328 @@ const adminRouter = router({
       await db.insert(adminSettings).values({ settingKey: input.key, value: input.value, updatedBy: ctx.user.id });
     }
     return { success: true };
+  }),
+
+  // ── Administrator management ───────────────────────────────────────────
+  //
+  // Every procedure below is superAdminProcedure - that is, gated on
+  // `admins.manage`, which is the ONE permission held by SUPER_ADMIN alone.
+  // That single fact is what makes privilege escalation impossible for every
+  // other role: there is no capability they hold that reaches the authority
+  // model at all, so there is nothing for them to escalate through.
+
+  /**
+   * Who am I, and what may I do?
+   *
+   * adminProcedure, not superAdminProcedure: every administrator needs this to
+   * render their own dashboard. Permissions are DERIVED from the stored role on
+   * each call rather than read from the session, so a role change takes effect
+   * on the next request instead of whenever the token happens to expire.
+   */
+  me: adminProcedure.query(({ ctx }) => ({
+    id: ctx.user.id,
+    name: ctx.user.name,
+    username: ctx.user.username,
+    email: ctx.user.email,
+    adminRole: ctx.user.adminRole as AdminRole,
+    permissions: permissionsForAdminRole(ctx.user.adminRole),
+  })),
+
+  /**
+   * The administrator directory.
+   *
+   * An explicit column allowlist, exactly as ADMIN_USER_COLUMNS does for normal
+   * users. `users` also holds passwordHash, invitationToken and
+   * passwordResetToken; a `select().from(users)` here would put all three on the
+   * Admin Management screen.
+   */
+  admins: superAdminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select({
+      id: users.id,
+      name: users.name,
+      username: users.username,
+      email: users.email,
+      adminRole: users.adminRole,
+      accountStatus: users.accountStatus,
+      deactivatedAt: users.deactivatedAt,
+      invitationStatus: users.invitationStatus,
+      createdAt: users.createdAt,
+      lastSignedIn: users.lastSignedIn,
+      passwordSetAt: users.passwordSetAt,
+    }).from(users).where(eq(users.role, 'admin')).orderBy(desc(users.createdAt));
+  }),
+
+  /**
+   * Create a Sub-Admin, and issue a one-time invitation link.
+   *
+   * The new account is created WITHOUT a password. It cannot sign in until the
+   * invitee redeems the link and chooses one, which is what keeps the Super
+   * Admin from ever knowing another administrator's credential - there is no
+   * moment at which one exists for them to see.
+   *
+   * The raw token is returned exactly once, here, and never stored. SMTP is not
+   * configured on this deployment, so the caller hands the link over out of
+   * band; when mail exists this is the value it would send. Storing it would
+   * defeat the point of hashing it.
+   */
+  createAdmin: superAdminProcedure.input(z.object({
+    name: z.string().trim().min(1).max(255),
+    email: z.string().trim().email().max(320),
+    username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/, 'Use letters, numbers, dots, underscores, or hyphens only'),
+    adminRole: z.enum(ADMIN_ROLES),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const username = normalizeUsername(input.username)!;
+    const email = normalizeEmail(input.email)!;
+    if (await getUserByUsername(username)) throw new TRPCError({ code: 'CONFLICT', message: 'Username is already in use' });
+    if (await getUserByEmail(email)) throw new TRPCError({ code: 'CONFLICT', message: 'Email is already in use' });
+
+    const result = await db.insert(users).values({
+      openId: `local_${randomUUID()}`,
+      username, email, name: input.name,
+      // role and adminRole are set now so the directory shows them immediately,
+      // but with no passwordHash the account cannot authenticate: adminSignIn
+      // treats a null hash as no account at all.
+      role: 'admin',
+      adminRole: input.adminRole,
+      userRole: 'admin',
+      loginMethod: 'password',
+      accountSource: 'admin_created',
+      isDummy: false,
+      accountStatus: 'active',
+      onboardingStatus: 'approved',
+      verified: true,
+      createdBy: ctx.user.id,
+      invitationStatus: 'invitation_sent',
+      invitationSentAt: new Date(),
+    });
+    const userId = Number(result[0]?.insertId);
+
+    const rawToken = randomBytes(ADMIN_TOKEN_BYTES).toString('base64url');
+    await db.insert(adminInvitations).values({
+      tokenHash: hashAdminToken(rawToken),
+      userId,
+      adminRole: input.adminRole,
+      invitedBy: ctx.user.id,
+      expiresAt: new Date(Date.now() + ADMIN_INVITE_TTL_HOURS * 60 * 60 * 1000),
+    });
+    await db.insert(userAccountAuditEvents).values({
+      userId, actorId: ctx.user.id, action: 'admin_created', source: 'admin_invite',
+      note: `Administrator ${username} created with role ${input.adminRole}`,
+    });
+    return {
+      success: true,
+      userId,
+      // Shown once, to be delivered out of band. Never persisted.
+      invitationLink: `/admin/accept-invitation?token=${rawToken}`,
+      expiresAt: new Date(Date.now() + ADMIN_INVITE_TTL_HOURS * 60 * 60 * 1000),
+    };
+  }),
+
+  /**
+   * Change another administrator's role.
+   *
+   * Refuses to act on the caller's own account. Without that check a
+   * SUPER_ADMIN could demote themselves and leave the platform with no one able
+   * to manage administrators - an unrecoverable state reachable by one misclick.
+   * It also means "modify your own permissions" is impossible for everybody, not
+   * only for sub-admins.
+   */
+  setAdminRole: superAdminProcedure.input(z.object({
+    userId: z.number().int().positive(),
+    adminRole: z.enum(ADMIN_ROLES),
+  })).mutation(async ({ ctx, input }) => {
+    if (input.userId === ctx.user.id) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'You cannot change your own administrator role.' });
+    }
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [target] = await db.select({ id: users.id, role: users.role, adminRole: users.adminRole, username: users.username })
+      .from(users).where(eq(users.id, input.userId));
+    if (!target || target.role !== 'admin') throw new TRPCError({ code: 'NOT_FOUND', message: 'No such administrator' });
+
+    await db.update(users).set({ adminRole: input.adminRole }).where(eq(users.id, input.userId));
+    await db.insert(userAccountAuditEvents).values({
+      userId: input.userId, actorId: ctx.user.id, action: 'admin_role_changed', source: 'admin_management',
+      note: `Role changed from ${target.adminRole} to ${input.adminRole}`,
+    });
+    return { success: true } as const;
+  }),
+
+  /**
+   * Deactivate or reactivate an administrator.
+   *
+   * Deactivation revokes every live session as well as barring sign-in.
+   * Flipping a flag alone would leave whoever is currently signed in with a
+   * working session for up to a year, which is not what "deactivate" means to
+   * the person clicking it.
+   */
+  setAdminActive: superAdminProcedure.input(z.object({
+    userId: z.number().int().positive(),
+    active: z.boolean(),
+  })).mutation(async ({ ctx, input }) => {
+    if (input.userId === ctx.user.id) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'You cannot deactivate your own account.' });
+    }
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [target] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, input.userId));
+    if (!target || target.role !== 'admin') throw new TRPCError({ code: 'NOT_FOUND', message: 'No such administrator' });
+
+    await db.update(users).set({
+      accountStatus: input.active ? 'active' : 'frozen',
+      deactivatedAt: input.active ? null : new Date(),
+      // Kills every existing session for this account when deactivating.
+      ...(input.active ? {} : { sessionsInvalidBefore: new Date() }),
+    }).where(eq(users.id, input.userId));
+
+    await db.insert(userAccountAuditEvents).values({
+      userId: input.userId, actorId: ctx.user.id,
+      action: input.active ? 'admin_reactivated' : 'admin_deactivated',
+      source: 'admin_management',
+      note: input.active ? 'Administrator reactivated' : 'Administrator deactivated and sessions revoked',
+    });
+    return { success: true } as const;
+  }),
+
+  /** Sign an administrator out of every device, without deactivating them. */
+  revokeAdminSessions: superAdminProcedure.input(z.object({
+    userId: z.number().int().positive(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [target] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, input.userId));
+    if (!target || target.role !== 'admin') throw new TRPCError({ code: 'NOT_FOUND', message: 'No such administrator' });
+
+    await db.update(users).set({ sessionsInvalidBefore: new Date() }).where(eq(users.id, input.userId));
+    await db.insert(userAccountAuditEvents).values({
+      userId: input.userId, actorId: ctx.user.id, action: 'admin_sessions_revoked', source: 'admin_management',
+      note: 'All sessions revoked',
+    });
+    return { success: true } as const;
+  }),
+
+  /**
+   * Issue a password-reset link for another administrator.
+   *
+   * The Super Admin never learns the resulting password: this mints a one-time
+   * token, and the administrator chooses their own password when they redeem it.
+   * Reusing the invitation table rather than adding a second token mechanism -
+   * an invitation and a reset are the same object here, "a one-time link that
+   * lets this person set a password".
+   *
+   * Existing sessions are revoked at the same time. A reset usually means the
+   * credential is suspect, and leaving live sessions running would defeat it.
+   */
+  resetAdminPassword: superAdminProcedure.input(z.object({
+    userId: z.number().int().positive(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [target] = await db.select({ id: users.id, role: users.role, adminRole: users.adminRole, username: users.username })
+      .from(users).where(eq(users.id, input.userId));
+    if (!target || target.role !== 'admin' || !isAdminRole(target.adminRole)) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'No such administrator' });
+    }
+
+    const rawToken = randomBytes(ADMIN_TOKEN_BYTES).toString('base64url');
+    const expiresAt = new Date(Date.now() + ADMIN_INVITE_TTL_HOURS * 60 * 60 * 1000);
+    await db.insert(adminInvitations).values({
+      tokenHash: hashAdminToken(rawToken),
+      userId: input.userId,
+      adminRole: target.adminRole,
+      invitedBy: ctx.user.id,
+      expiresAt,
+    });
+    await db.update(users).set({ sessionsInvalidBefore: new Date() }).where(eq(users.id, input.userId));
+    await db.insert(userAccountAuditEvents).values({
+      userId: input.userId, actorId: ctx.user.id, action: 'admin_password_reset_requested', source: 'admin_management',
+      note: 'One-time password reset link issued; existing sessions revoked',
+    });
+    return { success: true, resetLink: `/admin/accept-invitation?token=${rawToken}`, expiresAt };
+  }),
+
+  /** Live invitation/reset links for one administrator. Hashes are never returned. */
+  adminInvitations: superAdminProcedure.input(z.object({
+    userId: z.number().int().positive(),
+  })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select({
+      id: adminInvitations.id,
+      adminRole: adminInvitations.adminRole,
+      invitedBy: adminInvitations.invitedBy,
+      createdAt: adminInvitations.createdAt,
+      expiresAt: adminInvitations.expiresAt,
+      usedAt: adminInvitations.usedAt,
+      revokedAt: adminInvitations.revokedAt,
+    }).from(adminInvitations)
+      .where(eq(adminInvitations.userId, input.userId))
+      .orderBy(desc(adminInvitations.createdAt));
+  }),
+
+  /** Kill an outstanding invitation or reset link before it is redeemed. */
+  revokeAdminInvitation: superAdminProcedure.input(z.object({
+    invitationId: z.number().int().positive(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [row] = await db.select().from(adminInvitations).where(eq(adminInvitations.id, input.invitationId));
+    if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such invitation' });
+    if (row.usedAt) throw new TRPCError({ code: 'BAD_REQUEST', message: 'That link has already been used' });
+
+    await db.update(adminInvitations)
+      .set({ revokedAt: new Date(), revokedBy: ctx.user.id })
+      .where(eq(adminInvitations.id, input.invitationId));
+    await db.insert(userAccountAuditEvents).values({
+      userId: row.userId, actorId: ctx.user.id, action: 'admin_invitation_revoked', source: 'admin_management',
+      note: 'Outstanding administrator link revoked',
+    });
+    return { success: true } as const;
+  }),
+
+  /**
+   * Change your OWN password.
+   *
+   * adminProcedure, not superAdminProcedure - every administrator may do this
+   * for themselves and for nobody else. The target is ctx.user.id and there is
+   * no userId input, so there is no parameter to point at another account.
+   * Requires the current password, so a borrowed session cannot lock the real
+   * owner out.
+   */
+  changeOwnPassword: adminProcedure.input(z.object({
+    currentPassword: z.string().min(1).max(128),
+    newPassword: z.string().min(ADMIN_PASSWORD_MIN_LENGTH).max(128),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [self] = await db.select({ passwordHash: users.passwordHash }).from(users).where(eq(users.id, ctx.user.id));
+    if (!await verifyPassword(input.currentPassword, self?.passwordHash)) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Current password is incorrect.' });
+    }
+    await db.update(users).set({
+      passwordHash: await hashPassword(input.newPassword),
+      passwordSetAt: new Date(),
+      // Every OTHER session is invalidated; this request re-cookies below.
+      sessionsInvalidBefore: new Date(),
+    }).where(eq(users.id, ctx.user.id));
+
+    // Without this the administrator changing their password would be logged
+    // out by their own action, because the token they are holding predates
+    // sessionsInvalidBefore.
+    const sessionToken = await sdk.createSessionToken(ctx.user.openId, {
+      name: ctx.user.name || ctx.user.username || 'BuildHub administrator',
+    });
+    ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
+
+    await db.insert(userAccountAuditEvents).values({
+      userId: ctx.user.id, actorId: ctx.user.id, action: 'admin_password_changed', source: 'admin_management',
+      note: 'Administrator changed their own password; other sessions revoked',
+    });
+    return { success: true } as const;
   }),
 });
 
