@@ -108,3 +108,44 @@ export function resetAuthLimiters() {
   authLimiters.ipSustained.reset();
   authLimiters.identifierSustained.reset();
 }
+
+// ── Authenticated content creation ─────────────────────────────────────────
+//
+// Sign-in was bounded; what an account could DO once signed in was not. Two
+// endpoints could be driven in a loop by one authenticated caller:
+//
+//   rfq.create   floods the provider feed, which is the product's core surface;
+//   the five upload endpoints  fill the bucket, which converts directly into a
+//                              storage bill once S3 is configured.
+//
+// KEYED BY USER ID, NOT BY IP, and that is deliberate rather than lazy. Every
+// endpoint below already requires a session, so the account is the natural
+// subject: it is what an attacker has to acquire, and it is what a limit can
+// meaningfully punish. Adding an IP axis would import the carrier-grade-NAT
+// problem the auth limiters had to be loosened for - in Egypt thousands of
+// mobile subscribers, and every site office, share one public IPv4, so an IP
+// limit here would throttle a whole contractor's team for one busy colleague
+// while doing nothing an account limit does not already do.
+//
+// Two windows, as elsewhere: the burst catches a script, the sustained window
+// caps the daily damage a patient one can do.
+export const contentLimiters = {
+  // A human posts one RFQ at a time and thinks in between. Three a minute is
+  // already generous; twenty an hour is far past any real posting behaviour.
+  rfqBurst: createRateLimiter({ windowMs: 60_000, max: 3 }),
+  rfqSustained: createRateLimiter({ windowMs: 60 * 60_000, max: 20 }),
+  // An RFQ takes up to six attachments and registration onboarding takes
+  // several documents, so a legitimate burst is real. Ten a minute covers
+  // filling a form; sixty an hour covers a whole onboarding session and still
+  // caps an unattended script at roughly half a gigabyte an hour at the 8MB
+  // ceiling.
+  uploadBurst: createRateLimiter({ windowMs: 60_000, max: 10 }),
+  uploadSustained: createRateLimiter({ windowMs: 60 * 60_000, max: 60 }),
+};
+
+export function resetContentLimiters() {
+  contentLimiters.rfqBurst.reset();
+  contentLimiters.rfqSustained.reset();
+  contentLimiters.uploadBurst.reset();
+  contentLimiters.uploadSustained.reset();
+}

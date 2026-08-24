@@ -1,0 +1,1180 @@
+================================================================================
+BUILDHUB — FULL PRODUCTION-READINESS INVENTORY (§16)
+Evidence exercise only. Nothing in production was touched.
+================================================================================
+
+Date        : 2026-08-24
+Inspected at: main = 0133d49  (staging serving 928ef76, identical tree)
+Method      : direct inspection of server/, shared/, drizzle/, .github/workflows/,
+              render.yaml, deploy/, package.json, plus Staging QA run #12
+              (169/169 passed, 10 skipped) against live staging.
+
+--------------------------------------------------------------------------------
+HEADLINE FINDING — READ FIRST
+--------------------------------------------------------------------------------
+
+There is no production deployment target. Two facts from the repository:
+
+  1. `.github/workflows/deploy-production.yml` deploys over SSH to a Docker
+     host at `/srv/buildhub` (docker compose, .image.env, backup-before-release.sh).
+     It does NOT deploy to Render.
+  2. `render.yaml` provisions only `buildhub-staging` and a private
+     `buildhub-staging-mysql`, from branch
+     `claude/phase4b-readiness-audit-hardening`, with `autoDeploy: true`.
+
+So the pipeline that is *proven* (Render, git auto-deploy, preDeployCommand
+migrations) is not the pipeline production would use, and the pipeline
+production would use (SSH + Vultr) has never run — its host does not exist,
+none of its six secrets are set, and `PRODUCTION_BASE_URL` is unset.
+
+This is the root of most RED rows below. It is a provisioning gap, not a code
+defect.
+
+================================================================================
+16A. PRODUCTION ENVIRONMENT VARIABLES
+================================================================================
+
+Extracted from `server/_core/env.ts`, `server/_core/smtpMailer.ts`,
+`server/db.ts`, `server/adminBootstrap.ts`, `server/_core/health.ts` and the
+four workflows. Nothing below is invented.
+
+── Application runtime (must exist on the PRODUCTION HOST, in its .env) ───────
+
+VARIABLE            REQ  SECRET  USED BY                PURPOSE / STATUS / ACTION
+NODE_ENV            YES  no      env.ts isProduction    Must be `production`. Gates
+                                                        HSTS, CSP, Secure cookie,
+                                                        DATABASE_SSL default, boot
+                                                        validation. STATUS: not set
+                                                        (no host). ACTION: set.
+PORT                YES  no      _core/index.ts         Production binds exactly this
+                                                        or exits. STATUS: n/a.
+JWT_SECRET          YES  YES     env.ts, sdk.ts         Signs session JWTs. Boot REFUSES
+                                                        to start if unset or <32 chars.
+                                                        STATUS: not set. ACTION: generate
+                                                        fresh (`openssl rand -base64 48`).
+                                                        MUST NOT be the staging value.
+DATABASE_URL        YES  YES     db.ts                  MySQL DSN. Boot refuses if unset.
+                                                        STATUS: not set. ACTION: point at
+                                                        the Vultr managed MySQL; percent-
+                                                        encode the password.
+DATABASE_SSL        NO*  no      db.ts                  Defaults to `require` in
+                                                        production. *Leave UNSET — the
+                                                        default is the correct one.
+                                                        Setting `disable` in production is
+                                                        the footgun.
+DATABASE_CA_CERT    YES  no      db.ts                  Managed providers issue their own
+                                                        CA; without it `rejectUnauthorized:
+                                                        true` fails the handshake. Accepts
+                                                        inline PEM or a path. STATUS: not
+                                                        set. ACTION: take Vultr's bundle.
+APP_BASE_URL        YES  no      env.ts, mailer         Public origin, e.g.
+                                                        https://buildhub.eg (no trailing
+                                                        slash). Deliberately NOT derived
+                                                        from the Host header. Password
+                                                        reset reports itself unavailable
+                                                        until set. STATUS: unset.
+VITE_APP_ID         NO   no      env.ts, sdk.ts         When set, a session token is only
+                                                        accepted if it carries this exact
+                                                        value. Optional; JWT_SECRET is the
+                                                        trust boundary either way. If set,
+                                                        must DIFFER from staging's
+                                                        `buildhub-staging`.
+OAUTH_SERVER_URL    NO   no      env.ts, oauth.ts       Unset ⇒ auth.capabilities reports
+                                                        OAuth unavailable and the UI hides
+                                                        it. STATUS: intentionally empty on
+                                                        staging. NOT REQUIRED.
+OWNER_OPEN_ID       NO   no      env.ts                 Owner notifications. Optional.
+TEST_LOGIN_ENABLED  NO   no      env.ts                 **PRODUCTION MUST NEVER SET THIS.**
+                                                        Compared to the exact string
+                                                        "true"; anything else = OFF.
+OPENAI_API_KEY      NO   YES     openai.ts              AI assistant. Absent ⇒ feature
+                                                        reports itself unavailable.
+
+── Object storage (S3-compatible) ────────────────────────────────────────────
+S3_ENDPOINT         NO   no      env.ts/objectStorage   e.g. https://ewr1.vultrobjects.com
+S3_REGION           NO   no      "                      e.g. ewr1
+S3_BUCKET           NO   no      "                      Bucket name
+S3_ACCESS_KEY_ID    NO   YES     "                      Access key
+S3_SECRET_ACCESS_KEY NO  YES     "                      Secret key
+S3_FORCE_PATH_STYLE NO   no      "                      Defaults TRUE. Set "false" only
+                                                        for AWS proper.
+BUILT_IN_FORGE_API_URL / _API_KEY — legacy Manus storage, used only when no S3
+bucket is set. NOT REQUIRED for production; leave unset.
+
+── Outbound email (SMTP) ─────────────────────────────────────────────────────
+SMTP_HOST           NO   no      smtpMailer.ts          Absent ⇒ NullMailer; reset reports
+                                                        unavailable rather than pretending.
+SMTP_PORT           NO   no      "                      Default 587
+SMTP_SECURE         NO   no      "                      Default: true on 465, false on 587
+SMTP_USER           NO   YES     "                      Relay username
+SMTP_PASSWORD       NO   YES     "                      Relay password
+SMTP_FROM           YES* no      "                      *REQUIRED once SMTP_HOST is set —
+                                                        boot THROWS without it. Must be on
+                                                        an SPF/DKIM/DMARC-verified domain.
+SMTP_ALLOW_INSECURE NO   no      "                      Development only; ignored when
+                                                        isProduction.
+
+── First-administrator bootstrap (TEMPORARY) ─────────────────────────────────
+ADMIN_BOOTSTRAP_EMAIL / _USERNAME / _PASSWORD — see §16H. Set together, deploy
+once, remove. Password minimum 12 characters. NEVER prefix VITE_.
+
+── Build-time only (Vite; PUBLIC by construction) ────────────────────────────
+VITE_APP_ID, VITE_OAUTH_PORTAL_URL. Anything `VITE_`-prefixed is inlined into
+the client bundle and is therefore public. No secret may ever carry that prefix.
+
+── Diagnostics, injected by the platform ─────────────────────────────────────
+RENDER_GIT_COMMIT / BUILD_COMMIT — feed `/version`. Read-only.
+
+────────────────────────────────────────────────────────────────────────────────
+1. MUST BE GITHUB SECRETS
+────────────────────────────────────────────────────────────────────────────────
+   PRODUCTION_SSH_HOST      deploy-production.yml
+   PRODUCTION_SSH_USER      deploy-production.yml
+   PRODUCTION_SSH_KEY       deploy-production.yml
+   STAGING_SSH_HOST         deploy-staging.yml   (gate; currently unset ⇒ inert)
+   STAGING_SSH_USER         deploy-staging.yml
+   STAGING_SSH_KEY          deploy-staging.yml
+   STAGING_ADMIN_USER       staging-qa.yml       (unset ⇒ 3 QA checks SKIP)
+   STAGING_ADMIN_PASSWORD   staging-qa.yml
+   (GITHUB_TOKEN is issued automatically.)
+
+────────────────────────────────────────────────────────────────────────────────
+2. MUST BE GITHUB REPOSITORY VARIABLES  (`vars`, NOT `secrets`)
+────────────────────────────────────────────────────────────────────────────────
+   STAGING_BASE_URL
+   PRODUCTION_BASE_URL
+
+   This distinction is load-bearing and was a real 83-run outage: GitHub does
+   not expose the `secrets` context to `environment.url`, and a workflow that
+   references it there fails validation at STARTUP — zero jobs, zero seconds,
+   no check run. A base URL is a public hostname, so `vars` is also the
+   correct home for it on the merits.
+
+────────────────────────────────────────────────────────────────────────────────
+3. MUST EXIST ONLY ON THE HOST (never in GitHub, never in git)
+────────────────────────────────────────────────────────────────────────────────
+   JWT_SECRET, DATABASE_URL, DATABASE_CA_CERT, APP_BASE_URL, all S3_*, all
+   SMTP_*, OPENAI_API_KEY, ADMIN_BOOTSTRAP_* (temporarily).
+
+   On Render these are dashboard values (`sync: false` in the Blueprint, so no
+   value is committed). On the Vultr host they live in `/srv/buildhub/.env`,
+   which docker-compose reads via `--env-file`.
+
+────────────────────────────────────────────────────────────────────────────────
+4. MUST NEVER USE THE `VITE_` PREFIX (server secrets)
+────────────────────────────────────────────────────────────────────────────────
+   JWT_SECRET · DATABASE_URL · DATABASE_CA_CERT · S3_ACCESS_KEY_ID ·
+   S3_SECRET_ACCESS_KEY · SMTP_USER · SMTP_PASSWORD · OPENAI_API_KEY ·
+   ADMIN_BOOTSTRAP_EMAIL · ADMIN_BOOTSTRAP_USERNAME · ADMIN_BOOTSTRAP_PASSWORD
+
+   Enforced by evidence, not just convention: staging QA section 21 greps the
+   delivered page for JWT_SECRET, DATABASE_URL, SMTP_PASSWORD, S3_SECRET,
+   `mysql://` and `BEGIN PRIVATE KEY`. All six passed in run #12.
+
+STATUS: CONFIGURATION REQUIRED (every production value is unset).
+
+================================================================================
+16B. PRODUCTION DATABASE
+================================================================================
+
+Separate from staging?          YES, by construction. Staging's MySQL is a Render
+                                private service (`buildhub-staging-mysql`)
+                                reachable only inside Render's network, never
+                                from the internet. Production is planned on
+                                Vultr Managed Databases. No shared credential
+                                exists — staging's JWT_SECRET is
+                                `generateValue: true`, so nobody has ever held it.
+Prod URL ≠ staging URL?         Guaranteed: staging's DATABASE_URL is `sync: false`
+                                (dashboard-only) and production's does not exist yet.
+Migrations reproducible?        YES. 21 journalled Drizzle migrations
+                                (`drizzle/meta/_journal.json`, last `0020_tense_triathlon`).
+                                Applied by `drizzle-kit migrate`, which is
+                                apply-only and idempotent against the journal.
+Silently skipped?               NO. On Render, migrations are the
+                                `preDeployCommand`: it runs once per deploy, and
+                                **a failure halts the deploy and keeps the old
+                                version serving**. In the SSH workflows it is an
+                                explicit step before release; a non-zero exit
+                                fails the job.
+Startup depends on staging?     NO. Nothing reads a staging hostname. The only
+                                cross-service reference in render.yaml is
+                                APP_BASE_URL ← the service's own RENDER_EXTERNAL_URL.
+Destructive migrations auto-run? NO — with one footgun to keep out of the deploy
+                                path. `package.json` defines
+                                `db:push = drizzle-kit generate && drizzle-kit migrate`,
+                                and `generate` can author a DROP. **No deploy
+                                path uses it** — Render uses
+                                `./node_modules/.bin/drizzle-kit migrate`, both
+                                workflows use `npx drizzle-kit migrate`.
+                                RECOMMENDATION: never run `db:push` against any
+                                deployed database.
+Connection config correct?      YES. `resolveSslOptions()` (server/db.ts:31).
+DATABASE_SSL expectations?      Production DEFAULTS to `require` with
+                                `rejectUnauthorized: true`, never weakened. A
+                                managed database therefore needs DATABASE_CA_CERT
+                                or the handshake fails. Staging sets `disable`
+                                because the hop is inside Render's private network.
+Staging seed/test accounts?     Cannot cross over — separate databases, and no
+                                migration contains an INSERT (checked: zero of
+                                21 files).
+
+RECOMMENDED PRODUCTION MIGRATION PROCEDURE (not executed):
+  1. Take a verified dump first — `deploy/backup-before-release.sh <tag>`; it
+     verifies the dump before trusting it.
+  2. Apply with the pinned image, apply-only:
+       docker run --rm --env-file .env <image>:<tag> npx drizzle-kit migrate
+  3. Never `db:push`. Never `drizzle-kit generate` on a deployed database.
+  4. Hold the compatibility rule: migrations run BEFORE the new code is live, so
+     the OLD code runs against the NEW schema for the length of a deploy. Add
+     columns nullable. Never drop or rename in the same release that stops using
+     the column — the drop belongs in a LATER release. **Nothing enforces this;
+     it is a review rule.** (Documented in render.yaml.)
+  5. Rollback does NOT undo a migration. With rule 4 held that is safe.
+     `deploy/restore-backup.sh` is the backstop.
+
+STATUS: CONFIGURATION REQUIRED (strategy explicit and proven on staging;
+production instance does not exist).
+
+================================================================================
+16C. DATABASE BACKUP / RECOVERY
+================================================================================
+
+    PRODUCTION OPERATIONAL REQUIREMENT — NOT VERIFIED
+
+Backup capability   : Two layers are DESIGNED, neither is RUNNING.
+                      (a) Vultr Managed Databases' own scheduled backups — the
+                          real disaster-recovery story. No Vultr instance exists,
+                          so nothing is scheduled.
+                      (b) `deploy/backup-before-release.sh` — a pre-migration
+                          dump taken by the production workflow. It exists in
+                          the repo and is written to be correct (pinned
+                          `mysql:8.0` client so a MariaDB host client cannot
+                          silently produce a bad dump; `--no-tablespaces` for
+                          managed-DB privileges; SSL REQUIRED by default; the
+                          dump is VERIFIED before it is trusted). It has never
+                          run, because it must be copied to `/srv/buildhub/` on
+                          a host that does not exist.
+Frequency           : UNKNOWN — depends on the Vultr plan chosen. Pre-release
+                      dumps are per-deploy by definition.
+Retention           : Pre-release dumps: 10 (`BACKUP_RETAIN`, overridable).
+                      Managed-database retention: UNKNOWN.
+Point-in-time       : UNKNOWN. Vultr offers PITR on some tiers; not selected.
+Restore procedure   : `deploy/restore-backup.sh` +
+                      BUILDHUB_BACKUP_AND_ROLLBACK_RUNBOOK.md.
+Restore TESTED?     : **NO.** No restore drill has been performed against any
+                      production-shaped database. This is the single most
+                      important untested item in this document.
+Responsible party   : UNASSIGNED. No on-call, no owner, no escalation path.
+
+STATUS: BLOCKED for launch. An untested restore is a rumour.
+
+================================================================================
+16D. DEPLOYMENT / ROLLBACK
+================================================================================
+
+What triggers staging?      TWO mechanisms, and only one of them works:
+                            (a) LIVE: Render `autoDeploy: true` on branch
+                                `claude/phase4b-readiness-audit-hardening`.
+                                Pushing that branch deploys staging. This is how
+                                928ef76 reached staging.
+                            (b) INERT: `deploy-staging.yml` on push to `main`.
+                                Its `gate` job checks for STAGING_SSH_HOST/KEY,
+                                finds neither, emits a notice and SKIPS every
+                                subsequent job. It has never deployed anything.
+What triggers production?   `workflow_dispatch` ONLY. No push trigger, no
+                            schedule, no `on: release`.
+Manual approval?            YES, three independent gates:
+                              1. `confirm` input must equal the literal `DEPLOY`
+                              2. `github.ref` must be `refs/heads/main`
+                              3. GitHub `environment: production` — the release
+                                 job does not start until a required reviewer
+                                 approves in the UI.
+                            Gates 1 and 2 are in the repo and verified by
+                            reading. Gate 3 depends on the `production`
+                            environment being configured with required reviewers
+                            and a `main` branch restriction — **that is a GitHub
+                            settings item and is NOT VERIFIED.**
+Which branch?               main, enforced twice.
+Which commit?               An already-published image addressed by its 12-char
+                            commit SHA, passed as `image_tag`. Production does
+                            NOT rebuild — it releases the exact artefact staging
+                            verified. Regex-validated `^[0-9a-f]{12}$`.
+Rollback available?         YES, automatic on smoke-test failure: the previously
+                            running image is recorded to `.image.env.previous`
+                            BEFORE the release, and `if: failure()` brings it
+                            back. The error message states plainly that the
+                            migration was NOT reverted.
+Render rollback?            Render's dashboard offers "Rollback to this deploy"
+                            for staging. It rolls back the IMAGE only — a
+                            preDeployCommand migration is not undone.
+Migrations rollback-safe?   ONLY IF the backward-compatibility rule is held
+                            (§16B step 4). Not enforced by tooling.
+
+CAN ANYTHING DEPLOY PRODUCTION ACCIDENTALLY?  **No.** I checked every trigger in
+all four workflows: `ci.yml` (push to any branch, PR, dispatch) builds and tests
+only; `staging-qa.yml` is dispatch-only; `deploy-staging.yml` is push-to-main and
+touches nothing named production; `deploy-production.yml` is dispatch-only behind
+three gates. Pushing staging changes cannot release production.
+
+DEFECT FOUND — reported, not changed (this phase is evidence-only):
+  `render.yaml` pins staging to `branch: claude/phase4b-readiness-audit-hardening`
+  with `autoDeploy: true`. Staging therefore tracks a FEATURE BRANCH, not `main`.
+  Today they are identical, so nothing is broken. But it means (i) a push to that
+  branch deploys staging without going through `main`, and (ii) merging to `main`
+  alone does NOT deploy staging. Recommended before launch: point it at `main`.
+  Left unchanged here because the instruction was to change deployment behaviour
+  only for a concrete defect, and this is a latent one.
+
+STATUS: staging deploy READY (via Render). Production deploy
+CONFIGURATION REQUIRED — no host, no secrets, approval gate unverified.
+
+================================================================================
+16E. DOMAIN / HTTPS / COOKIE / CORS
+================================================================================
+
+Production domain     : NOT CONFIGURED. No domain appears anywhere in the
+                        repository, and I have not invented one. Concrete launch
+                        task — see PHASE 2.
+HTTPS                 : Assumed by construction in production. `helmet` sets HSTS
+                        only when isProduction: max-age 63 072 000 (2 years),
+                        includeSubDomains, preload. `upgradeInsecureRequests` is
+                        added to the CSP in production only.
+Secure cookies        : `secure` is PINNED true in production
+                        (`server/_core/cookies.ts`), not derived per request —
+                        one proxy hop that looked plain-HTTP would otherwise hand
+                        back a cookie the browser discards, logging users out for
+                        no visible reason.
+SameSite              : `secure ? "none" : "lax"`. Production ⇒ `None; Secure`,
+                        which is the only legal pairing. (Pinning "none" while
+                        secure derived false was a real defect: browsers dropped
+                        the cookie outright and local development could not
+                        authenticate in any browser.)
+Cookie domain         : NOT SET (the domain-derivation block is commented out),
+                        so the cookie is host-only on the exact origin that set
+                        it. Correct for a single-origin deployment; if production
+                        ever needs `app.` and `www.` to share a session, this is
+                        the line that must change.
+Cookie path           : `/`
+CORS                  : **No CORS middleware exists at all.** Deliberate and
+                        correct: the API is same-origin (Express serves the built
+                        SPA and mounts tRPC on the same host), so no
+                        `Access-Control-Allow-Origin` is needed. The CSP already
+                        pins `connectSrc: 'self'` in production. If a separate
+                        front-end origin is ever introduced, CORS becomes a new
+                        requirement — today its absence is the safe state.
+Allowed origins       : CSP `defaultSrc 'self'`; `frameAncestors 'none'`;
+                        `objectSrc 'none'`; `baseUri 'self'`; `formAction 'self'`.
+                        External hosts permitted: fonts.googleapis.com (styles)
+                        and fonts.gstatic.com (fonts) only.
+APP_BASE_URL          : Unset for production. Password-reset and invitation links
+                        are built from it and NOT from the Host header —
+                        deliberately, so an attacker who can set that header
+                        cannot have a reset link for their own domain mailed to a
+                        victim. Consequence: **until APP_BASE_URL is set,
+                        password reset reports itself unavailable.**
+OAuth callbacks       : N/A. OAUTH_SERVER_URL is empty; auth.capabilities reports
+                        `oauthSignIn: false` and the UI hides that door.
+Password-reset URLs   : Derived from APP_BASE_URL. Blocked with SMTP (§16J).
+Invitation URLs       : Admin invitations are RELATIVE
+                        (`/admin/accept-invitation?token=…`) and are returned to
+                        the browser, never emailed — so they carry no host and
+                        cannot leak a staging URL into production.
+Webhook URLs          : None exist. No webhook endpoint is implemented (§16L).
+Staging URL in prod?  : Cannot happen through code. No staging hostname is
+                        hard-coded anywhere; every URL is derived from
+                        APP_BASE_URL / RENDER_EXTERNAL_URL. The one risk is an
+                        operator copying a staging .env — mitigated by the fact
+                        that staging's secrets are `generateValue`/`sync: false`
+                        and nobody holds them.
+
+STATUS: CONFIGURATION REQUIRED (domain + APP_BASE_URL + TLS certificate).
+
+================================================================================
+16F. AUTHENTICATION / AUTHORIZATION — FINAL REVIEW
+================================================================================
+
+Enforcement is server-side in `server/routers.ts`. The frontend guard in
+AdminDashboard is cosmetic; removing it changes what is DRAWN, not what is
+PERMITTED.
+
+  adminProcedure   = authenticated  AND role==='admin'  AND isAdminRole(adminRole)
+  adminWith(p)     = adminProcedure AND hasAdminPermission(adminRole, p)
+  superAdmin       = adminWith('admins.manage')   ← SUPER_ADMIN only
+
+Role coverage (all five roles + normal users):
+  SUPER_ADMIN        all 10 permissions incl. admins.manage — verified
+  USER_ADMIN         users.read/manage, audit-scoped — verified
+  MARKETPLACE_ADMIN  marketplace.manage — verified
+  SUPPORT_ADMIN      support.manage, qa.manage — verified
+  BILLING_ADMIN      billing.read/manage — verified
+  normal users       refused at the door (403) on every admin endpoint
+
+Attack-by-attack:
+
+Privilege escalation   BLOCKED. Only `admins.manage` reaches createAdmin /
+                       setAdminRole, and only SUPER_ADMIN holds it. A sub-admin
+                       calling either gets FORBIDDEN before any input is read.
+Self-promotion         BLOCKED twice over. `setAdminRole` refuses when
+                       `input.userId === ctx.user.id` — so "modify your own role"
+                       is impossible for EVERYBODY, not only sub-admins. (It also
+                       prevents a Super Admin demoting themselves into an
+                       unrecoverable platform with nobody able to manage admins.)
+Role manipulation      BLOCKED. Permissions are DERIVED from role via a static
+                       map; there is no per-user permission record to edit, so
+                       there is no row to tamper with.
+Unauthorized routes    BLOCKED, proven on LIVE staging (run #12):
+                         admin.me      anonymous 401 · customer 403
+                         admin.admins  anonymous 401 · customer 403
+                         admin.users / commercialKpis / productAnalytics
+                                       anonymous 401 · non-admin 403
+Revoked admin access   ENFORCED. revokeAdminSessions / setAdminActive(false) /
+                       setAdminRole all stamp `sessionsInvalidBefore =
+                       revocationCutoff()` (now + 1000 ms). The +1000 ms is not
+                       cosmetic: the comparison is whole-second and strict `<`,
+                       so a session issued in the SAME second as the revocation
+                       previously SURVIVED it. Found by live probing, fixed.
+Disabled accounts      ENFORCED at the door: adminSignIn refuses when
+                       `accountStatus !== 'active'` or `deactivatedAt` is set —
+                       with the SAME 401 as a wrong password.
+Invitation reuse       BLOCKED. `usedAt` is stamped on redemption and checked on
+                       every attempt. Test-login links go further: the burn is an
+                       atomic `UPDATE … WHERE usedAt IS NULL`, so two simultaneous
+                       redemptions race and exactly one wins.
+Expired invitations    BLOCKED. 48-hour TTL (`ADMIN_INVITE_TTL_HOURS`), checked
+                       against `expiresAt` at redemption; also revocable.
+Password-reset abuse   BOUNDED. Rate-limited (§16O). `resetAdminPassword` does
+                       not set or reveal a password — it invalidates the current
+                       credential and issues a fresh single-use invitation, so a
+                       stolen reset gains an attacker nothing without the token.
+Session invalidation   Per-session via `revokedSessions` (jti); bulk via
+                       `sessionsInvalidBefore`. Logout, password change, admin
+                       revocation and deactivation all exercised.
+Cookie security        httpOnly, Secure (pinned in production), SameSite paired
+                       correctly, path=/. §16E.
+Cross-user data access BLOCKED at the query, not the response: explicit column
+                       allowlists on every client-facing user query (`passwordHash`
+                       and `invitationToken` are never in a select list), and
+                       `rfq.quotations` is scoped by `requesterId` because a
+                       quotation carries a rival vendor's email, price and terms.
+IDOR                   Closed on the paths audited in Slice 9: `rfq.get` is scoped
+                       `WHERE id = ? AND requesterId = ?` and returns NOT_FOUND
+                       (not FORBIDDEN) so it does not confirm an id exists;
+                       `rfq.list` drops `attachments`; project sub-resources are
+                       owner-scoped. **One residual gap — see 16P/F-1.**
+
+Evidence: 34 authorization tests + 22 invitation tests locally; 1240/1240 total;
+9/9 credential-free admin-door checks against live staging in run #12; 5 mutation
+reverts on the admin security surface, each caught by its own test. No
+destructive test was run against production — there is no production to run one
+against.
+
+STATUS: READY.
+
+================================================================================
+16G. TEST / QA DATA ISOLATION
+================================================================================
+
+QA users staging-only?      YES at every SIGN-IN path. `auth.signInDummy` and the
+                            test-login-link redemption both begin with
+                            `if (!isTestLoginEnabled()) throw NOT_FOUND` —
+                            NOT_FOUND rather than FORBIDDEN, deliberately, so the
+                            endpoint looks absent rather than confirming there is
+                            a test-login mechanism to hunt for.
+TEST_LOGIN_ENABLED off?     Enforced server-side against the exact string "true".
+                            Unset, empty, "1", "yes", "TRUE" and " true" all mean
+                            OFF. It CANNOT be derived from NODE_ENV, because
+                            staging also runs NODE_ENV=production — hence the
+                            explicit, default-denied flag. `render.yaml` sets it
+                            `"true"` on staging only; production must never set it.
+Staging data → production?  Impossible: separate databases, and no migration
+                            contains an INSERT.
+Production uses staging
+credentials?                No shared credential exists. Staging's JWT_SECRET is
+                            `generateValue: true` — nobody has ever seen it.
+QA emails in production?     Dummy accounts are minted with
+                            `dummy+<token>@buildhub.test`, an unroutable domain.
+Test invitation links?      Cannot affect production — tokens live in the
+                            per-environment database, and redemption is gated on
+                            TEST_LOGIN_ENABLED anyway.
+"Include test data" scoped? YES. `includeDummy` defaults to FALSE on
+                            `admin.analyticsSummary` and the compliance queue; the
+                            public vendor directory adds
+                            `eq(users.isDummy, false)` whenever
+                            TEST_LOGIN_ENABLED is not on, on top of the
+                            active/not-deactivated filter.
+
+TWO RESIDUAL NOTES (neither is a blocker):
+  G-1  `admin.createDummyUser` is gated by `qa.manage` but NOT by
+       `isTestLoginEnabled()`. A production Super Admin could therefore CREATE a
+       QA persona. It could never sign in (both entry points are gated) and it is
+       created `accountStatus:'frozen'` with `deactivatedAt` set and excluded
+       from the directory — so this is clutter, not exposure. Tightening it to
+       also require the flag would be one line; deliberately not changed here.
+  G-2  `admin.issueTestLoginLink` is likewise ungated at issue time. Redemption
+       is gated, so a link minted in production is inert. Defence in depth is
+       already present; the issue-time check is the missing belt.
+
+STATUS: READY. (G-1/G-2 are hardening, not blockers.)
+
+================================================================================
+16H. ADMIN BOOTSTRAP — PRODUCTION PROCEDURE
+================================================================================
+
+Confirmed from `server/adminBootstrap.ts`: THE BOOTSTRAP CANNOT MODIFY AN
+EXISTING ADMINISTRATOR. Its first action is
+`SELECT count(*) FROM users WHERE role='admin'`; any non-zero result returns
+`already-exists` and it touches nothing. It cannot promote, re-role, reset a
+password, or create a duplicate. It always INSERTS a new account from the
+supplied identity rather than elevating a matching one, so pointing it at
+someone else's email grants that person nothing. It is never a request handler —
+the only trigger is process start.
+
+One correction to state plainly: the bootstrap is **not** environment-gated. It
+has no isProduction check and no flag; it runs identically wherever deployed.
+Production is protected by deployment isolation (separate host, separate
+database) plus the create-only gate — not by a staging-only switch. Running it
+in production is the INTENDED path for creating the first production admin.
+
+PROCEDURE (NOT EXECUTED — no credentials requested, none exposed):
+
+  1. On the production host, add to `/srv/buildhub/.env`:
+       ADMIN_BOOTSTRAP_EMAIL=<production admin email>
+     Format: valid address; trimmed and lowercased before use.
+  2.   ADMIN_BOOTSTRAP_USERNAME=<username>
+     Format: 3–100 chars, `[a-z0-9._-]` only; trimmed and lowercased — so
+     `IslamSu` is stored and typed as `islamsu`.
+  3.   ADMIN_BOOTSTRAP_PASSWORD=<generated by a password manager>
+     Minimum 12 characters, taken VERBATIM (not trimmed — a stray trailing space
+     becomes part of the password). Never typed into chat, a ticket, or a commit.
+  4. Restart production so the process re-reads its environment
+     (`docker compose --env-file .env --env-file .image.env up -d`).
+     No rebuild and no new image are required.
+  5. Verify from the logs. Exactly one of:
+       [bootstrap] Created the first administrator (<username>). Unset
+       ADMIN_BOOTSTRAP_* now - it is inert from here on.
+       [bootstrap] An administrator already exists; bootstrap did nothing.
+       [bootstrap] ADMIN_BOOTSTRAP_* is set but unusable: <reason>
+       [bootstrap] Database unavailable; skipped administrator bootstrap.
+     The password appears in none of them, by test.
+  6. Log in at  https://<production-domain>/admin/login  with the email OR the
+     username plus the password. (Both identifiers were lowercased on the way in,
+     so sign-in is case-insensitive.)
+  7. Remove all three variables from `.env` and restart. Leaving them set cannot
+     reset anybody — but clearing them means production holds no standing admin
+     credential in its environment at all.
+  8. Verify normal admin login still works after the restart, and confirm
+     `/admin/admins` lists exactly one SUPER_ADMIN.
+
+FAILURE MODE TO EXPECT: the bootstrap NEVER throws. A misconfiguration degrades
+to "no admin account", never to a boot loop.
+
+STATUS: READY — procedure defined, mechanism verified on staging, awaiting a
+production host.
+
+================================================================================
+16I. ADMIN INVITATION / SUB-ADMIN OPERATIONS
+================================================================================
+
+Token cryptographically random?  YES. `randomBytes(32)` → base64url. 256 bits.
+                                 Never a user id, an email, a sequence, or a
+                                 password in a URL.
+Only the hash persisted?         YES. `adminInvitations.tokenHash` is SHA-256,
+                                 UNIQUE. The raw token exists only in the response
+                                 to the creating Super Admin. Unsalted SHA-256 is
+                                 correct here precisely because the input is
+                                 already 256 bits of CSPRNG entropy — salting
+                                 would buy nothing and break the unique-index
+                                 lookup.
+Expires?                         YES. 48 hours (`ADMIN_INVITE_TTL_HOURS = 48`).
+Single-use?                      YES. `usedAt` stamped and checked.
+Invitee selects the password?    YES. The account is created with NO passwordHash
+                                 and cannot authenticate until step 4 —
+                                 `adminSignIn` treats a null hash as no account.
+Visible to the Super Admin?      NEVER. It does not exist until the invitee
+                                 chooses it.
+Reusable?                        NO — used, expired and revoked are all checked.
+Self-escalation?                 NO. §16F.
+Only Super Admin manages admins? YES — all eight management endpoints are
+                                 `superAdminProcedure`.
+Permissions server-side?         YES. §16F.
+
+OPERATIONAL PROCESSES
+
+Create an administrator
+  /admin/admins → name, email, username, role → the invitation link is shown
+  ONCE. Deliver it out of band (Signal, a phone call, in person). It is NOT
+  emailed — SMTP is unconfigured, and administrator credentials should not be
+  sent by email regardless. Record only WHO was invited, never the token.
+
+Revoke an administrator
+  Immediate:  admin.setAdminActive(userId, false)  → account refused at the door
+              AND every live session invalidated in the same write.
+  Permanent:  additionally admin.revokeAdminSessions(userId) if the account is
+              being kept but locked out.
+  Accounts are deactivated, never deleted — the audit trail must keep pointing at
+  a real row.
+
+Reset administrator access
+  admin.resetAdminPassword(userId). Invalidates the current credential, revokes
+  sessions, issues a fresh single-use invitation. No password is set or shown.
+
+Replace an administrator
+  Create the successor first and confirm they can sign in; then deactivate the
+  predecessor. Never the other way round — with one Super Admin, deactivating
+  first strands the platform (and self-deactivation is refused precisely to stop
+  that).
+
+Handle an expired invitation
+  Do not extend it — there is no extend path by design. Either
+  admin.revokeAdminInvitation then admin.createAdmin again, or for an account
+  that already exists, admin.resetAdminPassword to mint a fresh 48-hour token.
+
+STATUS: READY.
+
+================================================================================
+16J. EMAIL / SMTP
+================================================================================
+
+WORKFLOW                    NEEDS EMAIL?  BEHAVIOUR TODAY WITHOUT SMTP
+Password reset              YES           `auth.capabilities` reports
+                                          `passwordReset: false`; the UI HIDES the
+                                          door rather than offering a button that
+                                          can only fail. Confirmed live in run #12.
+Administrator invitation    NO            By design. The link is returned to the
+                                          Super Admin's browser and delivered out
+                                          of band.
+User invitation (admin-created accounts)
+                            PARTIAL       `admin.createUser(sendInvitation:true)`
+                                          and `admin.resendInvitation` produce a
+                                          link; without SMTP an operator must hand
+                                          it over manually. Workable at low volume,
+                                          not at scale.
+Account verification        NO            Verification is an ADMIN review of
+                                          uploaded documents, not an email
+                                          round-trip.
+Notifications               NO            In-app only (`notifications` table, bell
+                                          + unread count). Verified live.
+RFQ notifications           NO            In-app.
+Enquiry notifications       NO            In-app.
+Transactional (receipts)    NOT YET       Nothing generates a receipt — payments
+                                          are deferred (§16L).
+
+CAN THE PRODUCT OPERATE WITHOUT SMTP?  Technically yes — nothing crashes and
+nothing lies; every email-dependent capability reports itself unavailable.
+
+BUT: **self-service password reset is the one that matters commercially.** A
+public marketplace where a user who forgets their password must contact an
+administrator to regain access is not a launchable consumer product. That is a
+product judgement, not a code defect, and I am stating it rather than deciding it.
+
+Note also: setting SMTP_HOST without SMTP_FROM makes the server THROW at boot —
+deliberately, because an unverified sender either gets rejected or quietly
+destroys the sending domain's reputation. Configure both, with SPF, DKIM and
+DMARC published, and send a real test message before launch.
+
+STATUS: BLOCKED for a public consumer launch; CONFIGURATION REQUIRED for a
+closed/invite-only launch.
+
+================================================================================
+16K. S3 / FILE STORAGE
+================================================================================
+
+FEATURES REQUIRING STORAGE (all five upload endpoints):
+  registration.uploadDocument  compliance/licence documents (professional roles)
+  projects.uploadDocument      private project files
+  rfq.uploadAttachment         drawings, BOQs, site photos (≤8 MB)
+  messages.uploadAttachment    images / PDFs in conversations
+  profile.uploadAvatar         profile pictures
+
+Upload authentication  ENFORCED. Every endpoint is protectedProcedure or
+                       stricter (registration uploads require complianceProcedure
+                       — an authenticated user in a professional role).
+Authorization          ENFORCED per category in
+                       `authorizeStorageKey` (server/_core/storageProxy.ts).
+Private vs public      All objects are served through `/manus-storage/:key`, a
+                       server-side proxy that authenticates and authorizes on
+                       every request. Nothing is world-readable.
+Object access control  registration/  → owner only (+ admin), checked against
+                                        registrationDocumentSubmissions.userId
+                       project-documents/ → project owner only, joined through
+                                        documents → projects
+                       message-attachments/ → conversation participants
+                       avatars/       → any authenticated user (they appear on
+                                        every public vendor card)
+                       rfq-attachments/ → any authenticated user  ← SEE F-1
+                       default        → FAIL CLOSED (returns false)
+File ownership         Tracked in the owning table's `fileKey` column; the proxy
+                       verifies against the DB and never treats key
+                       unpredictability as authorization.
+Deletion               No user-facing delete endpoint exists. Objects are
+                       orphaned rather than removed. Not a security issue; it is
+                       a cost and GDPR-erasure gap worth noting.
+Signed URLs            `storageGetSignedUrl` exists for the S3 backend and the
+                       proxy 307-redirects to a presigned URL. `helmet` sets
+                       `crossOriginResourcePolicy: cross-origin` precisely so
+                       that redirect is not blocked.
+Size limits            RFQ attachments 8 MB (max 6 per RFQ); registration
+                       documents 10 MB; base64 payloads capped in the Zod schema
+                       before decoding.
+Type restrictions      REAL, not declared. `assertUploadedFileMatches` sniffs the
+                       actual bytes (server/_core/fileType.ts) and rejects a
+                       mismatch — applied at ALL FIVE endpoints. Verified live in
+                       run #12: SVG refused (400), SVG relabelled PNG refused,
+                       HTML relabelled PNG refused, a genuine PNG passed the type
+                       check.
+Secret handling        S3_SECRET_ACCESS_KEY is server-only; QA greps the
+                       delivered page for `S3_SECRET` and it is absent.
+
+IS S3 REQUIRED FOR PRODUCTION?  YES. Professional onboarding — contractors,
+engineers, architects — cannot complete without uploading licence documents, and
+that is the gate on becoming an approved provider who can quote. Without storage
+the supply side of the marketplace cannot be onboarded at all. Uploads currently
+fail loudly ("storage backend not configured") rather than pretending to store
+anything, which is the correct failure but not a launchable one.
+
+STATUS: BLOCKED until a production bucket and credentials exist.
+
+================================================================================
+16L. PAYMENTS — DEFERRED BY PRODUCT DECISION
+================================================================================
+
+WHAT EXISTS
+  shared/billing.ts          plan catalogue, prices (Professional EGP 499/mo,
+                             Premium EGP 999/mo), `isEntitlementEnforced()` —
+                             an ALLOWLIST, so an unrecognised marker fails closed
+                             toward honesty rather than advertising a capability
+                             nothing enforces.
+  server/billing/provider.ts `PaymentProvider` interface + `PaymentProviderNotConfiguredError`.
+                             Shaped from BuildHub's own approved lifecycle, NOT
+                             from any provider's API.
+  server/billing/lifecycle.ts, service.ts, entitlements.ts
+                             trial, active, past-due, cancelled, resumed;
+                             entitlement derivation; analytics events. All
+                             admin-driven today.
+  drizzle/schema.ts          vendorSubscriptions with provider / providerCustomerRef
+                             / providerSubscriptionRef columns already in place.
+  Admin endpoints            startVendorTrial, changeVendorPlan,
+                             recordVendorPaymentSucceeded / _Failed / _Recovered,
+                             reconcileVendorBilling, reconcileDueBilling.
+
+WHAT REMAINS INCOMPLETE
+  No provider adapter. No checkout. No webhook endpoint. No refund path. No
+  dunning emails. No card data touched anywhere — by design.
+
+ENVIRONMENT VARIABLES EVENTUALLY REQUIRED (none exist yet; names to be set by
+the adapter, not invented here): a merchant/API key, an API secret, an
+integration or plan id, and a webhook signing secret. `verifyAndParseWebhook`
+is specified to THROW on an invalid signature and never return a best-effort
+parse — that contract is written down before any adapter exists.
+
+CAN PAYMENT CODE SAFELY REMAIN DISABLED?  YES. The active provider is a
+not-configured stub that throws a clear error naming the phase. Nothing in the
+non-payment product calls it.
+
+DOES THE APP INCORRECTLY IMPLY PAYMENT IS ACTIVE?  NO, and this is verified
+rather than asserted. `billing.plans` returns `checkoutAvailable:
+isPaymentProviderConfigured()` → false; Pricing.tsx renders
+`pricing.checkoutUnavailable` instead of a buy button; staging QA run #12 passed
+"16. checkout is honestly reported unavailable" and five separate "unbuilt
+entitlement not advertised" checks (portfolioLevel, promotionalCapability,
+branchLimit, teamMemberLimit, visibilityLevel).
+
+CLASSIFICATION: **DEFERRED BY PRODUCT DECISION.** No defect found that prevents
+non-payment functionality from operating safely. The absence of live credentials
+is a deliberate choice, not an omission.
+
+================================================================================
+16M. RFQ MONETIZATION DECISION
+================================================================================
+
+    ACCEPTED PRODUCT DECISION — REVISIT AFTER MARKETPLACE LIQUIDITY
+
+Recorded as instructed. The free browse feed continues to show full description
+and exact budget. Not reopened.
+
+SECURITY BOUNDARIES — verified individually:
+
+  No attachments in the free feed      HELD. `rfq.list` uses an explicit column
+                                       allowlist (id, requesterId, projectId,
+                                       title, description, category, budget,
+                                       location, deadline, productReference,
+                                       status, createdAt). `attachments` is
+                                       absent, and `parseRfqAttachments` treats
+                                       the missing field as "none". Owners still
+                                       get their own via `myList`.
+  Requester/authorization checks       HELD. `rfq.list` is protectedProcedure
+                                       (anonymous → 401, confirmed live).
+                                       `rfq.get` is scoped
+                                       `WHERE id = ? AND requesterId = ?` and
+                                       returns NOT_FOUND so it does not confirm
+                                       that an id exists.
+  Paid enquiry access server-side      HELD. `openQualifiedEnquiry` requires
+                                       approval, declared categories, a billing
+                                       entitlement, and one credit per lead
+                                       enforced by a UNIQUE INDEX — not by
+                                       application arithmetic that a race could
+                                       beat.
+  Free users cannot bypass credits     HELD. Verified live: usage reports
+                                       `{"used":0,"allowance":5,...}` and an
+                                       UNAPPROVED provider quoting gets 403.
+
+One related finding that touches this boundary from a different direction is
+F-1 below. It is NOT a change to the pricing decision.
+
+================================================================================
+16N. OBSERVABILITY / LOGGING
+================================================================================
+
+Secrets never logged      VERIFIED by design and by test. `registerRequestLogging`
+                          deliberately omits request/response BODIES (tRPC carries
+                          passwords and tokens through POST bodies), the Cookie
+                          and Authorization headers, and QUERY STRINGS — which is
+                          where `?token=` lands. It logs `req.path`, captured
+                          before Express rewrites `req.url`, so the procedure name
+                          is still visible without the secret.
+Passwords never logged    VERIFIED. `adminBootstrap` has a test that captures every
+                          console call during a successful bootstrap and asserts
+                          the password appears in none of them.
+DATABASE_URL / JWT_SECRET Never logged. Connection failures log the error message
+                          only, not the DSN.
+Invitation tokens         Never logged. Audit notes record WHICH identity was
+                          invited, never the credential.
+Stack traces to users     Not exposed. Verified live: "21. errors carry no stack
+                          trace or filesystem path" passed in run #12.
+Request IDs               PRESENT. A UUID per request, returned as the
+                          `x-request-id` header and included in the JSON access
+                          log, so a user reporting a problem can quote something
+                          findable. Explicitly not derived from the session.
+Auditable auth/admin events
+                          YES. `userAccountAuditEvents` records actor + subject +
+                          action + source + note. Admin actions added this phase:
+                          admin_signed_in, admin_created, admin_role_changed,
+                          admin_sessions_revoked, admin_password_changed,
+                          admin_password_reset_requested,
+                          admin_invitation_redeemed, admin_invitation_revoked,
+                          super_admin_bootstrapped. Reading the log itself
+                          requires `audit.read` (SUPER_ADMIN only).
+Failed auth leaks?        NO. adminSignIn returns ONE message for all five
+                          rejection causes (wrong password, no such account, not
+                          an administrator, no role assigned, deactivated).
+                          Verified live: "that refusal is INDISTINGUISHABLE from
+                          an unknown account — 401 vs 401". Timing is levelled by
+                          `NO_SUCH_ACCOUNT_HASH`, so the unknown-account path
+                          costs the same scrypt work as the wrong-password path.
+
+MONITORING / ALERTING     **NONE.** No Sentry, no Datadog, no OpenTelemetry, no
+                          Prometheus, no log shipper, no uptime check, no alert
+                          rule anywhere in the repository. What exists is
+                          `/healthz` (liveness), `/readyz` (database probe, 503
+                          when down) and `/version` — endpoints something COULD
+                          poll, but nothing does.
+
+CLASSIFICATION: operational RECOMMENDATION, not a hard blocker — the application
+is honest and auditable without it. But launching with no alerting means the
+first notification of an outage is a customer complaint. At minimum, point an
+uptime monitor at `/readyz` and ship the JSON access log somewhere queryable
+before taking real traffic.
+
+================================================================================
+16O. RATE LIMITING / ABUSE CONTROLS
+================================================================================
+
+IMPLEMENTATION: `server/_core/rateLimit.ts`, a fixed-window counter, applied
+per-identifier AND per-IP.
+  auth:  IP burst 60/min · IP sustained 300/15min · identifier 10/15min
+  ai.chat: user burst 5/10s · user sustained 20/5min · IP burst 10/10s ·
+           IP sustained 60/5min
+
+PROTECTED (8 endpoints, all confirmed by reading the call sites):
+  auth.signIn · auth.signUp · auth.adminSignIn · auth.signInDummy ·
+  auth.requestPasswordReset · auth.resetPassword · auth.completeInvitation ·
+  auth.completeAdminInvitation
+
+NOT PROTECTED — reported explicitly, as instructed:
+  O-1  rfq.create           No limit. An authenticated account can post RFQs in a
+                            loop and flood the provider feed. Sign-up is
+                            rate-limited, so this needs an account first, but one
+                            account is enough.
+  O-2  rfq.openQualifiedEnquiry
+                            No rate limit — but bounded by the enquiry credit
+                            allowance and a unique index, which is the stronger
+                            control. Acceptable.
+  O-3  All five upload endpoints
+                            No rate limit. Size caps (8–10 MB) and byte-level type
+                            sniffing exist, but nothing caps the RATE. A single
+                            authenticated account can fill the bucket. This is the
+                            most consequential gap once S3 is configured, because
+                            it converts into a direct storage bill.
+  O-4  Public marketplace reads (products.list, vendors directory, billing.plans)
+                            No limit. Read-only, no secrets, no writes — scraping
+                            is a business concern rather than a security one.
+  O-5  messages.send        No limit. Spam between users is possible.
+
+ADDITIONAL LIMITATION, worth knowing before scaling: the limiter is an
+IN-PROCESS `Map`. It is correct for the single-instance deployment in use today.
+Scaling to two instances halves its effectiveness, and a rolling deploy resets
+every window. Moving to a shared store is a real task the moment a second
+instance exists.
+
+No redesign performed — no concrete vulnerability was proven, and the
+instruction was to report rather than rebuild.
+
+STATUS: CONFIGURATION REQUIRED (add limits to O-1 and O-3 before public launch).
+
+================================================================================
+16P. SECURITY / DATA PRIVACY — ACTIONABLE FINDINGS
+================================================================================
+
+Areas reviewed clean: authentication (§16F), authorization (§16F), secrets
+(§16A), cookies (§16E), CORS (§16E — absent, and correctly so for a same-origin
+deployment), database access (parameterised throughout via Drizzle; no string
+concatenation into SQL), password handling (§16I), error responses (§16N),
+client-side secret exposure (§16A item 4, proven by QA section 21).
+
+THREE ACTIONABLE FINDINGS. None was changed — this phase is evidence-only.
+
+F-1  MEDIUM — `rfq-attachments/` in the storage proxy is broader than the data
+     rule it was written to match.
+     `authorizeStorageKey` returns TRUE for any `rfq-attachments/` key to any
+     authenticated user, and its comment justifies this with: "rfq.get/rfq.list
+     already expose full RFQ detail - including these attachments - to any
+     authenticated user by design". **Slice 9 made that comment false.**
+     `rfq.list` no longer returns attachments and `rfq.get` is owner-scoped, so
+     the proxy is now the loosest surface, not the matching one.
+     Exploitability: keys are `rfq-attachments/user-<id>/<filename>_<8 hex>.<ext>`.
+     The 8-hex suffix is 32 bits, and the user id is a small integer, so an
+     attacker needs the original filename plus ~2^32 guesses per file. Not
+     practical at scale; not a number to rely on either.
+     Recommended fix (one function, not a rewrite): scope `rfq-attachments/` to
+     the RFQ's requester plus providers who have opened a qualified enquiry on
+     that RFQ — the same rule the credit already buys — resolving the key through
+     the owning `rfqs.attachments` row.
+
+F-2  LOW — uploaded objects are never deleted.
+     No endpoint removes an object from the bucket, so deleting an RFQ, a message
+     or an account leaves its files in storage indefinitely. Cost issue today;
+     a right-to-erasure issue the moment real personal data is involved.
+
+F-3  LOW — no per-account upload rate limit (= O-3). Recorded in both places
+     because the consequence differs: abuse control here, storage cost there.
+
+NOT FINDINGS, recorded so they are not re-litigated:
+  · Absence of CORS middleware is correct for a same-origin app.
+  · Unsalted SHA-256 on invitation tokens is correct — the input is already 256
+    bits of CSPRNG entropy.
+  · The free feed showing description and budget is an accepted product decision
+    (§16M), not a vulnerability.
+
+================================================================================
+16Q. PRODUCTION CONTENT / SEED DATA
+================================================================================
+
+REQUIRED SYSTEM CONFIGURATION — none needs seeding:
+  Marketplace / RFQ categories  CODE CONSTANT (`shared/rfqCategories.ts`, nine
+                                values, single source of truth for both sides of
+                                the match). No rows to insert.
+  Subscription plans            CODE CONSTANT (`shared/billing.ts`). Verified live:
+                                "16. three plans in the catalogue — 3".
+  Compliance requirements       CODE CONSTANT (`shared/compliance.ts`), per role.
+  Admin settings                `adminSettings` table, but `admin.settings` merges
+                                over `DEFAULT_ADMIN_SETTINGS`, so an EMPTY table is
+                                a valid, fully-functional state. Rows appear only
+                                when an administrator changes something.
+  Admin configuration           The first Super Admin, via §16H. This is the only
+                                mandatory production data-creation step.
+
+STAGING / TEST DATA — must never reach production:
+  Dummy users (`isDummy = true`, `dummy+…@buildhub.test`), test-login tokens, and
+  any staging catalogue rows. Structurally impossible to promote: separate
+  databases, and ZERO of the 21 migrations contain an INSERT (checked). The one
+  live INSERT in a migration is the `adminRole` backfill in 0020, which updates
+  existing admin rows and creates nothing.
+
+PRODUCTION BUSINESS DATA — genuinely absent, and NOT a code task:
+  Real vendors, real products, real RFQs. The staging catalogue is empty, which
+  is why run #12 honestly SKIPPED three data-dependent checks rather than
+  asserting over nothing. A marketplace with no supply side has nothing to sell;
+  vendor recruitment is the launch task no configuration change can substitute for.
+
+Nothing was seeded. No automatic seeding exists or was added.
+
+STATUS: READY (no seed step required) — but see the business-data note.
+
+================================================================================
+16R. FINAL PRODUCTION GO / NO-GO MATRIX
+================================================================================
+
+AREA                     STATUS   BLOCKER  REQUIRED ACTION                        OWNER
+------------------------ -------- -------- -------------------------------------- ----------
+Code quality             GREEN    No       none                                    —
+TypeScript               GREEN    No       tsc --noEmit exit 0                     —
+Tests                    GREEN    No       1240/1240, 64 files                     —
+Build                    GREEN    No       client + dist/index.js, exit 0           —
+Staging deployment       GREEN    No       live at 928ef76, /readyz 200            —
+Database connectivity    GREEN    No       verified on staging                     —
+Database migrations      YELLOW   No       apply-only path proven on staging;      Eng
+                                           hold the backward-compat rule
+Authentication           GREEN    No       none                                    —
+Authorization            GREEN    No       none                                    —
+Super Admin              GREEN    No       verified on staging                     —
+Sub-Admin invitation     GREEN    No       verified on staging                     —
+SMTP                     RED      YES*     provider + SPF/DKIM/DMARC + SMTP_FROM;  Owner
+                                           *blocker for a PUBLIC launch, since
+                                           password reset is otherwise manual
+S3                       RED      YES      production bucket + credentials;        Owner
+                                           professional onboarding cannot
+                                           complete without it
+Payments                 BLUE     No       deferred by product decision            Owner
+RFQ monetization         BLUE     No       accepted; revisit after liquidity       Owner
+Secrets                  YELLOW   No       generate production JWT_SECRET;         Owner
+                                           never reuse staging
+HTTPS/cookies            YELLOW   No       correct in code; needs a real domain    Owner
+                                           + certificate to be exercised
+CORS                     GRAY     No       not applicable (same-origin)            —
+Production env vars      YELLOW   No       §16A — every value unset                Owner
+Production database      RED      YES      no instance exists; provision Vultr     Owner
+                                           managed MySQL + CA cert
+Backups                  RED      YES      provision, then RUN A RESTORE DRILL     Owner
+Deployment workflow      RED      YES      production host does not exist; six     Owner
+                                           SSH secrets + PRODUCTION_BASE_URL unset
+Rollback                 YELLOW   No       image rollback automatic on smoke       Eng
+                                           failure; schema rollback is manual
+Monitoring               YELLOW   No       none exists; point an uptime check at   Owner
+                                           /readyz and ship the access log
+Test-data isolation      GREEN    No       verified; G-1/G-2 optional hardening    Eng
+Domain configuration     RED      YES      no domain chosen; blocks APP_BASE_URL,  Owner
+                                           TLS, cookies, reset links
+OAuth                    GRAY     No       not required; honestly reported off     —
+Webhooks                 GRAY     No       none exist (payments deferred)          —
+Privacy/security         YELLOW   No       F-1 (medium), F-2, F-3 — see §16P       Eng
+Remaining skipped QA     YELLOW   No       10 skips; 3 clear once ADMIN_BOOTSTRAP_*
+                                           + STAGING_ADMIN_* are set, 1 with SMTP,
+                                           1 with S3, 3 with catalogue data,
+                                           1 (approved-provider quotation) once an
+                                           admin can approve a vendor             Owner+Eng
+
+RED count: 6 — SMTP, S3, production database, backups, deployment workflow,
+domain. Every one is infrastructure provisioning. **None is a code defect.**
+
+================================================================================
+17. EXECUTION PLAN
+================================================================================
+
+PHASE 1 — REMAINING STAGING VERIFICATION
+  1. Render dashboard → buildhub-staging → set ADMIN_BOOTSTRAP_EMAIL,
+     ADMIN_BOOTSTRAP_USERNAME, ADMIN_BOOTSTRAP_PASSWORD (≥12 chars). Save.
+  2. Confirm in the deploy log: "[bootstrap] Created the first administrator".
+  3. Sign in at /admin/login. Confirm /admin/admins lists one SUPER_ADMIN.
+  4. Clear all three variables. Redeploy. Confirm login still works.
+  5. Add GitHub secrets STAGING_ADMIN_USER and STAGING_ADMIN_PASSWORD
+     (this order — step 5 before steps 1–4 gives the gate credentials for an
+     account that does not exist).
+  6. Re-run Staging QA. Expect 3 SKIPs to become PASSes: section 23 credentialed
+     admin sign-in, section 17 subscription lifecycle, section 18 admin billing.
+  7. Create one sub-admin end to end on staging: invite → accept → sign in →
+     confirm the permission boundary → revoke. Confirms §16I operationally.
+  8. Point render.yaml's staging service at `main` instead of the feature branch.
+  9. Fix F-1 (scope rfq-attachments/ in the storage proxy), add rate limits for
+     O-1 and O-3, and optionally close G-1/G-2. Re-run the full gate.
+
+PHASE 2 — REQUIRED INFRASTRUCTURE CONFIGURATION
+  1. Choose and register the production domain. Everything else depends on it.
+  2. Provision the production host (Vultr) and lay down /srv/buildhub with
+     docker-compose.yml, backup-before-release.sh and restore-backup.sh from
+     deploy/.
+  3. Provision Vultr Managed MySQL. Record the CA bundle. Confirm the backup
+     schedule and retention the plan actually provides.
+  4. Provision the production S3 bucket + credentials, separate from staging.
+  5. Choose the SMTP provider. Publish SPF, DKIM and DMARC. Verify the sender.
+  6. Write /srv/buildhub/.env: NODE_ENV, PORT, a FRESH JWT_SECRET, DATABASE_URL,
+     DATABASE_CA_CERT, APP_BASE_URL, S3_*, SMTP_*. Leave DATABASE_SSL unset.
+     **Do not set TEST_LOGIN_ENABLED.**
+  7. GitHub secrets: PRODUCTION_SSH_HOST, PRODUCTION_SSH_USER, PRODUCTION_SSH_KEY.
+     GitHub variable: PRODUCTION_BASE_URL.
+  8. Configure the GitHub `production` environment with required reviewers and a
+     `main`-only branch restriction. Verify by attempting a dispatch from a
+     non-main ref and confirming it is refused.
+
+PHASE 3 — PRODUCTION PREFLIGHT
+  1. Restore the most recent staging dump into a THROWAWAY database on the
+     production stack. Run drizzle-kit migrate against it. This is the restore
+     drill — do not skip it; it is the only untested link in the chain.
+  2. Confirm all 21 migrations apply cleanly to an EMPTY production database.
+  3. Boot the image against production .env with an intentionally missing
+     JWT_SECRET and confirm it REFUSES to start. Then restore it.
+  4. Confirm TLS to the database: `DATABASE_SSL` unset ⇒ require ⇒ handshake
+     succeeds with the CA cert, fails without it.
+  5. Send one real test email through the production SMTP relay.
+  6. Upload and retrieve one file through the production bucket.
+  7. Confirm /admin/login is served and refuses a customer with 401.
+  8. Verify no VITE_ variable carries a secret: build, then grep the bundle for
+     JWT_SECRET, DATABASE_URL, SMTP_PASSWORD, S3_SECRET, mysql://.
+
+PHASE 4 — PRODUCTION DEPLOYMENT
+  1. Merge to main. Let CI go green.
+  2. Confirm the intended commit is running on staging and that Staging QA is
+     green against that exact commit.
+  3. Dispatch "Deploy production" with image_tag = the 12-char SHA and
+     confirm = DEPLOY.
+  4. Approve the environment gate as the named reviewer.
+  5. The workflow records the current image, backs up the database, migrates,
+     releases and smoke-tests — in that order. Watch it.
+  6. If the smoke test fails, the rollback is automatic. The MIGRATION IS NOT
+     REVERTED — review it against the pre-release backup before re-releasing.
+
+PHASE 5 — POST-PRODUCTION VERIFICATION
+  1. /healthz, /readyz, /version — confirm the commit matches what was released.
+  2. Bootstrap the first production Super Admin per §16H, then REMOVE the three
+     variables and restart.
+  3. Confirm TEST_LOGIN_ENABLED is absent: auth.capabilities must report
+     testLogin false, and auth.signInDummy must return 404.
+  4. Real sign-up, sign-in, password reset (now that SMTP is live), RFQ post,
+     message, file upload — as a real user in a real browser, EN and AR, desktop
+     and 375px.
+  5. Confirm no secret appears in the delivered page (QA section 21 equivalents).
+  6. Invite one real sub-admin and confirm the permission boundary holds.
+  7. Point an uptime monitor at /readyz and confirm it alerts on a forced 503.
+  8. Take the first scheduled backup and RESTORE IT to a throwaway database.
+
+PHASE 6 — DEFERRED PAYMENT ACTIVATION (do not start before Phase 5 is signed off)
+  1. Obtain the Paymob merchant + sandbox account.
+  2. Implement the adapter against the existing `PaymentProvider` interface. No
+     domain code changes.
+  3. Implement the webhook endpoint with signature verification that THROWS on
+     an invalid signature, and idempotent processing keyed on the provider event id.
+  4. Add the provider credentials and the webhook signing secret as host-only
+     variables. Register the webhook URL against the production domain.
+  5. Exercise the full sandbox lifecycle: checkout, activation, renewal, failure,
+     recovery, cancellation, refund.
+  6. Flip `isEntitlementEnforced` markers ONLY for entitlements that are actually
+     enforced — the allowlist exists to stop the catalogue advertising vapour.
+  7. Re-run the full gate, then release through Phase 4.
+
+================================================================================
+
+PRODUCTION DECISION: NO-GO
+
+BLOCKERS (all infrastructure; none is a code defect):
+  1. No production domain — blocks APP_BASE_URL, TLS, cookie behaviour, reset
+     and invitation links.
+  2. No production database — no Vultr instance, no DATABASE_URL, no CA cert.
+  3. No production host — deploy-production.yml targets /srv/buildhub over SSH
+     on a machine that does not exist; PRODUCTION_SSH_HOST/USER/KEY and
+     PRODUCTION_BASE_URL are all unset.
+  4. No verified backups — the pre-release script has never run and NO RESTORE
+     HAS EVER BEEN TESTED.
+  5. No S3 — professional onboarding cannot complete, so the supply side of the
+     marketplace cannot be recruited.
+  6. No SMTP — password reset is manual, which is not viable for a public
+     consumer launch.
+
+NON-BLOCKING but to be closed first: F-1 (storage proxy scope), O-1/O-3 (rate
+limits on RFQ creation and uploads), monitoring, and the staging branch pin.
+
+The application itself is ready: 1240/1240 tests, tsc clean, build clean,
+169/169 live staging checks, authentication and authorization verified against a
+running system, and every unbuilt capability honestly reported as unavailable
+rather than advertised. What is missing is the environment to run it in.
+
+Nothing in production was modified. No production administrator was created.
+Payments were not activated. No production migration was run.

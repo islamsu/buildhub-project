@@ -33,7 +33,14 @@ services:
     dockerfilePath: ./Dockerfile
     plan: starter
     region: frankfurt          # Closest of Render's regions to Egypt.
-    branch: claude/phase4b-readiness-audit-hardening
+    # `main`, not a feature branch. This tracked
+    # claude/phase4b-readiness-audit-hardening, which meant staging deployed
+    # whatever that branch happened to hold - so a push that had never been
+    # reviewed or merged went live on staging, while merging to main deployed
+    # nothing. The two were identical when it was noticed, so nothing was
+    # broken; it was a latent way for staging to stop being a test of what
+    # production would actually run.
+    branch: main
     autoDeploy: true
 
     # Liveness, deliberately - not /readyz. A database blip must not make Render

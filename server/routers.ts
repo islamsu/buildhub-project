@@ -16,7 +16,7 @@ import { storagePut } from './storage';
 import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
 import { acceptQuotationSecure, rejectQuotationSecure } from './quotationWorkflow';
-import { aiChatLimiters, authLimiters, getClientIp } from './_core/rateLimit';
+import { aiChatLimiters, authLimiters, contentLimiters, getClientIp } from './_core/rateLimit';
 import { recordEventAsync } from './analytics/events';
 import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
 import { getEventCounts, getMedianDaysToMilestone, getVendorFunnel } from './analytics/events';
@@ -183,6 +183,60 @@ function enforceAuthRateLimit(req: TrpcContext['req'], identifier: string | null
       code: 'TOO_MANY_REQUESTS',
       message: `Too many attempts. Try again in ${Math.ceil(blocked.retryAfterMs / 1000)}s.`,
     });
+  }
+}
+
+/**
+ * Bound what one AUTHENTICATED account can create, as opposed to how often it
+ * can try to sign in.
+ *
+ * Keyed by user id alone. Every caller of this is behind protectedProcedure or
+ * stricter, so the account is the subject that matters, and keying by IP as
+ * well would throttle whole teams behind one carrier-grade NAT address without
+ * bounding anything the account limit does not already bound.
+ *
+ * TOO_MANY_REQUESTS with the wait in seconds, matching the auth limiter, so the
+ * client renders one message for both.
+ */
+function enforceContentRateLimit(
+  userId: number,
+  burst: { check: (key: string, now?: number) => { allowed: boolean; retryAfterMs: number } },
+  sustained: { check: (key: string, now?: number) => { allowed: boolean; retryAfterMs: number } },
+): void {
+  const now = Date.now();
+  const key = String(userId);
+  const blocked = [burst.check(key, now), sustained.check(key, now)].find(result => !result.allowed);
+  if (blocked) {
+    throw new TRPCError({
+      code: 'TOO_MANY_REQUESTS',
+      message: `Too many requests. Try again in ${Math.ceil(blocked.retryAfterMs / 1000)}s.`,
+    });
+  }
+}
+
+const enforceRfqRateLimit = (userId: number) =>
+  enforceContentRateLimit(userId, contentLimiters.rfqBurst, contentLimiters.rfqSustained);
+
+const enforceUploadRateLimit = (userId: number) =>
+  enforceContentRateLimit(userId, contentLimiters.uploadBurst, contentLimiters.uploadSustained);
+
+/**
+ * Refuse the QA-persona machinery wherever test login is switched off.
+ *
+ * The two SIGN-IN paths (auth.signInDummy, auth.redeemTestLoginLink) were
+ * already gated, so a QA persona minted in production could never actually be
+ * used. This closes the other end: production should not accumulate frozen
+ * test accounts and inert sign-in links at all, and an administrator should be
+ * told the machinery is off rather than handed an artefact that silently does
+ * nothing.
+ *
+ * NOT_FOUND rather than FORBIDDEN, matching the sign-in paths: where the
+ * capability is switched off the endpoint should look absent rather than
+ * confirm there is a test-login mechanism to go hunting for.
+ */
+function assertTestLoginCapabilityEnabled(): void {
+  if (!isTestLoginEnabled()) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Not found' });
   }
 }
 
@@ -754,6 +808,7 @@ const registrationRouter = router({
     base64: z.string().min(1),
     applicantNote: z.string().max(1000).optional(),
   })).mutation(async ({ ctx, input }) => {
+    enforceUploadRateLimit(ctx.user.id);
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const requirements = getComplianceRequirements(ctx.user.userRole);
@@ -966,6 +1021,7 @@ const projectsRouter = router({
       base64: z.string().max(11_000_000, 'File too large (max ~8MB)'),
     }))
     .mutation(async ({ ctx, input }) => {
+      enforceUploadRateLimit(ctx.user.id);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
@@ -1240,6 +1296,7 @@ const rfqRouter = router({
       })).max(6).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      enforceRfqRateLimit(ctx.user.id);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       if (input.projectId != null) {
@@ -1274,6 +1331,7 @@ const rfqRouter = router({
       base64: z.string().max(11_000_000, 'File too large (max ~8MB)'),
     }))
     .mutation(async ({ ctx, input }) => {
+      enforceUploadRateLimit(ctx.user.id);
       const buffer = Buffer.from(input.base64, 'base64');
       if (buffer.length > MAX_RFQ_ATTACHMENT_SIZE) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
@@ -1516,6 +1574,7 @@ const messagesRouter = router({
     return { id: Number(result[0].insertId), ...input, senderId: ctx.user.id };
   }),
   uploadAttachment: protectedProcedure.input(z.object({ fileName: z.string().min(1).max(255), contentType: z.string().startsWith('image/').or(z.literal('application/pdf')), base64: z.string().max(11_000_000) })).mutation(async ({ ctx, input }) => {
+    enforceUploadRateLimit(ctx.user.id);
     const buffer = Buffer.from(input.base64, 'base64');
     if (buffer.length > 8 * 1024 * 1024) throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
     assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
@@ -1757,6 +1816,7 @@ const profileRouter = router({
     contentType: z.string().refine(isAllowedAvatarType, 'Only image files are supported'),
     base64: z.string().min(1),
   })).mutation(async ({ ctx, input }) => {
+    enforceUploadRateLimit(ctx.user.id);
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const bytes = Buffer.from(input.base64, 'base64');
@@ -2042,6 +2102,7 @@ const adminRouter = router({
     note: z.string().trim().max(1000).optional(),
     password: z.string().min(8).max(128).optional(),
   })).mutation(async ({ ctx, input }) => {
+    assertTestLoginCapabilityEnabled();
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const token = randomUUID().replace(/-/g, '').slice(0, 12);
@@ -2062,6 +2123,7 @@ const adminRouter = router({
     userId: z.number().int().positive(),
     expiresInMinutes: z.number().int().min(1).max(TEST_LOGIN_TTL_MINUTES_MAX).default(TEST_LOGIN_TTL_MINUTES_DEFAULT),
   })).mutation(async ({ ctx, input }) => {
+    assertTestLoginCapabilityEnabled();
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 

@@ -1,0 +1,612 @@
+================================================================================
+BUILDHUB — ADMIN PHASE FINAL REPORT
+Admin Authentication + Super Admin + Sub-Admin Management
+================================================================================
+
+Date              : 2026-08-24
+Repository        : github.com/islamsu/buildhub-project
+Branch            : claude/buildhub-audit-verification-vrai7l
+main              : 0133d49  (Merge PR #8)
+Deployed (staging): 928ef76  — tree afcc8bdf, byte-identical to 0133d49
+Staging URL       : https://buildhub-staging.onrender.com
+
+--------------------------------------------------------------------------------
+STATUS
+--------------------------------------------------------------------------------
+
+    ADMIN LOGIN             PASS
+    SUPER ADMIN             PASS
+    SUB-ADMINS              PASS
+    RBAC                    PASS
+    ADMIN AUTHORIZATION     PASS
+    PASSWORD SECURITY       PASS
+    SESSION SECURITY        PASS
+    AUDIT LOG               PASS
+    NORMAL AUTH REGRESSION  PASS
+    STAGING QA              PASS
+    PRODUCTION CHANGES      NO
+
+One qualification, stated up front so nothing in this report is read as more
+than it is: every PASS above was proven against a real running system except
+"a real administrator signs in on live staging", which is a documented SKIP.
+Staging has no Super Admin yet, because creating one requires setting
+ADMIN_BOOTSTRAP_* in the Render dashboard — an operator action this phase
+deliberately did not take, since committing those values anywhere is exactly
+what §4 forbids. The credentialed staging login was proven end-to-end against
+a real MariaDB with a real browser; on live staging the door is proven to
+refuse everyone, and the "let the right person in" half is pending that one
+operator step. See item 18.
+
+================================================================================
+1. EXISTING ARCHITECTURE DISCOVERED
+================================================================================
+
+Reported before any code was modified, as instructed.
+
+Authentication
+  First-party email+password, added in Slice 3. `server/routers.ts` held
+  `hashPassword`/`verifyPassword` (scrypt, format `scrypt$<salt>$<key>`,
+  compared with `timingSafeEqual`) and a constant `NO_SUCH_ACCOUNT_HASH` used
+  to keep the unknown-account path the same cost as the wrong-password path.
+  Sessions are JWT (jose, HS256) carrying a `jti`, set as an httpOnly cookie
+  by `server/_core/cookies.ts`, verified by `server/_core/sdk.ts`.
+
+Authorization
+  tRPC procedure tiers in `server/routers.ts`: `publicProcedure`,
+  `protectedProcedure`, `adminProcedure`, `approvedProviderProcedure`,
+  `complianceProcedure`. `adminProcedure` was a single boolean gate —
+  `ctx.user.role !== 'admin'` → FORBIDDEN. **There was exactly one level of
+  administrator.** 37 endpoints sat behind that one gate. Nothing distinguished
+  a billing clerk from someone who could delete accounts.
+
+Admin surface
+  `client/src/pages/AdminDashboard.tsx`, routed at `/admin` and
+  `/admin/:section`. It had no login page of its own: an administrator signed
+  in through the ordinary `/auth` customer form and was then recognised by
+  role. There was no separate administrator door.
+
+Session revocation
+  Already present and reusable: a `revokedSessions` table keyed by `jti`, and
+  `users.sessionsInvalidBefore` for bulk invalidation, compared at
+  whole-second granularity.
+
+Audit
+  A `userAccountAuditEvents` table already existed with (userId, actorId,
+  action, source, note, createdAt), written from ~20 sites. No admin-specific
+  actions were recorded because there were no admin-specific operations.
+
+What did NOT exist, and therefore had to be built
+  - a separate administrator sign-in door
+  - any notion of an administrator *role* (all admins were equal)
+  - any permission model
+  - any way to create a second administrator
+  - any way to bootstrap the first one without hand-editing the database
+  - any invitation mechanism for administrators
+  - any staging QA coverage of the administrator surface
+
+================================================================================
+2. FILES CHANGED
+================================================================================
+
+35 files, +6824 / -103, across commits c4a19e8, 1b9aa0c, 8534c5f, 18c0324,
+928ef76.
+
+New — shared / server
+  shared/adminRoles.ts                    roles, permissions, the role→permission
+                                          map, and `hasAdminPermission`
+  server/passwords.ts                     hashPassword / verifyPassword /
+                                          NO_SUCH_ACCOUNT_HASH, extracted from
+                                          routers.ts so adminBootstrap.ts can
+                                          reuse them without importing the
+                                          whole router graph
+  server/adminBootstrap.ts                first-Super-Admin bootstrap
+
+New — client
+  client/src/pages/AdminLogin.tsx
+  client/src/pages/AdminAcceptInvitation.tsx
+  client/src/pages/AdminAdmins.tsx
+
+New — tests
+  server/adminAuthorization.test.ts       34 tests
+  server/adminInvitations.test.ts         22 tests
+  server/adminBootstrapEnv.test.ts        15 tests
+  server/sessionEstablishment.test.ts     18 tests
+
+New — migration
+  drizzle/0020_tense_triathlon.sql
+  drizzle/meta/0020_snapshot.json
+  drizzle/meta/_journal.json
+
+Modified
+  server/routers.ts        (+612/-…)  permission tiers, 12 new endpoints,
+                                      37 existing endpoints rewired
+  drizzle/schema.ts        (+66)      users.adminRole, adminInvitations
+  client/src/App.tsx       (+10)      three admin routes, ordered before the
+                                      `/admin/:section` wildcard
+  client/src/pages/AdminDashboard.tsx  permission-gated queries
+  scripts/staging-qa.mjs   (+70)      section 23, administrator authentication
+  render.yaml              (+24)      ADMIN_BOOTSTRAP_* declared, sync: false
+  .env.example             (+15)      documented, no values
+  server/_core/index.ts    (+11)      bootstrap wired into boot
+  server/stagingGate.test.ts (+13)    pins section 23 into the coverage test
+  …plus 8 test-fixture files updated to carry `adminRole`.
+
+================================================================================
+3. DATABASE MIGRATIONS CREATED
+================================================================================
+
+`drizzle/0020_tense_triathlon.sql` — additive only. Nothing dropped, nothing
+narrowed, no data deleted.
+
+  1. CREATE TABLE `adminInvitations`
+       id, tokenHash (varchar(64), UNIQUE), userId, adminRole, invitedBy,
+       createdAt, expiresAt, usedAt, revokedAt, revokedBy
+       FKs: userId → users ON DELETE CASCADE
+            invitedBy → users ON DELETE RESTRICT
+            revokedBy → users ON DELETE SET NULL
+       Indexes on userId, invitedBy, expiresAt.
+
+  2. ALTER TABLE `users` ADD `adminRole` enum(...) — nullable, no default.
+
+  3. Backfill:
+       UPDATE `users` SET `adminRole` = 'SUPER_ADMIN'
+        WHERE `role` = 'admin' AND `adminRole` IS NULL;
+
+The backfill is not cosmetic and the reason is worth stating. Every permission
+check fails closed on a null adminRole. Without line 3, an administrator who
+existed before this migration would authenticate perfectly and then be refused
+by every admin endpoint — a self-inflicted lockout with no route back in
+through the application. SUPER_ADMIN is the honest value: `role='admin'` has
+been all-or-nothing until now, so it names authority they already held. It
+widens nobody's access. The `adminRole IS NULL` guard makes it idempotent, so
+re-running can never overwrite a role since assigned deliberately.
+
+================================================================================
+4. SUPER ADMIN BOOTSTRAP METHOD
+================================================================================
+
+`server/adminBootstrap.ts`, invoked once from `server/_core/index.ts` at boot.
+
+Inputs, read from the server process environment only:
+    ADMIN_BOOTSTRAP_EMAIL
+    ADMIN_BOOTSTRAP_USERNAME
+    ADMIN_BOOTSTRAP_PASSWORD
+
+Declared in `render.yaml` with `sync: false` and in `.env.example` with no
+value, so the Blueprint documents that they are required without carrying
+them. They are never prefixed VITE_, never reach the client bundle, and are
+never returned by any API.
+
+Behaviour:
+  - Idempotence gate first: `SELECT count(*) FROM users WHERE role='admin'`.
+    If > 0, it returns `already-exists` and does nothing at all. It cannot
+    recreate, cannot overwrite a password, cannot reset on redeploy, cannot
+    create a duplicate.
+  - If no admin exists and all three variables are set, it creates one user
+    with role='admin', adminRole='SUPER_ADMIN', and the password scrypt-hashed.
+  - Minimum password length 12, enforced before anything is written.
+  - It never throws. A misconfigured bootstrap must not take the whole service
+    down; it logs a reason and the service boots without an admin.
+  - It never logs the password, and never logs the hash. Verified by a test
+    that captures every console call during a successful bootstrap and asserts
+    the password string appears in none of them.
+
+Verified: 15 tests in `server/adminBootstrapEnv.test.ts` plus a live run
+against real MariaDB — first boot created the Super Admin, second boot with a
+*different* ADMIN_BOOTSTRAP_PASSWORD left the original password working and the
+new one refused, which is the property that matters.
+
+================================================================================
+5. ADMIN LOGIN URL
+================================================================================
+
+    https://buildhub-staging.onrender.com/admin/login
+
+Routed in `client/src/App.tsx`. Route order is load-bearing — wouter matches
+first, not best — so `/admin/login`, `/admin/accept-invitation` and
+`/admin/admins` are all declared *before* the `/admin/:section` wildcard.
+Regression-tested; a reordering breaks a test rather than silently sending
+`/admin/login` to the dashboard.
+
+Backed by `auth.adminSignIn`, a separate procedure from `auth.signIn`. It
+refuses any account that is not role='admin' with the same 401 and the same
+message as an unknown account, so the administrator door does not tell an
+attacker which of their guesses is a real customer.
+
+================================================================================
+6. ADMIN ROLES
+================================================================================
+
+`shared/adminRoles.ts`:
+
+    SUPER_ADMIN         everything, including managing other administrators
+    USER_ADMIN          user accounts, verification, freezing, account audit
+    MARKETPLACE_ADMIN   vendors, compliance queue, targeting, disputes
+    SUPPORT_ADMIN       disputes, support-facing views, test-login links
+    BILLING_ADMIN       subscriptions, billing lifecycle, commercial KPIs
+
+Labelled in English and Arabic (`ADMIN_ROLE_LABELS`).
+
+================================================================================
+7. PERMISSIONS
+================================================================================
+
+Ten permissions, mapped per role by `ADMIN_ROLE_PERMISSIONS`:
+
+    admins.manage        users.read          users.manage
+    marketplace.manage   support.manage      billing.read
+    billing.manage       audit.read          qa.manage
+    settings.manage
+
+`hasAdminPermission(role, permission)` **fails closed**: null, undefined, an
+unknown string, or a role missing from the map all return false. This is the
+property the whole model rests on, so it is asserted directly and was
+mutation-tested.
+
+Enforcement is server-side, in `server/routers.ts`:
+
+    const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') throw FORBIDDEN;
+      if (!isAdminRole(ctx.user.adminRole)) throw FORBIDDEN;   // no role → no entry
+      return next({ ctx });
+    });
+
+    const adminWith = (permission) => adminProcedure.use(({ ctx, next }) => {
+      if (!hasAdminPermission(ctx.user.adminRole, permission)) throw FORBIDDEN;
+      return next({ ctx });
+    });
+
+    const superAdminProcedure = adminWith('admins.manage');
+
+All 37 pre-existing admin endpoints were rewired from bare `adminProcedure` to
+`adminWith('<permission>')`. `admin.me` is the single deliberate exception: it
+stays on bare `adminProcedure`, because it is how the UI asks "what am I
+allowed to do", and it must answer for every administrator.
+
+The frontend gate in `AdminDashboard.tsx` (`can(permission)`, driven by
+`trpc.admin.me`) exists so the UI does not render doors that will slam. It is
+cosmetic. Removing it changes what is drawn and changes nothing about what is
+permitted.
+
+================================================================================
+8. SUB-ADMIN CREATION FLOW
+================================================================================
+
+Only a Super Admin can reach any of this — every endpoint below is
+`superAdminProcedure`, i.e. `adminWith('admins.manage')`, a permission held by
+SUPER_ADMIN alone.
+
+  1. Super Admin opens `/admin/admins` and submits email, username, role.
+  2. `admin.createAdmin` creates the account with role='admin' and the chosen
+     adminRole, with **no usable password**, and mints an invitation:
+     32 bytes from `crypto.randomBytes`, hex-encoded; only its SHA-256 is
+     stored in `adminInvitations.tokenHash`. The raw token is returned exactly
+     once, in that mutation's response, to the Super Admin's browser.
+  3. The Super Admin passes the invitation link to the new administrator
+     through whatever channel they consider appropriate. The system does not
+     email it (SMTP is not configured, and §13 forbids sending passwords by
+     email regardless).
+  4. New administrator opens `/admin/accept-invitation?token=…`, sets their own
+     password, and the token is burned (`usedAt` stamped).
+  5. They sign in at `/admin/login`.
+
+The Super Admin never sees the new administrator's password, because the
+password does not exist until step 4 and is chosen by its owner.
+
+Sub-admin containment, as required by §11 — each of these is a server-side
+refusal with a test behind it:
+  - cannot create administrators at all (no `admins.manage`)
+  - therefore cannot create a Super Admin
+  - cannot change any role, including their own
+  - cannot change permissions (permissions are derived from role, not stored
+    per-user, so there is no per-user permission record to edit)
+  - cannot read secrets, passwords, or password hashes through any endpoint
+  - cannot reach infrastructure or production credentials
+  - cannot bypass audit logging: the writes are inside the mutations, not in a
+    caller-supplied wrapper
+
+Management endpoints, all Super-Admin-only: `admin.admins`,
+`admin.createAdmin`, `admin.setAdminRole`, `admin.setAdminActive`,
+`admin.revokeAdminSessions`, `admin.resetAdminPassword`,
+`admin.adminInvitations`, `admin.revokeAdminInvitation`.
+
+================================================================================
+9. PASSWORD / RESET FLOW
+================================================================================
+
+Storage
+  scrypt, `scrypt$<salt>$<key>`, per-password random salt, verified with
+  `timingSafeEqual`. No custom cryptography was invented (§16); this is the
+  same primitive the customer path has used since Slice 3, now shared through
+  `server/passwords.ts`.
+
+Reset
+  `admin.resetAdminPassword` (Super Admin only) does **not** set a password and
+  does not display one. It invalidates the target's current credential and
+  issues a fresh single-use invitation token, so the administrator chooses
+  their own new password through the same accept-invitation screen. This is
+  what satisfies §13: there is no code path in which a permanent password is
+  shown to the Super Admin, and none in which a password is emailed.
+
+Self-service
+  `admin.changeOwnPassword` requires the current password, and re-issues the
+  session cookie so the caller is not logged out by their own change.
+
+Never displayed, never returned, never logged (§12, §17): password, password
+hash, session token, raw invitation token, raw reset token, API key, database
+password. `admin.admins` returns an explicit column allowlist — id, email,
+username, adminRole, active, createdAt — never `passwordHash`. This is asserted
+by a test that would fail if the allowlist were replaced with `select()`.
+
+Tokens (§14)
+  32 random bytes from a CSPRNG. Never a user id, never an email, never a
+  sequential number, never a password in a URL. Stored only as SHA-256 —
+  unsalted sha256 is correct here precisely because the input is already 256
+  bits of entropy; salting would buy nothing and would break the unique-index
+  lookup.
+
+================================================================================
+10. SESSION SECURITY
+================================================================================
+
+  - JWT (jose, HS256), httpOnly cookie, `path=/`, `secure` in production, and
+    `sameSite` chosen to match: `none` only when the request is genuinely
+    secure, `lax` otherwise. (A `SameSite=None` cookie without `Secure` is
+    dropped by every modern browser — that combination was a live defect found
+    and fixed earlier in this engagement.)
+  - Each session carries a `jti`. Individual revocation via `revokedSessions`;
+    bulk revocation via `users.sessionsInvalidBefore`.
+  - `verifySession` rejects a token with no `openId`, and rejects a token
+    issued for a different `appId` when an appId is configured.
+  - Deactivating an administrator, changing their role, or revoking their
+    sessions all invalidate every session they hold, immediately.
+
+One defect found here by live probing, and fixed. `sessionsInvalidBefore` is
+compared at whole-second granularity with a strict `<`. A session issued in the
+*same second* as the revocation therefore survived it — a real one-second
+window in which a just-deactivated administrator kept working. Fixed with
+
+    const revocationCutoff = () => new Date(Date.now() + 1000);
+
+applied at all three revocation sites. `changeOwnPassword` deliberately keeps
+`new Date()`, because it re-issues the caller's cookie immediately afterwards
+and a forward-dated cutoff would log the caller out of their own password
+change.
+
+================================================================================
+11. AUDIT LOGGING
+================================================================================
+
+Written into the existing `userAccountAuditEvents` table, so administrator
+activity lands in the same timeline as everything else and
+`admin.fullAuditReport` / `admin.accountAudit` already read it.
+
+Admin actions added this phase:
+
+    admin_signed_in                  admin_created
+    admin_role_changed               admin_sessions_revoked
+    admin_password_changed           admin_password_reset_requested
+    admin_invitation_redeemed        admin_invitation_revoked
+
+Every entry records who acted (`actorId`) and who was acted upon (`userId`).
+The note field carries a human-readable description and is asserted never to
+carry a token or a password.
+
+Administrator sign-in gets its own action rather than reusing the customer one,
+so "who logged into the admin console, and when" is a single query rather than
+an inference.
+
+Reading the audit log is itself gated: `audit.read`, held by SUPER_ADMIN only.
+
+================================================================================
+12. TESTS ADDED
+================================================================================
+
+    server/adminAuthorization.test.ts     34   role gate, permission gate,
+                                               fail-closed on null/unknown role,
+                                               column allowlists, sub-admin
+                                               containment, self-elevation
+    server/adminInvitations.test.ts       22   token entropy, hash-at-rest,
+                                               single use, expiry, revocation,
+                                               forged/replayed tokens
+    server/adminBootstrapEnv.test.ts      15   idempotence, min length, never
+                                               logs the password, never throws
+    server/sessionEstablishment.test.ts   18   cookie flags, SameSite/Secure
+                                               pairing, appId, jti revocation,
+                                               the one-second cutoff
+    server/stagingGate.test.ts            +13  pins section 23 into the gate's
+                                               own coverage test
+                                          ---
+                                           89 new admin tests (+ fixture updates
+                                              across 8 existing test files)
+
+Two tests in this set were rewritten because mutation testing showed they
+passed for the wrong reason:
+
+  - "refuses a null adminRole" originally called `admin.users`, which is
+    permission-scoped and refuses a null role anyway — so it survived deleting
+    the door check in `adminProcedure`. It now also calls `admin.me`, the only
+    endpoint on the bare tier, where the door check is the *only* thing that
+    can refuse.
+  - Several source-slicing assertions anchored on `indexOf(...)`, which returns
+    -1 when the anchor is absent, slices to `''`, and makes `not.toMatch` pass
+    vacuously. Replaced with a `declarationOf()` helper that **throws** when it
+    matches nothing, so a renamed symbol fails loudly instead of quietly.
+
+Mutation testing on the admin security surface: 5 deliberate reverts (drop the
+role check; drop the permission check; make `hasAdminPermission` default true;
+store the raw invitation token; drop the single-use burn). Each one failed its
+own test. Reverted.
+
+================================================================================
+13. TESTS PASSED
+================================================================================
+
+Full local gate at 0133d49, run for this report:
+
+    npx tsc --noEmit    exit 0
+    npx vitest run      64 files, 1240/1240 tests passed
+    npm run build       exit 0 (client + dist/index.js, 308.8kb)
+
+Live verification against real MariaDB and a real browser:
+
+    admin flow (server)         37 / 37
+    admin UI (browser, EN/AR)   18 / 18
+    role journey regression     44 / 44
+    marketplace funnel          36 / 36
+
+No assertion was weakened, skipped, or deleted to reach these numbers.
+
+================================================================================
+14. RENDER DEPLOYMENT COMMIT
+================================================================================
+
+    Deployed commit reported by /version : 928ef76f976d654678140174b6fe9b558d4dc1a1
+    main                                 : 0133d49
+    tree(928ef76) == tree(0133d49)       : afcc8bdff1b867097a8953e9b0fb67a2fa251dc2
+
+928ef76 is the head of PR #8's branch; 0133d49 is the merge commit. The merge
+was content-identical, so `git diff 928ef76 0133d49` is empty. Staging is
+running exactly the merged code — this was checked rather than assumed.
+
+`/readyz` returns http 200 with the database check passing.
+
+================================================================================
+15. STAGING ADMIN LOGIN VERIFICATION
+================================================================================
+
+Section 23 of the staging gate, run against live staging in Staging QA run #12
+(run 32708170851, job 97373668632, conclusion: success):
+
+    PASS  23. /admin/login is served                                    http 200
+    PASS  23. a customer CANNOT sign in at the administrator door       http 401
+    PASS  23. that refusal is INDISTINGUISHABLE from an unknown account 401 vs 401
+    PASS  22. anonymous refused: admin.me                               http 401
+    PASS  22. a customer is refused: admin.me                           http 403
+    PASS  22. anonymous refused: admin.admins                           http 401
+    PASS  22. a customer is refused: admin.admins                       http 403
+    PASS  23. a customer cannot create an administrator                 http 403
+    PASS  23. a forged administrator invitation is refused              http 400
+    SKIP  23. a real administrator signs in and loads the admin surface
+
+The SKIP is honest, not cosmetic. It reads:
+
+    no STAGING_ADMIN_USER/PASSWORD supplied - set ADMIN_BOOTSTRAP_* on the
+    service, then these secrets
+
+Staging has no Super Admin, because creating one is an operator action in the
+Render dashboard that this phase deliberately did not take. What is proven on
+live staging is that the door refuses everyone who should be refused. What is
+proven only against real MariaDB — not yet on live staging — is that it admits
+the right person. The gate says so rather than pretending otherwise, and it
+prints "Skipped checks are NOT passes" at the end of every run.
+
+================================================================================
+16. NORMAL USER REGRESSION VERIFICATION
+================================================================================
+
+The customer path was the thing most at risk from this change, since
+`hashPassword`/`verifyPassword` moved out of `routers.ts` and the session layer
+was touched. It was checked directly.
+
+Live staging (run #12): sign-up, sign-in, RFQ posting (rfq id 7), qualified-
+enquiry counter, messaging both directions, third-party message isolation,
+notifications, unread count, provider quotation refusal for an unapproved
+provider, upload content-type sniffing (SVG refused, SVG-as-PNG refused,
+HTML-as-PNG refused), billing catalogue, EN/AR at 1440px and 375px with no
+horizontal overflow on any route, no console or first-party request errors on
+any public route, and no secret in any delivered page.
+
+Local: 44/44 role journeys and 36/36 marketplace funnel checks against real
+MariaDB.
+
+`server/passwords.ts` is re-exported from `server/routers.ts`, so every existing
+import still resolves — the extraction moved code without moving its address.
+
+================================================================================
+17. STAGING QA RESULT
+================================================================================
+
+    Run #12 — 169/169 checks passed, 10 skipped
+    against https://buildhub-staging.onrender.com
+
+Baseline before this phase (§31) was 160/160 passed, 9 skipped. The delta is
++9 executed checks and +1 skip, all of them section 23. **No previously
+executing check became a skip, and no assertion was loosened.** The one new
+skip is the credentialed admin login described in item 15, which had no
+baseline to regress from because the feature did not exist.
+
+The 10 skips, each with the specific thing it needs:
+
+    9.  password reset                       SMTP_HOST unset
+    10. end-to-end upload to the bucket      S3_* unset
+    11. every product carries real columns   staging catalogue empty
+    11. category filtering actually filters  staging catalogue empty
+    12. every directory vendor real columns  staging catalogue empty
+    14. approved-provider quotation flow     needs an admin to approve a vendor
+    17. subscription lifecycle               no STAGING_ADMIN_USER/PASSWORD
+    18. admin billing visibility             no STAGING_ADMIN_USER/PASSWORD
+    23. a real administrator signs in        no STAGING_ADMIN_USER/PASSWORD
+
+(Nine lines, ten skips — section 11 contributes two.)
+
+One CI defect was found and fixed on the way here, and it is worth recording
+because it was mine: I had bumped the QA workflow to `actions/setup-node@v5`,
+which turns `package-manager-cache` on by default and then fails with "Unable
+to locate executable file: pnpm" before pnpm is installed. It was invisible
+because the QA workflow has no push trigger. Fixed with
+`package-manager-cache: false` and a comment saying why. The harness was not
+modified to hide anything (§31).
+
+================================================================================
+18. REMAINING BLOCKERS
+================================================================================
+
+None of these block the admin system itself. Each is a configuration step that
+belongs to an operator or to a later phase, and each is named precisely.
+
+BLOCKING the last admin verification
+  1. ADMIN_BOOTSTRAP_EMAIL / _USERNAME / _PASSWORD are not set on the Render
+     staging service. They are declared in render.yaml with `sync: false`, so
+     the Blueprint asks for them and carries no value. Until an operator sets
+     them and redeploys, staging has no Super Admin.
+  2. STAGING_ADMIN_USER / STAGING_ADMIN_PASSWORD are not set as GitHub Actions
+     secrets. These are what let the QA gate sign in as that Super Admin and
+     turn three SKIPs into PASSes (sections 14, 17, 18, 23).
+
+     Order matters: (1) then (2). Setting (2) first gives the gate credentials
+     for an account that does not exist.
+
+NOT BLOCKING — deferred by §30, untouched by this phase
+  3. SMTP unconfigured  → `auth.capabilities` honestly reports
+                          `passwordReset: false`; the gate skips section 9.
+  4. S3 unconfigured    → content-type sniffing is proven; the bucket round
+                          trip is skipped.
+  5. PRODUCTION_BASE_URL unverified → the production deploy workflow's smoke
+                          step has no target. Production has never been
+                          deployed from this pipeline.
+  6. Staging catalogue is empty → three data-dependent checks skip rather than
+                          assert over nothing.
+
+STANDING DECISIONS, unchanged by this phase
+  7. TEST_LOGIN_ENABLED=true on staging, and it stays that way (§30). It is
+     enforced server-side to be impossible in production, and a QA/dummy user
+     receives no administrator permission of any kind (§18) — `adminProcedure`
+     requires role='admin' *and* a non-null adminRole, and the test-login path
+     grants neither.
+  8. Free-RFQ visibility (full description + exact budget) is unchanged (§29).
+     Still an open business decision, deliberately not touched here.
+
+PRODUCTION
+  Nothing in production was modified. No production database, credential,
+  secret, or deployment was touched; no QA login was enabled there; no
+  universal master password exists; no data was deleted (§20, §21).
+
+================================================================================
+STOP CONDITION (§33)
+================================================================================
+
+This phase is complete. Per §33 I am stopping here and not continuing into the
+QA/dummy user redesign, SMTP, S3, production, or pricing changes.
+
+================================================================================
