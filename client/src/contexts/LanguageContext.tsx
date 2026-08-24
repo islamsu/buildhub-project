@@ -325,6 +325,8 @@ const translations: Record<Language, Record<string, string>> = {
     'rfq.no_quotes': 'No quotations yet',
     'rfq.no_quotes.desc': 'Providers will submit their offers here once they see your RFQ.',
     // ── AI Assistant ─────────────────────────────────────────────────────────
+    'ai.unavailable.title': 'The AI assistant is not available right now',
+    'ai.unavailable.body': 'This deployment has no AI provider configured, so the assistant cannot answer. Everything else on BuildHub works normally.',
     'ai.title': 'AI Construction Assistant',
     'ai.subtitle': 'Your intelligent partner for cost estimation, planning, and project advice',
     'ai.placeholder': 'Ask anything about your construction project…',
@@ -1113,6 +1115,8 @@ const translations: Record<Language, Record<string, string>> = {
     'rfq.no_quotes': 'لا توجد عروض بعد',
     'rfq.no_quotes.desc': 'سيقدم المزودون عروضهم هنا بمجرد رؤية طلبك.',
     // ── AI Assistant ─────────────────────────────────────────────────────────
+    'ai.unavailable.title': 'مساعد الذكاء الاصطناعي غير متاح حالياً',
+    'ai.unavailable.body': 'لم يتم تكوين مزوّد ذكاء اصطناعي لهذا الإصدار، لذا لا يمكن للمساعد الإجابة. باقي خدمات BuildHub تعمل بشكل طبيعي.',
     'ai.title': 'مساعد البناء بالذكاء الاصطناعي',
     'ai.subtitle': 'شريكك الذكي لتقدير التكاليف والتخطيط ونصائح المشاريع',
     'ai.placeholder': 'اسأل أي شيء عن مشروع البناء الخاص بك…',

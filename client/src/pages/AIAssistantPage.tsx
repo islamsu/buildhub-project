@@ -30,6 +30,13 @@ Always provide practical, actionable advice. When estimating costs, mention that
 
 export default function AIAssistantPage() {
   const { t, lang } = useLanguage();
+  // Ask before offering. Every card below is the same ai.chat mutation, so on a
+  // deployment with no provider credential all eight of them fail identically -
+  // which is exactly what happened on staging: the page rendered perfectly and
+  // nothing on it worked. `undefined` while the query is in flight, so the
+  // tools stay enabled until we actually know otherwise.
+  const { data: capabilities } = trpc.auth.capabilities.useQuery();
+  const aiUnavailable = capabilities?.aiAssistant === false;
   const [messages, setMessages] = useState<Message[]>([
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'assistant', content: lang === 'ar' ? 'مرحباً! أنا BuildHub AI. يمكنني مساعدتك في تقدير التكاليف واختيار المواد وتخطيط المشاريع وتقييم المخاطر والمزيد. بماذا تريد أن تعرف؟' : "Hello! I'm BuildHub AI. I can help you with cost estimation, material selection, project planning, risk assessment, and much more. What would you like to know?" },
@@ -66,9 +73,21 @@ export default function AIAssistantPage() {
             <p className="text-muted-foreground">{lang === 'ar' ? 'اسأل عن أي شيء: تقدير التكاليف، المواد، إدارة المشاريع...' : 'Ask anything about cost estimation, materials, project planning, and more'}</p>
           </div>
 
+          {aiUnavailable && (
+            <div role="status" className="mb-8 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-center">
+              <p className="font-medium text-amber-700 dark:text-amber-400">{t('ai.unavailable.title')}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{t('ai.unavailable.body')}</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
             {AI_MODES.map((mode) => (
-              <Card key={mode.label} className="card-hover cursor-pointer border-border hover:border-primary/30" onClick={() => handleModeClick(mode.prompt)}>
+              <Card
+                key={mode.label}
+                aria-disabled={aiUnavailable}
+                className={`border-border ${aiUnavailable ? 'opacity-50 pointer-events-none' : 'card-hover cursor-pointer hover:border-primary/30'}`}
+                onClick={() => { if (!aiUnavailable) handleModeClick(mode.prompt); }}
+              >
                 <CardContent className="p-4 text-center">
                   <mode.icon className={`w-6 h-6 mx-auto mb-2 ${mode.color}`} />
                   <p className="text-sm font-medium">{mode.label}</p>
@@ -82,6 +101,7 @@ export default function AIAssistantPage() {
               messages={messages.filter(m => m.role !== 'system')}
               onSendMessage={handleSend}
               isLoading={chatMutation.isPending}
+              disabled={aiUnavailable}
               placeholder={lang === 'ar' ? 'اسأل عن التكاليف، المواد، تخطيط المشاريع...' : 'Ask about costs, materials, project planning...'}
               suggestedPrompts={[
                 'Estimate cost for a 200m² apartment finishing',

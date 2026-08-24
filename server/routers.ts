@@ -11,7 +11,7 @@ import type { TrpcContext } from './_core/context';
 import { TRPCError } from '@trpc/server';
 import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername, revokeSession } from './db';
 import { hashPassword, verifyPassword, NO_SUCH_ACCOUNT_HASH } from './passwords';
-import { invokeLLM } from './_core/llm';
+import { invokeLLM, isLlmConfigured } from './_core/llm';
 import { storagePut } from './storage';
 import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
@@ -385,6 +385,11 @@ const authRouter = router({
     // and a trustworthy origin to put in the link. The UI hides the flow rather
     // than offering a button that can only fail.
     passwordReset: isMailerConfigured() && ENV.appBaseUrl.length > 0,
+    // Same contract as passwordReset: the page asks before it offers. /ai used
+    // to render its eight tools unconditionally, so on a deployment with no
+    // provider credential every one of them returned the generic internal
+    // error - the feature looked present and was not.
+    aiAssistant: isLlmConfigured(),
   } as const)),
 
   signUp: publicProcedure.input(z.object({
@@ -2934,6 +2939,21 @@ const aiRouter = router({
       })).min(1).max(MAX_AI_MESSAGES),
     }))
     .mutation(async ({ input }) => {
+      // Deliberate, client-safe refusal for a KNOWN condition. Without it
+      // invokeLLM throws a bare Error, tRPC classifies that as
+      // INTERNAL_SERVER_ERROR, and the error formatter - correctly - replaces
+      // the message with "Something went wrong. Please try again.". That is the
+      // right thing to do with an unexpected internal error and the wrong thing
+      // to say about a deployment that was simply never given a provider
+      // credential. SERVICE_UNAVAILABLE carries a message written for the
+      // caller, so it passes the formatter untouched and names no variable,
+      // provider or endpoint.
+      if (!isLlmConfigured()) {
+        throw new TRPCError({
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'The AI assistant is not available on this deployment.',
+        });
+      }
       const response = await invokeLLM({ messages: input.messages as any, max_tokens: MAX_AI_RESPONSE_TOKENS });
       const raw = response.choices[0]?.message?.content;
       const content = typeof raw === 'string' ? raw : Array.isArray(raw) ? raw.map((c: any) => c.text ?? '').join('') : 'Sorry, I could not process your request.';

@@ -1,0 +1,465 @@
+BUILDHUB FINAL STAGING CLOSURE HANDOFF
+
+Prepared: 2026-08-24
+Prepared by: Claude (engineering / execution layer)
+For: ChatGPT (independent review layer) and the owner
+
+============================================================
+CURRENT MAIN SHA:
+============================================================
+155ea2690287de8c1d30a52baadb2e0a8e91246e
+  "Merge pull request #13: staging closure - authenticated admin UI browser coverage"
+  main before this closure: 11e2b8930bd3320ab12643651d7f763e8b4b901d
+
+CURRENT STAGING SHA:
+============================================================
+155ea2690287de8c1d30a52baadb2e0a8e91246e
+  Self-reported by the running service at /version and asserted by the gate.
+  Staging SHA == main SHA. They are the same 40-character commit.
+
+============================================================
+MERGE:
+============================================================
+- What was merged
+  Two files, no application code.
+
+    scripts/staging-qa.mjs                   +271 / -13   section 26 added
+    BUILDHUB_FINAL_STAGING_VERIFICATION.txt   +62 / -294   rewritten
+    (2 files changed, 333 insertions, 307 deletions)
+
+  scripts/staging-qa.mjs gained section 26 - "Authenticated admin UI
+  (browser)": 58 real-browser checks driving a signed-in administrator
+  through the dashboard, the administrators page, the invitation modal,
+  the role selector, sub-admin sign-in, promotion, demotion and
+  deactivation. It also memoises the administrator sign-in to one call
+  per run (the previous five-per-run pattern tripped the identifier rate
+  limiter at 10 attempts / 15 minutes - the limiter was correct, the
+  harness was greedy).
+
+  BUILDHUB_FINAL_STAGING_VERIFICATION.txt was rewritten because it was
+  stale and actively misleading on main. It pinned
+  "main : c77c409f4b08846854690329c4dd4d863e6a086e", claimed
+  "174/174 checks passed, 8 skipped", and recorded
+  "SKIP 23. a real administrator signs in and loads the admin surface"
+  together with a claim that the authenticated admin surface was
+  unproven. All three statements were false as of this merge. Rather
+  than freeze another tally against a moving SHA, the file now records
+  what was established and points at the authoritative live result.
+
+- Confirmed NOT in the merge
+  No files under server/, client/, shared/ or drizzle/.
+  No render.yaml, no deploy/, no Dockerfile, no workflow files, no .env.
+  No committed credentials. (The one grep hit,
+  `const uiToken = (json(madeUi.t)?.invitationLink ?? '').split('token=')[1]`
+  in the harness, is a runtime read of a token the server just issued to
+  the test, not a stored secret.)
+
+- Commit / PR
+  PR #13 "Staging closure: authenticated admin UI browser coverage"
+  Branch commits: e465ed5 (one sign-in per run), 0260e77 (report rewrite)
+  Merge commit: 155ea2690287de8c1d30a52baadb2e0a8e91246e
+  PR CI: 6 of 6 checks SUCCESS
+    Typecheck, test, build      success
+    Migrations apply from empty  success
+    Image builds and starts      success
+    (each ran twice - push and pull_request triggers)
+
+- Whether main moved
+  Yes. 11e2b89 -> 155ea26.
+
+============================================================
+DEPLOYMENT:
+============================================================
+- Deployed SHA
+  155ea2690287de8c1d30a52baadb2e0a8e91246e
+
+- Provenance verification
+  This is an assertion made by the gate, not an assumption. The workflow
+  was dispatched with expect_commit set to the exact 40-character merge
+  SHA and section 0 compares it against what the running service reports:
+
+    STAGING_EXPECT_COMMIT: 155ea2690287de8c1d30a52baadb2e0a8e91246e
+    PASS  0. /version identifies the build  - http 200
+    >>> DEPLOYED COMMIT: 155ea2690287de8c1d30a52baadb2e0a8e91246e
+    PASS  0. the deployed commit is the one under test
+          - expected 155ea2690287, serving 155ea2690287de8c1d30a52baadb2e0a8e91246e
+
+  A mismatch fails the check and therefore the run. The 306 results below
+  are results against this build, not against whatever happened to be
+  deployed.
+
+============================================================
+FINAL QA:
+============================================================
+- Run number        #27 (Staging QA, workflow_dispatch from main)
+- Run id            32758893837   job id 97532737655
+- URL               https://github.com/islamsu/buildhub-project/actions/runs/32758893837
+- Target            https://buildhub-staging.onrender.com
+- head_sha          155ea2690287de8c1d30a52baadb2e0a8e91246e
+
+- Total             310 checks executed (306 asserted + 4 skipped)
+- Passed            306
+- Failed            0
+- Skipped           4
+- Workflow conclusion   SUCCESS
+
+  Verbatim tally line from the job log:
+
+    306/306 checks passed, 4 skipped, against https://buildhub-staging.onrender.com
+    Skipped checks are NOT passes. See the SKIP lines above for what each one needs.
+
+  Both numbers are reported deliberately. SUCCESS on its own is not
+  evidence: the harness is piped through tee, and `bash -e` does not
+  propagate a pipeline's exit status. The workflow therefore sets
+  `set -o pipefail` immediately before the run so a non-zero harness exit
+  cannot be swallowed by tee. That ordering is asserted by a unit test in
+  server/stagingGate.test.ts over comment-stripped executable lines, and
+  it was exercised for real: earlier runs in this series (#23 six
+  failures, #24 six failures, #25 forty-one failures) all reported
+  FAILURE. The gate is capable of going red. Run #27 is green because
+  nothing failed.
+
+============================================================
+ADMIN:
+============================================================
+All of the following are real-browser results from section 26, driving
+Chromium against staging - not API calls, and not inferred from HTTP
+status codes.
+
+- Super Admin browser login
+  VERIFIED. The Super Admin signs in through the rendered /admin/login
+  form and lands on /admin.
+
+- Admin dashboard
+  VERIFIED. The navigation renders Users, Fraud Detection and Settings;
+  the Users tab renders the user-management surface; the rendered
+  dashboard carries no credential material.
+
+- Administrators page
+  VERIFIED. /admin/admins renders the administrator table with all eight
+  columns (Name, Username, Email, Role, Status, Created, Last login,
+  Actions). The bootstrapped administrator displays its role and status.
+  A real Super Admin is not shown the Super-Admin-only refusal. The table
+  renders no credential material.
+
+- Invitation lifecycle
+  VERIFIED end to end in the browser. The invitation modal opens and asks
+  for Full name, Username and Email (each asserted as exactly one field,
+  by DOM count, because placeholders never appear in innerText); it
+  offers to issue a one-time link; it states that the Super Admin will
+  never see the password. A QA sub-administrator is created (http 200),
+  redeems its invitation and sets its own password (http 200), then signs
+  in through the browser form and reaches /admin.
+  Token strength is asserted separately: 43 characters, and the
+  invitation audit record exposes neither the raw token nor its hash.
+
+- Role management
+  VERIFIED. The role selector renders exactly five options - Super Admin,
+  User Admin, Marketplace Admin, Support Admin, Billing Admin. A Super
+  Admin promotes the QA sub-administrator (http 200) and the promotion
+  reaches the existing browser session with no re-login. A Super Admin
+  then demotes it (http 200) and access is withdrawn immediately, not
+  deferred.
+
+  Why that is the correct expectation, and why it was wrong in an earlier
+  draft: authenticateRequest re-reads the user row from the database on
+  every request, so ctx.user.adminRole is always live and never cached in
+  the JWT. Only setAdminActive(false), revokeAdminSessions and
+  resetAdminPassword stamp sessionsInvalidBefore. setAdminRole does not.
+  An earlier version of section 25 asserted that a role change kills the
+  session and produced three live failures. The harness was wrong, not
+  the application. It now asserts what the design actually guarantees:
+  the session survives, the authority changes immediately.
+
+- Permission boundaries
+  VERIFIED, and verified discriminatingly. A SUPPORT_ADMIN reaches the
+  admin surface rather than Access Denied, is refused /admin/admins in
+  the browser, and is not offered the invite control.
+  The section 25 matrix is chained - each role's allowed endpoint is the
+  next role's denied endpoint - so a blanket allow or a blanket deny
+  cannot pass it:
+
+    USER_ADMIN        allow admin.fullAuditReport   deny admin.commercialKpis
+    MARKETPLACE_ADMIN allow admin.complianceQueue   deny admin.fullAuditReport
+    SUPPORT_ADMIN     allow admin.disputes          deny admin.complianceQueue
+    BILLING_ADMIN     allow admin.commercialKpis    deny admin.disputes
+
+  The matrix is cross-checked against ADMIN_ROLE_PERMISSIONS by unit
+  test, and deliberately avoids users.read, which all five roles hold and
+  which therefore discriminates nothing.
+
+- Browser authorization
+  VERIFIED. The refusals above are what the browser actually renders, not
+  an API 403 assumed to imply a correct UI. A deactivated administrator
+  cannot sign in through the browser and is returned to /admin/login.
+  No first-party console or request errors on either the admin surface or
+  the sub-admin surface.
+
+- Cleanup
+  The QA sub-administrator created for the UI pass is deactivated at the
+  end of the run (http 200) and its inability to sign in is then asserted
+  through the browser. Test administrators remain identifiable as QA
+  data. The existing Super Admin was not modified.
+
+============================================================
+TEST ENVIRONMENT:
+============================================================
+- TEST_LOGIN_ENABLED
+  ON in staging. This is a live observation, not an inference. The
+  harness prints the capability document the server itself publishes:
+
+    INFO  capabilities: {"testLogin":true,"passwordSignIn":true,
+                         "oauthSignIn":false,"passwordReset":false}
+
+  That is correct for a test environment and is the reason the closure
+  gate does not assert testLogin === false. That assertion belongs to a
+  future production gate, where the expected value is the opposite.
+
+- Dummy-user isolation
+  The isolation is a single predicate, and it is the same predicate in
+  both places:
+
+    server/_core/env.ts:137   isTestLoginEnabled() === (TEST_LOGIN_ENABLED === "true")
+    server/routers.ts:237     assertTestLoginCapabilityEnabled() throws NOT_FOUND
+                              guarding createDummyUser (2105) and
+                              issueTestLoginLink (2126)
+    server/vendorDirectory.ts:82
+                              if (!isTestLoginEnabled())
+                                conditions.push(eq(users.isDummy, false))
+
+  Dummy users are additionally created frozen: accountStatus 'frozen',
+  frozenReason 'Dummy/test accounts are disabled by default',
+  isDummy true, accountSource 'admin_created'.
+  Live check 5 passed on staging - no legacy seeded or dummy accounts are
+  visible in public surfaces, even with test login on.
+
+- Production safety
+  With TEST_LOGIN_ENABLED unset, which is its state anywhere it is not
+  explicitly set to the exact string "true":
+    createDummyUser and issueTestLoginLink return NOT_FOUND - the
+      endpoints do not merely refuse, they do not appear to exist;
+    the vendor directory filters isDummy rows out of every query.
+  NOT VERIFIED against a production deployment, because no production
+  deployment exists yet (see P3). The guard is verified at source and by
+  unit test; it has not been exercised against production infrastructure,
+  and this handoff does not claim otherwise.
+
+============================================================
+SECURITY:
+============================================================
+- Secret exposure
+  VERIFIED against the delivered pages on staging. Section 21:
+    no JWT_SECRET, no DATABASE_URL, no SMTP_PASSWORD, no S3_SECRET,
+    no mysql:// connection string, no BEGIN PRIVATE KEY.
+    Errors carry no stack trace and no filesystem path.
+
+- Password / token logging
+  VERIFIED in the browser, not only server-side:
+    no administrator password appears in browser console output;
+    no raw invitation token appears in browser console output;
+    the rendered dashboard and the rendered administrator table carry no
+      credential material.
+  The invitation form itself states that the Super Admin will never see
+  the password - the invitee sets it.
+
+- Invitation-token protection
+  VERIFIED. The token is 43 characters. The invitation audit record
+  exposes neither the raw token nor its hash. The token reaches the
+  invitee through a one-time link and is redeemed exactly once.
+
+- Cookie security
+  VERIFIED on the live response:
+    PASS  21. the session cookie is HttpOnly
+    PASS  21. the session cookie is Secure
+          - Path=/; HttpOnly; Secure; SameSite=None
+
+  SameSite=None is deliberate and is a known trade-off, not an oversight:
+  it is what makes the cookie usable from the separately-origined
+  preview/browser contexts this project is tested from. It is paired with
+  Secure, so the cookie is HTTPS-only. Worth ChatGPT's independent view
+  before production, since a production deployment on a single origin
+  could tighten this to Lax.
+
+- Authentication hardening (adjacent, verified in the same run)
+  Wrong password and unknown user are indistinguishable (401, identical
+  message), and that check is itself asserted to be testing auth rather
+  than rate limiting.
+
+============================================================
+EXPECTED SKIPS:
+============================================================
+Four, exactly as anticipated. None is a product defect and none was
+manufactured away by seeding data or setting configuration to inflate the
+tally. Verbatim:
+
+  SKIP  9. password reset
+        - auth.capabilities reports it unavailable - SMTP_HOST unset or
+          credentials failed to verify at boot
+  SKIP  10. end-to-end upload to the staging bucket
+        - S3_* not configured: Something went wrong. Please try again.
+  SKIP  11. every product carries real database columns
+        - the staging catalogue is empty - nothing to verify, so nothing
+          is claimed
+  SKIP  11. category filtering actually filters
+        - the staging catalogue is empty - a filter over nothing proves
+          nothing
+
+- SMTP        environment gap. Blocked by P6 for production.
+- S3          environment gap. Blocked by P5 for production. Note that the
+              adjacent check "10. a genuine PNG passes the TYPE check"
+              PASSED - the type sniffing is verified; only the round trip
+              to a bucket is not.
+- Empty catalogue      no product data on staging. Seeding business data
+              was not authorised, and inventing rows to turn a skip into a
+              pass would be dishonest evidence.
+- Category filtering   same cause. A filter over an empty set proves
+              nothing regardless of what it returns.
+
+A skip is not a pass. The harness prints that sentence itself at the end
+of every run.
+
+============================================================
+NON-BLOCKING ITEMS:
+============================================================
+- Admin navigation UX
+  The admin navigation exposes Users, Fraud Detection and Settings.
+  Administrator management lives at /admin/admins and is reached by URL
+  rather than by a navigation entry. This is a UX gap, not an
+  authorization gap - the page renders correctly for a Super Admin and is
+  correctly refused in the browser to a sub-administrator. Not redesigned
+  in this closure task, per instruction. Recommend it as a small,
+  separately-authorised UX change.
+
+- F-2 object deletion
+  Uploaded objects are not currently deleted. Removing a record does not
+  remove the stored file. Carried forward unchanged; not a launch blocker
+  but it accrues cost and retains data longer than the record implies.
+
+- Monitoring / alerting
+  Health and readiness endpoints exist and pass, but nothing polls them.
+  There is no alerting. Carried forward unchanged. This becomes urgent at
+  the moment real users exist, not before.
+
+============================================================
+PRODUCTION BLOCKERS:
+============================================================
+Unchanged. No evidence in this closure task moves any of them.
+
+  P1 - Production domain / DNS / TLS      OPEN
+  P2 - Production database                OPEN
+  P3 - Production host / deployment target OPEN
+  P4 - Verified backups AND a tested restore OPEN
+       Backups are not claimed to exist. Neither a backup nor a restore
+       has been executed and verified.
+  P5 - Production S3                      OPEN
+  P6 - Production SMTP                    OPEN
+
+The four staging skips are consequences of P5 and P6 plus an empty
+catalogue. They are not production code defects and are not counted as
+such.
+
+============================================================
+FINAL TEST / BUILD STATUS:
+============================================================
+- Main SHA              155ea2690287de8c1d30a52baadb2e0a8e91246e
+- Staging SHA           155ea2690287de8c1d30a52baadb2e0a8e91246e
+- TypeScript            npx tsc --noEmit -> exit 0, no errors
+- Full test suite       66 files, 1276 tests, 1276 passed, 0 failed
+                        (npx vitest run, 18.93s)
+- Build                 npm run build -> exit 0
+                        dist/index.js 311.8kb, client built in 16.79s
+- Staging QA total      310 executed
+- Passed                306
+- Failed                0
+- Skipped               4
+- Workflow conclusion   SUCCESS
+- Run URL               https://github.com/islamsu/buildhub-project/actions/runs/32758893837
+
+  Honesty note on what was and was not re-run: the merge contained
+  QA-harness and documentation changes only - no application code. The
+  typecheck, the 1276-test suite and the build above were nonetheless
+  re-executed locally in this closure task, against a working tree whose
+  git tree hash (55661f4ce1c319195ca3c40d6f7bc30d92e1de84) is byte-identical
+  to origin/main's. They are actual re-runs, not carried-forward results.
+  The same three checks also passed in PR #13's CI before the merge.
+
+============================================================
+PRODUCTION IMPACT:
+============================================================
+Production was NOT touched. Explicitly:
+
+  - No production database was created, migrated, read or written.
+  - No production migrations were run.
+  - No production host, service or deployment target was created.
+  - No DNS record and no TLS certificate was created or modified.
+  - No production S3 bucket or credential was created.
+  - No production SMTP credential was created.
+  - No Render environment variable was added, changed or removed.
+  - No payment gateway was implemented, activated or configured.
+    Paymob remains deferred, untouched, and not simulated.
+  - No price and no plan definition was changed.
+  - No production or real customer account was read, modified or deleted.
+  - The existing Super Admin was not modified.
+  - Every account created during QA was a clearly identifiable test
+    administrator, and it was deactivated before the run ended.
+  - No secret value was printed, echoed, logged or included in any report,
+    including this one.
+
+  The only systems written to were: the git repository (branch
+  claude/buildhub-audit-verification-vrai7l, PR #13, main), GitHub Actions,
+  and the staging deployment plus its database.
+
+  The accepted free-RFQ decision is unchanged and was not reopened: full
+  description and exact budget remain visible in the free RFQ feed.
+
+============================================================
+FINAL DECISION:
+============================================================
+STAGING:     GO
+
+  Justification: 306 of 306 asserted checks pass against a build whose
+  identity was proved rather than assumed; 0 failures; the workflow
+  conclusion is SUCCESS and the pipeline that produces that conclusion
+  has been demonstrated to go red when checks fail. The four skips are
+  environment gaps, each named, each traceable to a known blocker or to
+  absent catalogue data, and none of them silently converted from a
+  failure. The authenticated admin surface is now proved in a real
+  browser rather than inferred from status codes.
+
+PRODUCTION:  NO-GO
+
+  Justification: P1 through P6 are all open. There is no production
+  domain, database, host, backup-and-tested-restore, object store or
+  mail transport. No amount of staging green changes that. A GO here
+  would be a claim about infrastructure that does not exist.
+
+============================================================
+NEXT PHASE:
+============================================================
+Not begun, and not to be begun on the strength of this document.
+
+The repository is ready for independent ChatGPT review and owner approval
+before entering production-infrastructure preparation.
+
+Classification of everything above:
+  VERIFIED                staging behaviour, admin lifecycle, permission
+                          boundaries, secret hygiene, cookie flags,
+                          provenance, typecheck/tests/build
+  NOT VERIFIED            production behaviour of the test-login guard
+                          (no production deployment exists to exercise it)
+  DEFERRED                Paymob / payments; F-2 object deletion;
+                          monitoring and alerting
+  USER DECISION REQUIRED  whether to proceed to production-infrastructure
+                          preparation; whether to tighten SameSite=None
+                          to Lax on a single-origin production
+                          deployment; whether to add an admin-navigation
+                          entry for /admin/admins
+
+Two items I would put in front of the reviewer specifically:
+  1. SameSite=None on the session cookie - correct for how this project
+     is tested today, worth revisiting for a single-origin production.
+  2. The staging gate does not assert testLogin === false, because on
+     staging it is legitimately true. A production gate must assert the
+     opposite, and that assertion does not exist yet.
+
+STOP. No further development phase is authorised by this task.

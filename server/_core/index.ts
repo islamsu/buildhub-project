@@ -7,6 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+import { onError } from "./trpcErrorLog";
 import { runAdminBootstrap } from "../adminBootstrap";
 import { ENV, assertEnvOrExit } from "./env";
 import { buildCommit, registerHealthRoutes } from "./health";
@@ -139,6 +140,7 @@ async function startServer() {
     createExpressMiddleware({
       router: appRouter,
       createContext,
+      onError,
     })
   );
   // development mode uses Vite, production mode uses static files
