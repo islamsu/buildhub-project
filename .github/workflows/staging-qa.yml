@@ -65,10 +65,21 @@ jobs:
         env:
           U: ${{ secrets.STAGING_ADMIN_USER }}
           P: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+          # Same names read from the VARIABLES context. The Secrets and
+          # Variables tabs sit on one settings page, so landing in the wrong one
+          # is an easy and completely invisible mistake.
+          VU: ${{ vars.STAGING_ADMIN_USER }}
+          VP: ${{ vars.STAGING_ADMIN_PASSWORD }}
+          # Control: a repository variable already known to work, so an EMPTY
+          # everywhere result cannot be blamed on the contexts themselves.
+          CTRL: ${{ vars.STAGING_BASE_URL }}
         run: |
-          echo "STAGING_ADMIN_USER     : $([ -n "$U" ] && echo SET || echo EMPTY)"
-          echo "STAGING_ADMIN_USER len : ${#U}"
-          echo "STAGING_ADMIN_PASSWORD : $([ -n "$P" ] && echo SET || echo EMPTY)"
+          echo "secrets.STAGING_ADMIN_USER     : $([ -n "$U" ] && echo SET || echo EMPTY)"
+          echo "secrets.STAGING_ADMIN_USER len : ${#U}"
+          echo "secrets.STAGING_ADMIN_PASSWORD : $([ -n "$P" ] && echo SET || echo EMPTY)"
+          echo "vars.STAGING_ADMIN_USER        : $([ -n "$VU" ] && echo SET || echo EMPTY)"
+          echo "vars.STAGING_ADMIN_PASSWORD    : $([ -n "$VP" ] && echo SET || echo EMPTY)"
+          echo "vars.STAGING_BASE_URL (control): $([ -n "$CTRL" ] && echo SET || echo EMPTY)"
 
   probe-staging-environment:
     name: "Secret probe (staging environment)"
