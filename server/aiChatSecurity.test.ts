@@ -3,18 +3,23 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 vi.mock('./db', () => ({
   getDb: vi.fn(),
 }));
-vi.mock('./_core/llm', () => ({
-  invokeLLM: vi.fn(),
-  // This suite is about authorization, rate limiting and payload handling on a
-  // deployment that HAS a provider. ai.chat now refuses before invoking when
-  // none is configured, so the mock has to say which of the two worlds these
-  // tests live in. The unconfigured world is covered by aiAvailability.test.ts.
-  isLlmConfigured: () => true,
-}));
+vi.mock('./_core/ai', async () => {
+  const actual = await vi.importActual<typeof import('./_core/ai')>('./_core/ai');
+  return {
+    ...actual,
+    generateAIResponse: vi.fn(),
+    // This suite is about authorization, rate limiting and payload handling on
+    // a deployment that HAS a provider. ai.chat refuses before calling out when
+    // none is configured, so the mock has to say which of the two worlds these
+    // tests live in. The unconfigured world is aiAvailability.test.ts, and the
+    // provider itself is openAiProvider.test.ts.
+    isAiConfigured: () => true,
+  };
+});
 
 import { appRouter } from './routers';
 import type { TrpcContext } from './_core/context';
-import { invokeLLM } from './_core/llm';
+import { generateAIResponse } from './_core/ai';
 import { resetAiChatLimiters } from './_core/rateLimit';
 
 function makeCtx(userId: number | null, ip = '1.2.3.4'): TrpcContext {
@@ -38,15 +43,13 @@ function makeCtx(userId: number | null, ip = '1.2.3.4'): TrpcContext {
   } as TrpcContext;
 }
 
-const CANNED_RESPONSE = {
-  choices: [{ message: { role: 'assistant', content: 'Hello!' } }],
-};
+const CANNED_RESPONSE = { text: 'Hello!' };
 
 describe('ai.chat (live production route)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetAiChatLimiters();
-    (invokeLLM as ReturnType<typeof vi.fn>).mockResolvedValue(CANNED_RESPONSE);
+    (generateAIResponse as ReturnType<typeof vi.fn>).mockResolvedValue(CANNED_RESPONSE);
   });
 
   it('an authenticated user can use the endpoint', async () => {
@@ -57,7 +60,7 @@ describe('ai.chat (live production route)', () => {
   it('unauthenticated access is rejected (anonymous AI use is not a documented requirement)', async () => {
     const caller = appRouter.createCaller(makeCtx(null));
     await expect(caller.ai.chat({ messages: [{ role: 'user', content: 'Hi' }] })).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
-    expect(invokeLLM).not.toHaveBeenCalled();
+    expect(generateAIResponse).not.toHaveBeenCalled();
   });
 
   it('excessive requests from one user are rate limited (burst protection)', async () => {
@@ -109,26 +112,30 @@ describe('ai.chat (live production route)', () => {
     const caller = appRouter.createCaller(makeCtx(1));
     const messages = Array.from({ length: 41 }, (_, i) => ({ role: 'user' as const, content: `msg ${i}` }));
     await expect(caller.ai.chat({ messages })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
-    expect(invokeLLM).not.toHaveBeenCalled();
+    expect(generateAIResponse).not.toHaveBeenCalled();
   });
 
   it('rejects an oversized individual message', async () => {
     const caller = appRouter.createCaller(makeCtx(1));
     const messages = [{ role: 'user' as const, content: 'x'.repeat(6001) }];
     await expect(caller.ai.chat({ messages })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
-    expect(invokeLLM).not.toHaveBeenCalled();
+    expect(generateAIResponse).not.toHaveBeenCalled();
   });
 
   it('rejects an empty message array', async () => {
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.ai.chat({ messages: [] })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
-    expect(invokeLLM).not.toHaveBeenCalled();
+    expect(generateAIResponse).not.toHaveBeenCalled();
   });
 
-  it('enforces a server-side max_tokens ceiling regardless of client input', async () => {
+  it('the client cannot influence provider parameters', async () => {
+    // The output ceiling, the model, the reasoning effort and the retry budget
+    // are all decided inside the provider module. The router hands over the
+    // conversation and nothing else, so there is no field a caller could send
+    // that widens what the request costs.
     const caller = appRouter.createCaller(makeCtx(1));
     await caller.ai.chat({ messages: [{ role: 'user', content: 'Hi' }] });
-    expect(invokeLLM).toHaveBeenCalledWith(expect.objectContaining({ max_tokens: 1024 }));
+    expect(generateAIResponse).toHaveBeenCalledWith({ messages: [{ role: 'user', content: 'Hi' }] });
   });
 
   it('the response never carries API credentials to the client', async () => {

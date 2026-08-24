@@ -374,12 +374,15 @@ describe('§5 the workflow runs somewhere that can reach staging', () => {
 describe('§6 the AI section cannot claim an AI that was never exercised', () => {
   // Section 27 exists because the gate ran 306 green checks against a
   // deployment whose AI assistant was broken for every user. Its own honesty
-  // is the thing worth pinning: a section that reports success on an
-  // unconfigured deployment would recreate exactly the blind spot it was
-  // added to close.
+  // is the thing worth pinning - and after the migration to a real provider,
+  // the SKIP/FAIL line is the part that matters most: a configured provider
+  // that fails must never be softened into a skip.
   const SECTION = (() => {
-    const start = GATE.indexOf("section('27. AI Assistant')");
-    const end = GATE.indexOf("section('21. Secret exposure')");
+    // From the comment marker, not the section() call: the cost-control
+    // rationale lives in the comment above it, and one of the tests below
+    // asserts that the rationale is written down.
+    const start = GATE.indexOf('// ── 27. AI Assistant');
+    const end = GATE.indexOf("section('28. AI Assistant in a real browser')");
     if (start === -1 || end === -1 || end < start) {
       throw new Error('section 27 anchors not found - this test is no longer reading the AI section');
     }
@@ -403,16 +406,20 @@ describe('§6 the AI section cannot claim an AI that was never exercised', () =>
   const CONFIGURED = EXECUTABLE.slice(IF_CONFIGURED, ELSE_BRANCH);
   const UNCONFIGURED = EXECUTABLE.slice(ELSE_BRANCH, BOTH_STATES);
 
-  it('only the configured branch asserts that the provider answered', () => {
-    expect(CONFIGURED).toContain('the provider returns renderable content');
-    expect(UNCONFIGURED).not.toContain('the provider returns renderable content');
-    expect(UNCONFIGURED).not.toContain('an authenticated AI request succeeds');
+  it('a CONFIGURED provider failure is a FAILURE and can never be skipped', () => {
+    // The single most important property in this file. If OPENAI_API_KEY is
+    // set and OpenAI returns 401, 429, 500, a timeout or an empty answer, the
+    // gate must go red. A skip there would hide a broken paid integration
+    // behind a green run - the exact shape of the original incident.
+    expect(CONFIGURED).not.toContain('skip(');
+    expect(CONFIGURED).toContain('a real AI request succeeds against the configured provider');
+    expect(CONFIGURED).toContain('the provider returns non-empty text');
   });
 
-  it('the unconfigured branch SKIPS the provider round trip instead of passing it', () => {
+  it('only the unconfigured branch skips, and it says exactly what it needs', () => {
     expect(UNCONFIGURED).toContain("skip('27. the provider answers a real question'");
-    // A skip that does not say what it needs is a shrug, not a finding.
-    expect(UNCONFIGURED).toContain('BUILT_IN_FORGE_API_KEY');
+    expect(UNCONFIGURED).toContain('OPENAI_API_KEY');
+    expect(UNCONFIGURED).not.toContain('a real AI request succeeds');
   });
 
   it('the unconfigured branch still proves the refusal is deliberate', () => {
@@ -420,13 +427,29 @@ describe('§6 the AI section cannot claim an AI that was never exercised', () =>
     expect(UNCONFIGURED).toContain('Something went wrong. Please try again.');
   });
 
-  it('it makes at most one provider call per run', () => {
-    // Cost control. Eight tools, one shared mutation, one request.
-    expect(EXECUTABLE.match(/post\('ai\.chat'/g) ?? []).toHaveLength(2); // anonymous refusal + the one real call
+  it('it makes at most ONE paid provider call per run', () => {
+    // Cost control, and the reason section 28 renders section 27's answer
+    // instead of asking again. Two ai.chat posts: the free anonymous refusal
+    // and the one real request.
+    expect(EXECUTABLE.match(/post\('ai\.chat'/g) ?? []).toHaveLength(2);
+    const BROWSER = GATE.slice(GATE.indexOf("section('28. AI Assistant in a real browser')"));
+    const BROWSER_EXEC = BROWSER.slice(0, BROWSER.indexOf("section('21. Secret exposure')"))
+      .split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
+    expect(BROWSER_EXEC).not.toContain("post('ai.chat'");
+  });
+
+  it('the cost-control decision is documented in the harness itself', () => {
+    expect(SECTION).toContain('AT MOST ONE PAID PROVIDER REQUEST');
+  });
+
+  it('the live question is not an obedience test', () => {
+    // "Reply with exactly X" tests whether the model follows instructions, not
+    // whether the integration works, and a helpful answer would fail it.
+    expect(EXECUTABLE).not.toMatch(/Reply with exactly/i);
   });
 
   it('the AI error is checked for credential leakage', () => {
-    for (const leak of ['BUILT_IN_FORGE', 'OPENAI_API_KEY', 'forge.manus.im', 'Bearer ']) {
+    for (const leak of ['OPENAI_API_KEY', 'api.openai.com', 'Bearer ', 'sk-']) {
       expect(EXECUTABLE).toContain(leak);
     }
     expect(EXECUTABLE).toContain('27/21. the AI error exposes no');
@@ -434,5 +457,15 @@ describe('§6 the AI section cannot claim an AI that was never exercised', () =>
 
   it('a failed AI request can never be rendered as a successful one', () => {
     expect(EXECUTABLE).toContain('a failed AI request never returns a content payload');
+  });
+
+  it('the browser section proves all eight tools and checks for secret leakage', () => {
+    const BROWSER = GATE.slice(GATE.indexOf("section('28. AI Assistant in a real browser')"));
+    const BODY = BROWSER.slice(0, BROWSER.indexOf("section('21. Secret exposure')"));
+    for (const tool of ['Cost Estimator', 'Quantity Surveyor', 'Material Advisor', 'Project Manager', 'Risk Detector', 'Procurement', 'Maintenance', 'General Consultant']) {
+      expect(BODY).toContain(tool);
+    }
+    expect(BODY).toContain('the delivered AI page contains no');
+    expect(BODY).toContain('the AI page renders Arabic');
   });
 });

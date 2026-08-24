@@ -19,8 +19,24 @@ export const ENV = {
   // deployment and a password-less session.
   //
   // PRODUCTION MUST NEVER SET THIS.
+  // OBJECT STORAGE AND NOTIFICATIONS ONLY. The AI assistant used to run through
+  // this gateway too; it now talks to OpenAI directly (see openAi* below), and
+  // nothing on the /ai path reads either of these.
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // ── AI assistant: OpenAI, directly ─────────────────────────────────────────
+  //
+  // The key is the only thing that decides whether the feature exists. The
+  // model has a default so a deployment cannot be half-configured into a
+  // confusing state - a key with no model still works.
+  openAiApiKey: process.env.OPENAI_API_KEY ?? "",
+  // gpt-5.6-luna, not the bare "gpt-5.6" alias: that alias routes to Sol, a
+  // different and more expensive model. BuildHub AI is a high-volume assistant,
+  // and Luna is the cost/performance tier intended for exactly that.
+  openAiModel: (process.env.OPENAI_MODEL ?? "").trim() || "gpt-5.6-luna",
+  // Optional. Only for a compatible gateway or a regional endpoint; empty means
+  // the official https://api.openai.com/v1.
+  openAiBaseUrl: (process.env.OPENAI_BASE_URL ?? "").trim(),
   // Public origin of this deployment, e.g. https://buildhub.eg. Used to build
   // the links inside outbound email. Deliberately NOT derived from the request's
   // Host header: an attacker who can set that header could otherwise have a

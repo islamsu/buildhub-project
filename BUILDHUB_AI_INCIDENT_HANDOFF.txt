@@ -1,0 +1,487 @@
+BUILDHUB AI INCIDENT HANDOFF
+
+DATE: 2026-08-24
+
+CURRENT MAIN SHA: 2f3dcd55217582aa51630c394274ac6b7303c838
+
+CURRENT STAGING SHA: 2f3dcd55217582aa51630c394274ac6b7303c838
+  Asserted, not assumed. Section 0 of the gate:
+    PASS  0. the deployed commit is the one under test
+          - expected 2f3dcd552175, serving 2f3dcd55217582aa51630c394274ac6b7303c838
+
+============================================================
+A. USER-VISIBLE FAILURE
+============================================================
+
+What the user did:
+  Opened https://buildhub-staging.onrender.com/ai on a mobile browser. The
+  page rendered normally - AI Assistant heading, and all eight tool cards:
+  Cost Estimator, Quantity Surveyor, Material Advisor, Project Manager, Risk
+  Detector, Procurement, Maintenance, General Consultant. Clicking a tool, or
+  typing a question, sent the request.
+
+What appeared on screen:
+  "Something went wrong. Please try again."
+
+Which AI tools were affected:
+  ALL EIGHT, and necessarily so. Every card on /ai calls the same
+  `trpc.ai.chat` mutation with a different opening prompt - the tool identity
+  is the prompt string in AI_MODES, nothing more. There is exactly one AI
+  procedure in the entire application. This was ONE SHARED FAILURE, not eight
+  independent ones.
+
+============================================================
+B. ROOT CAUSE
+============================================================
+
+Exact root cause:
+  BUILT_IN_FORGE_API_KEY is not set on the staging deployment. `invokeLLM`
+  calls `assertApiKey()` first, which throws before any network activity. The
+  AI provider was NEVER CONTACTED and is not implicated in this incident.
+
+Evidence:
+  Reproduced against live staging from a GitHub runner (this engineering
+  sandbox is on an egress allowlist that returns 403 for every Render host,
+  so the probe runs where it can actually reach the deployment).
+
+  Run #28, before any fix:
+
+    INFO  27. ai.chat -> http 500 INTERNAL_SERVER_ERROR in 154ms
+    FAIL  27. an authenticated AI request succeeds - http 500 INTERNAL_SERVER_ERROR in 154ms
+
+  THE 154 MILLISECONDS ARE THE FINDING. `fetchWithBackoff` makes up to five
+  attempts (RETRY_MAX_RETRIES = 4) and sleeps between them:
+
+    computeBackoffDelay(attempt) = jitter over [cap/2, cap], cap = 500 * 2^attempt
+
+  so the FLOOR on sleeping alone, before counting five network attempts, is
+  250 + 500 + 1000 + 2000 = 3750 ms. No failure that reached the provider can
+  return in 154 ms - and 154 ms is barely more than the runner-to-Frankfurt
+  round trip. The request therefore died BEFORE the first fetch.
+
+  Corroborated locally against the same code path with the variable unset and
+  then set to a dummy value:
+
+    key absent          Error: "…is not configured"        1 ms, no network
+    key present, bad    TypeError: fetch failed         5,805 ms, 4 retries logged
+
+  Two clean signatures, ~1 ms versus ~5.8 s. The live 154 ms sits with the
+  first. Independently confirmed after the fix: the deployment now publishes
+  its own answer, `"aiAssistant": false`.
+
+  Ruled out by the same evidence:
+  - NOT the provider (never contacted).
+  - NOT a regression. `git log server/_core/llm.ts` returns exactly one
+    commit, "Initial project bootstrap". The AI path has never been changed
+    and has never been configured for a non-Manus deployment. Nothing in the
+    recent merges (#11, #12, #13) touched it.
+  - NOT authentication. Anonymous callers get "Please login (10001)"; the
+    owner saw the generic message, which proves the request passed auth and
+    the rate limiter and reached the mutation body.
+  - NOT rate limiting (that returns 429 with its own message).
+
+Affected code path:
+  /ai (client/src/pages/AIAssistantPage.tsx, route "/ai" in App.tsx:66)
+    -> AI_MODES card onClick -> handleSend
+    -> trpc.ai.chat.useMutation
+    -> POST /api/trpc/ai.chat
+    -> aiChatProcedure (server/routers.ts:2912) = protectedProcedure + 4 rate limiters
+    -> aiRouter.chat (server/routers.ts:2929)
+    -> invokeLLM (server/_core/llm.ts:342)
+    -> assertApiKey() -> THREW HERE
+    -> [never reached] fetchWithBackoff -> POST ${forgeApiUrl}/v1/chat/completions
+    -> tRPC classifies a bare Error as INTERNAL_SERVER_ERROR
+    -> errorFormatter (server/_core/trpc.ts) replaces the message with
+       GENERIC_INTERNAL_MESSAGE = "Something went wrong. Please try again."
+    -> AIAssistantPage onError -> toast.error(e.message)
+
+  That last chain is why the message was uninformative, and the masking is
+  CORRECT - it exists to stop internal messages like
+  "set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY" reaching browsers.
+  The defect was throwing an unexpected-error type for an entirely expected
+  condition.
+
+Configuration involved:
+  VARIABLE                  REQUIRED FOR AI?  PRESENT ON STAGING?  WHERE USED
+  BUILT_IN_FORGE_API_KEY    YES               NO  (proven)         server/_core/env.ts:23
+                                                                   -> llm.ts assertApiKey / authorization header
+  BUILT_IN_FORGE_API_URL    NO (has default)  NO  (unset)          server/_core/env.ts:22
+                                                                   -> llm.ts resolveApiUrl
+  OPENAI_API_KEY            NO - see below    NOT CHECKABLE        server/openaiIntegration.ts:11 only
+
+  Where each is declared:
+                            render.yaml   .env.example   docker-compose   GH Actions
+  BUILT_IN_FORGE_API_KEY    NOW yes (was NO)  yes         yes              no
+  BUILT_IN_FORGE_API_URL    NOW yes (was NO)  yes         yes              no
+  OPENAI_API_KEY            yes               yes         yes              no
+
+  No secret value was retrieved, printed, logged or echoed at any point.
+
+Provider involved:
+  None was reached. For the record, the code's provider is the MANUS FORGE
+  gateway: `resolveApiUrl()` returns ${BUILT_IN_FORGE_API_URL}/v1/chat/completions
+  and defaults to https://forge.manus.im/v1/chat/completions when the URL is
+  empty. Authentication is `authorization: Bearer ${BUILT_IN_FORGE_API_KEY}`.
+  No model is sent unless a caller supplies one, and ai.chat does not - the
+  gateway picks. Timeout: none set on the fetch; retries: 5 attempts, jittered
+  exponential backoff honouring Retry-After, capped at 30 s.
+
+  This matters for the decision below: BuildHub has deliberately migrated OFF
+  the Manus platform, but its AI feature is still wired to that platform's LLM
+  proxy.
+
+============================================================
+C. FIX
+============================================================
+
+Code changed:
+  Configuration is the root cause and only you can supply a credential. But
+  four code defects are the reason it took an external timing probe to
+  establish that, and those are fixed.
+
+  1. server/_core/llm.ts - the guard named the WRONG VARIABLE.
+     It threw "OPENAI_API_KEY is not configured" while testing
+     ENV.forgeApiKey (BUILT_IN_FORGE_API_KEY). Anyone acting on that message
+     configured a variable this path never reads - and somebody already had:
+     render.yaml carried an OPENAI_API_KEY entry and no FORGE key at all. It
+     now names the variable it actually checks. Also exports isLlmConfigured()
+     so callers can ask instead of guessing.
+
+  2. server/routers.ts - ai.chat now REFUSES DELIBERATELY.
+     `throw new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: 'The AI
+     assistant is not available on this deployment.' })` when unconfigured.
+     Server-authored messages for expected conditions pass the error formatter
+     untouched, so the caller learns the truth while the generic mask stays in
+     place for genuine crashes. The message names no variable, provider or
+     endpoint. It also short-circuits BEFORE invokeLLM, so an unconfigured
+     deployment never burns five attempts and 3.75 s proving what the process
+     already knew.
+
+  3. auth.capabilities + /ai - the page now ASKS BEFORE IT OFFERS.
+     `aiAssistant: isLlmConfigured()` joins passwordReset and oauthSignIn in
+     the capability document, and AIAssistantPage renders an honest bilingual
+     notice with the eight cards inert (pointer-events-none) and the composer
+     disabled. Written as `=== false`, not `!capabilities?.aiAssistant`, so a
+     healthy deployment is not disabled during the first render while the
+     query is still in flight.
+
+  4. server/_core/trpcErrorLog.ts (new) - the deployment now WRITES SOMETHING
+     DOWN. No onError handler was mounted on the tRPC express middleware at
+     all, so staging logged nothing while this failed for every user. Errors
+     are classified: config-missing, provider-auth, provider-quota,
+     provider-unavailable, provider-bad-request, provider-network,
+     response-parse, database, unclassified.
+
+Configuration changed:
+  NONE on any running system. No Render environment variable was added,
+  changed or read. render.yaml and .env.example were corrected as SOURCE
+  FILES: render.yaml now declares BUILT_IN_FORGE_API_KEY and
+  BUILT_IN_FORGE_API_URL, and .env.example no longer claims that
+  OPENAI_API_KEY "Enables the AI assistant. Absent = the feature reports
+  itself unavailable." Both halves of that sentence were false. The second
+  half is now true.
+
+Tests added:
+  server/aiAvailability.test.ts    10 tests
+  server/trpcErrorLog.test.ts      15 tests
+  server/stagingGate.test.ts       +6 tests (§6, the AI section's own honesty)
+  server/aiChatSecurity.test.ts    mock updated - it exercises the CONFIGURED
+                                   world, which now has to be stated explicitly
+
+  Thirteen mutations applied and killed, one at a time:
+    M1  restore the misleading error message              -> 1 test fails
+    M2  remove the SERVICE_UNAVAILABLE refusal            -> 3 fail
+    M3  drop the aiAssistant capability                   -> 3 fail
+    M4  page ignores the capability                       -> 1 fails
+    M5  the truthy trap (`!capabilities?.aiAssistant`)    -> 2 fail
+    M6  render.yaml stops asking for the real variable    -> 1 fails
+    M7  unmount onError (the original blackout)           -> 1 fails
+    M8  log the raw error message (prompt/credential leak)-> 2 fail
+    M9  log every code, not just the masked ones          -> 1 fails
+    M10 unconfigured branch claims the provider answered  -> 1 fails
+    M11 the skip stops saying what it needs               -> 1 fails
+    M12 drop the deliberate-refusal assertion             -> 1 fails
+    M13 a second paid provider call sneaks in             -> 1 fails
+
+  Worth recording: M8 first appeared to SURVIVE. It had not - the mutation
+  itself never applied, because my replacement string did not match a template
+  literal split across two lines. Re-applied correctly it kills two tests. A
+  surviving mutation and a mutation that never ran look identical in the
+  output, and only one of them means anything.
+
+Why the fix is correct:
+  It changes what the application SAYS, not what it CAN DO. No provider was
+  chosen, no credential invented, no integration written, no fallback to a
+  different vendor quietly added. An unconfigured deployment behaved as though
+  the feature existed; now it says it does not, in the same way this codebase
+  has handled password reset and OAuth since Slice 3. When you supply a
+  credential, the same code path runs unchanged and the gate's configured
+  branch makes a real call and asserts a real answer.
+
+============================================================
+D. AI CAPABILITY MATRIX
+============================================================
+
+Tool                | Procedure     | Status
+--------------------|---------------|-------------------------------------------
+Cost Estimator      | ai.chat       | BLOCKED - no provider credential
+Quantity Surveyor   | ai.chat       | BLOCKED - no provider credential
+Material Advisor    | ai.chat       | BLOCKED - no provider credential
+Project Manager     | ai.chat       | BLOCKED - no provider credential
+Risk Detector       | ai.chat       | BLOCKED - no provider credential
+Procurement         | ai.chat       | BLOCKED - no provider credential
+Maintenance         | ai.chat       | BLOCKED - no provider credential
+General Consultant  | ai.chat       | BLOCKED - no provider credential
+
+Evidence, and why one row of evidence covers all eight:
+  Every tool is the same procedure. AI_MODES (AIAssistantPage.tsx:10-19) is a
+  list of eight {icon, label, prompt} objects; handleModeClick passes the
+  prompt to the identical `trpc.ai.chat` mutation. `grep -rn "trpc\.ai\."
+  client/src/` returns three hits, of which two are documentation examples in
+  a comment and a showcase page. There is one AI procedure in the codebase.
+
+  So ONE live call proves or disproves the provider integration for all eight,
+  and per-tool routing is unit-tested with no provider call at all. This is
+  also the cost control: the gate makes at most ONE paid request per run, and
+  a test fails if a second one is ever added.
+
+  Live evidence at the current SHA:
+    PASS  27. the AI Assistant page is reachable  - http 200
+    PASS  27. the deployment declares whether AI is available  - aiAssistant: false
+    INFO  27. ai.chat -> http 503 SERVICE_UNAVAILABLE in 136ms
+    SKIP  27. the provider answers a real question  - no AI provider credential
+          is configured on this deployment - the provider round trip is NOT proven
+
+  The provider round trip is NOT PROVEN and is not claimed to be. No tool is
+  marked working.
+
+============================================================
+E. STAGING QA
+============================================================
+
+Previous QA:
+  306/306 passed, 4 skipped   (run #27, SHA 155ea269)
+  That result remains valid FOR THE CHECKS IT COVERED. It did not test the AI
+  assistant at all - /ai was never requested and ai.chat was never called. The
+  gate was not wrong; it was blind, and that blind spot is the reason a
+  feature broken for every user sat behind a green gate.
+
+New AI QA (run #29, the full gate including the new section 27):
+  total:      325 executed
+  passed:     320
+  failed:     0
+  skipped:    5
+
+  Verbatim:
+    320/320 checks passed, 5 skipped, against https://buildhub-staging.onrender.com
+    Skipped checks are NOT passes. See the SKIP lines above for what each one needs.
+
+  The five skips - four carried forward, one new and honest:
+    SMTP                 password reset            (SMTP_HOST unset)
+    S3                   bucket round trip         (S3_* unset)
+    empty catalogue      product database columns  (no products on staging)
+    category filtering   filter over an empty set  (no products on staging)
+    NEW - AI provider    "the provider answers a real question"
+                         no AI provider credential is configured on this
+                         deployment - the provider round trip is NOT proven.
+                         Set BUILT_IN_FORGE_API_KEY (and BUILT_IN_FORGE_API_URL
+                         if not using the default gateway).
+
+  Of the 14 AI checks in section 27, 13 PASS and 1 is SKIPPED. What passes is
+  the honest-degradation contract - the page loads, the deployment declares
+  its own capability, anonymous use is refused with the auth message rather
+  than a masked internal one, the refusal is a typed 503 rather than a 500,
+  the caller is told the feature is unavailable, a failure never returns a
+  content payload, and seven separate leak checks confirm the error names no
+  variable, provider, credential or stack frame. What is skipped is the one
+  thing that needs a credential.
+
+Workflow conclusion:
+  SUCCESS
+
+  Reported alongside the tally deliberately. The gate is demonstrably capable
+  of going red: run #28, the diagnostic that found this incident, reported
+  FAILURE with exactly the two AI checks failing.
+
+Exact deployed SHA:
+  2f3dcd55217582aa51630c394274ac6b7303c838
+
+Exact GitHub Actions run:
+  https://github.com/islamsu/buildhub-project/actions/runs/32766318167
+  (run #29, job 97556470203)
+
+  Diagnostic run that established the root cause:
+  https://github.com/islamsu/buildhub-project/actions/runs/32763843111
+  (run #28, conclusion FAILURE, 317/319 with the two AI checks red)
+
+Local verification at the merged tree:
+  npx tsc --noEmit    exit 0
+  npx vitest run      1307/1307 across 68 files
+  npm run build       exit 0
+  PR #14 CI           6 of 6 checks SUCCESS
+
+============================================================
+F. SECURITY
+============================================================
+
+Confirmed, each by an executed check rather than by inspection alone:
+
+  - no API key exposed
+      Seven leak assertions against the live error text: no BUILT_IN_FORGE,
+      no OPENAI_API_KEY, no forge.manus.im, no api.openai.com, no "Bearer ",
+      no stack frames, no node_modules paths. All PASS.
+  - no password exposed
+      Section 21 unchanged and green; sections 25/26 assert no administrator
+      password reaches rendered output or browser console.
+  - no token exposed
+      Invitation-token assertions unchanged and green.
+  - no provider secret exposed
+      The refusal message is "The AI assistant is not available on this
+      deployment." It names no provider and no endpoint. The one place a
+      credential is interpolated (the authorization header) is never rendered,
+      returned or logged.
+  - no stack trace exposed
+      The error formatter strips shape.data.stack unconditionally; section 21
+      asserts errors carry no stack trace or filesystem path.
+  - no sensitive prompt logging
+      The new classifier logs a CATEGORY and a numeric status and never the
+      underlying message. This is deliberate: the provider error string is
+      `LLM invoke failed: <status> - <body>`, and a provider that echoes the
+      request would otherwise put project details and budgets into the
+      deployment log. Two tests assert exactly this, using a fixture
+      containing a fake budget figure and a fake Bearer token, and both fail
+      if the raw message is ever appended.
+
+  Nothing in this task retrieved, printed, echoed or logged a secret value.
+
+============================================================
+G. PRODUCTION IMPACT
+============================================================
+
+Production touched: NO
+
+  - No production database was created, migrated, read or written.
+  - No production host, service or deployment target was created or altered.
+  - No DNS record and no TLS certificate was touched.
+  - No Render environment variable was added, changed, read or deleted, on
+    staging or anywhere else.
+  - No payment gateway was implemented, activated or configured. Paymob
+    remains deferred and untouched.
+  - No price, plan or entitlement was changed.
+  - RFQ visibility is unchanged: full description and exact budget remain
+    visible in the free RFQ feed, exactly as accepted.
+  - Authentication and admin functionality already accepted were not changed.
+    auth.capabilities gained ONE ADDITIVE FIELD (aiAssistant); every existing
+    field and every existing behaviour is untouched.
+  - No production or real customer account was read, modified or deleted.
+  - The QA accounts created during the run remain identifiable test data.
+
+  Systems written to: the git repository (branch, PR #14, main), GitHub
+  Actions, and the staging deployment plus its database.
+
+============================================================
+H. REMAINING BLOCKERS
+============================================================
+
+Genuine, and kept separate from the pre-existing production blockers:
+
+  AI-1  No AI provider credential on staging. OWNER ACTION REQUIRED.
+        BUILT_IN_FORGE_API_KEY must be set for the assistant to answer.
+        Optionally BUILT_IN_FORGE_API_URL if not using the default gateway.
+
+  AI-2  Which provider BuildHub uses is an OPEN PRODUCT DECISION, and I am
+        not making it. The code's default gateway is https://forge.manus.im -
+        the Manus platform BuildHub has otherwise migrated away from. Telling
+        you to obtain a Manus Forge credential may be exactly the wrong
+        instruction. There is a second, currently DEAD path
+        (server/openaiIntegration.ts) that calls api.openai.com directly with
+        OPENAI_API_KEY; nothing in the running application imports it, and
+        wiring it up would be implementing an integration on a guess. This
+        needs your decision, not my inference. See section J.
+
+The pre-existing production blockers are unchanged, and none of them is an AI
+issue:
+
+  P1 - Production domain / DNS / TLS                 OPEN
+  P2 - Production database                           OPEN
+  P3 - Production host / deployment target           OPEN
+  P4 - Verified backups AND a tested restore         OPEN
+  P5 - Production S3                                 OPEN
+  P6 - Production SMTP                               OPEN
+
+  Also carried forward, unchanged and non-blocking:
+    F-2 uploaded objects are not deleted
+    Monitoring/alerting - health endpoints exist, nothing polls them
+    Admin navigation UX - /admin/admins is reached by URL, not by a nav entry
+
+============================================================
+I. DECISION
+============================================================
+
+AI STAGING:  BLOCKED
+
+  Not NO-GO in the sense of "something is broken" - the code path is fixed,
+  covered and behaving honestly. Blocked in the literal sense: the capability
+  cannot be proven without a provider credential, which only you can supply,
+  and the choice of provider is a decision I have not made.
+
+OVERALL STAGING:  NO-GO
+
+  Applying your own rule from §15: staging is not declared green until AI
+  works. The AI assistant does not work - it now says so accurately instead of
+  failing opaquely, which is better, but "reports itself unavailable" is not
+  "works". Everything else in the gate is green at 320/320 with 0 failures.
+  The single thing standing between this and GO is AI-1.
+
+PRODUCTION:  NO-GO
+
+  P1 through P6 are all open. No production infrastructure exists.
+
+============================================================
+J. NEXT ACTION
+============================================================
+
+The production infrastructure phase has NOT been started and must not be
+started on the strength of this document. No other development phase has been
+started.
+
+What ChatGPT / the owner needs to decide, in order:
+
+  DECISION 1 - Which AI provider does BuildHub use?
+    (a) Keep the Manus Forge gateway. You obtain a Forge credential and set
+        BUILT_IN_FORGE_API_KEY on Render staging. Zero code change; the gate's
+        configured branch then makes a real call and asserts a real answer.
+        Reservation worth weighing: this re-couples a product you deliberately
+        decoupled from Manus, for its most visible feature.
+    (b) Move to a direct provider. This is a real integration - provider
+        choice, model choice, cost model, key handling, error mapping and
+        tests - and it is a development phase, not a configuration step.
+        server/openaiIntegration.ts is a partial, unimported sketch of one
+        such path; it is not a finished answer.
+    (c) Ship without AI for now. The feature already degrades honestly, so
+        this costs nothing further and is a legitimate option if the launch
+        does not depend on the assistant.
+
+  DECISION 2 - If (a) or (b): set the credential on Render staging, tell me,
+    and I will re-run the gate. The configured branch of section 27 then makes
+    one live call and either proves the assistant works or reports exactly how
+    it failed - by category, with no secret exposure.
+
+  DECISION 3 - Whether OVERALL STAGING may be re-declared GO with AI shipped
+    disabled-but-honest, or whether the assistant must answer first. That is a
+    product call, and per §15 I am not making it.
+
+Everything above is classified as follows:
+  VERIFIED        the root cause and its timing evidence; the four code
+                  defects and their fixes; honest degradation on live staging;
+                  secret-safe errors; 320/320 with 0 failures; tsc, 1307 tests
+                  and build at the merged tree
+  NOT VERIFIED    that the AI assistant can answer a question. No provider
+                  call has ever succeeded from this deployment, and none is
+                  claimed
+  DEFERRED        Paymob / payments; F-2; monitoring and alerting
+  USER DECISION   provider choice (AI-2); whether to configure the existing
+     REQUIRED     gateway; whether staging may be green without a working
+                  assistant
+
+STOP. No further development phase is authorised by this task.

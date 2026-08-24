@@ -23,7 +23,7 @@ vi.mock('./db', () => ({ getDb: vi.fn() }));
 import type { TrpcContext } from './_core/context';
 import { resetAiChatLimiters } from './_core/rateLimit';
 
-const LLM_SOURCE = readFileSync(new URL('./_core/llm.ts', import.meta.url), 'utf8');
+const AI_SOURCE = readFileSync(new URL('./_core/ai.ts', import.meta.url), 'utf8');
 const PAGE_SOURCE = readFileSync(new URL('../client/src/pages/AIAssistantPage.tsx', import.meta.url), 'utf8');
 const RENDER_YAML = readFileSync(new URL('../render.yaml', import.meta.url), 'utf8');
 
@@ -41,38 +41,31 @@ function makeCtx(userId: number | null): TrpcContext {
 
 // The env module snapshots process.env at import time, so each case needs a
 // fresh module graph rather than a mutated singleton.
-async function freshRouter(forgeKey: string | undefined) {
+async function freshRouter(openAiKey: string | undefined) {
   vi.resetModules();
-  if (forgeKey === undefined) delete process.env.BUILT_IN_FORGE_API_KEY;
-  else process.env.BUILT_IN_FORGE_API_KEY = forgeKey;
+  if (openAiKey === undefined) delete process.env.OPENAI_API_KEY;
+  else process.env.OPENAI_API_KEY = openAiKey;
   const { appRouter } = await import('./routers');
   return appRouter;
 }
 
-const ORIGINAL_KEY = process.env.BUILT_IN_FORGE_API_KEY;
+const ORIGINAL_KEY = process.env.OPENAI_API_KEY;
 
 describe('AI availability is honest about itself', () => {
   beforeEach(() => { resetAiChatLimiters(); });
   afterEach(() => {
-    if (ORIGINAL_KEY === undefined) delete process.env.BUILT_IN_FORGE_API_KEY;
-    else process.env.BUILT_IN_FORGE_API_KEY = ORIGINAL_KEY;
+    if (ORIGINAL_KEY === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = ORIGINAL_KEY;
   });
 
   it('the provider guard names the variable it actually reads', () => {
-    // The defect: it threw "OPENAI_API_KEY is not configured" while testing
-    // ENV.forgeApiKey. Anyone who acted on that message configured a variable
-    // this path never consults - and someone did: render.yaml carried
-    // OPENAI_API_KEY and no FORGE key at all.
-    const guard = LLM_SOURCE.slice(LLM_SOURCE.indexOf('const assertApiKey'));
-    // Executable lines only. The comment inside the guard names OPENAI_API_KEY
-    // deliberately - it explains the old message - and a naive substring match
-    // over the raw text passes on the comment while the throw stays wrong.
-    const body = guard.slice(0, guard.indexOf('};'))
-      .split('\n')
-      .filter(line => !line.trim().startsWith('//'))
-      .join('\n');
-    expect(body).toContain('BUILT_IN_FORGE_API_KEY is not configured');
-    expect(body).not.toContain('OPENAI_API_KEY');
+    // The original defect: the guard threw "OPENAI_API_KEY is not configured"
+    // while testing the FORGE key, which sent configuration effort at a
+    // variable that path never read. After the migration the same sentence is
+    // finally true - and it has to stay true.
+    const executable = AI_SOURCE.split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
+    expect(executable).toContain("'OPENAI_API_KEY is not configured'");
+    expect(executable).not.toContain('BUILT_IN_FORGE');
   });
 
   it('an unconfigured deployment reports the AI assistant as unavailable', async () => {
@@ -111,22 +104,26 @@ describe('AI availability is honest about itself', () => {
     }
   });
 
-  it('an unconfigured deployment never reaches the provider at all', async () => {
-    // Cost, not just correctness: the refusal must short-circuit BEFORE
-    // invokeLLM, which otherwise burns five attempts and ~3.75s of backoff
-    // proving something the process already knew.
-    vi.resetModules();
-    delete process.env.BUILT_IN_FORGE_API_KEY;
-    const invokeLLM = vi.fn();
-    vi.doMock('./_core/llm', async () => {
-      const actual = await vi.importActual<typeof import('./_core/llm')>('./_core/llm');
-      return { ...actual, invokeLLM };
-    });
-    const { appRouter } = await import('./routers');
-    await appRouter.createCaller(makeCtx(9)).ai.chat({ messages: [{ role: 'user', content: 'hi' }] })
-      .catch(() => undefined);
-    expect(invokeLLM).not.toHaveBeenCalled();
-    vi.doUnmock('./_core/llm');
+  it('an unconfigured deployment never reaches the provider at all', () => {
+    // Cost, not just correctness: the refusal must short-circuit before any
+    // provider call. Proven directly against the provider module in
+    // openAiProvider.test.ts ('refuses before constructing a client'); asserted
+    // here at the router, which must check BEFORE it calls out.
+    const router = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    // Anchored on both ends. `indexOf('});')` closes the zod input object long
+    // before the mutation body, which silently yields a slice containing
+    // neither the guard nor the call - and then every ordering assertion is
+    // vacuously comparing -1 with -1.
+    const from = router.indexOf('const aiRouter = router({');
+    const to = router.indexOf('// ── Billing Router', from);
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    const body = router.slice(from, to);
+    const guardAt = body.indexOf('if (!isAiConfigured())');
+    const callAt = body.indexOf('generateAIResponse(');
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(callAt).toBeGreaterThan(-1);
+    expect(guardAt).toBeLessThan(callAt);
   });
 
   it('the page asks whether AI is available before offering the tools', () => {
@@ -145,7 +142,14 @@ describe('AI availability is honest about itself', () => {
   });
 
   it('render.yaml asks for the variables the AI path actually reads', () => {
-    expect(RENDER_YAML).toContain('key: BUILT_IN_FORGE_API_KEY');
-    expect(RENDER_YAML).toContain('key: BUILT_IN_FORGE_API_URL');
+    expect(RENDER_YAML).toContain('key: OPENAI_API_KEY');
+    expect(RENDER_YAML).toContain('key: OPENAI_MODEL');
+    expect(RENDER_YAML).toContain('value: gpt-5.6-luna');
+  });
+
+  it('no secret value is committed alongside the declaration', () => {
+    // sync: false means Render prompts for the value in the dashboard. A
+    // literal key in this file would be a credential in git.
+    expect(RENDER_YAML).not.toMatch(/sk-[A-Za-z0-9_-]{8,}/);
   });
 });

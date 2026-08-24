@@ -222,20 +222,37 @@ services:
       - key: SMTP_FROM
         sync: false
 
-      # AI assistant. The /ai path calls invokeLLM in server/_core/llm.ts, which
-      # reads BUILT_IN_FORGE_API_KEY and BUILT_IN_FORGE_API_URL - NOT
-      # OPENAI_API_KEY. OPENAI_API_KEY is read only by server/openaiIntegration.ts,
-      # which nothing in the running application imports; it is kept here because
-      # deploy/docker-compose.yml still passes it and removing it is a separate
-      # decision. Leave the FORGE pair unset and auth.capabilities reports
-      # aiAssistant false, so /ai says so instead of offering tools that fail.
+      # Object storage and owner notifications ONLY. The AI assistant used to
+      # run through this gateway; it now calls OpenAI directly and reads
+      # neither of these. Optional: S3 takes precedence for storage when a
+      # bucket is set.
       - key: BUILT_IN_FORGE_API_URL
         sync: false
 
       - key: BUILT_IN_FORGE_API_KEY
         sync: false
 
+      # ── AI assistant: OpenAI, directly ──────────────────────────────────
+      #
+      # OPENAI_API_KEY is what decides whether the feature exists.
+      # auth.capabilities reports aiAssistant true only when it is set, and
+      # /ai renders its honest unavailable state when it is not.
+      #
+      # sync: false means the VALUE is supplied in the Render dashboard and
+      # never lives in this file or in git.
       - key: OPENAI_API_KEY
+        sync: false
+
+      # gpt-5.6-luna, not the bare "gpt-5.6" alias - that alias routes to Sol,
+      # a different and more expensive model. Luna is the cost/performance tier
+      # intended for high-volume assistants. The application defaults to this
+      # value, so the variable exists to let the model change without a deploy.
+      - key: OPENAI_MODEL
+        value: gpt-5.6-luna
+
+      # Optional. Only for a compatible gateway or a regional endpoint. Leave
+      # unset for the official https://api.openai.com/v1.
+      - key: OPENAI_BASE_URL
         sync: false
 
   # ── MySQL 8, private ─────────────────────────────────────────────────────

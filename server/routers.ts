@@ -11,7 +11,7 @@ import type { TrpcContext } from './_core/context';
 import { TRPCError } from '@trpc/server';
 import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername, revokeSession } from './db';
 import { hashPassword, verifyPassword, NO_SUCH_ACCOUNT_HASH } from './passwords';
-import { invokeLLM, isLlmConfigured } from './_core/llm';
+import { generateAIResponse, isAiConfigured, AiError, type AiFailureCategory } from './_core/ai';
 import { storagePut } from './storage';
 import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
@@ -389,7 +389,7 @@ const authRouter = router({
     // to render its eight tools unconditionally, so on a deployment with no
     // provider credential every one of them returned the generic internal
     // error - the feature looked present and was not.
-    aiAssistant: isLlmConfigured(),
+    aiAssistant: isAiConfigured(),
   } as const)),
 
   signUp: publicProcedure.input(z.object({
@@ -2912,7 +2912,6 @@ const adminRouter = router({
 // ── AI Router ──────────────────────────────────────────────────────────────
 const MAX_AI_MESSAGES = 40;
 const MAX_AI_MESSAGE_LENGTH = 6000;
-const MAX_AI_RESPONSE_TOKENS = 1024;
 
 const aiChatProcedure = protectedProcedure.use(({ ctx, next }) => {
   const now = Date.now();
@@ -2930,6 +2929,58 @@ const aiChatProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+/**
+ * What the visitor is told, and with what HTTP shape.
+ *
+ * Every message here is written FOR the caller: no variable name, no provider,
+ * no endpoint, no status code, no request id. They are server-authored
+ * TRPCError messages for expected conditions, so the error formatter passes
+ * them through untouched while still masking genuine internal errors. The
+ * operator gets the real classification from the server log; the browser gets
+ * a sentence it can act on.
+ */
+function aiErrorCode(category: AiFailureCategory): 'SERVICE_UNAVAILABLE' | 'TOO_MANY_REQUESTS' | 'TIMEOUT' | 'INTERNAL_SERVER_ERROR' {
+  switch (category) {
+    case 'provider-rate-limit':
+    case 'provider-quota':
+      return 'TOO_MANY_REQUESTS';
+    case 'provider-timeout':
+      return 'TIMEOUT';
+    case 'config-missing':
+    case 'provider-auth':
+    case 'provider-unavailable':
+    case 'provider-network':
+      return 'SERVICE_UNAVAILABLE';
+    // A malformed, empty or refused request is OUR bug or the provider's, not
+    // something the visitor can fix or should be told the details of.
+    case 'provider-bad-request':
+    case 'response-empty':
+    case 'response-parse':
+      return 'INTERNAL_SERVER_ERROR';
+  }
+}
+
+function aiErrorMessage(category: AiFailureCategory): string {
+  switch (category) {
+    case 'config-missing':
+    case 'provider-auth':
+      return 'The AI assistant is not available on this deployment.';
+    case 'provider-rate-limit':
+      return 'The AI assistant is busy right now. Please try again in a moment.';
+    case 'provider-quota':
+      return 'The AI assistant is temporarily unavailable. Please try again later.';
+    case 'provider-timeout':
+      return 'The AI assistant took too long to answer. Please try again.';
+    case 'provider-unavailable':
+    case 'provider-network':
+      return 'The AI assistant is temporarily unreachable. Please try again shortly.';
+    case 'provider-bad-request':
+    case 'response-empty':
+    case 'response-parse':
+      return 'The AI assistant could not answer that. Please try rephrasing.';
+  }
+}
+
 const aiRouter = router({
   chat: aiChatProcedure
     .input(z.object({
@@ -2939,25 +2990,30 @@ const aiRouter = router({
       })).min(1).max(MAX_AI_MESSAGES),
     }))
     .mutation(async ({ input }) => {
-      // Deliberate, client-safe refusal for a KNOWN condition. Without it
-      // invokeLLM throws a bare Error, tRPC classifies that as
-      // INTERNAL_SERVER_ERROR, and the error formatter - correctly - replaces
-      // the message with "Something went wrong. Please try again.". That is the
-      // right thing to do with an unexpected internal error and the wrong thing
-      // to say about a deployment that was simply never given a provider
-      // credential. SERVICE_UNAVAILABLE carries a message written for the
-      // caller, so it passes the formatter untouched and names no variable,
-      // provider or endpoint.
-      if (!isLlmConfigured()) {
+      // Deliberate, client-safe refusal for a KNOWN condition. Without it the
+      // provider layer throws, tRPC classifies that as INTERNAL_SERVER_ERROR,
+      // and the error formatter - correctly - replaces the message with
+      // "Something went wrong. Please try again.". That is the right thing to
+      // do with an unexpected internal error and the wrong thing to say about
+      // a deployment that was simply never given a credential.
+      if (!isAiConfigured()) {
         throw new TRPCError({
           code: 'SERVICE_UNAVAILABLE',
           message: 'The AI assistant is not available on this deployment.',
         });
       }
-      const response = await invokeLLM({ messages: input.messages as any, max_tokens: MAX_AI_RESPONSE_TOKENS });
-      const raw = response.choices[0]?.message?.content;
-      const content = typeof raw === 'string' ? raw : Array.isArray(raw) ? raw.map((c: any) => c.text ?? '').join('') : 'Sorry, I could not process your request.';
-      return { content };
+      try {
+        const { text } = await generateAIResponse({ messages: input.messages });
+        // The application's contract, not the provider's. No SDK object, no
+        // usage figures, no model name, no request id - only what the chat
+        // window renders.
+        return { content: text };
+      } catch (error) {
+        if (error instanceof AiError) {
+          throw new TRPCError({ code: aiErrorCode(error.category), message: aiErrorMessage(error.category) });
+        }
+        throw error;
+      }
     }),
 });
 

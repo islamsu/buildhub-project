@@ -39,7 +39,10 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       BUILT_IN_FORGE_API_URL: ${BUILT_IN_FORGE_API_URL:-}
       BUILT_IN_FORGE_API_KEY: ${BUILT_IN_FORGE_API_KEY:-}
+      # AI assistant: OpenAI, directly. The Forge pair above is storage only.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
     healthcheck:
       # Liveness only. /readyz also checks the database, and a database outage
       # must not make Docker restart the app in a loop - the app is not the
