@@ -118,7 +118,21 @@ jobs:
           # still REPORTS the commit it tested, so the result is attributable
           # either way.
           STAGING_EXPECT_COMMIT: ${{ inputs.expect_commit }}
-        run: node scripts/staging-qa.mjs "${{ steps.target.outputs.url }}" | tee qa-output.txt
+        # `set -o pipefail` is LOAD-BEARING, not tidiness.
+        #
+        # `node ... | tee qa-output.txt` reports TEE's exit status, and tee
+        # always succeeds. GitHub runs this with `bash -e`, which aborts on a
+        # failing command but says nothing about a failing pipeline, so the step
+        # exited 0 no matter what the gate concluded. The harness has always
+        # exited 1 on a failed check - that value was simply thrown away.
+        #
+        # It never showed, because every run until now happened to have zero
+        # failures. Run #13 was the first genuinely red gate, and it published
+        # "171/173 checks passed" with two named FAILURES under a green tick.
+        # A gate that cannot fail its own workflow is not a gate.
+        run: |
+          set -o pipefail
+          node scripts/staging-qa.mjs "${{ steps.target.outputs.url }}" | tee qa-output.txt
 
       # Provenance belongs at the top of the summary, not buried in a log. A
       # green result against an unnamed build is not evidence of anything.
