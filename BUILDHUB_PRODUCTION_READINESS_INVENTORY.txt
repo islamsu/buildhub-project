@@ -1178,3 +1178,103 @@ rather than advertised. What is missing is the environment to run it in.
 
 Nothing in production was modified. No production administrator was created.
 Payments were not activated. No production migration was run.
+
+
+================================================================================
+ADDENDUM — 2026-08-24, after the inventory
+================================================================================
+
+Four of the findings above are now closed, and acting on them surfaced a fifth
+that the inventory could not have found by reading. Recorded here rather than by
+editing the sections above, so the original assessment stays readable as what
+was true when it was written.
+
+CLOSED (PR #9, merged as 23ba7f4)
+
+  F-1  rfq-attachments/ in the storage proxy is now scoped to the requester plus
+       any provider who has PAID to open a qualified enquiry on that RFQ.
+       Candidate RFQs are looked up by the uploader id embedded in the key
+       rather than by the caller, which also closes a laundering path: an
+       attacker who learns a key cannot reference it from an RFQ of their own.
+       Matching is exact string comparison in JS, not SQL LIKE, because `_` is
+       legal in these keys and is a LIKE wildcard.
+
+  O-1  rfq.create now carries burst (3/min) and sustained (20/hour) limits.
+  O-3  All five upload endpoints now carry burst (10/min) and sustained
+       (60/hour) limits. Both keyed by user id only, never by IP - every one of
+       these endpoints already requires a session, and an IP axis would
+       reimport the carrier-grade-NAT problem the auth limiters had to be
+       loosened for.
+
+  G-1  admin.createDummyUser and
+  G-2  admin.issueTestLoginLink now refuse with NOT_FOUND wherever test login is
+       off, matching the two sign-in paths.
+
+  Also: render.yaml repointed from claude/phase4b-readiness-audit-hardening to
+  main. THIS TAKES EFFECT ONLY WHEN THE BLUEPRINT IS RE-SYNCED IN THE RENDER
+  DASHBOARD. It is not automatic, and until it happens staging deploys from the
+  feature branch and NOT from main.
+
+STILL OPEN
+
+  F-2  Uploaded objects are never deleted. Cost issue now; a right-to-erasure
+       issue once real personal data is involved.
+
+NEW — F-4, and it changes how much every previous green run is worth
+
+  THE STAGING GATE COULD NOT FAIL ITS OWN WORKFLOW.
+
+  The workflow ran the harness as
+
+      node scripts/staging-qa.mjs "$URL" | tee qa-output.txt
+
+  A pipeline's exit status is its LAST command's, and tee always succeeds.
+  GitHub runs the step with `bash -e`, which aborts on a failing command but
+  says nothing about a failing pipeline. The harness has always exited 1 on a
+  failed check; that value was discarded.
+
+  Found because run #13 was the first genuinely red gate: it printed two named
+  FAILURES and "171/173 checks passed" under a green tick. Fixed with
+  `set -o pipefail` (PR #10, merged as 4e4c300) and pinned by a regression test,
+  because a gate that cannot go red looks exactly like a healthy one.
+
+  WHAT THIS DOES AND DOES NOT INVALIDATE. Every earlier green run printed its
+  own tally, and each one was 100% of executed checks - 150/150, 160/160,
+  169/169. Those numbers came from the harness, not from the workflow
+  conclusion, so they stand. What was worthless was the green tick itself: had
+  any of those runs failed a check, it would still have shown green. The
+  evidence was always in the log; the badge was never evidence.
+
+REGRESSION BASELINE, UPDATED
+
+  Run #13: 171/173 passed, 9 skipped, against deployed commit 928ef76.
+  The two failures are section 24 (the new rate limits) and are CORRECT -
+  staging does not carry that code yet. They will clear once staging deploys
+  main. Do not treat 171/173 as the new baseline; the baseline is 173/173 at a
+  commit that includes PR #9.
+
+  Skips fell from 10 to 9: the staging catalogue now has 39 vendors accumulated
+  from earlier QA registrations, so "every directory vendor carries real
+  database columns" now executes and passes instead of skipping.
+
+VERIFICATION AT THIS POINT
+
+  main = 4e4c300 · tsc 0 · 1271/1271 tests across 66 files · build 0
+  Eleven mutation reverts across the two PRs, each caught by its own test -
+  after TWO of them initially survived:
+    - the attachment-laundering test used a positional mock that could not see
+      which id the query bound. Rewritten to walk the Drizzle predicate.
+    - the pipefail test matched the COMMENT explaining pipefail rather than the
+      command. Rewritten to strip comment lines and assert ordering too.
+
+THE ONE THING THAT NOW BLOCKS FURTHER LIVE VERIFICATION
+
+  Staging serves 928ef76 and cannot advance from this session: Render tracks
+  claude/phase4b-readiness-audit-hardening, and this session may only push to
+  its designated branch. Re-syncing the Blueprint in the Render dashboard makes
+  staging track main, at which point section 24 should turn green on its own.
+  Until then, everything merged after 928ef76 is verified locally and in CI but
+  NOT on live staging.
+
+  The GO/NO-GO verdict is unchanged: NO-GO, on the same six infrastructure
+  blockers. None of the work above moves any of them.
