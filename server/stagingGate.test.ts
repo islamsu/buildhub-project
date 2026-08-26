@@ -464,14 +464,14 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
     expect(ALWAYS_ON).toContain('englishAiRequests === 0');
   });
 
-  it('the six-request knowledge suite is OPT-IN and says what it costs', () => {
-    // Six extra paid calls must never ride along on a routine gate run. It is
+  it('the paid knowledge suite is OPT-IN and says what it costs', () => {
+    // Ten extra paid calls must never ride along on a routine gate run. It is
     // gated on an explicit input, and the skip says so instead of going quiet.
     expect(GATE).toContain('const AI_KNOWLEDGE_SUITE');
     expect(GATE).toContain("process.env.STAGING_AI_KNOWLEDGE_SUITE ?? ''");
     expect(GATE).toContain('if (AI_KNOWLEDGE_SUITE) {');
     expect(GATE).toContain("skip('29. BuildHub knowledge priority (live)'");
-    expect(GATE).toContain('six extra paid provider requests');
+    expect(GATE).toContain('ten extra paid provider requests');
     expect(WORKFLOW).toContain('ai_knowledge_suite:');
     expect(WORKFLOW).toContain('STAGING_AI_KNOWLEDGE_SUITE:');
   });
@@ -487,7 +487,7 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
     expect(SUITE).toContain('the same authoritative fact reaches both languages');
   });
 
-  it('the knowledge suite covers all six cases the owner listed', () => {
+  it('the knowledge suite covers all ten cases the owner listed', () => {
     const SUITE = GATE.slice(GATE.indexOf('if (AI_KNOWLEDGE_SUITE) {'), GATE.indexOf("skip('29. BuildHub knowledge priority (live)'"));
     expect(SUITE).toContain('29.1 a general construction question');
     expect(SUITE).toContain('29.2 a BuildHub fact is answered from BuildHub content');
@@ -495,6 +495,10 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
     expect(SUITE).toContain('29.4 an unpublished point is acknowledged, not invented');
     expect(SUITE).toContain('29.5 the Arabic question is answered in Arabic');
     expect(SUITE).toContain('29.6 the English question is answered in English');
+    expect(SUITE).toContain('29.7 a provider recommendation request is answered');
+    expect(SUITE).toContain('29.8 a no-match request never fabricates a company name');
+    expect(SUITE).toContain('29.9 a current-information question is answered');
+    expect(SUITE).toContain('29.10 the request is refused rather than partially answered');
   });
 
   it('the cost-control decision is documented in the harness itself', () => {

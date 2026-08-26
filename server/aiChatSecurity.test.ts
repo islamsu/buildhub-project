@@ -136,9 +136,22 @@ describe('ai.chat (live production route)', () => {
     const caller = appRouter.createCaller(makeCtx(1));
     await caller.ai.chat({ messages: [{ role: 'user', content: 'Hi' }] });
     const call = (generateAIResponse as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(Object.keys(call)).toEqual(['messages']);
+    // messages and webSearch, and nothing else. webSearch is decided by the
+    // server's own intent router - a caller cannot set it, so it cannot be used
+    // to make every question run a paid search.
+    expect(Object.keys(call).sort()).toEqual(['messages', 'webSearch']);
+    expect(call.webSearch).toBe(false);
     expect(call.messages[0].role).toBe('system');
     expect(call.messages.slice(1)).toEqual([{ role: 'user', content: 'Hi' }]);
+  });
+
+  it('a caller cannot turn on web search', async () => {
+    // Not a parameter the client may send. If it were, any caller could make
+    // every question run a paid search.
+    const caller = appRouter.createCaller(makeCtx(1));
+    await caller.ai.chat({ messages: [{ role: 'user', content: 'Hi' }], webSearch: true } as never);
+    const call = (generateAIResponse as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.webSearch).toBe(false);
   });
 
   it('a client-supplied system message is discarded, not forwarded', async () => {

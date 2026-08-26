@@ -77,6 +77,10 @@ const REQUEST_TIMEOUT_MS = 60_000;
 // still handled explicitly below rather than trusted not to happen.
 const REASONING_EFFORT = 'low' as const;
 const MAX_OUTPUT_TOKENS = 4096;
+// A search-backed answer spends tokens reading results before it writes
+// anything, so the same ceiling would truncate it into the empty-output failure
+// this module already guards against.
+const MAX_OUTPUT_TOKENS_WITH_SEARCH = 8192;
 
 let client: OpenAI | undefined;
 const getClient = (): OpenAI => {
@@ -151,7 +155,20 @@ const classify = (error: unknown): AiError => {
  * provider body. Callers map the category to a user-facing message; nothing
  * here is safe to show a browser verbatim and nothing here is meant to be.
  */
-export async function generateAIResponse(params: { messages: AiMessage[] }): Promise<AiResult> {
+export async function generateAIResponse(params: {
+  messages: AiMessage[];
+  /**
+   * Turns on OpenAI's hosted web_search tool for THIS request only.
+   *
+   * Off by default and decided in code (server/_core/aiIntent.ts), never by the
+   * model: a search on every question would add latency and cost to
+   * "what is a BOQ?", which the briefing already answers. It is switched on for
+   * the questions where model memory is actively dangerous - current prices,
+   * current code editions - where a confident stale answer is worse than a slow
+   * one.
+   */
+  webSearch?: boolean;
+}): Promise<AiResult> {
   if (!isAiConfigured()) {
     throw new AiError('config-missing', undefined, 'OPENAI_API_KEY is not configured');
   }
@@ -164,7 +181,8 @@ export async function generateAIResponse(params: { messages: AiMessage[] }): Pro
       model: ENV.openAiModel,
       ...(instructions ? { instructions } : {}),
       input,
-      max_output_tokens: MAX_OUTPUT_TOKENS,
+      ...(params.webSearch ? { tools: [{ type: 'web_search' as const }] } : {}),
+      max_output_tokens: params.webSearch ? MAX_OUTPUT_TOKENS_WITH_SEARCH : MAX_OUTPUT_TOKENS,
       reasoning: { effort: REASONING_EFFORT },
       // No `temperature`. GPT-5 family models are reasoning models and reject
       // it; sending it turns every request into a 400.
