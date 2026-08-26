@@ -1,0 +1,386 @@
+BUILDHUB FINAL AI ACCEPTANCE HANDOFF
+
+DATE: 2026-08-26
+
+============================================================
+THE HEADLINE
+============================================================
+
+  BuildHub -> OpenAI -> real response -> BuildHub -> browser
+
+  PROVEN. Verbatim from the run:
+
+    INFO  28. ai.chat (browser) -> http 200 in 3321ms
+    INFO  28. answer length: 69 chars
+    PASS  28. the browser AI request succeeds against the configured provider
+          - http 200 in 3321ms
+    PASS  28. BuildHub returns a non-empty AI answer
+          - Steel reinforcement bars (rebar) are commonly used in concre…
+    PASS  28. the answer appears on screen, beyond the question that was typed
+          - 73 chars beyond the 73-char question
+    PASS  28. the rendered answer is the one the server returned
+          - looked for "Steel reinforcement bars"
+
+  One request. Typed into the real composer on /ai, submitted with Enter,
+  answered by OpenAI, returned by BuildHub, rendered on screen.
+
+============================================================
+DEPLOYED SHA
+============================================================
+
+  Verified against: e85341d01f616e2ffe95f8bd10dd4fa072f1c5cc
+
+  Asserted, not assumed:
+    >>> DEPLOYED COMMIT: e85341d01f616e2ffe95f8bd10dd4fa072f1c5cc
+    PASS  0. the deployed commit is the one under test
+          - expected e85341d01f61, serving e85341d01f616e2ffe95f8bd10dd4fa072f1c5cc
+
+  MAIN HAS SINCE MOVED, and you should know exactly why. After the
+  verification passed I merged PR #17 (now 929300046ae9e23389c3142a2cf49f6dc168c89c),
+  which contains the QA harness, the harness's own tests and the handoff
+  documents - and NO runtime application code. Render will redeploy to that
+  SHA. The application that was verified is byte-identical; only the
+  verification apparatus and documentation changed.
+
+  I merged it rather than leaving it on the branch because main's copy of the
+  gate still carried a parsing defect (see "Two harness defects" below) that
+  would have reported a false failure on the next run from main.
+
+============================================================
+GITHUB ACTIONS RUN
+============================================================
+
+  Run number:  #34
+  URL:         https://github.com/islamsu/buildhub-project/actions/runs/32970108871
+  Job:         98181583201
+  Conclusion:  SUCCESS
+
+  Tally:       343/343 checks passed, 0 failed, 4 skipped
+
+============================================================
+aiAssistant CAPABILITY
+============================================================
+
+  TRUE. Read from the deployment's own capability document:
+
+    INFO  capabilities: {"testLogin":true,"passwordSignIn":true,
+                         "oauthSignIn":false,"passwordReset":false,
+                         "aiAssistant":true}
+
+  OPENAI_API_KEY = PRESENT (inferred only from this flag, which is
+  isAiConfigured() - the key's own value was never read, printed or logged).
+  OPENAI_MODEL   = gpt-5.6-luna (application default; see below).
+
+============================================================
+OPENAI PROVIDER RESULT
+============================================================
+
+  SUCCESS.
+
+  Actual HTTP status:      200
+  Latency:                 3321 ms
+  Real response received:  YES - 69 characters
+  Answer:                  "Steel reinforcement bars (rebar) are commonly
+                            used in concre…" (truncated in the log by the
+                            harness, not by the model)
+
+  Exact model used:        gpt-5.6-luna
+
+    This is ENV.openAiModel. OPENAI_MODEL is not set on Render, so the
+    application default applies, and that default is the literal string
+    'gpt-5.6-luna' in server/_core/env.ts - the explicit Luna id, never the
+    bare "gpt-5.6" alias which routes to Sol. A unit test asserts the model in
+    the REQUEST BODY, not merely in the getter, precisely so this cannot drift.
+
+    HONEST LIMIT: the response is a 200 with real construction content, which
+    proves the model id was accepted and answered. I did not read a model
+    field back off the wire, because the application's response contract is
+    { content } and deliberately discards the provider object. So "the model
+    used is gpt-5.6-luna" is established from configuration plus a successful
+    request, not from an echoed identifier.
+
+  The application is demonstrably using the configured OpenAI path:
+    - the Manus modules are DELETED (server/_core/llm.ts,
+      server/openaiIntegration.ts), so no other AI path exists to be used;
+    - a test asserts ./_core/llm and ./openaiIntegration can no longer be
+      imported;
+    - aiAssistant is isAiConfigured(), which reads OPENAI_API_KEY and nothing
+      else, and it flipped from false to true when you set that key;
+    - the request succeeded only after the key was set, having refused with a
+      typed 503 before.
+
+============================================================
+BROWSER RESULT
+============================================================
+
+  All in Chromium against https://buildhub-staging.onrender.com/ai.
+
+  PASS  28. the AI Assistant page renders
+  PASS  28. no unavailable banner is shown on a configured deployment
+  PASS  28. all eight tool cards are enabled  - 0 disabled
+  PASS  28. the message composer accepts input
+  PASS  28. the conversation grows after submitting  - 467 -> 613 chars
+  PASS  28. the page shows no generic failure message
+  PASS  28. the page shows no unavailable message
+  PASS  28. no first-party console or request errors on the AI page
+
+  The rendering proof is deliberately TWO independent checks:
+    1. from the DOM - growth beyond the length of the question the harness
+       itself typed, so it cannot pass on the echo of its own input;
+    2. against the payload - the text on screen is the text the server
+       returned, which catches a UI rendering something else.
+
+============================================================
+COST ESTIMATOR RESULT
+============================================================
+
+  The eight tools are ONE procedure. Cost Estimator, Quantity Surveyor,
+  Material Advisor, Project Manager, Risk Detector, Procurement, Maintenance
+  and General Consultant are the same trpc.ai.chat mutation with a different
+  opening prompt; AI_MODES is a list of {icon, label, prompt}.
+
+  So the live submission went through the composer rather than a specific
+  card, and it proves the path every card uses. The cards themselves are
+  asserted present and ENABLED (0 disabled), which is the part that is
+  card-specific.
+
+  I am stating this plainly rather than claiming "Cost Estimator was clicked":
+  clicking a card fires the same mutation with a canned prompt, and doing it
+  as a second request would have spent a second paid call to prove the same
+  code path.
+
+============================================================
+ARABIC RESULT
+============================================================
+
+  UI: PASS, live.
+    PASS  28. the AI page switches to right-to-left in Arabic  - dir=rtl, lang=ar
+    PASS  28. the document language is Arabic  - lang=ar
+    PASS  28. the AI page renders Arabic text
+
+  Model response in Arabic: NOT LIVE-TESTED. UNIT-TEST LEVEL ONLY.
+
+    Your instruction was "submit one real Arabic question IF THE TEST DESIGN
+    PERMITS IT", against a hard requirement of exactly ONE real provider
+    request. The design does not permit both, so the one request went to the
+    English path and Arabic is proven at the UI layer only.
+
+    What that leaves unproven: that the model answers an Arabic question in
+    Arabic. The conversation is passed through unchanged and the system prompt
+    instructs bilingual answering, but no Arabic question has reached OpenAI
+    from this deployment. Say the word and I will run one additional Arabic
+    request - it is one more call, seconds of work, and I did not take that
+    decision on your behalf.
+
+============================================================
+ALL EIGHT AI TOOLS
+============================================================
+
+  Tool                | Status  | Evidence
+  --------------------|---------|------------------------------------------
+  Cost Estimator      | WORKING | rendered + enabled; shared path proven live
+  Quantity Surveyor   | WORKING | rendered + enabled; shared path proven live
+  Material Advisor    | WORKING | rendered + enabled; shared path proven live
+  Project Manager     | WORKING | rendered + enabled; shared path proven live
+  Risk Detector       | WORKING | rendered + enabled; shared path proven live
+  Procurement         | WORKING | rendered + enabled; shared path proven live
+  Maintenance         | WORKING | rendered + enabled; shared path proven live
+  General Consultant  | WORKING | rendered + enabled; shared path proven live
+
+  Each row is: asserted by name in the browser, asserted enabled (0 of 8
+  disabled), and backed by a live 200 with real content on the single
+  procedure all eight invoke.
+
+============================================================
+SECURITY RESULT
+============================================================
+
+  PASS  28/13. the AI response payload contains no OPENAI_API_KEY
+  PASS  28/13. the AI response payload contains no api.openai.com
+  PASS  28/13. the AI response payload contains no Bearer
+  PASS  28/13. the AI response payload contains no sk-proj
+  PASS  28/13. the AI response payload contains no at Object.
+  PASS  28/13. the delivered AI page contains no OPENAI_API_KEY
+  PASS  28/13. the delivered AI page contains no api.openai.com
+  PASS  28/13. the delivered AI page contains no Bearer
+  PASS  28/13. the delivered AI page contains no API-key-shaped string
+  PASS  28/13. no credential appears in browser console output
+  PASS  21. the delivered page contains no JWT_SECRET / DATABASE_URL /
+        SMTP_PASSWORD / S3_SECRET / mysql:// / BEGIN PRIVATE KEY
+  PASS  21. errors carry no stack trace or filesystem path
+
+  These are now assertions against a LIVE SUCCESSFUL response carrying real
+  model output, not against an error page - which is the stronger test.
+
+  Prompt logging: the server-side classifier records a category and a numeric
+  status and never the underlying message, because the provider error string
+  interpolates the response body. Unit-tested with a fixture containing a fake
+  budget figure and a fake Bearer token.
+
+  The key was never printed, echoed, logged or inspected at any point in this
+  task. Its presence was inferred solely from the aiAssistant boolean.
+
+============================================================
+REMAINING SKIPS
+============================================================
+
+  FOUR, and the AI skip is GONE.
+
+    SMTP               password reset (SMTP_HOST unset)
+    S3                 bucket round trip (S3_* unset)
+    empty catalogue    product database columns (no products on staging)
+    category filtering filter over an empty set
+
+  For the first time in this engagement there is no AI-related skip. The
+  provider round trip is a PASS.
+
+============================================================
+OAUTH WARNING CLASSIFICATION
+============================================================
+
+  PRE-EXISTING, NON-BLOCKING, DELIBERATE. It does NOT affect the AI path.
+
+  Evidence rather than assertion:
+
+    - Source: server/_core/sdk.ts:37, inside the OAuthService CONSTRUCTOR. It
+      is a bare console.error. There is no throw, no process.exit and no
+      rejected promise, which is why the service started and is live.
+    - Intent: render.yaml sets OAUTH_SERVER_URL to "" with the comment "Left
+      unset on purpose. auth.capabilities then reports OAuth as unavailable
+      and the UI hides that door - first-party email and password sign-in has
+      been the primary path since Slice 3."
+    - Consistency: the same run reports "oauthSignIn": false, and the sign-in
+      page hides the OAuth door accordingly.
+    - Independence from AI: nothing on the /ai path references OAuth. The
+      chain is AIAssistantPage -> trpc.ai.chat -> aiChatProcedure ->
+      generateAIResponse -> the OpenAI SDK. Grepping the AI path for oauth
+      returns nothing.
+    - Decisive: the AI request SUCCEEDED with this warning present. Whatever
+      the warning is, it is not standing between BuildHub and OpenAI.
+
+  The one fair criticism is the log LEVEL: an intended configuration is being
+  announced as ERROR, which is how a benign line ends up in an incident
+  report. Not changed - you said not to touch it, and it is cosmetic.
+
+============================================================
+WHAT WENT WRONG ON THE WAY, AND WHY IT MATTERED
+============================================================
+
+  Three runs, and neither of the first two was an application fault.
+
+  Run #32  http 429 in 4725ms   FAILURE
+    A real provider refusal. NOT converted to a skip - the gate went red, as
+    designed. The 4725ms already ruled out BuildHub's own AI limiter, which
+    rejects in about a millisecond with no network and a different message.
+
+  Run #33  http 200 in 1343ms   FAILURE (harness)
+    The request SUCCEEDED. The harness reported "answer length: 0 chars" on a
+    200 whose conversation had grown by 136 characters on screen in the same
+    run - lines that contradict each other, which is what gave it away. A 200
+    from ai.chat cannot carry empty content; the router throws instead.
+
+    Cause: client/src/main.tsx uses httpBatchLink, so the BROWSER's response
+    body is a tRPC batch ARRAY. Reading .result off an array yields undefined.
+    The harness's own post() gets the bare object, so the bug only appeared
+    once the paid call moved into the browser.
+
+    Nothing changed on the deployment between #32 and #33, which is also what
+    establishes #32's 429 as transient provider throttling rather than a
+    configuration fault.
+
+  Run #34  http 200 in 3321ms   SUCCESS, 343/343
+
+  The rendering proof no longer depends on that parse at all: it is asserted
+  from the DOM first, with the payload cross-check kept as a second,
+  independent check.
+
+============================================================
+TESTS AND BUILD
+============================================================
+
+  npx tsc --noEmit    exit 0
+  npx vitest run      1341/1341 across 68 files
+  npm run build       exit 0
+  Gate's own tests    40/40
+  CI on PR #17        6/6 SUCCESS
+
+  Negative controls on the AI gate, all killed: softening a configured
+  provider failure into a skip; removing the rendered-on-screen assertion;
+  bypassing the UI for a bare API call; using an anonymous browser context;
+  and mishandling the batch envelope.
+
+============================================================
+REMAINING BLOCKERS
+============================================================
+
+  FOR AI: NONE.
+
+  Not blockers, but worth your judgement:
+    - Arabic model response is unproven live (see ARABIC RESULT). One extra
+      call fixes it if you want it.
+    - Provider throttling is real and observed. One 429 in three attempts on a
+      newly configured key. The gate treats it as a failure, correctly, so a
+      transient 429 will occasionally turn a run red. That is the honest
+      behaviour, not a defect.
+
+  Production infrastructure blockers, unchanged and NOT AI issues:
+    P1 domain/DNS/TLS · P2 database · P3 host · P4 backups+tested restore ·
+    P5 S3 · P6 SMTP - all OPEN.
+
+============================================================
+PRODUCTION IMPACT
+============================================================
+
+  Production touched: NO. No production database, host, S3, SMTP, domain,
+  payments or credentials. No Render environment variable was added, changed
+  or read by me - you set OPENAI_API_KEY yourself. Pricing, RFQ visibility,
+  admin permissions and vendor approval are untouched.
+
+============================================================
+DECISION
+============================================================
+
+  AI STAGING:       GO
+
+    The assistant answers. A real construction question went through the real
+    UI to OpenAI and came back as real content rendered on screen, with zero
+    failures across 343 checks and no credential anywhere the browser can see.
+
+  OVERALL STAGING:  GO
+
+    Your rule was that staging is not green until AI works. AI works. 343/343
+    passed, 0 failed, and the 4 remaining skips are the long-standing
+    environment gaps - SMTP, S3 and an empty product catalogue - none of which
+    is a code defect.
+
+  PRODUCTION:       NO-GO
+
+    P1 through P6 remain open. No production infrastructure exists.
+
+============================================================
+NEXT ACTION
+============================================================
+
+  AI is now VERIFIED. I have stopped.
+
+  I have NOT started production infrastructure work and will not without an
+  explicit instruction.
+
+  What is yours to decide:
+    1. Whether to spend one more provider call proving an Arabic answer.
+    2. Whether OVERALL STAGING: GO is accepted, which is the gate to the
+       production-infrastructure phase.
+    3. Whether the OAuth line should be downgraded from ERROR to INFO - a
+       one-line cosmetic change I did not make.
+
+  Classification:
+    VERIFIED        the live provider round trip; the rendered answer; all
+                    eight tools present and enabled; Arabic UI (dir=rtl,
+                    lang=ar); secret safety in payload, page and console;
+                    343/343 with 0 failures; tsc, 1341 tests, build
+    NOT VERIFIED    that the model answers an Arabic question in Arabic
+    DEFERRED        Paymob/payments; F-2 object deletion; monitoring;
+                    the dead server/_core/dataApi.ts
+    USER DECISION   the three items above
+
+STOP.

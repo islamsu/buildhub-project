@@ -41,6 +41,11 @@ const ADMIN_PASSWORD = process.env.STAGING_ADMIN_PASSWORD;
 // instead of merely reporting whatever it found.
 const EXPECT_COMMIT = (process.env.STAGING_EXPECT_COMMIT ?? '').trim();
 
+// Opt-in. The knowledge-priority acceptance suite makes SIX extra paid
+// provider requests, so a routine gate run must not pay for it. Section 29
+// runs only when this is explicitly turned on for an acceptance run.
+const AI_KNOWLEDGE_SUITE = (process.env.STAGING_AI_KNOWLEDGE_SUITE ?? '').trim() === 'true';
+
 let pass = 0, fail = 0, skipped = 0;
 const failures = [];
 const check = (ok, name, detail = '') => {
@@ -1054,7 +1059,7 @@ try {
   //
   // COST CONTROL, stated explicitly because it is a design decision and not an
   // oversight: this run makes AT MOST ONE PAID PROVIDER REQUEST, and it is made
-  // in section 28 THROUGH THE BROWSER.
+  // in section 28 THROUGH THE BROWSER, IN ARABIC.
   //
   // That placement is the whole trick. The proof required is
   // BuildHub -> OpenAI -> real response -> BuildHub -> browser, and a request
@@ -1063,6 +1068,12 @@ try {
   // request yields the status, the returned payload AND the rendered answer. An
   // API call here plus a browser call there would prove the same thing twice and
   // cost twice.
+  //
+  // Arabic rather than English because Arabic is the harder case and the
+  // provider path is language-agnostic: right-to-left layout, a non-Latin
+  // script through the composer, and an answer that has to come back in the
+  // language it was asked in. Proving the hard case proves the shared path.
+  // The English surface is still asserted, free, in its own context.
   //
   // So this section spends nothing. It asserts what is free: the page, what the
   // deployment declares about itself, and the anonymous refusal.
@@ -1144,18 +1155,13 @@ try {
   aiPageB.on('console', m => { if (m.type() === 'error' && !/favicon|third-party/i.test(m.text())) aiErrors.push(m.text()); });
   aiPageB.on('requestfailed', r => { if (r.url().startsWith(BASE)) aiErrors.push(`request failed: ${new URL(r.url()).pathname}`); });
 
-  // Capture the ai.chat exchange off the wire. This is what makes ONE request
-  // serve as both the API-level and the browser-level proof.
-  let aiHttpStatus = 0;
-  let aiPayload = '';
-  const aiBodyRead = [];
+  // COUNTED, not captured. The English surface must cost nothing: merely
+  // loading /ai must not fire an AI request, and the run's single paid call
+  // belongs to the Arabic context below. This counter turns "one request per
+  // run" from a claim in a comment into something the run itself checks.
+  let englishAiRequests = 0;
   aiPageB.on('response', r => {
-    if (!r.url().includes('/api/trpc/ai.chat')) return;
-    aiHttpStatus = r.status();
-    // Push the PROMISE and await it later. Awaiting inside the handler races
-    // the page's own consumption of the body, which is why the first version
-    // reported "no code" on a response that plainly had one.
-    aiBodyRead.push(r.text().then(t => { aiPayload = t; }).catch(() => {}));
+    if (r.url().includes('/api/trpc/ai.chat')) englishAiRequests++;
   });
 
   try {
@@ -1171,127 +1177,155 @@ try {
 
     const bannerShown = /not available|unavailable|غير متاح/i.test(aiText);
     const disabledCards = await aiPageB.locator('[aria-disabled="true"]').count();
-    const composer = aiPageB.locator('textarea').first();
+    const composerEn = aiPageB.locator('textarea').first();
+    const dirEn = await aiPageB.evaluate(() => document.documentElement.getAttribute('dir'));
 
     if (aiConfigured) {
       check(!bannerShown, '28. no unavailable banner is shown on a configured deployment');
       check(disabledCards === 0, '28. all eight tool cards are enabled', `${disabledCards} disabled`);
-      check(await composer.isEnabled(), '28. the message composer accepts input');
-
-      // ══ THE ONE PAID REQUEST ══════════════════════════════════════════
-      const QUESTION = 'Name one material used for a concrete slab. Answer in one short sentence.';
-      const before = await aiPageB.locator('body').innerText();
-      await composer.fill(QUESTION);
-      await composer.press('Enter');
-
-      // The model is a reasoning model; give it room. Waiting on the response
-      // event rather than a fixed sleep so a fast answer does not pad the run.
-      const t0 = Date.now();
-      await aiPageB.waitForResponse(r => r.url().includes('/api/trpc/ai.chat'), { timeout: 120_000 }).catch(() => {});
-      const elapsed = Date.now() - t0;
-      await aiPageB.waitForTimeout(2500);
-
-      await Promise.all(aiBodyRead);
-      // The BROWSER uses httpBatchLink (client/src/main.tsx), so its response
-      // body is a tRPC BATCH ARRAY - [{ result: … }] - not the bare object the
-      // harness's own post() receives. Reading `.result` straight off an array
-      // yields undefined, which is why run #33 reported "answer length: 0
-      // chars" on an HTTP 200 that had plainly worked: the conversation grew
-      // on screen in the same run. Handle both shapes.
-      const aiEnvelope = (() => {
-        try {
-          const parsed = JSON.parse(aiPayload);
-          return Array.isArray(parsed) ? parsed[0] : parsed;
-        } catch { return undefined; }
-      })();
-      const payloadContent = aiEnvelope?.result?.data?.json?.content ?? '';
-      const payloadCode = aiEnvelope?.error?.json?.data?.code ?? '';
-      const payloadMsg = aiEnvelope?.error?.json?.message ?? '';
-
-      console.log(`INFO  28. ai.chat (browser) -> http ${aiHttpStatus}${payloadCode ? ` ${payloadCode}` : ''} in ${elapsed}ms`);
-      console.log(`INFO  28. answer length: ${payloadContent.length} chars`);
-      // The user-facing sentence is category-specific, so printing it in full
-      // is what separates "OpenAI is rate limiting" from "OpenAI is out of
-      // quota" from "BuildHub's own limiter refused" - three different
-      // problems with three different owners. Safe to print: these strings are
-      // written for the browser and name no variable, provider or endpoint.
-      if (aiHttpStatus !== 200) {
-        console.log(`INFO  28. refusal message: ${payloadMsg || '(none captured)'}`);
-        console.log(`INFO  28. payload bytes: ${aiPayload.length}`);
-        // BuildHub's OWN rate limiter says "Too many AI requests. Try again in
-        // Ns." and rejects in about a millisecond without any network. Anything
-        // slower than that, with a different sentence, went to the provider.
-        const ownLimiter = /Too many AI requests/i.test(payloadMsg);
-        console.log(`INFO  28. refused by: ${ownLimiter ? "BuildHub's own AI rate limiter" : 'the provider path'}`);
-      }
-
-      check(aiHttpStatus === 200, '28. the browser AI request succeeds against the configured provider',
-        `http ${aiHttpStatus}${payloadCode ? ` ${payloadCode}` : ''} in ${elapsed}ms${aiHttpStatus !== 200 ? ` — ${payloadMsg.slice(0, 90)}` : ''}`);
-      check(payloadContent.trim().length > 0, '28. BuildHub returns a non-empty AI answer',
-        payloadContent ? `${payloadContent.trim().slice(0, 60)}…` : `no content; ${payloadCode || 'no code'}`);
-
-      // Rendered, not merely returned. Proved from the DOM FIRST, because the
-      // DOM is what the visitor actually sees and it does not depend on the
-      // harness parsing a transport envelope correctly.
-      const after = await aiPageB.locator('body').innerText();
-      check(after.length > before.length, '28. the conversation grows after submitting', `${before.length} -> ${after.length} chars`);
-
-      // Growth beyond the question the harness itself typed. Whatever is left
-      // came from the model, so this is a real answer-on-screen assertion and
-      // not just "the page changed".
-      const grewBy = after.length - before.length - QUESTION.length;
-      check(grewBy > 10, '28. the answer appears on screen, beyond the question that was typed',
-        `${grewBy} chars beyond the ${QUESTION.length}-char question`);
-
-      // Cross-check against the payload when it parses. Belt and braces: the
-      // DOM check above stands on its own if the transport shape ever changes
-      // again, and this one catches a UI that renders something OTHER than
-      // what the server returned.
-      const rendered = payloadContent.trim().slice(0, 24);
-      check(rendered.length > 0 && after.includes(rendered),
-        '28. the rendered answer is the one the server returned',
-        rendered ? `looked for "${rendered}"` : 'payload not parsed - DOM check above is the standalone proof');
-      check(!/Something went wrong/i.test(after), '28. the page shows no generic failure message');
-      check(!/not available on this deployment/i.test(after), '28. the page shows no unavailable message');
-
-      // The answer must not carry provider internals to the browser.
-      for (const leak of ['OPENAI_API_KEY', 'api.openai.com', 'Bearer ', 'sk-proj', 'at Object.']) {
-        check(!aiPayload.includes(leak), `28/13. the AI response payload contains no ${leak.trim()}`);
-      }
+      check(await composerEn.isEnabled(), '28. the message composer accepts input');
+      check(dirEn !== 'rtl', '28. the English surface is left-to-right', `dir=${dirEn}`);
     } else {
       skip('28. a real OpenAI request answers a real question',
         'OPENAI_API_KEY is not configured on this deployment - the provider round trip is NOT proven. Set OPENAI_API_KEY (and optionally OPENAI_MODEL, default gpt-5.6-luna).');
       check(bannerShown, '28. the honest unavailable banner is shown when AI is unconfigured');
       check(disabledCards === 8, '28. all eight tool cards are inert rather than clickable', `${disabledCards} inert`);
-      check(await composer.isDisabled(), '28. the message composer refuses input');
+      check(await composerEn.isDisabled(), '28. the message composer refuses input');
     }
 
-    // Arabic. Free: no second provider request.
+    // ══ ARABIC, and where the run's ONE PAID REQUEST is spent ═══════════════
+    //
+    // Its own context: the language is set before first paint via
+    // addInitScript, with the same session cookie, because ai.chat is a
+    // protectedProcedure.
     //
     // The key is `buildhub_lang` - LanguageContext reads exactly that - and the
-    // assertion is dir=rtl, not "some Arabic characters are present". The first
-    // draft wrote the wrong key and asserted the latter: the page stayed in
-    // English and the check passed anyway, because the navbar's language toggle
-    // is itself labelled العربية. A check that passes on the control that would
-    // SWITCH the language proves nothing about the page.
+    // layout assertion is dir=rtl, never "some Arabic characters are present".
+    // An earlier draft wrote the wrong key and asserted the latter: the page
+    // stayed in English and the check passed anyway, because the navbar's
+    // language toggle is itself labelled العربية. A check that passes on the
+    // control that would SWITCH the language proves nothing about the page.
     const arCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: BASE.includes('127.0.0.1') });
+    if (users.homeowner?.cookie) {
+      const [arName, ...arRest] = users.homeowner.cookie.split('=');
+      await arCtx.addCookies([{
+        name: arName.trim(), value: arRest.join('='), domain: new URL(BASE).hostname,
+        path: '/', httpOnly: true, secure: BASE.startsWith('https'), sameSite: 'None',
+      }]);
+    }
     const arPage = await arCtx.newPage();
+    const arErrors = [];
+    arPage.on('console', m => { if (m.type() === 'error' && !/favicon|third-party/i.test(m.text())) arErrors.push(m.text()); });
+    arPage.on('requestfailed', r => { if (r.url().startsWith(BASE)) arErrors.push(`request failed: ${new URL(r.url()).pathname}`); });
+
+    let arHttpStatus = 0;
+    let arPayload = '';
+    const arBodyRead = [];
+    arPage.on('response', r => {
+      if (!r.url().includes('/api/trpc/ai.chat')) return;
+      arHttpStatus = r.status();
+      // Push the PROMISE and await it after the exchange settles. Awaiting
+      // inside the handler races the page's own consumption of the body.
+      arBodyRead.push(r.text().then(t => { arPayload = t; }).catch(() => {}));
+    });
+
     try {
       await arPage.addInitScript(() => localStorage.setItem('buildhub_lang', 'ar'));
       await arPage.goto(`${BASE}/ai`, { waitUntil: 'domcontentloaded', timeout: 45_000 });
       await arPage.waitForTimeout(2500);
-      const dir = await arPage.evaluate(() => document.documentElement.getAttribute('dir'));
-      const arLang = await arPage.evaluate(() => document.documentElement.getAttribute('lang'));
-      check(dir === 'rtl', '28. the AI page switches to right-to-left in Arabic', `dir=${dir}, lang=${arLang}`);
-      check(arLang === 'ar', '28. the document language is Arabic', `lang=${arLang}`);
-      const arBody = await arPage.locator('body').innerText();
-      check(/[؀-ۿ]/.test(arBody), '28. the AI page renders Arabic text');
+
+      const dirBefore = await arPage.evaluate(() => document.documentElement.getAttribute('dir'));
+      const langBefore = await arPage.evaluate(() => document.documentElement.getAttribute('lang'));
+      check(dirBefore === 'rtl', '28. the AI page switches to right-to-left in Arabic', `dir=${dirBefore}`);
+      check(langBefore === 'ar', '28. the document language is Arabic', `lang=${langBefore}`);
+      const arBodyBefore = await arPage.locator('body').innerText();
+      check(/[؀-ۿ]/.test(arBodyBefore), '28. the AI page renders Arabic text');
+
       if (!aiConfigured) {
-        check(/غير متاح/.test(arBody), '28. the unavailable notice is translated into Arabic');
+        check(/غير متاح/.test(arBodyBefore), '28. the unavailable notice is translated into Arabic');
+      } else {
+        // ══ THE ONE PAID REQUEST ═══════════════════════════════════════════
+        // A genuine Arabic construction question, typed into the real composer.
+        const AR_QUESTION = 'أريد تقديرًا مبدئيًا لتكلفة تشطيب شقة بمساحة 120 متر مربع. ما المعلومات التي تحتاجها مني لإعطائي تقديرًا أدق؟';
+        const arComposer = arPage.locator('textarea').first();
+        check(await arComposer.isEnabled(), '28. the Arabic composer accepts input');
+        await arComposer.fill(AR_QUESTION);
+        await arComposer.press('Enter');
+
+        const t0 = Date.now();
+        await arPage.waitForResponse(r => r.url().includes('/api/trpc/ai.chat'), { timeout: 120_000 }).catch(() => {});
+        const elapsed = Date.now() - t0;
+        await arPage.waitForTimeout(3000);
+        await Promise.all(arBodyRead);
+
+        // The browser uses httpBatchLink (client/src/main.tsx), so its response
+        // body is a tRPC BATCH ARRAY - [{ result: … }] - not the bare object the
+        // harness's own post() receives. Handle both shapes.
+        const arEnvelope = (() => {
+          try {
+            const parsed = JSON.parse(arPayload);
+            return Array.isArray(parsed) ? parsed[0] : parsed;
+          } catch { return undefined; }
+        })();
+        const arContent = arEnvelope?.result?.data?.json?.content ?? '';
+        const arCode = arEnvelope?.error?.json?.data?.code ?? '';
+        const arMsg = arEnvelope?.error?.json?.message ?? '';
+
+        console.log(`INFO  28. ai.chat (Arabic, browser) -> http ${arHttpStatus}${arCode ? ` ${arCode}` : ''} in ${elapsed}ms`);
+        console.log(`INFO  28. Arabic answer length: ${arContent.length} chars`);
+        if (arHttpStatus !== 200) {
+          console.log(`INFO  28. refusal message: ${arMsg || '(none captured)'}`);
+          console.log(`INFO  28. refused by: ${/Too many AI requests/i.test(arMsg) ? "BuildHub's own AI rate limiter" : 'the provider path'}`);
+        }
+
+        check(arHttpStatus === 200, '28. the Arabic AI request succeeds against the configured provider',
+          `http ${arHttpStatus}${arCode ? ` ${arCode}` : ''} in ${elapsed}ms${arHttpStatus !== 200 ? ` — ${arMsg.slice(0, 90)}` : ''}`);
+        check(arContent.trim().length > 0, '28. BuildHub returns a non-empty Arabic answer',
+          arContent ? `${arContent.trim().slice(0, 60)}…` : `no content; ${arCode || 'no code'}`);
+
+        // The ANSWER must be Arabic, not merely the page around it.
+        const arabicChars = (arContent.match(/[؀-ۿ]/g) ?? []).length;
+        check(arabicChars > 20, '28. the answer itself is written in Arabic', `${arabicChars} Arabic characters in the answer`);
+
+        // Not the echo. The answer must differ from the question that was typed.
+        check(arContent.trim() !== AR_QUESTION, '28. the answer is not the question echoed back');
+
+        // Rendered, proved from the DOM and independent of the envelope parse.
+        const arBodyAfter = await arPage.locator('body').innerText();
+        const grewBy = arBodyAfter.length - arBodyBefore.length - AR_QUESTION.length;
+        check(grewBy > 20, '28. the Arabic answer appears on screen, beyond the question that was typed',
+          `${grewBy} chars beyond the ${AR_QUESTION.length}-char question`);
+        const arRendered = arContent.trim().slice(0, 24);
+        check(arRendered.length > 0 && arBodyAfter.includes(arRendered),
+          '28. the rendered Arabic answer is the one the server returned',
+          arRendered ? 'server text found on screen' : 'payload not parsed - the DOM check above is the standalone proof');
+        check(!/Something went wrong/i.test(arBodyAfter), '28. the Arabic page shows no generic failure message');
+        check(!/not available on this deployment|غير متاح/i.test(arBodyAfter), '28. the Arabic page shows no unavailable message');
+
+        // Layout must survive the answer - an RTL page that flips to LTR when
+        // content arrives is a broken Arabic experience, not a working one.
+        const dirAfter = await arPage.evaluate(() => document.documentElement.getAttribute('dir'));
+        check(dirAfter === 'rtl', '28. the page is still right-to-left after the answer renders', `dir=${dirAfter}`);
+
+        for (const leak of ['OPENAI_API_KEY', 'api.openai.com', 'Bearer ', 'sk-proj', 'at Object.', 'node_modules']) {
+          check(!arPayload.includes(leak), `28/13. the Arabic AI response payload contains no ${leak.trim()}`);
+        }
       }
+
+      const arDelivered = await arPage.content();
+      for (const leak of ['OPENAI_API_KEY', 'api.openai.com', 'Bearer ']) {
+        check(!arDelivered.includes(leak), `28/13. the delivered Arabic AI page contains no ${leak.trim()}`);
+      }
+      check(!/\bsk-[A-Za-z0-9]{20,}/.test(arDelivered), '28/13. the delivered Arabic AI page contains no API-key-shaped string');
+      check(!arErrors.some(e => /sk-[A-Za-z0-9]{20,}|OPENAI_API_KEY/i.test(e)), '28/13. no credential appears in Arabic browser console output');
+      check(arErrors.length === 0, '28. no first-party console or request errors on the Arabic AI page',
+        arErrors.slice(0, 2).join(' | ').slice(0, 300));
     } finally {
       await arCtx.close();
     }
+
+    check(englishAiRequests === 0, '28. loading the AI page costs nothing - no request until one is sent',
+      `${englishAiRequests} ai.chat request(s) on the English surface`);
 
     const delivered = await aiPageB.content();
     for (const leak of ['OPENAI_API_KEY', 'api.openai.com', 'Bearer ']) {
@@ -1307,6 +1341,102 @@ try {
       aiErrors.slice(0, 2).join(' | ').slice(0, 300));
   } finally {
     await aiCtx.close();
+  }
+
+  // ── 29. BuildHub knowledge priority (OPT-IN, SIX PAID REQUESTS) ──────────
+  //
+  // Off unless STAGING_AI_KNOWLEDGE_SUITE=true, because these are the only
+  // checks in the gate that cost more than one provider call.
+  //
+  // HOW THIS PROVES GROUNDING RATHER THAN VIBES. "The model seems to know
+  // BuildHub" is not evidence. Each BuildHub question here has an answer
+  // containing a NUMBER that exists only in BuildHub's own source - the
+  // Professional price, the free plan's monthly enquiry allowance, the trial
+  // length. A model answering from general knowledge cannot produce 499 EGP;
+  // if it appears, the briefing demonstrably reached the model and was used.
+  if (AI_KNOWLEDGE_SUITE) {
+    section('29. BuildHub knowledge priority (live)');
+
+    const ask = async (question, lang) => {
+      const t0 = Date.now();
+      const r = await post('ai.chat', { messages: [{ role: 'user', content: question }], lang }, users.homeowner?.cookie);
+      const answer = json(r.t)?.content ?? '';
+      let code = '';
+      try { code = JSON.parse(r.t)?.error?.json?.data?.code ?? ''; } catch { /* success envelope */ }
+      return { s: r.s, answer, code, ms: Date.now() - t0 };
+    };
+    const arabic = text => (text.match(/[؀-ۿ]/g) ?? []).length;
+
+    // 1. A normal construction question - the general-expertise path.
+    const q1 = await ask('What is a reasonable concrete cover for reinforcement in a foundation exposed to soil?', 'en');
+    console.log(`INFO  29.1 general construction -> http ${q1.s} in ${q1.ms}ms, ${q1.answer.length} chars`);
+    check(q1.s === 200 && q1.answer.length > 40, '29.1 a general construction question gets a real expert answer',
+      q1.answer ? `${q1.answer.slice(0, 60)}…` : `http ${q1.s} ${q1.code}`);
+
+    // 2. A BuildHub question whose answer is in BuildHub's own source.
+    const q2 = await ask('On BuildHub, how many qualified enquiries per month does the free vendor plan include?', 'en');
+    console.log(`INFO  29.2 BuildHub fact -> http ${q2.s} in ${q2.ms}ms`);
+    check(q2.s === 200 && /\b5\b/.test(q2.answer),
+      '29.2 a BuildHub fact is answered from BuildHub content (the free plan allowance)',
+      q2.answer ? `${q2.answer.slice(0, 90)}…` : `http ${q2.s} ${q2.code}`);
+
+    // 3. The tricky one: a generic marketplace assumption, contradicted.
+    const q3 = await ask('Most construction marketplaces charge the customer a fee to post a request for quotation. Does BuildHub charge customers to submit an RFQ?', 'en');
+    console.log(`INFO  29.3 tricky conflict -> http ${q3.s} in ${q3.ms}ms`);
+    check(q3.s === 200 && /free|no charge|does not charge|no fee/i.test(q3.answer),
+      '29.3 BuildHub content beats the generic marketplace assumption',
+      q3.answer ? `${q3.answer.slice(0, 110)}…` : `http ${q3.s} ${q3.code}`);
+
+    // 4. Something BuildHub genuinely does not publish. The assistant must say
+    //    so rather than invent a policy.
+    const q4 = await ask('What is BuildHub\'s refund policy if a vendor cancels a subscription halfway through a paid month?', 'en');
+    console.log(`INFO  29.4 not covered -> http ${q4.s} in ${q4.ms}ms`);
+    check(q4.s === 200 && /not specify|does not specify|not specified|no published|not stated|does not state|not published/i.test(q4.answer),
+      '29.4 an unpublished point is acknowledged, not invented',
+      q4.answer ? `${q4.answer.slice(0, 110)}…` : `http ${q4.s} ${q4.code}`);
+    check(q4.s === 200 && !/refund policy is|BuildHub refunds/i.test(q4.answer),
+      '29.4 no BuildHub refund policy is fabricated');
+
+    // 5 and 6. THE SAME BuildHub question in both languages. Same source, same
+    //    number, different answer language - which is the whole requirement.
+    //
+    // The expected price is read from the DEPLOYMENT's own billing.plans, not
+    // from this repository. So the assertion is "the assistant's answer agrees
+    // with what this staging build actually serves on its pricing page" - which
+    // is the claim worth making, and it cannot pass by coincidence: a model
+    // answering from general knowledge has no way to produce this number.
+    const planDoc = json((await get('billing.plans')).t);
+    const professional = (planDoc?.plans ?? []).find(plan => plan.id === 'professional');
+    const PRICE = String(professional?.standard?.month ?? '');
+    console.log(`INFO  29. professional monthly price served by this deployment: ${PRICE || 'unknown'} ${planDoc?.currency ?? ''}`);
+    check(PRICE.length > 0, '29. the deployment publishes a Professional monthly price to check the answer against', PRICE);
+    const q5 = await ask('كم تبلغ تكلفة خطة Professional الشهرية على BuildHub؟', 'ar');
+    console.log(`INFO  29.5 Arabic BuildHub fact -> http ${q5.s} in ${q5.ms}ms, ${arabic(q5.answer)} Arabic chars`);
+    check(q5.s === 200 && q5.answer.includes(PRICE),
+      `29.5 the Arabic answer carries BuildHub's own price (${PRICE} EGP)`,
+      q5.answer ? `${q5.answer.slice(0, 90)}…` : `http ${q5.s} ${q5.code}`);
+    check(q5.s === 200 && arabic(q5.answer) > 20, '29.5 the Arabic question is answered in Arabic',
+      `${arabic(q5.answer)} Arabic characters`);
+
+    const q6 = await ask('How much does the Professional plan cost per month on BuildHub?', 'en');
+    console.log(`INFO  29.6 English BuildHub fact -> http ${q6.s} in ${q6.ms}ms, ${arabic(q6.answer)} Arabic chars`);
+    check(q6.s === 200 && q6.answer.includes(PRICE),
+      `29.6 the English answer carries the SAME BuildHub price (${PRICE} EGP)`,
+      q6.answer ? `${q6.answer.slice(0, 90)}…` : `http ${q6.s} ${q6.code}`);
+    check(q6.s === 200 && arabic(q6.answer) === 0, '29.6 the English question is answered in English',
+      `${arabic(q6.answer)} Arabic characters`);
+
+    // The knowledge source did not change with the language. That is the claim.
+    check(q5.answer.includes(PRICE) && q6.answer.includes(PRICE),
+      '29. the same authoritative fact reaches both languages - only the wording changes');
+
+    for (const leak of ['OPENAI_API_KEY', 'api.openai.com', 'Bearer ', 'JWT_SECRET', 'DATABASE_URL', 'SUPER_ADMIN', 'passwordHash']) {
+      const all = [q1, q2, q3, q4, q5, q6].map(q => q.answer).join(' ');
+      check(!all.includes(leak), `29/13. no AI answer exposes ${leak.trim()}`);
+    }
+  } else {
+    skip('29. BuildHub knowledge priority (live)',
+      'opt-in: this suite makes six extra paid provider requests. Dispatch with ai_knowledge_suite=true to run it.');
   }
 
   section('21. Secret exposure');

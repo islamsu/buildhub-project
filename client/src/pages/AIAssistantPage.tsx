@@ -7,26 +7,24 @@ import { trpc } from '@/lib/trpc';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+// The eight tools. `labelKey` and `promptKey` rather than literals: the tool
+// names used to render in English on an Arabic page, and the opening prompt was
+// sent in English no matter which language the person had chosen.
 const AI_MODES = [
-  { icon: Calculator, label: 'Cost Estimator', prompt: 'Help me estimate the cost of my construction project', color: 'text-blue-500' },
-  { icon: Layers, label: 'Quantity Surveyor', prompt: 'Calculate material quantities for my project', color: 'text-green-500' },
-  { icon: Lightbulb, label: 'Material Advisor', prompt: 'Recommend the best materials for my project', color: 'text-amber-500' },
-  { icon: TrendingUp, label: 'Project Manager', prompt: 'Help me plan and schedule my construction project', color: 'text-purple-500' },
-  { icon: AlertTriangle, label: 'Risk Detector', prompt: 'Identify potential risks and delays in my project', color: 'text-red-500' },
-  { icon: ShoppingCart, label: 'Procurement', prompt: 'Help me optimize my procurement strategy', color: 'text-indigo-500' },
-  { icon: Wrench, label: 'Maintenance', prompt: 'Create a maintenance schedule for my property', color: 'text-orange-500' },
-  { icon: Bot, label: 'General Consultant', prompt: 'I have a general question about construction', color: 'text-teal-500' },
+  { icon: Calculator, labelKey: 'ai.mode.cost', promptKey: 'ai.mode.cost.prompt', color: 'text-blue-500' },
+  { icon: Layers, labelKey: 'ai.mode.quantity', promptKey: 'ai.mode.quantity.prompt', color: 'text-green-500' },
+  { icon: Lightbulb, labelKey: 'ai.mode.material', promptKey: 'ai.mode.material.prompt', color: 'text-amber-500' },
+  { icon: TrendingUp, labelKey: 'ai.mode.pm', promptKey: 'ai.mode.pm.prompt', color: 'text-purple-500' },
+  { icon: AlertTriangle, labelKey: 'ai.mode.risk', promptKey: 'ai.mode.risk.prompt', color: 'text-red-500' },
+  { icon: ShoppingCart, labelKey: 'ai.mode.procurement', promptKey: 'ai.mode.procurement.prompt', color: 'text-indigo-500' },
+  { icon: Wrench, labelKey: 'ai.mode.maintenance', promptKey: 'ai.mode.maintenance.prompt', color: 'text-orange-500' },
+  { icon: Bot, labelKey: 'ai.mode.general', promptKey: 'ai.mode.general.prompt', color: 'text-teal-500' },
 ];
 
-const SYSTEM_PROMPT = `You are BuildHub AI — an expert construction and home improvement assistant. You help users with:
-- Cost estimation and quantity surveying for construction projects in Egypt and the GCC
-- Material selection and recommendations (local and international brands)
-- Project planning, scheduling, and risk assessment
-- Procurement advice and vendor evaluation
-- Building regulations and best practices
-- Interior design and finishing guidance
-
-Always provide practical, actionable advice. When estimating costs, mention that prices are approximate and vary by location. Be concise but thorough. Support both English and Arabic queries.`;
+// No SYSTEM_PROMPT here on purpose. The server builds it - the source
+// hierarchy, the BuildHub briefing derived from live product data, and the
+// rules the assistant may not break - and DISCARDS any system message a client
+// sends. Grounding that the browser could edit is not grounding.
 
 export default function AIAssistantPage() {
   const { t, lang } = useLanguage();
@@ -38,7 +36,6 @@ export default function AIAssistantPage() {
   const { data: capabilities } = trpc.auth.capabilities.useQuery();
   const aiUnavailable = capabilities?.aiAssistant === false;
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'system', content: SYSTEM_PROMPT },
     { role: 'assistant', content: lang === 'ar' ? 'مرحباً! أنا BuildHub AI. يمكنني مساعدتك في تقدير التكاليف واختيار المواد وتخطيط المشاريع وتقييم المخاطر والمزيد. بماذا تريد أن تعرف؟' : "Hello! I'm BuildHub AI. I can help you with cost estimation, material selection, project planning, risk assessment, and much more. What would you like to know?" },
   ]);
 
@@ -52,7 +49,7 @@ export default function AIAssistantPage() {
   const handleSend = (content: string) => {
     const newMessages: Message[] = [...messages, { role: 'user', content }];
     setMessages(newMessages);
-    chatMutation.mutate({ messages: newMessages });
+    chatMutation.mutate({ messages: newMessages, lang });
   };
 
   const handleModeClick = (prompt: string) => {
@@ -83,14 +80,14 @@ export default function AIAssistantPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
             {AI_MODES.map((mode) => (
               <Card
-                key={mode.label}
+                key={mode.labelKey}
                 aria-disabled={aiUnavailable}
                 className={`border-border ${aiUnavailable ? 'opacity-50 pointer-events-none' : 'card-hover cursor-pointer hover:border-primary/30'}`}
-                onClick={() => { if (!aiUnavailable) handleModeClick(mode.prompt); }}
+                onClick={() => { if (!aiUnavailable) handleModeClick(t(mode.promptKey)); }}
               >
                 <CardContent className="p-4 text-center">
                   <mode.icon className={`w-6 h-6 mx-auto mb-2 ${mode.color}`} />
-                  <p className="text-sm font-medium">{mode.label}</p>
+                  <p className="text-sm font-medium">{t(mode.labelKey)}</p>
                 </CardContent>
               </Card>
             ))}
@@ -104,10 +101,9 @@ export default function AIAssistantPage() {
               disabled={aiUnavailable}
               placeholder={lang === 'ar' ? 'اسأل عن التكاليف، المواد، تخطيط المشاريع...' : 'Ask about costs, materials, project planning...'}
               suggestedPrompts={[
-                'Estimate cost for a 200m² apartment finishing',
-                'What materials do I need for a kitchen renovation?',
-                'How do I manage a construction project timeline?',
-                'What are common construction risks in Egypt?',
+                t('ai.suggestion.1'),
+                t('ai.suggestion.2'),
+                t('ai.suggestion.3'),
               ]}
             />
           </div>
