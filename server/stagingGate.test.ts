@@ -418,9 +418,19 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
     expect(UNCONFIGURED).not.toContain('succeeds against the configured provider');
   });
 
+  it('the batched tRPC envelope is handled - the browser does not send bare objects', () => {
+    // client/src/main.tsx uses httpBatchLink, so the response body is an array.
+    expect(EXECUTABLE).toContain('Array.isArray(parsed) ? parsed[0] : parsed');
+  });
+
   it('the configured branch proves the answer was RENDERED, not merely returned', () => {
     // Returning JSON the browser never displays is not a working assistant.
-    expect(CONFIGURED).toContain('the AI answer is rendered on screen');
+    // Two independent proofs. The DOM one must not depend on the harness
+    // parsing a transport envelope: the browser batches its tRPC calls, and a
+    // parse that missed that reported "answer length: 0 chars" on a request
+    // that had plainly worked.
+    expect(CONFIGURED).toContain('the answer appears on screen, beyond the question that was typed');
+    expect(CONFIGURED).toContain('the rendered answer is the one the server returned');
     expect(CONFIGURED).toContain('after.includes(rendered)');
     expect(CONFIGURED).toContain('the page shows no generic failure message');
   });

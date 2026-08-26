@@ -1192,11 +1192,21 @@ try {
       await aiPageB.waitForTimeout(2500);
 
       await Promise.all(aiBodyRead);
-      let payloadContent = '';
-      let payloadCode = '';
-      try { payloadContent = JSON.parse(aiPayload)?.result?.data?.json?.content ?? ''; } catch { /* not a success envelope */ }
-      try { payloadCode = JSON.parse(aiPayload)?.error?.json?.data?.code ?? ''; } catch { /* not an error envelope */ }
-      const payloadMsg = (() => { try { return JSON.parse(aiPayload)?.error?.json?.message ?? ''; } catch { return ''; } })();
+      // The BROWSER uses httpBatchLink (client/src/main.tsx), so its response
+      // body is a tRPC BATCH ARRAY - [{ result: … }] - not the bare object the
+      // harness's own post() receives. Reading `.result` straight off an array
+      // yields undefined, which is why run #33 reported "answer length: 0
+      // chars" on an HTTP 200 that had plainly worked: the conversation grew
+      // on screen in the same run. Handle both shapes.
+      const aiEnvelope = (() => {
+        try {
+          const parsed = JSON.parse(aiPayload);
+          return Array.isArray(parsed) ? parsed[0] : parsed;
+        } catch { return undefined; }
+      })();
+      const payloadContent = aiEnvelope?.result?.data?.json?.content ?? '';
+      const payloadCode = aiEnvelope?.error?.json?.data?.code ?? '';
+      const payloadMsg = aiEnvelope?.error?.json?.message ?? '';
 
       console.log(`INFO  28. ai.chat (browser) -> http ${aiHttpStatus}${payloadCode ? ` ${payloadCode}` : ''} in ${elapsed}ms`);
       console.log(`INFO  28. answer length: ${payloadContent.length} chars`);
@@ -1220,13 +1230,27 @@ try {
       check(payloadContent.trim().length > 0, '28. BuildHub returns a non-empty AI answer',
         payloadContent ? `${payloadContent.trim().slice(0, 60)}…` : `no content; ${payloadCode || 'no code'}`);
 
-      // Rendered, not merely returned. The answer must be on screen and must
-      // not be the generic failure toast.
+      // Rendered, not merely returned. Proved from the DOM FIRST, because the
+      // DOM is what the visitor actually sees and it does not depend on the
+      // harness parsing a transport envelope correctly.
       const after = await aiPageB.locator('body').innerText();
       check(after.length > before.length, '28. the conversation grows after submitting', `${before.length} -> ${after.length} chars`);
+
+      // Growth beyond the question the harness itself typed. Whatever is left
+      // came from the model, so this is a real answer-on-screen assertion and
+      // not just "the page changed".
+      const grewBy = after.length - before.length - QUESTION.length;
+      check(grewBy > 10, '28. the answer appears on screen, beyond the question that was typed',
+        `${grewBy} chars beyond the ${QUESTION.length}-char question`);
+
+      // Cross-check against the payload when it parses. Belt and braces: the
+      // DOM check above stands on its own if the transport shape ever changes
+      // again, and this one catches a UI that renders something OTHER than
+      // what the server returned.
       const rendered = payloadContent.trim().slice(0, 24);
       check(rendered.length > 0 && after.includes(rendered),
-        '28. the AI answer is rendered on screen', rendered ? `looked for "${rendered}"` : 'no answer to look for');
+        '28. the rendered answer is the one the server returned',
+        rendered ? `looked for "${rendered}"` : 'payload not parsed - DOM check above is the standalone proof');
       check(!/Something went wrong/i.test(after), '28. the page shows no generic failure message');
       check(!/not available on this deployment/i.test(after), '28. the page shows no unavailable message');
 
