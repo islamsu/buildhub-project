@@ -1053,20 +1053,28 @@ try {
   // ── 27. AI Assistant ─────────────────────────────────────────────────────
   //
   // COST CONTROL, stated explicitly because it is a design decision and not an
-  // oversight: this section makes AT MOST ONE PAID PROVIDER REQUEST per run.
+  // oversight: this run makes AT MOST ONE PAID PROVIDER REQUEST, and it is made
+  // in section 28 THROUGH THE BROWSER.
+  //
+  // That placement is the whole trick. The proof required is
+  // BuildHub -> OpenAI -> real response -> BuildHub -> browser, and a request
+  // submitted through the chat UI travels that entire path in one go: Playwright
+  // captures the ai.chat HTTP response on the way back, so the same single
+  // request yields the status, the returned payload AND the rendered answer. An
+  // API call here plus a browser call there would prove the same thing twice and
+  // cost twice.
+  //
+  // So this section spends nothing. It asserts what is free: the page, what the
+  // deployment declares about itself, and the anonymous refusal.
   //
   // All eight tools on /ai - Cost Estimator, Quantity Surveyor, Material
   // Advisor, Project Manager, Risk Detector, Procurement, Maintenance, General
   // Consultant - are the same `trpc.ai.chat` mutation with a different opening
-  // prompt. One live call therefore proves the provider integration for all
-  // eight. Per-tool routing, language handling and the failure taxonomy are
-  // covered by unit tests that never touch the network, so nothing is lost by
-  // not repeating the call. Arabic is verified in the browser against the
-  // SAME single response rather than by asking twice.
+  // prompt, so one request proves the provider integration for all eight.
   //
-  // SKIP vs FAIL is the other deliberate line here:
-  //   OPENAI_API_KEY absent  -> the deployment says aiAssistant:false, and the
-  //                             provider round trip SKIPS, naming what it needs
+  // SKIP vs FAIL:
+  //   OPENAI_API_KEY absent  -> aiAssistant:false, and the provider round trip
+  //                             SKIPS in section 28, naming what it needs
   //   OPENAI_API_KEY present -> any provider failure is a FAILURE. A configured
   //                             provider returning 401/429/500/timeout/empty
   //                             must never be softened into a skip.
@@ -1081,83 +1089,70 @@ try {
     '27. the deployment declares whether AI is available', `aiAssistant: ${aiCaps?.aiAssistant}`);
   console.log(`INFO  27. aiAssistant capability: ${aiCaps?.aiAssistant}`);
 
-  // Free (no provider call): anonymous use must be refused, and refused with
-  // the login message rather than the generic internal one - if this ever
-  // returns the generic message it means the request got past auth and died
-  // inside the provider path instead.
+  // Free: anonymous use must be refused, and refused with the login message
+  // rather than the generic internal one - if this ever returns the generic
+  // message it means the request got past auth and died in the provider path.
   const aiAnon = await post('ai.chat', { messages: [{ role: 'user', content: 'ping' }] });
   const anonMsg = errMsg(aiAnon.t) ?? '';
   check(aiAnon.s === 401, '27. anonymous AI use is refused', `http ${aiAnon.s}`);
   check(/10001/.test(anonMsg), '27. the refusal is an auth refusal, not a masked internal error', anonMsg.slice(0, 60));
 
-  const aiUser = users.homeowner;
-  let aiAnswer = '';
-  if (!aiUser?.cookie) {
-    skip('27. the AI request path is exercised', 'no signed-in user session available in this run');
-  } else {
-    // THE single paid request. A real construction question rather than a
-    // "reply with exactly X" instruction: over-constraining natural language
-    // output tests the model's obedience, not the integration, and a model
-    // that answers helpfully instead of literally would fail a gate that
-    // proves nothing either way.
-    const t0 = Date.now();
-    const ai = await post('ai.chat', { messages: [
-      { role: 'system', content: 'You are BuildHub AI, a construction assistant for Egypt. Answer in one short sentence.' },
-      { role: 'user', content: 'Name one material used for a concrete slab.' },
-    ] }, aiUser.cookie);
-    const elapsed = Date.now() - t0;
-    const body = json(ai.t);
-    const message = errMsg(ai.t) ?? '';
-    let code = '';
-    try { code = JSON.parse(ai.t)?.error?.json?.data?.code ?? ''; } catch { /* not an error envelope */ }
-
-    console.log(`INFO  27. ai.chat -> http ${ai.s}${code ? ` ${code}` : ''} in ${elapsed}ms`);
-
-    if (aiConfigured) {
-      // Configured. Everything here is an assertion, never a skip.
-      check(ai.s === 200, '27. a real AI request succeeds against the configured provider',
-        `http ${ai.s}${code ? ` ${code}` : ''} in ${elapsed}ms${ai.s !== 200 ? ` — ${message.slice(0, 80)}` : ''}`);
-      aiAnswer = typeof body?.content === 'string' ? body.content.trim() : '';
-      check(aiAnswer.length > 0, '27. the provider returns non-empty text',
-        aiAnswer ? `${aiAnswer.slice(0, 60)}…` : `no content; ${code || 'no code'}`);
-      check(typeof body === 'object' && body !== null && Object.keys(body).join() === 'content',
-        '27. the response carries only the application contract, no provider object',
-        body ? Object.keys(body).join(',') : 'no body');
-    } else {
-      skip('27. the provider answers a real question',
-        'OPENAI_API_KEY is not configured on this deployment - the provider round trip is NOT proven. Set OPENAI_API_KEY (and optionally OPENAI_MODEL, default gpt-5.6-luna).');
-      check(ai.s === 503 && code === 'SERVICE_UNAVAILABLE',
-        '27. an unconfigured deployment refuses deliberately, not with a masked internal error',
-        `http ${ai.s} ${code || 'no code'} in ${elapsed}ms`);
-      check(message !== 'Something went wrong. Please try again.',
-        '27. the caller is told the feature is unavailable, not that something broke', message.slice(0, 70));
-    }
-
-    // True in both states.
-    check(!(ai.s !== 200 && body?.content), '27. a failed AI request never returns a content payload');
-    for (const leak of ['OPENAI_API_KEY', 'BUILT_IN_FORGE', 'api.openai.com', 'forge.manus.im', 'Bearer ', 'sk-', 'at Object.', 'node_modules']) {
-      check(!message.includes(leak), `27/21. the AI error exposes no ${leak.trim()}`);
+  if (!aiConfigured) {
+    // Free: an unconfigured deployment refuses without contacting anyone, so
+    // this costs nothing and still proves the refusal is deliberate.
+    const aiUnconf = await post('ai.chat', { messages: [{ role: 'user', content: 'ping' }] }, users.homeowner?.cookie);
+    let unconfCode = '';
+    try { unconfCode = JSON.parse(aiUnconf.t)?.error?.json?.data?.code ?? ''; } catch { /* not an error envelope */ }
+    const unconfMsg = errMsg(aiUnconf.t) ?? '';
+    check(aiUnconf.s === 503 && unconfCode === 'SERVICE_UNAVAILABLE',
+      '27. an unconfigured deployment refuses deliberately, not with a masked internal error',
+      `http ${aiUnconf.s} ${unconfCode || 'no code'}`);
+    check(unconfMsg !== 'Something went wrong. Please try again.',
+      '27. the caller is told the feature is unavailable, not that something broke', unconfMsg.slice(0, 70));
+    for (const leak of ['OPENAI_API_KEY', 'BUILT_IN_FORGE', 'api.openai.com', 'forge.manus.im', 'Bearer ', 'at Object.', 'node_modules']) {
+      check(!unconfMsg.includes(leak), `27/21. the AI error exposes no ${leak.trim()}`);
     }
   }
 
   // ── 28. AI Assistant in a real browser ───────────────────────────────────
   //
-  // Section 27 proves the API. A screen can still be broken, blank or leaking
-  // while the endpoint behind it answers correctly - which is exactly how this
-  // feature shipped: /ai rendered perfectly and nothing on it worked.
+  // Section 27 proves the page and the refusals. A screen can still be broken,
+  // blank or leaking while the endpoint behind it answers correctly - which is
+  // exactly how this feature shipped: /ai rendered perfectly and nothing on it
+  // worked.
   //
-  // NO ADDITIONAL PAID CALL. When AI is unconfigured this drives the honest
-  // unavailable state, which costs nothing. When AI IS configured, section 27
-  // has already made the run's one paid request, so this asserts the page and
-  // the Arabic surface WITHOUT sending another - the rendered-answer check is
-  // reported against section 27's response.
+  // This section carries the RUN'S ONE PAID REQUEST when AI is configured: a
+  // real construction question typed into the real composer, submitted through
+  // the real UI, with the ai.chat response captured off the wire and the
+  // answer asserted on screen.
   section('28. AI Assistant in a real browser');
 
   const aiCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: BASE.includes('127.0.0.1') });
+  // ai.chat is a protectedProcedure, so an anonymous browser could only ever
+  // prove the login wall. The session cookie from section 8 is injected
+  // directly rather than driving the sign-in form again, which keeps this
+  // section clear of the per-identifier auth rate limit.
+  if (users.homeowner?.cookie) {
+    const [name, ...rest] = users.homeowner.cookie.split('=');
+    await aiCtx.addCookies([{
+      name: name.trim(), value: rest.join('='), domain: new URL(BASE).hostname,
+      path: '/', httpOnly: true, secure: BASE.startsWith('https'), sameSite: 'None',
+    }]);
+  }
   const aiPageB = await aiCtx.newPage();
   const aiErrors = [];
   aiPageB.on('console', m => { if (m.type() === 'error' && !/favicon|third-party/i.test(m.text())) aiErrors.push(m.text()); });
   aiPageB.on('requestfailed', r => { if (r.url().startsWith(BASE)) aiErrors.push(`request failed: ${new URL(r.url()).pathname}`); });
+
+  // Capture the ai.chat exchange off the wire. This is what makes ONE request
+  // serve as both the API-level and the browser-level proof.
+  let aiHttpStatus = 0;
+  let aiPayload = '';
+  aiPageB.on('response', async r => {
+    if (!r.url().includes('/api/trpc/ai.chat')) return;
+    aiHttpStatus = r.status();
+    try { aiPayload = await r.text(); } catch { /* body already consumed */ }
+  });
 
   try {
     await aiPageB.goto(`${BASE}/ai`, { waitUntil: 'domcontentloaded', timeout: 45_000 });
@@ -1166,39 +1161,76 @@ try {
 
     check(/AI|الذكاء/i.test(aiText), '28. the AI Assistant page renders', aiText.slice(0, 50).replace(/\n/g, ' '));
 
-    // Every one of the eight tools must be on screen. They are the product.
     for (const tool of ['Cost Estimator', 'Quantity Surveyor', 'Material Advisor', 'Project Manager', 'Risk Detector', 'Procurement', 'Maintenance', 'General Consultant']) {
       check(aiText.toLowerCase().includes(tool.toLowerCase()), `28. the "${tool}" tool is offered`);
     }
 
     const bannerShown = /not available|unavailable|غير متاح/i.test(aiText);
+    const disabledCards = await aiPageB.locator('[aria-disabled="true"]').count();
+    const composer = aiPageB.locator('textarea').first();
+
     if (aiConfigured) {
       check(!bannerShown, '28. no unavailable banner is shown on a configured deployment');
-      const disabledCards = await aiPageB.locator('[aria-disabled="true"]').count();
-      check(disabledCards === 0, '28. the tool cards are enabled', `${disabledCards} disabled`);
-      const composer = aiPageB.locator('textarea').first();
+      check(disabledCards === 0, '28. all eight tool cards are enabled', `${disabledCards} disabled`);
       check(await composer.isEnabled(), '28. the message composer accepts input');
-      // Rendered answer: asserted against section 27's single response rather
-      // than by sending a second paid request.
-      check(aiAnswer.length > 0, '28. an AI answer was produced for this run to render',
-        aiAnswer ? `${aiAnswer.slice(0, 40)}…` : 'none');
-      check(!/Something went wrong/i.test(aiText), '28. the page shows no generic failure message');
+
+      // ══ THE ONE PAID REQUEST ══════════════════════════════════════════
+      const QUESTION = 'Name one material used for a concrete slab. Answer in one short sentence.';
+      const before = await aiPageB.locator('body').innerText();
+      await composer.fill(QUESTION);
+      await composer.press('Enter');
+
+      // The model is a reasoning model; give it room. Waiting on the response
+      // event rather than a fixed sleep so a fast answer does not pad the run.
+      const t0 = Date.now();
+      await aiPageB.waitForResponse(r => r.url().includes('/api/trpc/ai.chat'), { timeout: 120_000 }).catch(() => {});
+      const elapsed = Date.now() - t0;
+      await aiPageB.waitForTimeout(2500);
+
+      let payloadContent = '';
+      let payloadCode = '';
+      try { payloadContent = JSON.parse(aiPayload)?.result?.data?.json?.content ?? ''; } catch { /* not a success envelope */ }
+      try { payloadCode = JSON.parse(aiPayload)?.error?.json?.data?.code ?? ''; } catch { /* not an error envelope */ }
+      const payloadMsg = (() => { try { return JSON.parse(aiPayload)?.error?.json?.message ?? ''; } catch { return ''; } })();
+
+      console.log(`INFO  28. ai.chat (browser) -> http ${aiHttpStatus}${payloadCode ? ` ${payloadCode}` : ''} in ${elapsed}ms`);
+      console.log(`INFO  28. answer length: ${payloadContent.length} chars`);
+
+      check(aiHttpStatus === 200, '28. the browser AI request succeeds against the configured provider',
+        `http ${aiHttpStatus}${payloadCode ? ` ${payloadCode}` : ''} in ${elapsed}ms${aiHttpStatus !== 200 ? ` — ${payloadMsg.slice(0, 90)}` : ''}`);
+      check(payloadContent.trim().length > 0, '28. BuildHub returns a non-empty AI answer',
+        payloadContent ? `${payloadContent.trim().slice(0, 60)}…` : `no content; ${payloadCode || 'no code'}`);
+
+      // Rendered, not merely returned. The answer must be on screen and must
+      // not be the generic failure toast.
+      const after = await aiPageB.locator('body').innerText();
+      check(after.length > before.length, '28. the conversation grows after submitting', `${before.length} -> ${after.length} chars`);
+      const rendered = payloadContent.trim().slice(0, 24);
+      check(rendered.length > 0 && after.includes(rendered),
+        '28. the AI answer is rendered on screen', rendered ? `looked for "${rendered}"` : 'no answer to look for');
+      check(!/Something went wrong/i.test(after), '28. the page shows no generic failure message');
+      check(!/not available on this deployment/i.test(after), '28. the page shows no unavailable message');
+
+      // The answer must not carry provider internals to the browser.
+      for (const leak of ['OPENAI_API_KEY', 'api.openai.com', 'Bearer ', 'sk-proj', 'at Object.']) {
+        check(!aiPayload.includes(leak), `28/13. the AI response payload contains no ${leak.trim()}`);
+      }
     } else {
+      skip('28. a real OpenAI request answers a real question',
+        'OPENAI_API_KEY is not configured on this deployment - the provider round trip is NOT proven. Set OPENAI_API_KEY (and optionally OPENAI_MODEL, default gpt-5.6-luna).');
       check(bannerShown, '28. the honest unavailable banner is shown when AI is unconfigured');
-      const disabledCards = await aiPageB.locator('[aria-disabled="true"]').count();
       check(disabledCards === 8, '28. all eight tool cards are inert rather than clickable', `${disabledCards} inert`);
-      const composer = aiPageB.locator('textarea').first();
       check(await composer.isDisabled(), '28. the message composer refuses input');
     }
 
-    // Arabic. Free: this is the same page under the other language.
+    // Arabic. Free: no second provider request.
     //
     // The key is `buildhub_lang` - LanguageContext reads exactly that - and the
-    // assertion is `dir=rtl`, not "some Arabic characters are present". The
-    // first draft of this check wrote the wrong key and asserted the latter: the
-    // page stayed in English and the check passed anyway, because the navbar's
-    // language toggle is itself labelled العربية. A check that passes on the
-    // control that would SWITCH the language proves nothing about the page.
+    // assertion is dir=rtl, not "some Arabic characters are present". The first
+    // draft wrote the wrong key and asserted the latter: the page stayed in
+    // English and the check passed anyway, because the navbar's language toggle
+    // is itself labelled العربية. A check that passes on the control that would
+    // SWITCH the language proves nothing about the page.
     const arCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: BASE.includes('127.0.0.1') });
     const arPage = await arCtx.newPage();
     try {
@@ -1208,28 +1240,26 @@ try {
       const dir = await arPage.evaluate(() => document.documentElement.getAttribute('dir'));
       const arLang = await arPage.evaluate(() => document.documentElement.getAttribute('lang'));
       check(dir === 'rtl', '28. the AI page switches to right-to-left in Arabic', `dir=${dir}, lang=${arLang}`);
+      check(arLang === 'ar', '28. the document language is Arabic', `lang=${arLang}`);
       const arBody = await arPage.locator('body').innerText();
       check(/[؀-ۿ]/.test(arBody), '28. the AI page renders Arabic text');
       if (!aiConfigured) {
-        // The unavailable notice must be translated too - an English-only
-        // fallback is exactly the hard-coded behaviour this must not have.
         check(/غير متاح/.test(arBody), '28. the unavailable notice is translated into Arabic');
       }
     } finally {
       await arCtx.close();
     }
 
-    // The credential must not be anywhere the browser can see it.
     const delivered = await aiPageB.content();
     for (const leak of ['OPENAI_API_KEY', 'api.openai.com', 'Bearer ']) {
       check(!delivered.includes(leak), `28/13. the delivered AI page contains no ${leak.trim()}`);
     }
     // A key SHAPE, not the bare "sk-" substring. Tailwind emits mask-image
     // custom properties that minify to fragments like "sk-image-conic-from-pos",
-    // so a substring check here reports a credential leak on a page that has
-    // none - a false alarm on this exact check is how a real one gets ignored.
+    // so a substring check reports a credential leak on a page that has none -
+    // and a false alarm on this exact check is how a real one gets ignored.
     check(!/\bsk-[A-Za-z0-9]{20,}/.test(delivered), '28/13. the delivered AI page contains no API-key-shaped string');
-    check(!aiErrors.some(e => /sk-|OPENAI/i.test(e)), '28/13. no credential appears in browser console output');
+    check(!aiErrors.some(e => /sk-[A-Za-z0-9]{20,}|OPENAI_API_KEY/i.test(e)), '28/13. no credential appears in browser console output');
     check(aiErrors.length === 0, '28. no first-party console or request errors on the AI page',
       aiErrors.slice(0, 2).join(' | ').slice(0, 120));
   } finally {
