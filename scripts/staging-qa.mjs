@@ -1148,10 +1148,14 @@ try {
   // serve as both the API-level and the browser-level proof.
   let aiHttpStatus = 0;
   let aiPayload = '';
-  aiPageB.on('response', async r => {
+  const aiBodyRead = [];
+  aiPageB.on('response', r => {
     if (!r.url().includes('/api/trpc/ai.chat')) return;
     aiHttpStatus = r.status();
-    try { aiPayload = await r.text(); } catch { /* body already consumed */ }
+    // Push the PROMISE and await it later. Awaiting inside the handler races
+    // the page's own consumption of the body, which is why the first version
+    // reported "no code" on a response that plainly had one.
+    aiBodyRead.push(r.text().then(t => { aiPayload = t; }).catch(() => {}));
   });
 
   try {
@@ -1187,6 +1191,7 @@ try {
       const elapsed = Date.now() - t0;
       await aiPageB.waitForTimeout(2500);
 
+      await Promise.all(aiBodyRead);
       let payloadContent = '';
       let payloadCode = '';
       try { payloadContent = JSON.parse(aiPayload)?.result?.data?.json?.content ?? ''; } catch { /* not a success envelope */ }
@@ -1195,6 +1200,20 @@ try {
 
       console.log(`INFO  28. ai.chat (browser) -> http ${aiHttpStatus}${payloadCode ? ` ${payloadCode}` : ''} in ${elapsed}ms`);
       console.log(`INFO  28. answer length: ${payloadContent.length} chars`);
+      // The user-facing sentence is category-specific, so printing it in full
+      // is what separates "OpenAI is rate limiting" from "OpenAI is out of
+      // quota" from "BuildHub's own limiter refused" - three different
+      // problems with three different owners. Safe to print: these strings are
+      // written for the browser and name no variable, provider or endpoint.
+      if (aiHttpStatus !== 200) {
+        console.log(`INFO  28. refusal message: ${payloadMsg || '(none captured)'}`);
+        console.log(`INFO  28. payload bytes: ${aiPayload.length}`);
+        // BuildHub's OWN rate limiter says "Too many AI requests. Try again in
+        // Ns." and rejects in about a millisecond without any network. Anything
+        // slower than that, with a different sentence, went to the provider.
+        const ownLimiter = /Too many AI requests/i.test(payloadMsg);
+        console.log(`INFO  28. refused by: ${ownLimiter ? "BuildHub's own AI rate limiter" : 'the provider path'}`);
+      }
 
       check(aiHttpStatus === 200, '28. the browser AI request succeeds against the configured provider',
         `http ${aiHttpStatus}${payloadCode ? ` ${payloadCode}` : ''} in ${elapsed}ms${aiHttpStatus !== 200 ? ` — ${payloadMsg.slice(0, 90)}` : ''}`);
@@ -1261,7 +1280,7 @@ try {
     check(!/\bsk-[A-Za-z0-9]{20,}/.test(delivered), '28/13. the delivered AI page contains no API-key-shaped string');
     check(!aiErrors.some(e => /sk-[A-Za-z0-9]{20,}|OPENAI_API_KEY/i.test(e)), '28/13. no credential appears in browser console output');
     check(aiErrors.length === 0, '28. no first-party console or request errors on the AI page',
-      aiErrors.slice(0, 2).join(' | ').slice(0, 120));
+      aiErrors.slice(0, 2).join(' | ').slice(0, 300));
   } finally {
     await aiCtx.close();
   }
