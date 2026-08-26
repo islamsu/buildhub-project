@@ -137,8 +137,11 @@ describe('E. the grounding cannot be talked out of the model', () => {
   });
 
   it('the server system prompt is the FIRST message the provider sees', () => {
+    // Asserted as a shape, not a literal: the system content now also carries
+    // the provider-candidate block, and pinning the exact string made this fail
+    // on a change that strengthened it rather than weakened it.
     const chat = ROUTERS.slice(ROUTERS.indexOf('const aiRouter = router({'));
-    expect(chat).toContain("messages: [{ role: 'system', content: systemPrompt }, ...conversation]");
+    expect(chat).toMatch(/messages: \[\{ role: 'system', content: systemPrompt[^\]]*\}, \.\.\.conversation\]/);
   });
 
   it('the prompt refuses instructions to override the rules', () => {
@@ -212,6 +215,31 @@ describe('language selects the ANSWER, never the knowledge', () => {
   it('each language instructs its own answer language', () => {
     expect(buildSystemPrompt('ar', customer)).toMatch(/Answer entirely in Arabic/);
     expect(buildSystemPrompt('en', customer)).toMatch(/Answer entirely in English/);
+  });
+
+  it('the SITE language wins over the question language - all four combinations', () => {
+    // The requirement that is easy to get wrong: an Arabic site must answer in
+    // Arabic even when the visitor types English, and vice versa. A prompt that
+    // said "answer in the language of the question" would satisfy two of these
+    // four cases and quietly fail the other two.
+    const ar = buildSystemPrompt('ar', customer).replace(/\s+/g, ' ');
+    const en = buildSystemPrompt('en', customer).replace(/\s+/g, ' ');
+    for (const prompt of [ar, en]) {
+      expect(prompt).toMatch(/regardless of which language this instruction is written in/i);
+    }
+    // Arabic site: Arabic answer, whatever the question language.
+    expect(ar).toMatch(/Answer entirely in Arabic/);
+    expect(ar).not.toMatch(/Answer entirely in English/);
+    // English site: English answer, whatever the question language.
+    expect(en).toMatch(/Answer entirely in English/);
+    expect(en).not.toMatch(/Answer entirely in Arabic/);
+  });
+
+  it('the answer language is never inferred from the question text', () => {
+    const KNOWLEDGE_SOURCE = read('./_core/buildhubKnowledge.ts');
+    // Nothing in the prompt builder may look at what the user typed to decide
+    // the language - it only receives the site's selection.
+    expect(KNOWLEDGE_SOURCE).not.toMatch(/detectLanguage|questionLanguage|guessLang/);
   });
 
   it('the language reaches the server from the website selection', () => {
