@@ -450,13 +450,51 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
     expect(PAID).toContain("arComposer.press('Enter')");
   });
 
-  it('it makes at most ONE paid provider call per run, and the run proves it', () => {
+  it('a DEFAULT run makes at most ONE paid provider call, and proves it', () => {
+    // Scoped to the ALWAYS-ON sections. Section 29 is opt-in and makes six more
+    // by design, so counting across the whole block would conflate "what a
+    // routine run costs" with "what an acceptance run costs".
+    const alwaysOnEnd = EXECUTABLE.indexOf('if (AI_KNOWLEDGE_SUITE) {');
+    expect(alwaysOnEnd).toBeGreaterThan(0);
+    const ALWAYS_ON = EXECUTABLE.slice(0, alwaysOnEnd);
     // Two ai.chat posts, both free: the anonymous 401 and the unconfigured 503.
-    expect(EXECUTABLE.match(/post\('ai\.chat'/g) ?? []).toHaveLength(2);
-    // Exactly one composer submission anywhere in the AI block.
-    expect(EXECUTABLE.match(/press\('Enter'\)/g) ?? []).toHaveLength(1);
-    // And the English surface asserts it spent nothing.
-    expect(EXECUTABLE).toContain('englishAiRequests === 0');
+    expect(ALWAYS_ON.match(/post\('ai\.chat'/g) ?? []).toHaveLength(2);
+    // One composer submission: the single paid request.
+    expect(ALWAYS_ON.match(/press\('Enter'\)/g) ?? []).toHaveLength(1);
+    expect(ALWAYS_ON).toContain('englishAiRequests === 0');
+  });
+
+  it('the six-request knowledge suite is OPT-IN and says what it costs', () => {
+    // Six extra paid calls must never ride along on a routine gate run. It is
+    // gated on an explicit input, and the skip says so instead of going quiet.
+    expect(GATE).toContain('const AI_KNOWLEDGE_SUITE');
+    expect(GATE).toContain("process.env.STAGING_AI_KNOWLEDGE_SUITE ?? ''");
+    expect(GATE).toContain('if (AI_KNOWLEDGE_SUITE) {');
+    expect(GATE).toContain("skip('29. BuildHub knowledge priority (live)'");
+    expect(GATE).toContain('six extra paid provider requests');
+    expect(WORKFLOW).toContain('ai_knowledge_suite:');
+    expect(WORKFLOW).toContain('STAGING_AI_KNOWLEDGE_SUITE:');
+  });
+
+  it('the knowledge suite proves grounding with a number only BuildHub knows', () => {
+    // "The model seems to know BuildHub" is not evidence. The expected price is
+    // read from the deployment's own billing.plans, so the check cannot pass on
+    // general knowledge and cannot pass by coincidence.
+    const SUITE = GATE.slice(GATE.indexOf('if (AI_KNOWLEDGE_SUITE) {'), GATE.indexOf("skip('29. BuildHub knowledge priority (live)'"));
+    expect(SUITE).toContain("get('billing.plans')");
+    expect(SUITE).toContain('answer.includes(PRICE)');
+    // Both languages must carry the SAME fact.
+    expect(SUITE).toContain('the same authoritative fact reaches both languages');
+  });
+
+  it('the knowledge suite covers all six cases the owner listed', () => {
+    const SUITE = GATE.slice(GATE.indexOf('if (AI_KNOWLEDGE_SUITE) {'), GATE.indexOf("skip('29. BuildHub knowledge priority (live)'"));
+    expect(SUITE).toContain('29.1 a general construction question');
+    expect(SUITE).toContain('29.2 a BuildHub fact is answered from BuildHub content');
+    expect(SUITE).toContain('29.3 BuildHub content beats the generic marketplace assumption');
+    expect(SUITE).toContain('29.4 an unpublished point is acknowledged, not invented');
+    expect(SUITE).toContain('29.5 the Arabic question is answered in Arabic');
+    expect(SUITE).toContain('29.6 the English question is answered in English');
   });
 
   it('the cost-control decision is documented in the harness itself', () => {

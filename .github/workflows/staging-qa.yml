@@ -26,6 +26,11 @@ on:
         description: "Optional: the commit SHA staging should be serving. Set it and a mismatch FAILS the gate instead of being reported."
         required: false
         type: string
+      ai_knowledge_suite:
+        description: "Run the BuildHub knowledge-priority acceptance suite. SIX EXTRA PAID OpenAI requests. Off by default so routine runs cost one."
+        required: false
+        default: false
+        type: boolean
   # DISPATCH ONLY - deliberately no `schedule:` trigger.
   #
   # This copy lives on the default branch so the workflow registers with
@@ -118,6 +123,7 @@ jobs:
           # still REPORTS the commit it tested, so the result is attributable
           # either way.
           STAGING_EXPECT_COMMIT: ${{ inputs.expect_commit }}
+          STAGING_AI_KNOWLEDGE_SUITE: ${{ inputs.ai_knowledge_suite }}
         # `set -o pipefail` is LOAD-BEARING, not tidiness.
         #
         # `node ... | tee qa-output.txt` reports TEE's exit status, and tee

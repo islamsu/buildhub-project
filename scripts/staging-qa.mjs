@@ -41,6 +41,11 @@ const ADMIN_PASSWORD = process.env.STAGING_ADMIN_PASSWORD;
 // instead of merely reporting whatever it found.
 const EXPECT_COMMIT = (process.env.STAGING_EXPECT_COMMIT ?? '').trim();
 
+// Opt-in. The knowledge-priority acceptance suite makes SIX extra paid
+// provider requests, so a routine gate run must not pay for it. Section 29
+// runs only when this is explicitly turned on for an acceptance run.
+const AI_KNOWLEDGE_SUITE = (process.env.STAGING_AI_KNOWLEDGE_SUITE ?? '').trim() === 'true';
+
 let pass = 0, fail = 0, skipped = 0;
 const failures = [];
 const check = (ok, name, detail = '') => {
@@ -1336,6 +1341,102 @@ try {
       aiErrors.slice(0, 2).join(' | ').slice(0, 300));
   } finally {
     await aiCtx.close();
+  }
+
+  // ── 29. BuildHub knowledge priority (OPT-IN, SIX PAID REQUESTS) ──────────
+  //
+  // Off unless STAGING_AI_KNOWLEDGE_SUITE=true, because these are the only
+  // checks in the gate that cost more than one provider call.
+  //
+  // HOW THIS PROVES GROUNDING RATHER THAN VIBES. "The model seems to know
+  // BuildHub" is not evidence. Each BuildHub question here has an answer
+  // containing a NUMBER that exists only in BuildHub's own source - the
+  // Professional price, the free plan's monthly enquiry allowance, the trial
+  // length. A model answering from general knowledge cannot produce 499 EGP;
+  // if it appears, the briefing demonstrably reached the model and was used.
+  if (AI_KNOWLEDGE_SUITE) {
+    section('29. BuildHub knowledge priority (live)');
+
+    const ask = async (question, lang) => {
+      const t0 = Date.now();
+      const r = await post('ai.chat', { messages: [{ role: 'user', content: question }], lang }, users.homeowner?.cookie);
+      const answer = json(r.t)?.content ?? '';
+      let code = '';
+      try { code = JSON.parse(r.t)?.error?.json?.data?.code ?? ''; } catch { /* success envelope */ }
+      return { s: r.s, answer, code, ms: Date.now() - t0 };
+    };
+    const arabic = text => (text.match(/[؀-ۿ]/g) ?? []).length;
+
+    // 1. A normal construction question - the general-expertise path.
+    const q1 = await ask('What is a reasonable concrete cover for reinforcement in a foundation exposed to soil?', 'en');
+    console.log(`INFO  29.1 general construction -> http ${q1.s} in ${q1.ms}ms, ${q1.answer.length} chars`);
+    check(q1.s === 200 && q1.answer.length > 40, '29.1 a general construction question gets a real expert answer',
+      q1.answer ? `${q1.answer.slice(0, 60)}…` : `http ${q1.s} ${q1.code}`);
+
+    // 2. A BuildHub question whose answer is in BuildHub's own source.
+    const q2 = await ask('On BuildHub, how many qualified enquiries per month does the free vendor plan include?', 'en');
+    console.log(`INFO  29.2 BuildHub fact -> http ${q2.s} in ${q2.ms}ms`);
+    check(q2.s === 200 && /\b5\b/.test(q2.answer),
+      '29.2 a BuildHub fact is answered from BuildHub content (the free plan allowance)',
+      q2.answer ? `${q2.answer.slice(0, 90)}…` : `http ${q2.s} ${q2.code}`);
+
+    // 3. The tricky one: a generic marketplace assumption, contradicted.
+    const q3 = await ask('Most construction marketplaces charge the customer a fee to post a request for quotation. Does BuildHub charge customers to submit an RFQ?', 'en');
+    console.log(`INFO  29.3 tricky conflict -> http ${q3.s} in ${q3.ms}ms`);
+    check(q3.s === 200 && /free|no charge|does not charge|no fee/i.test(q3.answer),
+      '29.3 BuildHub content beats the generic marketplace assumption',
+      q3.answer ? `${q3.answer.slice(0, 110)}…` : `http ${q3.s} ${q3.code}`);
+
+    // 4. Something BuildHub genuinely does not publish. The assistant must say
+    //    so rather than invent a policy.
+    const q4 = await ask('What is BuildHub\'s refund policy if a vendor cancels a subscription halfway through a paid month?', 'en');
+    console.log(`INFO  29.4 not covered -> http ${q4.s} in ${q4.ms}ms`);
+    check(q4.s === 200 && /not specify|does not specify|not specified|no published|not stated|does not state|not published/i.test(q4.answer),
+      '29.4 an unpublished point is acknowledged, not invented',
+      q4.answer ? `${q4.answer.slice(0, 110)}…` : `http ${q4.s} ${q4.code}`);
+    check(q4.s === 200 && !/refund policy is|BuildHub refunds/i.test(q4.answer),
+      '29.4 no BuildHub refund policy is fabricated');
+
+    // 5 and 6. THE SAME BuildHub question in both languages. Same source, same
+    //    number, different answer language - which is the whole requirement.
+    //
+    // The expected price is read from the DEPLOYMENT's own billing.plans, not
+    // from this repository. So the assertion is "the assistant's answer agrees
+    // with what this staging build actually serves on its pricing page" - which
+    // is the claim worth making, and it cannot pass by coincidence: a model
+    // answering from general knowledge has no way to produce this number.
+    const planDoc = json((await get('billing.plans')).t);
+    const professional = (planDoc?.plans ?? []).find(plan => plan.id === 'professional');
+    const PRICE = String(professional?.standard?.month ?? '');
+    console.log(`INFO  29. professional monthly price served by this deployment: ${PRICE || 'unknown'} ${planDoc?.currency ?? ''}`);
+    check(PRICE.length > 0, '29. the deployment publishes a Professional monthly price to check the answer against', PRICE);
+    const q5 = await ask('كم تبلغ تكلفة خطة Professional الشهرية على BuildHub؟', 'ar');
+    console.log(`INFO  29.5 Arabic BuildHub fact -> http ${q5.s} in ${q5.ms}ms, ${arabic(q5.answer)} Arabic chars`);
+    check(q5.s === 200 && q5.answer.includes(PRICE),
+      `29.5 the Arabic answer carries BuildHub's own price (${PRICE} EGP)`,
+      q5.answer ? `${q5.answer.slice(0, 90)}…` : `http ${q5.s} ${q5.code}`);
+    check(q5.s === 200 && arabic(q5.answer) > 20, '29.5 the Arabic question is answered in Arabic',
+      `${arabic(q5.answer)} Arabic characters`);
+
+    const q6 = await ask('How much does the Professional plan cost per month on BuildHub?', 'en');
+    console.log(`INFO  29.6 English BuildHub fact -> http ${q6.s} in ${q6.ms}ms, ${arabic(q6.answer)} Arabic chars`);
+    check(q6.s === 200 && q6.answer.includes(PRICE),
+      `29.6 the English answer carries the SAME BuildHub price (${PRICE} EGP)`,
+      q6.answer ? `${q6.answer.slice(0, 90)}…` : `http ${q6.s} ${q6.code}`);
+    check(q6.s === 200 && arabic(q6.answer) === 0, '29.6 the English question is answered in English',
+      `${arabic(q6.answer)} Arabic characters`);
+
+    // The knowledge source did not change with the language. That is the claim.
+    check(q5.answer.includes(PRICE) && q6.answer.includes(PRICE),
+      '29. the same authoritative fact reaches both languages - only the wording changes');
+
+    for (const leak of ['OPENAI_API_KEY', 'api.openai.com', 'Bearer ', 'JWT_SECRET', 'DATABASE_URL', 'SUPER_ADMIN', 'passwordHash']) {
+      const all = [q1, q2, q3, q4, q5, q6].map(q => q.answer).join(' ');
+      check(!all.includes(leak), `29/13. no AI answer exposes ${leak.trim()}`);
+    }
+  } else {
+    skip('29. BuildHub knowledge priority (live)',
+      'opt-in: this suite makes six extra paid provider requests. Dispatch with ai_knowledge_suite=true to run it.');
   }
 
   section('21. Secret exposure');

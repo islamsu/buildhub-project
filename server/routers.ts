@@ -12,6 +12,7 @@ import { TRPCError } from '@trpc/server';
 import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername, revokeSession } from './db';
 import { hashPassword, verifyPassword, NO_SUCH_ACCOUNT_HASH } from './passwords';
 import { generateAIResponse, isAiConfigured, AiError, type AiFailureCategory } from './_core/ai';
+import { buildSystemPrompt, type KnowledgeLanguage } from './_core/buildhubKnowledge';
 import { storagePut } from './storage';
 import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
@@ -2988,8 +2989,12 @@ const aiRouter = router({
         role: z.enum(['system', 'user', 'assistant']),
         content: z.string().min(1).max(MAX_AI_MESSAGE_LENGTH),
       })).min(1).max(MAX_AI_MESSAGES),
+      // The website's selected language decides the ANSWER's language. It does
+      // not decide what the assistant knows - the BuildHub briefing is the same
+      // in both languages, because a rule is not a translation.
+      lang: z.enum(['en', 'ar']).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       // Deliberate, client-safe refusal for a KNOWN condition. Without it the
       // provider layer throws, tRPC classifies that as INTERNAL_SERVER_ERROR,
       // and the error formatter - correctly - replaces the message with
@@ -3002,8 +3007,29 @@ const aiRouter = router({
           message: 'The AI assistant is not available on this deployment.',
         });
       }
+      // THE SERVER OWNS THE SYSTEM PROMPT.
+      //
+      // Client-supplied `system` messages are DISCARDED, not merged. The
+      // assistant's grounding - the source hierarchy, the BuildHub briefing,
+      // the refusal to invent policy - would otherwise be editable by anyone
+      // who can post to this endpoint, which makes "BuildHub content is the
+      // source of truth" a suggestion rather than a property. The caller
+      // contributes the conversation; the server contributes the rules.
+      const conversation = input.messages.filter(message => message.role !== 'system');
+      if (conversation.length === 0) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ask a question to start.' });
+      }
+      const lang: KnowledgeLanguage = input.lang ?? 'en';
+      const systemPrompt = buildSystemPrompt(lang, {
+        // The caller's OWN role, read from their session server-side - never
+        // from the request body, which they could set to anything.
+        userRole: ctx.user.userRole ?? null,
+      });
+
       try {
-        const { text } = await generateAIResponse({ messages: input.messages });
+        const { text } = await generateAIResponse({
+          messages: [{ role: 'system', content: systemPrompt }, ...conversation],
+        });
         // The application's contract, not the provider's. No SDK object, no
         // usage figures, no model name, no request id - only what the chat
         // window renders.
