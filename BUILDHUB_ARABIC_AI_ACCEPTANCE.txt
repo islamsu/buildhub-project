@@ -1,0 +1,186 @@
+BUILDHUB ARABIC AI ACCEPTANCE REPORT
+
+DATE: 2026-08-26
+
+FINAL RESULT: PASS
+
+============================================================
+THE EVIDENCE
+============================================================
+
+One Arabic construction question, typed into the real composer on /ai with
+the page in right-to-left Arabic, submitted with Enter, answered by OpenAI
+through the normal BuildHub ai.chat path, rendered on screen.
+
+Question submitted, verbatim:
+
+  أريد تقديرًا مبدئيًا لتكلفة تشطيب شقة بمساحة 120 متر مربع. ما المعلومات التي
+  تحتاجها مني لإعطائي تقديرًا أدق؟
+
+Verbatim from the run:
+
+  PASS  28. the AI page switches to right-to-left in Arabic  - dir=rtl
+  PASS  28. the document language is Arabic  - lang=ar
+  PASS  28. the Arabic composer accepts input
+  INFO  28. ai.chat (Arabic, browser) -> http 200 in 11509ms
+  INFO  28. Arabic answer length: 1975 chars
+  PASS  28. the Arabic AI request succeeds against the configured provider
+        - http 200 in 11509ms
+  PASS  28. BuildHub returns a non-empty Arabic answer
+        - لإعطائك تقديرًا أدق لتشطيب شقة بمساحة **120 م²**، أحتاج المع…
+  PASS  28. the answer itself is written in Arabic  - 1363 Arabic characters
+  PASS  28. the answer is not the question echoed back
+  PASS  28. the Arabic answer appears on screen, beyond the question that was
+        typed  - 1729 chars beyond the 109-char question
+  PASS  28. the rendered Arabic answer is the one the server returned
+        - server text found on screen
+  PASS  28. the page is still right-to-left after the answer renders  - dir=rtl
+
+The answer opens "لإعطائك تقديرًا أدق لتشطيب شقة بمساحة 120 م²، أحتاج
+المع…" - "to give you a more accurate estimate for finishing a 120 m²
+apartment, I need the inform…". It answered in Arabic, picked up the 120 m²
+from the question, and did what was asked: it is asking which details it
+needs. This is a real, responsive Arabic answer, not a generic one.
+
+============================================================
+THE FIELDS YOU ASKED FOR
+============================================================
+
+  Deployed SHA          929300046ae9e23389c3142a2cf49f6dc168c89c
+                        Asserted:
+                          PASS 0. the deployed commit is the one under test
+                          - expected 929300046ae9, serving 929300046ae9…
+
+  HTTP status           200
+
+  Response time         11,509 ms
+                        Longer than English (3,321 ms at run #34) because the
+                        answer is far longer: 1,975 characters against 69.
+                        Throughput, not latency.
+
+  Model                 gpt-5.6-luna
+                        ENV.openAiModel. OPENAI_MODEL is unset on Render, so
+                        the application default applies, and that default is
+                        the literal 'gpt-5.6-luna' in server/_core/env.ts -
+                        the explicit Luna id, never the "gpt-5.6" alias which
+                        routes to Sol. Unchanged from run #34; nothing about
+                        the provider, model, prompts or architecture was
+                        touched for this test.
+                        HONEST LIMIT: established from configuration plus a
+                        successful request, not from a model id echoed back -
+                        the response contract is { content } and deliberately
+                        discards the provider object.
+
+  OpenAI reached        YES. 200 with 1,975 characters of original Arabic
+                        prose that is responsive to the specific question.
+                        Nothing in BuildHub could synthesise that.
+
+  Response non-empty    YES - 1,975 characters, 1,363 of them Arabic.
+
+  Arabic answer         YES, proved from the DOM two ways:
+  rendered in browser     - the page grew 1,729 characters beyond the length
+                            of the question the harness itself typed, so it
+                            cannot be passing on the echo of its own input;
+                          - the server's text was then located on screen,
+                            which catches a UI that renders something other
+                            than what the server returned.
+
+  RTL remained correct  YES. dir=rtl and lang=ar before the request, and
+                        dir=rtl again AFTER the answer rendered. Asserted
+                        after as well as before on purpose: a page that flips
+                        to left-to-right when content lands is a broken
+                        Arabic experience that a before-only check passes.
+
+  Security checks       ALL PASS, and against a live SUCCESSFUL response
+                        carrying real model output rather than an error page,
+                        which is the stronger test:
+                          no OPENAI_API_KEY, api.openai.com, Bearer, sk-proj,
+                          stack frames or node_modules paths in the response
+                          payload;
+                          none of those in the delivered Arabic page, plus no
+                          API-key-shaped string;
+                          no credential in Arabic browser console output;
+                          no first-party console or request errors.
+                        The key was never printed, echoed, logged or inspected
+                        at any point.
+
+============================================================
+RUN
+============================================================
+
+  Run number   #35
+  URL          https://github.com/islamsu/buildhub-project/actions/runs/32971785575
+  Job          98186992159
+  Conclusion   SUCCESS
+  Tally        355/355 checks passed, 0 failed, 4 skipped
+
+  The four skips are the unchanged environment gaps - SMTP, S3, empty product
+  catalogue, category filtering. None is AI-related.
+
+============================================================
+EXACTLY ONE REQUEST
+============================================================
+
+  Proved by the run rather than asserted in a comment:
+
+    PASS  28. loading the AI page costs nothing - no request until one is sent
+          - 0 ai.chat request(s) on the English surface
+
+  The English browser context counts ai.chat responses and fails if merely
+  loading /ai costs anything. The only paid call in the run is the Arabic
+  submission. A gate test also fails if a second composer submission is ever
+  added anywhere in the AI sections.
+
+  The two other ai.chat calls in the run are free: the anonymous 401 refusal,
+  and a 503 refusal that only executes on an unconfigured deployment.
+
+============================================================
+WHAT CHANGED, AND WHAT DID NOT
+============================================================
+
+  NOT changed: application code, provider, model, prompts, architecture,
+  Render configuration. Nothing under server/, client/, shared/ or drizzle/
+  was touched, and no environment variable was added, changed or read.
+
+  Changed: the QA harness and its own tests, on the branch
+  claude/buildhub-audit-verification-vrai7l. The run's single paid request
+  moved from English to Arabic, because exactly one was authorised and Arabic
+  is the case that was still unproven. Four negative controls were applied and
+  killed: accepting an English answer on the Arabic path, letting the echoed
+  question count as an answer, dropping the post-answer RTL check, and
+  sneaking in a second paid call.
+
+  tsc 0, 1344/1344 tests across 68 files, gate's own tests 43/43.
+
+  NOT MERGED. Main's harness still sends the English question, which is
+  correct and was accepted at run #34 - there is no defect on main to fix, so
+  merging would be new work rather than finishing this task. The Arabic
+  version sits on the branch for your decision.
+
+============================================================
+STATUS
+============================================================
+
+  Arabic AI path:  PASS - proven end to end
+  English AI path: PASS - proven at run #34
+  AI STAGING:      GO
+  OVERALL STAGING: GO
+  PRODUCTION:      NO-GO (P1-P6 open; no production infrastructure exists)
+
+  Production was not touched.
+
+  Nothing in the earlier handoff is now unproven. The one item carried as NOT
+  VERIFIED - that the model answers an Arabic question in Arabic - is closed.
+
+============================================================
+NEXT
+============================================================
+
+  No new development started. No production work started.
+
+  Yours to decide:
+    1. Whether to merge the Arabic harness to main, so future runs exercise
+       the Arabic path by default rather than the English one.
+    2. Whether OVERALL STAGING: GO is accepted.
+
+STOP.
