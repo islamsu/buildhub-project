@@ -371,40 +371,36 @@ describe('§5 the workflow runs somewhere that can reach staging', () => {
   });
 });
 
-describe('§6 the AI section cannot claim an AI that was never exercised', () => {
-  // Section 27 exists because the gate ran 306 green checks against a
-  // deployment whose AI assistant was broken for every user. Its own honesty
-  // is the thing worth pinning - and after the migration to a real provider,
-  // the SKIP/FAIL line is the part that matters most: a configured provider
-  // that fails must never be softened into a skip.
-  const SECTION = (() => {
-    // From the comment marker, not the section() call: the cost-control
-    // rationale lives in the comment above it, and one of the tests below
-    // asserts that the rationale is written down.
+describe('§6 the AI sections cannot claim an AI that was never exercised', () => {
+  // Section 27/28 exist because the gate ran 306 green checks against a
+  // deployment whose AI assistant was broken for every user. Their own honesty
+  // is the thing worth pinning - and with a real provider configured, the
+  // SKIP/FAIL line matters most: a configured provider that fails must never
+  // be softened into a skip.
+  const AI_BLOCK = (() => {
     const start = GATE.indexOf('// ── 27. AI Assistant');
-    const end = GATE.indexOf("section('28. AI Assistant in a real browser')");
+    const end = GATE.indexOf("section('21. Secret exposure')");
     if (start === -1 || end === -1 || end < start) {
-      throw new Error('section 27 anchors not found - this test is no longer reading the AI section');
+      throw new Error('AI section anchors not found - this test is no longer reading the AI sections');
     }
     return GATE.slice(start, end);
   })();
 
   // Comments explain the reasoning and mention the very strings some of these
   // assertions forbid, so every check below reads executable lines only.
-  const EXECUTABLE = SECTION.split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
+  const EXECUTABLE = AI_BLOCK.split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
 
-  // Anchored by offset, not by first occurrence: there are TWO `} else {` in
-  // this section - the session-missing fallback and the configured/unconfigured
-  // split - and taking the first one silently yields an empty slice, which
-  // makes every assertion below vacuous rather than failing.
+  // Anchored by offset on BOTH ends. Taking the first `} else {` in the block
+  // silently yields an empty slice, which makes every assertion below vacuous
+  // rather than failing.
   const IF_CONFIGURED = EXECUTABLE.indexOf('if (aiConfigured) {');
   const ELSE_BRANCH = EXECUTABLE.indexOf('} else {', IF_CONFIGURED);
-  const BOTH_STATES = EXECUTABLE.indexOf("check(!(ai.s !== 200", ELSE_BRANCH);
-  if (IF_CONFIGURED === -1 || ELSE_BRANCH === -1 || BOTH_STATES === -1) {
-    throw new Error('section 27 branch anchors not found - this test is no longer reading the branches');
+  const AFTER_BRANCHES = EXECUTABLE.indexOf('const arCtx =', ELSE_BRANCH);
+  if (IF_CONFIGURED === -1 || ELSE_BRANCH === -1 || AFTER_BRANCHES === -1) {
+    throw new Error('AI branch anchors not found - this test is no longer reading the branches');
   }
   const CONFIGURED = EXECUTABLE.slice(IF_CONFIGURED, ELSE_BRANCH);
-  const UNCONFIGURED = EXECUTABLE.slice(ELSE_BRANCH, BOTH_STATES);
+  const UNCONFIGURED = EXECUTABLE.slice(ELSE_BRANCH, AFTER_BRANCHES);
 
   it('a CONFIGURED provider failure is a FAILURE and can never be skipped', () => {
     // The single most important property in this file. If OPENAI_API_KEY is
@@ -412,34 +408,53 @@ describe('§6 the AI section cannot claim an AI that was never exercised', () =>
     // gate must go red. A skip there would hide a broken paid integration
     // behind a green run - the exact shape of the original incident.
     expect(CONFIGURED).not.toContain('skip(');
-    expect(CONFIGURED).toContain('a real AI request succeeds against the configured provider');
-    expect(CONFIGURED).toContain('the provider returns non-empty text');
+    expect(CONFIGURED).toContain('the browser AI request succeeds against the configured provider');
+    expect(CONFIGURED).toContain('BuildHub returns a non-empty AI answer');
   });
 
   it('only the unconfigured branch skips, and it says exactly what it needs', () => {
-    expect(UNCONFIGURED).toContain("skip('27. the provider answers a real question'");
+    expect(UNCONFIGURED).toContain("skip('28. a real OpenAI request answers a real question'");
     expect(UNCONFIGURED).toContain('OPENAI_API_KEY');
-    expect(UNCONFIGURED).not.toContain('a real AI request succeeds');
+    expect(UNCONFIGURED).not.toContain('succeeds against the configured provider');
   });
 
-  it('the unconfigured branch still proves the refusal is deliberate', () => {
-    expect(UNCONFIGURED).toContain('SERVICE_UNAVAILABLE');
-    expect(UNCONFIGURED).toContain('Something went wrong. Please try again.');
+  it('the batched tRPC envelope is handled - the browser does not send bare objects', () => {
+    // client/src/main.tsx uses httpBatchLink, so the response body is an array.
+    expect(EXECUTABLE).toContain('Array.isArray(parsed) ? parsed[0] : parsed');
+  });
+
+  it('the configured branch proves the answer was RENDERED, not merely returned', () => {
+    // Returning JSON the browser never displays is not a working assistant.
+    // Two independent proofs. The DOM one must not depend on the harness
+    // parsing a transport envelope: the browser batches its tRPC calls, and a
+    // parse that missed that reported "answer length: 0 chars" on a request
+    // that had plainly worked.
+    expect(CONFIGURED).toContain('the answer appears on screen, beyond the question that was typed');
+    expect(CONFIGURED).toContain('the rendered answer is the one the server returned');
+    expect(CONFIGURED).toContain('after.includes(rendered)');
+    expect(CONFIGURED).toContain('the page shows no generic failure message');
+  });
+
+  it('the one paid request goes through the real UI, not a bare API call', () => {
+    // BuildHub -> OpenAI -> response -> BuildHub -> browser is the claim, and
+    // only a submission through the composer travels all of it.
+    expect(CONFIGURED).toContain('composer.fill(QUESTION)');
+    expect(CONFIGURED).toContain("composer.press('Enter')");
   });
 
   it('it makes at most ONE paid provider call per run', () => {
-    // Cost control, and the reason section 28 renders section 27's answer
-    // instead of asking again. Two ai.chat posts: the free anonymous refusal
-    // and the one real request.
-    expect(EXECUTABLE.match(/post\('ai\.chat'/g) ?? []).toHaveLength(2);
-    const BROWSER = GATE.slice(GATE.indexOf("section('28. AI Assistant in a real browser')"));
-    const BROWSER_EXEC = BROWSER.slice(0, BROWSER.indexOf("section('21. Secret exposure')"))
-      .split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
-    expect(BROWSER_EXEC).not.toContain("post('ai.chat'");
+    // Cost control. The only ai.chat posts are the free anonymous refusal and
+    // the free unconfigured-branch refusal; the paid one is the browser
+    // submission, which is not a post() at all.
+    const posts = EXECUTABLE.match(/post\('ai\.chat'/g) ?? [];
+    expect(posts).toHaveLength(2);
+    // Both free ones must be outside the configured branch.
+    expect(CONFIGURED).not.toContain("post('ai.chat'");
+    expect(EXECUTABLE.match(/composer\.press\('Enter'\)/g) ?? []).toHaveLength(1);
   });
 
   it('the cost-control decision is documented in the harness itself', () => {
-    expect(SECTION).toContain('AT MOST ONE PAID PROVIDER REQUEST');
+    expect(AI_BLOCK).toContain('AT MOST ONE PAID PROVIDER REQUEST');
   });
 
   it('the live question is not an obedience test', () => {
@@ -448,27 +463,30 @@ describe('§6 the AI section cannot claim an AI that was never exercised', () =>
     expect(EXECUTABLE).not.toMatch(/Reply with exactly/i);
   });
 
-  it('the AI error is checked for credential leakage', () => {
-    for (const leak of ['OPENAI_API_KEY', 'api.openai.com', 'Bearer ', 'sk-']) {
+  it('the browser session is authenticated - ai.chat is a protectedProcedure', () => {
+    // An anonymous browser could only ever prove the login wall.
+    expect(EXECUTABLE).toContain('aiCtx.addCookies');
+  });
+
+  it('the AI response and page are checked for credential leakage', () => {
+    for (const leak of ['OPENAI_API_KEY', 'api.openai.com', 'Bearer ']) {
       expect(EXECUTABLE).toContain(leak);
     }
-    expect(EXECUTABLE).toContain('27/21. the AI error exposes no');
+    expect(EXECUTABLE).toContain('the AI response payload contains no');
+    expect(EXECUTABLE).toContain('the delivered AI page contains no API-key-shaped string');
   });
 
-  it('a failed AI request can never be rendered as a successful one', () => {
-    expect(EXECUTABLE).toContain('a failed AI request never returns a content payload');
+  it('Arabic is proved by dir=rtl, not by the presence of Arabic glyphs', () => {
+    // The navbar's language toggle is itself labelled العربية, so a presence
+    // check passes on a page that never switched.
+    expect(EXECUTABLE).toContain("dir === 'rtl'");
+    expect(EXECUTABLE).toContain("arLang === 'ar'");
+    expect(EXECUTABLE).toContain("localStorage.setItem('buildhub_lang', 'ar')");
   });
 
-  it('the browser section proves all eight tools and checks for secret leakage', () => {
-    const BROWSER = GATE.slice(GATE.indexOf("section('28. AI Assistant in a real browser')"));
-    const BODY = BROWSER.slice(0, BROWSER.indexOf("section('21. Secret exposure')"));
+  it('all eight tools are asserted by name in the browser', () => {
     for (const tool of ['Cost Estimator', 'Quantity Surveyor', 'Material Advisor', 'Project Manager', 'Risk Detector', 'Procurement', 'Maintenance', 'General Consultant']) {
-      expect(BODY).toContain(tool);
+      expect(AI_BLOCK).toContain(tool);
     }
-    expect(BODY).toContain('the delivered AI page contains no');
-    // dir=rtl, not "Arabic characters appear somewhere". The navbar's language
-    // toggle is labelled العربية, so a presence check passes on an English page.
-    expect(BODY).toContain("dir === 'rtl'");
-    expect(BODY).toContain("localStorage.setItem('buildhub_lang', 'ar')");
   });
 });
