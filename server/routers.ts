@@ -15,6 +15,7 @@ import { generateAIResponse, isAiConfigured, AiError, type AiFailureCategory } f
 import { buildSystemPrompt, type KnowledgeLanguage } from './_core/buildhubKnowledge';
 import { detectIntent } from './_core/aiIntent';
 import { recommendProviders, formatCandidatesForModel } from './recommendation';
+import { retrieve, formatRetrievalForModel } from './_core/knowledgeRetrieval';
 import { storagePut } from './storage';
 import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
@@ -3036,6 +3037,12 @@ const aiRouter = router({
       // BUILDHUB IS SEARCHED FIRST for a provider request - before the model
       // sees the question - so the answer is drawn from listed, approved
       // providers rather than from whatever companies the model can recall.
+      // Reference knowledge for the question, ranked by relevance then by
+      // authority tier. Empty when nothing in the corpus matches, which is the
+      // common case and costs nothing.
+      const retrieved = formatRetrievalForModel(retrieve(lastQuestion), lang);
+      const referenceBlock = retrieved ? `\n\n${retrieved}` : '';
+
       let candidateBlock = '';
       if (intent.wantsProviderRecommendation) {
         const outcome = await recommendProviders({
@@ -3048,7 +3055,7 @@ const aiRouter = router({
 
       try {
         const { text } = await generateAIResponse({
-          messages: [{ role: 'system', content: systemPrompt + candidateBlock }, ...conversation],
+          messages: [{ role: 'system', content: systemPrompt + referenceBlock + candidateBlock }, ...conversation],
           webSearch: intent.wantsCurrentInformation,
         });
         // The application's contract, not the provider's. No SDK object, no
