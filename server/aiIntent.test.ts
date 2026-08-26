@@ -84,3 +84,55 @@ describe('current-information detection', () => {
     expect(intent.wantsCurrentInformation).toBe(false);
   });
 });
+
+/**
+ * Both of these were found by a LIVE staging run, not by reasoning about the
+ * code. Scenario 29.8 asked "I need a swimming pool specialist contractor in
+ * Aswan. Who is on BuildHub?" and the router said no - so the directory was
+ * never searched, and the model answered "I can't access BuildHub's live vendor
+ * directory". That answer is honest about the model and wrong about BuildHub:
+ * BuildHub CAN answer it, and the true answer is "nobody listed matches".
+ */
+describe('asking for a provider without using the word "recommend"', () => {
+  it.each([
+    'I need a swimming pool specialist contractor in Aswan. Who is on BuildHub?',
+    'I need a contractor in Cairo',
+    'We need an architect for a villa in Giza',
+    'Who do you have for waterproofing in Alexandria? I want a contractor.',
+    'Are there any suppliers listed on BuildHub for steel?',
+    'أحتاج مهندس في القاهرة',
+    'هل لديكم مقاول تشطيبات؟',
+  ])('routes to the BuildHub directory: %s', question => {
+    expect(detectIntent(question).wantsProviderRecommendation).toBe(true);
+  });
+
+  it('still extracts the filters from a needs-based phrasing', () => {
+    const intent = detectIntent('I need a waterproofing contractor in Cairo');
+    expect(intent.role).toBe('contractor');
+    expect(intent.category).toBe('waterproofing');
+    expect(intent.location).toBe('Cairo');
+  });
+
+  it('a city BuildHub does not list yields NO location filter, so the search stays wide', () => {
+    // Aswan is not a served city. Guessing it would filter every real provider
+    // out; leaving it off lets the broadening ladder answer honestly.
+    const intent = detectIntent('I need a contractor in Aswan');
+    expect(intent.wantsProviderRecommendation).toBe(true);
+    expect(intent.location).toBeUndefined();
+  });
+
+  it('a stated need FAR from the role word is not a request for a provider', () => {
+    // This is the reason the demand cue is windowed rather than matched
+    // anywhere in the sentence. Routing this to the directory would answer
+    // "BuildHub has no listed contractor" to someone asking about cost.
+    const intent = detectIntent(
+      'I need a rough cost estimate for finishing a 120 m2 apartment, and I am curious what a contractor typically charges for that',
+    );
+    expect(intent.wantsProviderRecommendation).toBe(false);
+  });
+
+  it('naming a role with no demand and no asking cue still does not fire', () => {
+    expect(detectIntent('What does a main contractor do on site?').wantsProviderRecommendation).toBe(false);
+    expect(detectIntent('The engineer signs off the structural drawings').wantsProviderRecommendation).toBe(false);
+  });
+});
