@@ -166,6 +166,31 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # THE VERDICT, LAST, so it is always in the tail of the job log.
+      #
+      # Written for a specific and repeated problem: the engineering sandbox
+      # this project is developed in cannot reach GitHub's log or artifact blob
+      # hosts (403 through the proxy), and the log-reading tool it does have
+      # returns only a size-capped tail. The harness prints its totals BEFORE
+      # the summary and artifact steps, so the one line that says what happened
+      # was always just out of reach - which once led to a six-day-old local
+      # log being misread as this run's result.
+      #
+      # Reprinting the verdict as the final step costs nothing and makes the
+      # result readable from anywhere that can see the tail.
+      - name: Print the verdict last
+        if: always()
+        run: |
+          echo "───────── GATE VERDICT ─────────"
+          grep -E '^(PASS|FAIL|SKIP)  0\.' qa-output.txt 2>/dev/null || true
+          grep -E '>>> DEPLOYED COMMIT:' qa-output.txt 2>/dev/null || true
+          echo "--- skipped checks ---"
+          grep -E '^SKIP' qa-output.txt 2>/dev/null || echo "(none)"
+          echo "--- failed checks ---"
+          grep -E '^FAIL' qa-output.txt 2>/dev/null || echo "(none)"
+          echo "--- totals ---"
+          grep -E 'checks passed' qa-output.txt 2>/dev/null || echo "(no totals line captured)"
+
       - name: Keep the full log
         if: always()
         uses: actions/upload-artifact@v6

@@ -1635,9 +1635,33 @@ const messagesRouter = router({
       : sql`${messages.senderId} = ${ctx.user.id} OR ${messages.receiverId} = ${ctx.user.id}`;
     return db.select().from(messages).where(filter).orderBy(messages.createdAt);
   }),
-  send: protectedProcedure.input(z.object({ receiverId: z.number(), projectId: z.number().optional(), content: z.string().min(1), type: z.enum(['text', 'file', 'quotation']).default('text'), fileUrl: z.string().url().optional(), quotationId: z.number().optional() })).mutation(async ({ ctx, input }) => {
+  // `fileUrl` WAS `z.string().url()`, and two things followed from that.
+  //
+  // IT BROKE THE FEATURE. storagePut returns a RELATIVE proxy path,
+  // `/manus-storage/<key>`, and the client sends exactly that back here. A
+  // relative path is not a valid URL, so zod refused every real attachment:
+  // the upload succeeded and the send that followed it failed. Attaching a
+  // file to a message has never worked.
+  //
+  // AND IT WAS FREE-FORM CLIENT INPUT pointing at a storage key. The proxy
+  // authorizes a message attachment by finding the message row whose fileUrl
+  // equals the requested path and checking the caller is a party to it - so a
+  // message that referenced SOMEONE ELSE'S key would have handed the sender
+  // that file. It was not exploitable only because the absolute URL zod
+  // demanded could never equal the relative path the proxy compares against;
+  // fixing the first problem without this would have created the second.
+  //
+  // So the path is now checked to be a message attachment THIS SENDER
+  // uploaded. The `user-<id>` segment is not trusted as authorization
+  // elsewhere - the proxy resolves keys through rows - but here it is the
+  // sender's own id from the session being required to match, which is a
+  // different thing: it stops a sender naming a key that is not theirs.
+  send: protectedProcedure.input(z.object({ receiverId: z.number().int().positive(), projectId: z.number().int().positive().optional(), content: z.string().min(1).max(4000), type: z.enum(['text', 'file', 'quotation']).default('text'), fileUrl: z.string().max(512).regex(/^\/manus-storage\/message-attachments\/user-\d+\//, 'Attachment must be a BuildHub message upload').optional(), quotationId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    if (input.fileUrl && !input.fileUrl.startsWith(`/manus-storage/message-attachments/user-${ctx.user.id}/`)) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'You may only attach a file you uploaded' });
+    }
     if (input.type === 'quotation') {
       if (!input.quotationId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Quotation reference is required' });
       // Slice 9: the sender must be a PARTY to the quotation, not merely someone
@@ -2172,7 +2196,20 @@ const adminRouter = router({
     const db = await getDb();
     if (!db) return [];
     const events = await db.select().from(userAccountAuditEvents).orderBy(desc(userAccountAuditEvents.createdAt)).limit(1000);
-    const allUsersList = await db.select().from(users);
+    // COLUMN LIST, not `select().from(users)`.
+    //
+    // Nothing leaked: the projection below is already an explicit allowlist, so
+    // no private column ever reached the response. But this pulled EVERY column
+    // of EVERY user - passwordHash, invitationToken, openId - into process
+    // memory to build an audit export, and it is the precise pattern
+    // ADMIN_USER_LIST_COLUMNS exists to forbid, one endpoint over. The next
+    // person to add `...targetUser` to the mapped object would have shipped the
+    // leak without touching this line.
+    const allUsersList = await db.select({
+      id: users.id, name: users.name, email: users.email, isDummy: users.isDummy,
+      accountSource: users.accountSource, userRole: users.userRole, role: users.role,
+      accountStatus: users.accountStatus, invitationStatus: users.invitationStatus,
+    }).from(users);
     const userMap = new Map(allUsersList.map(u => [u.id, u]));
     const adminMap = new Map(allUsersList.map(u => [u.id, u.name || u.email || `#${u.id}`]));
     return events.map(event => {

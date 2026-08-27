@@ -6,14 +6,37 @@ import { Card } from '@/components/ui/card';
 import { useLocation } from 'wouter';
 import { useMemo, useState } from 'react';
 import { Search, Package, Store, PenTool, HardHat, ArrowRight, ArrowLeft, Star, BadgeCheck, TrendingUp, Sparkles } from 'lucide-react';
-import { PRODUCT_CATEGORIES, VENDORS, DESIGNERS, FINISHING_COMPANIES, DESIGN_CATEGORIES, FINISHING_CATEGORIES } from '@/lib/marketplaceData';
+import { PRODUCT_CATEGORIES, DESIGN_CATEGORIES, FINISHING_CATEGORIES } from '@/lib/marketplaceData';
+import { trpc } from '@/lib/trpc';
 
+/**
+ * CLOSURE PASS. The three "featured" strips and the search autocomplete on this
+ * page were built from VENDORS / DESIGNERS / FINISHING_COMPANIES in
+ * client/src/lib/marketplaceData.ts - hardcoded entries carrying invented
+ * ratings, review counts and `verified` badges, several of them attached to
+ * real named Egyptian companies with no BuildHub account.
+ *
+ * They now come from marketplace.vendors, the same authorized directory query
+ * the vendors page uses: reputation from verified reviews, verification from
+ * the compliance decision, categories declared by the vendor. The counts are
+ * counts of real accounts, so an empty marketplace shows an empty marketplace.
+ *
+ * PRODUCT_CATEGORIES, DESIGN_CATEGORIES and FINISHING_CATEGORIES stay: they are
+ * browse vocabulary, not claims about anybody.
+ */
 export default function MarketplaceHub() {
   const { lang, t } = useLanguage();
   const [, navigate] = useLocation();
   const [search, setSearch] = useState('');
   const ar = lang === 'ar';
   const Arrow = ar ? ArrowLeft : ArrowRight;
+
+  // One authorized query. The directory already excludes unapproved and
+  // unverified accounts, so nothing here can show a provider the marketplace
+  // itself would not list.
+  const { data: directory = [] } = trpc.marketplace.vendors.useQuery({ limit: 100 });
+  const designers = directory.filter(v => v.categories?.includes('Design'));
+  const finishing = directory.filter(v => v.categories?.includes('Renovation'));
 
   // AI-style autocomplete: search across products categories, vendors, designers, companies
   const suggestions = useMemo(() => {
@@ -22,12 +45,14 @@ export default function MarketplaceHub() {
     const out: { type: string; label: string; href: string }[] = [];
     PRODUCT_CATEGORIES.filter(c => c.en.toLowerCase().includes(q) || c.ar.includes(q)).slice(0, 4).forEach(c =>
       out.push({ type: t('marketHub.suggestionProductCategory'), label: ar ? c.ar : c.en, href: `/marketplace/products?cat=${c.id}` }));
-    VENDORS.filter(v => v.name.toLowerCase().includes(q) || v.nameAr.includes(q)).slice(0, 3).forEach(v =>
-      out.push({ type: t('marketHub.suggestionVendor'), label: ar ? v.nameAr : v.name, href: `/marketplace/vendors/${v.id}` }));
-    DESIGNERS.filter(d => d.name.toLowerCase().includes(q) || d.nameAr.includes(q)).slice(0, 3).forEach(d =>
-      out.push({ type: t('marketHub.suggestionDesigner'), label: ar ? d.nameAr : d.name, href: `/marketplace/designers/${d.id}` }));
-    FINISHING_COMPANIES.filter(f => f.name.toLowerCase().includes(q) || f.nameAr.includes(q)).slice(0, 3).forEach(f =>
-      out.push({ type: t('marketHub.suggestionFinishingCompany'), label: ar ? f.nameAr : f.name, href: `/marketplace/finishing/${f.id}` }));
+    // Suggestions are drawn from the SAME authorized directory rows that the
+    // strips below render - never a second, looser source.
+    directory.filter(v => (v.name ?? '').toLowerCase().includes(q)).slice(0, 3).forEach(v =>
+      out.push({ type: t('marketHub.suggestionVendor'), label: v.name ?? `#${v.id}`, href: `/marketplace/vendors/${v.id}` }));
+    designers.filter(d => (d.name ?? '').toLowerCase().includes(q)).slice(0, 3).forEach(d =>
+      out.push({ type: t('marketHub.suggestionDesigner'), label: d.name ?? `#${d.id}`, href: `/vendor/${d.id}` }));
+    finishing.filter(f => (f.name ?? '').toLowerCase().includes(q)).slice(0, 3).forEach(f =>
+      out.push({ type: t('marketHub.suggestionFinishingCompany'), label: f.name ?? `#${f.id}`, href: `/vendor/${f.id}` }));
     return out.slice(0, 8);
   }, [search, ar, t]);
 
@@ -50,9 +75,9 @@ export default function MarketplaceHub() {
       gradient: 'from-emerald-600 to-teal-500',
       title: t('marketHub.sectionVendorsTitle'),
       desc: t('marketHub.sectionVendorsDesc'),
-      stat: `${VENDORS.length}`,
+      stat: `${directory.length}`,
       statLabel: t('marketHub.vendorsLabel'),
-      chips: VENDORS.slice(0, 3).map(v => (ar ? v.nameAr : v.name)),
+      chips: directory.slice(0, 3).map(v => v.name ?? `#${v.id}`),
     },
     {
       id: 'designers',
@@ -78,9 +103,13 @@ export default function MarketplaceHub() {
     },
   ];
 
-  const featuredVendors = VENDORS.filter(v => v.featured).slice(0, 4);
-  const featuredDesigners = DESIGNERS.filter(d => d.featured).slice(0, 3);
-  const featuredCompanies = FINISHING_COMPANIES.filter(f => f.featured).slice(0, 3);
+  // "Featured" here means the top of the organic directory order, which is
+  // verified-first then newest. It is NOT paid placement: that is a separate,
+  // labelled concept served by marketplace.featuredVendors, and mixing the two
+  // is precisely how a paid slot ends up rendered as an editorial pick.
+  const featuredVendors = directory.slice(0, 4);
+  const featuredDesigners = designers.slice(0, 3);
+  const featuredCompanies = finishing.slice(0, 3);
 
   return (
     <div className="min-h-screen bg-background">
@@ -170,29 +199,16 @@ export default function MarketplaceHub() {
               </button>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {featuredVendors.map(v => (
-                <Card key={v.id} className="p-4 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate(`/marketplace/vendors/${v.id}`)}>
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl">{v.logo}</div>
-                    <div className="min-w-0">
-                      <div className="font-semibold text-sm truncate flex items-center gap-1">
-                        {ar ? v.nameAr : v.name}
-                        {v.verified && <BadgeCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />}
-                      </div>
-                      <div className="text-xs text-muted-foreground truncate">{ar ? v.categoryAr : v.category}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 text-xs">
-                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                    <span className="font-medium">{v.rating}</span>
-                    <span className="text-muted-foreground">({v.reviewCount})</span>
-                  </div>
-                </Card>
+              {featuredVendors.map(vendor => (
+                <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
               ))}
+              {featuredVendors.length === 0 && (
+                <p className="col-span-full text-sm text-muted-foreground">{t('marketHub.noneYet')}</p>
+              )}
             </div>
           </div>
 
-          {/* Featured designers + companies strip */}
+          {/* Designers and finishing companies, from the same directory rows. */}
           <div className="mt-12 grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div>
               <div className="flex items-center justify-between mb-5">
@@ -204,25 +220,12 @@ export default function MarketplaceHub() {
                 </button>
               </div>
               <div className="space-y-3">
-                {featuredDesigners.map(d => (
-                  <Card key={d.id} className="p-4 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate(`/marketplace/designers/${d.id}`)}>
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-xl bg-muted flex items-center justify-center text-xl flex-shrink-0">{d.logo}</div>
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-sm flex items-center gap-1">
-                          {ar ? d.nameAr : d.name}
-                          {d.verified && <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" />}
-                          {d.awardWinning && <span title={t('marketHub.awardWinningTitle')}>🏆</span>}
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate">{(ar ? d.specialtiesAr : d.specialties).join(' · ')}</div>
-                      </div>
-                      <div className="flex items-center gap-1 text-xs flex-shrink-0">
-                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                        <span className="font-medium">{d.rating}</span>
-                      </div>
-                    </div>
-                  </Card>
+                {featuredDesigners.map(vendor => (
+                  <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
                 ))}
+                {featuredDesigners.length === 0 && (
+                  <p className="text-sm text-muted-foreground">{t('marketHub.noneYet')}</p>
+                )}
               </div>
             </div>
             <div>
@@ -235,32 +238,65 @@ export default function MarketplaceHub() {
                 </button>
               </div>
               <div className="space-y-3">
-                {featuredCompanies.map(f => (
-                  <Card key={f.id} className="p-4 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate(`/marketplace/finishing/${f.id}`)}>
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-xl bg-muted flex items-center justify-center text-xl flex-shrink-0">{f.logo}</div>
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-sm flex items-center gap-1">
-                          {ar ? f.nameAr : f.name}
-                          {f.verified && <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" />}
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate">{(ar ? f.servicesAr : f.services).slice(0, 2).join(' · ')}</div>
-                      </div>
-                      <div className="text-end flex-shrink-0">
-                        <div className="flex items-center gap-1 text-xs justify-end">
-                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                          <span className="font-medium">{f.rating}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground">{f.completedProjects}+ {t('marketHub.projectsSuffix')}</div>
-                      </div>
-                    </div>
-                  </Card>
+                {featuredCompanies.map(vendor => (
+                  <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
                 ))}
+                {featuredCompanies.length === 0 && (
+                  <p className="text-sm text-muted-foreground">{t('marketHub.noneYet')}</p>
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * One card for a real directory row, used by all three strips.
+ *
+ * Renders only fields the server actually returns. `averageRating` is NULL
+ * until a vendor has a verified review, and that renders as "no reviews yet" -
+ * never as 0, and never as a number the marketplace does not have. That
+ * distinction is the whole reason the fabricated lists were a problem.
+ */
+function DirectoryCard({
+  vendor, t, onOpen,
+}: {
+  vendor: { id: number; name: string | null; avatar: string | null; location: string | null; verified: boolean | null; categories: string[]; averageRating: number | null; reviewCount: number };
+  t: (key: string) => string;
+  onOpen: () => void;
+}) {
+  return (
+    <Card className="p-4 cursor-pointer hover:shadow-lg transition-shadow" onClick={onOpen}>
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
+          {vendor.avatar
+            ? <img src={vendor.avatar} alt="" className="w-full h-full object-cover" />
+            : <Store className="w-5 h-5 text-muted-foreground" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-sm truncate flex items-center gap-1">
+            {vendor.name ?? `#${vendor.id}`}
+            {vendor.verified && <BadgeCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />}
+          </div>
+          <div className="text-xs text-muted-foreground truncate">
+            {vendor.categories.length > 0 ? vendor.categories.slice(0, 2).join(' · ') : (vendor.location ?? '')}
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-1 text-xs mt-2">
+        {vendor.averageRating != null ? (
+          <>
+            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+            <span className="font-medium">{vendor.averageRating}</span>
+            <span className="text-muted-foreground">({vendor.reviewCount})</span>
+          </>
+        ) : (
+          <span className="text-muted-foreground">{t('marketHub.noReviewsYet')}</span>
+        )}
+      </div>
+    </Card>
   );
 }

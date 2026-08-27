@@ -197,6 +197,76 @@ describe('rfq.acceptQuotation (live production route)', () => {
     );
   });
 
+  it('the WINNER is never told they lost, even after bidding several times', async () => {
+    // Nothing today stops one provider submitting several quotations on one
+    // RFQ - that is an OWNER DECISION recorded in the Phase 1B handoff, and
+    // this test does not settle it. What it settles is who gets told what.
+    //
+    // The auto-reject cascade mapped every OTHER QUOTATION row to a recipient,
+    // so provider 20 - who bid three times and WON - was sent "Quotation not
+    // selected" twice, seconds after "Quotation accepted".
+    const harness = createLockedFakeDb({
+      rfq: { id: 5, requesterId: 1, status: 'open' },
+      quotations: [
+        { id: 10, rfqId: 5, providerId: 20, status: 'pending' },
+        { id: 11, rfqId: 5, providerId: 20, status: 'pending' },
+        { id: 12, rfqId: 5, providerId: 20, status: 'pending' },
+        { id: 13, rfqId: 5, providerId: 21, status: 'pending' },
+      ],
+    });
+    harness.transaction.mockImplementation(harness.bindTransaction(10));
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
+
+    await appRouter.createCaller(makeCtx(1)).rfq.acceptQuotation({ quotationId: 10, rfqId: 5 });
+
+    const bulk = harness.notificationInserts.filter(Array.isArray) as Record<string, unknown>[][];
+    const losers = bulk.flat().map(row => row.userId);
+    expect(losers, 'the winner must not be in the rejection list').not.toContain(20);
+    expect(losers, 'the genuine competitor must still be told').toContain(21);
+  });
+
+  it('a provider who bid twice and lost is told once, not twice', async () => {
+    const harness = createLockedFakeDb({
+      rfq: { id: 5, requesterId: 1, status: 'open' },
+      quotations: [
+        { id: 10, rfqId: 5, providerId: 20, status: 'pending' },
+        { id: 11, rfqId: 5, providerId: 21, status: 'pending' },
+        { id: 12, rfqId: 5, providerId: 21, status: 'pending' },
+      ],
+    });
+    harness.transaction.mockImplementation(harness.bindTransaction(10));
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
+
+    await appRouter.createCaller(makeCtx(1)).rfq.acceptQuotation({ quotationId: 10, rfqId: 5 });
+
+    const bulk = harness.notificationInserts.filter(Array.isArray) as Record<string, unknown>[][];
+    const losers = bulk.flat().map(row => row.userId);
+    expect(losers.filter(id => id === 21)).toHaveLength(1);
+  });
+
+  it('the outcome notifications carry a translation key, not only English prose', async () => {
+    // These three call sites live in quotationWorkflow.ts, which the first
+    // version of the notification coverage test never read.
+    const harness = createLockedFakeDb({
+      rfq: { id: 5, requesterId: 1, status: 'open', title: 'Villa slab' },
+      quotations: [
+        { id: 10, rfqId: 5, providerId: 20, status: 'pending' },
+        { id: 11, rfqId: 5, providerId: 21, status: 'pending' },
+      ],
+    });
+    harness.transaction.mockImplementation(harness.bindTransaction(10));
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ transaction: harness.transaction, insert: harness.insert });
+
+    await appRouter.createCaller(makeCtx(1)).rfq.acceptQuotation({ quotationId: 10, rfqId: 5 });
+
+    expect(harness.notificationInserts).toContainEqual(expect.objectContaining({
+      userId: 20, messageKey: 'notif.quotation.accepted',
+    }));
+    expect(harness.notificationInserts).toContainEqual(expect.arrayContaining([
+      expect.objectContaining({ userId: 21, messageKey: 'notif.quotation.notSelected' }),
+    ]));
+  });
+
   it('[Test 3] FORBIDDEN when the quotation belongs to a different RFQ than the one supplied (cross-RFQ IDOR)', async () => {
     const harness = createLockedFakeDb({
       // Attacker owns RFQ 99; quotation 10 actually belongs to RFQ 5 (someone else's).

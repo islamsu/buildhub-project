@@ -12,12 +12,28 @@
 // only it, and a client that does not know a key must still show a sentence.
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { notificationText } from '../client/src/lib/notificationText';
 
 const read = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8');
-const ROUTERS = read('./routers.ts');
 const CONTEXT = read('../client/src/contexts/LanguageContext.tsx');
+
+/**
+ * EVERY server source that can write a notification, not just routers.ts.
+ *
+ * The first version of this file read routers.ts alone, and missed the three
+ * notifyUser/notifyUsers calls in quotationWorkflow.ts entirely - quotation
+ * accepted, and quotation not selected, twice. They were English-only and the
+ * "every call carries a messageKey" rule reported a clean pass over a file
+ * that did not contain them. A coverage test that chooses where to look is
+ * only as good as that choice, so it no longer chooses.
+ */
+const SERVER_DIR = new URL('./', import.meta.url);
+const SERVER_SOURCES: [string, string][] = readdirSync(SERVER_DIR)
+  .filter(name => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+  .map(name => [name, read(`./${name}`)] as [string, string]);
+const ALL_SERVER_CODE = SERVER_SOURCES.map(([, source]) => source).join('\n');
+const ROUTERS = read('./routers.ts');
 
 /** The two translation tables, as plain key -> string maps. */
 function tableFor(lang: 'en' | 'ar'): Map<string, string> {
@@ -51,7 +67,7 @@ describe('every key the server can write has both languages', () => {
 
   function expandedKeys(): string[] {
     const keys: string[] = [];
-    for (const match of ROUTERS.matchAll(/messageKey: ['`]([^'`]+)['`]/g)) {
+    for (const match of ALL_SERVER_CODE.matchAll(/messageKey: ['`]([^'`]+)['`]/g)) {
       const raw = match[1];
       const template = raw.match(/^(.*)\$\{input\.status\}$/);
       if (template) keys.push(...COMPLIANCE_STATUSES.map(s => template[1] + s));
@@ -223,12 +239,31 @@ const quotationFixture = {
 };
 
 describe('the server writes the key everywhere it writes prose', () => {
-  it('every notifyUser/notifyUsers call carries a messageKey', () => {
+  it('every notifyUser/notifyUsers call carries a messageKey, in EVERY server file', () => {
     // The defect this file exists to prevent is a NEW notification added the
-    // old way. Counting the two against each other catches that.
-    const calls = [...ROUTERS.matchAll(/notify(?:User|Users)\(db,/g)].length;
-    const keyed = [...ROUTERS.matchAll(/messageKey: /g)].length;
-    expect(calls).toBeGreaterThan(0);
-    expect(keyed, 'a notification was added without a messageKey').toBe(calls);
+    // old way. Counting the two against each other catches that - but only in
+    // files it actually reads, which is why this counts per file and names
+    // the offender rather than summing across the codebase.
+    const offenders: string[] = [];
+    let total = 0;
+    for (const [name, source] of SERVER_SOURCES) {
+      if (name === 'notifications.ts') continue; // the transport, not a caller
+      const calls = [...source.matchAll(/notify(?:User|Users)\(db,/g)].length;
+      const keyed = [...source.matchAll(/messageKey: /g)].length;
+      total += calls;
+      if (calls !== keyed) offenders.push(`${name}: ${calls} call(s), ${keyed} key(s)`);
+    }
+    expect(total, 'no notification call sites found at all').toBeGreaterThan(5);
+    expect(offenders, 'a notification was added without a messageKey').toEqual([]);
+  });
+
+  it('the scan actually reaches quotationWorkflow.ts', () => {
+    // Named explicitly, because this is the file the first version missed. A
+    // rule that silently stops covering a file passes for the wrong reason.
+    const names = SERVER_SOURCES.map(([name]) => name);
+    expect(names).toContain('quotationWorkflow.ts');
+    expect(names).toContain('routers.ts');
+    const [, workflow] = SERVER_SOURCES.find(([name]) => name === 'quotationWorkflow.ts')!;
+    expect([...workflow.matchAll(/notify(?:User|Users)\(db,/g)].length).toBe(3);
   });
 });

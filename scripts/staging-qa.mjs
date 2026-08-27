@@ -775,7 +775,11 @@ try {
   browser = await chromium.launch({ args: ['--no-sandbox'] });
   const appErrors = [];
   const thirdPartyFailures = new Set();
-  const ROUTES = ['/', '/pricing', '/marketplace', '/marketplace/products', '/marketplace/vendors', '/auth'];
+  // The two directories were added here in the closure pass: they used to
+  // render a hardcoded list and now read the real vendor directory, so an
+  // empty marketplace must render an empty state rather than break.
+  const ROUTES = ['/', '/pricing', '/marketplace', '/marketplace/products', '/marketplace/vendors',
+    '/marketplace/designers', '/marketplace/finishing', '/auth'];
 
   for (const [label, viewport] of [['desktop', { width: 1440, height: 900 }], ['mobile375', { width: 375, height: 800 }]]) {
     for (const lang of ['en', 'ar']) {
@@ -1856,6 +1860,27 @@ try {
 
             check(!/(?:^|\s)(?:dash|platform|nav|common|project|provider)\.[a-z_]+(?:\.[a-z_]+)*(?:\s|$)/.test(body),
               `${where}: no untranslated key is rendered`);
+
+            // CLOSURE PART 17. The dashboard is not the only authenticated
+            // surface a role uses. These are the three they spend time in, and
+            // they were checked at no width in any language before this. Run
+            // at the two EXTREMES only - a layout that survives 375 and 1440
+            // rarely fails at 768, and the dashboard above covers 768 anyway -
+            // because each load costs real seconds against a live deployment.
+            if (width !== 768) {
+              for (const route of ['/rfq', '/messages', '/ai']) {
+                await page.goto(`${BASE}${route}`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+                await page.waitForTimeout(400);
+                const routeBody = await page.locator('body').innerText().catch(() => '');
+                const routeWhere = `32. ${role}/${widthLabel}/${lang} ${route}`;
+                check(routeBody.length > 60, `${routeWhere}: renders content`, `${routeBody.length} chars`);
+                const routeOverflow = await page.evaluate(() =>
+                  document.documentElement.scrollWidth - document.documentElement.clientWidth);
+                check(routeOverflow <= 2, `${routeWhere}: no horizontal overflow`, `${routeOverflow}px past the viewport`);
+                const routeDir = await page.evaluate(() => document.documentElement.dir);
+                check(routeDir === (lang === 'ar' ? 'rtl' : 'ltr'), `${routeWhere}: text direction`, `dir=${routeDir}`);
+              }
+            }
           } catch (error) {
             check(false, `32. ${role}/${widthLabel}/${lang}: dashboard loaded`,
               error instanceof Error ? error.message.slice(0, 90) : String(error));
