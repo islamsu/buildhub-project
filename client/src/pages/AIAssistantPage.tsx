@@ -46,7 +46,7 @@ const ICONS: Record<string, typeof Bot> = {
 // message a client sends. Grounding the browser could edit is not grounding.
 
 export default function AIAssistantPage() {
-  const { t, lang } = useLanguage();
+  const { t, lang, dir } = useLanguage();
   const { data: capabilities } = trpc.auth.capabilities.useQuery();
   const { data: me } = trpc.auth.me.useQuery();
   const aiUnavailable = capabilities?.aiAssistant === false;
@@ -110,6 +110,29 @@ export default function AIAssistantPage() {
             </div>
             <h1 className="text-3xl font-bold mb-2" data-testid="ai-role-title">{t(experience.titleKey)}</h1>
             <p className="text-muted-foreground" data-testid="ai-role-subtitle">{t(experience.subtitleKey)}</p>
+
+            {/* THE ROLE'S PRIMARY WORKFLOW. Eight unrelated tools on a page is
+                a toolbox; a named sequence is a product that says what it is
+                for. The same steps are sent to the model, so the answer helps
+                move the person ALONG this path rather than merely answering. */}
+            <div className="mt-5" data-testid="ai-role-workflow">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">{t('ai.workflow.label')}</p>
+              <ol className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm">
+                {experience.workflow.map((step, index) => (
+                  <li key={step} className="flex items-center gap-2">
+                    <span
+                      data-testid={`ai-workflow-${step}`}
+                      className="rounded-full border border-border bg-muted/40 px-3 py-1 font-medium"
+                    >
+                      {t(`ai.workflow.${step}`)}
+                    </span>
+                    {index < experience.workflow.length - 1 && (
+                      <span aria-hidden className="text-muted-foreground">{dir === 'rtl' ? '←' : '→'}</span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </div>
           </div>
 
           {aiUnavailable && (

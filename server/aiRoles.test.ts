@@ -243,3 +243,111 @@ describe('buildSystemPrompt is pure with respect to role', () => {
     }
   });
 });
+
+// ── The workflow, and actions that actually land somewhere ────────────────
+//
+// The AI phase brief gives each role a PRIMARY WORKFLOW (plan -> estimate ->
+// find -> compare -> decide, and five others) and a list of BuildHub actions.
+// Eight unrelated tools on a page is a toolbox; a named sequence is a product
+// that says what it is for.
+//
+// The rule that shapes the action lists is the brief's own: do not create
+// buttons that do nothing. Every href must be a route App.tsx actually
+// registers, and one action the brief asks for is deliberately ABSENT because
+// BuildHub has no surface behind it.
+describe('each role runs a named workflow', () => {
+  const APP = readFileSync(new URL('../client/src/App.tsx', import.meta.url), 'utf8');
+  const CONTEXT = readFileSync(new URL('../client/src/contexts/LanguageContext.tsx', import.meta.url), 'utf8');
+  const PAGE = readFileSync(new URL('../client/src/pages/AIAssistantPage.tsx', import.meta.url), 'utf8');
+
+  const EXPECTED: Record<string, string[]> = {
+    homeowner: ['plan', 'estimate', 'find', 'compare', 'decide'],
+    contractor: ['findOpportunity', 'analyze', 'estimate', 'quote', 'execute'],
+    supplier: ['findDemand', 'matchProducts', 'quote', 'sell'],
+    architect: ['design', 'specify', 'coordinate', 'source'],
+    engineer: ['analyze', 'verify', 'qaqc', 'manageRisk'],
+    project_manager: ['plan', 'track', 'control', 'report'],
+  };
+
+  it('the workflow matches the one the brief specifies, in ORDER', () => {
+    // Order is the point. A set of steps is a menu; a sequence is a workflow.
+    for (const [role, steps] of Object.entries(EXPECTED)) {
+      expect(ROLE_EXPERIENCES[role as keyof typeof ROLE_EXPERIENCES].workflow, role).toEqual(steps);
+    }
+  });
+
+  it('every workflow step is translated in both languages', () => {
+    const steps = new Set(Object.values(EXPECTED).flat());
+    for (const step of steps) {
+      expect(CONTEXT.split(`'ai.workflow.${step}':`).length - 1, step).toBe(2);
+    }
+  });
+
+  it('the workflows DIFFER between roles - this is not one sequence relabelled', () => {
+    // Read from ROLE_EXPERIENCES, not from EXPECTED. The first version mapped
+    // over my own constant, so it asserted that six literals I had just typed
+    // were distinct - it could not have failed, and a mutation that gave two
+    // roles the same workflow was caught only by the ORDER test above.
+    const signatures = BUILDHUB_ROLES.map(role => ROLE_EXPERIENCES[role].workflow.join('>'));
+    expect(new Set(signatures).size, 'two roles share a workflow').toBe(6);
+  });
+
+  it('the page renders it, and the model is told it', () => {
+    expect(PAGE).toContain('data-testid="ai-role-workflow"');
+    expect(PAGE).toContain('experience.workflow.map');
+    const KNOWLEDGE = readFileSync(new URL('./_core/buildhubKnowledge.ts', import.meta.url), 'utf8');
+    expect(KNOWLEDGE).toContain('experience.workflow.join');
+    // ...and told not to force it, which is the failure mode of a workflow hint.
+    expect(KNOWLEDGE).toMatch(/do not push the\s*\n?\s*\/\/?\s*workflow when they simply asked a question|do not push the/);
+  });
+});
+
+describe('every action lands on a route that exists', () => {
+  const APP = readFileSync(new URL('../client/src/App.tsx', import.meta.url), 'utf8');
+  const CONTEXT = readFileSync(new URL('../client/src/contexts/LanguageContext.tsx', import.meta.url), 'utf8');
+
+  it('no action points at a route App.tsx does not register', () => {
+    for (const role of BUILDHUB_ROLES) {
+      for (const action of ROLE_EXPERIENCES[role].actions) {
+        const path = action.href.replace(/\/:\w+/g, '');
+        expect(APP, `${role}/${action.id} -> ${action.href} is not a route`)
+          .toContain(`path={"${path}"}`);
+      }
+    }
+  });
+
+  it('every action label is translated in both languages', () => {
+    for (const role of BUILDHUB_ROLES) {
+      for (const action of ROLE_EXPERIENCES[role].actions) {
+        expect(CONTEXT.split(`'${action.labelKey}':`).length - 1, action.labelKey).toBe(2);
+      }
+    }
+  });
+
+  it('the action sets DIFFER between roles', () => {
+    const signatures = BUILDHUB_ROLES.map(role =>
+      ROLE_EXPERIENCES[role].actions.map(a => a.id).join(','));
+    expect(new Set(signatures).size).toBeGreaterThanOrEqual(5);
+  });
+
+  it('a supplier is offered product management; a homeowner is not', () => {
+    const supplier = ROLE_EXPERIENCES.supplier.actions.map(a => a.id);
+    const homeowner = ROLE_EXPERIENCES.homeowner.actions.map(a => a.id);
+    expect(supplier).toContain('manageProduct');
+    expect(homeowner).not.toContain('manageProduct');
+    expect(homeowner).toContain('createProject');
+    expect(supplier).not.toContain('createProject');
+  });
+
+  it('COMPARE PROVIDERS is absent, and the absence is explained', () => {
+    // The brief lists it. BuildHub has no comparison route, component or
+    // endpoint, so shipping the button would be the decorative suggestion the
+    // same brief forbids. The gap is recorded in the source and the handoff.
+    const ROLES_SOURCE = readFileSync(new URL('../shared/aiRoles.ts', import.meta.url), 'utf8');
+    for (const role of BUILDHUB_ROLES) {
+      expect(ROLE_EXPERIENCES[role].actions.map(a => a.id)).not.toContain('compareProviders');
+    }
+    expect(ROLES_SOURCE).toMatch(/no comparison surface/i);
+    expect(APP).not.toContain('path={"/compare"}');
+  });
+});
