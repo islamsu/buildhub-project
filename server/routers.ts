@@ -33,6 +33,7 @@ import { getChurn, getCommercialKpis } from './analytics/kpis';
 import { ENV, isTestLoginEnabled } from './_core/env';
 import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
+import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
   projects, milestones, tasks, documents, products,
@@ -1099,9 +1100,9 @@ const marketplaceRouter = router({
   // read here and never affects position.
   vendors: publicProcedure
     .input(z.object({
-      category: z.string().optional(),
-      location: z.string().optional(),
-      search: z.string().optional(),
+      category: z.string().max(MAX_SEARCH_LENGTH).optional(),
+      location: z.string().max(MAX_SEARCH_LENGTH).optional(),
+      search: z.string().max(MAX_SEARCH_LENGTH).optional(),
       limit: z.number().int().positive().max(100).optional(),
     }).optional())
     .query(async ({ input }) => listDirectoryVendors(input ?? {})),
@@ -1114,8 +1115,8 @@ const marketplaceRouter = router({
   // labelling obligation impossible to overlook on the client side.
   featuredVendors: publicProcedure
     .input(z.object({
-      category: z.string().optional(),
-      location: z.string().optional(),
+      category: z.string().max(MAX_SEARCH_LENGTH).optional(),
+      location: z.string().max(MAX_SEARCH_LENGTH).optional(),
     }).optional())
     .query(async ({ input }) => {
       const vendors = await listFeaturedVendors(input ?? {});
@@ -1125,7 +1126,16 @@ const marketplaceRouter = router({
       };
     }),
   list: publicProcedure
-    .input(z.object({ category: z.string().optional(), search: z.string().optional(), limit: z.number().default(24) }))
+    // BOUNDED, matching marketplace.vendors below, which already was. This
+    // endpoint is PUBLIC and unauthenticated: `limit` had no int, no minimum
+    // and no maximum, so `limit: 100000` returned the entire catalogue in one
+    // request and `limit: -1` reached MySQL as a syntax error. The strings had
+    // no length cap either.
+    .input(z.object({
+      category: z.string().max(MAX_SEARCH_LENGTH).optional(),
+      search: z.string().max(MAX_SEARCH_LENGTH).optional(),
+      limit: z.number().int().positive().max(100).default(24),
+    }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -1139,7 +1149,7 @@ const marketplaceRouter = router({
         conditions.push(eq(products.category, input.category));
       }
       if (input.search) {
-        const term = `%${input.search}%`;
+        const term = containsTerm(input.search);
         conditions.push(or(
           like(products.name, term),
           like(products.nameAr, term),
