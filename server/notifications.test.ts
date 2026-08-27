@@ -11,13 +11,13 @@ describe('notifyUser / notifyUsers (shared in-app notification abstraction)', ()
   it('notifyUser writes one in-app notification row with sensible defaults', async () => {
     const db = makeDbSpy();
     await notifyUser(db, { userId: 5, title: 'Hello' });
-    expect(db.values).toHaveBeenCalledWith({ userId: 5, title: 'Hello', body: null, type: 'info', link: null });
+    expect(db.values).toHaveBeenCalledWith({ userId: 5, title: 'Hello', body: null, type: 'info', link: null, messageKey: null, messageParams: null });
   });
 
   it('notifyUser passes through an explicit type/link/body', async () => {
     const db = makeDbSpy();
     await notifyUser(db, { userId: 5, title: 'Quotation accepted', body: 'Nice work', type: 'quotation', link: '/provider' });
-    expect(db.values).toHaveBeenCalledWith({ userId: 5, title: 'Quotation accepted', body: 'Nice work', type: 'quotation', link: '/provider' });
+    expect(db.values).toHaveBeenCalledWith({ userId: 5, title: 'Quotation accepted', body: 'Nice work', type: 'quotation', link: '/provider', messageKey: null, messageParams: null });
   });
 
   it('notifyUser is a no-op when the database is unavailable (never throws)', async () => {
@@ -37,8 +37,8 @@ describe('notifyUser / notifyUsers (shared in-app notification abstraction)', ()
     ]);
     expect(db.insert).toHaveBeenCalledTimes(1);
     expect(db.values).toHaveBeenCalledWith([
-      { userId: 1, title: 'A', body: null, type: 'info', link: null },
-      { userId: 2, title: 'B', body: null, type: 'quotation', link: null },
+      { userId: 1, title: 'A', body: null, type: 'info', link: null, messageKey: null, messageParams: null },
+      { userId: 2, title: 'B', body: null, type: 'quotation', link: null, messageKey: null, messageParams: null },
     ]);
   });
 
@@ -111,5 +111,38 @@ describe('rfq.submitQuotation notifies the RFQ owner', () => {
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
     const caller = appRouter.createCaller(makeCtx(20, 'contractor'));
     await expect(caller.rfq.submitQuotation({ rfqId: 5, price: 1000 })).resolves.toEqual({ success: true });
+  });
+});
+
+// PHASE 1B: the localisation columns are not decorative - a caller that
+// supplies them must have them reach the insert, or the reader's language
+// never gets a say.
+describe('the translatable form reaches the row', () => {
+  it('writes messageKey and messageParams when the caller supplies them', async () => {
+    const db = makeDbSpy();
+    await notifyUser(db as never, {
+      userId: 5, title: 'New quotation received', body: 'You received a new quotation for "Slab"',
+      type: 'quotation', link: '/rfq',
+      messageKey: 'notif.quotation.received', messageParams: { rfqTitle: 'Slab' },
+    });
+    expect(db.values).toHaveBeenCalledWith(expect.objectContaining({
+      messageKey: 'notif.quotation.received',
+      messageParams: { rfqTitle: 'Slab' },
+    }));
+  });
+
+  it('still writes the English prose alongside it', async () => {
+    // The fallback is load-bearing: pre-migration rows have only prose, and a
+    // client that does not know a key must still render a sentence. Writing
+    // ONLY the key would leave those readers with a blank notification.
+    const db = makeDbSpy();
+    await notifyUser(db as never, {
+      userId: 5, title: 'New quotation received', body: 'You received a new quotation for "Slab"',
+      messageKey: 'notif.quotation.received', messageParams: { rfqTitle: 'Slab' },
+    });
+    expect(db.values).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'New quotation received',
+      body: 'You received a new quotation for "Slab"',
+    }));
   });
 });

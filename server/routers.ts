@@ -1543,7 +1543,7 @@ const rfqRouter = router({
       });
       const [rfq] = await db.select({ requesterId: rfqs.requesterId, title: rfqs.title }).from(rfqs).where(eq(rfqs.id, input.rfqId));
       if (rfq) {
-        await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: '/rfq' });
+        await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: '/rfq', messageKey: 'notif.quotation.received', messageParams: { rfqTitle: rfq.title } });
       }
       // Funnel milestone: a vendor responding is the point at which the
       // marketplace has produced value for both sides.
@@ -1750,7 +1750,7 @@ const reviewsRouter = router({
       );
       if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'You have already reviewed this provider for this project' });
       await db.insert(reviews).values({ ...input, reviewerId: ctx.user.id, verified: true });
-      await notifyUser(db, { userId: input.revieweeId, title: 'New review received', body: `You received a new ${input.rating}-star review.`, type: 'review', link: '/provider' });
+      await notifyUser(db, { userId: input.revieweeId, title: 'New review received', body: `You received a new ${input.rating}-star review.`, type: 'review', link: '/provider', messageKey: 'notif.review.received', messageParams: { rating: input.rating } });
       return { success: true };
     }),
 });
@@ -2535,7 +2535,7 @@ const adminRouter = router({
     await db.insert(registrationReviewEvents).values({ userId: applicant.id, documentId: document.id, actorId: ctx.user.id, action: 'document_reviewed', status: input.status, note: input.reviewerNote });
     const title = input.status === 'approved' ? 'Registration document approved' : input.status === 'update_required' ? 'Registration document update required' : input.status === 'rejected' ? 'Registration document rejected' : 'Registration document under review';
     const body = input.reviewerNote ? `${document.displayName}: ${input.reviewerNote}` : `${document.displayName} status changed to ${input.status.replace('_', ' ')}`;
-    await notifyUser(db, { userId: applicant.id, title, body, type: 'compliance', link: '/compliance' });
+    await notifyUser(db, { userId: applicant.id, title, body, type: 'compliance', link: '/compliance', messageKey: `notif.compliance.document.${input.status}`, messageParams: { document: document.displayName, ...(input.reviewerNote ? { note: input.reviewerNote } : {}) } });
     return { success: true, documentStatus: input.status, onboardingStatus: overallStatus };
   }),
   updateApplicantStatus: adminWith('marketplace.manage').input(z.object({
@@ -2549,7 +2549,7 @@ const adminRouter = router({
     if (!applicant || !isComplianceRole(applicant.userRole)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Compliance applicant not found' });
     await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: new Date(), onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(eq(users.id, input.userId));
     await db.insert(registrationReviewEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'applicant_status_updated', status: input.status, note: input.note });
-    await notifyUser(db, { userId: input.userId, title: 'Registration status updated', body: input.note || `Your registration is now ${input.status.replace('_', ' ')}`, type: 'compliance', link: '/compliance' });
+    await notifyUser(db, { userId: input.userId, title: 'Registration status updated', body: input.note || `Your registration is now ${input.status.replace('_', ' ')}`, type: 'compliance', link: '/compliance', messageKey: `notif.compliance.applicant.${input.status}`, messageParams: (input.note ? { note: input.note } : {}) as Record<string, string> });
     // Verification is the gate for appearing in the directory at all, so it is
     // the funnel stage where a vendor becomes able to earn anything. The
     // reviewer's note is not recorded - it is free text about a real person.
@@ -2574,7 +2574,7 @@ const adminRouter = router({
     const reviewedAt = new Date();
     await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: reviewedAt, onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(inArray(users.id, userIds));
     await db.insert(registrationReviewEvents).values(applicants.map(applicant => ({ userId: applicant.id, actorId: ctx.user.id, action: 'bulk_applicant_status_updated', status: input.status, note: input.note })));
-    await notifyUsers(db, applicants.map(applicant => ({ userId: applicant.id, title: input.status === 'approved' ? 'Registration approved' : 'Registration rejected', body: input.note || `Your registration is ${input.status}`, type: 'compliance', link: '/compliance' })));
+    await notifyUsers(db, applicants.map(applicant => ({ userId: applicant.id, title: input.status === 'approved' ? 'Registration approved' : 'Registration rejected', body: input.note || `Your registration is ${input.status}`, type: 'compliance', link: '/compliance', messageKey: `notif.compliance.applicant.${input.status}`, messageParams: (input.note ? { note: input.note } : {}) as Record<string, string> })));
     return { success: true, updatedCount: applicants.length, onboardingStatus: input.status };
   }),
   verifyUser: adminWith('users.manage').input(z.object({ userId: z.number(), verified: z.boolean() })).mutation(async ({ input }) => {

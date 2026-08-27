@@ -439,11 +439,27 @@ export const messages = mysqlTable('messages', {
 }));
 
 // ── Notifications ──────────────────────────────────────────────────────────
+// PHASE 1B. `title` and `body` hold ENGLISH PROSE, rendered at write time.
+// BuildHub is bilingual and the language is a per-viewer choice, so a stored
+// sentence is wrong for half the audience the moment it is written - an Arabic
+// contractor read "You received a new quotation" in English, in an otherwise
+// fully Arabic interface.
+//
+// `messageKey` + `messageParams` carry the translatable form: a key the client
+// resolves through the same t() every other string goes through, and the small
+// facts that fill it (an RFQ title, a star rating). The prose columns stay, and
+// stay populated, for two reasons - every row written before this migration has
+// only them, and a key the client does not recognise must still render
+// something rather than nothing.
 export const notifications = mysqlTable('notifications', {
   id:        int('id').autoincrement().primaryKey(),
   userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   title:     varchar('title', { length: 255 }).notNull(),
   body:      text('body'),
+  /** Translation key, e.g. 'notif.quotation.received'. Null on pre-Phase-1B rows. */
+  messageKey: varchar('messageKey', { length: 120 }),
+  /** Small, non-identifying substitutions for the key. Never a credential or a document. */
+  messageParams: json('messageParams'),
   type:      varchar('type', { length: 50 }).default('info'),
   read:      boolean('read').default(false),
   link:      varchar('link', { length: 255 }),
