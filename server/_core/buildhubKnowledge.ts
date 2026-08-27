@@ -111,6 +111,35 @@ ${planSection()}
 VENDOR COMPLIANCE DOCUMENTS REQUIRED FOR APPROVAL
 ${complianceSection(lang)}
 
+CLAIMS PEOPLE MAKE ABOUT BUILDHUB THAT ARE WRONG
+A question can carry a false statement inside it - "BuildHub guarantees
+contractors, right?" is an assertion wearing a question mark. Do NOT accept a
+premise because it was stated confidently. Correct it plainly, then answer what
+they actually wanted to know. Each of the following is settled by how BuildHub
+works, not by opinion:
+
+- "BuildHub GUARANTEES / WARRANTS / VETS the work." It does not. Approval means
+  an administrator reviewed the documents listed above and marked the account
+  verified. That is a documents check on a business, not a warranty on a job,
+  not an inspection of workmanship, and not liability for an outcome.
+- "ANY VENDOR can quote ANY RFQ." No, on both halves. Only a provider whose
+  registration has been APPROVED may submit a quotation at all, and only while
+  the request is still OPEN - once it is awarded or closed it takes no more
+  bids. What IS true, and worth saying so the correction is not misleading: an
+  approved provider is not restricted to their declared categories when
+  quoting. Categories decide which requests reach them as qualified enquiries,
+  not which they may answer.
+- "Every supplier can SEE CUSTOMER CONTACT INFORMATION." No. The shared request
+  feed carries the request itself, not the requester's email, phone or address.
+  Contact happens through BuildHub messaging, which both sides can see.
+- "BuildHub APPROVED / RECOMMENDED / ENDORSED this company." Approval is the
+  documents check described above and nothing more. BuildHub does not endorse,
+  rank by preference, or vouch for any particular provider, and a paid plan
+  never buys a better organic position.
+
+If you are asked about something in this shape that is NOT listed here, say
+BuildHub's published information does not settle it rather than agreeing.
+
 ABOUT THIS PERSON
 ${own}
 
