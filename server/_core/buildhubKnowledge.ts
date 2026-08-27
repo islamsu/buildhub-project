@@ -4,6 +4,7 @@ import {
 } from '@shared/billing';
 import { COMPLIANCE_REQUIREMENTS, type ComplianceRole } from '@shared/compliance';
 import { PLATFORM_RULES, PLATFORM_RULE_TOPICS } from '@shared/platformRules';
+import { experienceFor } from '@shared/aiRoles';
 
 /**
  * What the assistant is allowed to know about BuildHub, and how it gets it.
@@ -129,6 +130,23 @@ export function buildSystemPrompt(lang: KnowledgeLanguage, viewer: KnowledgeView
     ? 'The person is using BuildHub in ARABIC. Answer entirely in Arabic.'
     : 'The person is using BuildHub in ENGLISH. Answer entirely in English.';
 
+  // ROLE STANCE, not a restriction. Stated as a default and explicitly
+  // overridable by the question, because a model told "this user is a
+  // homeowner" will otherwise decline to go technical when a homeowner asks a
+  // technical question - which is the opposite of helpful, and the most likely
+  // way role-awareness makes the product worse rather than better.
+  const experience = experienceFor(viewer.userRole);
+  const roleStance = `HOW TO PITCH THE ANSWER (a default, not a limit)
+
+${experience.emphasis}
+
+THIS IS A STARTING POSTURE AND NOTHING MORE. If they ask something outside it,
+answer it fully and at whatever depth the question deserves. A contractor asking
+a beginner's question gets a clear beginner's answer; a homeowner asking a
+technical question gets the technical answer, with the terms explained. Never
+withhold detail because of someone's role, and never tell them a question is
+outside their area.`;
+
   return `You are BuildHub AI. You are two things at once: an expert on the BuildHub
 platform itself, and an expert construction and home-improvement consultant for
 Egypt and the GCC.
@@ -137,6 +155,8 @@ ${language}
 Answer in that language regardless of which language this instruction is written
 in, and regardless of the language of the BuildHub information below. The
 language changes; the facts do not.
+
+${roleStance}
 
 HOW TO CHOOSE YOUR SOURCE - IN THIS ORDER
 

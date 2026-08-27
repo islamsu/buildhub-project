@@ -1680,6 +1680,91 @@ try {
     }
   }
 
+  // ══ 31. ROLE-AWARE AI ═════════════════════════════════════════════════
+  //
+  // Six roles, six experiences, ZERO extra paid requests. Opening /ai costs
+  // nothing - the page renders its role's tools and shortcuts from config, and
+  // no AI request fires until someone asks something. Proving personalisation
+  // does not require paying for six answers.
+  section('31. Role-aware AI experiences');
+  {
+    const seen = new Map();
+
+    for (const role of ROLES) {
+      const cookie = users[role]?.cookie;
+      if (!cookie) { skip(`31. ${role} AI experience`, 'no session for this role'); continue; }
+
+      const roleCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: BASE.includes('127.0.0.1') });
+      try {
+        const [n, ...rest] = cookie.split('=');
+        await roleCtx.addCookies([{
+          name: n.trim(), value: rest.join('='), domain: new URL(BASE).hostname,
+          path: '/', httpOnly: true, secure: BASE.startsWith('https'), sameSite: 'None',
+        }]);
+        const page = await roleCtx.newPage();
+        let aiRequests = 0;
+        page.on('response', r => { if (r.url().includes('/api/trpc/ai.chat')) aiRequests++; });
+        await page.goto(`${BASE}/ai`, { waitUntil: 'networkidle', timeout: 45_000 });
+
+        const title = (await page.getByTestId('ai-role-title').innerText().catch(() => '')).trim();
+        const tools = await page.getByTestId('ai-tools').locator('[data-testid^="ai-tool-"]').all();
+        const toolIds = await Promise.all(tools.map(t => t.getAttribute('data-testid')));
+        const actions = await page.getByTestId('ai-actions').locator('[data-testid^="ai-action-"]').count();
+
+        check(title.length > 0, `31. ${role}: the AI page names this role's experience`, title.slice(0, 60));
+        check(tools.length === 8, `31. ${role}: eight tools are offered`, `${tools.length} tool(s)`);
+        check(actions >= 3, `31. ${role}: BuildHub shortcuts are offered`, `${actions} action(s)`);
+        // The composer is the line that must never be optimised away:
+        // personalisation decides what is offered, never what may be asked.
+        check(await page.locator('textarea').count() > 0, `31. ${role}: the general composer is still available`);
+        check(aiRequests === 0, `31. ${role}: opening the page costs nothing`, `${aiRequests} ai.chat request(s)`);
+        check(!/ai\.tool\.|ai\.role\./.test(await page.locator('body').innerText()),
+          `31. ${role}: no untranslated key is rendered`);
+
+        seen.set(role, { title, tools: (toolIds ?? []).join(',') });
+
+        // Arabic, for this role.
+        await page.evaluate(() => localStorage.setItem('buildhub_lang', 'ar'));
+        await page.reload({ waitUntil: 'networkidle', timeout: 45_000 });
+        const dir = await page.evaluate(() => document.documentElement.getAttribute('dir'));
+        const arTitle = (await page.getByTestId('ai-role-title').innerText().catch(() => '')).trim();
+        check(dir === 'rtl', `31. ${role}: the role page is right-to-left in Arabic`, `dir=${dir}`);
+        check(/[؀-ۿ]/.test(arTitle), `31. ${role}: the role title is in ARABIC`, arTitle.slice(0, 50));
+        check(arTitle !== title, `31. ${role}: the Arabic title is a translation, not the English string`);
+        check(!/ai\.tool\.|ai\.role\./.test(await page.locator('body').innerText()),
+          `31. ${role}: no untranslated key is rendered in Arabic`);
+      } finally {
+        await roleCtx.close();
+      }
+    }
+
+    // THE CLAIM THAT MATTERS: six roles, six DIFFERENT experiences. Without
+    // this the section would pass on an implementation that showed everyone
+    // the same page with a different heading - which is exactly the failure
+    // mode this feature is most likely to have.
+    const titles = [...seen.values()].map(v => v.title);
+    const toolSets = [...seen.values()].map(v => v.tools);
+    check(seen.size === ROLES.length, '31. every role rendered its own AI page', `${seen.size}/${ROLES.length}`);
+    check(new Set(titles).size === seen.size,
+      '31. every role has a DISTINCT heading', `${new Set(titles).size} distinct`);
+    check(new Set(toolSets).size === seen.size,
+      '31. every role has a DISTINCT tool set - not one page with six headings',
+      `${new Set(toolSets).size} distinct tool sets`);
+
+    // And a specific pair, so the assertion is not satisfiable by six random
+    // orderings of the same eight tools.
+    const homeowner = seen.get('homeowner');
+    const contractor = seen.get('contractor');
+    if (homeowner && contractor) {
+      check(!homeowner.tools.includes('ai-tool-rfqAnalyzer'),
+        '31. the homeowner is NOT shown contractor RFQ tooling');
+      check(contractor.tools.includes('ai-tool-rfqAnalyzer'),
+        '31. the contractor IS shown RFQ tooling', contractor.tools.slice(0, 60));
+      check(!contractor.tools.includes('ai-tool-findDesigner'),
+        '31. the contractor is NOT shown the homeowner designer finder');
+    }
+  }
+
   section('21. Secret exposure');
   for (const secret of ['JWT_SECRET', 'DATABASE_URL', 'SMTP_PASSWORD', 'S3_SECRET', 'mysql://', 'BEGIN PRIVATE KEY']) {
     check(!html.includes(secret), `21. the delivered page contains no ${secret}`);
