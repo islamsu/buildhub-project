@@ -1,4 +1,5 @@
 import { listDirectoryVendors, PROVIDER_ROLES, type DirectoryVendor } from './vendorDirectory';
+import { neutralizeUntrusted } from './_core/untrustedContent';
 
 /**
  * BuildHub's provider recommendation engine.
@@ -264,16 +265,24 @@ be described in full.`
 
   const rows = outcome.candidates.map((candidate, index) => {
     const v = candidate.vendor;
+    // EVERY vendor-authored field is neutralised on the way in. The name,
+    // the location and the declared categories are typed by the vendor, and
+    // until now went into the prompt verbatim - a company could name itself
+    // across several lines and close this block early. role and verified are
+    // BuildHub's own values and need no such treatment.
     const facts = [
       `role: ${v.userRole ?? 'unspecified'}`,
-      `location: ${v.location ?? 'not stated'}`,
+      `location: ${neutralizeUntrusted(v.location, 80) || 'not stated'}`,
       `verified: ${v.verified ? 'yes' : 'no'}`,
       v.averageRating !== null && v.reviewCount > 0
         ? `rating: ${v.averageRating.toFixed(1)}/5 from ${v.reviewCount} review(s)`
         : 'rating: no reviews yet',
-      v.categories.length ? `declared categories: ${v.categories.join(', ')}` : 'declared categories: none',
+      v.categories.length
+        ? `declared categories: ${neutralizeUntrusted(v.categories.join(', '), 200)}`
+        : 'declared categories: none',
     ].join(' | ');
-    return `  ${index + 1}. ${v.name ?? `Provider #${v.id}`} [BuildHub score ${candidate.score}]
+    const safeName = neutralizeUntrusted(v.name, 120) || `Provider #${v.id}`;
+    return `  ${index + 1}. ${safeName} [BuildHub score ${candidate.score}]
      ${facts}
      why ranked here: ${candidate.reasons.length ? candidate.reasons.join('; ') : 'no matching signals beyond being listed and approved'}`;
   }).join('\n');
