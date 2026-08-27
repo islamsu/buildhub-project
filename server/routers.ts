@@ -1535,26 +1535,54 @@ const rfqRouter = router({
       }
     }),
   submitQuotation: approvedProviderProcedure
+    // BOUNDS MATCH THE COLUMNS. `price` is decimal(12,2), `warranty` is
+    // varchar(100), `timeline` is an int. None of these were bounded, so a
+    // negative price was accepted as a bid, and an over-long warranty string
+    // reached MySQL as an error or a silent truncation depending on sql_mode.
+    // This is input validation, not policy - the shape of the column is not a
+    // business rule somebody has to decide.
     .input(z.object({
-      rfqId: z.number(),
-      price: z.number(),
-      timeline: z.number().optional(),
-      warranty: z.string().optional(),
-      paymentTerms: z.string().optional(),
-      notes: z.string().optional(),
+      rfqId: z.number().int().positive(),
+      price: z.number().positive().max(9_999_999_999.99),
+      timeline: z.number().int().positive().max(3650).optional(),
+      warranty: z.string().max(100).optional(),
+      paymentTerms: z.string().max(2000).optional(),
+      notes: z.string().max(4000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      // THE RFQ IS READ FIRST, AND ITS STATE IS CHECKED.
+      //
+      // This used to insert immediately and look the RFQ up afterwards, only to
+      // address the notification. Two consequences. A quotation against an id
+      // that does not exist hit the RESTRICT foreign key and surfaced as a 500
+      // rather than a 404. And a quotation could be submitted against a CLOSED
+      // or AWARDED RFQ - the requester had already accepted somebody, and new
+      // bids still landed in their inbox.
+      //
+      // The client filters the pipeline to `status === 'open'`, which is why
+      // nobody hit this through the UI. Frontend filtering is not a control;
+      // the status enum and acceptQuotation's transition to 'awarded' are the
+      // existing rule, and this enforces it where it is enforceable.
+      const [rfq] = await db.select({ requesterId: rfqs.requesterId, title: rfqs.title, status: rfqs.status })
+        .from(rfqs).where(eq(rfqs.id, input.rfqId));
+      if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
+      if (rfq.status !== 'open') {
+        throw new TRPCError({ code: 'CONFLICT', message: 'This request is no longer accepting quotations' });
+      }
+      // KNOWN GAP, deliberately not decided here: nothing stops the same
+      // provider submitting several quotations on one RFQ, and each one
+      // notifies the requester again. Whether a second submission should be
+      // refused, or should REPLACE the first as a revision, is a product
+      // decision about how bidding works on BuildHub - not something to infer
+      // from the schema. Recorded in the Phase 1B handoff for the owner.
       await db.insert(quotations).values({
         ...input,
         providerId: ctx.user.id,
         price: String(input.price),
       });
-      const [rfq] = await db.select({ requesterId: rfqs.requesterId, title: rfqs.title }).from(rfqs).where(eq(rfqs.id, input.rfqId));
-      if (rfq) {
-        await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: '/rfq', messageKey: 'notif.quotation.received', messageParams: { rfqTitle: rfq.title } });
-      }
+      await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: '/rfq', messageKey: 'notif.quotation.received', messageParams: { rfqTitle: rfq.title } });
       // Funnel milestone: a vendor responding is the point at which the
       // marketplace has produced value for both sides.
       recordEventAsync({

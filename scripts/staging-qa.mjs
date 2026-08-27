@@ -734,6 +734,17 @@ try {
         await post('admin.updateApplicantStatus', { userId: contractorId, status: 'approved' }, admin);
         const q = await post('rfq.submitQuotation', { rfqId, price: 9000, timeline: 14 }, users.contractor.cookie);
         check(q.s === 200, '14. an APPROVED provider can submit a quotation', `http ${q.s}`);
+        // PHASE 1B. submitQuotation used to insert first and look the RFQ up
+        // afterwards, so a quotation against an id that does not exist hit the
+        // foreign key and came back a 500. It must be a clean refusal, and the
+        // status code is the difference between "you asked for something that
+        // is not there" and "we broke".
+        const ghost = await post('rfq.submitQuotation', { rfqId: 999_999_999, price: 100 }, users.contractor.cookie);
+        check(ghost.s >= 400 && ghost.s < 500, '14. quoting a nonexistent RFQ is refused, not a server error', `http ${ghost.s}`);
+        check(!/at Object\.|node_modules|ER_NO_REFERENCED_ROW/.test(ghost.t),
+          '14. the refusal carries no database error or stack', ghost.t.slice(0, 80));
+        const negative = await post('rfq.submitQuotation', { rfqId, price: -5 }, users.contractor.cookie);
+        check(negative.s >= 400 && negative.s < 500, '14. a negative price is refused', `http ${negative.s}`);
         const stranger = await post('rfq.acceptQuotation', { quotationId: 1, rfqId }, users.engineer.cookie);
         check(stranger.s !== 200, '14. a stranger cannot accept a quotation on another RFQ', `http ${stranger.s}`);
 
