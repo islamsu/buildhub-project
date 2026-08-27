@@ -33,6 +33,7 @@ import { getChurn, getCommercialKpis } from './analytics/kpis';
 import { ENV, isTestLoginEnabled } from './_core/env';
 import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
+import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
   projects, milestones, tasks, documents, products,
@@ -1099,9 +1100,9 @@ const marketplaceRouter = router({
   // read here and never affects position.
   vendors: publicProcedure
     .input(z.object({
-      category: z.string().optional(),
-      location: z.string().optional(),
-      search: z.string().optional(),
+      category: z.string().max(MAX_SEARCH_LENGTH).optional(),
+      location: z.string().max(MAX_SEARCH_LENGTH).optional(),
+      search: z.string().max(MAX_SEARCH_LENGTH).optional(),
       limit: z.number().int().positive().max(100).optional(),
     }).optional())
     .query(async ({ input }) => listDirectoryVendors(input ?? {})),
@@ -1114,8 +1115,8 @@ const marketplaceRouter = router({
   // labelling obligation impossible to overlook on the client side.
   featuredVendors: publicProcedure
     .input(z.object({
-      category: z.string().optional(),
-      location: z.string().optional(),
+      category: z.string().max(MAX_SEARCH_LENGTH).optional(),
+      location: z.string().max(MAX_SEARCH_LENGTH).optional(),
     }).optional())
     .query(async ({ input }) => {
       const vendors = await listFeaturedVendors(input ?? {});
@@ -1125,7 +1126,16 @@ const marketplaceRouter = router({
       };
     }),
   list: publicProcedure
-    .input(z.object({ category: z.string().optional(), search: z.string().optional(), limit: z.number().default(24) }))
+    // BOUNDED, matching marketplace.vendors below, which already was. This
+    // endpoint is PUBLIC and unauthenticated: `limit` had no int, no minimum
+    // and no maximum, so `limit: 100000` returned the entire catalogue in one
+    // request and `limit: -1` reached MySQL as a syntax error. The strings had
+    // no length cap either.
+    .input(z.object({
+      category: z.string().max(MAX_SEARCH_LENGTH).optional(),
+      search: z.string().max(MAX_SEARCH_LENGTH).optional(),
+      limit: z.number().int().positive().max(100).default(24),
+    }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
@@ -1139,7 +1149,7 @@ const marketplaceRouter = router({
         conditions.push(eq(products.category, input.category));
       }
       if (input.search) {
-        const term = `%${input.search}%`;
+        const term = containsTerm(input.search);
         conditions.push(or(
           like(products.name, term),
           like(products.nameAr, term),
@@ -1227,8 +1237,22 @@ const marketplaceRouter = router({
   askQuestion: protectedProcedure.input(z.object({ productId: z.number(), question: z.string().min(2).max(2000) })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [product] = await db.select({ id: products.id }).from(products).where(eq(products.id, input.productId));
-    if (!product && input.productId > 10) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
+    // Mirrors marketplace.get's predicate exactly, and for its reasons. Two
+    // things were wrong with the line this replaces.
+    //
+    // `input.productId > 10` let ids 1-10 skip the existence check entirely -
+    // a leftover accommodation for the static mock catalogue that used to back
+    // this page. productQuestions.productId now carries a RESTRICT foreign key,
+    // so the insert would fail at the database instead, turning a clean
+    // NOT_FOUND into a 500 for exactly those ten ids.
+    //
+    // And `active` was never checked. Slice 9 established for marketplace.get
+    // that a withdrawn product and an absent one are the same answer to a
+    // buyer; a question thread attached to a product the supplier has delisted
+    // contradicted that, and had nowhere to be displayed.
+    const [product] = await db.select({ id: products.id }).from(products)
+      .where(and(eq(products.id, input.productId), eq(products.active, true)));
+    if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
     const result = await db.insert(productQuestions).values({ productId: input.productId, askerId: ctx.user.id, question: input.question });
     return { id: Number(result[0].insertId) };
   }),
@@ -1511,26 +1535,54 @@ const rfqRouter = router({
       }
     }),
   submitQuotation: approvedProviderProcedure
+    // BOUNDS MATCH THE COLUMNS. `price` is decimal(12,2), `warranty` is
+    // varchar(100), `timeline` is an int. None of these were bounded, so a
+    // negative price was accepted as a bid, and an over-long warranty string
+    // reached MySQL as an error or a silent truncation depending on sql_mode.
+    // This is input validation, not policy - the shape of the column is not a
+    // business rule somebody has to decide.
     .input(z.object({
-      rfqId: z.number(),
-      price: z.number(),
-      timeline: z.number().optional(),
-      warranty: z.string().optional(),
-      paymentTerms: z.string().optional(),
-      notes: z.string().optional(),
+      rfqId: z.number().int().positive(),
+      price: z.number().positive().max(9_999_999_999.99),
+      timeline: z.number().int().positive().max(3650).optional(),
+      warranty: z.string().max(100).optional(),
+      paymentTerms: z.string().max(2000).optional(),
+      notes: z.string().max(4000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      // THE RFQ IS READ FIRST, AND ITS STATE IS CHECKED.
+      //
+      // This used to insert immediately and look the RFQ up afterwards, only to
+      // address the notification. Two consequences. A quotation against an id
+      // that does not exist hit the RESTRICT foreign key and surfaced as a 500
+      // rather than a 404. And a quotation could be submitted against a CLOSED
+      // or AWARDED RFQ - the requester had already accepted somebody, and new
+      // bids still landed in their inbox.
+      //
+      // The client filters the pipeline to `status === 'open'`, which is why
+      // nobody hit this through the UI. Frontend filtering is not a control;
+      // the status enum and acceptQuotation's transition to 'awarded' are the
+      // existing rule, and this enforces it where it is enforceable.
+      const [rfq] = await db.select({ requesterId: rfqs.requesterId, title: rfqs.title, status: rfqs.status })
+        .from(rfqs).where(eq(rfqs.id, input.rfqId));
+      if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
+      if (rfq.status !== 'open') {
+        throw new TRPCError({ code: 'CONFLICT', message: 'This request is no longer accepting quotations' });
+      }
+      // KNOWN GAP, deliberately not decided here: nothing stops the same
+      // provider submitting several quotations on one RFQ, and each one
+      // notifies the requester again. Whether a second submission should be
+      // refused, or should REPLACE the first as a revision, is a product
+      // decision about how bidding works on BuildHub - not something to infer
+      // from the schema. Recorded in the Phase 1B handoff for the owner.
       await db.insert(quotations).values({
         ...input,
         providerId: ctx.user.id,
         price: String(input.price),
       });
-      const [rfq] = await db.select({ requesterId: rfqs.requesterId, title: rfqs.title }).from(rfqs).where(eq(rfqs.id, input.rfqId));
-      if (rfq) {
-        await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: '/rfq' });
-      }
+      await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: '/rfq', messageKey: 'notif.quotation.received', messageParams: { rfqTitle: rfq.title } });
       // Funnel milestone: a vendor responding is the point at which the
       // marketplace has produced value for both sides.
       recordEventAsync({
@@ -1736,7 +1788,7 @@ const reviewsRouter = router({
       );
       if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'You have already reviewed this provider for this project' });
       await db.insert(reviews).values({ ...input, reviewerId: ctx.user.id, verified: true });
-      await notifyUser(db, { userId: input.revieweeId, title: 'New review received', body: `You received a new ${input.rating}-star review.`, type: 'review', link: '/provider' });
+      await notifyUser(db, { userId: input.revieweeId, title: 'New review received', body: `You received a new ${input.rating}-star review.`, type: 'review', link: '/provider', messageKey: 'notif.review.received', messageParams: { rating: input.rating } });
       return { success: true };
     }),
 });
@@ -2044,12 +2096,22 @@ const adminRouter = router({
     if (!db) return [];
     return db.select(ADMIN_USER_LIST_COLUMNS).from(users).orderBy(desc(users.createdAt)).limit(250);
   }),
+  // 'admin' is NOT creatable here. This endpoint is gated on `users.manage`,
+  // which USER_ADMIN holds - but shared/adminRoles.ts states the invariant that
+  // only SUPER_ADMIN (`admins.manage`) may create or re-role an administrator,
+  // and this enum contradicted it. It never granted permissions, because
+  // `adminRole` is left null and all 38 adminWith(...) endpoints fail closed on
+  // a null role. What it DID produce was a row the platform treats as an
+  // administrator everywhere it checks `role`: exempt from the frozen-account
+  // check in _core/trpc.ts, rendering the full admin menu, and created outside
+  // the invitation flow that records `admin_created` and an adminInvitations
+  // row. Administrators are created by admin.createAdmin, under superAdminProcedure.
   createUser: adminWith('users.manage').input(z.object({
     username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/),
     email: z.string().trim().email(),
     name: z.string().trim().min(1).max(255),
     phone: z.string().trim().max(32).optional(),
-    userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager', 'admin']),
+    userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager']),
     note: z.string().trim().max(1000).optional(),
     sendInvitation: z.boolean().default(true),
   })).mutation(async ({ ctx, input }) => {
@@ -2064,7 +2126,7 @@ const adminRouter = router({
     const inviteToken = randomUUID() + '-' + randomUUID().slice(0, 8);
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
     const result = await db.insert(users).values({
-      openId, username, name: input.name, email, phone: input.phone || null, loginMethod: 'admin_created', role: input.userRole === 'admin' ? 'admin' : 'user', userRole: input.userRole, accountSource: 'admin_created', isDummy: false, createdBy: ctx.user.id, creationNote: input.note || null, onboardingStatus: professional ? 'not_started' : 'approved', verified: !professional,
+      openId, username, name: input.name, email, phone: input.phone || null, loginMethod: 'admin_created', role: 'user', userRole: input.userRole, accountSource: 'admin_created', isDummy: false, createdBy: ctx.user.id, creationNote: input.note || null, onboardingStatus: professional ? 'not_started' : 'approved', verified: !professional,
       invitationStatus: input.sendInvitation ? 'invitation_sent' : 'none',
       invitationToken: input.sendInvitation ? inviteToken : null,
       invitationExpiresAt: input.sendInvitation ? expiresAt : null,
@@ -2511,7 +2573,7 @@ const adminRouter = router({
     await db.insert(registrationReviewEvents).values({ userId: applicant.id, documentId: document.id, actorId: ctx.user.id, action: 'document_reviewed', status: input.status, note: input.reviewerNote });
     const title = input.status === 'approved' ? 'Registration document approved' : input.status === 'update_required' ? 'Registration document update required' : input.status === 'rejected' ? 'Registration document rejected' : 'Registration document under review';
     const body = input.reviewerNote ? `${document.displayName}: ${input.reviewerNote}` : `${document.displayName} status changed to ${input.status.replace('_', ' ')}`;
-    await notifyUser(db, { userId: applicant.id, title, body, type: 'compliance', link: '/compliance' });
+    await notifyUser(db, { userId: applicant.id, title, body, type: 'compliance', link: '/compliance', messageKey: `notif.compliance.document.${input.status}`, messageParams: { document: document.displayName, ...(input.reviewerNote ? { note: input.reviewerNote } : {}) } });
     return { success: true, documentStatus: input.status, onboardingStatus: overallStatus };
   }),
   updateApplicantStatus: adminWith('marketplace.manage').input(z.object({
@@ -2525,7 +2587,7 @@ const adminRouter = router({
     if (!applicant || !isComplianceRole(applicant.userRole)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Compliance applicant not found' });
     await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: new Date(), onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(eq(users.id, input.userId));
     await db.insert(registrationReviewEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'applicant_status_updated', status: input.status, note: input.note });
-    await notifyUser(db, { userId: input.userId, title: 'Registration status updated', body: input.note || `Your registration is now ${input.status.replace('_', ' ')}`, type: 'compliance', link: '/compliance' });
+    await notifyUser(db, { userId: input.userId, title: 'Registration status updated', body: input.note || `Your registration is now ${input.status.replace('_', ' ')}`, type: 'compliance', link: '/compliance', messageKey: `notif.compliance.applicant.${input.status}`, messageParams: (input.note ? { note: input.note } : {}) as Record<string, string> });
     // Verification is the gate for appearing in the directory at all, so it is
     // the funnel stage where a vendor becomes able to earn anything. The
     // reviewer's note is not recorded - it is free text about a real person.
@@ -2550,7 +2612,7 @@ const adminRouter = router({
     const reviewedAt = new Date();
     await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: reviewedAt, onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(inArray(users.id, userIds));
     await db.insert(registrationReviewEvents).values(applicants.map(applicant => ({ userId: applicant.id, actorId: ctx.user.id, action: 'bulk_applicant_status_updated', status: input.status, note: input.note })));
-    await notifyUsers(db, applicants.map(applicant => ({ userId: applicant.id, title: input.status === 'approved' ? 'Registration approved' : 'Registration rejected', body: input.note || `Your registration is ${input.status}`, type: 'compliance', link: '/compliance' })));
+    await notifyUsers(db, applicants.map(applicant => ({ userId: applicant.id, title: input.status === 'approved' ? 'Registration approved' : 'Registration rejected', body: input.note || `Your registration is ${input.status}`, type: 'compliance', link: '/compliance', messageKey: `notif.compliance.applicant.${input.status}`, messageParams: (input.note ? { note: input.note } : {}) as Record<string, string> })));
     return { success: true, updatedCount: applicants.length, onboardingStatus: input.status };
   }),
   verifyUser: adminWith('users.manage').input(z.object({ userId: z.number(), verified: z.boolean() })).mutation(async ({ input }) => {

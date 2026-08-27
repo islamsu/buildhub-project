@@ -734,6 +734,17 @@ try {
         await post('admin.updateApplicantStatus', { userId: contractorId, status: 'approved' }, admin);
         const q = await post('rfq.submitQuotation', { rfqId, price: 9000, timeline: 14 }, users.contractor.cookie);
         check(q.s === 200, '14. an APPROVED provider can submit a quotation', `http ${q.s}`);
+        // PHASE 1B. submitQuotation used to insert first and look the RFQ up
+        // afterwards, so a quotation against an id that does not exist hit the
+        // foreign key and came back a 500. It must be a clean refusal, and the
+        // status code is the difference between "you asked for something that
+        // is not there" and "we broke".
+        const ghost = await post('rfq.submitQuotation', { rfqId: 999_999_999, price: 100 }, users.contractor.cookie);
+        check(ghost.s >= 400 && ghost.s < 500, '14. quoting a nonexistent RFQ is refused, not a server error', `http ${ghost.s}`);
+        check(!/at Object\.|node_modules|ER_NO_REFERENCED_ROW/.test(ghost.t),
+          '14. the refusal carries no database error or stack', ghost.t.slice(0, 80));
+        const negative = await post('rfq.submitQuotation', { rfqId, price: -5 }, users.contractor.cookie);
+        check(negative.s >= 400 && negative.s < 500, '14. a negative price is refused', `http ${negative.s}`);
         const stranger = await post('rfq.acceptQuotation', { quotationId: 1, rfqId }, users.engineer.cookie);
         check(stranger.s !== 200, '14. a stranger cannot accept a quotation on another RFQ', `http ${stranger.s}`);
 
@@ -1774,6 +1785,85 @@ try {
         '31. the contractor IS shown RFQ tooling', contractor.tools.slice(0, 60));
       check(!contractor.tools.includes('ai-tool-findDesigner'),
         '31. the contractor is NOT shown the homeowner designer finder');
+    }
+  }
+
+  // ── 32. The six role dashboards, at three widths, in two languages ───────
+  //
+  // PHASE 1B parts 25-26. Section 19-20 above covers the PUBLIC routes at 1440
+  // and 375. The role workspaces are the surface this phase actually built on,
+  // they are only reachable with a session, and they were never checked at any
+  // width. 768 is added here too - the tablet breakpoint sits between the two
+  // the harness already had, and a grid that works at both ends can still
+  // break in the middle.
+  //
+  // Two of the assertions are about the product, not the layout:
+  //   - an UNAPPROVED provider must land on /compliance, not on a dashboard.
+  //     Only the contractor is approved (section 17-18 does it), so the other
+  //     four provider roles are the negative case and are asserted as such.
+  //   - no untranslated key may render. A missing key shows as `platform.x`,
+  //     which looks like a bug to a user and like nothing to a screenshot.
+  section('32. Role dashboards: three widths, two languages');
+  {
+    const WIDTHS = [['mobile375', 375], ['tablet768', 768], ['desktop1440', 1440]];
+    const APPROVED = new Set(['homeowner', 'contractor']);
+
+    for (const role of ROLES) {
+      const cookie = users[role]?.cookie;
+      if (!cookie) { skip(`32. ${role} dashboard`, 'no session for this role'); continue; }
+
+      for (const [widthLabel, width] of WIDTHS) {
+        for (const lang of ['en', 'ar']) {
+          const roleCtx = await browser.newContext({
+            viewport: { width, height: 900 },
+            ignoreHTTPSErrors: BASE.includes('127.0.0.1'),
+          });
+          try {
+            const [n, ...rest] = cookie.split('=');
+            await roleCtx.addCookies([{
+              name: n.trim(), value: rest.join('='), domain: new URL(BASE).hostname,
+              path: '/', httpOnly: true, secure: BASE.startsWith('https'), sameSite: 'None',
+            }]);
+            const page = await roleCtx.newPage();
+            await page.addInitScript(l => localStorage.setItem('buildhub_lang', l), lang);
+            await page.goto(`${BASE}/platform/${role}`, { waitUntil: 'networkidle', timeout: 45_000 });
+            await page.waitForTimeout(500);
+
+            const where = `32. ${role}/${widthLabel}/${lang}`;
+            const url = page.url();
+            const body = await page.locator('body').innerText().catch(() => '');
+
+            if (!APPROVED.has(role)) {
+              // The control that makes self-service role selection safe:
+              // choosing a provider role resets approval, and an unapproved
+              // provider gets the compliance queue rather than a workspace.
+              check(url.includes('/compliance'), `${where}: an unapproved provider is sent to compliance`,
+                url.replace(BASE, ''));
+              continue;
+            }
+
+            check(url.includes(`/platform/${role}`), `${where}: the dashboard is reachable`, url.replace(BASE, ''));
+            check(body.length > 120, `${where}: renders real content`, `${body.length} chars`);
+
+            const dir = await page.evaluate(() => document.documentElement.dir);
+            check(dir === (lang === 'ar' ? 'rtl' : 'ltr'), `${where}: text direction`, `dir=${dir}`);
+
+            // A page whose body scrolls sideways is broken at that width. The
+            // 2px tolerance is for sub-pixel rounding, not for a stray element.
+            const overflow = await page.evaluate(() =>
+              document.documentElement.scrollWidth - document.documentElement.clientWidth);
+            check(overflow <= 2, `${where}: no horizontal overflow`, `${overflow}px past the viewport`);
+
+            check(!/(?:^|\s)(?:dash|platform|nav|common|project|provider)\.[a-z_]+(?:\.[a-z_]+)*(?:\s|$)/.test(body),
+              `${where}: no untranslated key is rendered`);
+          } catch (error) {
+            check(false, `32. ${role}/${widthLabel}/${lang}: dashboard loaded`,
+              error instanceof Error ? error.message.slice(0, 90) : String(error));
+          } finally {
+            await roleCtx.close();
+          }
+        }
+      }
     }
   }
 

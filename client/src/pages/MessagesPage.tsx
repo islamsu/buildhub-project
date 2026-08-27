@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { notificationText } from '@/lib/notificationText';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useState, useRef, useEffect } from 'react';
@@ -287,18 +288,21 @@ export default function MessagesPage() {
                   <p>{lang === 'ar' ? 'لا توجد إشعارات بعد' : 'No notifications yet'}</p>
                 </div>
               )}
-              {notifications?.map(n => (
+              {notifications?.map(n => {
+                const text = notificationText(n, t);
+                return (
                 <Card key={n.id} className={`transition-colors ${!n.read ? 'border-primary/30 bg-primary/5' : ''}`}>
                   <CardContent className="p-4 flex items-start gap-3">
                     <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!n.read ? 'bg-primary' : 'bg-muted'}`} />
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">{n.title}</p>
-                      {n.body && <p className="text-muted-foreground text-sm mt-0.5">{n.body}</p>}
+                      <p className="font-medium text-sm">{text.title}</p>
+                      {text.body && <p className="text-muted-foreground text-sm mt-0.5">{text.body}</p>}
                       <p className="text-xs text-muted-foreground mt-1">{new Date(n.createdAt).toLocaleString()}</p>
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+                );
+              })}
             </div>
           </TabsContent>
         </Tabs>

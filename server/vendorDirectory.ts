@@ -15,6 +15,7 @@
 // later phase and must never be blended into this ordering.
 
 import { and, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
+import { containsTerm } from './_core/searchTerms';
 import { qualifiedEnquiries, reviews, users, vendorCategories, vendorSubscriptions } from '../drizzle/schema';
 import { deriveBillingState } from './billing/domain';
 import { getEntitlements } from '@shared/billing';
@@ -105,10 +106,10 @@ export async function listDirectoryVendors(filters: DirectoryFilters = {}): Prom
   const conditions = [directoryVisibilityFilter()];
 
   if (filters.location) {
-    conditions.push(like(users.location, `%${filters.location}%`));
+    conditions.push(like(users.location, containsTerm(filters.location)));
   }
   if (filters.search) {
-    const term = `%${filters.search}%`;
+    const term = containsTerm(filters.search);
     conditions.push(or(like(users.name, term), like(users.bio, term))!);
   }
   // Category filter is a declared-category match, using the same shared
@@ -264,7 +265,7 @@ export async function listFeaturedVendors(
 
   const now = filters.now ?? new Date();
   const conditions = [directoryVisibilityFilter()];
-  if (filters.location) conditions.push(like(users.location, `%${filters.location}%`));
+  if (filters.location) conditions.push(like(users.location, containsTerm(filters.location)));
   if (filters.category) {
     conditions.push(
       sql`${users.id} IN (SELECT ${vendorCategories.userId} FROM ${vendorCategories} WHERE ${vendorCategories.category} = ${filters.category})`,

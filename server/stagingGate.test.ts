@@ -516,12 +516,13 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
   });
 
   it('every browser context that needs a session gets one - ai.chat is a protectedProcedure', () => {
-    // Four CALL SITES now: the English AI surface, the Arabic one, the
-    // attachment composer in section 30, and the role loop in section 31 -
-    // which is one call site executed once per role. Pinned so a new context
-    // that forgets its cookie fails here rather than producing a mysterious
-    // 401 on staging.
-    expect(EXECUTABLE.match(/addCookies/g) ?? []).toHaveLength(4);
+    // Five CALL SITES now: the English AI surface, the Arabic one, the
+    // attachment composer in section 30, the role loop in section 31, and the
+    // role-dashboard loop in section 32 - the last two being one call site
+    // each, executed once per role (and per width and language, in 32).
+    // Pinned so a new context that forgets its cookie fails here rather than
+    // producing a mysterious 401 on staging.
+    expect(EXECUTABLE.match(/addCookies/g) ?? []).toHaveLength(5);
   });
 
   it('the batched tRPC envelope is handled - the browser does not send bare objects', () => {

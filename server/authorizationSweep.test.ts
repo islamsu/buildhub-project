@@ -315,6 +315,31 @@ describe('§2b marketplace', () => {
     expect(body).toContain('supplierId: ctx.user.id');
     expect(body).not.toContain('supplierId: input');
   });
+
+  it('REGRESSION: askQuestion applies the SAME predicate as marketplace.get', () => {
+    // Found by walking the 62 id-taking procedures against their siblings.
+    // askQuestion read `if (!product && input.productId > 10) throw NOT_FOUND`.
+    //
+    // Two defects on one line. The `> 10` was a leftover accommodation for the
+    // static mock catalogue, and left ids 1-10 unvalidated - which the RESTRICT
+    // foreign key on productQuestions.productId then turns into a 500 rather
+    // than a 404. And `active` was never checked at all, so a question could be
+    // attached to a product the supplier had withdrawn, contradicting the Slice
+    // 9 decision above that withdrawn and absent are the same answer.
+    // codeOnly, because the comment that replaced the defect quotes it.
+    const body = codeOnly(procedureBody('marketplace.askQuestion'));
+    expect(body).not.toMatch(/productId > \d/);
+    expect(body).toContain('eq(products.active, true)');
+    expect(body).toContain("code: 'NOT_FOUND'");
+  });
+
+  it('no id-taking marketplace procedure keeps a numeric escape hatch', () => {
+    // The general form of the defect: a threshold on an id that decides whether
+    // validation applies at all. Nothing in this router should have one.
+    for (const name of ['marketplace.get', 'marketplace.questions', 'marketplace.askQuestion']) {
+      expect(codeOnly(procedureBody(name)), name).not.toMatch(/input\.\w*[Ii]d [<>]=? \d/);
+    }
+  });
 });
 
 describe('§2c messages', () => {

@@ -423,3 +423,65 @@ describe('killing a session leaves no window', () => {
     expect(block).toContain('ctx.res.cookie(COOKIE_NAME');
   });
 });
+
+// ── 9. The other door onto the authority model ─────────────────────────────
+//
+// Section 4 asserts that only a Super Admin may shape administrator authority,
+// and it does so against admin.admins/createAdmin/setAdminRole/... - the
+// endpoints that obviously belong to that model. The gap it left is that
+// admin.createUser writes the SAME `role` column from a completely different
+// permission, `users.manage`, which USER_ADMIN holds. Its enum accepted
+// 'admin', and the row it wrote said role='admin'.
+//
+// That never granted a permission - `adminRole` stays null and every
+// adminWith(...) endpoint fails closed on a null role - so this is not a
+// privilege escalation. It is something narrower and still worth closing: a
+// row the rest of the platform treats as an administrator wherever it checks
+// `role` rather than `adminRole`. Concretely it is exempt from the
+// frozen-account check in _core/trpc.ts, it renders the admin menu, and it
+// exists without the adminInvitations row and `admin_created` audit event that
+// are the only record of an administrator being created.
+describe('createUser cannot be a second way to make an administrator', () => {
+  const draft = { username: 'newuser', email: 'new@t.com', name: 'New User', phone: '+201000000000' };
+
+  it("refuses userRole:'admin' - the input schema does not offer it", async () => {
+    stubDb([]);
+    (getUserByUsername as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await expect(
+      appRouter.createCaller(ctxFor({ adminRole: 'USER_ADMIN' }))
+        .admin.createUser({ ...draft, userRole: 'admin' } as never),
+    ).rejects.toBeDefined();
+  });
+
+  it('writes role=user for every role it DOES accept', async () => {
+    // The enum is one half. This is the other: even if a later edit widened the
+    // enum again, the insert must not derive `role` from what was submitted.
+    for (const userRole of ['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager'] as const) {
+      const db = stubDb([]);
+      (getUserByUsername as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+      await appRouter.createCaller(ctxFor({ adminRole: 'USER_ADMIN' }))
+        .admin.createUser({ ...draft, username: `u_${userRole}`, email: `${userRole}@t.com`, userRole });
+      const inserted = db.insert.mock.results[0].value.values.mock.calls[0][0];
+      expect(inserted.role, `${userRole} must not become an authorization admin`).toBe('user');
+      expect(inserted.userRole).toBe(userRole);
+    }
+  });
+
+  it('the source no longer derives the authorization column from the request', () => {
+    // Reading source as well as behaviour, because the failure mode here is a
+    // future edit reintroducing the ternary rather than the current code being
+    // wrong. `role:` inside admin.createUser must be a literal.
+    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    const createUser = source.slice(source.indexOf("  createUser: adminWith('users.manage')"));
+    const body = createUser.slice(0, createUser.indexOf('\n  resendInvitation:'));
+    expect(body).not.toMatch(/role:\s*input\./);
+    expect(body).toContain("role: 'user'");
+  });
+
+  it('the Create-account dialog offers no admin option either', () => {
+    // Not security - the server is the control - but a UI that offers a choice
+    // the server rejects is a defect of its own.
+    const page = readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
+    expect(page).toContain("ROLE_GROUPS.filter(group => group.key !== 'admin')");
+  });
+});
