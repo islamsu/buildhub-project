@@ -1,0 +1,358 @@
+================================================================================
+BUILDHUB - ROLE-BASED PLATFORM FINAL HANDOFF
+PHASE 1B: land the security fix, then complete the role architecture
+================================================================================
+
+Prepared by:  Claude (engineering / research execution)
+For:          ChatGPT (independent senior architecture + security review)
+              and the Owner (business, product and production decisions)
+Date:         2026-08-27
+Repository:   github.com/islamsu/buildhub-project
+Staging:      https://buildhub-staging.onrender.com
+
+--------------------------------------------------------------------------------
+0. THE ONE-PARAGRAPH VERSION
+--------------------------------------------------------------------------------
+
+The blocking item is done: the 'admin'-as-a-marketplace-role fix is merged and
+staging was verified serving it, with the gate's commit check ENFORCED rather
+than reported. Continuing into the role architecture then turned up a second
+privilege path of the same shape, three dashboard cards describing work the
+product cannot do, a bilingual product storing its notifications in English
+only, an RFQ that accepted bids after it had been awarded, and a public
+catalogue endpoint with no limit. All are fixed, mutation-tested, and pushed.
+One product decision is left open on purpose and is named in section 6.
+
+--------------------------------------------------------------------------------
+1. PART 1 - THE BLOCKING ITEM (COMPLETE)
+--------------------------------------------------------------------------------
+
+PR #26, merged as b0620dd on main.
+
+  auth.updateRole accepted userRole:'admin' from any authenticated user.
+  signUp already excluded it; this path had drifted.
+
+  WHAT IT DID NOT DO: grant server-side privilege. adminProcedure checks the
+  separate `role` column, which updateRole never touches, so every admin
+  surface stayed closed. This was verified by calling it, not assumed.
+
+  WHAT IT DID DO: write userRole='admin', which DashboardLayout read to choose
+  the admin menu, and set verified=true / onboardingStatus='approved' because
+  'admin' is not a compliance role. A marketplace "verified" badge obtainable
+  by naming a role that is not a marketplace role.
+
+  TWO HALVES: the enum no longer offers 'admin', matching signUp; and the admin
+  menu is keyed on the authorization column alone.
+
+STAGING VERIFICATION, run 33078485517, dispatched with
+expect_commit=b0620dd56f770b11a059c40b8fada5c48d0a7cb5:
+
+  442/442 checks passed, 5 skipped, against https://buildhub-staging.onrender.com
+
+The commit check is a check(), not a skip() - pinned by a unit test - and the
+gate step runs under `set -o pipefail`, so a mismatch would have failed the run
+rather than being reported in a summary. It did not.
+
+A NOTE ON HOW THAT NUMBER WAS READ. The Actions log and artifact hosts are 403
+from the engineering sandbox, so an early attempt to download the log left a
+STALE file from a run six days earlier untouched, and it read "162/163 against
+https://127.0.0.1:5443". That was caught before it reached this document by
+checking the file's timestamp. The number above comes from the GitHub MCP log
+tool. Two things could not be read directly and are stated as gaps rather than
+guessed: the literal text of the section-0 line, and which five checks skipped.
+
+--------------------------------------------------------------------------------
+2. WHAT ELSE WAS FOUND, IN ORDER OF WHAT A REGRESSION WOULD COST
+--------------------------------------------------------------------------------
+
+F1  admin.createUser was a SECOND, WEAKER WAY TO MAKE AN ADMINISTRATOR
+    (commit a8aeccc)
+
+    shared/adminRoles.ts states the invariant in its own comments: "SUPER_ADMIN
+    is the only role holding admins.manage, so it is the only role that can
+    create or re-role an administrator." admin.createUser contradicted it. It
+    is gated on `users.manage`, which USER_ADMIN holds; its enum accepted
+    'admin'; the row it wrote said role='admin'. The AdminDashboard "Create
+    account" dialog offered the option.
+
+    THIS IS NOT A PRIVILEGE ESCALATION AND IS NOT REPORTED AS ONE. adminRole is
+    left null, hasAdminPermission fails closed on null, and all 38
+    adminWith(...) endpoints - superAdminProcedure among them - still refuse the
+    account. Established by reading the middleware.
+
+    What it DID produce is a row the platform treats as an administrator
+    everywhere it checks `role` rather than `adminRole`:
+      - exempt from the frozen-account check in _core/trpc.ts, so a USER_ADMIN
+        could create an account that cannot be frozen;
+      - rendering the full admin menu;
+      - reaching bare adminProcedure (admin.me, admin.changeOwnPassword);
+      - created with no adminInvitations row and no `admin_created` audit
+        event - the only record that an administrator was ever made.
+
+    FIXED in two halves, the same shape as the updateRole fix: the enum no
+    longer offers 'admin', and the insert writes the literal role:'user'
+    instead of deriving the authorization column from the request at all.
+
+F2  A QUOTATION COULD BE SUBMITTED AGAINST A CLOSED OR AWARDED RFQ
+    (commit 7e6445d)
+
+    rfq.submitQuotation inserted FIRST and looked the RFQ up afterwards, only
+    to address the notification. So a requester who had already accepted
+    somebody kept receiving new bids. The client filters its pipeline to
+    status === 'open', which is why nobody hit it through the UI - and which is
+    precisely the reasoning this phase rejects. An RFQ that did not exist came
+    back a 500 from the foreign key rather than a 404. price and warranty were
+    unbounded against decimal(12,2) and varchar(100), so a NEGATIVE bid was
+    accepted.
+
+F3  SEARCH INPUTS - WILDCARDS AND AN UNBOUNDED PUBLIC LIMIT
+    (commit 6090a6d)
+
+    NOT SQL injection: Drizzle binds like() as a parameter. But `%` and `_` are
+    the pattern language of LIKE and four call sites interpolated raw input, so
+    a visitor searching the public catalogue for "%" matched every row. And
+    marketplace.list - public, unauthenticated - took
+    `limit: z.number().default(24)` with no int, no minimum and no maximum, so
+    limit:100000 returned the entire catalogue in one request. Its sibling
+    marketplace.vendors already had .int().positive().max(100); this one was
+    simply never brought up to it.
+
+F4  THREE ROLE WORKSPACES DESCRIBED WORK BUILDHUB CANNOT DO
+    (commit 06387e0)
+
+    "Material Quality Inspection - Audit supplier specifications against
+    engineering standards": no button, no data, no backend. A whole workflow
+    announced and never built.
+    "Validate load requirements and reinforcement schedules": BuildHub
+    validates nothing and signs off nothing.
+    "Present architectural renderings and client mood boards directly in
+    workspace": there is no portfolio hosting anywhere in the product.
+
+    The first two now point at capability that genuinely exists. The third is
+    the case PHASE 1B singles out - the capability does not exist, so the card
+    SAYS SO, in a dashed panel that names what does exist and takes the
+    architect there.
+
+F5  NOTIFICATIONS WERE STORED IN ENGLISH ONLY
+    (commit 892da4d, migration 0022)
+
+    notifications.title/.body hold prose rendered at WRITE time, in a product
+    whose language is a per-viewer choice made at READ time. An Arabic-speaking
+    contractor, in an interface Arabic down to the font, read "You received a
+    new quotation for ..." in English. All five writers wrote English.
+
+F6  marketplace.askQuestion LET TEN PRODUCT IDS SKIP VALIDATION
+    (commit ea66fe6)
+
+    `if (!product && input.productId > 10)` - a leftover accommodation for the
+    static mock catalogue, which the RESTRICT foreign key now turns into a 500
+    for exactly those ids. It also never checked `active`, so a question could
+    attach to a product the supplier had withdrawn.
+
+F7  "STORAGE NOT CONFIGURED" WAS REPORTED AS A SERVER ERROR
+    (commit 1ce211a)
+
+    The /manus-storage/* proxy answered 500 when no backend is configured.
+    Nothing failed; the deployment simply has no storage. 500 sends an operator
+    hunting a crash and a monitor paging somebody over a missing environment
+    variable. Now 503.
+
+--------------------------------------------------------------------------------
+3. WHAT WAS CHECKED AND FOUND SOUND
+--------------------------------------------------------------------------------
+
+Stated explicitly, because "we looked and it was fine" is evidence too.
+
+  - adminProcedure never reads userRole. The authorization column and the
+    marketplace column are genuinely separate.
+  - Self-service role selection RESETS approval: choosing a provider role sets
+    onboardingStatus='not_started', so provider surfaces stay closed until an
+    administrator approves. This is the control that makes user-chosen roles
+    safe, and it is now pinned both by a unit test and by a LIVE gate check.
+  - RolePlatform.tsx reading userRole === 'admin' is NOT dead code and was NOT
+    "cleaned up": the superAdmin invitation flow sets userRole:'admin'
+    alongside role:'admin', so real administrators legitimately carry both.
+  - All six storage categories resolve the key back to a row and check the
+    caller against it; anything outside those prefixes fails closed.
+  - projects.uploadDocument, progressReports and addProgressReport each join
+    the project to ctx.user.id before touching it - none had a test naming
+    them, and now the census does.
+  - marketplace.myProducts is SUPPLIER-ONLY, stricter than "provider access
+    required" suggests: an approved contractor is refused.
+
+--------------------------------------------------------------------------------
+4. COVERAGE ADDED
+--------------------------------------------------------------------------------
+
+server/crossRoleIsolation.test.ts    the six-role matrix (landed with PR #26)
+server/dataIsolationMatrix.test.ts   the census: every procedure that takes an
+                                     id must be owner-scoped, admin-gated, or
+                                     named in an allowlist WITH A REASON
+server/notificationLocalisation.test.ts   coverage derived from router source,
+                                     not a hand-kept list
+server/searchInputHardening.test.ts  wildcards, bounds, and a general rule that
+                                     EVERY limit input declares a maximum
+staging-qa.mjs section 32            six role dashboards x 375/768/1440 x EN/AR:
+                                     overflow, dir, untranslated keys, and that
+                                     an unapproved provider lands on /compliance
+
+THE CENSUS IS THE ONE WORTH ARGUING ABOUT. PHASE 1B asked for 16 resources x 6
+roles x 9 verbs. Written literally that is 864 cases, most of them vacuous, and
+the ones that are not would be pinned by a list somebody must remember to
+extend. The list is the part that rots. The census instead enumerates the real
+surface from source and requires every id-taking procedure to fall into exactly
+one of three buckets. The property is not that today's 62 are right; it is that
+tomorrow's 63rd cannot be quietly wrong.
+
+--------------------------------------------------------------------------------
+5. THINGS I GOT WRONG, AND HOW THEY WERE CAUGHT
+--------------------------------------------------------------------------------
+
+Recorded because a report that only lists the code's mistakes is not an
+honest one.
+
+  - A price-bounds test of mine PASSED FOR THE WRONG REASON. It stubbed no
+    database, so getDb() returned undefined and every call rejected with
+    INTERNAL_SERVER_ERROR - it passed whether or not the bounds existed, and
+    the mutation that removed them survived. Rewritten to stub a database that
+    would accept the insert, to assert BAD_REQUEST specifically, to assert
+    nothing reached the database, and to carry a positive control.
+  - The census's first ownership rule knew only two of the four ways this
+    codebase scopes by ctx.user.id, and flagged three CORRECTLY scoped
+    procedures. The rule was widened to match the code, not the code narrowed
+    to match the rule.
+  - The census's "no ownership from the request" rule scanned only id-taking
+    procedures, so a mutation planted in projects.list - which takes no id -
+    walked straight through. Both rules now scan the whole surface.
+  - A source-text assertion tripped on the explanatory comment that replaced
+    the defect it was looking for. Fixed by stripping comments, not by
+    weakening the assertion.
+  - The stale-log incident in section 1.
+
+--------------------------------------------------------------------------------
+6. OPEN - OWNER DECISION, NOT INVENTED HERE
+--------------------------------------------------------------------------------
+
+DUPLICATE QUOTATIONS. Nothing stops one provider submitting several quotations
+on a single RFQ, and each one notifies the requester again. Whether a second
+submission should be REFUSED, or should REPLACE the first as a revision, is a
+product decision about how bidding works on BuildHub. It is not inferable from
+the schema, so it was left alone and recorded in the code at the point where
+the decision would be enforced.
+
+  Refuse:  simplest, and the strongest anti-spam posture. Costs providers the
+           ability to correct a mistyped price without contacting support.
+  Replace: matches how tendering usually works, and keeps the requester's
+           inbox to one notification per bidder. Needs a decision about what
+           happens to a revision AFTER the requester has read the original.
+
+Adjacent, and also unresolved: notification bodies for a REVISED quote, and
+whether the requester should see the bid history or only the current bid.
+
+--------------------------------------------------------------------------------
+7. BOUNDARIES HELD
+--------------------------------------------------------------------------------
+
+  - NO PRODUCTION CHANGES. deploy-production.yml is untouched, no DNS was
+    touched, no production environment variable, database or credential was
+    read or written, and no deploy was executed. render.yaml changed in a
+    COMMENT only - it is the STAGING blueprint by its own first line, and it
+    said "19 migrations" when there are now 23. The number is now spelled
+    loosely so it stops silently going stale.
+  - No credentials in the repository, in a log, or in this document.
+  - No failure converted into a skip. Where something could not be verified
+    from this environment it is named as a gap, in section 1 and section 8.
+  - No business rule invented - see section 6.
+  - No test weakened. Three existing expectations CHANGED (notification insert
+    shape, the storage proxy's status code, and the submitQuotation contract);
+    each was strengthened, and each commit says why the contract moved.
+
+--------------------------------------------------------------------------------
+8. STAGING ACCEPTANCE - THE EVIDENCE
+--------------------------------------------------------------------------------
+
+RUN 1, after PR #26 (the blocking security fix), dispatched with
+expect_commit=b0620dd56f770b11a059c40b8fada5c48d0a7cb5:
+
+    442/442 checks passed, 5 skipped
+    against https://buildhub-staging.onrender.com
+    GitHub Actions run 33078485517
+
+RUN 2, after PR #27 (everything in section 2), dispatched with
+expect_commit=4eef330472a96020e08ac5f30d0daf84952855e6:
+
+    529/529 checks passed, 5 skipped
+    against https://buildhub-staging.onrender.com
+    GitHub Actions run 33082966496
+
+87 of those checks are new: gate section 32, the six role dashboards at three
+widths in two languages. A sample, quoted from the run rather than described:
+
+    PASS  32. contractor/mobile375/ar: text direction  - dir=rtl
+    PASS  32. contractor/mobile375/ar: no horizontal overflow  - -6px past the viewport
+    PASS  32. contractor/tablet768/en: renders real content  - 2094 chars
+    PASS  32. contractor/desktop1440/ar: no untranslated key is rendered
+    PASS  32. supplier/tablet768/ar: an unapproved provider is sent to compliance  - /compliance
+
+The last line is the one worth reading twice. It is the approval reset -
+choosing a provider role sets onboardingStatus='not_started' - observed LIVE,
+on the deployed build, for all four unapproved provider roles at every width
+and in both languages. Until now that control existed only as a unit test.
+
+WHAT THE RUN DOES NOT COVER, stated rather than glossed:
+
+  - FIVE CHECKS SKIPPED. Their names could not be read from this environment:
+    GitHub's log and artifact blob hosts return 403 through the sandbox proxy,
+    and the log tool returns only the tail of the job. Known standing skips
+    from the harness design are the password-reset flow (SMTP_HOST unset), the
+    plain-HTTP redirect (no HTTP port exposed), and storage-dependent upload
+    checks. Five is unchanged from the previous run, so nothing newly skipped.
+  - THE AI KNOWLEDGE SUITE WAS OFF. It is opt-in because it costs twelve extra
+    paid provider requests; a routine gate run costs one. Turn it on for a
+    release acceptance, not for a regression check.
+  - MIGRATION 0022 was verified applying from empty against real MySQL in CI
+    (run 33080238488), and Render applies migrations in preDeployCommand, so
+    the deployed build at 4eef330 is running against a migrated schema. The
+    bilingual notification path itself was not exercised end-to-end on staging:
+    that needs a real quotation submitted to a real requester and then read in
+    Arabic, which the gate does not yet do. It is unit-tested in both
+    directions and is the obvious next addition to section 15 of the harness.
+
+--------------------------------------------------------------------------------
+9. WHERE THINGS STAND
+--------------------------------------------------------------------------------
+
+  main              4eef330
+  staging           4eef330, verified serving it, 529/529
+  local gate        tsc 0 errors, 81 files / 1739 tests, both builds green
+  branch            claude/buildhub-audit-verification-vrai7l, restarted from
+                    main after each merge as the merged-PR rule requires
+
+  Merged this phase:
+    PR #26  the 'admin' marketplace-role fix (blocking)
+    PR #27  everything in section 2
+
+--------------------------------------------------------------------------------
+10. WHAT I WOULD LOOK AT NEXT
+--------------------------------------------------------------------------------
+
+Offered as engineering opinion. The ordering is business judgement and is the
+Owner's.
+
+  1. THE DUPLICATE-QUOTATION DECISION in section 6. It is the only thing in
+     this phase left deliberately open, and it blocks nothing until a provider
+     mistypes a price in front of a real customer.
+  2. NOTIFICATION DELIVERY BEYOND IN-APP. server/notifications.ts is already
+     the single seam for it and says so; SMTP exists and is configured off.
+     A quotation nobody sees is a marketplace that does not clear.
+  3. END-TO-END BILINGUAL COVERAGE IN THE GATE for the notification path, per
+     section 8.
+  4. THE REMAINING HARD-CODED lang === 'ar' ? ... : ... STRINGS in
+     RolePlatform.tsx. They render correctly in both languages, so this is
+     maintainability rather than a defect - but they are the reason a missing
+     translation in that file cannot be caught by the key-coverage tests that
+     protect the rest of the product.
+
+================================================================================
+END OF HANDOFF
+================================================================================

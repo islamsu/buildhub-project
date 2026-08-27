@@ -12,7 +12,9 @@
 # WHY MYSQL IS A PRIVATE SERVICE RATHER THAN A MANAGED DATABASE
 #
 # Render's managed database offering is PostgreSQL. BuildHub is MySQL - drizzle
-# via mysql2, 19 migrations, and a schema verified against MySQL 8.0.46. Porting
+# via mysql2, twenty-odd migrations, and a schema verified against MySQL 8.0.46.
+# (The count was written as "19" and is now 23; it is spelled loosely on purpose
+# so it stops being a number that silently goes stale.) Porting
 # to Postgres would be exactly the architecture redesign this deployment is meant
 # to avoid, and it would make staging a test of something production will never
 # run. So MySQL 8 runs as a private service with a persistent disk: reachable
