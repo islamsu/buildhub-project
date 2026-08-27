@@ -182,7 +182,13 @@ function DashboardLayoutContent({
   const isMobile = useIsMobile();
 
   const userRole = (user as any)?.userRole ?? 'homeowner';
-  const menuKeys = userRole === 'admin' || user?.role === 'admin'
+  // ONLY the authorization column decides the admin menu. `userRole` is a
+  // marketplace role chosen by the user; reading it here meant a self-assigned
+  // value could render admin navigation on an account with no admin rights.
+  // Every link behind it failed server-side, so nothing leaked - but a menu
+  // that misrepresents an account is its own problem, and a UI control keyed
+  // on user-supplied data is the habit worth removing, not the symptom.
+  const menuKeys = user?.role === 'admin'
     ? ADMIN_MENU_KEYS
     : ROLE_MENU_KEYS[userRole as keyof typeof ROLE_MENU_KEYS] ?? HOMEOWNER_MENU_KEYS;
   const menuItems = menuKeys.map(item => ({ ...item, label: t(item.labelKey) }));
