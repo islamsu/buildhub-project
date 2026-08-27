@@ -18,7 +18,7 @@ import { recommendProviders, formatCandidatesForModel } from './recommendation';
 import { retrieve, formatRetrievalForModel } from './_core/knowledgeRetrieval';
 import { findRegulatory, formatRegulatoryForModel } from './knowledge/jurisdictions';
 import { storagePut } from './storage';
-import { getObjectStorage } from './_core/objectStorage';
+import { getObjectStorage, ObjectStorageNotConfiguredError } from './_core/objectStorage';
 import { validateAiAttachment, attachmentInstruction } from './_core/aiAttachments';
 import { MAX_AI_ATTACHMENTS_PER_MESSAGE } from '@shared/aiAttachments';
 import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
@@ -3180,11 +3180,31 @@ const aiRouter = router({
 
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const { key } = await storagePut(
-        `ai-attachments/user-${ctx.user.id}/${validated.name}`,
-        validated.bytes,
-        validated.contentType,
-      );
+
+      // A deployment with no bucket is a KNOWN condition, not an unexpected
+      // one. Without this the adapter throws, tRPC classifies it as
+      // INTERNAL_SERVER_ERROR, and the error formatter - correctly - replaces
+      // the message with "Something went wrong. Please try again.". That is
+      // the right thing to say about a genuine internal fault and the wrong
+      // thing to say about an operator who has not configured storage yet: it
+      // sends them looking for a bug instead of a setting. This is the same
+      // masking that made the original AI outage take a day to diagnose.
+      let key: string;
+      try {
+        ({ key } = await storagePut(
+          `ai-attachments/user-${ctx.user.id}/${validated.name}`,
+          validated.bytes,
+          validated.contentType,
+        ));
+      } catch (error) {
+        if (error instanceof ObjectStorageNotConfiguredError) {
+          throw new TRPCError({
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'File attachments are not available on this deployment.',
+          });
+        }
+        throw error;
+      }
       const inserted = await db.insert(aiAttachments).values({
         userId: ctx.user.id,
         name: validated.name,
