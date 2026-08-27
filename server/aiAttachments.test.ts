@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 /**
  * AI attachments, end to end: what BuildHub accepts, what it refuses, and who
@@ -47,7 +48,7 @@ import { getDb } from './db';
 import { resetAiChatLimiters, resetContentLimiters } from './_core/rateLimit';
 import { validateAiAttachment, toModelContent, attachmentInstruction } from './_core/aiAttachments';
 import { authorizeStorageKey } from './_core/storageProxy';
-import { safeAttachmentName, MAX_AI_ATTACHMENT_SIZE } from '@shared/aiAttachments';
+import { safeAttachmentName, MAX_AI_ATTACHMENT_SIZE, MAX_AI_ATTACHMENTS_PER_MESSAGE } from '@shared/aiAttachments';
 
 // ── Real byte sequences. A test that validates a made-up buffer proves nothing
 //    about a validator whose whole job is reading real signatures.
@@ -468,5 +469,41 @@ describe('an unconfigured deployment says so, instead of looking broken', () => 
     const failure = await upload(1, 'drawing.png', 'image/png', PNG)
       .catch((error: { code: string }) => error);
     expect(failure.code).not.toBe('SERVICE_UNAVAILABLE');
+  });
+});
+
+describe('multi-file is an ARCHITECTURE question, not a constant', () => {
+  it('the provider layer is already plural - attachments[], not one attachment', async () => {
+    // Part 10 of the brief: multi-file must be addable without rewriting the
+    // provider layer. It already is - generateAIResponse takes a list and maps
+    // over it, so the limit is a policy at the router boundary rather than a
+    // shape baked into the integration.
+    const source = await import('node:fs').then(fs =>
+      fs.readFileSync(new URL('./_core/ai.ts', import.meta.url), 'utf8'));
+    expect(source).toContain('attachments?: AiAttachment[]');
+    expect(source).toContain('attachments.map(toModelContent)');
+  });
+
+  it('the limit is ONE shared constant, enforced at the router', () => {
+    expect(MAX_AI_ATTACHMENTS_PER_MESSAGE).toBe(1);
+    const routers = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    expect(routers).toContain('.max(MAX_AI_ATTACHMENTS_PER_MESSAGE)');
+  });
+
+  it('RAISING THE CONSTANT WOULD NOT DELIVER THE FEATURE, and this records why', () => {
+    // Deliberately a test rather than a comment, so the reasoning is in front
+    // of whoever next opens the file to "just bump it to 3".
+    //
+    // Two files would reach the model and be read. What would NOT happen is
+    // attribution: nothing in the attachment instruction tells the model to say
+    // WHICH document each fact came from, and nothing in the evaluation suite
+    // checks that it does. "Compare this quotation against this BOQ" answered
+    // without attribution is worse than a refusal, because the reader cannot
+    // tell which document a discrepancy was found in.
+    const instruction = attachmentInstruction(['BOQ.pdf', 'Quotation.pdf'], 'en');
+    // The instruction pluralises - so the wording is ready - but it carries no
+    // per-document attribution requirement, which is the actual missing piece.
+    expect(instruction).toContain('ATTACHED FILES');
+    expect(instruction).not.toMatch(/say which (file|document)/i);
   });
 });
