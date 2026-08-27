@@ -29,12 +29,32 @@ import { Search, Star, BadgeCheck, MapPin, Megaphone, Store, ChevronLeft, Chevro
  * Ordering is organic only. A paid plan does not buy a higher position here;
  * paid placement is a separate, clearly-labelled concept for a later phase.
  */
+/**
+ * CLOSURE PASS: the Designers and Finishing directories used to render a
+ * hardcoded list - invented ratings, review counts, team sizes and "verified"
+ * badges, some of them attached to real named Egyptian companies that have no
+ * BuildHub account. They now render THIS component with a category preset, so
+ * there is one directory reading one source, and an empty category shows an
+ * empty state rather than a fiction.
+ */
+export type VendorsDirectoryProps = {
+  /** A category from the shared RFQ taxonomy to start filtered on. */
+  presetCategory?: string;
+  titleKey?: string;
+  subtitleKey?: string;
+};
+
+/** The route component. wouter hands it route props, so it takes none of ours. */
 export default function VendorsDirectory() {
+  return <VendorsDirectoryView />;
+}
+
+export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: VendorsDirectoryProps) {
   const { lang, t } = useLanguage();
   const ar = lang === 'ar';
   const [, navigate] = useLocation();
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('all');
+  const [category, setCategory] = useState(presetCategory ?? 'all');
   const [location, setLocation] = useState('');
 
   const { data: vendors = [], isLoading } = trpc.marketplace.vendors.useQuery({
@@ -63,8 +83,8 @@ export default function VendorsDirectory() {
         </Button>
 
         <div className="mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold">{t('vendorsDir.title')}</h1>
-          <p className="text-muted-foreground mt-1 text-sm sm:text-base">{t('vendorsDir.subtitle')}</p>
+          <h1 className="text-2xl sm:text-3xl font-bold">{t(titleKey ?? 'vendorsDir.title')}</h1>
+          <p className="text-muted-foreground mt-1 text-sm sm:text-base">{t(subtitleKey ?? 'vendorsDir.subtitle')}</p>
         </div>
 
         {/* Filters */}

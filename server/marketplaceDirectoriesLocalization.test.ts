@@ -4,11 +4,28 @@ import { describe, expect, it } from 'vitest';
 const readClientFile = (relativePath: string) =>
   readFileSync(new URL(`../client/src/${relativePath}`, import.meta.url), 'utf8');
 
+/**
+ * Pages that render their own copy and must therefore localise it themselves.
+ *
+ * CLOSURE PASS: DesignersDirectory and FinishingDirectory used to be here.
+ * They no longer render any copy - each is now a four-line wrapper that renders
+ * VendorsDirectoryView with a category preset, because the lists they used to
+ * show were fabricated. A wrapper with no strings cannot make eighteen t()
+ * calls, and requiring it to would be requiring copy back.
+ *
+ * The rule follows the copy: it now applies to the component that renders it,
+ * and the wrappers are held to a DIFFERENT and equally strict rule below -
+ * they must pass translation KEYS, never literals.
+ */
 const DIRECTORY_PAGES = [
   { file: 'pages/VendorsDirectory.tsx', minTCalls: 20 },
-  { file: 'pages/DesignersDirectory.tsx', minTCalls: 18 },
-  { file: 'pages/FinishingDirectory.tsx', minTCalls: 20 },
   { file: 'pages/MarketplaceHub.tsx', minTCalls: 25 },
+];
+
+/** Pages that delegate their rendering, and the keys they must hand over. */
+const DELEGATING_PAGES = [
+  { file: 'pages/DesignersDirectory.tsx', titleKey: 'designersDir.title', subtitleKey: 'designersDir.subtitle' },
+  { file: 'pages/FinishingDirectory.tsx', titleKey: 'finishingDir.title', subtitleKey: 'finishingDir.subtitle' },
 ];
 
 // Extracts the `en: { ... }` / `ar: { ... }` translation blocks from the shared LanguageContext
@@ -41,6 +58,37 @@ describe('marketplace directory pages use the shared t() translation system, not
       // literals on both sides.
       expect(source).not.toMatch(/ar \? '[^']*' : '[^']*'/);
       expect(source).not.toMatch(/ar\s*\?\s*"[^"]*"\s*:\s*"[^"]*"/);
+    });
+  }
+});
+
+describe('a page that delegates its rendering still owes its copy to t()', () => {
+  for (const { file, titleKey, subtitleKey } of DELEGATING_PAGES) {
+    it(`${file} passes translation KEYS, never literal copy`, () => {
+      const source = readClientFile(file);
+      expect(source).toContain('VendorsDirectoryView');
+      expect(source).toContain(`titleKey="${titleKey}"`);
+      expect(source).toContain(`subtitleKey="${subtitleKey}"`);
+    });
+
+    it(`${file} renders no user-facing string of its own`, () => {
+      // The failure this guards against is a wrapper that starts adding a
+      // heading or a note inline, outside the dictionary, because it is "just
+      // one string".
+      const code = readClientFile(file)
+        .split('\n')
+        .filter(line => !line.trim().startsWith('//') && !line.trim().startsWith('*') && !line.trim().startsWith('/*'))
+        .join('\n');
+      expect(code).not.toMatch(/ar \? '[^']*' : '[^']*'/);
+      expect(code).not.toMatch(/>[A-Za-z][A-Za-z ,.'-]{4,}</);
+    });
+
+    it(`${file} hands over a category from the shared taxonomy`, () => {
+      const source = readClientFile(file);
+      const preset = /presetCategory="([^"]+)"/.exec(source)?.[1];
+      expect(preset, 'no preset category').toBeTruthy();
+      const taxonomy = readFileSync(new URL('../shared/rfqCategories.ts', import.meta.url), 'utf8');
+      expect(taxonomy, `${preset} is not in the RFQ taxonomy`).toContain(`'${preset}'`);
     });
   }
 });
