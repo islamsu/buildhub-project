@@ -684,4 +684,23 @@ describe('§10 the role section proves six experiences, not six headings', () =>
     expect(SECTION).toContain('the role title is in ARABIC');
     expect(SECTION).toContain('no untranslated key is rendered in Arabic');
   });
+
+  it('checks the project selector by what it OFFERS, not by its absence', () => {
+    // The first version of this gate check asserted the selector is absent for
+    // every role. That encodes the homeowner's model - a fresh account owns no
+    // projects - and it is false for an approved provider, whose selector is
+    // populated from `projects.directory`. The live run failed on the
+    // contractor for behaving correctly.
+    //
+    // Absence alone must therefore NOT be the assertion, or the check passes on
+    // a feature that never renders. What survives is the rule it was reaching
+    // for: a rendered selector must hold something real.
+    expect(SECTION).toContain('the project selector offers REAL projects, not an empty control');
+    expect(SECTION).toContain('real.length > 0');
+    // And the placeholder must be excluded from that count, or a selector
+    // holding only "No specific project" would satisfy it.
+    expect(SECTION).toContain("!== 'No specific project'");
+    // The naive form must not come back.
+    expect(SECTION).not.toContain('no project selector when the account has no projects');
+  });
 });

@@ -1758,12 +1758,36 @@ try {
         check((await Promise.all(workflowSteps.map(step => step.innerText()))).every(text => text.trim().length > 0),
           `31. ${role}: every workflow step is labelled`);
 
-        // The project selector must NOT be there for an account with no
-        // projects - these are freshly registered, so there is nothing to
-        // select, and a dropdown with one empty option is a control that does
-        // nothing. This is the "no fake buttons" rule checked live.
-        check(await page.getByTestId('ai-project-selector').count() === 0,
-          `31. ${role}: no project selector when the account has no projects`);
+        // THE "NO DEAD CONTROL" RULE, live - stated as what it actually is.
+        //
+        // The first version of this check asserted the selector is absent for
+        // every role, reasoning that a freshly registered account owns no
+        // projects. That is the HOMEOWNER's model and it is false for a
+        // provider: the selector is populated from `projects.directory`, an
+        // approvedProviderProcedure, so an APPROVED provider selects from the
+        // lead directory rather than from things they own. The contractor -
+        // the one provider section 17-18 approves - failed the old assertion
+        // by behaving correctly. The four unapproved providers are denied the
+        // directory and the homeowner owns nothing, so both render nothing.
+        //
+        // The rule the assertion was reaching for survives, and is now checked
+        // where it belongs: the selector may exist only when it has something
+        // REAL to offer. Present with nothing but the "none" placeholder is
+        // precisely the control that does nothing, and still fails.
+        const selectorCount = await page.getByTestId('ai-project-selector').count();
+        if (selectorCount === 0) {
+          check(true, `31. ${role}: no project selector when there is nothing to select`);
+        } else {
+          await page.getByTestId('ai-project-selector').click();
+          const options = await page.locator('[role="option"]').allInnerTexts();
+          // 'No specific project' is the placeholder, not a project. A
+          // selector holding only that is the dead control this rule forbids.
+          const real = options.filter(text => text.trim() && text.trim() !== 'No specific project');
+          check(real.length > 0,
+            `31. ${role}: the project selector offers REAL projects, not an empty control`,
+            `${real.length} selectable project(s)`);
+          await page.keyboard.press('Escape');
+        }
 
         seen.set(role, { title, tools: (toolIds ?? []).join(','), workflow: (stepIds ?? []).join(',') });
 
