@@ -1598,6 +1598,13 @@ try {
         attachmentIds: [uploaded.id],
       }, ai);
       check(afterRemoval.s === 404, '30. a removed attachment can no longer be sent to the model', `http ${afterRemoval.s}`);
+    } else if (goodPng.s === 429) {
+      // NOT a storage problem, and saying so matters: the two failures look
+      // identical from the outside and lead operators to opposite fixes. This
+      // section makes 7 rate-limited uploads against a burst ceiling of 10, so
+      // hitting it means something else in the run also uploaded as this user.
+      check(false, '30. a genuine PNG is accepted',
+        `rate limited (http 429) - the upload budget was already spent this run, not a storage fault`);
     } else {
       // The type gate still ran and still passed - that is a real result and it
       // is reported as one. The upload is NOT reported as passing.
