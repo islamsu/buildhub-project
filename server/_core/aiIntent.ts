@@ -1,4 +1,5 @@
 import { PROVIDER_ROLES } from '../vendorDirectory';
+import type { JurisdictionCode } from '@shared/knowledgeTaxonomy';
 
 /**
  * Which sources a question needs, decided in code rather than by the model.
@@ -42,6 +43,16 @@ export type AiIntent = {
    * actually matched on.
    */
   unmappedQualifiers: string[];
+  /**
+   * The jurisdiction the QUESTION is about, when it names one.
+   *
+   * Deliberately read from the question and never from the user's account. A
+   * Saudi question asked by an Egyptian customer is a Saudi question; ranking
+   * regulatory content by where someone signed up would answer it with the
+   * wrong country's code, which is the specific mistake the regulatory layer
+   * exists to prevent.
+   */
+  jurisdiction?: JurisdictionCode;
 };
 
 const RECOMMENDATION_CUES = [
@@ -159,7 +170,29 @@ export function detectIntent(question: string): AiIntent {
     unmappedQualifiers: wantsProviderRecommendation
       ? unmappedQualifiers(question, { category, location })
       : [],
+    jurisdiction: extractJurisdiction(question),
   };
+}
+
+/**
+ * Countries and their major cities, mapped to the jurisdiction code. Cities are
+ * included because "is a permit needed in Jeddah" names a jurisdiction without
+ * naming a country - and a regulatory answer that ignores that is answering a
+ * different question.
+ */
+const JURISDICTION_CUES: Array<[RegExp, JurisdictionCode]> = [
+  [/\begypt\b|\begyptian\b|\bcairo\b|\bgiza\b|\balexandria\b|مصر|القاهرة|الجيزة|الإسكندرية/i, 'EG'],
+  [/\bsaudi\b|\bksa\b|\briyadh\b|\bjeddah\b|\bdammam\b|السعودية|الرياض|جدة|الدمام/i, 'SA'],
+  [/\buae\b|\bemirates\b|\bdubai\b|\babu dhabi\b|\bsharjah\b|الإمارات|دبي|أبوظبي|ابوظبي|الشارقة/i, 'AE'],
+  [/\bqatar\b|\bdoha\b|قطر|الدوحة/i, 'QA'],
+  [/\bkuwait\b|الكويت/i, 'KW'],
+  [/\bbahrain\b|\bmanama\b|البحرين|المنامة/i, 'BH'],
+  [/\boman\b|\bmuscat\b|عُمان|عمان\s|مسقط/i, 'OM'],
+  [/\bjordan\b|\bamman\b|الأردن/i, 'JO'],
+];
+
+export function extractJurisdiction(question: string): JurisdictionCode | undefined {
+  return JURISDICTION_CUES.find(([pattern]) => pattern.test(question))?.[1];
 }
 
 /**

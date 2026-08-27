@@ -473,11 +473,11 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
     expect(GATE).toContain("process.env.STAGING_AI_KNOWLEDGE_SUITE ?? ''");
     expect(GATE).toContain('if (AI_KNOWLEDGE_SUITE) {');
     expect(GATE).toContain("skip('29. BuildHub knowledge priority (live)'");
-    expect(GATE).toContain('eleven extra paid provider requests');
+    expect(GATE).toContain('twelve extra paid provider requests');
     // And the number matches how many paid asks the suite actually makes.
     const suite = GATE.slice(GATE.indexOf('29. BuildHub knowledge priority'));
     const paidAsks = (suite.match(/await ask\(/g) ?? []).length;
-    expect(paidAsks).toBe(11);
+    expect(paidAsks).toBe(12);
     expect(WORKFLOW).toContain('ai_knowledge_suite:');
     expect(WORKFLOW).toContain('STAGING_AI_KNOWLEDGE_SUITE:');
   });
@@ -619,5 +619,25 @@ describe('§8 the regulatory scenario refuses to invent a code requirement', () 
 
   it('asserts the answer points at the authority', () => {
     expect(SUITE).toContain('it points at the authority rather than answering the clause from memory');
+  });
+});
+
+describe('§9 semantic retrieval is proven live, not assumed', () => {
+  // Anchored at the ask() itself: the INFO line comes after it, so slicing on
+  // the label would cut off the very statement under test.
+  const SUITE = CODE.slice(CODE.indexOf('const q12 = await ask('));
+
+  it('asks a question that shares NO keyword with the corpus', () => {
+    // If the question matched lexically, a pass would prove nothing about
+    // semantic ranking - the old ranker would have found it too.
+    expect(SUITE).toContain('Water is seeping through the underground car park slab');
+  });
+
+  it('reads the capability rather than inferring retrieval from answer quality', () => {
+    // The model has its own construction knowledge, so a good answer is not
+    // evidence that BuildHub's corpus was consulted. The server has to say.
+    expect(SUITE).toContain('aiSemanticRetrieval');
+    expect(SUITE).toContain("check(caps?.aiSemanticRetrieval === true");
+    expect(SUITE).toContain('not by keyword fallback');
   });
 });

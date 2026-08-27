@@ -27,7 +27,7 @@ on:
         required: false
         type: string
       ai_knowledge_suite:
-        description: "Run the BuildHub knowledge-priority acceptance suite. ELEVEN EXTRA PAID OpenAI requests. Off by default so routine runs cost one."
+        description: "Run the BuildHub knowledge-priority acceptance suite. TWELVE EXTRA PAID OpenAI requests. Off by default so routine runs cost one."
         required: false
         default: false
         type: boolean

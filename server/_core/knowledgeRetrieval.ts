@@ -4,6 +4,7 @@ import {
 } from '@shared/knowledgeTaxonomy';
 import { CONSTRUCTION_CORE } from '../knowledge/constructionCore';
 import { CONSTRUCTION_DEPTH } from '../knowledge/constructionDepth';
+import { CONSTRUCTION_TRADES } from '../knowledge/constructionTrades';
 
 /**
  * Retrieval over the BuildHub knowledge corpus.
@@ -31,7 +32,7 @@ import { CONSTRUCTION_DEPTH } from '../knowledge/constructionDepth';
  * is information the reader wants.
  */
 
-const CORPUS: KnowledgeDocument[] = [...CONSTRUCTION_CORE, ...CONSTRUCTION_DEPTH];
+const CORPUS: KnowledgeDocument[] = [...CONSTRUCTION_CORE, ...CONSTRUCTION_DEPTH, ...CONSTRUCTION_TRADES];
 
 export type RetrievedDocument = { document: KnowledgeDocument; score: number };
 

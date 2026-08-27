@@ -1507,13 +1507,34 @@ try {
       '29.11 it does NOT invent a numeric code requirement',
       q11.answer.slice(0, 140));
 
+    // 12. SEMANTIC RETRIEVAL, proven rather than assumed.
+    //
+    //     The question is deliberately phrased so that NO keyword in the corpus
+    //     appears in it - the lexical ranker scores every document zero on it.
+    //     A good answer alone would not prove retrieval fired, because the model
+    //     has its own construction knowledge; so the capability endpoint is read
+    //     afterwards, and it reports whether the corpus was actually embedded.
+    //     Without that, a deployment whose embeddings endpoint rejects every
+    //     call looks identical to a healthy one from outside.
+    const q12 = await ask('Water is seeping through the underground car park slab after heavy rain. What should I be looking at?', 'en');
+    console.log(`INFO  29.12 semantic retrieval -> http ${q12.s} in ${q12.ms}ms, ${q12.answer.length} chars`);
+    check(q12.s === 200 && q12.answer.length > 80,
+      '29.12 a question sharing no corpus keyword is still answered',
+      q12.answer ? `${q12.answer.slice(0, 110)}…` : `http ${q12.s} ${q12.code}`);
+
+    const caps = json((await get('auth.capabilities')).t);
+    console.log(`INFO  29.12 aiSemanticRetrieval capability: ${caps?.aiSemanticRetrieval}`);
+    check(caps?.aiSemanticRetrieval === true,
+      '29.12 the corpus was EMBEDDED - retrieval ranked semantically, not by keyword fallback',
+      `aiSemanticRetrieval=${caps?.aiSemanticRetrieval}`);
+
     for (const leak of ['OPENAI_API_KEY', 'api.openai.com', 'Bearer ', 'JWT_SECRET', 'DATABASE_URL', 'SUPER_ADMIN', 'passwordHash']) {
-      const all = [q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11].map(q => q.answer).join(' ');
+      const all = [q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12].map(q => q.answer).join(' ');
       check(!all.includes(leak), `29/13. no AI answer exposes ${leak.trim()}`);
     }
   } else {
     skip('29. BuildHub knowledge priority (live)',
-      'opt-in: this suite makes eleven extra paid provider requests. Dispatch with ai_knowledge_suite=true to run it.');
+      'opt-in: this suite makes twelve extra paid provider requests. Dispatch with ai_knowledge_suite=true to run it.');
   }
 
   // ══ 30. AI ATTACHMENTS ════════════════════════════════════════════════

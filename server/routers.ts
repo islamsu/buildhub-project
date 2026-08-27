@@ -15,7 +15,8 @@ import { generateAIResponse, isAiConfigured, AiError, type AiFailureCategory } f
 import { buildSystemPrompt, type KnowledgeLanguage } from './_core/buildhubKnowledge';
 import { detectIntent } from './_core/aiIntent';
 import { recommendProviders, formatCandidatesForModel } from './recommendation';
-import { retrieve, formatRetrievalForModel } from './_core/knowledgeRetrieval';
+import { formatRetrievalForModel } from './_core/knowledgeRetrieval';
+import { retrieveSemantic, semanticRankingAvailable } from './_core/semanticRetrieval';
 import { findRegulatory, formatRegulatoryForModel } from './knowledge/jurisdictions';
 import { storagePut } from './storage';
 import { getObjectStorage, ObjectStorageNotConfiguredError } from './_core/objectStorage';
@@ -399,6 +400,19 @@ const authRouter = router({
     // provider credential every one of them returned the generic internal
     // error - the feature looked present and was not.
     aiAssistant: isAiConfigured(),
+    // Whether the corpus has actually been embedded, so retrieval is ranking
+    // semantically rather than falling back to keywords.
+    //
+    // Reported because it is otherwise UNOBSERVABLE from outside. The fallback
+    // is deliberately silent - a degraded ranking still answers - which means a
+    // deployment whose embeddings endpoint is rejecting every call looks
+    // identical to a healthy one from the browser. Without this the staging
+    // gate could only assert that answers arrive, and would have no way to tell
+    // whether the architecture under test was the one actually running.
+    //
+    // Starts false and becomes true after the first retrieval on this process,
+    // so the gate must ask a question before reading it.
+    aiSemanticRetrieval: semanticRankingAvailable(),
   } as const)),
 
   signUp: publicProcedure.input(z.object({
@@ -3051,7 +3065,14 @@ const aiRouter = router({
       // Reference knowledge for the question, ranked by relevance then by
       // authority tier. Empty when nothing in the corpus matches, which is the
       // common case and costs nothing.
-      const retrieved = formatRetrievalForModel(retrieve(lastQuestion), lang);
+      // SEMANTIC retrieval, with a lexical floor and metadata ranking. Async
+      // because it may embed the question; it never throws - when embeddings
+      // are unavailable it degrades to lexical scoring and still returns.
+      // Retrieval improves an answer, it is not a precondition for one.
+      const retrieved = formatRetrievalForModel(
+        await retrieveSemantic(lastQuestion, { jurisdiction: intent.jurisdiction }),
+        lang,
+      );
       const referenceBlock = retrieved ? `\n\n${retrieved}` : '';
 
       // REGULATORY. Separate from the corpus because it is a different KIND of
@@ -3059,7 +3080,7 @@ const aiRouter = router({
       // instruction not to reconstruct clause text. A code question answered
       // from model memory is the most dangerous output this assistant can
       // produce, because it is precisely the kind a person acts on unchecked.
-      const regulatory = formatRegulatoryForModel(findRegulatory(lastQuestion), lang);
+      const regulatory = formatRegulatoryForModel(findRegulatory(lastQuestion, intent.jurisdiction), lang);
       const regulatoryBlock = regulatory ? `\n\n${regulatory}` : '';
 
       // ATTACHMENTS. Authorization happens HERE, before a byte reaches the
