@@ -29,8 +29,9 @@ import { retrieveSemantic, resetCorpusVectors, corpusSizeSemantic } from './_cor
 import { resetEmbeddingCache, cosineSimilarity } from './_core/embeddings';
 import { CONSTRUCTION_CORE } from './knowledge/constructionCore';
 import { CONSTRUCTION_DEPTH } from './knowledge/constructionDepth';
+import { CONSTRUCTION_TRADES } from './knowledge/constructionTrades';
 
-const CORPUS = [...CONSTRUCTION_CORE, ...CONSTRUCTION_DEPTH];
+const CORPUS = [...CONSTRUCTION_CORE, ...CONSTRUCTION_DEPTH, ...CONSTRUCTION_TRADES];
 
 /**
  * A deterministic stand-in for a real embedding space.

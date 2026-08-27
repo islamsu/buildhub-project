@@ -4,6 +4,7 @@ import {
 } from '@shared/knowledgeTaxonomy';
 import { CONSTRUCTION_CORE } from '../knowledge/constructionCore';
 import { CONSTRUCTION_DEPTH } from '../knowledge/constructionDepth';
+import { CONSTRUCTION_TRADES } from '../knowledge/constructionTrades';
 import { scoreDocument } from './knowledgeRetrieval';
 import { embedQuery, embedDocuments, cosineSimilarity, isEmbeddingAvailable, type Vector } from './embeddings';
 
@@ -32,7 +33,7 @@ import { embedQuery, embedDocuments, cosineSimilarity, isEmbeddingAvailable, typ
  * assistant refusing a question it could have answered.
  */
 
-const CORPUS: KnowledgeDocument[] = [...CONSTRUCTION_CORE, ...CONSTRUCTION_DEPTH];
+const CORPUS: KnowledgeDocument[] = [...CONSTRUCTION_CORE, ...CONSTRUCTION_DEPTH, ...CONSTRUCTION_TRADES];
 
 const MATCH_LIMIT = 3;
 

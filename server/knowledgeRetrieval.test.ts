@@ -8,6 +8,7 @@ vi.mock('./db', () => ({ getDb: vi.fn() }));
 import { retrieve, scoreDocument, formatRetrievalForModel, coveredDomains, corpusSize, staleDocuments } from './_core/knowledgeRetrieval';
 import { CONSTRUCTION_CORE } from './knowledge/constructionCore';
 import { CONSTRUCTION_DEPTH } from './knowledge/constructionDepth';
+import { CONSTRUCTION_TRADES } from './knowledge/constructionTrades';
 import { isStale, AUTHORITY_TIERS, KNOWLEDGE_DOMAINS } from '@shared/knowledgeTaxonomy';
 
 const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
@@ -19,7 +20,7 @@ const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
  * all have gone unchecked for exactly the documents most likely to be added in
  * a hurry.
  */
-const CORPUS = [...CONSTRUCTION_CORE, ...CONSTRUCTION_DEPTH];
+const CORPUS = [...CONSTRUCTION_CORE, ...CONSTRUCTION_DEPTH, ...CONSTRUCTION_TRADES];
 
 describe('the corpus is real, not padded', () => {
   it('every document has substantive content in BOTH languages', () => {
@@ -148,9 +149,9 @@ describe('coverage is reported honestly', () => {
     // The corpus is every tranche, not just the first one. Pinning this to
     // CONSTRUCTION_CORE meant that adding documents FAILED the coverage test,
     // which is precisely backwards.
-    expect(corpusSize()).toBe(CONSTRUCTION_CORE.length + CONSTRUCTION_DEPTH.length);
+    expect(corpusSize()).toBe(CONSTRUCTION_CORE.length + CONSTRUCTION_DEPTH.length + CONSTRUCTION_TRADES.length);
     // The honesty property: a domain appears only if a document claims it.
-    const claimed = [...CONSTRUCTION_CORE, ...CONSTRUCTION_DEPTH]
+    const claimed = [...CONSTRUCTION_CORE, ...CONSTRUCTION_DEPTH, ...CONSTRUCTION_TRADES]
       .map(document => document.domain)
       .filter((id, index, all) => all.indexOf(id) === index);
     expect(covered).toHaveLength(claimed.length);
