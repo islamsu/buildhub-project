@@ -13,7 +13,18 @@ describe('regulatory records are pointers, never contents', () => {
     for (const reference of REGULATORY_REFERENCES) {
       expect(reference.authority.length).toBeGreaterThan(10);
       expect(reference.authorityAr.length).toBeGreaterThan(5);
-      expect(reference.edition.length).toBeGreaterThan(0);
+      // An edition is OPTIONAL, and its absence is only acceptable alongside an
+      // explicit unverified status - a record may not simply go quiet about it.
+      if (reference.edition === undefined) {
+        expect(reference.status).toBe('unverified');
+        // The substance, not one phrasing: the note must make clear BuildHub
+        // does not hold a confirmed edition. Jordan's record says WHY there is
+        // no single edition to hold, which is better than the stock sentence.
+        expect(reference.note).toMatch(/not established|issuing bodies only|no single edition/i);
+      } else {
+        expect(reference.edition.length).toBeGreaterThan(0);
+      }
+      expect(Number.isNaN(Date.parse(reference.reviewDate))).toBe(false);
       expect(reference.sourceUrl).toMatch(/^https:\/\//);
       expect(Number.isNaN(Date.parse(reference.lastVerified))).toBe(false);
       expect(reference.keywords.length).toBeGreaterThan(3);
@@ -81,23 +92,47 @@ describe('a superseded edition is never presented as the current one', () => {
   it('any record NOT marked current must say why in its note', () => {
     for (const reference of REGULATORY_REFERENCES.filter(item => item.status !== 'current')) {
       expect(reference.note.length).toBeGreaterThan(80);
-      expect(reference.note).toMatch(/confirm|amend|newer|later/i);
+      // Whatever the reason, the note must send the reader to the authority
+      // rather than leaving them with BuildHub's uncertainty and nothing to do.
+      expect(reference.note).toMatch(/confirm|amend|newer|later|obtain|not established|check|review|raise/i);
     }
   });
 });
 
 describe('coverage is reported honestly', () => {
-  it('most supported markets have NO regulatory coverage, and that is not hidden', () => {
+  it('all eight supported markets now have a record', () => {
     const supported = Object.keys(JURISDICTIONS).filter(code => code !== 'GLOBAL');
-    expect(COVERED_JURISDICTIONS.length).toBeGreaterThan(0);
-    expect(COVERED_JURISDICTIONS.length).toBeLessThan(supported.length);
+    expect([...COVERED_JURISDICTIONS].sort()).toEqual([...supported].sort());
   });
 
-  it('a question about an uncovered jurisdiction retrieves nothing rather than the nearest neighbour', () => {
-    // Reasoning by analogy from Saudi to Qatar is how a project gets designed
-    // to the wrong country's code. Returning nothing is the correct answer.
-    expect(findRegulatory('what building code applies in Qatar?')).toHaveLength(0);
+  it('COVERAGE IS NOT THE SAME AS CONFIRMATION - most records are unverified', () => {
+    // The honest shape of this corpus: BuildHub knows who regulates every
+    // market and has confirmed the current edition in almost none of them.
+    // A test that only counted markets would read as "8/8 done".
+    const unverified = REGULATORY_REFERENCES.filter(reference => reference.status === 'unverified');
+    expect(unverified.length).toBeGreaterThan(0);
+    expect(REGULATORY_REFERENCES.every(reference => reference.status === 'current')).toBe(false);
+  });
+
+  it('a market whose edition is unknown says so, rather than borrowing a neighbour\'s', () => {
+    // Reasoning by analogy from Saudi to Kuwait is how a project gets designed
+    // to the wrong country's code. The record names the authority and stops.
+    const kuwait = REGULATORY_REFERENCES.find(reference => reference.jurisdiction === 'KW')!;
+    expect(kuwait.edition).toBeUndefined();
+    const block = formatRegulatoryForModel([kuwait], 'en');
+    expect(block).toContain('NOT ESTABLISHED BY BUILDHUB');
+    expect(block).toMatch(/Do NOT supply\s+an edition from your own recollection/);
+    expect(block).not.toMatch(/undefined/);
+  });
+
+  it('a question naming no covered instrument retrieves nothing', () => {
+    expect(findRegulatory('what colour should I paint my kitchen?')).toHaveLength(0);
     expect(formatRegulatoryForModel([], 'en')).toBe('');
+  });
+
+  it('the jurisdiction filter keeps one country\'s question off another country\'s code', () => {
+    const saudiOnly = findRegulatory('which building code applies here?', 'SA');
+    expect(saudiOnly.every(reference => reference.jurisdiction === 'SA')).toBe(true);
   });
 });
 
