@@ -25,6 +25,23 @@ export type AiIntent = {
   role?: string;
   category?: string;
   location?: string;
+  /**
+   * Qualifiers the person clearly asked for that BuildHub could NOT map to its
+   * own vocabulary - an unlisted trade, an unserved city.
+   *
+   * This exists because of a real answer on staging. "I need a swimming pool
+   * specialist contractor in Aswan" parses to role=contractor and nothing else:
+   * "swimming pool" is not a BuildHub category and Aswan is not a served city,
+   * so both are silently dropped. The search then succeeds on role alone and
+   * reports matchQuality 'exact', because from its own point of view every
+   * criterion it knew about was satisfied - and a generic contractor gets
+   * presented as a match for a highly specific request.
+   *
+   * Nothing was fabricated and no ranking was wrong. The FRAMING was wrong, and
+   * the fix is to carry the dropped terms forward so the answer can say what it
+   * actually matched on.
+   */
+  unmappedQualifiers: string[];
 };
 
 const RECOMMENDATION_CUES = [
@@ -130,13 +147,55 @@ export function detectIntent(question: string): AiIntent {
     includesAny(text, EXPLICIT_CURRENCY_CUES) ||
     (includesAny(text, WEAK_CURRENCY_CUES) && !includesAny(text, TIMELESS_GUARD));
 
+  const category = wantsProviderRecommendation ? extractCategory(text) : undefined;
+  const location = wantsProviderRecommendation ? extractLocation(question) : undefined;
+
   return {
     wantsProviderRecommendation,
     wantsCurrentInformation,
     role: wantsProviderRecommendation ? role : undefined,
-    category: wantsProviderRecommendation ? extractCategory(text) : undefined,
-    location: wantsProviderRecommendation ? extractLocation(question) : undefined,
+    category,
+    location,
+    unmappedQualifiers: wantsProviderRecommendation
+      ? unmappedQualifiers(question, { category, location })
+      : [],
   };
+}
+
+/**
+ * A place name the question names that BuildHub does not serve.
+ *
+ * Matched conservatively - "in <Capitalised Word>" and the Arabic "في <word>" -
+ * because the cost of a false positive is only a slightly over-cautious
+ * sentence, while the cost of a false negative is the silent-drop behaviour
+ * this whole field exists to fix.
+ */
+const PLACE_PHRASE = /\b(?:in|near)\s+([A-Z][a-z]{2,})\b/;
+const PLACE_PHRASE_AR = /\bفي\s+([\u0600-\u06FF]{3,})/;
+
+/** Words that follow "in" but are not places, so they are never reported as one. */
+const NOT_A_PLACE = new Set([
+  'the', 'this', 'that', 'my', 'our', 'general', 'total', 'egypt', 'saudi',
+  'order', 'time', 'cash', 'advance', 'fact', 'writing', 'person',
+]);
+
+function unmappedQualifiers(
+  question: string,
+  mapped: { category?: string; location?: string },
+): string[] {
+  const found: string[] = [];
+
+  if (!mapped.location) {
+    const place = PLACE_PHRASE.exec(question)?.[1] ?? PLACE_PHRASE_AR.exec(question)?.[1];
+    if (place && !NOT_A_PLACE.has(place.toLowerCase())) found.push(place);
+  }
+
+  // No recognised trade at all. Said plainly rather than guessed: BuildHub
+  // filters on categories its vendors actually declare, and inventing one to
+  // look responsive would filter real providers out of the search.
+  if (!mapped.category) found.push('the specific trade asked for');
+
+  return found;
 }
 
 /**

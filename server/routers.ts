@@ -3120,7 +3120,7 @@ const aiRouter = router({
           category: intent.category,
           location: intent.location,
         });
-        candidateBlock = `\n\n${formatCandidatesForModel(outcome, lang)}`;
+        candidateBlock = `\n\n${formatCandidatesForModel(outcome, lang, intent.unmappedQualifiers)}`;
       }
 
       try {

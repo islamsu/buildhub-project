@@ -136,3 +136,42 @@ describe('asking for a provider without using the word "recommend"', () => {
     expect(detectIntent('The engineer signs off the structural drawings').wantsProviderRecommendation).toBe(false);
   });
 });
+
+/**
+ * Limitation 19.2 from the previous handoff, closed.
+ *
+ * The staging answer that exposed it passed its check: asked for a "swimming
+ * pool specialist contractor in Aswan", BuildHub returned a generic contractor
+ * as "the best matches based on the available BuildHub data" - because neither
+ * qualifier is in its vocabulary, both were silently dropped, and the search
+ * then reported an EXACT match on the one criterion that survived.
+ */
+describe('qualifiers BuildHub cannot map are carried, not dropped', () => {
+  it('reports both the unserved city and the unlisted trade', () => {
+    const intent = detectIntent('I need a swimming pool specialist contractor in Aswan. Who is on BuildHub?');
+    expect(intent.wantsProviderRecommendation).toBe(true);
+    expect(intent.location).toBeUndefined();
+    expect(intent.unmappedQualifiers).toContain('Aswan');
+    expect(intent.unmappedQualifiers).toContain('the specific trade asked for');
+  });
+
+  it('reports nothing when everything asked for WAS mapped', () => {
+    const intent = detectIntent('Can you recommend a waterproofing contractor in Cairo?');
+    expect(intent.category).toBe('waterproofing');
+    expect(intent.location).toBe('Cairo');
+    expect(intent.unmappedQualifiers).toEqual([]);
+  });
+
+  it('a served city is never reported as unmapped', () => {
+    expect(detectIntent('I need a plumbing contractor in Alexandria').unmappedQualifiers).toEqual([]);
+  });
+
+  it('is empty when no recommendation was requested at all', () => {
+    expect(detectIntent('What causes honeycombing in concrete?').unmappedQualifiers).toEqual([]);
+  });
+
+  it('does not mistake a common phrase after "in" for a place name', () => {
+    const intent = detectIntent('I need a contractor in the event that my current one withdraws');
+    expect(intent.unmappedQualifiers).not.toContain('the');
+  });
+});
