@@ -516,10 +516,12 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
   });
 
   it('every browser context that needs a session gets one - ai.chat is a protectedProcedure', () => {
-    // Three now: the English AI surface, the Arabic one, and the attachment
-    // composer in section 30. Pinned to a count so a new context that forgets
-    // its cookie fails here rather than producing a mysterious 401 on staging.
-    expect(EXECUTABLE.match(/addCookies/g) ?? []).toHaveLength(3);
+    // Four CALL SITES now: the English AI surface, the Arabic one, the
+    // attachment composer in section 30, and the role loop in section 31 -
+    // which is one call site executed once per role. Pinned so a new context
+    // that forgets its cookie fails here rather than producing a mysterious
+    // 401 on staging.
+    expect(EXECUTABLE.match(/addCookies/g) ?? []).toHaveLength(4);
   });
 
   it('the batched tRPC envelope is handled - the browser does not send bare objects', () => {
@@ -639,5 +641,41 @@ describe('§9 semantic retrieval is proven live, not assumed', () => {
     expect(SUITE).toContain('aiSemanticRetrieval');
     expect(SUITE).toContain("check(caps?.aiSemanticRetrieval === true");
     expect(SUITE).toContain('not by keyword fallback');
+  });
+});
+
+describe('§10 the role section proves six experiences, not six headings', () => {
+  const SECTION = CODE.slice(CODE.indexOf("section('31. Role-aware AI experiences')"));
+
+  it('walks every role, not a sample', () => {
+    expect(SECTION).toContain('for (const role of ROLES)');
+    expect(SECTION).toContain("check(seen.size === ROLES.length");
+  });
+
+  it('asserts DISTINCT tool sets, not just distinct titles', () => {
+    // A page that changed only its heading would pass a title-only check while
+    // delivering none of the feature. This is the assertion that would catch it.
+    expect(SECTION).toContain('every role has a DISTINCT tool set');
+    expect(SECTION).toContain('new Set(toolSets).size === seen.size');
+  });
+
+  it('checks a specific pair, so six shuffles of one tool set cannot pass', () => {
+    expect(SECTION).toContain('the homeowner is NOT shown contractor RFQ tooling');
+    expect(SECTION).toContain('the contractor is NOT shown the homeowner designer finder');
+  });
+
+  it('proves the general composer survives personalisation for every role', () => {
+    expect(SECTION).toContain('the general composer is still available');
+  });
+
+  it('costs nothing - opening a role page fires no AI request', () => {
+    expect(SECTION).toContain('opening the page costs nothing');
+    expect(SECTION).toContain('aiRequests === 0');
+  });
+
+  it('covers Arabic per role, by dir=rtl and a translated title', () => {
+    expect(SECTION).toContain("check(dir === 'rtl'");
+    expect(SECTION).toContain('the role title is in ARABIC');
+    expect(SECTION).toContain('no untranslated key is rendered in Arabic');
   });
 });
