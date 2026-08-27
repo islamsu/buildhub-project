@@ -1745,10 +1745,27 @@ try {
         // personalisation decides what is offered, never what may be asked.
         check(await page.locator('textarea').count() > 0, `31. ${role}: the general composer is still available`);
         check(aiRequests === 0, `31. ${role}: opening the page costs nothing`, `${aiRequests} ai.chat request(s)`);
-        check(!/ai\.tool\.|ai\.role\./.test(await page.locator('body').innerText()),
+        check(!/ai\.tool\.|ai\.role\.|ai\.workflow\.|ai\.action\./.test(await page.locator('body').innerText()),
           `31. ${role}: no untranslated key is rendered`);
 
-        seen.set(role, { title, tools: (toolIds ?? []).join(',') });
+        // THE ROLE'S PRIMARY WORKFLOW, live. Added in the AI phase: a named
+        // sequence is what makes this a product rather than eight tool cards
+        // sharing a page, so its absence is a failure and not a cosmetic miss.
+        const workflowSteps = await page.getByTestId('ai-role-workflow')
+          .locator('[data-testid^="ai-workflow-"]').all();
+        const stepIds = await Promise.all(workflowSteps.map(step => step.getAttribute('data-testid')));
+        check(workflowSteps.length >= 4, `31. ${role}: a primary workflow is shown`, `${workflowSteps.length} step(s)`);
+        check((await Promise.all(workflowSteps.map(step => step.innerText()))).every(text => text.trim().length > 0),
+          `31. ${role}: every workflow step is labelled`);
+
+        // The project selector must NOT be there for an account with no
+        // projects - these are freshly registered, so there is nothing to
+        // select, and a dropdown with one empty option is a control that does
+        // nothing. This is the "no fake buttons" rule checked live.
+        check(await page.getByTestId('ai-project-selector').count() === 0,
+          `31. ${role}: no project selector when the account has no projects`);
+
+        seen.set(role, { title, tools: (toolIds ?? []).join(','), workflow: (stepIds ?? []).join(',') });
 
         // Arabic, for this role.
         await page.evaluate(() => localStorage.setItem('buildhub_lang', 'ar'));
@@ -1777,6 +1794,9 @@ try {
     check(new Set(toolSets).size === seen.size,
       '31. every role has a DISTINCT tool set - not one page with six headings',
       `${new Set(toolSets).size} distinct tool sets`);
+    const workflows = [...seen.values()].map(entry => entry.workflow);
+    check(new Set(workflows).size === seen.size,
+      '31. every role has a DISTINCT workflow', `${new Set(workflows).size} distinct workflows`);
 
     // And a specific pair, so the assertion is not satisfiable by six random
     // orderings of the same eight tools.
