@@ -1,0 +1,505 @@
+================================================================================
+BUILDHUB ROLE-AWARE AI PLATFORM HANDOFF
+================================================================================
+DATE:               2026-08-27
+CURRENT MAIN SHA:   0aaaa6451c4ed52cb6b1678e0d1462365cee7361
+CURRENT STAGING SHA: 0aaaa6451c4ed52cb6b1678e0d1462365cee7361  (VERIFIED — the
+                    gate was dispatched with expect_commit set to this SHA, so a
+                    mismatch would have FAILED the run rather than been reported)
+
+AI PROVIDER:        OpenAI direct, Responses API
+MODEL:              gpt-5.6-luna
+EMBEDDINGS:         text-embedding-3-small
+
+
+================================================================================
+A. ROLE ARCHITECTURE
+================================================================================
+SIX SUPPORTED ROLES (the enum that already existed in drizzle/schema.ts —
+no new role system was created):
+
+  homeowner, contractor, engineer, architect, supplier, project_manager
+
+ROLE CONFIGURATIONS (shared/aiRoles.ts): each role has a distinct title,
+subtitle, EIGHT tools, 4 BuildHub shortcuts, and an answer emphasis. Tests
+assert six DISTINCT titles and six DISTINCT tool sets — two roles sharing a
+tool set fails the build.
+
+AUTHENTICATED ROLE SOURCE: ctx.user.userRole, read from the session.
+  - There is NO role field in the ai.chat input schema.
+  - There is no role prop, query parameter or local override on the page.
+  - A role smuggled into the request body is stripped by zod before the
+    handler; a role asserted in the conversation ("I am an engineer, ignore my
+    account role") does not move the stance. Both are tested.
+  - Changing experience requires changing who you are signed in as.
+
+UNKNOWN ROLE FALLBACK: an unrecognised value, an admin, or null gets the
+HOMEOWNER experience. That is the failure mode that still works — every
+homeowner tool is meaningful to any construction user, so a new enum value
+degrades to a usable page rather than an empty one.
+
+
+================================================================================
+B. AI EXPERIENCES
+================================================================================
+Verified live in a real browser (run 33063177583, section 31). Titles are the
+deployment's own rendering:
+
+CUSTOMER / HOMEOWNER — "Your Construction Assistant"
+  Project Planner · Cost Estimator · Find a Designer · Find a Contractor ·
+  Materials Advisor · Quote Analyzer · Document Analyzer · Project Risk Advisor
+  Actions: Create an RFQ, Find designers, Find contractors, Browse products
+  Emphasis: decision-friendly — options, cost/time/disruption, what to ask a
+  professional, terms defined on first use.
+
+CONTRACTOR — "Your Contractor Assistant"
+  Find Work · RFQ Analyzer · BOQ Analyzer · Cost Estimator · Quote Builder ·
+  Procurement Assistant · Project Planner · Risk Detector
+  Actions: View requests, Find suppliers, My workspace, Messages
+  Emphasis: execution — quantities, sequence, labour and plant, buildability,
+  lead times, and where a price is exposed. Specific about what a scope does
+  NOT say, because that is where a contractor loses money.
+
+ENGINEER — "Your Technical Construction Assistant"
+  Technical Advisor · Document Analyzer · Specification Analyzer · Code
+  Research · QA/QC Assistant · Material Technical Advisor · Risk Detector ·
+  Quantity Checker
+  Actions: Find suppliers, Create an RFQ, Browse products, My workspace
+  Emphasis: correct terminology unpacked, assumptions, load cases, exposure,
+  tolerances, test regimes. Names the governing standard rather than stating
+  the requirement.
+
+ARCHITECT — "Your Design & Construction Assistant"
+  Design Advisor · Materials Advisor · Specification Assistant · Drawing
+  Analyzer · Client Brief Analyzer · Code Research · Sustainability Advisor ·
+  Procurement Advisor
+  Actions: Find suppliers, Browse products, Create an RFQ, Finishing providers
+  Emphasis: design intent, material consequence, specification wording,
+  buildability of the detail, performance vs appearance as one problem.
+
+SUPPLIER — "Your Supplier & Opportunity Assistant"
+  Find Opportunities · RFQ Matcher · Product Matcher · Requirement Analyzer ·
+  Quote Assistant · Product Description · Substitution Advisor · Demand Insights
+  Actions: View requests, My products, Browse products, Messages
+  Emphasis: product fit against the stated requirement, what evidence a buyer
+  will ask for, lead time, whether a substitution is defensible — and direct
+  about where a product does NOT meet a requirement.
+
+PROJECT MANAGER — "Your Project Management Assistant"
+  Project Control · Schedule Assistant · Risk Manager · Cost Controller ·
+  Procurement Assistant · Variation Analyzer · Progress Analyzer · Report
+  Assistant
+  Actions: My workspace, Create an RFQ, Find contractors, Messages
+  Emphasis: schedule impact and the critical path, cost forecast, procurement
+  lead times, interface risk, what needs a decision now.
+
+THE GENERAL COMPOSER IS PRESENT FOR EVERY ROLE, and that is asserted per role
+live. Personalisation decides what is OFFERED, never what may be ASKED.
+
+
+================================================================================
+C. USER / PROJECT CONTEXT
+================================================================================
+ROLE CONTEXT: the role and the caller's own plan reach the system prompt as a
+stance. A test asserts the prompt does NOT contain email, openId, account
+status or last sign-in — pitching an answer does not require knowing who
+someone is, so personalisation did not widen the context.
+
+THE STANCE IS A DEFAULT, NOT A RESTRICTION. This is the part most likely to
+make the product worse and it is written against explicitly:
+
+  "THIS IS A STARTING POSTURE AND NOTHING MORE. If they ask something outside
+   it, answer it fully and at whatever depth the question deserves. A
+   contractor asking a beginner's question gets a clear beginner's answer; a
+   homeowner asking a technical question gets the technical answer, with the
+   terms explained. Never withhold detail because of someone's role, and never
+   tell them a question is outside their area."
+
+That clause is under test.
+
+PROJECT CONTEXT: NOT IMPLEMENTED. Part 6 of the brief asked for project-aware
+answers where authorized. This phase did not build it, and the assistant does
+not receive project data. Reported as a gap rather than partially wired —
+see L.1.
+
+AUTHORIZATION: unchanged. The AI path is protectedProcedure with four rate
+limiters. The briefing still states the model knows nothing about any other
+user, and that is asserted per role.
+
+
+================================================================================
+D. KNOWLEDGE
+================================================================================
+DOMAINS:          10 of 70 hold documents —
+                  6 Concrete, 7 Steel, 12 Waterproofing, 28 HVAC,
+                  35 BOQ and Takeoff, 36 Cost Estimation,
+                  40 Tendering/RFQ/RFP, 47 QA and QC, 50 Safety,
+                  52 Claims and Variations
+DOMAINS NOT COVERED: 60 of 70. Listed in the taxonomy as slots, NOT as coverage.
+DOCUMENTS:        10 deep bilingual documents (EN + AR, same facts)
+REGULATORY ITEMS: 8 records, one per market
+AUTHORITY TIERS:  Tier 1 (BuildHub, derived live from billing/compliance/rules),
+                  Tier 2-3 (the regulatory layer, pointers only),
+                  Tier 6 (all 10 construction documents).
+                  TIERS 4 AND 5 ARE EMPTY.
+JURISDICTIONS:    8 of 8 markets have a record — EG, SA, AE, QA, KW, BH, OM, JO
+SOURCE COUNT:     8 official authority sources cited with URLs
+
+COVERAGE IS NOT CONFIRMATION, and a test enforces the distinction: all 8
+markets have a record and ALL 8 are marked something other than 'current'.
+BuildHub knows who regulates every market and has confirmed the current
+edition in none of them. A count of markets would read as "8/8 done".
+
+SEMANTIC RETRIEVAL: hybrid — OpenAI embeddings + cosine, PLUS lexical, PLUS
+metadata (authority tier, jurisdiction, staleness, superseded). Metadata is
+SCORED not filtered, because a jurisdiction mismatch should push a document
+down, not make it invisible. Degrades to lexical when embeddings are
+unavailable; never fails the request.
+
+  PROVEN LIVE: 29.12 asked "Water is seeping through the underground car park
+  slab after heavy rain" — a phrasing sharing no corpus keyword — and then read
+  auth.capabilities, which reported aiSemanticRetrieval=true. Answer quality
+  alone would prove nothing, because the model has its own construction
+  knowledge.
+
+BUILDHUB PRIORITY: tier 1 content is derived at request time from the same
+constants the product enforces, and the prompt orders sources explicitly.
+Verified live: 29.2, 29.3, 29.5, 29.6.
+
+WEB RESEARCH: enabled per request by the intent router, never on every
+question. Verified live by latency (29.9, 5-13 s vs 1.3-3 s).
+
+
+================================================================================
+E. MARKETPLACE RECOMMENDATIONS
+================================================================================
+RANKING (server/recommendation.ts, deterministic, in code):
+  categoryMatch 50 · roleMatch 25 · locationMatch 20 · verified 15 ·
+  ratingMax 20 (ONLY when reviewCount > 0) · reviewVolumeMax 10
+Tiebreakers: score, then review count, then account age. Never database order.
+
+THE LLM DOES NOT RANK. The engine produces the ordered candidates and the
+model presents them; the block forbids re-ordering and forbids superlatives
+the data cannot support.
+
+EXACT / PARTIAL / RELATED / NO-MATCH (Part 8):
+  exact    every qualifier asked for was searchable AND matched
+  partial  matched what BuildHub could search; part of the request was never
+           a criterion (an unlisted trade, an unserved city)
+  related  nothing matched as asked; came from a broadened search
+  none     nothing
+
+  A GENERIC CONTRACTOR IS NEVER EXACT FOR A SPECIALIST REQUEST. The test runs
+  end to end through the real intent router, because the original defect lived
+  in the HANDOFF between parser and engine — hand-built criteria would have
+  passed while the product failed. Mutation-tested.
+
+EXTERNAL FALLBACK: only when explicitly asked, and must be labelled
+"External recommendation - not currently listed on BuildHub", with no implied
+verification or endorsement.
+
+NO PREMATURE "I DON'T KNOW": the engine searches, broadens, then offers the
+free RFQ route. Verified live (29.7, 29.8).
+
+FIELDS NOT AVAILABLE and therefore never used: availability, response time,
+years of experience, portfolio relevance, current workload, budget fit. The
+candidate block names them as unknown and forbids stating or implying them.
+
+
+================================================================================
+F. ATTACHMENTS
+================================================================================
+SUPPORTED FORMATS: PNG, JPEG, WEBP, PDF
+MAXIMUM SIZE:      8 MB
+NOT SUPPORTED:     TXT/CSV (no magic bytes — admitting a signature-less format
+                   disables the byte-sniffing gate for the content type most
+                   likely to smuggle something else), DOCX/XLSX (zip containers
+                   indistinguishable from any other zip without opening them),
+                   GIF (an animated GIF is a video in a picture's clothing)
+
+VALIDATION: size, then declared type, then filename/extension agreement, then
+MAGIC-BYTE SNIFFING via the shared gate (server/_core/fileType.ts). The AI path
+NARROWS that gate rather than duplicating it — a test asserts the delegation.
+
+STORAGE: S3-compatible via the existing adapter, key prefix
+ai-attachments/user-<id>/. NOT CONFIGURED ON STAGING — see I and L.2.
+
+AUTHORIZATION: THE ID IS NOT A CAPABILITY. Every chat request re-reads the row
+and requires userId to match and deletedAt to be null. Another user's id
+returns the SAME error as one that never existed, so the endpoint cannot
+enumerate. The storage proxy resolves ownership through the DATABASE ROW and
+does not parse the user-<id> segment of the key. Both mutation-tested.
+
+AI ANALYSIS: images as input_image, PDFs as input_file — the split the
+Responses API itself draws. Bytes travel INLINE, so no credential to BuildHub
+storage reaches the provider and no object is created there needing deletion.
+
+AN UNREADABLE ATTACHMENT FAILS THE REQUEST. Answering without the file would
+look exactly like a working answer.
+
+MULTI-FILE ARCHITECTURE: the provider layer is ALREADY attachments[] and maps
+over the list; the limit of 1 is a policy at the router boundary. A test
+records WHY raising the constant would not deliver the feature: two files would
+be read, but nothing instructs the model to attribute each fact to the right
+document, and nothing checks that it does.
+
+RETENTION: INDEFINITE. Files persist in object storage; removal soft-deletes
+the row and the bytes remain. Stated plainly rather than given an invented
+policy — see M.2.
+
+
+================================================================================
+G. LANGUAGE
+================================================================================
+THE SELECTED WEBSITE LANGUAGE IS AUTHORITATIVE. All four combinations tested:
+
+  Arabic site  + Arabic question   -> Arabic
+  Arabic site  + ENGLISH question  -> ARABIC
+  English site + Arabic question   -> ENGLISH
+  English site + English question  -> English
+  No language selected             -> English, never inferred from the text
+
+Only testing matching pairs would pass on an implementation that echoes the
+question's language — which is a model's default and is wrong here. Mutation-
+tested: making the router infer language from the question fails three tests.
+
+FOR EVERY ROLE, verified live: all six role pages render dir=rtl with an
+Arabic title, and no raw ai.tool.* / ai.role.* key appears in either language.
+104 role localization keys, EN and AR, with the completeness test DERIVED from
+the config so an untranslated new tool fails the build.
+
+
+================================================================================
+H. TESTING
+================================================================================
+TYPECHECK:            npx tsc --noEmit — 0 errors
+FULL TESTS:           1600 passed / 1600, across 77 files
+BUILD:                npm run build — success
+CI:                   PRs #24 and #25, 6/6 checks green each
+
+  Role tests             server/aiRoles.test.ts             30
+  Attachment tests       server/aiAttachments.test.ts       43
+  Intent/routing tests   server/aiIntent.test.ts            38
+  Semantic retrieval     server/semanticRetrieval.test.ts   17
+  Jurisdiction tests     server/jurisdictionKnowledge.test.ts 18
+  Language authority     server/languageAuthority.test.ts    7
+  Recommendation tests   server/recommendation.test.ts      27
+  Retrieval tests        server/knowledgeRetrieval.test.ts  18
+  BuildHub knowledge     server/buildhubKnowledge.test.ts   36
+  AI security tests      server/aiChatSecurity.test.ts      12
+  Gate self-tests        server/stagingGate.test.ts         62
+
+MUTATION TESTS — 13 across this phase and the two before it, ALL KILLED:
+  role: two roles sharing a tool set; role context removed from the prompt
+        (10 tests fail); a client-side role override; the unknown-role
+        fallback removed
+  recommendation: a generic contractor hard-coded to 'exact'
+  retrieval: semantic term deleted from the score; the similarity floor
+        removed; corpus re-embedded per question; authority rescuing an
+        irrelevant document
+  attachments: ownership predicate dropped from the chat query; the proxy
+        trusting the key path; the unconfigured-storage branch removed
+  language: the router inferring language from the question
+
+ONE MUTATION EXPOSED A HOLE IN MY OWN TESTS. Deleting the semantic term from
+the retrieval score left all sixteen tests passing, because every one asserted
+WHICH documents came back and none asserted that similarity decided their
+ORDER. A test was added for that specifically.
+
+
+================================================================================
+I. STAGING QA
+================================================================================
+TOTAL:              470 checks
+PASSED:             470
+FAILED:             0
+SKIPPED:            6  (skips are NOT passes)
+EXACT DEPLOYED SHA: 0aaaa6451c4ed52cb6b1678e0d1462365cee7361
+GITHUB ACTIONS RUN: https://github.com/islamsu/buildhub-project/actions/runs/33063177583
+
+THE SIX SKIPS, each naming what it needs:
+  1-2. product columns / category filtering — the staging catalogue is empty
+  3.   password reset — SMTP_HOST unset
+  4.   end-to-end upload to the staging bucket — S3_* not configured
+  5.   storing an AI attachment end to end — S3_* not configured
+  6.   cross-user attachment access, live — requires a stored attachment
+
+A PREVIOUS RUN OF THIS PHASE FAILED AND IS REPORTED AS A FAILURE. Run
+33060972266 returned 468/475 with seven failures. All seven were MY STALE
+HARNESS: section 28 hard-coded the eight English tool names of the universal
+grid, and when the grid became role-aware it reported the intended change as
+seven defects. The unit test guarding it had the identical flaw and PASSED
+while the gate failed. Both now derive from the page. The deployed application
+was correct; the checker was stale.
+
+
+================================================================================
+J. LIVE TESTS
+================================================================================
+All against https://buildhub-staging.onrender.com at 0aaaa64. Quotes are the
+deployment's own answers.
+
+CUSTOMER:         PASS — "Your Construction Assistant", 8 tools, 4 shortcuts,
+                  composer present, 0 ai.chat requests on load
+CONTRACTOR:       PASS — "Your Contractor Assistant", RFQ tooling present
+                  (findRfqs, rfqAnalyzer, boqAnalyzer…), designer finder ABSENT
+ENGINEER:         PASS — "Your Technical Construction Assistant"
+ARCHITECT:        PASS — "Your Design & Construction Assistant"
+SUPPLIER:         PASS — "Your Supplier & Opportunity Assistant"
+PROJECT MANAGER:  PASS — "Your Project Management Assistant"
+                  6/6 distinct headings AND 6/6 distinct tool sets
+
+RECOMMENDATION:   PASS — no listed provider: says so and offers the free RFQ
+                  route; the no-match case names what it could not match on
+                  ("Aswan", "swimming-pool specialist") rather than presenting
+                  a generic contractor as an exact match
+ATTACHMENT:       PARTIAL — every validation refusal passed live (anonymous
+                  upload 401, SVG-as-PNG, HTML-as-PNG, DOCX, name/type
+                  mismatch, empty file); the control renders in EN and AR at
+                  375px with an accept list exactly matching the server.
+                  STORE-AND-RETRIEVE SKIPPED — no S3 on staging.
+ARABIC:           PASS — 499 EGP carried in Arabic; every role page dir=rtl
+ENGLISH:          PASS — the SAME 499 EGP in English, 0 Arabic characters
+CURRENT WEB:      PASS — dated steel prices, 5-13 s (the search signature)
+REGULATORY:       PASS — "The Saudi Building Code 2024 edition has been issued
+                  and supersedes the 2018 edition in part" — leads with the
+                  newer edition, points at the authority, states NO millimetre
+                  figure
+SEMANTIC:         PASS — a no-keyword question answered AND
+                  aiSemanticRetrieval=true confirmed from the server
+AUTHORIZATION:    PASS — "I can't access or disclose other vendors' private
+                  contact details, account records, or subscription revenue."
+                  No email address returned.
+
+
+================================================================================
+K. SECURITY
+================================================================================
+- The AI path is protectedProcedure; anonymous use is refused 401 as an AUTH
+  refusal, not a masked internal error.
+- Rate limits: user 5/10s and 20/5min; IP 10/10s and 60/5min. Uploads 10/min,
+  60/hour.
+- NONE of the modules that contribute to the model's context — buildhubKnowledge,
+  knowledgeRetrieval, jurisdictions, recommendation, aiAttachments, aiRoles —
+  reads env or secrets. Audited.
+- The model has NO database access: no query, no schema, no raw row. It
+  receives formatted, already-authorized facts.
+- Attachment authorization happens BEFORE bytes reach the model.
+- Cross-user attachment access returns the same error as a nonexistent id, so
+  the endpoint is not an enumeration oracle.
+- Live: no AI answer, page or console output exposed OPENAI_API_KEY,
+  api.openai.com, Bearer, JWT_SECRET, DATABASE_URL, SUPER_ADMIN or
+  passwordHash. Errors carry no stack trace or filesystem path.
+- Role personalisation did NOT widen the context; a test asserts the absence of
+  identity and contact fields.
+
+
+================================================================================
+L. KNOWN LIMITATIONS
+================================================================================
+L.1  PROJECT-AWARE AI IS NOT IMPLEMENTED. Part 6 asked for project context
+     where authorized. The assistant receives no project data. Not started, not
+     partially wired — a user asking "what's next on my villa project?" gets a
+     general answer.
+
+L.2  NO S3 ON STAGING. Attachment store-and-retrieve and live cross-user access
+     cannot be proven there and are reported as skips. Validation runs BEFORE
+     storage, so every refusal IS proven live.
+
+L.3  ONE ATTACHMENT PER MESSAGE. Multi-file needs per-document attribution in
+     the prompt and the evaluation suite, not a larger constant.
+
+L.4  CORPUS IS 10 OF 70 DOMAINS, all tier 6. Tiers 4 and 5 are empty.
+
+L.5  ALL 8 REGULATORY RECORDS ARE UNVERIFIED OR SUPERSEDED-IN-PART. None is
+     confirmed current. Two (Kuwait, Jordan) have NO edition on record at all,
+     by design.
+
+L.6  UI ACTIONS ARE NAVIGATION, NOT DEEP LINKS. The shortcuts open real routes
+     but do not pre-fill an RFQ from the conversation.
+
+L.7  ROLE AFFECTS STANCE, NOT DATA. A contractor and a homeowner asking the
+     same question get the same facts pitched differently. Role-specific data
+     retrieval (a contractor's matched RFQs, a supplier's products) is not
+     implemented.
+
+L.8  SEMANTIC RETRIEVAL ADDS ONE EMBEDDING CALL PER QUESTION, cached by exact
+     text. Cheap, but not free.
+
+L.9  NO AUTOMATED KNOWLEDGE REFRESH. Review dates exist; re-verification is
+     manual.
+
+L.10 ONE PROVIDER, ONE MODEL, no fallback.
+
+
+================================================================================
+M. OWNER DECISIONS
+================================================================================
+M.1  ADMINS CAN READ AI ATTACHMENTS. The storage proxy's blanket admin allow
+     sits above every category and covers the new one. Pre-existing accepted
+     behaviour; a file handed to the assistant is arguably more private than a
+     compliance document. Flagged, not changed.
+
+M.2  ATTACHMENT RETENTION IS INDEFINITE and removal is a soft delete — the
+     bytes remain in storage. What should the retention period be, and should
+     deleting a conversation purge its attachments?
+
+M.3  IS PROJECT-AWARE AI THE NEXT PRIORITY (L.1), or corpus depth, or
+     role-specific data retrieval (L.7)?
+
+M.4  WHICH DOMAINS MATTER COMMERCIALLY. 60 of 70 are empty; the priority order
+     should not be guessed from a taxonomy I wrote.
+
+M.5  WILL BUILDHUB LICENCE OR AUTHOR TIER 4-5 CONTENT? Codes are copyrighted —
+     citable and summarisable, not reproducible.
+
+M.6  REGULATORY RE-VERIFICATION CADENCE. Records carry reviewDate; nothing
+     re-checks them automatically.
+
+M.7  PER-USER AI COST CAP. Rate limits bound abuse, not spend.
+
+M.8  SHOULD THE ASSISTANT EVER RECOMMEND A NON-BUILDHUB PROVIDER? It currently
+     refuses unless explicitly asked, then labels it as external.
+
+
+================================================================================
+N. PRODUCTION
+================================================================================
+PRODUCTION TOUCHED:  NO
+PRODUCTION STATUS:   NO-GO
+
+No production deployment, database, S3, SMTP, AI key, admin, payments or
+pricing change. No DNS. Everything verified on staging.
+
+EXISTING INFRASTRUCTURE BLOCKERS:
+  - SMTP not configured (password reset unverifiable)
+  - S3 not configured (attachment round-trip unverifiable)
+  - staging product catalogue empty
+  - no real approved vendors on staging
+  - no production AI key, no production admins, payments not activated
+
+
+================================================================================
+O. FINAL DECISION
+================================================================================
+ROLE-AWARE AI:   GO
+    Six distinct experiences verified live in a real browser, in both
+    languages, at zero extra provider cost. The role cannot be spoofed and is
+    a stance rather than a restriction. 30 role tests, 4 mutations killed.
+
+AI:              GO
+    470/470 at the SHA staging is actually serving. Semantic retrieval proven
+    by a server-reported capability rather than inferred from answer quality.
+
+STAGING:         GO
+    470/470 with 6 honest, named skips. Skips are not counted as passes.
+
+PRODUCTION:      NO-GO
+    Not because of the AI work. Because SMTP, S3 and the production database
+    are unconfigured, no production AI key exists, payments are inactive, there
+    are no production administrators, and the marketplace holds no real vendor
+    data.
+
+================================================================================
+END OF HANDOFF — stopping here for independent ChatGPT review.
+================================================================================

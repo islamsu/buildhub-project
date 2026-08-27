@@ -762,7 +762,17 @@ const authRouter = router({
   }),
   updateRole: protectedProcedure
     .input(z.object({
-      userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager', 'admin']),
+      // 'admin' is NOT self-selectable, matching signUp - which already
+      // excluded it and which this path had drifted away from.
+      //
+      // Choosing it never granted server-side privilege: adminProcedure checks
+      // the separate `role` column, which this mutation does not touch. What it
+      // DID do was write userRole='admin', which the dashboard reads to pick the
+      // admin menu, and set verified=true / onboardingStatus=approved because
+      // 'admin' is not a compliance role. So a normal account could show itself
+      // admin navigation and a verified badge by naming a role that is not a
+      // marketplace role at all.
+      userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager']),
       name: z.string().optional(),
       phone: z.string().optional(),
       location: z.string().optional(),
