@@ -204,6 +204,10 @@ const translations: Record<Language, Record<string, string>> = {
     // theirs, in whatever language they wrote it, and is passed through as-is.
     'notif.quotation.received.title': 'New quotation received',
     'notif.quotation.received.body': 'You received a new quotation for "{rfqTitle}".',
+    'notif.quotation.accepted.title': 'Quotation accepted',
+    'notif.quotation.accepted.body': 'Your quotation for "{rfqTitle}" was accepted.',
+    'notif.quotation.notSelected.title': 'Quotation not selected',
+    'notif.quotation.notSelected.body': 'Your quotation for "{rfqTitle}" was not selected.',
     'notif.review.received.title': 'New review received',
     'notif.review.received.body': 'You received a new {rating}-star review.',
     'notif.compliance.document.approved.title': 'Registration document approved',
@@ -1141,6 +1145,10 @@ const translations: Record<Language, Record<string, string>> = {
     // ملاحظة: نص المراجع الحر يمرَّر كما هو - هو كلامه بلغته.
     'notif.quotation.received.title': 'عرض سعر جديد',
     'notif.quotation.received.body': 'وصلك عرض سعر جديد على "{rfqTitle}".',
+    'notif.quotation.accepted.title': 'تم قبول عرض السعر',
+    'notif.quotation.accepted.body': 'تم قبول عرض سعرك على "{rfqTitle}".',
+    'notif.quotation.notSelected.title': 'لم يتم اختيار عرض السعر',
+    'notif.quotation.notSelected.body': 'لم يتم اختيار عرض سعرك على "{rfqTitle}".',
     'notif.review.received.title': 'تقييم جديد',
     'notif.review.received.body': 'وصلك تقييم جديد بـ {rating} نجوم.',
     'notif.compliance.document.approved.title': 'تم اعتماد مستند التسجيل',

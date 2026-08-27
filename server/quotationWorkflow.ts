@@ -47,12 +47,31 @@ export async function acceptQuotationSecure(rfqId: number, quotationId: number, 
     );
     await tx.update(rfqs).set({ status: 'awarded' }).where(eq(rfqs.id, rfqId));
 
+    // WHO IS TOLD THEY LOST, and who must not be.
+    //
+    // `others` is every OTHER QUOTATION on this RFQ, not every other provider,
+    // and nothing prevents one provider from submitting several (see the
+    // OWNER DECISION in the Phase 1B handoff). Mapping rows straight to
+    // recipients therefore did two wrong things at once: a provider who bid
+    // three times and WON was sent "Quotation not selected" twice, seconds
+    // after "Quotation accepted"; and a provider who bid twice and lost was
+    // told so twice.
+    //
+    // De-duplicating and excluding the winner is not a decision about whether
+    // duplicates should exist - it is addressing each provider once, which is
+    // correct under either answer to that question.
+    // (No Set spread: this TypeScript target has no downlevelIteration.)
+    const losingProviderIds = others
+      .map(o => o.providerId)
+      .filter((providerId, index, all) =>
+        providerId !== quotation.providerId && all.indexOf(providerId) === index);
+
     return {
       success: true as const,
       awardedQuotationId: quotationId,
       rfqId,
       acceptedProviderId: quotation.providerId,
-      rejectedProviderIds: others.map(o => o.providerId),
+      rejectedProviderIds: losingProviderIds,
       rfqTitle: rfq.title,
     };
   });
@@ -65,6 +84,8 @@ export async function acceptQuotationSecure(rfqId: number, quotationId: number, 
     body: `Your quotation for "${result.rfqTitle}" was accepted.`,
     type: 'quotation',
     link: '/provider',
+    messageKey: 'notif.quotation.accepted',
+    messageParams: { rfqTitle: result.rfqTitle },
   });
   await notifyUsers(db, result.rejectedProviderIds.map(providerId => ({
     userId: providerId,
@@ -72,6 +93,8 @@ export async function acceptQuotationSecure(rfqId: number, quotationId: number, 
     body: `Your quotation for "${result.rfqTitle}" was not selected.`,
     type: 'quotation',
     link: '/provider',
+    messageKey: 'notif.quotation.notSelected',
+    messageParams: { rfqTitle: result.rfqTitle },
   })));
 
   return { success: result.success, awardedQuotationId: result.awardedQuotationId, rfqId: result.rfqId };
@@ -109,6 +132,8 @@ export async function rejectQuotationSecure(rfqId: number, quotationId: number, 
     body: `Your quotation for "${result.rfqTitle}" was not selected.`,
     type: 'quotation',
     link: '/provider',
+    messageKey: 'notif.quotation.notSelected',
+    messageParams: { rfqTitle: result.rfqTitle },
   });
 
   return { success: result.success };
