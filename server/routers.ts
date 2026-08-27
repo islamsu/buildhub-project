@@ -2044,12 +2044,22 @@ const adminRouter = router({
     if (!db) return [];
     return db.select(ADMIN_USER_LIST_COLUMNS).from(users).orderBy(desc(users.createdAt)).limit(250);
   }),
+  // 'admin' is NOT creatable here. This endpoint is gated on `users.manage`,
+  // which USER_ADMIN holds - but shared/adminRoles.ts states the invariant that
+  // only SUPER_ADMIN (`admins.manage`) may create or re-role an administrator,
+  // and this enum contradicted it. It never granted permissions, because
+  // `adminRole` is left null and all 38 adminWith(...) endpoints fail closed on
+  // a null role. What it DID produce was a row the platform treats as an
+  // administrator everywhere it checks `role`: exempt from the frozen-account
+  // check in _core/trpc.ts, rendering the full admin menu, and created outside
+  // the invitation flow that records `admin_created` and an adminInvitations
+  // row. Administrators are created by admin.createAdmin, under superAdminProcedure.
   createUser: adminWith('users.manage').input(z.object({
     username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/),
     email: z.string().trim().email(),
     name: z.string().trim().min(1).max(255),
     phone: z.string().trim().max(32).optional(),
-    userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager', 'admin']),
+    userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager']),
     note: z.string().trim().max(1000).optional(),
     sendInvitation: z.boolean().default(true),
   })).mutation(async ({ ctx, input }) => {
@@ -2064,7 +2074,7 @@ const adminRouter = router({
     const inviteToken = randomUUID() + '-' + randomUUID().slice(0, 8);
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
     const result = await db.insert(users).values({
-      openId, username, name: input.name, email, phone: input.phone || null, loginMethod: 'admin_created', role: input.userRole === 'admin' ? 'admin' : 'user', userRole: input.userRole, accountSource: 'admin_created', isDummy: false, createdBy: ctx.user.id, creationNote: input.note || null, onboardingStatus: professional ? 'not_started' : 'approved', verified: !professional,
+      openId, username, name: input.name, email, phone: input.phone || null, loginMethod: 'admin_created', role: 'user', userRole: input.userRole, accountSource: 'admin_created', isDummy: false, createdBy: ctx.user.id, creationNote: input.note || null, onboardingStatus: professional ? 'not_started' : 'approved', verified: !professional,
       invitationStatus: input.sendInvitation ? 'invitation_sent' : 'none',
       invitationToken: input.sendInvitation ? inviteToken : null,
       invitationExpiresAt: input.sendInvitation ? expiresAt : null,
