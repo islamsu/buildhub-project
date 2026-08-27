@@ -15,7 +15,8 @@ import { generateAIResponse, isAiConfigured, AiError, type AiFailureCategory } f
 import { buildSystemPrompt, type KnowledgeLanguage } from './_core/buildhubKnowledge';
 import { detectIntent } from './_core/aiIntent';
 import { recommendProviders, formatCandidatesForModel } from './recommendation';
-import { retrieve, formatRetrievalForModel } from './_core/knowledgeRetrieval';
+import { formatRetrievalForModel } from './_core/knowledgeRetrieval';
+import { retrieveSemantic } from './_core/semanticRetrieval';
 import { findRegulatory, formatRegulatoryForModel } from './knowledge/jurisdictions';
 import { storagePut } from './storage';
 import { getObjectStorage, ObjectStorageNotConfiguredError } from './_core/objectStorage';
@@ -3051,7 +3052,14 @@ const aiRouter = router({
       // Reference knowledge for the question, ranked by relevance then by
       // authority tier. Empty when nothing in the corpus matches, which is the
       // common case and costs nothing.
-      const retrieved = formatRetrievalForModel(retrieve(lastQuestion), lang);
+      // SEMANTIC retrieval, with a lexical floor and metadata ranking. Async
+      // because it may embed the question; it never throws - when embeddings
+      // are unavailable it degrades to lexical scoring and still returns.
+      // Retrieval improves an answer, it is not a precondition for one.
+      const retrieved = formatRetrievalForModel(
+        await retrieveSemantic(lastQuestion, { jurisdiction: intent.jurisdiction }),
+        lang,
+      );
       const referenceBlock = retrieved ? `\n\n${retrieved}` : '';
 
       // REGULATORY. Separate from the corpus because it is a different KIND of
@@ -3059,7 +3067,7 @@ const aiRouter = router({
       // instruction not to reconstruct clause text. A code question answered
       // from model memory is the most dangerous output this assistant can
       // produce, because it is precisely the kind a person acts on unchecked.
-      const regulatory = formatRegulatoryForModel(findRegulatory(lastQuestion), lang);
+      const regulatory = formatRegulatoryForModel(findRegulatory(lastQuestion, intent.jurisdiction), lang);
       const regulatoryBlock = regulatory ? `\n\n${regulatory}` : '';
 
       // ATTACHMENTS. Authorization happens HERE, before a byte reaches the

@@ -160,7 +160,9 @@ describe('coverage is reported honestly', () => {
 describe('retrieval is wired into the AI path', () => {
   it('the router retrieves and injects reference knowledge', () => {
     const chat = ROUTERS.slice(ROUTERS.indexOf('const aiRouter = router({'));
-    expect(chat).toContain('formatRetrievalForModel(retrieve(lastQuestion), lang)');
+    // Retrieval is SEMANTIC now, and awaited: it may embed the question.
+    expect(chat).toContain('await retrieveSemantic(lastQuestion, { jurisdiction: intent.jurisdiction })');
+    expect(chat).toContain('formatRetrievalForModel(');
     expect(chat).toContain('systemPrompt + attachmentBlock + regulatoryBlock + referenceBlock + candidateBlock');
   });
 

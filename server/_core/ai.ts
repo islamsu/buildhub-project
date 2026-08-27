@@ -107,6 +107,17 @@ const getClient = (): OpenAI => {
 export const resetAiClient = (): void => { client = undefined; };
 
 /**
+ * The shared client, for the OTHER OpenAI surface this application uses:
+ * embeddings, in server/_core/embeddings.ts.
+ *
+ * Exported rather than duplicated so there is still exactly ONE place that
+ * holds the credential, the base URL, the timeout and the retry budget. A
+ * second client built next to the first is how two halves of an integration
+ * end up on different configuration.
+ */
+export const getAiClient = getClient;
+
+/**
  * Split BuildHub's conversation into the two things the Responses API wants:
  * `instructions` (system-level steering) and `input` (the actual turns).
  *

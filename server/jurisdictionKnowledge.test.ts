@@ -133,7 +133,10 @@ describe('retrieval and the instruction block', () => {
 
   it('the router injects the regulatory block into the AI request', () => {
     const chat = ROUTERS.slice(ROUTERS.indexOf('const aiRouter = router({'));
-    expect(chat).toContain('formatRegulatoryForModel(findRegulatory(lastQuestion), lang)');
+    // The jurisdiction comes from the QUESTION, not the account - see
+    // extractJurisdiction. A Saudi question asked by an Egyptian customer is a
+    // Saudi question.
+    expect(chat).toContain('formatRegulatoryForModel(findRegulatory(lastQuestion, intent.jurisdiction), lang)');
     expect(chat).toContain('regulatoryBlock');
   });
 });
