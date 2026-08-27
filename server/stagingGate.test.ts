@@ -544,10 +544,15 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
     expect(EXECUTABLE).toContain('the delivered Arabic AI page contains no API-key-shaped string');
   });
 
-  it('all eight tools are asserted by name in the browser', () => {
-    for (const tool of ['Cost Estimator', 'Quantity Surveyor', 'Material Advisor', 'Project Manager', 'Risk Detector', 'Procurement', 'Maintenance', 'General Consultant']) {
-      expect(AI_BLOCK).toContain(tool);
-    }
+  it('the tool set is COUNTED from the page, not matched against English names', () => {
+    // This test used to require eight specific English names, and it passed
+    // right up until the grid became role-aware - at which point the gate
+    // failed seven checks against a working product. A harness pinned to labels
+    // reports a defect whenever the labels legitimately change, which is the
+    // opposite of what a gate is for.
+    expect(AI_BLOCK).toContain('eight tools are offered for the signed-in role');
+    expect(AI_BLOCK).toContain('no tool renders a raw translation key');
+    expect(AI_BLOCK).not.toContain('Quantity Surveyor');
   });
 });
 

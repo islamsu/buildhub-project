@@ -1078,10 +1078,10 @@ try {
   // So this section spends nothing. It asserts what is free: the page, what the
   // deployment declares about itself, and the anonymous refusal.
   //
-  // All eight tools on /ai - Cost Estimator, Quantity Surveyor, Material
-  // Advisor, Project Manager, Risk Detector, Procurement, Maintenance, General
-  // Consultant - are the same `trpc.ai.chat` mutation with a different opening
-  // prompt, so one request proves the provider integration for all eight.
+  // The eight tools on /ai are the same `trpc.ai.chat` mutation with a
+  // different opening prompt, so one request proves the provider integration
+  // for all of them. WHICH eight depends on the signed-in role now - see
+  // section 31 - so this section counts them rather than naming them.
   //
   // SKIP vs FAIL:
   //   OPENAI_API_KEY absent  -> aiAssistant:false, and the provider round trip
@@ -1171,9 +1171,21 @@ try {
 
     check(/AI|الذكاء/i.test(aiText), '28. the AI Assistant page renders', aiText.slice(0, 50).replace(/\n/g, ' '));
 
-    for (const tool of ['Cost Estimator', 'Quantity Surveyor', 'Material Advisor', 'Project Manager', 'Risk Detector', 'Procurement', 'Maintenance', 'General Consultant']) {
-      check(aiText.toLowerCase().includes(tool.toLowerCase()), `28. the "${tool}" tool is offered`);
-    }
+    // COUNTED FROM THE PAGE, not matched against a list of English names.
+    //
+    // The previous version hard-coded the eight tool names of the universal
+    // grid, and when the grid became role-aware it failed seven checks against
+    // a working product - a stale harness reporting a defect that did not
+    // exist. Tool NAMES are now a property of the signed-in role's config; what
+    // the gate should assert is the invariant that survives that: this role is
+    // offered a full set of tools, each labelled, and none of them a raw
+    // translation key.
+    const toolCards = await aiPageB.getByTestId('ai-tools').locator('[data-testid^="ai-tool-"]').all();
+    check(toolCards.length === 8, '28. eight tools are offered for the signed-in role', `${toolCards.length} tool(s)`);
+    const toolLabels = await Promise.all(toolCards.map(card => card.innerText()));
+    check(toolLabels.every(label => label.trim().length > 0), '28. every tool card carries a label');
+    check(!toolLabels.some(label => /ai\.tool\./.test(label)),
+      '28. no tool renders a raw translation key', toolLabels.find(l => /ai\.tool\./.test(l)) ?? '');
 
     const bannerShown = /not available|unavailable|غير متاح/i.test(aiText);
     const disabledCards = await aiPageB.locator('[aria-disabled="true"]').count();
