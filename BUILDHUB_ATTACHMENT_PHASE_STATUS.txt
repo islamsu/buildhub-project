@@ -1,0 +1,369 @@
+================================================================================
+BUILDHUB — AI KNOWLEDGE PLATFORM EXPANSION
+INTERIM STATUS (NOT THE FINAL HANDOFF)
+================================================================================
+Date:    2026-08-27
+Phase:   Knowledge depth + user attachments + retrieval hardening
+Status:  Code merged to main. Staging acceptance NOT YET RUN.
+
+WHY THIS IS INTERIM. The mandated BUILDHUB AI KNOWLEDGE + ATTACHMENT HANDOFF
+requires live staging results, and the acceptance run has not happened yet —
+Render is still redeploying the merge commit. Dispatching the gate against a
+stale build would produce numbers that describe the previous deployment while
+appearing to describe this one. The final handoff follows the acceptance run.
+
+
+--------------------------------------------------------------------------------
+1. WHAT IS MERGED
+--------------------------------------------------------------------------------
+Branch      : claude/buildhub-audit-verification-vrai7l
+Merge commit: 1e639d90693018a6b3d4e2590d718a202661bd61  (PR #21)
+main SHA    : 1e639d90693018a6b3d4e2590d718a202661bd61
+Staging SHA : PENDING — the redeploy is in flight and has not been verified
+
+PR #21 CI: 6/6 green (typecheck+test+build, migrations from empty, image builds
+and starts — across both head commits).
+
+35 files changed, +7,495 / -51.
+
+
+--------------------------------------------------------------------------------
+2. PART A — USER ATTACHMENTS
+--------------------------------------------------------------------------------
+A user can attach a file to an AI conversation and ask about it. The file
+reaches the model as an `input_image` or `input_file` content part — the split
+the Responses API itself draws — rather than being flattened into the text
+prompt, where an image is not looked at and a PDF is not read.
+
+WHAT SHIPPED
+  shared/aiAttachments.ts          the accepted set, shared by browser + server
+  server/_core/aiAttachments.ts    validation + Responses API content parts
+  drizzle 0021_sleepy_boomerang    the aiAttachments table
+  ai.uploadAttachment              protected, rate limited, validated, stored
+  ai.deleteAttachment              soft delete, scoped by userId
+  ai.chat attachmentIds            ids only — never a URL, never bytes
+  storageProxy category            owner-only, resolved through the DB row
+  AIAttachmentControl.tsx          composer control, EN/AR, RTL, mobile
+  20 localization keys             EN and AR, in the existing system
+
+SUPPORTED: PNG, JPEG, WEBP, PDF. Max 8 MB. One file per message.
+
+FOUR FORMATS, NOT THE EIGHT REQUESTED — and this is a real reduction against
+the brief, stated plainly rather than buried:
+
+  TXT and CSV have NO MAGIC BYTES. BuildHub's upload gate works by sniffing the
+  real bytes and refusing what it cannot recognise — that gate is what stops an
+  SVG arriving as image/png. Admitting a format defined by the ABSENCE of a
+  signature means accepting any byte sequence under a text/* label, which turns
+  the gate off for the content type most likely to be used to smuggle something
+  else. Supporting them safely needs a content inspector (valid UTF-8, no NUL
+  bytes, a delimiter shape), not a wider allowlist.
+
+  DOCX and XLSX are ZIP containers. Their signature PK\x03\x04 is shared with
+  every other zip, so sniffing cannot tell an XLSX from an arbitrary archive
+  without opening it — which means bounding decompression against zip bombs and
+  deciding about macros and external relationships first. That is a piece of
+  work, not a line in an array.
+
+  GIF is sniffable and BuildHub already stores it elsewhere, but it is excluded
+  on purpose: an animated GIF is a video in a picture's clothing, and one frame
+  of it is not what the user believes they sent.
+
+AUTHORIZATION — the part worth an independent review
+
+  THE ID IS NOT A CAPABILITY. Every chat request re-reads the row and requires
+  userId to match and deletedAt to be null. Another user's id resolves to
+  nothing — and to the SAME error as an id that never existed, because a
+  distinguishable message would turn the endpoint into an oracle for which
+  attachment ids exist.
+
+  THE STORAGE PROXY RESOLVES OWNERSHIP THROUGH THE DATABASE ROW and does not
+  even parse the `user-<id>` segment of the key, because a key is a string an
+  attacker may come to hold. Unpredictability is not authorization.
+
+  Both properties are MUTATION-TESTED: dropping the ownership predicate fails
+  two tests; making the proxy trust the key path fails a third.
+
+BYTES GO TO OPENAI INLINE, as a data URL / file_data. The alternative — handing
+over a signed URL — would leave a credential to BuildHub's private storage in a
+third party's hands, and would create an object at the provider that later needs
+deleting. Nothing is created there, so there is nothing to retain and nothing to
+delete. Verified: no Files API call exists anywhere in the codebase.
+
+AN UNREADABLE ATTACHMENT FAILS THE REQUEST. Answering the question without the
+file would look exactly like a working answer, which is worse than an error.
+
+SOURCE PRIORITY. The attachment instruction is injected ONLY when a file is
+present — telling a model to prefer "the attachment" when none exists is how a
+model starts describing one. It states that the file OUTRANKS BuildHub knowledge
+and general expertise for facts about itself, that the attachment GOVERNS on
+conflict, that a gap must be reported rather than filled, and that no figure,
+dimension, quantity, rate or certification may be invented.
+
+
+--------------------------------------------------------------------------------
+3. PART B — KNOWLEDGE DEPTH
+--------------------------------------------------------------------------------
+CORPUS: 4 documents -> 7, across 7 of 70 domains.
+
+  NEW: concrete-mix-and-strength (6), qaqc-inspection-regime (47),
+       variations-and-claims (52)
+  EXISTING: qs-boq-fundamentals (35), estimating-assumptions (36),
+       waterproofing-selection (12), tender-comparison (40)
+
+Written to the depth checklist — what a thing is, how it is chosen, how it
+fails, how failure is caught, what drives its cost, what people get wrong —
+because a paragraph a model could produce with no corpus at all is not worth
+storing. The reason to hold a document is that it OUTRANKS general recollection,
+and it earns that only by being specific.
+
+7 OF 70 IS STILL PARTIAL AND IS REPORTED AS SUCH. Padding the other 63 with a
+paragraph each would raise the count and lower the value.
+
+THE REGULATORY LAYER (server/knowledge/jurisdictions.ts) is the more valuable
+piece. It holds POINTERS TO INSTRUMENTS — authority, code, edition, status,
+official URL, last-verified date — and deliberately NO clause text, NO table and
+NO numeric requirement. Two reasons that are the same reason: codes are
+copyrighted, and a clause quoted from memory is the most dangerous output this
+product can produce, because it is exactly the kind a person acts on without
+checking. A cover depth or fire rating that is confidently wrong costs a
+rejected inspection at best.
+
+THREE RECORDS, each verified against the publishing authority on 2026-08-26
+rather than recalled — and the research surfaced exactly the trap the brief
+warned about:
+
+  SBC — Saudi Building Code National Committee. 2018 edition, developed from
+  IBC 2015 under agreement with the ICC. A 2024 EDITION HAS SINCE BEEN ISSUED,
+  so the record is marked superseded-in-part and states that which edition
+  applies depends on permit date and reviewing authority.
+
+  UAE Fire and Life Safety Code of Practice — UAE Civil Defence, administered
+  per emirate and AMENDED LOCALLY. Abu Dhabi Civil Defence formalised 54
+  amendments on 12 March 2026. The code plus your emirate's amendments is what
+  governs.
+
+  ECP 203 — HBRC, Egypt. Marked UNVERIFIED, not current, because BuildHub has
+  not confirmed whether a later edition is in force. Claiming "current" for an
+  edition nobody checked is the exact failure the status field exists to
+  prevent. The Arabic text is the official one; circulating English versions are
+  unofficial translations.
+
+A question about an UNCOVERED jurisdiction retrieves NOTHING rather than the
+nearest neighbour. Reasoning by analogy from Saudi to Qatar is how a project
+gets designed to the wrong country's code.
+
+Coverage: 3 of 8 supported markets have regulatory records. The other 5 have
+none, and the assistant is told to say so.
+
+Tests assert the ABSENCE of clause content as a property of the file, so adding
+a "helpful" requirement to a record fails the build rather than reaching a user.
+
+
+--------------------------------------------------------------------------------
+4. LIMITATION 19.2 FROM THE PREVIOUS HANDOFF — CLOSED
+--------------------------------------------------------------------------------
+The one found by reading a PASSING scenario's answer rather than its green tick.
+
+"I need a swimming pool specialist contractor in Aswan" parsed to
+role=contractor and nothing else: "swimming pool" is not a BuildHub category and
+Aswan is not a served city, so both were silently dropped. The search then
+succeeded on the one surviving criterion and reported matchQuality EXACT —
+because from its own point of view everything it knew about was satisfied. A
+generic contractor was offered as the match for a highly specific request.
+Nothing fabricated, no ranking wrong, the FRAMING wrong.
+
+detectIntent now carries the qualifiers it could not map, and the candidate
+block states them: MATCH QUALITY: PARTIAL, what the match was actually based on,
+an instruction not to imply any provider specialises in the dropped term, and the
+RFQ route where the requirement can be described in full.
+
+
+--------------------------------------------------------------------------------
+5. LANGUAGE AUTHORITY — ALL FOUR COMBINATIONS
+--------------------------------------------------------------------------------
+The website's language decides the answer's language; the question's language
+does not.
+
+  Arabic site + Arabic question   -> Arabic
+  Arabic site + English question  -> ARABIC
+  English site + Arabic question  -> ENGLISH
+  English site + English question -> English
+  No language selected            -> English, not inferred from the text
+
+Only testing the matching pairs would pass on an implementation that simply
+echoes the question's language — which is what a model does by default, and it
+is wrong here: someone on an Arabic page who types one English technical term
+has not changed languages. Mutation-tested by making the router infer language
+from the question: three tests fail.
+
+
+--------------------------------------------------------------------------------
+6. TWO AUDITS WORTH RECORDING
+--------------------------------------------------------------------------------
+COST (brief part 23). ONE provider call per request. Retrieval, ranking and the
+regulatory lookup are all local — there is exactly one generateAIResponse call
+site in the router, and none of the knowledge or recommendation modules touches
+a provider. A routine staging run costs ONE paid request; the opt-in acceptance
+suite costs ELEVEN, and the count is now asserted against the number of paid
+asks in the suite so adding a scenario without updating the operator's notice
+fails the build.
+
+CONTEXT SECURITY (brief part 24). None of the five modules that contribute to
+the model's context — buildhubKnowledge, knowledgeRetrieval, jurisdictions,
+recommendation, aiAttachments — reads env or secrets. The single grep hit is
+prompt TEXT instructing the model never to discuss credentials, not a credential
+read. The model has no database access, no query, no schema and no raw row.
+
+
+--------------------------------------------------------------------------------
+7. LOCAL VERIFICATION
+--------------------------------------------------------------------------------
+  npx tsc --noEmit    0 errors
+  npx vitest run      1534 passed / 1534, across 75 files (from 1496 / 73)
+  npm run build       success
+
+  New dedicated suites:
+    server/aiAttachments.test.ts        38
+    server/jurisdictionKnowledge.test.ts 15
+    server/languageAuthority.test.ts      7
+
+  Mutation testing: 6 mutations across the phase, ALL KILLED —
+    ownership predicate removed from the chat attachment query   -> 2 fail
+    proxy trusts the user-<id> key segment instead of the row    -> 1 fail
+    router infers answer language from the question              -> 3 fail
+
+SIX STRUCTURAL GUARDS FIRED on Part A and were UPDATED TO COVER THE NEW
+ENDPOINT, NOT RELAXED. The byte-verification sweep now counts BOTH verified
+paths and requires them to cover every storagePut — counting only
+assertUploadedFileMatches would have read a genuinely-verified sixth endpoint as
+an unverified one. The rate-limit guard even carried the message "an upload
+endpoint was added or removed — it needs a rate limit too", which is the guard
+working exactly as designed.
+
+Also fixed: the corpus metadata checks iterated only the first tranche, so a
+second corpus file would have been held to NO standard at all — the documents
+most likely to be added in a hurry were the ones going unchecked. And the
+coverage test pinned corpusSize to the first tranche, so ADDING documents failed
+it, which is precisely backwards.
+
+
+--------------------------------------------------------------------------------
+8. STAGING GATE — WHAT WAS ADDED
+--------------------------------------------------------------------------------
+SECTION 30, AI ATTACHMENTS. Staging has NO S3, so the honest question is what
+CAN be proven there. The answer is most of it, because VALIDATION RUNS BEFORE
+STORAGE: anonymous upload refused, anonymous delete refused, SVG relabelled as
+PNG refused, HTML relabelled as PNG refused, DOCX refused, name/type
+disagreement refused, empty file refused — all genuine live results on a
+deployment with no bucket. Plus the composer control in English and Arabic, at
+375px, proven by dir=rtl rather than "Arabic glyphs appear somewhere" (the trap
+that once let an Arabic check pass on the navbar's language toggle), and the
+file picker's accept list proven to match the server's allowlist.
+
+The upload itself is attempted FOR REAL. If storage is unconfigured it becomes a
+SKIP THAT NAMES WHAT IT NEEDS — and the cross-user check is skipped WITH it
+rather than quietly dropped, because it cannot run without a stored file and
+pretending otherwise would be the worst kind of green. Skips are not passes.
+
+A 429 is now discriminated from a storage fault. The two look identical from
+outside and lead an operator to opposite fixes.
+
+SCENARIO 29.11, REGULATORY — the most dangerous answer in the product, under
+live test. It must name the instrument, must NOT present the 2018 SBC edition as
+simply current when a 2024 edition exists, must point at the authority, and must
+NOT state a millimetre figure — because BuildHub never gave it one, so anything
+it produced would be invented.
+
+
+--------------------------------------------------------------------------------
+9. KNOWN LIMITATIONS
+--------------------------------------------------------------------------------
+9.1  STAGING HAS NO S3. Store-and-retrieve and live cross-user attachment access
+     cannot be proven there and will report as skips. Configuring staging S3 is
+     the owner action that closes this.
+
+9.2  ONE ATTACHMENT PER MESSAGE. Multi-file comparison ("compare this quotation
+     against this BOQ") is genuinely useful and is NOT implemented. Raising the
+     constant is not sufficient: the answer has to attribute each fact to the
+     right document, and nothing in the prompt or the evaluation suite checks
+     that it does.
+
+9.3  FOUR FORMATS, NOT EIGHT. See section 2 for the reasoning per format.
+
+9.4  CORPUS IS 7 OF 70 DOMAINS, all tier 6. Tiers 2-5 hold no construction
+     documents; the regulatory layer is tier 2-3 but holds pointers only.
+
+9.5  REGULATORY COVERAGE IS 3 OF 8 MARKETS. Qatar, Kuwait, Bahrain, Oman and
+     Jordan have no records and retrieve nothing.
+
+9.6  ECP 203's CURRENT EDITION IS UNCONFIRMED. Marked unverified rather than
+     guessed.
+
+9.7  RETRIEVAL IS KEYWORD-BASED. A question sharing no vocabulary with a
+     document's keyword list will not retrieve it, however relevant.
+
+9.8  NO AUTOMATED KNOWLEDGE REFRESH. Review dates and staleness reporting exist;
+     re-review is manual.
+
+9.9  ONE PROVIDER, ONE MODEL. gpt-5.6-luna via the OpenAI Responses API, no
+     fallback. If OpenAI is down the assistant is down — with a typed error and
+     an honest message, but down.
+
+
+--------------------------------------------------------------------------------
+10. OWNER DECISIONS REQUIRED
+--------------------------------------------------------------------------------
+10.1 ADMINS CAN READ AI ATTACHMENTS. The storage proxy's existing blanket
+     `admin` allow sits above every category, so it covers the new one. That is
+     pre-existing accepted behaviour and changing administrator visibility is a
+     product decision, not an engineering one — flagged rather than altered. A
+     file handed to the assistant is arguably more private than a compliance
+     document, so this is worth a deliberate answer either way.
+
+10.2 ATTACHMENT RETENTION. Files persist in object storage indefinitely today;
+     the row is soft-deleted on removal. There is no retention period and no
+     purge job. What should the period be, and should deleting a conversation
+     purge its attachments?
+
+10.3 WHETHER TO FUND TXT/CSV AND DOCX/XLSX support — each needs a content
+     inspector, not a wider allowlist.
+
+10.4 WHICH DOMAINS MATTER COMMERCIALLY. 63 of 70 are empty and the priority
+     order should not be guessed from a taxonomy I wrote.
+
+10.5 WHETHER TO LICENCE OR AUTHOR TIER 2-5 CONTENT. Codes are copyrighted; they
+     can be cited and summarised, not reproduced.
+
+10.6 REGULATORY VERIFICATION CADENCE. Records carry lastVerified dates; nothing
+     re-checks them automatically.
+
+10.7 PER-USER AI COST CAP. Rate limits bound abuse, not spend.
+
+
+--------------------------------------------------------------------------------
+11. PRODUCTION IMPACT
+--------------------------------------------------------------------------------
+NONE.
+
+No production deployment, database, S3, SMTP, AI key, admin or payments. No DNS.
+No pricing change. No RFQ visibility change. No authentication or admin
+behaviour change. Everything is staging-only.
+
+
+--------------------------------------------------------------------------------
+12. NEXT STEPS
+--------------------------------------------------------------------------------
+1. Wait out the Render redeploy of 1e639d9.
+2. Dispatch Staging QA with expect_commit=1e639d9 and ai_knowledge_suite=true,
+   so a stale build FAILS the run rather than being silently tested.
+3. Read the log, diagnose anything that fails — no failure converted to a skip.
+4. Produce the mandated BUILDHUB AI KNOWLEDGE + ATTACHMENT HANDOFF with real
+   live numbers, then STOP.
+
+NO VERIFICATION IS CLAIMED IN THIS DOCUMENT BEYOND WHAT IS STATED. The local
+gate numbers are measured. The staging numbers do not exist yet.
+
+================================================================================
+END OF INTERIM STATUS
+================================================================================

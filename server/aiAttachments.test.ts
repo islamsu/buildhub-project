@@ -438,3 +438,35 @@ describe('no leakage', () => {
     }
   });
 });
+
+describe('an unconfigured deployment says so, instead of looking broken', () => {
+  it('reports SERVICE_UNAVAILABLE with a plain reason, not a generic internal error', async () => {
+    // Found on a GREEN staging run: the gate passed, and the skip line read
+    // "Something went wrong. Please try again." That is the right message for a
+    // genuine internal fault and the wrong one for an operator who has not
+    // configured storage - it sends them hunting a bug instead of a setting,
+    // which is exactly what made the original AI outage slow to diagnose.
+    const { ObjectStorageNotConfiguredError } = await vi.importActual<typeof import('./_core/objectStorage')>('./_core/objectStorage');
+    storage.put.mockRejectedValueOnce(new ObjectStorageNotConfiguredError('store a file'));
+
+    const failure = await upload(1, 'drawing.png', 'image/png', PNG)
+      .catch((error: { code: string; message: string }) => error);
+
+    expect(failure.code).toBe('SERVICE_UNAVAILABLE');
+    expect(failure.message).toBe('File attachments are not available on this deployment.');
+    // And it must not leak the adapter's own message, which names env vars.
+    expect(failure.message).not.toMatch(/S3_BUCKET|S3_ENDPOINT|FORGE/);
+    // Nothing was recorded for a file that was never stored.
+    expect(rows).toHaveLength(0);
+  });
+
+  it('a genuine storage fault is still an internal error, not a config claim', async () => {
+    // The discrimination has to work in BOTH directions: telling an operator
+    // "not configured" when the bucket is configured but erroring would send
+    // them to change a setting that was already correct.
+    storage.put.mockRejectedValueOnce(new Error('connection reset by peer'));
+    const failure = await upload(1, 'drawing.png', 'image/png', PNG)
+      .catch((error: { code: string }) => error);
+    expect(failure.code).not.toBe('SERVICE_UNAVAILABLE');
+  });
+});
