@@ -34,6 +34,7 @@ import { ENV, isTestLoginEnabled } from './_core/env';
 import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
 import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
+import { formatProjectContext, resolveProjectContext } from './_core/projectContext';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
   projects, milestones, tasks, documents, products,
@@ -3130,6 +3131,15 @@ const aiRouter = router({
        * database, so possession of an id is not possession of the file.
        */
       attachmentIds: z.array(z.number().int().positive()).max(MAX_AI_ATTACHMENTS_PER_MESSAGE).optional(),
+      /**
+       * The project this question is about, when the person has said which.
+       *
+       * A SELECTOR, not an authorization claim. resolveProjectContext re-derives
+       * what this caller may see from the session and picks among THAT - naming
+       * somebody else's project id yields "not among the ones you may see", not
+       * their project. Same discipline as attachmentIds above.
+       */
+      projectId: z.number().int().positive().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       // Deliberate, client-safe refusal for a KNOWN condition. Without it the
@@ -3243,6 +3253,24 @@ const aiRouter = router({
         attachmentBlock = `\n\n${attachmentInstruction(rows.map(row => row.name), lang)}`;
       }
 
+      // PROJECT CONTEXT. Costs no query at all unless the question bears on a
+      // project or one was explicitly chosen - the brief's "retrieve only
+      // relevant authorized context", enforced by not asking otherwise.
+      let projectBlock = '';
+      {
+        const db = await getDb();
+        if (db) {
+          const projectContext = await resolveProjectContext({
+            db,
+            userId: ctx.user.id,
+            userRole: ctx.user.userRole,
+            question: lastQuestion,
+            selectedProjectId: input.projectId,
+          });
+          projectBlock = formatProjectContext(projectContext, lang);
+        }
+      }
+
       let candidateBlock = '';
       if (intent.wantsProviderRecommendation) {
         const outcome = await recommendProviders({
@@ -3257,7 +3285,7 @@ const aiRouter = router({
       try {
         const { text } = await generateAIResponse({
           messages: [
-            { role: 'system', content: systemPrompt + attachmentBlock + regulatoryBlock + referenceBlock + candidateBlock },
+            { role: 'system', content: systemPrompt + attachmentBlock + projectBlock + regulatoryBlock + referenceBlock + candidateBlock },
             ...conversation,
           ],
           webSearch: intent.wantsCurrentInformation,

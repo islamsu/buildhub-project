@@ -50,6 +50,15 @@ export type RoleExperience = {
   role: BuildHubRole;
   titleKey: string;
   subtitleKey: string;
+  /**
+   * The primary workflow this role runs, as ordered step keys.
+   *
+   * Shown on the landing page so the assistant announces what it is FOR,
+   * and sent to the model as the shape an answer should help move along.
+   * It is a sequence, not a menu: "plan, estimate, find, compare, decide" is
+   * a different product from eight unrelated tools sharing a page.
+   */
+  workflow: string[];
   tools: AiTool[];
   actions: AiAction[];
   /**
@@ -74,9 +83,19 @@ const action = (id: string, href: string): AiAction => ({
   labelKey: `ai.action.${id}`,
 });
 
-/** Routes that exist. Referenced by name so a typo is a compile error. */
+/**
+ * Routes that exist. Referenced by name so a typo is a compile error.
+ *
+ * WHAT IS DELIBERATELY ABSENT: a COMPARE PROVIDERS destination. The brief lists
+ * "Compare Providers" and "Compare" among the customer's actions, and BuildHub
+ * has no comparison surface - there is no route, no component and no endpoint
+ * that puts two providers side by side. Adding a button for it would be exactly
+ * the decorative suggestion the same brief forbids, so it is recorded as a gap
+ * in the handoff instead of shipped as a link to nowhere.
+ */
 export const ROUTES = {
   rfq: '/rfq',
+  homeownerProjects: '/dashboard',
   vendors: '/marketplace/vendors',
   designers: '/marketplace/designers',
   products: '/marketplace/products',
@@ -92,6 +111,7 @@ export const ROLE_EXPERIENCES: Record<BuildHubRole, RoleExperience> = {
     role: 'homeowner',
     titleKey: 'ai.role.homeowner.title',
     subtitleKey: 'ai.role.homeowner.subtitle',
+    workflow: ['plan', 'estimate', 'find', 'compare', 'decide'],
     tools: [
       tool('projectPlanner', 'ClipboardList'),
       tool('costEstimator', 'Calculator'),
@@ -103,9 +123,10 @@ export const ROLE_EXPERIENCES: Record<BuildHubRole, RoleExperience> = {
       tool('riskAdvisor', 'AlertTriangle'),
     ],
     actions: [
+      action('createProject', ROUTES.homeownerProjects),
       action('createRfq', ROUTES.rfq),
+      action('findProvider', ROUTES.vendors),
       action('findDesigner', ROUTES.designers),
-      action('findContractor', ROUTES.vendors),
       action('browseProducts', ROUTES.products),
     ],
     emphasis: `They are a HOMEOWNER or CUSTOMER planning work on their own property.
@@ -119,6 +140,7 @@ say what would tip it either way rather than making it for them.`,
     role: 'contractor',
     titleKey: 'ai.role.contractor.title',
     subtitleKey: 'ai.role.contractor.subtitle',
+    workflow: ['findOpportunity', 'analyze', 'estimate', 'quote', 'execute'],
     tools: [
       tool('findRfqs', 'Search'),
       tool('rfqAnalyzer', 'FileSearch'),
@@ -130,9 +152,10 @@ say what would tip it either way rather than making it for them.`,
       tool('riskDetector', 'AlertTriangle'),
     ],
     actions: [
-      action('viewRfqs', ROUTES.rfq),
+      action('openRfq', ROUTES.rfq),
+      action('prepareQuote', ROUTES.provider),
       action('findSuppliers', ROUTES.vendors),
-      action('myWork', ROUTES.provider),
+      action('openProject', ROUTES.provider),
       action('messages', ROUTES.messages),
     ],
     emphasis: `They are a CONTRACTOR who will execute the work and carry the
@@ -146,6 +169,7 @@ that is where a contractor loses money.`,
     role: 'engineer',
     titleKey: 'ai.role.engineer.title',
     subtitleKey: 'ai.role.engineer.subtitle',
+    workflow: ['analyze', 'verify', 'qaqc', 'manageRisk'],
     tools: [
       tool('technicalAdvisor', 'Cpu'),
       tool('documentAnalyzer', 'FileText'),
@@ -157,10 +181,10 @@ that is where a contractor loses money.`,
       tool('quantityChecker', 'Layers'),
     ],
     actions: [
-      action('findSuppliers', ROUTES.vendors),
+      action('viewTechnicalProvider', ROUTES.vendors),
       action('createRfq', ROUTES.rfq),
       action('browseProducts', ROUTES.products),
-      action('myWork', ROUTES.provider),
+      action('openProject', ROUTES.provider),
     ],
     emphasis: `They are an ENGINEER. Use correct technical terminology without
 unpacking it, and be precise about assumptions, load cases, exposure conditions,
@@ -173,6 +197,7 @@ edition is jurisdictional, say so instead of quoting a number.`,
     role: 'architect',
     titleKey: 'ai.role.architect.title',
     subtitleKey: 'ai.role.architect.subtitle',
+    workflow: ['design', 'specify', 'coordinate', 'source'],
     tools: [
       tool('designAdvisor', 'Palette'),
       tool('materialsAdvisor', 'Lightbulb'),
@@ -184,8 +209,8 @@ edition is jurisdictional, say so instead of quoting a number.`,
       tool('procurementAdvisor', 'ShoppingCart'),
     ],
     actions: [
-      action('findSuppliers', ROUTES.vendors),
-      action('browseProducts', ROUTES.products),
+      action('viewProduct', ROUTES.products),
+      action('findSupplier', ROUTES.vendors),
       action('createRfq', ROUTES.rfq),
       action('findFinishing', ROUTES.finishing),
     ],
@@ -200,6 +225,7 @@ would need a performance requirement rather than a product name.`,
     role: 'supplier',
     titleKey: 'ai.role.supplier.title',
     subtitleKey: 'ai.role.supplier.subtitle',
+    workflow: ['findDemand', 'matchProducts', 'quote', 'sell'],
     tools: [
       tool('findOpportunities', 'Search'),
       tool('rfqMatcher', 'FileSearch'),
@@ -211,8 +237,9 @@ would need a performance requirement rather than a product name.`,
       tool('demandInsights', 'TrendingUp'),
     ],
     actions: [
-      action('viewRfqs', ROUTES.rfq),
-      action('myProducts', ROUTES.provider),
+      action('openRfq', ROUTES.rfq),
+      action('prepareQuote', ROUTES.provider),
+      action('manageProduct', ROUTES.provider),
       action('browseProducts', ROUTES.products),
       action('messages', ROUTES.messages),
     ],
@@ -228,6 +255,7 @@ that out at inspection loses more than the order.`,
     role: 'project_manager',
     titleKey: 'ai.role.project_manager.title',
     subtitleKey: 'ai.role.project_manager.subtitle',
+    workflow: ['plan', 'track', 'control', 'report'],
     tools: [
       tool('projectControl', 'GanttChart'),
       tool('scheduleAssistant', 'CalendarClock'),
@@ -239,9 +267,9 @@ that out at inspection loses more than the order.`,
       tool('reportAssistant', 'FileText'),
     ],
     actions: [
-      action('myWork', ROUTES.provider),
-      action('createRfq', ROUTES.rfq),
+      action('openProject', ROUTES.provider),
       action('findContractor', ROUTES.vendors),
+      action('createRfq', ROUTES.rfq),
       action('messages', ROUTES.messages),
     ],
     emphasis: `They are a PROJECT MANAGER accountable for delivery. Emphasise

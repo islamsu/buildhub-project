@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { formatProjectContext } from './_core/projectContext';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('./db', () => ({ getDb: vi.fn() }));
@@ -102,5 +104,47 @@ describe('the instruction is explicit that language and facts are separate', () 
       expect(en).toContain(marker);
       expect(ar).toContain(marker);
     }
+  });
+});
+
+// ── Everything ADDED to the prompt follows the same authority ──────────────
+//
+// The four combinations above cover the answer. What they do not cover is a
+// new context block written in the wrong language - the failure would be an
+// Arabic reader receiving an Arabic answer that quotes an English "PROJECT
+// CONTEXT" header, which is exactly how a bilingual product frays at the edges.
+describe('the context blocks follow the website language too', () => {
+  it('the project block is Arabic for an Arabic site, English for an English one', () => {
+    const resolved = {
+      kind: 'resolved' as const, scope: 'owner' as const,
+      project: {
+        id: 1, title: 'Villa slab', type: 'residential', status: 'active',
+        location: 'New Cairo', progress: 40, budget: '100.00', spent: '10.00',
+        startDate: null, endDate: null,
+      },
+    };
+    const english = formatProjectContext(resolved, 'en');
+    const arabic = formatProjectContext(resolved, 'ar');
+    expect(english).toContain('PROJECT CONTEXT');
+    expect(english).not.toMatch(/[؀-ۿ]/);
+    expect(arabic).toMatch(/[؀-ۿ]/);
+    expect(arabic).not.toContain('PROJECT CONTEXT');
+  });
+
+  it('so do the ambiguous and unauthorized cases - not just the happy path', () => {
+    // These are the blocks a user is most likely to see when something is
+    // wrong, which is the worst moment to switch languages on them.
+    for (const context of [
+      { kind: 'ambiguous' as const, choices: [{ id: 1, title: 'A' }, { id: 2, title: 'B' }] },
+      { kind: 'unauthorized' as const },
+    ]) {
+      expect(formatProjectContext(context, 'ar')).toMatch(/[؀-ۿ]/);
+      expect(formatProjectContext(context, 'en')).not.toMatch(/[؀-ۿ]/);
+    }
+  });
+
+  it('the router passes the SITE language to the project formatter', () => {
+    const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    expect(ROUTERS).toContain('formatProjectContext(projectContext, lang)');
   });
 });
