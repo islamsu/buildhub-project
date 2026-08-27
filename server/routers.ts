@@ -1227,8 +1227,22 @@ const marketplaceRouter = router({
   askQuestion: protectedProcedure.input(z.object({ productId: z.number(), question: z.string().min(2).max(2000) })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [product] = await db.select({ id: products.id }).from(products).where(eq(products.id, input.productId));
-    if (!product && input.productId > 10) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
+    // Mirrors marketplace.get's predicate exactly, and for its reasons. Two
+    // things were wrong with the line this replaces.
+    //
+    // `input.productId > 10` let ids 1-10 skip the existence check entirely -
+    // a leftover accommodation for the static mock catalogue that used to back
+    // this page. productQuestions.productId now carries a RESTRICT foreign key,
+    // so the insert would fail at the database instead, turning a clean
+    // NOT_FOUND into a 500 for exactly those ten ids.
+    //
+    // And `active` was never checked. Slice 9 established for marketplace.get
+    // that a withdrawn product and an absent one are the same answer to a
+    // buyer; a question thread attached to a product the supplier has delisted
+    // contradicted that, and had nowhere to be displayed.
+    const [product] = await db.select({ id: products.id }).from(products)
+      .where(and(eq(products.id, input.productId), eq(products.active, true)));
+    if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
     const result = await db.insert(productQuestions).values({ productId: input.productId, askerId: ctx.user.id, question: input.question });
     return { id: Number(result[0].insertId) };
   }),
