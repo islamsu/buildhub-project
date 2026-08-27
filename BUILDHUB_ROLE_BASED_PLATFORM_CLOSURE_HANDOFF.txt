@@ -1,0 +1,571 @@
+================================================================================
+BUILDHUB - ROLE-BASED PLATFORM CLOSURE HANDOFF
+Final closure pass + complete cross-role verification
+================================================================================
+
+Prepared by:  Claude (engineering, implementation, testing, evidence)
+For:          ChatGPT (independent architecture / security / product review)
+              and the Owner (final business, product and production decisions)
+Date:         2026-08-27
+Repository:   github.com/islamsu/buildhub-project
+Staging:      https://buildhub-staging.onrender.com
+
+--------------------------------------------------------------------------------
+1. SHAs
+--------------------------------------------------------------------------------
+
+  CURRENT MAIN SHA      db192d65b3de41ff2e888697ca464772e764dcf5
+  CURRENT STAGING SHA   db192d6 - verified by the gate below with expect_commit
+                        ENFORCED, so a stale build fails the run
+
+  Merged this pass:  PR #28
+
+  Previously in this engagement:
+    PR #26  the 'admin'-as-a-marketplace-role fix   -> main b0620dd
+    PR #27  the Phase 1B role architecture          -> main 4eef330
+
+--------------------------------------------------------------------------------
+2. SECURITY FINDINGS
+--------------------------------------------------------------------------------
+
+FOUND AND FIXED IN THIS CLOSURE PASS
+
+  C1  FABRICATED RATINGS ON REAL, NAMED COMPANIES.  The worst thing in the
+      repository, and it was not a security hole - it was an honesty one.
+      client/src/lib/marketplaceData.ts held VENDORS, DESIGNERS and
+      FINISHING_COMPANIES with invented ratings, review counts, project counts,
+      years of experience, team sizes, award badges and `verified: true`.
+      Several entries were REAL Egyptian businesses - Ezz Steel, Elsewedy
+      Electric, Ceramica Cleopatra, Jotun Egypt - with no BuildHub account and
+      no knowledge of the platform. A 4.9 beside a real company is a factual
+      claim about a third party; a "verified" badge is a claim BuildHub was
+      making about a business it had verified nothing about.
+
+      Rendered on FOUR surfaces: /marketplace/designers, /marketplace/finishing,
+      and the Marketplace Hub's three featured strips AND its autocomplete. An
+      earlier phase converted /marketplace/vendors and /marketplace/products to
+      real data and left these four behind - the leftover half being the one
+      naming real companies.
+
+      All four now read marketplace.vendors. An absent rating renders as "no
+      reviews yet", never 0 and never a plausible number. An empty marketplace
+      shows an empty marketplace.
+
+  C2  MESSAGE ATTACHMENTS NEVER WORKED, AND REPAIRING THEM NAIVELY WOULD HAVE
+      OPENED AN IDOR.  messages.send declared `fileUrl: z.string().url()`;
+      storagePut returns a RELATIVE proxy path and the client sends exactly
+      that back, so zod refused every real attachment. It was also free-form
+      client input naming a storage key, and the proxy authorizes a message
+      attachment by MATCHING that stored path - so a message referencing
+      someone else's key would have handed its sender that file. Not
+      exploitable only because the absolute URL zod demanded could never equal
+      the relative path the proxy compares. Fixing the feature alone would have
+      created the hole. Now constrained to a message-attachment path owned by
+      the sender's own session id.
+
+  C3  admin.fullAuditReport READ EVERY COLUMN OF EVERY USER - passwordHash,
+      invitationToken, openId - into memory to build an export. Nothing leaked;
+      the projection below it is an allowlist. It is the exact pattern
+      ADMIN_USER_LIST_COLUMNS exists to forbid, one endpoint away, and the next
+      person to write `...targetUser` would have shipped it. Now a nine-column
+      list, and the rule is ENFORCED: every select().from(users) must be on a
+      twelve-entry allowlist naming why the full row is genuinely needed.
+
+  C4  THE WINNER WAS TOLD THEY LOST.  Accepting a quotation auto-rejects the
+      others and notifies their providers - by mapping every other quotation
+      ROW to a recipient, not every other provider. A provider who bid three
+      times and won received "Quotation not selected" twice, seconds after
+      "Quotation accepted".
+
+  C5  THREE NOTIFICATIONS WERE INVISIBLE TO THEIR OWN COVERAGE TEST. The
+      Phase 1B localisation test read routers.ts alone and never opened
+      quotationWorkflow.ts, so its three calls stayed English-only while the
+      rule reported a clean pass. The scan now walks every non-test server
+      source, counts per file, and names the offender.
+
+  C6  THE LEAD CREDIT BOUGHT A TOAST. Supplier -> Qualified Enquiries -> View
+      details spent a credit; the server returned the full RFQ in that same
+      response and the client discarded it. It is the ONLY way a vendor can
+      read that detail - rfq.get is requester-scoped. Now rendered.
+
+FOUND AND FIXED EARLIER IN THIS ENGAGEMENT (re-verified, section 3)
+
+  P1  auth.updateRole accepted userRole:'admin' from any authenticated user.
+  P2  admin.createUser could mint a role='admin' row under `users.manage`.
+  P3  A quotation could be submitted against a closed or awarded RFQ.
+  P4  A NEGATIVE quotation price was accepted (decimal(12,2), unbounded).
+  P5  LIKE wildcards came straight from user input on four search paths.
+  P6  marketplace.list, public and unauthenticated, had no limit at all.
+  P7  Three role workspace cards described work the product cannot do.
+  P8  Notifications were stored as English prose in a bilingual product.
+  P9  marketplace.askQuestion let ten product ids skip validation.
+  P10 "Storage not configured" was reported as a 500.
+
+REMAINING - NOT FIXED, AND WHY
+
+  R1  PRODUCT IMAGES DO NOT EXIST. products.images is a column nothing writes;
+      there is no upload procedure and the storage proxy has no product-images
+      category. A supplier cannot attach a photograph to a listing.
+  R2  A SUPPLIER CANNOT EDIT OR DELETE A LISTING. There is no
+      marketplace.update and no delete anywhere in the product.
+  R3  AN RFQ CANNOT BE AMENDED after posting, for the same reason.
+  R4  NO EXPORT of reports or analytics, and no invoice or receipt.
+  R5  PROJECT-AWARE AI IS NOT IMPLEMENTED (section 13).
+  R6  DUPLICATE QUOTATIONS - OWNER DECISION, section 12.
+
+  R1-R4 are ABSENT PRODUCT SURFACE, not defects to patch. Adding mandatory
+  fields, an edit path or an image pipeline is new product with real decisions
+  behind it (what is mandatory? what happens to a live listing when it is
+  edited?), and inventing those was explicitly out of bounds.
+
+--------------------------------------------------------------------------------
+3. PART 1 - RE-VERIFICATION OF THE NINE REGRESSIONS
+--------------------------------------------------------------------------------
+
+Run locally against the working tree, and again in CI on the merged SHA.
+
+  1. userRole="admin" self-selection      crossRoleIsolation.test.ts      27 tests
+  2. unauthorized administrator creation  adminAuthorization.test.ts      41 tests
+  3. closed/awarded RFQ quotation         notifications.test.ts           12 tests
+  4. negative quotation price             notifications.test.ts           (same)
+  5. wildcard search                      searchInputHardening.test.ts    14 tests
+  6. public query limits                  searchInputHardening.test.ts    (same)
+  7. notification language                notificationLocalisation.test   20 tests
+  8. product validation                   authorizationSweep.test.ts      42 tests
+  9. role dashboard authorization         rolePlatform + dataIsolation    71 tests
+
+  226 tests across the nine areas, all passing.
+
+The first re-verification gate (run 33084346051, expect_commit 4eef330) came
+back green. Its TOTALS COULD NOT BE READ from the engineering sandbox: GitHub's
+log and artifact blob hosts return 403 through the proxy and the log tool
+returns only a size-capped tail, which put the harness's summary line just out
+of reach. That is now fixed at the source - the gate reprints its verdict, its
+skips, its failures and the deployed commit as its FINAL step - so the run in
+section 17 is readable, and so is every future one.
+
+--------------------------------------------------------------------------------
+4. ROLE MATRIX
+--------------------------------------------------------------------------------
+
+shared/roleMatrix.ts declares all 171 resource/verb pairs. It is not prose:
+server/roleMatrix.test.ts checks every cell against the router source - a cell
+naming a procedure must name a real one WITH the tier it claims, a single-role
+claim must point at a body that checks userRole, a storage-proxy claim must name
+a prefix the proxy classifies, and the falsifiable N/A claims are falsified.
+
+  V=view C=create E=edit D=delete S=submit A=approve R=reject W=download M=communicate
+  Y allowed    n refused (role not permitted)    ~ administrators only
+  - N/A: the product does not implement it FOR ANYONE
+
+  resource            HOMEOWNER      CONTRACTOR/ENGINEER/    SUPPLIER
+                                     ARCHITECT/PROJ.MGR
+                      V C E D S A R W M   V C E D S A R W M   V C E D S A R W M
+  dashboard           Y - - - - - - - -   Y - - - - - - - -   Y - - - - - - - -
+  project             Y Y Y - - - - Y Y   Y Y Y - - - - Y Y   Y Y Y - - - - Y Y
+  rfq                 Y Y - - Y - - Y Y   Y Y - - Y - - Y Y   Y Y - - Y - - Y Y
+  qualifiedEnquiry    n n - - - - - - -   Y Y - - - - - - -   Y Y - - - - - - -
+  quotation           n n - - n Y Y - Y   Y Y - - Y Y Y - Y   Y Y - - Y Y Y - Y
+  submission          n n n - n ~ ~ n -   Y Y Y - Y ~ ~ Y -   Y Y Y - Y ~ ~ Y -
+  provider            Y - Y - - ~ ~ - Y   Y - Y - - ~ ~ - Y   Y - Y - - ~ ~ - Y
+  product             Y n - - n - - - Y   Y n - - n - - - Y   Y Y - - Y - - - Y
+  service             n n n n - - - - -   Y Y Y Y - - - - -   Y Y Y Y - - - - -
+  message             Y Y - - - - - Y Y   Y Y - - - - - Y Y   Y Y - - - - - Y Y
+  conversation        Y Y - - - - - - Y   Y Y - - - - - - Y   Y Y - - - - - - Y
+  notification        Y - Y - - - - - -   Y - Y - - - - - -   Y - Y - - - - - -
+  document            Y Y - - n ~ ~ Y -   Y Y - - Y ~ ~ Y -   Y Y - - Y ~ ~ Y -
+  attachment          Y Y - Y - - - Y -   Y Y - Y - - - Y -   Y Y - Y - - - Y -
+  order               - - - - - - - - -   - - - - - - - - -   - - - - - - - - -
+  transaction         Y - n - - - - - -   Y - Y - - - - - -   Y - Y - - - - - -
+  report              Y Y - - Y - - - -   Y Y - - Y - - - -   Y Y - - Y - - - -
+  activity            ~ - - - - - - ~ -   ~ - - - - - - ~ -   ~ - - - - - - ~ -
+  analytics           n - - - - - - - -   Y - - - - - - - -   Y - - - - - - - -
+
+WHAT THE MATRIX MAKES VISIBLE, which is why it was worth writing out:
+
+  - BuildHub HAS ALMOST NO DELETE SURFACE. Outside ai.deleteAttachment and a
+    vendor replacing their declared service categories, nothing in the product
+    can be deleted by anyone - not an RFQ, a quotation, a message or a project.
+  - NO EDIT either, for most things. The whole router has exactly two update
+    procedures: projects.update and profile.update.
+  - THERE IS NO ORDER AND NO CHECKOUT.
+  - ENGINEER, ARCHITECT AND PROJECT MANAGER HAVE IDENTICAL AUTHORITY. They
+    differ in EXPERIENCE - dashboard, AI tools, prompts, workflows - not in
+    permissions. The test asserts three distinct signatures rather than six,
+    because manufacturing a difference to make the table look richer would be
+    the same dishonesty as the fabricated vendors.
+  - THE ONLY SUPPLIER-ONLY CAPABILITY IS THE PRODUCT CATALOGUE.
+
+--------------------------------------------------------------------------------
+5. DASHBOARDS AND NAVIGATION
+--------------------------------------------------------------------------------
+
+Six genuinely different workspaces, verified LIVE at three widths in two
+languages (section 17). Not different titles: different queries, different
+metrics, different actions, different components.
+
+  homeowner        projects, budget/spend, create project, get quotes
+  contractor       RFQ pipeline, field projects, submitted quotations
+  engineer         technical deliverables, engineering RFQs, active projects
+  architect        design concept + a DASHED "portfolio hosting - not
+                   available yet" panel naming what does exist
+  supplier         catalogue, review requests, projects
+  project_manager  project queue, request overview, message stakeholders
+
+Navigation is role-keyed (ROLE_MENU_KEYS), the admin menu on the AUTHORIZATION
+column alone, and the platform route derives its role from the SESSION - a
+different role in the URL redirects to the caller's own.
+
+UNAPPROVED PROVIDERS LAND ON /compliance, not on a dashboard, verified live for
+all four unapproved roles at every width and language. That is the control that
+makes self-service role selection safe.
+
+--------------------------------------------------------------------------------
+6. DATA ISOLATION
+--------------------------------------------------------------------------------
+
+server/dataIsolationMatrix.test.ts enumerates EVERY procedure that accepts an
+id and requires each to be owner-scoped, admin-gated, or named in a
+ten-entry allowlist WITH ITS REASON. The property is not that today's 62 are
+right; it is that tomorrow's 63rd cannot be quietly wrong.
+
+Ownership is recognised in the four shapes this codebase actually uses -
+predicate, insert value, fetch-then-compare, and passed-to-a-helper - because
+the first version of the rule knew two and flagged three CORRECTLY scoped
+procedures.
+
+Two further rules scan the WHOLE surface, not just id-takers: no procedure may
+read an owner id from the request, and none may write an owner column from it.
+That second scope was itself a hole a mutation found.
+
+CROSS-ORGANIZATION ACCESS IS NOT APPLICABLE. BuildHub has no organization,
+company or tenant concept - every account is an individual. Rather than claim a
+control that cannot exist, the suite asserts the ABSENCE: add such a column and
+the test fails until every owner-scoped query is extended.
+
+--------------------------------------------------------------------------------
+7. SEARCH AND DISCOVERY
+--------------------------------------------------------------------------------
+
+No file may build a LIKE pattern by hand; every `limit:` input in the router
+must declare a maximum. Both are general rules, not the two fixes that prompted
+them. Autocomplete on the Marketplace Hub now draws from the same authorized
+directory rows the page renders - never a second, looser source.
+
+--------------------------------------------------------------------------------
+8. RFQ
+--------------------------------------------------------------------------------
+
+submitQuotation reads the RFQ FIRST and refuses a closed or awarded one with
+CONFLICT, and a missing one with NOT_FOUND rather than a 500 from the foreign
+key. Bounds match the columns. The client's status filter is no longer the only
+thing standing between a bidder and an awarded RFQ.
+
+State machine: open -> awarded (accept, which auto-rejects every other bid in
+one row-locked transaction) or open -> closed. 'cancelled' and 'expired' DO NOT
+EXIST in the enum; the matrix and this handoff say so rather than implying a
+richer lifecycle than the product has.
+
+--------------------------------------------------------------------------------
+9. QUOTATIONS, PRODUCTS, MESSAGING, NOTIFICATIONS, DOCUMENTS, ATTACHMENTS
+--------------------------------------------------------------------------------
+
+QUOTATIONS    provider-scoped for the bidder, requester-scoped for the buyer;
+              accept/reject row-locked; cross-RFQ IDOR tested; each provider
+              now notified exactly once, and never that they lost when they won.
+PRODUCTS      catalogue is supplier-only to write and public to read, active
+              only. No images, no edit, no delete - see R1-R2.
+MESSAGING     participant-scoped in the query; the quotation-reference oracle
+              was closed in an earlier phase; attachments now work and are
+              owner-checked.
+NOTIFICATIONS own-only, no input to manipulate, all three procedures scoped;
+              bilingual through messageKey + messageParams, with the English
+              prose retained as the fallback for pre-migration rows and for a
+              client that does not know a key.
+DOCUMENTS     project documents owner-scoped; compliance documents own-only
+              with admin review.
+ATTACHMENTS   six storage categories, each resolving the key back to a ROW and
+              checking the caller against it. Unknown prefixes fail closed.
+
+--------------------------------------------------------------------------------
+10. AI ROLE CONTEXT
+--------------------------------------------------------------------------------
+
+One engine, six experiences. The role comes from ctx.user.userRole - the
+authenticated session - and NEVER from the request; a client-supplied role is
+not part of the input schema at all. Verified live for all six roles: distinct
+heading, distinct eight-tool set, four BuildHub actions, the general composer
+always present, Arabic RTL with a translated title, and zero paid requests to
+open the page.
+
+--------------------------------------------------------------------------------
+11. PROJECT CONTEXT
+--------------------------------------------------------------------------------
+
+NOT IMPLEMENTED. Reported plainly rather than described. ai.chat touches
+ctx.user.userRole and ctx.user.id and nothing else: no project, no projectId,
+no project query. The prompt is built from the role stance, the knowledge
+corpus, the regulatory records, the vendor candidates and any attachment. No
+project data reaches the model, so there is nothing to scope and nothing to
+verify - and no fabricated context to describe.
+
+--------------------------------------------------------------------------------
+12. OWNER DECISIONS
+--------------------------------------------------------------------------------
+
+D1  DUPLICATE QUOTATIONS.  Investigated before touching anything, as asked.
+
+    WHAT THE REPOSITORY ESTABLISHES: submission is UNMETERED.
+    BUILDHUB_PHASE4A_MONETIZATION_ARCHITECTURE.md, twice: "any approved
+    provider can submit unlimited quotations to unlimited RFQs at no cost" and
+    "unlimited free quotation submission" as the current vendor proposition.
+
+    WHAT IT ESTABLISHES ABOUT REVISIONS: nothing. No status beyond
+    pending/accepted/rejected, no supersededBy, no version, no history table,
+    no unique index on (rfqId, providerId), no update procedure, no UI that
+    blocks a second bid. "Unlimited" there is about QUOTA - we do not charge
+    per lead - not about bidding twice on one RFQ.
+
+    THEREFORE: OWNER DECISION REQUIRED. The workflow is unchanged.
+
+    NO LEAK OR OWNERSHIP CORRUPTION, verified: every row carries providerId
+    from the session, the requester is entitled to every bid they see, and
+    accepting one auto-rejects all others in the same transaction. The one real
+    harm duplicates caused - the winner being told they lost, once per extra
+    bid - is fixed, because addressing each provider once is correct under
+    EITHER answer.
+
+    KNOWN DISTORTION IF DUPLICATES CONTINUE: analytics.myStats computes win
+    rate as accepted/submitted. Five bids on one RFQ and one win reads as 20%.
+
+    For consideration, NOT implemented: one active quotation per provider per
+    RFQ, with controlled revisions and history. Needs a decision on what
+    happens to a revision after the requester has read the original.
+
+D2  'Renovation' AS THE FINISHING DIRECTORY'S CATEGORY. The shared taxonomy has
+    no "finishing" value. A one-word change if the answer is different.
+
+D3  MANDATORY PRODUCT FIELDS. Today a listing needs a name and a category and
+    goes live immediately - no price, no image, no lead time. Which fields
+    should be mandatory, and whether an incomplete product should be a draft,
+    is a product decision, not one to infer from a zod schema.
+
+--------------------------------------------------------------------------------
+13. TESTS AND BUILD
+--------------------------------------------------------------------------------
+
+  tsc --noEmit        0 errors
+  vitest run          86 files, 1875 tests, 0 failures
+  vite build          green
+  esbuild (server)    green
+  CI on the merged SHA - all three jobs green:
+    Typecheck, test, build     success
+    Image builds and starts    success
+    Migrations apply from empty  success   (run 33087615015)
+
+MUTATIONS KILLED IN THIS PASS: citing a procedure that does not exist; drifting
+a tier claim; widening a provider-gated cell to all roles; adding an update the
+matrix does not know about; removing the supplier guard; mapping quotation rows
+straight to recipients; de-duplicating but keeping the winner; dropping a
+messageKey; discarding the granted RFQ; removing the attachment parse guard; the
+proxy dropping its qualifiedEnquiries check; restoring z.string().url();
+dropping the sender-ownership check; reverting fullAuditReport to a bare select;
+a new procedure reading the whole users row; reintroducing a fabricated list;
+rendering a rating with no reviews; a preset outside the taxonomy; adding an
+organizationId column; and unscoping a notifications procedure. Twenty.
+
+WHERE A TEST OF MINE DID NOT DISCRIMINATE, recorded rather than glossed: the
+price-bounds test stubbed no database, so every call rejected with
+INTERNAL_SERVER_ERROR and it passed whether or not the bounds existed - a
+mutation walked through it. Rewritten with a working stub, a specific error
+code, an assertion that nothing reached the database, and a positive control.
+
+--------------------------------------------------------------------------------
+14. STAGING QA - THE FINAL RUN
+--------------------------------------------------------------------------------
+
+GitHub Actions run 33088665361, dispatched against
+https://buildhub-staging.onrender.com with
+expect_commit=db192d65b3de41ff2e888697ca464772e764dcf5.
+
+  TOTAL     626 checks defined
+  PASSED    621
+  FAILED    0
+  SKIPPED   5
+
+Quoted from the run rather than described:
+
+  PASS  0. the deployed commit is the one under test
+        - expected db192d65b3de, serving db192d65b3de41ff2e888697ca464772e764dcf5
+  >>> DEPLOYED COMMIT: db192d65b3de41ff2e888697ca464772e764dcf5
+  --- failed checks ---
+  (none)
+  --- totals ---
+  621/621 checks passed, 5 skipped
+
+The commit check is a check(), never a skip - pinned by a unit test - and the
+gate step runs under `set -o pipefail`, so a mismatch FAILS the run rather than
+appearing in a summary. Staging is serving the exact SHA under test.
+
+--------------------------------------------------------------------------------
+15. REMAINING SKIPS - NAMED, NOT COUNTED
+--------------------------------------------------------------------------------
+
+Skips are not passes. All five are ENVIRONMENT, not defects, and each names
+what it needs:
+
+  9.  password reset
+      auth.capabilities reports it unavailable - SMTP_HOST unset, or the
+      credentials failed to verify at boot. NEEDS: SMTP configuration on the
+      staging service.
+
+  10. end-to-end upload to the staging bucket
+      S3_* not configured. NEEDS: an object-storage bucket and credentials.
+
+  29. BuildHub knowledge priority (live)
+      OPT-IN BY DESIGN. Twelve extra PAID provider requests; a routine gate run
+      costs one. Dispatch with ai_knowledge_suite=true for a release
+      acceptance. NEEDS: nothing - this is a cost decision, not a gap.
+
+  30. storing an AI attachment end to end
+      S3_* not configured on this deployment.
+
+  30. cross-user attachment access, live
+      Requires a stored attachment, which requires configured storage. The
+      authorization it would exercise IS covered in unit tests
+      (storageProxy.test.ts, aiAttachments.test.ts) - what is missing is the
+      LIVE proof, not the control.
+
+Four of the five clear the moment staging gets SMTP and a bucket. The fifth is
+a deliberate cost control.
+
+--------------------------------------------------------------------------------
+16. WHAT I GOT WRONG IN THIS PASS
+--------------------------------------------------------------------------------
+
+Recorded because a closure report that lists only the code's mistakes is not a
+closure report.
+
+  - I NEARLY REPORTED A DEFECT THAT DID NOT EXIST. Reading the first twelve
+    lines of marketplace.create showed the input schema and no role guard, and
+    I had already written up "an approved contractor can create a product". The
+    guard is the first statement of the mutation, just below what I had read.
+    Caught by checking the body before committing the claim, and the test now
+    checks the BODY - scoped to its own router, because a bare indexOf finds
+    projects.create instead.
+
+  - A SOURCE ASSERTION TRIPPED ON ITS OWN EXPLANATORY COMMENT four times, in
+    four different files. The comment describing a removed defect contains the
+    defect's own text. The comment-stripping helper is now written into each
+    file that needs it, with a note saying why.
+
+  - THE FIRST OWNERSHIP RULE IN THE ISOLATION CENSUS knew two of the four ways
+    this codebase scopes by ctx.user.id and flagged three CORRECTLY scoped
+    procedures. Widened to match the code.
+
+  - A PRICE-BOUNDS TEST OF MINE PASSED FOR THE WRONG REASON and a mutation
+    walked through it (section 13).
+
+  - AN EARLIER READ OF A GATE LOG hit a proxy 403 and left a six-day-old local
+    file untouched, which read "162/163 against 127.0.0.1". Caught by the
+    file's timestamp before it reached a handoff. The gate now reprints its
+    verdict as its final step so this cannot recur.
+
+--------------------------------------------------------------------------------
+17. LANGUAGE AND MOBILE
+--------------------------------------------------------------------------------
+
+Verified LIVE on the deployed build, not asserted from source.
+
+  SIX ROLE DASHBOARDS x 375 / 768 / 1440 x English LTR and Arabic RTL:
+  reachable, real content, correct `dir`, no horizontal overflow, no
+  untranslated key rendered. Unapproved providers land on /compliance at every
+  width and in both languages.
+
+  THREE AUTHENTICATED PAGES - /rfq, /messages, /ai - at 375 and 1440 in both
+  languages, added this pass. They had been checked at no width in any
+  language.
+
+  EIGHT PUBLIC ROUTES at 375 and 1440 in both languages, now including the two
+  rebuilt marketplace directories.
+
+  SIX AI ROLE PAGES in Arabic: RTL confirmed, the role title in Arabic script
+  and asserted to DIFFER from the English string - copying the English across
+  would otherwise pass a "key exists" check.
+
+  A measured 375px defect from an earlier phase stays fixed: metric labels wrap
+  rather than truncate, because "إجمالي ال..." identifies nothing.
+
+--------------------------------------------------------------------------------
+18. PRODUCTION IMPACT
+--------------------------------------------------------------------------------
+
+  PRODUCTION IMPACT   NONE
+
+  - deploy-production.yml untouched. No DNS touched. No deploy executed.
+  - No production environment variable, database or credential read or written.
+  - No payment system changed - there is none to change; checkout is honestly
+    reported unavailable.
+  - No price changed. The catalogue remains EGP 499 professional / EGP 999
+    premium, asserted live by the gate.
+  - Accepted-RFQ visibility unchanged.
+  - No credential appears in the repository, in a log, or in this document.
+  - render.yaml is the STAGING blueprint by its own first line; the only change
+    to it in this engagement was a stale comment.
+
+--------------------------------------------------------------------------------
+19. VERDICT
+--------------------------------------------------------------------------------
+
+  ROLE-BASED PLATFORM      GO
+  STAGING                  GO
+  PRODUCTION               NO-GO
+
+ROLE-BASED PLATFORM - GO. Six roles with distinct experiences and a matrix that
+is checked against the router rather than written down. Authorization is
+server-side everywhere it matters: the marketplace role is user-chosen and
+grants nothing, the authorization column is separate and untouchable from the
+client, and provider surfaces stay closed until an administrator approves. The
+gaps that remain are ABSENT SURFACE - no delete, no edit, no product images, no
+export - not broken controls, and they are named in section 2.
+
+STAGING - GO. 621/621 at the exact SHA under test, five environment skips, zero
+failures.
+
+PRODUCTION - NO-GO, and this is engineering's recommendation, not a blocker
+anybody imposed. Four things stand in the way, none of them in this phase's
+scope:
+
+  1. NO EMAIL. SMTP is unconfigured, so password reset does not work and no
+     notification leaves the platform. A marketplace where a quotation arrives
+     and nobody is told is not a marketplace.
+  2. NO OBJECT STORAGE. Every attachment path degrades honestly, but degrades.
+  3. NO PAYMENT INTEGRATION. Plans and entitlements are real; there is no way
+     to pay for one.
+  4. THE OWNER DECISIONS IN SECTION 12 are open, and D1 shapes how bidding
+     works.
+
+Production also remains a separate architecture (Vultr) that this staging
+environment deliberately shares nothing with.
+
+--------------------------------------------------------------------------------
+20. WHAT I WOULD DO NEXT
+--------------------------------------------------------------------------------
+
+Engineering opinion. The ordering is the Owner's.
+
+  1. SETTLE D1, the duplicate-quotation model. It is the only open decision
+     that changes how the marketplace behaves, and it distorts win rate today.
+  2. SMTP. It clears a gate skip and unblocks the entire notification
+     investment - the bilingual work in this engagement currently reaches
+     nobody who is not looking at the page.
+  3. OBJECT STORAGE. Clears three more skips and makes attachments real.
+  4. THE PRODUCT CATALOGUE GAPS (R1-R3): images, edit, and RFQ amendment.
+     These are the most visible absences to a supplier evaluating BuildHub.
+  5. END-TO-END BILINGUAL COVERAGE IN THE GATE for the notification path -
+     a real quotation, read in Arabic. Unit-tested in both directions today,
+     never exercised live.
+
+================================================================================
+END OF CLOSURE HANDOFF
+================================================================================
