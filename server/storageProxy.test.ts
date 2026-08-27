@@ -268,11 +268,20 @@ describe('/manus-storage/* (live Express route — real HTTP requests)', () => {
     const where = vi.fn().mockResolvedValue([{ userId: 5 }]);
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select: () => ({ from: () => ({ where }) }) });
     const res = await fetch(`${baseUrl}/manus-storage/registration/5/1700-doc.pdf_ab12cd34`);
-    // No BUILT_IN_FORGE_API_URL/KEY configured in this environment, so a request that made it
-    // past auth+authorization deterministically hits this specific downstream failure - proving
-    // it was not rejected by the 401/403 gate.
-    expect(res.status).toBe(500);
+    // No object storage configured in this environment, so a request that made
+    // it past auth+authorization deterministically hits this specific
+    // downstream outcome - proving it was not rejected by the 401/403 gate.
+    //
+    // 503, not 500. Changed deliberately: nothing failed, the deployment
+    // simply has no storage configured, and a 500 sends an operator hunting a
+    // crash (and a monitor paging somebody) over a missing environment
+    // variable. It also has to stay DISTINCT from 401 and 403 for this test to
+    // mean anything, which it does.
+    expect(res.status).toBe(503);
+    expect([401, 403]).not.toContain(res.status);
     const body = await res.text();
     expect(body).toMatch(/not configured/i);
+    // ...and says nothing about where files live.
+    expect(body).not.toMatch(/bucket|s3|forge|amazonaws|http/i);
   });
 });

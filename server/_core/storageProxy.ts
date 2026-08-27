@@ -162,7 +162,13 @@ export function registerStorageProxy(app: Express) {
     // the codebase knew where files physically live and only one of them would
     // have been migrated.
     if (!isObjectStorageConfigured()) {
-      res.status(500).send("Storage proxy not configured");
+      // 503, not 500. The same distinction the AI attachment path already
+      // makes: nothing failed here, the deployment simply has no object
+      // storage configured. A 500 tells an operator to go looking for a crash,
+      // and tells a monitor to page somebody, for a missing environment
+      // variable. The message says which it is without naming a bucket, a
+      // host or a credential.
+      res.status(503).send("File storage is not configured on this deployment");
       return;
     }
 
