@@ -110,3 +110,63 @@ describe('each correction matches what the code actually does', () => {
     expect(PROMPTS.en).toMatch(/a paid plan\s+never buys a better organic position/i);
   });
 });
+
+// ── The precedence chain the brief specifies ──────────────────────────────
+//
+// AI PHASE PARTS 12 AND 13. The hierarchy used to have two levels: BuildHub
+// information, then general expertise. The brief specifies five, in an order
+// that decides real disagreements - an attachment beats BuildHub's generic
+// guidance about the person's OWN document, and current regulatory information
+// beats older recall.
+//
+// Two levels could not express either of those, so the chain is now stated in
+// full. These tests pin the ORDER, because a list of available sources with no
+// precedence is not a hierarchy.
+describe('the source hierarchy is a precedence chain, in order', () => {
+  const STEPS = [
+    'AN ATTACHMENT THE PERSON GAVE YOU',
+    'AUTHORITATIVE BUILDHUB INFORMATION',
+    'LIVE BUILDHUB RECORDS',
+    'CURRENT REGULATORY AND WEB INFORMATION',
+    'YOUR GENERAL CONSTRUCTION EXPERTISE',
+  ];
+
+  it('all five levels are present', () => {
+    for (const step of STEPS) expect(PROMPTS.en, step).toContain(step);
+  });
+
+  it('and they appear in the specified ORDER', () => {
+    const positions = STEPS.map(step => PROMPTS.en.indexOf(step));
+    expect(positions, 'the precedence order changed').toEqual([...positions].sort((a, b) => a - b));
+  });
+
+  it('it SAYS that earlier wins, rather than only listing sources', () => {
+    // A list of things you have available is not a hierarchy. The instruction
+    // that resolves a disagreement is the whole point.
+    expect(PROMPTS.en).toMatch(/the EARLIER one in this list wins/i);
+    expect(PROMPTS.en).toMatch(/precedence chain, not a list/i);
+  });
+
+  it('the attachment level forbids answering as if an unreadable file was read', () => {
+    // The specific dishonesty this phase's brief calls out by name.
+    expect(PROMPTS.en).toMatch(/could not read\s+the file, say so - never answer as though you had/i);
+  });
+
+  it('live records may not be extended into fields that are absent', () => {
+    expect(PROMPTS.en).toMatch(/a field that is not there is not recorded,\s+not something to estimate/i);
+  });
+
+  it('current information is told to beat older recall, and to name its date', () => {
+    expect(PROMPTS.en).toMatch(/Current\s+official information beats older general recall/i);
+    expect(PROMPTS.en).toMatch(/Say which edition or date you are relying on/i);
+  });
+
+  it('a BuildHub rule beats a generic assumption at EVERY level below it', () => {
+    expect(PROMPTS.en).toMatch(/A BuildHub rule always beats a generic industry assumption/i);
+    expect(PROMPTS.en).toMatch(/never present\s+BuildHub policy as universal industry practice/i);
+  });
+
+  it('the chain reaches an Arabic session unchanged - a rule is not a translation', () => {
+    for (const step of STEPS) expect(PROMPTS.ar, step).toContain(step);
+  });
+});
