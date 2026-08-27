@@ -16,6 +16,7 @@ vi.mock('./vendorDirectory', async () => {
   return { ...actual, listDirectoryVendors };
 });
 
+import { detectIntent } from './_core/aiIntent';
 import { scoreProvider, recommendProviders, formatCandidatesForModel, MAX_RECOMMENDATIONS } from './recommendation';
 import type { DirectoryVendor } from './vendorDirectory';
 
@@ -90,7 +91,7 @@ describe('search BuildHub first, then broaden, then admit no match', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([vendor({ id: 2, location: 'Alexandria', categories: ['waterproofing'] })]);
     const out = await recommendProviders({ category: 'waterproofing', location: 'Cairo' });
-    expect(out.matchQuality).toBe('broadened');
+    expect(out.matchQuality).toBe('related');
     expect(out.broadenedBy.join()).toContain('Cairo');
     expect(out.appliedCriteria.location).toBeUndefined();
   });
@@ -101,7 +102,7 @@ describe('search BuildHub first, then broaden, then admit no match', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([vendor({ id: 3 })]);
     const out = await recommendProviders({ category: 'waterproofing', location: 'Cairo' });
-    expect(out.matchQuality).toBe('broadened');
+    expect(out.matchQuality).toBe('related');
     expect(out.broadenedBy.join()).toContain('waterproofing');
   });
 
@@ -173,13 +174,13 @@ describe('what the model is handed', () => {
     expect(block.replace(/\s+/g, ' ')).toMatch(/not imply BuildHub has verified or endorsed/);
   });
 
-  it('a broadened result is labelled as broadened, not passed off as exact', () => {
+  it('a related result is labelled as related, not passed off as exact', () => {
     const block = formatCandidatesForModel({
-      matchQuality: 'broadened', broadenedBy: ['no match in "Cairo" - searched all locations'], appliedCriteria: {},
+      matchQuality: 'related', broadenedBy: ['no match in "Cairo" - searched all locations'], appliedCriteria: {},
       candidates: [{ vendor: vendor({ id: 1 }), score: 0, reasons: [] }],
     }, 'en');
-    expect(block).toMatch(/BROADENED/);
-    expect(block).toMatch(/do not present these as exact matches/);
+    expect(block).toMatch(/RELATED/);
+    expect(block).toMatch(/do not present them as matches for the original request/);
   });
 
   it('unreviewed providers are shown as unreviewed, not as unrated-but-good', () => {
@@ -216,7 +217,13 @@ describe('a partial match is never presented as an exact one', () => {
   };
 
   it('says PARTIAL, and names what it could not match on', () => {
-    const block = formatCandidatesForModel(candidate, 'en', ['Aswan', 'the specific trade asked for']);
+    // matchQuality is now the single source of truth for the header, so a
+    // PARTIAL outcome is constructed rather than inferred from the argument.
+    const block = formatCandidatesForModel(
+      { ...candidate, matchQuality: 'partial' as const },
+      'en',
+      ['Aswan', 'the specific trade asked for'],
+    );
     expect(block).toContain('MATCH QUALITY: PARTIAL');
     expect(block).toContain('WHAT BUILDHUB COULD NOT MATCH ON');
     expect(block).toContain('Aswan');
@@ -233,5 +240,60 @@ describe('a partial match is never presented as an exact one', () => {
   it('the router passes the unmapped qualifiers through - not a default of none', () => {
     const routers = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
     expect(routers).toContain('formatCandidatesForModel(outcome, lang, intent.unmappedQualifiers)');
+  });
+});
+
+describe('Part 8: a generic provider is never an EXACT match for a specialist request', () => {
+  it('"swimming pool specialist contractor in Aswan" is PARTIAL, not exact', async () => {
+    // The exact defect from the audit, asserted end to end through the real
+    // intent router rather than with hand-built criteria - because the bug was
+    // in the handoff between the two, not in either half.
+    const intent = detectIntent('I need a swimming pool specialist contractor in Aswan. Who is on BuildHub?');
+    listDirectoryVendors.mockResolvedValue([
+      { id: 1, name: 'QA contractor', userRole: 'contractor', location: null, verified: true, averageRating: null, reviewCount: 0, categories: [] },
+    ]);
+
+    const outcome = await recommendProviders({
+      role: intent.role,
+      category: intent.category,
+      location: intent.location,
+      unmatchedQualifiers: intent.unmappedQualifiers,
+    });
+
+    expect(outcome.matchQuality).toBe('partial');
+    expect(outcome.matchQuality).not.toBe('exact');
+    expect(outcome.candidates.length).toBeGreaterThan(0);
+  });
+
+  it('a request with nothing dropped IS exact', async () => {
+    listDirectoryVendors.mockResolvedValue([
+      { id: 1, name: 'W', userRole: 'contractor', location: 'Cairo', verified: true, averageRating: null, reviewCount: 0, categories: ['waterproofing'] },
+    ]);
+    const intent = detectIntent('Can you recommend a waterproofing contractor in Cairo?');
+    expect(intent.unmappedQualifiers).toEqual([]);
+
+    const outcome = await recommendProviders({
+      role: intent.role, category: intent.category, location: intent.location,
+      unmatchedQualifiers: intent.unmappedQualifiers,
+    });
+    expect(outcome.matchQuality).toBe('exact');
+  });
+
+  it('the four levels are distinct and none is a synonym for another', () => {
+    const levels: Array<'exact' | 'partial' | 'related' | 'none'> = ['exact', 'partial', 'related', 'none'];
+    const headers = levels.filter(level => level !== 'none').map(level =>
+      formatCandidatesForModel({
+        matchQuality: level,
+        broadenedBy: level === 'related' ? ['dropped the location'] : [],
+        appliedCriteria: { role: 'contractor' },
+        candidates: [{
+          score: 25, reasons: ['role matches'],
+          vendor: { id: 1, name: 'X', userRole: 'contractor', location: null, verified: true, averageRating: null, reviewCount: 0, categories: [] },
+        }],
+      }, 'en'));
+    expect(new Set(headers).size).toBe(3);
+    expect(headers[0]).toContain('EXACT');
+    expect(headers[1]).toContain('PARTIAL');
+    expect(headers[2]).toContain('RELATED');
   });
 });

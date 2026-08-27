@@ -26,6 +26,8 @@ import { listDirectoryVendors, PROVIDER_ROLES, type DirectoryVendor } from './ve
  */
 
 export type RecommendationCriteria = {
+  /** Terms the person asked for that could NOT be turned into a search criterion. */
+  unmatchedQualifiers?: string[];
   /** A provider role, when the request names one. */
   role?: string;
   /** A declared service category. */
@@ -50,7 +52,24 @@ export type RecommendationOutcome = {
    * broadened  - nothing matched exactly; location or category was relaxed
    * none       - BuildHub has no suitable listed provider
    */
-  matchQuality: 'exact' | 'broadened' | 'none';
+  /**
+   * FOUR LEVELS, because three was not enough to be honest.
+   *
+   *   exact     every qualifier the person asked for was searchable AND matched
+   *   partial   matched on what BuildHub could search, but part of the request
+   *             was never a criterion (an unlisted trade, an unserved city)
+   *   related   nothing matched as asked; these came from a broadened search
+   *   none      nothing at all
+   *
+   * The distinction between `exact` and `partial` is the one that matters and
+   * the one this engine used to get wrong: asked for a "swimming pool
+   * specialist contractor in Aswan", it parsed role=contractor, dropped both
+   * qualifiers silently, matched on role alone, and reported EXACT - because
+   * from its own point of view every criterion it knew about was satisfied.
+   * A generic contractor is not an exact match for a specialist request, and
+   * saying so is the whole point.
+   */
+  matchQuality: 'exact' | 'partial' | 'related' | 'none';
   /** What was relaxed to find these, when anything was. */
   broadenedBy: string[];
   candidates: ScoredProvider[];
@@ -154,7 +173,16 @@ export async function recommendProviders(criteria: RecommendationCriteria): Prom
   });
   const exactRanked = rank(exact, { ...criteria, limit });
   if (exactRanked.length > 0) {
-    return { matchQuality: 'exact', broadenedBy: [], candidates: exactRanked, appliedCriteria: criteria };
+    // EXACT only if nothing was dropped on the way in. `unmatchedQualifiers`
+    // is what the intent router could not turn into a criterion; if there is
+    // any, this is a PARTIAL match however well it scored on the rest.
+    const dropped = criteria.unmatchedQualifiers ?? [];
+    return {
+      matchQuality: dropped.length > 0 ? 'partial' : 'exact',
+      broadenedBy: [],
+      candidates: exactRanked,
+      appliedCriteria: criteria,
+    };
   }
 
   if (criteria.location) {
@@ -162,7 +190,7 @@ export async function recommendProviders(criteria: RecommendationCriteria): Prom
     const ranked = rank(withoutLocation, { ...criteria, location: undefined, limit });
     if (ranked.length > 0) {
       return {
-        matchQuality: 'broadened',
+        matchQuality: 'related',
         broadenedBy: [`no match in "${criteria.location}" - searched all locations`],
         candidates: ranked,
         appliedCriteria: { ...criteria, location: undefined },
@@ -175,7 +203,7 @@ export async function recommendProviders(criteria: RecommendationCriteria): Prom
     const ranked = rank(withoutCategory, { ...criteria, category: undefined, limit });
     if (ranked.length > 0) {
       return {
-        matchQuality: 'broadened',
+        matchQuality: 'related',
         broadenedBy: [`no provider declaring "${criteria.category}" - searched related providers`],
         candidates: ranked,
         appliedCriteria: { ...criteria, category: undefined },
@@ -227,11 +255,12 @@ imply any of them specialises in it. Suggest an RFQ, where the requirement can
 be described in full.`
     : '';
 
-  const header = outcome.matchQuality === 'broadened'
-    ? `MATCH QUALITY: BROADENED. ${outcome.broadenedBy.join('; ')}. Say so - do not present these as exact matches.`
-    : unmappedQualifiers.length > 0
-      ? 'MATCH QUALITY: PARTIAL - these match the criteria BuildHub could search on, NOT the full request.'
-      : 'MATCH QUALITY: EXACT - these match the request as asked.';
+  const header = {
+    related: `MATCH QUALITY: RELATED. ${outcome.broadenedBy.join('; ')}. These did NOT match as asked - say so, and do not present them as matches for the original request.`,
+    partial: 'MATCH QUALITY: PARTIAL - these match the criteria BuildHub could search on, NOT the full request.',
+    exact: 'MATCH QUALITY: EXACT - these match the request as asked.',
+    none: '',
+  }[outcome.matchQuality];
 
   const rows = outcome.candidates.map((candidate, index) => {
     const v = candidate.vendor;
