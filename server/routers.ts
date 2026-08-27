@@ -16,7 +16,7 @@ import { buildSystemPrompt, type KnowledgeLanguage } from './_core/buildhubKnowl
 import { detectIntent } from './_core/aiIntent';
 import { recommendProviders, formatCandidatesForModel } from './recommendation';
 import { formatRetrievalForModel } from './_core/knowledgeRetrieval';
-import { retrieveSemantic } from './_core/semanticRetrieval';
+import { retrieveSemantic, semanticRankingAvailable } from './_core/semanticRetrieval';
 import { findRegulatory, formatRegulatoryForModel } from './knowledge/jurisdictions';
 import { storagePut } from './storage';
 import { getObjectStorage, ObjectStorageNotConfiguredError } from './_core/objectStorage';
@@ -400,6 +400,19 @@ const authRouter = router({
     // provider credential every one of them returned the generic internal
     // error - the feature looked present and was not.
     aiAssistant: isAiConfigured(),
+    // Whether the corpus has actually been embedded, so retrieval is ranking
+    // semantically rather than falling back to keywords.
+    //
+    // Reported because it is otherwise UNOBSERVABLE from outside. The fallback
+    // is deliberately silent - a degraded ranking still answers - which means a
+    // deployment whose embeddings endpoint is rejecting every call looks
+    // identical to a healthy one from the browser. Without this the staging
+    // gate could only assert that answers arrive, and would have no way to tell
+    // whether the architecture under test was the one actually running.
+    //
+    // Starts false and becomes true after the first retrieval on this process,
+    // so the gate must ask a question before reading it.
+    aiSemanticRetrieval: semanticRankingAvailable(),
   } as const)),
 
   signUp: publicProcedure.input(z.object({
