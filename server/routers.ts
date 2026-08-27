@@ -16,6 +16,7 @@ import { buildSystemPrompt, type KnowledgeLanguage } from './_core/buildhubKnowl
 import { detectIntent } from './_core/aiIntent';
 import { recommendProviders, formatCandidatesForModel } from './recommendation';
 import { retrieve, formatRetrievalForModel } from './_core/knowledgeRetrieval';
+import { findRegulatory, formatRegulatoryForModel } from './knowledge/jurisdictions';
 import { storagePut } from './storage';
 import { getObjectStorage } from './_core/objectStorage';
 import { validateAiAttachment, attachmentInstruction } from './_core/aiAttachments';
@@ -3053,6 +3054,14 @@ const aiRouter = router({
       const retrieved = formatRetrievalForModel(retrieve(lastQuestion), lang);
       const referenceBlock = retrieved ? `\n\n${retrieved}` : '';
 
+      // REGULATORY. Separate from the corpus because it is a different KIND of
+      // answer: pointers to instruments and their editions, with an explicit
+      // instruction not to reconstruct clause text. A code question answered
+      // from model memory is the most dangerous output this assistant can
+      // produce, because it is precisely the kind a person acts on unchecked.
+      const regulatory = formatRegulatoryForModel(findRegulatory(lastQuestion), lang);
+      const regulatoryBlock = regulatory ? `\n\n${regulatory}` : '';
+
       // ATTACHMENTS. Authorization happens HERE, before a byte reaches the
       // model: each id is re-read from the database and must belong to the
       // caller and still be live. An id from another user's conversation
@@ -3117,7 +3126,7 @@ const aiRouter = router({
       try {
         const { text } = await generateAIResponse({
           messages: [
-            { role: 'system', content: systemPrompt + attachmentBlock + referenceBlock + candidateBlock },
+            { role: 'system', content: systemPrompt + attachmentBlock + regulatoryBlock + referenceBlock + candidateBlock },
             ...conversation,
           ],
           webSearch: intent.wantsCurrentInformation,

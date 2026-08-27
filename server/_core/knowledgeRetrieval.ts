@@ -3,6 +3,7 @@ import {
   type KnowledgeDocument, type DomainId,
 } from '@shared/knowledgeTaxonomy';
 import { CONSTRUCTION_CORE } from '../knowledge/constructionCore';
+import { CONSTRUCTION_DEPTH } from '../knowledge/constructionDepth';
 
 /**
  * Retrieval over the BuildHub knowledge corpus.
@@ -30,7 +31,7 @@ import { CONSTRUCTION_CORE } from '../knowledge/constructionCore';
  * is information the reader wants.
  */
 
-const CORPUS: KnowledgeDocument[] = [...CONSTRUCTION_CORE];
+const CORPUS: KnowledgeDocument[] = [...CONSTRUCTION_CORE, ...CONSTRUCTION_DEPTH];
 
 export type RetrievedDocument = { document: KnowledgeDocument; score: number };
 
