@@ -1,0 +1,387 @@
+================================================================================
+BUILDHUB — ROLE-AWARE AI FINAL HANDOFF
+Phase: ROLE + PROJECT + KNOWLEDGE + MARKETPLACE + ATTACHMENT FINALIZATION
+Date:  2026-08-27
+================================================================================
+
+Claude = engineering, implementation, testing, evidence.
+ChatGPT = independent architecture / security / product review.
+Owner   = final business, product and production decisions.
+
+The three constraints the brief opened with were held:
+  - No production infrastructure was started.
+  - The OpenAI provider and model were NOT changed.
+  - No business rule was invented. Where the repository does not establish
+    one, it is recorded below as an OWNER DECISION, not decided here.
+
+--------------------------------------------------------------------------------
+1. MAIN SHA
+--------------------------------------------------------------------------------
+
+  cd638c274d36011012014299c6b82809c9f0af5e   (branch main)
+
+Landed this phase, in order:
+
+  6d7babb  feat(ai)  project context
+  304f423  feat(ai)  named workflows, actions that land somewhere
+  8691201  feat(ai)  false premises in questions
+  526f7b3  feat(ai)  the source hierarchy is a precedence chain
+  6988665  test(ai)  what actually reaches the model
+  d4c1a67  test(gate) role workflow + honest project selector, live
+  0a0ccf6  merge PR #29
+  89c210e  test(gate) the selector check was asserting the homeowner's model
+  cd638c2  merge PR #30
+
+--------------------------------------------------------------------------------
+2. STAGING SHA
+--------------------------------------------------------------------------------
+
+  DEPLOYED COMMIT: cd638c274d36011012014299c6b82809c9f0af5e
+
+Verified, not assumed. The gate was dispatched with
+expect_commit=cd638c274d36011012014299c6b82809c9f0af5e, and a mismatch FAILS the
+gate rather than being reported — that expect_commit reaches check() and not
+skip() is itself pinned by a unit test, because a provenance check that
+degrades to a skip proves nothing.
+
+  MAIN SHA == STAGING SHA == GATE SHA.
+
+Run: https://github.com/islamsu/buildhub-project/actions/runs/33109057353
+
+--------------------------------------------------------------------------------
+3. ROLE EXPERIENCES
+--------------------------------------------------------------------------------
+
+ONE shared AI engine. Six experiences. The role is read from the authenticated
+server-side session (ctx.user.userRole); `ai.chat` has NO role field in its
+input schema, and zod strips unknown keys, so a client cannot assert a role it
+does not hold. That absence IS the control, and a test asserts the absence.
+
+  ROLE              WORKFLOW                                          ACTIONS
+  ----------------  ------------------------------------------------  -------
+  homeowner         plan > estimate > find > compare > decide          5
+  contractor        findOpportunity > analyze > estimate > quote >     5
+                    execute
+  engineer          analyze > verify > qaqc > manageRisk               4
+  architect         design > specify > coordinate > source             4
+  supplier          findDemand > matchProducts > quote > sell          5
+  project_manager   plan > track > control > report                    4
+
+Every action href is asserted against App.tsx, so a route typo is a failing
+test rather than a dead link.
+
+  DELIBERATELY ABSENT: a "Compare Providers" action. The brief lists it among
+  the customer's actions. BuildHub has no comparison surface — no route, no
+  component, no endpoint puts two providers side by side. Shipping the button
+  would be exactly the decorative control the same brief forbids, so it is
+  reported here as a gap instead of shipped as a link to nowhere.
+
+Each role also carries an emphasis sent to the model as a DEFAULT STANCE and
+explicitly not a restriction — a model told "this user is a homeowner" will
+otherwise refuse to go technical when a homeowner asks a technical question.
+
+--------------------------------------------------------------------------------
+4. AI CONTEXT
+--------------------------------------------------------------------------------
+
+The system prompt is assembled, in this order, from:
+
+  systemPrompt + attachmentBlock + projectBlock + regulatoryBlock
+               + referenceBlock + candidateBlock
+
+Everything in it is derived server-side from the authenticated session. No
+block is populated from client input except the project SELECTOR (see §5),
+which selects among rows the caller may already see.
+
+The prompt is NOT a dump. A question with no project bearing costs no project
+query at all.
+
+--------------------------------------------------------------------------------
+5. PROJECT CONTEXT
+--------------------------------------------------------------------------------
+
+server/_core/projectContext.ts. Built around three refusals.
+
+  (a) AUTHORIZATION BEFORE RETRIEVAL.
+      `projectId` is a SELECTOR, never a grant. An owner resolves through
+      eq(projects.ownerId, userId); a provider resolves through the approved-
+      provider directory allowlist. Naming someone else's project returns
+      kind:'unauthorized', and the emitted block says outright:
+      "Do NOT substitute another project."
+
+  (b) A PROVIDER NEVER RECEIVES BUDGET OR SPEND.
+      projects.directory withholds them (it is an approvedProviderProcedure and
+      selects only id, title, type, status, location, progress). The AI path
+      must not become the way around that, so the provider branch selects the
+      same six columns and no more.
+
+  (c) ASK, DO NOT GUESS.
+      Multiple projects and a vague question yields kind:'ambiguous' and a
+      block that says: "ASK which project they mean before answering. Do not
+      choose for them, and do not assume the most recent one."
+
+The selector renders only when there is something real to pick. For an
+approved provider that set comes from the directory, not from ownership — this
+is what the live gate caught (see §14) and it is correct behaviour.
+
+--------------------------------------------------------------------------------
+6. KNOWLEDGE
+--------------------------------------------------------------------------------
+
+server/_core/buildhubKnowledge.ts.
+
+PRECEDENCE CHAIN (five levels, replacing an earlier two-level list), stated as
+what it is: "Where two sources disagree, the EARLIER one in this list wins.
+This is a precedence chain, not a list of things you have available."
+
+  1. the attachment the user supplied
+  2. BuildHub's own documented behaviour
+  3. live BuildHub records the caller is authorized to see
+  4. current / regulatory reference material
+  5. general construction knowledge
+
+CLAIMS PEOPLE MAKE ABOUT BUILDHUB THAT ARE WRONG — four corrections, each
+derived from what the code actually does, so a correction cannot become a new
+falsehood:
+
+  - BuildHub does NOT guarantee or vet contractors.
+  - Any approved provider may quote any RFQ — including the honest other half,
+    which is that approved providers are NOT restricted to their declared
+    categories when quoting.
+  - BuildHub does not hand over customer contact information.
+  - "Approved" is not "recommended" and is not "endorsed".
+
+--------------------------------------------------------------------------------
+7. RETRIEVAL
+--------------------------------------------------------------------------------
+
+Semantic retrieval over the knowledge corpus, embeddings text-embedding-3-small,
+ranked by metadata and authority tier. Retrieval is scoped to what the caller
+may see BEFORE anything is composed into the prompt — authorization happens
+before the data reaches the model, never after.
+
+Ordering is pinned by assertions on the composed prompt's ORDER, not by a
+literal string match on the whole prompt (an earlier version of that test was
+satisfiable by an empty slice and was rewritten).
+
+--------------------------------------------------------------------------------
+8. RECOMMENDATIONS
+--------------------------------------------------------------------------------
+
+Provider and product suggestions come from live BuildHub rows only.
+
+  - No fabricated attributes. No invented rating, availability or
+    specialization. Four surfaces that previously published invented ratings
+    and verified badges for real named Egyptian companies were fixed in the
+    preceding phase and remain fixed.
+  - A PARTIAL match is never presented as an EXACT one. Matching is explicitly
+    labelled EXACT / PARTIAL / RELATED / NO-MATCH.
+  - No "best" claim unless the evidence supports it.
+  - Any external provider is labelled: "External recommendation — not listed or
+    verified by BuildHub."
+
+--------------------------------------------------------------------------------
+9. ATTACHMENTS
+--------------------------------------------------------------------------------
+
+If the file could not be read, the assistant says so and does not answer as
+though it had been analyzed. Cross-user attachment access is denied at the
+server, and repairing message attachments naively would have opened an IDOR —
+that was found and closed in the preceding phase.
+
+  LIMITATION, STATED PLAINLY: S3 is not configured on staging, so the two
+  end-to-end attachment checks SKIPPED rather than passed. Attachment storage
+  is therefore proven by unit tests and by the server's refusal paths, and is
+  NOT proven end-to-end on a deployment. See §17.
+
+--------------------------------------------------------------------------------
+10. LANGUAGE
+--------------------------------------------------------------------------------
+
+The WEBSITE language is authoritative. A question typed in Arabic on an English
+site is answered in English, and vice versa — the question's language must not
+override the site's. All four combinations are covered by tests, and the live
+gate checks dir=rtl plus a genuinely translated (not merely copied) role title
+per role in Arabic.
+
+--------------------------------------------------------------------------------
+11. WEB
+--------------------------------------------------------------------------------
+
+No new external web access was added in this phase. The provider and model are
+unchanged: OpenAI Responses API, model gpt-5.6-luna (the pinned identifier, not
+the bare alias), embeddings text-embedding-3-small.
+
+--------------------------------------------------------------------------------
+12. SECURITY
+--------------------------------------------------------------------------------
+
+server/aiPromptPrivacy.test.ts (33 tests) builds the WHOLE assembled prompt
+from a deliberately poisoned viewer and asserts that none of the following
+survives into it, in either language:
+
+  bcrypt password hash · OpenAI API key · JWT secret · database URL
+  SMTP password · S3 secret · invitation token · session cookie
+  email · phone · username · openId
+
+A MUTATION SURVIVED AND CHANGED THE RULE. Interpolating viewer.email passed
+everything, because the forbidden list held only secrets. An email is not a
+credential and still must not travel: the assistant needs role and plan, never
+contact details. PII to a third-party provider is a cost with no benefit, so
+email, phone, username and openId are now forbidden too — and the POSITIVE half
+is pinned as well, so a privacy rule that also stripped the useful context
+fails the suite.
+
+Authorization precedes retrieval everywhere. No private or internal field is
+exposed. No admin-internal information reaches the model.
+
+--------------------------------------------------------------------------------
+13. TESTS
+--------------------------------------------------------------------------------
+
+  tsc --noEmit ............ 0 errors
+  vitest run .............. 89 files, 1966 tests, all passing
+  build ................... green (client + server)
+
+Suites carrying this phase:
+
+  aiProjectContext .......... 24    aiPromptPrivacy ........... 33
+  aiFalsePremises ........... 20    aiRoles ................... 39
+  negativeControls .......... 20    knowledgeRetrieval ........ 18
+  marketplaceHonesty ........ 10    stagingGate ............... 63
+
+Mutation testing was applied throughout, and it repeatedly caught tests that
+passed for the wrong reason. Recorded honestly because the record is the point:
+
+  - a price-bounds test stubbed no database, so every call rejected with
+    INTERNAL_SERVER_ERROR and the mutation removing the bounds SURVIVED;
+  - a "workflows differ between roles" test mapped over my own EXPECTED
+    constant and therefore could not have failed;
+  - the email interpolation above;
+  - a prompt-composition test whose slice was empty.
+
+Each was rewritten to fail for the right reason, never relaxed. Where a source
+assertion tripped on its own explanatory comment (four times), the fix was to
+strip comments before asserting — never to weaken the claim.
+
+--------------------------------------------------------------------------------
+14. STAGING QA
+--------------------------------------------------------------------------------
+
+Against https://buildhub-staging.onrender.com at cd638c27, from a GitHub runner
+in a real browser.
+
+  TOTAL ....... 640
+  PASSED ...... 640
+  FAILED ...... 0
+  SKIPPED ..... 5
+
+The five skips, each stating what it needs — skips are counted separately from
+passes and are NOT reported as passes:
+
+  9.  password reset ............ SMTP_HOST unset
+  10. upload to the bucket ...... S3_* not configured
+  29. knowledge priority (live) . opt-in; twelve extra paid provider requests
+  30. storing an attachment ..... S3_* not configured
+  30. cross-user attachment ..... requires a stored attachment
+
+THE RUN BEFORE THIS ONE FAILED, AND IT IS WORTH THE PARAGRAPH.
+
+At 0a0ccf6 the gate reported 639/640 with one failure:
+
+    FAIL  31. contractor: no project selector when the account has no projects
+
+The contractor failed it BY BEHAVING CORRECTLY. The assertion encoded the
+homeowner's model — a freshly registered account owns no projects, so the
+selector must be absent — which is false for a provider, whose selector is
+populated from projects.directory. Exactly one role failed because exactly one
+provider is approved by the gate; the other four are denied the directory and
+render nothing. The single failure was the shape of the diagnosis.
+
+The product was not changed. The check now states the rule it was reaching
+for: absence alone is not the rule, because a check satisfied by absence also
+passes on a feature that never renders. A rendered selector must hold something
+REAL, so the gate opens it and counts options that are not the placeholder.
+Both mutations against the new pin are killed.
+
+--------------------------------------------------------------------------------
+15. LIVE BROWSER
+--------------------------------------------------------------------------------
+
+Section 31 exercises all six roles in a real browser, in English and Arabic, at
+1440px, and asserts:
+
+  - a distinct heading per role, and DISTINCT TOOL SETS — not one page with six
+    headings, which is the failure mode this feature is most likely to have;
+  - a named workflow per role, every step labelled, and six DISTINCT workflows;
+  - a specific pair, so six shuffles of one tool set cannot pass: the homeowner
+    is not shown contractor RFQ tooling, and the contractor is not shown the
+    homeowner designer finder;
+  - the general composer survives personalisation for every role —
+    personalisation decides what is OFFERED, never what may be ASKED;
+  - no untranslated key renders, in either language;
+  - dir=rtl and a translated (not copied) title in Arabic.
+
+Section 32 additionally covers the six role dashboards at 375 / 768 / 1440 in
+both languages.
+
+MINIMAL LIVE OPENAI CALLS, as required: the whole six-role section costs ZERO
+provider requests — opening /ai must fire none, and that is asserted. A routine
+gate run spends AT MOST ONE PAID REQUEST in total, in section 28. The twelve-
+request knowledge suite is opt-in and stayed off.
+
+--------------------------------------------------------------------------------
+16. OWNER DECISIONS
+--------------------------------------------------------------------------------
+
+Carried forward untouched. These were NOT decided here.
+
+  D1  Duplicate quotation / revision behaviour. The repository does not
+      establish the intended model. OWNER DECISION REQUIRED.
+  D2  The Renovation finishing preset.
+  D3  Mandatory product fields.
+
+New from this phase:
+
+  D4  COMPARE PROVIDERS has no backing surface. Either a comparison surface is
+      built, or the action stays absent. It will not be shipped as a button
+      that does nothing.
+
+--------------------------------------------------------------------------------
+17. PRODUCTION BLOCKERS
+--------------------------------------------------------------------------------
+
+  B1  SMTP is not configured on staging. Password reset is unproven end-to-end.
+  B2  S3 is not configured on staging. Uploads and AI attachment storage are
+      unproven end-to-end (two skips).
+  B3  No payment provider is exercised on staging.
+  B4  No production administrator provisioning has been performed.
+  B5  Product images have no surface.
+  B6  No edit/delete surface for several owner-authored records.
+  B7  No export.
+
+None of these were touched. No production deployment, credential, database,
+S3 bucket, SMTP host, payment or administrator was created or modified in this
+phase.
+
+--------------------------------------------------------------------------------
+18. VERDICTS
+--------------------------------------------------------------------------------
+
+  ROLE-AWARE AI ......... GO
+      Six roles, six experiences, one engine, server-side role. Project context
+      authorized before retrieval, provider budget withheld, ambiguity asked
+      rather than guessed. Proven on the assembled prompt that no credential
+      and no PII reaches the model. 640/640 live.
+
+  STAGING ............... GO
+      640/640, 0 failures, 5 environment skips stated as skips, at a deployed
+      SHA verified to equal main.
+
+  PRODUCTION ............ NO-GO
+      B1-B7 above. Email, storage, payments and administrator provisioning are
+      unconfigured and therefore unproven; four owner decisions are open. This
+      verdict is unchanged from the previous handoff and nothing in this phase
+      was intended to change it.
+
+================================================================================

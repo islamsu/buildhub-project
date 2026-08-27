@@ -81,6 +81,7 @@ import {
 } from './vendorDirectory';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSubscriptions } from '../drizzle/schema';
+import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
 
 const scryptAsync = promisify(scryptCallback);
 
@@ -3282,10 +3283,34 @@ const aiRouter = router({
         candidateBlock = `\n\n${formatCandidatesForModel(outcome, lang, intent.unmappedQualifiers)}`;
       }
 
+      // TRANSACTION OPPORTUNITIES. The other side of the marketplace: a
+      // provider looking for work rather than a customer looking for a
+      // provider. Costs no query unless the question asks for work AND the
+      // caller holds a role for which work is an opportunity - findRfqOpportunities
+      // refuses any other role before it queries, so a homeowner asking about
+      // "available projects" gets nothing rather than a lead feed.
+      //
+      // Nothing here executes anything. The block carries PREPARED actions and
+      // says outright that no enquiry was opened and no credit was spent.
+      let opportunityBlock = '';
+      if (intent.wantsOpportunities && isRfqSeekingRole(ctx.user.userRole)) {
+        const db = await getDb();
+        if (db) {
+          const opportunities = await findRfqOpportunities({
+            db,
+            userId: ctx.user.id,
+            userRole: ctx.user.userRole,
+            requestedCategory: intent.category,
+            requestedLocation: intent.location,
+          });
+          opportunityBlock = `\n\n${formatOpportunitiesForModel(opportunities, lang)}`;
+        }
+      }
+
       try {
         const { text } = await generateAIResponse({
           messages: [
-            { role: 'system', content: systemPrompt + attachmentBlock + projectBlock + regulatoryBlock + referenceBlock + candidateBlock },
+            { role: 'system', content: systemPrompt + attachmentBlock + projectBlock + regulatoryBlock + referenceBlock + candidateBlock + opportunityBlock },
             ...conversation,
           ],
           webSearch: intent.wantsCurrentInformation,

@@ -5,6 +5,7 @@ import {
 import { COMPLIANCE_REQUIREMENTS, type ComplianceRole } from '@shared/compliance';
 import { PLATFORM_RULES, PLATFORM_RULE_TOPICS } from '@shared/platformRules';
 import { experienceFor } from '@shared/aiRoles';
+import { UNTRUSTED_CONTENT_RULE } from './untrustedContent';
 
 /**
  * What the assistant is allowed to know about BuildHub, and how it gets it.
@@ -227,6 +228,8 @@ precedence chain, not a list of things you have available.
 A BuildHub rule always beats a generic industry assumption, at every level
 below it. Never present general practice as BuildHub policy, and never present
 BuildHub policy as universal industry practice.
+
+${UNTRUSTED_CONTENT_RULE}
 
 RULES YOU MUST NOT BREAK
 

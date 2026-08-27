@@ -44,6 +44,17 @@ export type AiIntent = {
    */
   unmappedQualifiers: string[];
   /**
+   * The person is looking for WORK, not for a provider.
+   *
+   * Kept separate from wantsProviderRecommendation because they are opposite
+   * sides of the same marketplace and answering one with the other is the
+   * obvious failure: a contractor asking "find me finishing jobs in Cairo"
+   * must not be handed a list of finishing contractors, who are their
+   * competitors. The role check that gates this lives in the opportunity
+   * engine, not here - this only reads the question.
+   */
+  wantsOpportunities: boolean;
+  /**
    * The jurisdiction the QUESTION is about, when it names one.
    *
    * Deliberately read from the question and never from the user's account. A
@@ -54,6 +65,29 @@ export type AiIntent = {
    */
   jurisdiction?: JurisdictionCode;
 };
+
+/**
+ * Asking for WORK. Deliberately requires a work noun - "find me projects",
+ * "which RFQs" - rather than treating any "find me" as an opportunity search,
+ * because "find me a contractor" is the recommendation case and shares the verb.
+ */
+const OPPORTUNITY_PATTERNS = [
+  // "find me finishing projects", "show available fit-out work" - the verb and
+  // the work-noun with anything in between. A fixed substring list missed
+  // exactly this: an adjective between them is the normal way to ask.
+  /\b(find|show|get|list|search)\b[^.?!]{0,40}?\b(work|jobs?|projects?|opportunit(y|ies)|rfqs?|tenders?|leads?)\b/i,
+  /\b(rfqs?|projects?|jobs?|opportunit(y|ies)|leads?)\b[^.?!]{0,40}?\b(for me|need my|match my|suit my|available)\b/i,
+  /\b(available|open)\b[^.?!]{0,20}?\b(work|jobs?|projects?|rfqs?|tenders?)\b/i,
+];
+
+const OPPORTUNITY_CUES = [
+  'find work', 'find me work', 'find jobs', 'find me jobs', 'find projects',
+  'find me projects', 'find opportunities', 'find me opportunities',
+  'new opportunities', 'available work', 'available projects', 'available rfq',
+  'open rfq', 'which rfq', 'what rfq', 'rfqs need', 'rfqs match', 'match my products',
+  'need my products', 'bid on', 'tender', 'leads for me', 'any leads',
+  'فرص', 'فرص عمل', 'مشاريع متاحة', 'طلبات عروض', 'أعمال متاحة', 'مناقصات',
+];
 
 const RECOMMENDATION_CUES = [
   'recommend', 'suggestion', 'suggest', 'find me', 'looking for', 'who can',
@@ -158,11 +192,20 @@ export function detectIntent(question: string): AiIntent {
     includesAny(text, EXPLICIT_CURRENCY_CUES) ||
     (includesAny(text, WEAK_CURRENCY_CUES) && !includesAny(text, TIMELESS_GUARD));
 
-  const category = wantsProviderRecommendation ? extractCategory(text) : undefined;
-  const location = wantsProviderRecommendation ? extractLocation(question) : undefined;
+  const wantsOpportunities = includesAny(text, OPPORTUNITY_CUES)
+    || OPPORTUNITY_PATTERNS.some(pattern => pattern.test(question));
+
+  // Category and location are extracted for EITHER branch. An opportunity
+  // search filters on the same two things a recommendation does; extracting
+  // them only for recommendations would leave "find me finishing work in
+  // Cairo" unfiltered on both.
+  const wantsMarketplaceSearch = wantsProviderRecommendation || wantsOpportunities;
+  const category = wantsMarketplaceSearch ? extractCategory(text) : undefined;
+  const location = wantsMarketplaceSearch ? extractLocation(question) : undefined;
 
   return {
     wantsProviderRecommendation,
+    wantsOpportunities,
     wantsCurrentInformation,
     role: wantsProviderRecommendation ? role : undefined,
     category,
