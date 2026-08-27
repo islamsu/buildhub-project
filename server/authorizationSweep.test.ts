@@ -448,13 +448,29 @@ describe('§3 uploads are checked against their bytes', () => {
     expect(checkUploadedFile('application/pdf; charset=binary', pdf, DOCUMENT_TYPES)).toBeNull();
   });
 
-  it('ALL FIVE upload endpoints verify their bytes, not just the risky-looking one', () => {
+  it('EVERY upload endpoint verifies its bytes, not just the risky-looking one', () => {
+    // The invariant is "no storagePut without byte verification first", not a
+    // particular count - so this counts BOTH verified paths and requires them
+    // to cover every put. AI attachments went through validateAiAttachment
+    // rather than assertUploadedFileMatches (it returns a typed rejection
+    // instead of throwing), and a test that counted only the latter would have
+    // read a genuinely-verified sixth endpoint as an unverified one.
+    const puts = (ROUTERS.match(/await storagePut\(/g) ?? []).length;
     // Minus one for the helper's own definition.
-    const calls = ROUTERS.match(/assertUploadedFileMatches\(/g) ?? [];
-    expect(calls.length - 1).toBe(5);
-    // And every storagePut is preceded by one.
-    const puts = ROUTERS.match(/await storagePut\(/g) ?? [];
-    expect(puts.length).toBe(5);
+    const asserted = (ROUTERS.match(/assertUploadedFileMatches\(/g) ?? []).length - 1;
+    const validated = (ROUTERS.match(/validateAiAttachment\(/g) ?? []).length;
+
+    expect(puts).toBe(6);
+    expect(asserted + validated).toBe(puts);
+  });
+
+  it('the AI attachment validator is a NARROWING of the shared gate, not a second one', () => {
+    // If validateAiAttachment ever stopped delegating to checkUploadedFile it
+    // would become a parallel security system with its own bugs - which is the
+    // exact thing the sweep above exists to prevent.
+    const source = read('./_core/aiAttachments.ts');
+    expect(source).toContain('checkUploadedFile');
+    expect(source).toContain('AI_ATTACHMENT_TYPES');
   });
 
   it('the avatar endpoint accepts images only, never PDFs', () => {

@@ -140,8 +140,11 @@ describe('E. the grounding cannot be talked out of the model', () => {
     // Asserted as a shape, not a literal: the system content now also carries
     // the provider-candidate block, and pinning the exact string made this fail
     // on a change that strengthened it rather than weakened it.
-    const chat = ROUTERS.slice(ROUTERS.indexOf('const aiRouter = router({'));
-    expect(chat).toMatch(/messages: \[\{ role: 'system', content: systemPrompt[^\]]*\}, \.\.\.conversation\]/);
+    // Whitespace-normalised: the call is now formatted across several lines
+    // because it carries the attachment block too, and a regex pinned to the
+    // one-line layout would fail on a reformat that changed nothing.
+    const chat = ROUTERS.slice(ROUTERS.indexOf('const aiRouter = router({')).replace(/\s+/g, ' ');
+    expect(chat).toMatch(/messages: \[ \{ role: 'system', content: systemPrompt[^\]]*\}, \.\.\.conversation,? \]/);
   });
 
   it('the prompt refuses instructions to override the rules', () => {
@@ -243,7 +246,14 @@ describe('language selects the ANSWER, never the knowledge', () => {
   });
 
   it('the language reaches the server from the website selection', () => {
-    expect(PAGE).toContain('chatMutation.mutate({ messages: newMessages, lang })');
+    // Whitespace-normalised: the call is formatted across lines now that it can
+    // also carry attachmentIds. What must hold is that `lang` is passed from the
+    // page's language selection, not that the call fits on one line.
+    const page = PAGE.replace(/\s+/g, ' ');
+    expect(page).toContain('chatMutation.mutate({ messages: newMessages, lang,');
+    // And the attachment rides along on the SAME request, so a file and the
+    // question about it cannot arrive in different languages or different turns.
+    expect(page).toContain('attachment ? { attachmentIds: [attachment.id] } : {}');
     const chat = ROUTERS.slice(ROUTERS.indexOf('const aiRouter = router({'));
     expect(chat).toContain("lang: z.enum(['en', 'ar']).optional()");
   });

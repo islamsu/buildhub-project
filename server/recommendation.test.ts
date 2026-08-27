@@ -5,6 +5,7 @@
  * the model only explains it - and that a signal BuildHub does not store never
  * becomes a signal the answer claims.
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 // vi.hoisted, because vi.mock is hoisted above ordinary top-level consts and a
@@ -196,5 +197,41 @@ describe('what the model is handed', () => {
     }, 'en');
     expect(block).toMatch(/best match based on the available BuildHub data/);
     expect(block).toMatch(/Do not claim any provider is the best in a city/);
+  });
+});
+
+describe('a partial match is never presented as an exact one', () => {
+  const candidate = {
+    matchQuality: 'exact' as const,
+    broadenedBy: [] as string[],
+    appliedCriteria: { role: 'contractor' },
+    candidates: [{
+      score: 25,
+      reasons: ['role matches'],
+      vendor: {
+        id: 1, name: 'QA contractor', userRole: 'contractor', location: null,
+        verified: true, averageRating: null, reviewCount: 0, categories: [] as string[],
+      },
+    }],
+  };
+
+  it('says PARTIAL, and names what it could not match on', () => {
+    const block = formatCandidatesForModel(candidate, 'en', ['Aswan', 'the specific trade asked for']);
+    expect(block).toContain('MATCH QUALITY: PARTIAL');
+    expect(block).toContain('WHAT BUILDHUB COULD NOT MATCH ON');
+    expect(block).toContain('Aswan');
+    expect(block).toMatch(/do not\s+imply any of them specialises in it/);
+    expect(block).toMatch(/RFQ/);
+  });
+
+  it('still says EXACT when nothing was dropped', () => {
+    const block = formatCandidatesForModel(candidate, 'en', []);
+    expect(block).toContain('MATCH QUALITY: EXACT');
+    expect(block).not.toContain('COULD NOT MATCH ON');
+  });
+
+  it('the router passes the unmapped qualifiers through - not a default of none', () => {
+    const routers = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    expect(routers).toContain('formatCandidatesForModel(outcome, lang, intent.unmappedQualifiers)');
   });
 });

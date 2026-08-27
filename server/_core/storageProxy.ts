@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getObjectStorage, isObjectStorageConfigured } from "./objectStorage";
 import { sdk, type AuthenticatedUser } from "./sdk";
 import { getDb } from "../db";
-import { documents, messages, projects, qualifiedEnquiries, registrationDocumentSubmissions, rfqs } from "../../drizzle/schema";
+import { aiAttachments, documents, messages, projects, qualifiedEnquiries, registrationDocumentSubmissions, rfqs } from "../../drizzle/schema";
 import { parseRfqAttachments } from "../../shared/rfqAttachments";
 
 async function authenticateStorageRequest(req: Request): Promise<AuthenticatedUser | null> {
@@ -79,6 +79,26 @@ export async function authorizeStorageKey(key: string, user: AuthenticatedUser |
       .from(qualifiedEnquiries)
       .where(and(eq(qualifiedEnquiries.rfqId, match.id), eq(qualifiedEnquiries.userId, user.id)));
     return !!enquiry;
+  }
+
+  // Category F: AI attachments - the uploader ONLY.
+  //
+  // Narrower than every other category on purpose. An RFQ attachment is shown
+  // to a provider who paid for the enquiry, and an avatar is public; a file
+  // someone handed to the AI assistant has no second audience at all. Nobody
+  // else has a reason to read it, so nobody else may.
+  //
+  // Resolved through the DATABASE ROW, not the key. The `user-<id>` segment in
+  // the path is not trusted as authorization - it is not even parsed here -
+  // because a key is a string an attacker may come to possess, and this row is
+  // the only thing that records who the file belongs to. A soft-deleted
+  // attachment is refused too: removing it from a conversation means the bytes
+  // stop being reachable, not that the row stops being audited.
+  if (key.startsWith('ai-attachments/')) {
+    const [row] = await db.select({ userId: aiAttachments.userId, deletedAt: aiAttachments.deletedAt })
+      .from(aiAttachments)
+      .where(eq(aiAttachments.fileKey, key));
+    return !!row && row.userId === user.id && row.deletedAt === null;
   }
 
   // Category D: compliance/registration documents - owner only (+ admin above).

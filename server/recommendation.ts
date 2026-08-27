@@ -193,7 +193,16 @@ export async function recommendProviders(criteria: RecommendationCriteria): Prom
  * explicit statement of what BuildHub does NOT know - so the model has the
  * absent signals named rather than left to imagination.
  */
-export function formatCandidatesForModel(outcome: RecommendationOutcome, lang: 'en' | 'ar'): string {
+export function formatCandidatesForModel(
+  outcome: RecommendationOutcome,
+  lang: 'en' | 'ar',
+  /**
+   * Terms the person asked for that BuildHub could not map. Stated to the model
+   * so a role-only match is never presented as an exact one - see
+   * AiIntent.unmappedQualifiers for the staging answer that prompted this.
+   */
+  unmappedQualifiers: string[] = [],
+): string {
   if (outcome.matchQuality === 'none') {
     return `=== BUILDHUB PROVIDER SEARCH RESULT ===
 NO SUITABLE BUILDHUB-LISTED PROVIDER was found for this request, after also
@@ -208,9 +217,21 @@ imply BuildHub has verified or endorsed it.
 === END ===`;
   }
 
+  // An "exact" match on the criteria BuildHub UNDERSTOOD is not an exact match
+  // on what was ASKED, if part of the request never became a criterion.
+  const unmapped = unmappedQualifiers.length > 0
+    ? `\n\nWHAT BUILDHUB COULD NOT MATCH ON: ${unmappedQualifiers.join('; ')}. BuildHub
+does not hold that as a searchable attribute, so these providers were NOT
+matched on it. Say that plainly - name what the match WAS based on, and do not
+imply any of them specialises in it. Suggest an RFQ, where the requirement can
+be described in full.`
+    : '';
+
   const header = outcome.matchQuality === 'broadened'
     ? `MATCH QUALITY: BROADENED. ${outcome.broadenedBy.join('; ')}. Say so - do not present these as exact matches.`
-    : 'MATCH QUALITY: EXACT - these match the request as asked.';
+    : unmappedQualifiers.length > 0
+      ? 'MATCH QUALITY: PARTIAL - these match the criteria BuildHub could search on, NOT the full request.'
+      : 'MATCH QUALITY: EXACT - these match the request as asked.';
 
   const rows = outcome.candidates.map((candidate, index) => {
     const v = candidate.vendor;
@@ -229,7 +250,7 @@ imply BuildHub has verified or endorsed it.
   }).join('\n');
 
   return `=== BUILDHUB PROVIDER SEARCH RESULT ===
-${header}
+${header}${unmapped}
 
 These are BuildHub-listed, approved providers, ranked by BuildHub's own scoring.
 Present them in THIS ORDER. You did not choose this order and you must not

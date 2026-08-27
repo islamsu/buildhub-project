@@ -7,15 +7,25 @@ vi.mock('./db', () => ({ getDb: vi.fn() }));
 
 import { retrieve, scoreDocument, formatRetrievalForModel, coveredDomains, corpusSize, staleDocuments } from './_core/knowledgeRetrieval';
 import { CONSTRUCTION_CORE } from './knowledge/constructionCore';
+import { CONSTRUCTION_DEPTH } from './knowledge/constructionDepth';
 import { isStale, AUTHORITY_TIERS, KNOWLEDGE_DOMAINS } from '@shared/knowledgeTaxonomy';
 
 const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+
+/**
+ * EVERY tranche, not just the first. These checks used to iterate
+ * CONSTRUCTION_CORE, so a second corpus file would have been held to no
+ * standard at all - depth, bilingual parity, metadata and id uniqueness would
+ * all have gone unchecked for exactly the documents most likely to be added in
+ * a hurry.
+ */
+const CORPUS = [...CONSTRUCTION_CORE, ...CONSTRUCTION_DEPTH];
 
 describe('the corpus is real, not padded', () => {
   it('every document has substantive content in BOTH languages', () => {
     // The failure this guards: an English body with a stub Arabic one, or a
     // paragraph-per-domain corpus that looks broad and says nothing.
-    for (const doc of CONSTRUCTION_CORE) {
+    for (const doc of CORPUS) {
       expect(doc.en.trim().length).toBeGreaterThan(800);
       expect(doc.ar.trim().length).toBeGreaterThan(600);
       expect(/[؀-ۿ]/.test(doc.ar)).toBe(true);
@@ -23,7 +33,7 @@ describe('the corpus is real, not padded', () => {
   });
 
   it('every document carries the metadata the retrieval layer actually reads', () => {
-    for (const doc of CONSTRUCTION_CORE) {
+    for (const doc of CORPUS) {
       expect(doc.knowledgeId).toMatch(/^[a-z0-9-]+$/);
       expect(KNOWLEDGE_DOMAINS[doc.domain]).toBeDefined();
       expect(AUTHORITY_TIERS[doc.authorityLevel]).toBeDefined();
@@ -34,12 +44,12 @@ describe('the corpus is real, not padded', () => {
   });
 
   it('knowledge ids are unique', () => {
-    const ids = CONSTRUCTION_CORE.map(d => d.knowledgeId);
+    const ids = CORPUS.map(d => d.knowledgeId);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('every document carries Arabic keywords, so the Arabic site can retrieve', () => {
-    for (const doc of CONSTRUCTION_CORE) {
+    for (const doc of CORPUS) {
       expect(doc.keywords.some(k => /[؀-ۿ]/.test(k))).toBe(true);
     }
   });
@@ -135,7 +145,15 @@ describe('coverage is reported honestly', () => {
     const covered = coveredDomains();
     expect(covered.length).toBeGreaterThan(0);
     expect(covered.length).toBeLessThan(Object.keys(KNOWLEDGE_DOMAINS).length);
-    expect(corpusSize()).toBe(CONSTRUCTION_CORE.length);
+    // The corpus is every tranche, not just the first one. Pinning this to
+    // CONSTRUCTION_CORE meant that adding documents FAILED the coverage test,
+    // which is precisely backwards.
+    expect(corpusSize()).toBe(CONSTRUCTION_CORE.length + CONSTRUCTION_DEPTH.length);
+    // The honesty property: a domain appears only if a document claims it.
+    const claimed = [...CONSTRUCTION_CORE, ...CONSTRUCTION_DEPTH]
+      .map(document => document.domain)
+      .filter((id, index, all) => all.indexOf(id) === index);
+    expect(covered).toHaveLength(claimed.length);
   });
 });
 
@@ -143,7 +161,7 @@ describe('retrieval is wired into the AI path', () => {
   it('the router retrieves and injects reference knowledge', () => {
     const chat = ROUTERS.slice(ROUTERS.indexOf('const aiRouter = router({'));
     expect(chat).toContain('formatRetrievalForModel(retrieve(lastQuestion), lang)');
-    expect(chat).toContain('systemPrompt + referenceBlock + candidateBlock');
+    expect(chat).toContain('systemPrompt + attachmentBlock + regulatoryBlock + referenceBlock + candidateBlock');
   });
 
   it('the corpus module cannot reach the database', () => {

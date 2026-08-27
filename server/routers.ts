@@ -16,7 +16,11 @@ import { buildSystemPrompt, type KnowledgeLanguage } from './_core/buildhubKnowl
 import { detectIntent } from './_core/aiIntent';
 import { recommendProviders, formatCandidatesForModel } from './recommendation';
 import { retrieve, formatRetrievalForModel } from './_core/knowledgeRetrieval';
+import { findRegulatory, formatRegulatoryForModel } from './knowledge/jurisdictions';
 import { storagePut } from './storage';
+import { getObjectStorage } from './_core/objectStorage';
+import { validateAiAttachment, attachmentInstruction } from './_core/aiAttachments';
+import { MAX_AI_ATTACHMENTS_PER_MESSAGE } from '@shared/aiAttachments';
 import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
 import { acceptQuotationSecure, rejectQuotationSecure } from './quotationWorkflow';
@@ -34,6 +38,7 @@ import {
   rfqs, quotations, messages, notifications, reviews,
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
+  aiAttachments,
 } from '../drizzle/schema';
 import { and, desc, eq, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -2996,6 +3001,12 @@ const aiRouter = router({
       // not decide what the assistant knows - the BuildHub briefing is the same
       // in both languages, because a rule is not a translation.
       lang: z.enum(['en', 'ar']).optional(),
+      /**
+       * Files this person already uploaded via ai.uploadAttachment. IDs only -
+       * never a URL and never bytes. Ownership is re-checked below against the
+       * database, so possession of an id is not possession of the file.
+       */
+      attachmentIds: z.array(z.number().int().positive()).max(MAX_AI_ATTACHMENTS_PER_MESSAGE).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       // Deliberate, client-safe refusal for a KNOWN condition. Without it the
@@ -3043,6 +3054,65 @@ const aiRouter = router({
       const retrieved = formatRetrievalForModel(retrieve(lastQuestion), lang);
       const referenceBlock = retrieved ? `\n\n${retrieved}` : '';
 
+      // REGULATORY. Separate from the corpus because it is a different KIND of
+      // answer: pointers to instruments and their editions, with an explicit
+      // instruction not to reconstruct clause text. A code question answered
+      // from model memory is the most dangerous output this assistant can
+      // produce, because it is precisely the kind a person acts on unchecked.
+      const regulatory = formatRegulatoryForModel(findRegulatory(lastQuestion), lang);
+      const regulatoryBlock = regulatory ? `\n\n${regulatory}` : '';
+
+      // ATTACHMENTS. Authorization happens HERE, before a byte reaches the
+      // model: each id is re-read from the database and must belong to the
+      // caller and still be live. An id from another user's conversation
+      // resolves to nothing and the request is refused - the id is not a
+      // capability.
+      const requestedIds = input.attachmentIds ?? [];
+      let attachments: { name: string; contentType: string; bytes: Buffer }[] = [];
+      let attachmentBlock = '';
+      if (requestedIds.length > 0) {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        const rows = await db.select({
+          id: aiAttachments.id,
+          name: aiAttachments.name,
+          contentType: aiAttachments.contentType,
+          fileKey: aiAttachments.fileKey,
+        })
+          .from(aiAttachments)
+          .where(and(
+            inArray(aiAttachments.id, requestedIds),
+            eq(aiAttachments.userId, ctx.user.id),
+            isNull(aiAttachments.deletedAt),
+          ));
+
+        if (rows.length !== requestedIds.length) {
+          // Deliberately the same refusal whether the id never existed, belongs
+          // to someone else, or was deleted. Distinguishing them would turn
+          // this endpoint into an oracle for which attachment ids exist.
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'That attachment is no longer available.' });
+        }
+
+        try {
+          attachments = await Promise.all(rows.map(async row => ({
+            name: row.name,
+            contentType: row.contentType,
+            bytes: await getObjectStorage().get(row.fileKey),
+          })));
+        } catch {
+          // The bytes are gone or storage is down. Say so rather than silently
+          // answering the question WITHOUT the file the person asked about -
+          // an answer that ignores the attachment is worse than an error,
+          // because it looks like it worked.
+          throw new TRPCError({
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'That attachment could not be read. Please try uploading it again.',
+          });
+        }
+
+        attachmentBlock = `\n\n${attachmentInstruction(rows.map(row => row.name), lang)}`;
+      }
+
       let candidateBlock = '';
       if (intent.wantsProviderRecommendation) {
         const outcome = await recommendProviders({
@@ -3050,13 +3120,17 @@ const aiRouter = router({
           category: intent.category,
           location: intent.location,
         });
-        candidateBlock = `\n\n${formatCandidatesForModel(outcome, lang)}`;
+        candidateBlock = `\n\n${formatCandidatesForModel(outcome, lang, intent.unmappedQualifiers)}`;
       }
 
       try {
         const { text } = await generateAIResponse({
-          messages: [{ role: 'system', content: systemPrompt + referenceBlock + candidateBlock }, ...conversation],
+          messages: [
+            { role: 'system', content: systemPrompt + attachmentBlock + regulatoryBlock + referenceBlock + candidateBlock },
+            ...conversation,
+          ],
           webSearch: intent.wantsCurrentInformation,
+          attachments,
         });
         // The application's contract, not the provider's. No SDK object, no
         // usage figures, no model name, no request id - only what the chat
@@ -3068,6 +3142,86 @@ const aiRouter = router({
         }
         throw error;
       }
+    }),
+
+  /**
+   * Accept one file for use in an AI conversation.
+   *
+   * Order is deliberate: rate limit, size, then VALIDATE THE BYTES, and only
+   * then store. Nothing unvalidated reaches the bucket, so a refused file never
+   * exists anywhere in BuildHub.
+   *
+   * Returns an id and the display metadata the composer needs - deliberately
+   * NOT a URL. The RFQ uploader returns `/manus-storage/{key}` because RFQ
+   * attachments are rendered back to the browser; an AI attachment is read by
+   * the SERVER on the next chat request, so the browser never needs a path to
+   * it and is not given one.
+   */
+  uploadAttachment: protectedProcedure
+    .input(z.object({
+      fileName: z.string().min(1).max(255),
+      contentType: z.string().min(1).max(100),
+      base64: z.string().min(1).max(11_000_000, 'File too large (max ~8MB)'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      enforceUploadRateLimit(ctx.user.id);
+
+      const bytes = Buffer.from(input.base64, 'base64');
+      const validated = validateAiAttachment({
+        name: input.fileName,
+        declaredType: input.contentType,
+        bytes,
+      });
+      if ('code' in validated) {
+        // The validator's own message: specific, already user-safe, and it
+        // names what to do instead. There is no internal detail in it.
+        throw new TRPCError({ code: 'BAD_REQUEST', message: validated.message });
+      }
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const { key } = await storagePut(
+        `ai-attachments/user-${ctx.user.id}/${validated.name}`,
+        validated.bytes,
+        validated.contentType,
+      );
+      const inserted = await db.insert(aiAttachments).values({
+        userId: ctx.user.id,
+        name: validated.name,
+        contentType: validated.contentType,
+        size: validated.bytes.length,
+        fileKey: key,
+      });
+
+      return {
+        id: Number((inserted as unknown as { insertId: number | string }).insertId),
+        name: validated.name,
+        contentType: validated.contentType,
+        size: validated.bytes.length,
+      };
+    }),
+
+  /**
+   * Remove an attachment the person no longer wants to send.
+   *
+   * Soft delete: the row stays so the removal is auditable and so a replayed id
+   * cannot resurrect the file. Scoped by userId in the WHERE clause, so this
+   * cannot delete anyone else's row even if handed their id - and it reports
+   * success either way, for the same reason the chat path does.
+   */
+  deleteAttachment: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      await db.update(aiAttachments)
+        .set({ deletedAt: new Date() })
+        .where(and(
+          eq(aiAttachments.id, input.id),
+          eq(aiAttachments.userId, ctx.user.id),
+          isNull(aiAttachments.deletedAt),
+        ));
+      return { ok: true };
     }),
 });
 

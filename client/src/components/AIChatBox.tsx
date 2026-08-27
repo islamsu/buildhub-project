@@ -64,6 +64,13 @@ export type AIChatBoxProps = {
    * Click to send directly
    */
   suggestedPrompts?: string[];
+
+  /**
+   * Rendered directly above the composer. The chat box stays generic - it does
+   * not know what an attachment is, who may upload one, or how; the AI page
+   * owns that and passes the control in.
+   */
+  composerSlot?: React.ReactNode;
 };
 
 /**
@@ -127,6 +134,7 @@ export function AIChatBox({
   height = "600px",
   emptyStateMessage = "Start a conversation with AI",
   suggestedPrompts,
+  composerSlot,
 }: AIChatBoxProps) {
   const [input, setInput] = useState("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -314,8 +322,10 @@ export function AIChatBox({
       <form
         ref={inputAreaRef}
         onSubmit={handleSubmit}
-        className="flex gap-2 p-4 border-t bg-background/50 items-end"
+        className="flex flex-col gap-2 p-4 border-t bg-background/50"
       >
+        {composerSlot}
+        <div className="flex gap-2 items-end">
         <Textarea
           ref={textareaRef}
           value={input}
@@ -338,6 +348,7 @@ export function AIChatBox({
             <Send className="size-4" />
           )}
         </Button>
+        </div>
       </form>
     </div>
   );

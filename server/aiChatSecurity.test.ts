@@ -136,11 +136,15 @@ describe('ai.chat (live production route)', () => {
     const caller = appRouter.createCaller(makeCtx(1));
     await caller.ai.chat({ messages: [{ role: 'user', content: 'Hi' }] });
     const call = (generateAIResponse as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    // messages and webSearch, and nothing else. webSearch is decided by the
-    // server's own intent router - a caller cannot set it, so it cannot be used
-    // to make every question run a paid search.
-    expect(Object.keys(call).sort()).toEqual(['messages', 'webSearch']);
+    // messages, webSearch and attachments, and nothing else. All three are
+    // decided by the SERVER: webSearch by the intent router, and attachments by
+    // re-reading the caller's own rows from the database. A caller cannot set
+    // either, so neither can be used to widen what the request costs or reads.
+    expect(Object.keys(call).sort()).toEqual(['attachments', 'messages', 'webSearch']);
     expect(call.webSearch).toBe(false);
+    // No attachment was requested, so none was sent - the field exists but is
+    // empty rather than absent, and an empty list is not a file.
+    expect(call.attachments).toEqual([]);
     expect(call.messages[0].role).toBe('system');
     expect(call.messages.slice(1)).toEqual([{ role: 'user', content: 'Hi' }]);
   });

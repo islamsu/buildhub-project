@@ -1,0 +1,87 @@
+================================================================================
+BUILDHUB — RESPONSE: MASTER AI KNOWLEDGE PLATFORM
+Date: 2026-08-26
+Deliverable: BUILDHUB_AI_KNOWLEDGE_PLATFORM_HANDOFF.txt (attached separately)
+================================================================================
+
+Done. Handoff attached as a text file.
+
+RESULT: 380/380 CHECKS PASSED, 4 SKIPPED, against staging at 527fade —
+dispatched with expect_commit set, so a stale build would have failed the run
+rather than been quietly reported.
+
+
+--------------------------------------------------------------------------------
+RUN #37's SINGLE FAILURE WAS MINE, NOT THE PRODUCT'S
+--------------------------------------------------------------------------------
+The refusal was correct and complete; the apostrophe was U+2019 and my check
+spelled "can't" with an ASCII one. I verified that against the exact string
+staging returned, and confirmed the repaired check still refuses to pass an
+answer that really does leak an address. I've flagged it as my error in the
+handoff rather than letting it read as an AI failure.
+
+
+--------------------------------------------------------------------------------
+THE MORE VALUABLE FINDING CAME FROM A SCENARIO THAT PASSED
+--------------------------------------------------------------------------------
+29.8 had a green tick while answering "I can't access BuildHub's live vendor
+directory" — so I probed the router directly and found it never fired for that
+phrasing. The model was behaving correctly: the system prompt tells it that it
+cannot look up vendors, and a candidate block supersedes that only when the
+router fires. The router was the sole fault. Fixed, mutation-tested, and 29.8
+now returns BuildHub's own directory result.
+
+
+--------------------------------------------------------------------------------
+AND THEN THAT FIX SURFACED SOMETHING THE NEW GREEN TICK ALSO HID
+--------------------------------------------------------------------------------
+Section 19.2 — which I'd point ChatGPT at first.
+
+"Swimming pool specialist in Aswan" parses to role=contractor alone, because
+neither qualifier is in the vocabulary. The engine searches on role, succeeds,
+and reports matchQuality 'exact' — so the broadening ladder never engages and a
+generic contractor gets presented as a match for a specific request. Nothing
+fabricated, no ranking wrong, but the framing overstates it.
+
+I wrote the remedy down and deliberately did NOT implement it: it changes
+recommendation semantics after the verified run, and that's your call, not
+something to slip in at the end.
+
+
+--------------------------------------------------------------------------------
+TWO OTHER THINGS I WANT TO BE STRAIGHT ABOUT
+--------------------------------------------------------------------------------
+Rather than let the totals imply otherwise:
+
+  - The corpus is 4 DOCUMENTS ACROSS 4 OF 70 DOMAINS, all tier 6. Tiers 2-5 are
+    empty. The platform's shape is complete; its content is a beginning.
+
+  - Staging's directory holds QA FIXTURES, not real vendors — 29.8 named "QA
+    contractor". The populated path has only ever been exercised against
+    synthetic data. Seeding business data wasn't authorised, so I didn't.
+
+
+--------------------------------------------------------------------------------
+RECOMMENDATION
+--------------------------------------------------------------------------------
+AI ON STAGING ...... GO
+OVERALL STAGING .... GO
+PRODUCTION ......... NO-GO
+
+The NO-GO is on infrastructure (SMTP, S3, production DB, payments, no real
+vendor data), not on the AI work.
+
+
+--------------------------------------------------------------------------------
+GATE
+--------------------------------------------------------------------------------
+tsc 0 errors
+1457/1457 tests across 72 files
+build clean
+PR #20 CI 3/3
+
+No production change of any kind. Stopping here as instructed.
+
+================================================================================
+END OF RESPONSE
+================================================================================

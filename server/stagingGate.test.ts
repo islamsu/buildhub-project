@@ -465,13 +465,19 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
   });
 
   it('the paid knowledge suite is OPT-IN and says what it costs', () => {
-    // Ten extra paid calls must never ride along on a routine gate run. It is
+    // Extra paid calls must never ride along on a routine gate run. It is
     // gated on an explicit input, and the skip says so instead of going quiet.
+    // The COUNT is asserted against the skip text so that adding a scenario
+    // without updating what the operator is told fails here.
     expect(GATE).toContain('const AI_KNOWLEDGE_SUITE');
     expect(GATE).toContain("process.env.STAGING_AI_KNOWLEDGE_SUITE ?? ''");
     expect(GATE).toContain('if (AI_KNOWLEDGE_SUITE) {');
     expect(GATE).toContain("skip('29. BuildHub knowledge priority (live)'");
-    expect(GATE).toContain('ten extra paid provider requests');
+    expect(GATE).toContain('eleven extra paid provider requests');
+    // And the number matches how many paid asks the suite actually makes.
+    const suite = GATE.slice(GATE.indexOf('29. BuildHub knowledge priority'));
+    const paidAsks = (suite.match(/await ask\(/g) ?? []).length;
+    expect(paidAsks).toBe(11);
     expect(WORKFLOW).toContain('ai_knowledge_suite:');
     expect(WORKFLOW).toContain('STAGING_AI_KNOWLEDGE_SUITE:');
   });
@@ -509,8 +515,11 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
     expect(EXECUTABLE).not.toMatch(/Reply with exactly/i);
   });
 
-  it('both browser contexts are authenticated - ai.chat is a protectedProcedure', () => {
-    expect(EXECUTABLE.match(/addCookies/g) ?? []).toHaveLength(2);
+  it('every browser context that needs a session gets one - ai.chat is a protectedProcedure', () => {
+    // Three now: the English AI surface, the Arabic one, and the attachment
+    // composer in section 30. Pinned to a count so a new context that forgets
+    // its cookie fails here rather than producing a mysterious 401 on staging.
+    expect(EXECUTABLE.match(/addCookies/g) ?? []).toHaveLength(3);
   });
 
   it('the batched tRPC envelope is handled - the browser does not send bare objects', () => {
@@ -537,5 +546,78 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
     for (const tool of ['Cost Estimator', 'Quantity Surveyor', 'Material Advisor', 'Project Manager', 'Risk Detector', 'Procurement', 'Maintenance', 'General Consultant']) {
       expect(AI_BLOCK).toContain(tool);
     }
+  });
+});
+
+/** The gate with comment lines stripped, so an assertion cannot be satisfied by prose. */
+const CODE = GATE.split('\n').filter(line => !line.trim().startsWith('//')).join('\n');
+
+describe('§7 the attachment section proves the feature without faking storage', () => {
+  const SECTION = CODE.slice(CODE.indexOf("section('30. AI Assistant attachments')"));
+
+  it('checks authorization before anything else', () => {
+    expect(SECTION).toContain('anonymous attachment upload is refused');
+    expect(SECTION).toContain('anonymous attachment deletion is refused');
+  });
+
+  it('exercises the validation gate against the real deployment', () => {
+    // These run BEFORE storage, so they are genuine live results even on a
+    // deployment with no bucket - which is why the section is worth having now
+    // rather than after S3 is configured.
+    for (const refusal of [
+      'an SVG relabelled as a PNG is refused',
+      'an HTML document relabelled as a PNG is refused',
+      'a format BuildHub does not advertise is refused',
+      'a name that disagrees with its own declared type is refused',
+      'an empty file is refused',
+    ]) {
+      expect(SECTION).toContain(refusal);
+    }
+  });
+
+  it('a storage-blocked upload becomes a SKIP that names what it needs, never a pass', () => {
+    expect(SECTION).toContain("skip('30. storing an AI attachment end to end'");
+    expect(SECTION).toContain('S3_* not configured on this deployment');
+    // And the cross-user check is skipped too rather than silently dropped -
+    // it cannot run without a stored file, and pretending otherwise would be
+    // the worst kind of green.
+    expect(SECTION).toContain("skip('30. cross-user attachment access, live'");
+  });
+
+  it('when storage IS configured it proves cross-user refusal and removal', () => {
+    expect(SECTION).toContain('another user cannot reference this attachment id');
+    expect(SECTION).toContain('a removed attachment can no longer be sent to the model');
+    expect(SECTION).toContain('the upload response carries no URL and no storage key');
+  });
+
+  it('the picker offers exactly what the server accepts, and is checked in Arabic and on mobile', () => {
+    expect(SECTION).toContain('the picker offers exactly what the server accepts');
+    expect(SECTION).toContain('the picker does NOT offer a format the server would refuse');
+    expect(SECTION).toContain('still usable at 375px');
+    expect(SECTION).toContain('labelled in ARABIC, not English');
+    // dir=rtl, not "Arabic glyphs are present somewhere" - the same trap that
+    // made an earlier Arabic check pass on the navbar's language toggle.
+    expect(SECTION).toContain("check(dir === 'rtl'");
+  });
+});
+
+describe('§8 the regulatory scenario refuses to invent a code requirement', () => {
+  const SUITE = CODE.slice(CODE.indexOf('29.11 regulatory'));
+
+  it('asserts the edition is not presented as simply current', () => {
+    expect(SUITE).toContain('it does not present the 2018 edition as simply current');
+  });
+
+  it('asserts NO numeric requirement is stated', () => {
+    // The assistant was never given a cover depth. If one appears in the
+    // answer it was invented, and that is the single most dangerous output
+    // this product can produce.
+    expect(SUITE).toContain('it does NOT invent a numeric code requirement');
+    // The actual guard in the gate: a two-or-three digit millimetre figure.
+    expect(SUITE).toContain('s?mm');
+  });
+
+  it('asserts the answer points at the authority', () => {
+    expect(SUITE).toContain('it points at the authority rather than answering the clause from memory');
   });
 });

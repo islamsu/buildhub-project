@@ -1,5 +1,6 @@
 import OpenAI, { APIError } from 'openai';
 import { ENV } from './env';
+import { toModelContent } from './aiAttachments';
 
 /**
  * BuildHub's AI provider boundary.
@@ -21,6 +22,13 @@ import { ENV } from './env';
  */
 
 export type AiMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+
+/**
+ * A user file to be read by the model on THIS request. Already validated and
+ * already authorised by the time it reaches this module - see
+ * server/_core/aiAttachments.ts and the ai.chat procedure.
+ */
+export type AiAttachment = { name: string; contentType: string; bytes: Buffer };
 
 /** The application's contract. Deliberately narrow: no provider object escapes. */
 export type AiResult = { text: string };
@@ -106,17 +114,33 @@ export const resetAiClient = (): void => { client = undefined; };
  * Detector differ only in the opening user message - so nothing here is
  * mode-aware and nothing needs to be.
  */
-const splitConversation = (messages: AiMessage[]) => {
+const splitConversation = (messages: AiMessage[], attachments: AiAttachment[] = []) => {
   const instructions = messages
     .filter(m => m.role === 'system')
     .map(m => m.content)
     .join('\n\n');
-  const input = messages
-    .filter(m => m.role !== 'system')
-    .map(m => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }));
+
+  const turns = messages.filter(m => m.role !== 'system');
+
+  // Attachments belong to the turn the person is asking RIGHT NOW, so they are
+  // attached to the last user message rather than sent as a turn of their own.
+  // A bare file with no question reads to the model as context with no request;
+  // the file and the sentence about it have to arrive together.
+  const lastUserIndex = turns.map(m => m.role).lastIndexOf('user');
+
+  const input = turns.map((message, index) => {
+    if (attachments.length === 0 || index !== lastUserIndex) {
+      return { role: message.role as 'user' | 'assistant', content: message.content };
+    }
+    return {
+      role: 'user' as const,
+      content: [
+        { type: 'input_text' as const, text: message.content },
+        ...attachments.map(toModelContent),
+      ],
+    };
+  });
+
   return { instructions, input };
 };
 
@@ -168,12 +192,17 @@ export async function generateAIResponse(params: {
    * one.
    */
   webSearch?: boolean;
+  /**
+   * Files the person attached to this message. Validated and ownership-checked
+   * BEFORE they get here; this module does not decide who may read what.
+   */
+  attachments?: AiAttachment[];
 }): Promise<AiResult> {
   if (!isAiConfigured()) {
     throw new AiError('config-missing', undefined, 'OPENAI_API_KEY is not configured');
   }
 
-  const { instructions, input } = splitConversation(params.messages);
+  const { instructions, input } = splitConversation(params.messages, params.attachments ?? []);
 
   let response: Awaited<ReturnType<OpenAI['responses']['create']>>;
   try {
