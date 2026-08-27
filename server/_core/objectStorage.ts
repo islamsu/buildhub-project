@@ -28,6 +28,21 @@ export interface ObjectStorage {
   put(key: string, data: Buffer | Uint8Array | string, contentType: string): Promise<void>;
   /** A short-lived URL the browser can be redirected to. Never a public URL. */
   signedGetUrl(key: string): Promise<string>;
+  /**
+   * The stored bytes, read back by the SERVER.
+   *
+   * Added for AI attachments, which the server has to forward to the model
+   * itself. The alternative was to hand OpenAI a signed URL and let it fetch
+   * the object directly, which would mean a third party holding a credential
+   * to BuildHub's private storage - short-lived, but still a URL that grants
+   * access to a user's file existing outside BuildHub's control. Reading the
+   * bytes here keeps the whole transfer inside the request BuildHub already
+   * authorised.
+   *
+   * The browser is NOT a caller: it goes through /manus-storage, which checks
+   * ownership and then redirects to a signed URL.
+   */
+  get(key: string): Promise<Buffer>;
 }
 
 export class ObjectStorageNotConfiguredError extends Error {
@@ -88,6 +103,14 @@ export class ForgeObjectStorage implements ObjectStorage {
   signedGetUrl(key: string): Promise<string> {
     return this.presign("get", key);
   }
+
+  async get(key: string): Promise<Buffer> {
+    const response = await fetch(await this.presign("get", key));
+    if (!response.ok) {
+      throw new Error(`Storage read failed (${response.status})`);
+    }
+    return Buffer.from(await response.arrayBuffer());
+  }
 }
 
 /**
@@ -133,6 +156,13 @@ export class S3ObjectStorage implements ObjectStorage {
       expiresIn: SIGNED_URL_TTL_SECONDS,
     });
   }
+
+  async get(key: string): Promise<Buffer> {
+    const result = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    const body = result.Body;
+    if (!body) throw new Error(`Storage read returned no body for ${key}`);
+    return Buffer.from(await body.transformToByteArray());
+  }
 }
 
 /** The default when nothing is configured: refuses loudly on first use. */
@@ -142,6 +172,9 @@ export class UnconfiguredObjectStorage implements ObjectStorage {
     throw new ObjectStorageNotConfiguredError("store a file");
   }
   async signedGetUrl(): Promise<string> {
+    throw new ObjectStorageNotConfiguredError("read a file");
+  }
+  async get(): Promise<Buffer> {
     throw new ObjectStorageNotConfiguredError("read a file");
   }
 }

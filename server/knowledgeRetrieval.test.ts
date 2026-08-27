@@ -143,7 +143,7 @@ describe('retrieval is wired into the AI path', () => {
   it('the router retrieves and injects reference knowledge', () => {
     const chat = ROUTERS.slice(ROUTERS.indexOf('const aiRouter = router({'));
     expect(chat).toContain('formatRetrievalForModel(retrieve(lastQuestion), lang)');
-    expect(chat).toContain('systemPrompt + referenceBlock + candidateBlock');
+    expect(chat).toContain('systemPrompt + attachmentBlock + referenceBlock + candidateBlock');
   });
 
   it('the corpus module cannot reach the database', () => {

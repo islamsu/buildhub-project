@@ -235,6 +235,29 @@ export const tasks = mysqlTable('tasks', {
 }));
 
 // ── Documents ──────────────────────────────────────────────────────────────
+/**
+ * A file a user attached to an AI conversation.
+ *
+ * This row - not the storage key - is the authorization record. The key is
+ * unguessable, but /manus-storage and ai.chat both resolve ownership by
+ * SELECTing this row and comparing userId, so learning a key grants nothing.
+ * `deletedAt` is set when the user removes the attachment; the row is kept so
+ * that a delete is auditable and so a stale id cannot be replayed.
+ */
+export const aiAttachments = mysqlTable('aiAttachments', {
+  id:          int('id').autoincrement().primaryKey(),
+  userId:      int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  name:        varchar('name', { length: 255 }).notNull(),
+  contentType: varchar('contentType', { length: 100 }).notNull(),
+  size:        int('size').notNull(),
+  fileKey:     varchar('fileKey', { length: 512 }).notNull(),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+  deletedAt:   timestamp('deletedAt'),
+}, table => ({
+  userIdIdx:  index('aiAttachments_userId_idx').on(table.userId),
+  fileKeyIdx: index('aiAttachments_fileKey_idx').on(table.fileKey),
+}));
+
 export const documents = mysqlTable('documents', {
   id:        int('id').autoincrement().primaryKey(),
   projectId: int('projectId').notNull().references(() => projects.id, { onDelete: 'restrict', onUpdate: 'restrict' }),

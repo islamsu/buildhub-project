@@ -1,6 +1,7 @@
 import { useLanguage } from '@/contexts/LanguageContext';
 import Navbar from '@/components/Navbar';
 import { AIChatBox, type Message } from '@/components/AIChatBox';
+import { AIAttachmentControl, type UploadedAttachment } from '@/components/AIAttachmentControl';
 import { Card, CardContent } from '@/components/ui/card';
 import { Bot, Calculator, Layers, Lightbulb, TrendingUp, AlertTriangle, ShoppingCart, Wrench } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
@@ -39,6 +40,11 @@ export default function AIAssistantPage() {
     { role: 'assistant', content: lang === 'ar' ? 'مرحباً! أنا BuildHub AI. يمكنني مساعدتك في تقدير التكاليف واختيار المواد وتخطيط المشاريع وتقييم المخاطر والمزيد. بماذا تريد أن تعرف؟' : "Hello! I'm BuildHub AI. I can help you with cost estimation, material selection, project planning, risk assessment, and much more. What would you like to know?" },
   ]);
 
+  // The attachment belongs to the NEXT message, so it lives here rather than
+  // inside the composer: sending has to clear it, and a mode card that fires a
+  // canned prompt must carry it too.
+  const [attachment, setAttachment] = useState<UploadedAttachment | null>(null);
+
   const chatMutation = trpc.ai.chat.useMutation({
     onSuccess: (response: { content: string }) => {
       setMessages(prev => [...prev, { role: 'assistant', content: response.content }]);
@@ -49,7 +55,16 @@ export default function AIAssistantPage() {
   const handleSend = (content: string) => {
     const newMessages: Message[] = [...messages, { role: 'user', content }];
     setMessages(newMessages);
-    chatMutation.mutate({ messages: newMessages, lang });
+    chatMutation.mutate({
+      messages: newMessages,
+      lang,
+      ...(attachment ? { attachmentIds: [attachment.id] } : {}),
+    });
+    // Cleared once sent. The file stays with the turn it was asked about; a
+    // sticky attachment would silently re-attach itself to every later
+    // question, and the model would keep answering about a file the person
+    // stopped talking about.
+    setAttachment(null);
   };
 
   const handleModeClick = (prompt: string) => {
@@ -105,6 +120,14 @@ export default function AIAssistantPage() {
                 t('ai.suggestion.2'),
                 t('ai.suggestion.3'),
               ]}
+              composerSlot={(
+                <AIAttachmentControl
+                  attachment={attachment}
+                  onAttached={setAttachment}
+                  onCleared={() => setAttachment(null)}
+                  disabled={aiUnavailable}
+                />
+              )}
             />
           </div>
         </div>

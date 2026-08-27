@@ -155,10 +155,15 @@ describe('§2 storage.ts keeps its contract', () => {
     expect(puts[0].key.startsWith('avatars/')).toBe(true);
   });
 
-  it('the five upload call sites in routers.ts are untouched', () => {
+  it('every upload call site in routers.ts still goes through the adapter', () => {
     const calls = ROUTERS_SOURCE.match(/storagePut\(/g) ?? [];
-    expect(calls.length).toBe(5);
-    for (const prefix of ['registration/', 'project-documents/', 'message-attachments/', 'avatars/']) {
+    expect(calls.length).toBe(6);
+    for (const prefix of [
+      'registration/', 'project-documents/', 'message-attachments/', 'avatars/',
+      // AI attachments get their own prefix so the proxy can classify them,
+      // and so they are never mistaken for a category with a wider audience.
+      'ai-attachments/',
+    ]) {
       expect(ROUTERS_SOURCE).toContain(prefix);
     }
   });
