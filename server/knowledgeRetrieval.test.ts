@@ -164,7 +164,28 @@ describe('retrieval is wired into the AI path', () => {
     // Retrieval is SEMANTIC now, and awaited: it may embed the question.
     expect(chat).toContain('await retrieveSemantic(lastQuestion, { jurisdiction: intent.jurisdiction })');
     expect(chat).toContain('formatRetrievalForModel(');
-    expect(chat).toContain('systemPrompt + attachmentBlock + regulatoryBlock + referenceBlock + candidateBlock');
+    // ORDER, not one literal string.
+    //
+    // The literal broke the moment projectBlock was added between the
+    // attachment and the regulatory records - a test that fails because the
+    // prompt GREW is testing the wrong thing. What must hold is the precedence
+    // the brief states: the attachment first, then BuildHub's own context, then
+    // the knowledge corpus, then the live candidates. Asserting positions keeps
+    // that and survives the next block.
+    // Bounded FORWARD from the system line: '...conversation' also appears
+    // earlier in the file, so an unanchored indexOf for the end produced an
+    // empty slice and the loop below passed vacuously on nothing.
+    const systemAt = chat.indexOf("{ role: 'system', content:");
+    expect(systemAt, 'the system message was not found').toBeGreaterThan(-1);
+    const composition = chat.slice(systemAt, chat.indexOf('\n', systemAt));
+    for (const block of ['systemPrompt', 'attachmentBlock', 'projectBlock', 'regulatoryBlock', 'referenceBlock', 'candidateBlock']) {
+      expect(composition, `${block} is not in the system prompt`).toContain(block);
+    }
+    const order = ['systemPrompt', 'attachmentBlock', 'projectBlock', 'regulatoryBlock', 'referenceBlock', 'candidateBlock']
+      .map(block => composition.indexOf(block));
+    expect(order, 'the precedence order changed').toEqual([...order].sort((a, b) => a - b));
+    expect(composition.indexOf('attachmentBlock'), 'the attachment must come before the knowledge corpus')
+      .toBeLessThan(composition.indexOf('referenceBlock'));
   });
 
   it('the corpus module cannot reach the database', () => {

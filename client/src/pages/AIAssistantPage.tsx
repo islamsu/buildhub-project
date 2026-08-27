@@ -14,7 +14,9 @@ import { trpc } from '@/lib/trpc';
 import { useState } from 'react';
 import { Link } from 'wouter';
 import { toast } from 'sonner';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { experienceFor } from '@shared/aiRoles';
+import { PROVIDER_ROLES } from '@shared/roleMatrix';
 
 /**
  * ONE ENGINE, SIX EXPERIENCES.
@@ -59,6 +61,24 @@ export default function AIAssistantPage() {
   ]);
   const [attachment, setAttachment] = useState<UploadedAttachment | null>(null);
 
+  // THE PROJECT THIS QUESTION IS ABOUT.
+  //
+  // Sent as a SELECTOR only: the server re-derives what this account may see
+  // and picks among that, so choosing here cannot reach a project the session
+  // does not already permit. Owners pick from their own projects; approved
+  // providers pick from the lead directory, which withholds budget and spend.
+  //
+  // Left unset, the server adds no project context at all unless the question
+  // itself is about a project - and if the account has several and the question
+  // is vague, the assistant ASKS which rather than guessing.
+  const isProvider = PROVIDER_ROLES.includes((me?.userRole ?? '') as typeof PROVIDER_ROLES[number]);
+  const { data: ownProjects = [] } = trpc.projects.list.useQuery(undefined, { enabled: Boolean(me) && !isProvider });
+  const { data: directoryProjects = [] } = trpc.projects.directory.useQuery(undefined, { enabled: Boolean(me) && isProvider });
+  const selectableProjects: { id: number; title: string }[] =
+    (isProvider ? directoryProjects : ownProjects).map((project: { id: number; title: string }) =>
+      ({ id: project.id, title: project.title }));
+  const [projectId, setProjectId] = useState<string>('none');
+
   const chatMutation = trpc.ai.chat.useMutation({
     onSuccess: (response: { content: string }) => {
       setMessages(prev => [...prev, { role: 'assistant', content: response.content }]);
@@ -73,6 +93,7 @@ export default function AIAssistantPage() {
       messages: newMessages,
       lang,
       ...(attachment ? { attachmentIds: [attachment.id] } : {}),
+      ...(projectId !== 'none' ? { projectId: Number(projectId) } : {}),
     });
     setAttachment(null);
   };
@@ -139,12 +160,33 @@ export default function AIAssistantPage() {
               disabled={aiUnavailable}
               placeholder={lang === 'ar' ? 'اسأل عن أي شيء في البناء والتشطيب...' : 'Ask anything about construction...'}
               composerSlot={(
-                <AIAttachmentControl
-                  attachment={attachment}
-                  onAttached={setAttachment}
-                  onCleared={() => setAttachment(null)}
-                  disabled={aiUnavailable}
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <AIAttachmentControl
+                    attachment={attachment}
+                    onAttached={setAttachment}
+                    onCleared={() => setAttachment(null)}
+                    disabled={aiUnavailable}
+                  />
+                  {/* Shown only when there is something real to pick. An empty
+                      selector would be a control that does nothing. */}
+                  {selectableProjects.length > 0 && (
+                    <Select value={projectId} onValueChange={setProjectId}>
+                      <SelectTrigger
+                        className="h-9 w-[210px]"
+                        aria-label={t('ai.project.label')}
+                        data-testid="ai-project-selector"
+                      >
+                        <SelectValue placeholder={t('ai.project.none')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">{t('ai.project.none')}</SelectItem>
+                        {selectableProjects.map(project => (
+                          <SelectItem key={project.id} value={String(project.id)}>{project.title}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
               )}
             />
           </div>
