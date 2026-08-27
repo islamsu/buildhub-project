@@ -3,46 +3,60 @@ import Navbar from '@/components/Navbar';
 import { AIChatBox, type Message } from '@/components/AIChatBox';
 import { AIAttachmentControl, type UploadedAttachment } from '@/components/AIAttachmentControl';
 import { Card, CardContent } from '@/components/ui/card';
-import { Bot, Calculator, Layers, Lightbulb, TrendingUp, AlertTriangle, ShoppingCart, Wrench } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Bot, Calculator, Layers, Lightbulb, TrendingUp, AlertTriangle, ShoppingCart, Wrench,
+  ClipboardList, ClipboardCheck, Palette, HardHat, FileSearch, FileText, FileSpreadsheet,
+  Search, Cpu, BookOpen, FlaskConical, Leaf, Package, PenLine, Repeat, GanttChart,
+  CalendarClock, ArrowRight,
+} from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { useState } from 'react';
+import { Link } from 'wouter';
 import { toast } from 'sonner';
+import { experienceFor } from '@shared/aiRoles';
 
-// The eight tools. `labelKey` and `promptKey` rather than literals: the tool
-// names used to render in English on an Arabic page, and the opening prompt was
-// sent in English no matter which language the person had chosen.
-const AI_MODES = [
-  { icon: Calculator, labelKey: 'ai.mode.cost', promptKey: 'ai.mode.cost.prompt', color: 'text-blue-500' },
-  { icon: Layers, labelKey: 'ai.mode.quantity', promptKey: 'ai.mode.quantity.prompt', color: 'text-green-500' },
-  { icon: Lightbulb, labelKey: 'ai.mode.material', promptKey: 'ai.mode.material.prompt', color: 'text-amber-500' },
-  { icon: TrendingUp, labelKey: 'ai.mode.pm', promptKey: 'ai.mode.pm.prompt', color: 'text-purple-500' },
-  { icon: AlertTriangle, labelKey: 'ai.mode.risk', promptKey: 'ai.mode.risk.prompt', color: 'text-red-500' },
-  { icon: ShoppingCart, labelKey: 'ai.mode.procurement', promptKey: 'ai.mode.procurement.prompt', color: 'text-indigo-500' },
-  { icon: Wrench, labelKey: 'ai.mode.maintenance', promptKey: 'ai.mode.maintenance.prompt', color: 'text-orange-500' },
-  { icon: Bot, labelKey: 'ai.mode.general', promptKey: 'ai.mode.general.prompt', color: 'text-teal-500' },
-];
+/**
+ * ONE ENGINE, SIX EXPERIENCES.
+ *
+ * The tools, the heading and the shortcuts come from the role config; the
+ * composer below them is identical for everyone and accepts any question. That
+ * is the point of the split - personalisation decides what is OFFERED, never
+ * what may be ASKED.
+ *
+ * The role is read from the authenticated session via auth.me. There is no
+ * role prop, no query parameter and no local override, so there is nothing on
+ * this page for a user to set: picking a different experience would require
+ * changing who you are signed in as.
+ */
+
+/** Icon names in the shared config resolved to components here, not there. */
+const ICONS: Record<string, typeof Bot> = {
+  Bot, Calculator, Layers, Lightbulb, TrendingUp, AlertTriangle, ShoppingCart, Wrench,
+  ClipboardList, ClipboardCheck, Palette, HardHat, FileSearch, FileText, FileSpreadsheet,
+  Search, Cpu, BookOpen, FlaskConical, Leaf, Package, PenLine, Repeat, GanttChart,
+  CalendarClock,
+};
 
 // No SYSTEM_PROMPT here on purpose. The server builds it - the source
-// hierarchy, the BuildHub briefing derived from live product data, and the
-// rules the assistant may not break - and DISCARDS any system message a client
-// sends. Grounding that the browser could edit is not grounding.
+// hierarchy, the BuildHub briefing derived from live product data, the role
+// stance, and the rules the assistant may not break - and DISCARDS any system
+// message a client sends. Grounding the browser could edit is not grounding.
 
 export default function AIAssistantPage() {
   const { t, lang } = useLanguage();
-  // Ask before offering. Every card below is the same ai.chat mutation, so on a
-  // deployment with no provider credential all eight of them fail identically -
-  // which is exactly what happened on staging: the page rendered perfectly and
-  // nothing on it worked. `undefined` while the query is in flight, so the
-  // tools stay enabled until we actually know otherwise.
   const { data: capabilities } = trpc.auth.capabilities.useQuery();
+  const { data: me } = trpc.auth.me.useQuery();
   const aiUnavailable = capabilities?.aiAssistant === false;
-  const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: lang === 'ar' ? 'مرحباً! أنا BuildHub AI. يمكنني مساعدتك في تقدير التكاليف واختيار المواد وتخطيط المشاريع وتقييم المخاطر والمزيد. بماذا تريد أن تعرف؟' : "Hello! I'm BuildHub AI. I can help you with cost estimation, material selection, project planning, risk assessment, and much more. What would you like to know?" },
-  ]);
 
-  // The attachment belongs to the NEXT message, so it lives here rather than
-  // inside the composer: sending has to clear it, and a mode card that fires a
-  // canned prompt must carry it too.
+  // THE AUTHENTICATED ROLE, from the session. An unknown role - a new enum
+  // value, an admin, a signed-out visitor - falls back to the homeowner
+  // experience rather than an error or an empty page.
+  const experience = experienceFor(me?.userRole);
+
+  const [messages, setMessages] = useState<Message[]>([
+    { role: 'assistant', content: lang === 'ar' ? 'مرحباً! أنا BuildHub AI. اسألني عن أي شيء يخص البناء والتشطيب، أو اختر أداة من الأعلى.' : "Hello! I'm BuildHub AI. Ask me anything about construction, or pick one of the tools above." },
+  ]);
   const [attachment, setAttachment] = useState<UploadedAttachment | null>(null);
 
   const chatMutation = trpc.ai.chat.useMutation({
@@ -60,15 +74,7 @@ export default function AIAssistantPage() {
       lang,
       ...(attachment ? { attachmentIds: [attachment.id] } : {}),
     });
-    // Cleared once sent. The file stays with the turn it was asked about; a
-    // sticky attachment would silently re-attach itself to every later
-    // question, and the model would keep answering about a file the person
-    // stopped talking about.
     setAttachment(null);
-  };
-
-  const handleModeClick = (prompt: string) => {
-    handleSend(prompt);
   };
 
   return (
@@ -81,8 +87,8 @@ export default function AIAssistantPage() {
               <Bot className="w-4 h-4" />
               {t('dash.ai')}
             </div>
-            <h1 className="text-3xl font-bold mb-2">{lang === 'ar' ? 'خبيرك في البناء بالذكاء الاصطناعي' : 'Your AI Construction Expert'}</h1>
-            <p className="text-muted-foreground">{lang === 'ar' ? 'اسأل عن أي شيء: تقدير التكاليف، المواد، إدارة المشاريع...' : 'Ask anything about cost estimation, materials, project planning, and more'}</p>
+            <h1 className="text-3xl font-bold mb-2" data-testid="ai-role-title">{t(experience.titleKey)}</h1>
+            <p className="text-muted-foreground" data-testid="ai-role-subtitle">{t(experience.subtitleKey)}</p>
           </div>
 
           {aiUnavailable && (
@@ -92,19 +98,36 @@ export default function AIAssistantPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-            {AI_MODES.map((mode) => (
-              <Card
-                key={mode.labelKey}
-                aria-disabled={aiUnavailable}
-                className={`border-border ${aiUnavailable ? 'opacity-50 pointer-events-none' : 'card-hover cursor-pointer hover:border-primary/30'}`}
-                onClick={() => { if (!aiUnavailable) handleModeClick(t(mode.promptKey)); }}
-              >
-                <CardContent className="p-4 text-center">
-                  <mode.icon className={`w-6 h-6 mx-auto mb-2 ${mode.color}`} />
-                  <p className="text-sm font-medium">{t(mode.labelKey)}</p>
-                </CardContent>
-              </Card>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6" data-testid="ai-tools">
+            {experience.tools.map(mode => {
+              const Icon = ICONS[mode.icon] ?? Bot;
+              return (
+                <Card
+                  key={mode.id}
+                  data-testid={`ai-tool-${mode.id}`}
+                  aria-disabled={aiUnavailable}
+                  className={`border-border ${aiUnavailable ? 'opacity-50 pointer-events-none' : 'card-hover cursor-pointer hover:border-primary/30'}`}
+                  onClick={() => { if (!aiUnavailable) handleSend(t(mode.promptKey)); }}
+                >
+                  <CardContent className="p-4 text-center">
+                    <Icon className="w-6 h-6 mx-auto mb-2 text-primary" />
+                    <p className="text-sm font-medium">{t(mode.labelKey)}</p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Real routes only. A button that goes nowhere teaches people the
+              assistant's suggestions are decorative. */}
+          <div className="flex flex-wrap gap-2 mb-8 justify-center" data-testid="ai-actions">
+            {experience.actions.map(item => (
+              <Button key={item.id} variant="outline" size="sm" asChild data-testid={`ai-action-${item.id}`}>
+                <Link href={item.href} className="gap-1.5">
+                  {t(item.labelKey)}
+                  <ArrowRight className="size-3.5 rtl:rotate-180" />
+                </Link>
+              </Button>
             ))}
           </div>
 
@@ -114,12 +137,7 @@ export default function AIAssistantPage() {
               onSendMessage={handleSend}
               isLoading={chatMutation.isPending}
               disabled={aiUnavailable}
-              placeholder={lang === 'ar' ? 'اسأل عن التكاليف، المواد، تخطيط المشاريع...' : 'Ask about costs, materials, project planning...'}
-              suggestedPrompts={[
-                t('ai.suggestion.1'),
-                t('ai.suggestion.2'),
-                t('ai.suggestion.3'),
-              ]}
+              placeholder={lang === 'ar' ? 'اسأل عن أي شيء في البناء والتشطيب...' : 'Ask anything about construction...'}
               composerSlot={(
                 <AIAttachmentControl
                   attachment={attachment}

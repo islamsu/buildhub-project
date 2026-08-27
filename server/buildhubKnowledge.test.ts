@@ -12,6 +12,7 @@
  * The matrix letters map to the owner's cases A-G.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { allRoleKeys } from '@shared/aiRoles';
 import { readFileSync } from 'node:fs';
 
 vi.mock('./db', () => ({ getDb: vi.fn() }));
@@ -262,23 +263,34 @@ describe('language selects the ANSWER, never the knowledge', () => {
 describe('the AI tool labels follow the selected language', () => {
   it('no tool label is a hard-coded English literal any more', () => {
     expect(PAGE).not.toMatch(/label: 'Cost Estimator'/);
-    expect(PAGE).toContain("labelKey: 'ai.mode.cost'");
     expect(PAGE).toContain('{t(mode.labelKey)}');
+    expect(PAGE).toContain('{t(experience.titleKey)}');
   });
 
   it('the opening prompt is sent in the selected language too', () => {
-    expect(PAGE).toContain('handleModeClick(t(mode.promptKey))');
+    expect(PAGE).toContain('handleSend(t(mode.promptKey))');
   });
 
-  it('all eight tools have English AND Arabic labels', () => {
-    for (const key of ['cost', 'quantity', 'material', 'pm', 'risk', 'procurement', 'maintenance', 'general']) {
-      expect(LANG).toContain(`'ai.mode.${key}'`);
-      expect(LANG).toContain(`'ai.mode.${key}.prompt'`);
+  it('EVERY key the role layer needs exists in BOTH languages', () => {
+    // Strictly stronger than the old check, which listed eight keys by hand:
+    // the required set is now DERIVED from the role config, so adding a tool
+    // to any role without translating it fails here rather than rendering a
+    // raw key like "ai.tool.riskManager" to an Arabic user.
+    // Split on the Arabic block's opening line. Written as a runtime check so
+    // a future reformat of the file fails LOUDLY here rather than silently
+    // making every Arabic assertion pass against the English half.
+    const arIndex = LANG.indexOf('\n  ar: {');
+    expect(arIndex, 'the Arabic translation block was not found').toBeGreaterThan(0);
+    const en = LANG.slice(0, arIndex);
+    const ar = LANG.slice(arIndex);
+    for (const key of allRoleKeys()) {
+      expect(en, `${key} missing from English`).toContain(`'${key}':`);
+      expect(ar, `${key} missing from Arabic`).toContain(`'${key}':`);
     }
-    // Two blocks - one English, one Arabic - so every key appears twice.
-    for (const key of ['cost', 'general']) {
-      expect((LANG.match(new RegExp(`'ai\\.mode\\.${key}':`, 'g')) ?? [])).toHaveLength(2);
-    }
+    // The old ai.mode.* keys were removed with the universal tool grid; a
+    // stale translation entry for a tool nothing renders is dead weight that
+    // reads like coverage.
+    expect(LANG).not.toContain("'ai.mode.");
   });
 
   it('the client no longer carries a system prompt of its own', () => {
