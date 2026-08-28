@@ -2129,7 +2129,7 @@ const rfqRouter = router({
       // The QUOTATION's own id, because that is what the audit trail records.
       // See the note beside recordCommercialEvent below.
       const quotationId = Number(inserted?.[0]?.insertId ?? 0);
-      await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: '/rfq', messageKey: 'notif.quotation.received', messageParams: { rfqTitle: rfq.title } });
+      await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: `/rfq/${input.rfqId}`, messageKey: 'notif.quotation.received', messageParams: { rfqTitle: rfq.title } });
       // Funnel milestone: a vendor responding is the point at which the
       // marketplace has produced value for both sides.
       recordEventAsync({
@@ -2437,7 +2437,11 @@ const reviewsRouter = router({
       );
       if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'You have already reviewed this provider for this project' });
       await db.insert(reviews).values({ ...input, reviewerId: ctx.user.id, verified: true });
-      await notifyUser(db, { userId: input.revieweeId, title: 'New review received', body: `You received a new ${input.rating}-star review.`, type: 'review', link: '/provider', messageKey: 'notif.review.received', messageParams: { rating: input.rating } });
+      // `/provider` renders no reviews at all - it was a dead end for the one
+      // notification whose whole point is "come and read this". The page that
+      // actually shows a provider's reviews is their own vendor profile, via
+      // <VendorReputation userId=... />, keyed by user id.
+      await notifyUser(db, { userId: input.revieweeId, title: 'New review received', body: `You received a new ${input.rating}-star review.`, type: 'review', link: `/vendor/${input.revieweeId}`, messageKey: 'notif.review.received', messageParams: { rating: input.rating } });
       return { success: true };
     }),
 });

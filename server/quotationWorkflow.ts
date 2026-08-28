@@ -83,7 +83,10 @@ export async function acceptQuotationSecure(rfqId: number, quotationId: number, 
     title: 'Quotation accepted',
     body: `Your quotation for "${result.rfqTitle}" was accepted.`,
     type: 'quotation',
-    link: '/provider',
+    // THE REQUEST THEY BID ON, not the workspace. `/provider` is a dashboard;
+    // a supplier who has just won or lost a specific job wants that job. The
+    // detail page is role-aware and shows a provider exactly what they may see.
+    link: `/rfq/${result.rfqId}`,
     messageKey: 'notif.quotation.accepted',
     messageParams: { rfqTitle: result.rfqTitle },
   });
@@ -92,7 +95,7 @@ export async function acceptQuotationSecure(rfqId: number, quotationId: number, 
     title: 'Quotation not selected',
     body: `Your quotation for "${result.rfqTitle}" was not selected.`,
     type: 'quotation',
-    link: '/provider',
+    link: `/rfq/${result.rfqId}`,
     messageKey: 'notif.quotation.notSelected',
     messageParams: { rfqTitle: result.rfqTitle },
   })));
@@ -123,7 +126,7 @@ export async function rejectQuotationSecure(rfqId: number, quotationId: number, 
     }
 
     await tx.update(quotations).set({ status: 'rejected' }).where(eq(quotations.id, quotationId));
-    return { success: true as const, providerId: quotation.providerId, rfqTitle: rfq.title };
+    return { success: true as const, providerId: quotation.providerId, rfqTitle: rfq.title, rfqId };
   });
 
   await notifyUser(db, {
@@ -131,7 +134,8 @@ export async function rejectQuotationSecure(rfqId: number, quotationId: number, 
     title: 'Quotation not selected',
     body: `Your quotation for "${result.rfqTitle}" was not selected.`,
     type: 'quotation',
-    link: '/provider',
+    // The request they bid on, not the workspace - see acceptQuotationSecure.
+    link: `/rfq/${result.rfqId}`,
     messageKey: 'notif.quotation.notSelected',
     messageParams: { rfqTitle: result.rfqTitle },
   });

@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import { Link } from 'wouter';
 import {
   MessageSquare, Bell, Send, Paperclip, Search, CheckCheck,
-  Clock, FileText, Image,
+  Clock, FileText, Image, ChevronRight,
 } from 'lucide-react';
 
 /**
@@ -309,18 +309,35 @@ export default function MessagesPage() {
               )}
               {notifications?.map(n => {
                 const text = notificationText(n, t);
-                return (
-                <Card key={n.id} className={`transition-colors ${!n.read ? 'border-primary/30 bg-primary/5' : ''}`}>
-                  <CardContent className="p-4 flex items-start gap-3">
-                    <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!n.read ? 'bg-primary' : 'bg-muted'}`} />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">{text.title}</p>
-                      {text.body && <p className="text-muted-foreground text-sm mt-0.5">{text.body}</p>}
-                      <p className="text-xs text-muted-foreground mt-1">{new Date(n.createdAt).toLocaleString()}</p>
-                    </div>
-                  </CardContent>
-                </Card>
+                /**
+                 * THE `link` COLUMN WAS WRITTEN ON EVERY NOTIFICATION AND NEVER
+                 * READ. Each one rendered as an inert card: a customer was told
+                 * "New quotation received" and had no way to reach it, and a
+                 * supplier was told their bid was accepted with nowhere to go.
+                 * The destination existed in the database the whole time.
+                 */
+                const card = (
+                  <Card
+                    className={`transition-colors ${!n.read ? 'border-primary/30 bg-primary/5' : ''} ${n.link ? 'cursor-pointer hover:border-primary/50' : ''}`}
+                    data-testid={n.link ? 'notification-linked' : 'notification-plain'}
+                  >
+                    <CardContent className="p-4 flex items-start gap-3">
+                      <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!n.read ? 'bg-primary' : 'bg-muted'}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">{text.title}</p>
+                        {text.body && <p className="text-muted-foreground text-sm mt-0.5">{text.body}</p>}
+                        <p className="text-xs text-muted-foreground mt-1">{new Date(n.createdAt).toLocaleString()}</p>
+                      </div>
+                      {n.link && <ChevronRight className="w-4 h-4 shrink-0 self-center text-muted-foreground" />}
+                    </CardContent>
+                  </Card>
                 );
+                // A notification with no link still renders - some events are
+                // genuinely informational and inventing a destination for them
+                // would be worse than having none.
+                return n.link
+                  ? <Link key={n.id} href={n.link} className="block">{card}</Link>
+                  : <div key={n.id}>{card}</div>;
               })}
             </div>
           </TabsContent>
