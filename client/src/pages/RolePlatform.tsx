@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation } from 'wouter';
+import { useLocation, useSearch } from 'wouter';
+import { parseLinkedRfqId } from '@shared/linkedRfq';
 import { toast } from 'sonner';
 import VendorProfileCard from '@/components/VendorProfileCard';
 import VendorReputation from '@/components/VendorReputation';
@@ -66,6 +67,16 @@ export default function RolePlatform() {
   const { user, isAuthenticated, loading } = useAuth();
   const { t, lang, dir } = useLanguage();
   const [, navigate] = useLocation();
+  /**
+   * `?rfq=<id>` - the request a provider followed here from `/rfq/:id`.
+   *
+   * The RFQ detail page used to send them to a bare `/provider`, which meant
+   * arriving on a dashboard and having to find the request again in a list.
+   * The id travels with them now. It is used only to bring that row into view
+   * and to preselect the quotation form: nothing is opened, nothing is charged,
+   * and the server still decides everything about eligibility.
+   */
+  const linkedRfqId = parseLinkedRfqId(useSearch());
   const account = user as { userRole?: string; role?: string; onboardingStatus?: string } | null;
   const rawRole = account?.userRole;
   const accountRole = account?.role;
@@ -97,7 +108,12 @@ export default function RolePlatform() {
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [productForm, setProductForm] = useState({ name: '', nameAr: '', category: '', description: '', brand: '', price: '', stock: '', unit: '', deliveryDays: '' });
   const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
-  const [quoteForm, setQuoteForm] = useState({ rfqId: 0, price: '', timeline: '', warranty: '', notes: '' });
+  // Preselected from `?rfq=` so a provider who followed a link from the request
+  // does not have to find it again in the list.
+  const [quoteForm, setQuoteForm] = useState({ rfqId: linkedRfqId ?? 0, price: '', timeline: '', warranty: '', notes: '' });
+  // The request the open quotation form is actually about. A form that says
+  // only "Your price" is a way to bid on the wrong thing.
+  const quoteTarget = rfqs.find(rfq => rfq.id === quoteForm.rfqId);
 
   const createProduct = trpc.marketplace.create.useMutation({
     onSuccess: () => {
@@ -262,7 +278,7 @@ export default function RolePlatform() {
             </div>
             <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
               <VendorServiceCategories />
-              <QualifiedEnquiries />
+              <QualifiedEnquiries highlightRfqId={linkedRfqId} />
             </div>
           </section>
         )}
@@ -311,13 +327,21 @@ export default function RolePlatform() {
 
         <Dialog open={quoteDialogOpen} onOpenChange={setQuoteDialogOpen}>
           <DialogContent className="max-w-md">
-            <DialogHeader><DialogTitle>{t('platform.create_quote')}</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle>{t('platform.create_quote')}</DialogTitle>
+              {quoteTarget && (
+                <p className="text-sm text-muted-foreground" data-testid="quote-target">
+                  {lang === 'ar' ? 'رداً على' : 'In response to'}: <span className="font-medium text-foreground">{quoteTarget.title}</span>
+                  {' '}(#{quoteTarget.id})
+                </p>
+              )}
+            </DialogHeader>
             <div className="space-y-3">
               <Input placeholder={lang === 'ar' ? 'السعر بالجنيه' : 'Your price (EGP)'} type="number" value={quoteForm.price} onChange={e => setQuoteForm(form => ({ ...form, price: e.target.value }))} />
               <Input placeholder={lang === 'ar' ? 'المدة بالأيام' : 'Timeline in days'} type="number" value={quoteForm.timeline} onChange={e => setQuoteForm(form => ({ ...form, timeline: e.target.value }))} />
               <Input placeholder={t('common.warranty')} value={quoteForm.warranty} onChange={e => setQuoteForm(form => ({ ...form, warranty: e.target.value }))} />
               <Textarea placeholder={t('common.notes')} rows={3} value={quoteForm.notes} onChange={e => setQuoteForm(form => ({ ...form, notes: e.target.value }))} />
-              <Button className="w-full gap-2" onClick={() => submitQuote.mutate({ rfqId: quoteForm.rfqId, price: Number(quoteForm.price), timeline: quoteForm.timeline ? Number(quoteForm.timeline) : undefined, warranty: quoteForm.warranty || undefined, notes: quoteForm.notes || undefined })} disabled={submitQuote.isPending || !quoteForm.price}><Send className="h-4 w-4" />{submitQuote.isPending ? t('common.loading') : t('platform.create_quote')}</Button>
+              <Button className="w-full gap-2" onClick={() => submitQuote.mutate({ rfqId: quoteForm.rfqId, price: Number(quoteForm.price), timeline: quoteForm.timeline ? Number(quoteForm.timeline) : undefined, warranty: quoteForm.warranty || undefined, notes: quoteForm.notes || undefined })} disabled={submitQuote.isPending || !quoteForm.price || !quoteForm.rfqId}><Send className="h-4 w-4" />{submitQuote.isPending ? t('common.loading') : t('platform.create_quote')}</Button>
             </div>
           </DialogContent>
         </Dialog>

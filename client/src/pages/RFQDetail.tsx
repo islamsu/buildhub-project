@@ -230,7 +230,10 @@ export default function RFQDetail() {
                     : 'Viewing this request is free. Opening the qualified enquiry reveals the full brief and its attachments, uses one of your monthly credits, and requires the request to fall inside your declared service categories.'}
                 </p>
                 {isOpen ? (
-                  <Link href="/provider">
+                  // The id travels with them. This used to be a bare
+                  // `/provider`, which landed a provider on a dashboard with no
+                  // memory of which request they had just been reading.
+                  <Link href={`/provider?rfq=${rfq.id}`}>
                     <Button className="mt-3 gap-2" data-testid="rfq-detail-respond">
                       <Package className="h-4 w-4" />
                       {ar ? 'المتابعة إلى الردود' : 'Continue to respond'}
