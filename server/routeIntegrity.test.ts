@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, globSync } from 'node:fs';
 import { ROUTES, ROLE_EXPERIENCES } from '@shared/aiRoles';
 
 /**
@@ -76,6 +76,65 @@ describe('the route table itself', () => {
     // Recording the flip here rather than deleting the test keeps the history
     // of why the engine's hrefs changed twice.
     expect(resolves('/rfq/123')).toBe(true);
+  });
+});
+
+/**
+ * THE WHOLE CLIENT, not the two files this test started with.
+ *
+ * The original version checked ROUTES and the opportunity engine. A dead link
+ * shipped anyway, from a page neither of them covered. Narrowing a link check
+ * to the places you already suspect is how the next one ships too, so this
+ * sweeps every .tsx in the client for anything that looks like an internal
+ * destination and holds all of them against the same route table.
+ */
+describe('every internal destination anywhere in the client', () => {
+  const CLIENT = new URL('../client/src/', import.meta.url);
+
+  function internalTargets(): Map<string, Set<string>> {
+    const found = new Map<string, Set<string>>();
+    const paths = globSync('client/src/**/*.tsx')
+      // Not routed and not imported by anything - it is dead code, never
+      // bundled, and its hundreds of demo links are not destinations the
+      // product offers anybody.
+      .filter(path => !path.endsWith('ComponentShowcase.tsx'));
+
+    for (const path of paths) {
+      const source = readFileSync(path, 'utf8');
+      const patterns = [
+        /navigate\(\s*[`"']([^`"']+)[`"']/g,
+        /<Link href=\{?[`"']([^`"']+)[`"']/g,
+        /\bhref=\{?[`"'](\/[^`"']*)[`"']/g,
+      ];
+      for (const pattern of patterns) {
+        for (const match of source.matchAll(pattern)) {
+          if (!found.has(match[1])) found.set(match[1], new Set());
+          found.get(match[1])!.add(path);
+        }
+      }
+    }
+    return found;
+  }
+
+  const targets = internalTargets();
+
+  it('found a meaningful number of them - otherwise this suite is vacuous', () => {
+    // The failure mode of a sweep is sweeping nothing. A regex that stopped
+    // matching would make every assertion below pass on an empty set.
+    expect(String(CLIENT)).toContain('client/src');
+    expect(targets.size).toBeGreaterThan(15);
+  });
+
+  it('every one of them resolves to a registered route', () => {
+    const dead: string[] = [];
+    for (const [target, files] of targets) {
+      // A template arrives with its interpolation intact; substituting a
+      // placeholder tests the SHAPE, so `/rfq/${id}` passes and
+      // `/quotation/${id}` - no such route - still fails.
+      const concrete = target.replace(/\$\{[^}]+\}/g, '123');
+      if (!resolves(concrete)) dead.push(`${target}  (in ${[...files].join(', ')})`);
+    }
+    expect(dead, `dead internal links:\n  ${dead.join('\n  ')}`).toEqual([]);
   });
 });
 
