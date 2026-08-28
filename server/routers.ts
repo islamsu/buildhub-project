@@ -87,6 +87,8 @@ import {
   MAX_BASKET_ITEMS, MAX_ITEM_NAME, MAX_ITEM_SPECIFICATIONS, MAX_ITEM_UNIT,
   MAX_ITEM_VARIANT, MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY,
 } from '../shared/rfqBasket';
+import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shared/productImport';
+import { PRODUCT_CATEGORIES } from '../shared/productCategories';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSubscriptions } from '../drizzle/schema';
 import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
@@ -1270,7 +1272,10 @@ const marketplaceRouter = router({
       name: z.string().min(1),
       nameAr: z.string().optional(),
       description: z.string().optional(),
-      category: z.string().min(1),
+      // Was `z.string().min(1)`: any string at all. A category outside the
+      // taxonomy matches no marketplace filter, so the product becomes
+      // unfindable the moment it is listed. Bulk import enforces the same list.
+      category: z.enum(PRODUCT_CATEGORIES),
       brand: z.string().optional(),
       price: z.number().optional(),
       stock: z.number().int().min(0).optional(),
@@ -1303,6 +1308,93 @@ const marketplaceRouter = router({
    * yours simply does not come back. Absent and not-mine give the same NOT_FOUND
    * so the endpoint is not an oracle for which product ids exist.
    */
+  /**
+   * BULK CATALOGUE IMPORT.
+   *
+   * A supplier could add products only one at a time. A vendor with a real
+   * catalogue had no way in, which made onboarding them a manual data-entry
+   * project - the reason this was raised as a launch requirement.
+   *
+   * WHAT IS ENFORCED HERE AND NOT IN THE BROWSER:
+   *  - the caller is an approved SUPPLIER, and every row is written with THEIR
+   *    supplierId. There is no field in the file that can change the owner;
+   *  - the file is re-parsed server-side. The preview the browser showed is a
+   *    convenience, never the basis for what is written;
+   *  - the category must be a real BuildHub category, so an import cannot
+   *    invent taxonomy the directory does not have;
+   *  - a name already in THIS supplier's catalogue is reported, not silently
+   *    duplicated or silently overwritten - which of those a supplier wants is
+   *    not something to guess;
+   *  - ALL-OR-NOTHING, in one transaction. A partial import leaves a supplier
+   *    unable to tell what landed, and re-uploading then duplicates whatever
+   *    did.
+   */
+  importProducts: approvedProviderProcedure
+    .input(z.object({
+      csv: z.string().min(1).max(MAX_IMPORT_BYTES, 'File too large'),
+      /** Preview asks for the verdict without writing anything. */
+      dryRun: z.boolean().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.userRole !== 'supplier') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
+      }
+      enforceUploadRateLimit(ctx.user.id);
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const parsed = parseProductImport(input.csv, PRODUCT_CATEGORIES);
+
+      // Names this supplier already lists. Scoped to them: another supplier
+      // selling "Rebar 12mm" is not this supplier's problem, and telling them
+      // about it would leak a rival's catalogue.
+      const existing = parsed.rows.length > 0
+        ? await db.select({ name: products.name }).from(products).where(eq(products.supplierId, ctx.user.id))
+        : [];
+      const alreadyListed = new Set(existing.map(row => row.name.trim().toLowerCase()));
+      const conflicts = parsed.rows
+        .filter(row => row.name && alreadyListed.has(row.name.trim().toLowerCase()))
+        .map(row => ({ line: row.line, column: 'name', message: `"${row.name}" is already in your catalogue` }));
+
+      const errors = [...parsed.errors, ...conflicts]
+        .sort((a, b) => a.line - b.line)
+        .slice(0, 100);   // a bounded report; the first hundred are enough to act on
+
+      const summary = {
+        totalRows: parsed.rows.length,
+        errors,
+        errorCount: [...parsed.errors, ...conflicts].length,
+        duplicatesInFile: parsed.duplicatesInFile,
+        imported: 0,
+        dryRun: input.dryRun,
+      };
+
+      if (errors.length > 0 || input.dryRun) return summary;
+
+      await db.transaction(async (tx) => {
+        await tx.insert(products).values(parsed.rows.map(row => ({
+          supplierId: ctx.user.id,          // never from the file
+          name: row.name,
+          nameAr: row.nameAr,
+          category: row.category,
+          brand: row.brand,
+          description: row.description,
+          unit: row.unit,
+          price: row.price != null ? String(row.price) : undefined,
+          stock: row.stock,
+          deliveryDays: row.deliveryDays,
+        })));
+      });
+
+      // No analytics event: the framework has no product-listing event, and
+      // inventing one that nothing aggregates would be a metric that looks
+      // real and measures nothing.
+      return { ...summary, imported: parsed.rows.length };
+    }),
+
+  /** The file a supplier fills in. Static, so it needs no authorization. */
+  importTemplate: publicProcedure.query(() => ({ csv: importTemplateCsv() })),
+
   updateProduct: approvedProviderProcedure
     .input(z.object({
       id: z.number().int().positive(),
@@ -1680,9 +1772,24 @@ const rfqRouter = router({
   // at all is a pricing question - openQualifiedEnquiry charges a credit for
   // "full detail" - and narrowing it would change what the product gives away.
   // That is a call for you, not something to infer from a table.
-  list: protectedProcedure.query(async () => {
+  list: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
+    /**
+     * WHO THE FEED IS FOR.
+     *
+     * This returned every RFQ's title, full description, exact budget and
+     * location to EVERY authenticated caller - which meant one homeowner could
+     * read another homeowner's brief and the exact figure they were willing to
+     * spend, and so could a supplier who had no intention of bidding.
+     *
+     * The feed exists so PROVIDERS can find work. A customer has no reason to
+     * browse other customers' requests, so a non-provider now sees only their
+     * own. This is the owner's decision, taken explicitly, recorded here:
+     * discovery is for approved providers; a requester always sees their own.
+     */
+    const isProvider = providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])
+      && (ctx.user as { onboardingStatus?: string }).onboardingStatus === 'approved';
     return db.select({
       id: rfqs.id,
       requesterId: rfqs.requesterId,
@@ -1696,7 +1803,9 @@ const rfqRouter = router({
       productReference: rfqs.productReference,
       status: rfqs.status,
       createdAt: rfqs.createdAt,
-    }).from(rfqs).orderBy(desc(rfqs.createdAt)).limit(50);
+    }).from(rfqs)
+      .where(isProvider ? undefined : eq(rfqs.requesterId, ctx.user.id))
+      .orderBy(desc(rfqs.createdAt)).limit(50);
   }),
   myList: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
@@ -1731,7 +1840,7 @@ const rfqRouter = router({
    */
   summary: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       const [rfq] = await db.select({
@@ -1749,6 +1858,18 @@ const rfqRouter = router({
         createdAt: rfqs.createdAt,
       }).from(rfqs).where(eq(rfqs.id, input.id));
       if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
+      /**
+       * THE SAME GATE AS THE FEED. This is the per-record version of
+       * `rfq.list`, so it must not be a way around the narrowing applied
+       * there: the brief and the exact budget are for approved providers
+       * deciding whether to bid, and for the requester reading their own.
+       * NOT_FOUND rather than FORBIDDEN, so it does not confirm to a stranger
+       * that an id exists.
+       */
+      const mayRead = rfq.requesterId === ctx.user.id
+        || (providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])
+            && (ctx.user as { onboardingStatus?: string }).onboardingStatus === 'approved');
+      if (!mayRead) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
       /**
        * The lines are part of the BRIEF, and the brief is free to read - the
        * same rule already applied to `description`, `budget` and `location` by

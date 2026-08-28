@@ -137,6 +137,7 @@ describe('§1 every procedure is pinned to a tier', () => {
       'marketplace.categories',
       'marketplace.featuredVendors',
       'marketplace.get',
+      'marketplace.importTemplate',
       'marketplace.list',
       // Real platform counts for the landing and sign-up pages, which are
       // both seen while logged out. It returns four aggregate numbers and no

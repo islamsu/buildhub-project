@@ -111,8 +111,10 @@ describe('the limiter is actually wired to the endpoints that needed it', () => 
   it('all eight upload endpoints enforce the upload limit', () => {
     // Counted rather than spot-checked: the gap was identical at every one of
     // them, and a fix applied to four out of five is not a fix.
+    // NINE now: bulk product import accepts a file too, and an unbounded
+    // import endpoint is the cheapest way to fill a database.
     const wired = SOURCE.match(/enforceUploadRateLimit\(ctx\.user\.id\)/g) ?? [];
-    expect(wired).toHaveLength(8);
+    expect(wired).toHaveLength(9);
 
     const uploadEndpoints = SOURCE.match(/^\s+upload[A-Za-z]+:/gm) ?? [];
     expect(

@@ -3,6 +3,8 @@ import { useAuth } from '@/_core/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getRolePlatformPath, isPlatformRole, ROLE_PLATFORM_COPY, type PlatformRole } from '@/lib/rolePlatform';
 import { trpc } from '@/lib/trpc';
+import { PRODUCT_CATEGORIES, isProductCategory } from '@shared/productCategories';
+import ProductImport from '@/components/ProductImport';
 import { isComplianceRole } from '@shared/compliance';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -27,7 +29,6 @@ import {
   Package, PackagePlus, PenTool, Plus, Send, ShoppingBag, Sparkles, Star, Users, Paperclip, X
 } from 'lucide-react';
 
-const PRODUCT_CATEGORIES = ['Materials', 'Furniture', 'Lighting', 'Electrical', 'Plumbing', 'HVAC', 'Paint', 'Ceramics', 'Granite', 'Marble', 'Wood', 'Doors', 'Windows', 'Roofing', 'Glass', 'Steel', 'Concrete', 'Solar', 'Smart Home'];
 
 type RoleCardAction = { label: string; icon: React.ComponentType<{ className?: string }>; onClick: () => void; tone: string };
 
@@ -95,6 +96,7 @@ export default function RolePlatform() {
 
   const isProfessional = role !== 'homeowner';
   const isSupplier = role === 'supplier';
+  const utils = trpc.useUtils();
   const copy = ROLE_PLATFORM_COPY[role];
   const { data: projects = [] } = trpc.projects.list.useQuery(undefined, { enabled: isAuthenticated && role === 'homeowner' });
   const { data: projectDirectory = [] } = trpc.projects.directory.useQuery(undefined, { enabled: isAuthenticated && isProfessional });
@@ -289,6 +291,9 @@ export default function RolePlatform() {
               answer side of the product Q&A. The workspace card below is a
               read-only summary; this is where a supplier actually works. */}
           <SupplierCatalogue />
+          {/* Bulk import: a vendor with a real catalogue cannot add products
+              one dialog at a time. Preview first, then commit. */}
+          <ProductImport onImported={() => { void utils.marketplace.myProducts.invalidate(); }} />
           <SupplierWorkspace products={products} rfqs={matchingRfqs} projects={projectDirectory} t={t} lang={lang} navigate={navigate} onQuote={(rfqId) => { setQuoteForm(form => ({ ...form, rfqId })); setQuoteDialogOpen(true); }} />
           </>
         ) : role === 'contractor' ? (
@@ -366,7 +371,14 @@ export default function RolePlatform() {
               <Input placeholder={lang === 'ar' ? 'أيام التوصيل' : 'Delivery days'} type="number" value={productForm.deliveryDays} onChange={e => setProductForm(form => ({ ...form, deliveryDays: e.target.value }))} />
               <Textarea className="sm:col-span-2" placeholder={lang === 'ar' ? 'وصف المنتج' : 'Product description'} rows={3} value={productForm.description} onChange={e => setProductForm(form => ({ ...form, description: e.target.value }))} />
             </div>
-            <Button onClick={() => createProduct.mutate({ name: productForm.name, nameAr: productForm.nameAr || undefined, category: productForm.category, description: productForm.description || undefined, brand: productForm.brand || undefined, price: productForm.price ? Number(productForm.price) : undefined, stock: productForm.stock ? Number(productForm.stock) : undefined, unit: productForm.unit || undefined, deliveryDays: productForm.deliveryDays ? Number(productForm.deliveryDays) : undefined })} disabled={createProduct.isPending || !productForm.name || !productForm.category} className="w-full gap-2"><PackagePlus className="h-4 w-4" />{createProduct.isPending ? t('common.loading') : t('platform.new_listing')}</Button>
+            <Button onClick={() => (() => {
+              // Narrows the form's free-text value onto the shared taxonomy
+              // rather than casting it away. The button is disabled until a
+              // category is chosen, so this is the type system agreeing with
+              // the UI rather than a second rule that could drift from it.
+              if (!isProductCategory(productForm.category)) return;
+              createProduct.mutate({ name: productForm.name, nameAr: productForm.nameAr || undefined, category: productForm.category, description: productForm.description || undefined, brand: productForm.brand || undefined, price: productForm.price ? Number(productForm.price) : undefined, stock: productForm.stock ? Number(productForm.stock) : undefined, unit: productForm.unit || undefined, deliveryDays: productForm.deliveryDays ? Number(productForm.deliveryDays) : undefined });
+            })()} disabled={createProduct.isPending || !productForm.name || !productForm.category} className="w-full gap-2"><PackagePlus className="h-4 w-4" />{createProduct.isPending ? t('common.loading') : t('platform.new_listing')}</Button>
           </DialogContent>
         </Dialog>
 

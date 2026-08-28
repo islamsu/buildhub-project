@@ -99,7 +99,7 @@ describe('rfq.summary returns the feed allowlist and no more', () => {
       return [...body.matchAll(/^\s*(\w+): rfqs\.\w+,/gm)].map(m => m[1]).sort();
     };
 
-    const listColumns = columnsIn('list: protectedProcedure.query(async () => {');
+    const listColumns = columnsIn('list: protectedProcedure.query(async ({ ctx }) => {');
     const summaryColumns = columnsIn('summary: protectedProcedure');
     expect(listColumns.length).toBeGreaterThan(5);
     expect(summaryColumns).toEqual(listColumns);
@@ -122,14 +122,54 @@ describe('rfq.summary returns the feed allowlist and no more', () => {
     expect(projections).toHaveLength(0);
   });
 
-  it('is available to every role, because the feed already is', async () => {
-    // A homeowner browsing the marketplace sees the same feed. Restricting the
-    // single-row read to providers would be a rule the product does not have
-    // anywhere else.
-    for (const role of ['homeowner', 'contractor', 'supplier', 'engineer', 'architect', 'project_manager']) {
+  /**
+   * THE VISIBILITY RULE CHANGED, BY OWNER DECISION.
+   *
+   * This test used to assert the opposite - that every role could read any
+   * RFQ's brief and exact budget, "because the feed already is" open. The feed
+   * WAS open, and that was the finding: one homeowner could read another
+   * homeowner's brief and the figure they were willing to spend, and so could
+   * a supplier with no intention of bidding.
+   *
+   * The owner decided discovery is for approved providers. The rule is
+   * asserted here in both directions rather than removed.
+   */
+  it('every APPROVED PROVIDER role can read it - they are who the feed is for', async () => {
+    for (const role of ['contractor', 'supplier', 'engineer', 'architect', 'project_manager']) {
       stubDb(ROW);
-      await expect(appRouter.createCaller(ctx(5, role)).rfq.summary({ id: 7 })).resolves.toMatchObject({ id: 7 });
+      await expect(appRouter.createCaller(ctx(5, role)).rfq.summary({ id: 7 }))
+        .resolves.toMatchObject({ id: 7 });
     }
+  });
+
+  it('a homeowner who does not own it CANNOT read it', async () => {
+    stubDb(ROW);   // ROW.requesterId is 42; this caller is 5.
+    await expect(appRouter.createCaller(ctx(5, 'homeowner')).rfq.summary({ id: 7 }))
+      .rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('the requester always reads their own, whatever their role', async () => {
+    stubDb(ROW);
+    await expect(appRouter.createCaller(ctx(42, 'homeowner')).rfq.summary({ id: 7 }))
+      .resolves.toMatchObject({ id: 7 });
+  });
+
+  it('an UNAPPROVED provider cannot read it either', async () => {
+    // Approval is what the feed is gated on elsewhere; a pending account must
+    // not get the brief by taking a different route to it.
+    stubDb(ROW);
+    const pending = ctx(5, 'contractor');
+    (pending.user as { onboardingStatus?: string }).onboardingStatus = 'under_review';
+    await expect(appRouter.createCaller(pending).rfq.summary({ id: 7 }))
+      .rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('refusal is NOT_FOUND, so it is not an oracle for which ids exist', async () => {
+    stubDb(ROW);
+    const denied = await appRouter.createCaller(ctx(5, 'homeowner')).rfq.summary({ id: 7 }).catch(e => e);
+    stubDb(null);
+    const absent = await appRouter.createCaller(ctx(5, 'contractor')).rfq.summary({ id: 7 }).catch(e => e);
+    expect(denied.code).toBe(absent.code);
   });
 
   it('requires authentication', async () => {
