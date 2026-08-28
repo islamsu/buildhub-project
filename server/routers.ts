@@ -1506,6 +1506,7 @@ const marketplaceRouter = router({
       const [row] = await db
         .select({
           questionId: productQuestions.id,
+          productId: productQuestions.productId,
           answer: productQuestions.answer,
           supplierId: products.supplierId,
           active: products.active,
@@ -1527,10 +1528,15 @@ const marketplaceRouter = router({
       await db.update(productQuestions)
         .set({ answer: input.answer, answeredAt: new Date() })
         .where(eq(productQuestions.id, input.questionId));
+      // subjectType is 'product' so subjectId must be a PRODUCT id. It was the
+      // question id, which meant a supplier reading the trail for product 12
+      // would get rows about whichever questions happened to share that number.
+      // The question itself is context.
       await recordCommercialEvent(db, {
         actorId: ctx.user.id, ownerId: ctx.user.id,
-        subjectType: 'product', subjectId: input.questionId,
+        subjectType: 'product', subjectId: row.productId,
         action: 'product_question_answered',
+        detail: `question ${input.questionId}`,
       });
       return { id: input.questionId };
     }),
@@ -1888,13 +1894,24 @@ const rfqRouter = router({
           // The paid lead. `alreadyConsumed` distinguishes a re-open (free)
           // from a fresh charge, and the trail records which - otherwise a
           // billing dispute has no way to tell them apart.
+          //
+          // subjectId IS THE qualifiedEnquiries ROW, not the RFQ. The rule this
+          // trail keeps is that subjectId always names a row in the table
+          // subjectType names - otherwise `subjectType='enquiry' AND
+          // subjectId=5` would sometimes mean an enquiry and sometimes an RFQ,
+          // and nothing about the result would look wrong. The RFQ is context,
+          // so it goes in `detail`.
+          //
+          // A null enquiryId does not suppress the event: the credit was still
+          // spent, and a row saying so with the id missing is far better than
+          // no record of a charge.
           await recordCommercialEvent(await getDb(), {
             actorId: ctx.user.id,
             ownerId: result.rfq?.requesterId ?? null,
             subjectType: 'enquiry',
-            subjectId: input.rfqId,
+            subjectId: result.enquiryId ?? 0,
             action: 'enquiry_opened',
-            detail: result.alreadyConsumed ? 'reopened, no credit charged' : 'credit charged',
+            detail: `rfq ${input.rfqId}, ${result.alreadyConsumed ? 'reopened, no credit charged' : 'credit charged'}`,
           });
           return { rfq: result.rfq, alreadyConsumed: result.alreadyConsumed, usage: result.usage };
       }
@@ -1942,11 +1959,14 @@ const rfqRouter = router({
       // refused, or should REPLACE the first as a revision, is a product
       // decision about how bidding works on BuildHub - not something to infer
       // from the schema. Recorded in the Phase 1B handoff for the owner.
-      await db.insert(quotations).values({
+      const inserted = await db.insert(quotations).values({
         ...input,
         providerId: ctx.user.id,
         price: String(input.price),
       });
+      // The QUOTATION's own id, because that is what the audit trail records.
+      // See the note beside recordCommercialEvent below.
+      const quotationId = Number(inserted?.[0]?.insertId ?? 0);
       await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: '/rfq', messageKey: 'notif.quotation.received', messageParams: { rfqTitle: rfq.title } });
       // Funnel milestone: a vendor responding is the point at which the
       // marketplace has produced value for both sides.
@@ -1958,13 +1978,20 @@ const rfqRouter = router({
       });
       // Commercial trail. AFTER the insert succeeded - an audit row for a
       // quotation that was never stored would be worse than no row at all.
+      //
+      // subjectId IS THE QUOTATION, NOT THE RFQ. This recorded the rfqId at
+      // first, which made `subjectType: 'quotation'` mean the quotation id in
+      // `quotation_accepted` and the RFQ id here - two id spaces under one
+      // label, so `WHERE subjectType='quotation' AND subjectId=5` would return
+      // unrelated rows and nothing would look wrong. The RFQ belongs in
+      // `detail`, which is where context goes.
       await recordCommercialEvent(db, {
         actorId: ctx.user.id,
         ownerId: rfq.requesterId,
         subjectType: 'quotation',
-        subjectId: input.rfqId,
+        subjectId: quotationId,
         action: 'quotation_submitted',
-        detail: `price ${input.price}${input.timeline ? `, ${input.timeline} days` : ''}`,
+        detail: `rfq ${input.rfqId}, price ${input.price}${input.timeline ? `, ${input.timeline} days` : ''}`,
       });
       return { success: true };
     }),

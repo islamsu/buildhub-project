@@ -216,6 +216,73 @@ describe('the events that matter are recorded', () => {
   it('records WHICH product fields changed, never their values', () => {
     expect(ROUTERS).toMatch(/changed: \$\{Object\.keys\(patch\)/);
   });
+
+  /**
+   * THE INVARIANT THIS TRAIL IS EASIEST TO BREAK.
+   *
+   * `subjectId` must name a row in the table `subjectType` names. Three call
+   * sites got this wrong on the first pass and none of them looked wrong:
+   *
+   *   quotation_submitted   recorded the RFQ id under subjectType 'quotation'
+   *   enquiry_opened        recorded the RFQ id under subjectType 'enquiry'
+   *   product_question_...  recorded the QUESTION id under subjectType 'product'
+   *
+   * Each one produces a query that returns confident, wrong answers rather
+   * than an error: `WHERE subjectType='quotation' AND subjectId=5` would mix
+   * quotation 5 with whatever happened on RFQ 5. An audit trail that is
+   * plausibly wrong is worse than one that is obviously missing, because
+   * somebody will settle a dispute with it.
+   *
+   * So every call site is enumerated here. Adding one means adding a line,
+   * which is the point: it forces the question "is that id from that table?"
+   * at the moment somebody would otherwise not ask it.
+   */
+  it('every call site records an id from the table its subjectType names', () => {
+    const sites = [...ROUTERS.matchAll(
+      /recordCommercialEvent\([\s\S]{0,600}?\}\);/g,
+    )].map(match => {
+      const body = match[0];
+      return {
+        subjectType: /subjectType: '(\w+)'/.exec(body)?.[1] ?? null,
+        subjectId: /subjectId: ([^,\n]+)/.exec(body)?.[1]?.trim() ?? null,
+      };
+    }).filter(site => site.subjectType);
+
+    // Nine instrumented events. If this number moves, the list below must too.
+    expect(sites).toHaveLength(9);
+
+    // The id expression each subjectType is allowed to carry. `input.rfqId` is
+    // absent from 'quotation' and 'enquiry' deliberately - that was the defect.
+    const ALLOWED: Record<string, string[]> = {
+      product:   ['id', 'input.id', 'row.productId'],
+      rfq:       ['rfqId'],
+      quotation: ['quotationId', 'input.quotationId'],
+      enquiry:   ['result.enquiryId ?? 0'],
+    };
+
+    for (const site of sites) {
+      const allowed = ALLOWED[site.subjectType!] ?? [];
+      expect(
+        allowed,
+        `subjectType '${site.subjectType}' records subjectId '${site.subjectId}', `
+        + `which is not one of ${JSON.stringify(allowed)} - is that id really `
+        + `a ${site.subjectType} row?`,
+      ).toContain(site.subjectId);
+    }
+  });
+
+  it('the RFQ behind a quotation or enquiry is kept, as CONTEXT not as identity', () => {
+    // Losing it entirely would be the opposite mistake: a quotation audit row
+    // that cannot be traced back to what was quoted on.
+    expect(ROUTERS).toMatch(/detail: `rfq \$\{input\.rfqId\}, price/);
+    expect(ROUTERS).toMatch(/detail: `rfq \$\{input\.rfqId\}, \$\{result\.alreadyConsumed/);
+  });
+
+  it('a missing enquiry id still records the charge', () => {
+    // The credit was spent either way. A row saying so with the id absent
+    // beats no record that money changed hands.
+    expect(ROUTERS).toContain('subjectId: result.enquiryId ?? 0');
+  });
 });
 
 // ══ 5. READING THE TRAIL IS ITSELF SCOPED ══════════════════════════════════

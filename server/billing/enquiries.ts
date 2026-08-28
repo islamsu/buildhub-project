@@ -92,7 +92,19 @@ export async function getEnquiryUsage(userId: number, now: Date = new Date()): P
 }
 
 export type OpenEnquiryResult =
-  | { outcome: 'granted'; rfq: Rfq; alreadyConsumed: boolean; usage: EnquiryUsage }
+  | {
+      outcome: 'granted';
+      rfq: Rfq;
+      alreadyConsumed: boolean;
+      usage: EnquiryUsage;
+      /**
+       * The qualifiedEnquiries row this grant corresponds to - the billable
+       * record itself, which is what a billing dispute is actually about.
+       * Null only if the row could not be read back, which does not fail the
+       * grant: the vendor has paid and must get their lead.
+       */
+      enquiryId: number | null;
+    }
   | { outcome: 'not_found' }
   | { outcome: 'not_eligible'; reason: 'unclassified_rfq' | 'category_mismatch' }
   | { outcome: 'limit_reached'; usage: EnquiryUsage };
@@ -158,11 +170,15 @@ export async function openQualifiedEnquiry(
     .where(and(eq(qualifiedEnquiries.userId, userId), eq(qualifiedEnquiries.rfqId, rfqId)))
     .limit(1);
   if (existing) {
-    return { outcome: 'granted', rfq, alreadyConsumed: true, usage: await getEnquiryUsage(userId, now) };
+    return {
+      outcome: 'granted', rfq, alreadyConsumed: true,
+      usage: await getEnquiryUsage(userId, now), enquiryId: existing.id,
+    };
   }
 
   let limitReached = false;
   let duplicate = false;
+  let enquiryId: number | null = null;
 
   try {
     await db.transaction(async tx => {
@@ -178,13 +194,19 @@ export async function openQualifiedEnquiry(
           return;
         }
       }
-      await tx.insert(qualifiedEnquiries).values({
+      const written = await tx.insert(qualifiedEnquiries).values({
         userId,
         rfqId,
         yearMonth: period.key,
         planAtConsumption: resolution.effectivePlan,
         matchedCategory: rfq.category,
       });
+      // OPTIONAL CHAINING ALL THE WAY DOWN, deliberately. This runs INSIDE the
+      // transaction that spends the credit: if reading the insertId threw, the
+      // grant would roll back and the vendor would lose a lead to an audit
+      // bookkeeping detail. Capturing an id must never be able to fail the
+      // thing it is recording.
+      enquiryId = Number(written?.[0]?.insertId) || null;
     });
   } catch (error) {
     if (!isDuplicateKeyError(error)) throw error;
@@ -215,11 +237,23 @@ export async function openQualifiedEnquiry(
       metadata: { category: rfq.category ?? undefined },
     });
   }
+  // A duplicate-key race means somebody else's transaction wrote the row, so
+  // there is no insertId to have captured - read it back rather than reporting
+  // null for a record that plainly exists.
+  if (enquiryId === null) {
+    const [row] = await db
+      .select({ id: qualifiedEnquiries.id })
+      .from(qualifiedEnquiries)
+      .where(and(eq(qualifiedEnquiries.userId, userId), eq(qualifiedEnquiries.rfqId, rfqId)))
+      .limit(1);
+    enquiryId = row?.id ?? null;
+  }
   return {
     outcome: 'granted',
     rfq,
     alreadyConsumed: duplicate,
     usage: await getEnquiryUsage(userId, now),
+    enquiryId,
   };
 }
 
