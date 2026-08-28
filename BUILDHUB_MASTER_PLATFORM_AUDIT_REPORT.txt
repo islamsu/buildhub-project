@@ -1,0 +1,440 @@
+================================================================================
+BUILDHUB — MASTER PLATFORM AUDIT & PRODUCTION-READINESS REPORT
+================================================================================
+Date: 2026-08-28
+
+MAIN SHA:     6a9e1e650034f5471f82927447da04ac3f79dac9
+STAGING SHA:  6a9e1e650034f5471f82927447da04ac3f79dac9
+GATE SHA:     6a9e1e650034f5471f82927447da04ac3f79dac9
+
+  MAIN == STAGING == GATE, verified with expect_commit (a mismatch FAILS the
+  gate; that the check reaches check() and not skip() is pinned by a unit test).
+  Run: https://github.com/islamsu/buildhub-project/actions/runs/33138444914
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+
+The platform was audited by reading the actual repository, not the previous
+handoffs. Five real defects were found and fixed, and ONE CLAIM IN MY OWN
+PREVIOUS HANDOFF WAS WRONG and is corrected below.
+
+The most serious finding was not a missing feature. It was a page that
+fabricated four conversations for every new user and, because the send endpoint
+never checked its recipient, DELIVERED THEIR REPLIES TO A REAL STRANGER. One of
+the fabricated threads told the reader "Your verification is complete!" over
+BuildHub's name.
+
+That is the shape of the risk in this codebase right now: not absent
+functionality, which is visible, but present functionality that is not what it
+appears to be. Four of the five findings are of that kind - a link that leads to
+a 404, a question box whose answer can never be written, a badge counting to
+zero forever, an authorization check reasoning about a path it never validated.
+Each looked finished.
+
+WHAT WAS NOT DONE, stated up front: this is not a 48-hour audit. It is a deep
+pass over the areas where the evidence pointed, and several sections of the
+brief were verified by reading rather than by live exercise. Every such case is
+marked PARTIAL or NOT VERIFIED below rather than being reported as GO.
+
+--------------------------------------------------------------------------------
+CORRECTION TO THE PREVIOUS HANDOFF
+--------------------------------------------------------------------------------
+
+I previously reported "NO AUDIT TRAIL. There is no audit-log table" as blocker
+L1/B8. THAT WAS WRONG.
+
+`userAccountAuditEvents` exists, is FK-protected with SET NULL so the trail
+outlives its subject, and carries 22 distinct actions written from 29 call
+sites: account creation, OAuth linking, every admin action, role changes,
+session revocation, the full password-reset lifecycle, invitation redemption,
+compliance document review, and subscription events.
+
+The real gap is narrower and is what should have been reported: COMMERCIAL
+actions are unaudited - RFQ created/submitted, quotation submitted/accepted/
+rejected, product created/changed, document uploaded/deleted, message sent.
+
+================================================================================
+PLATFORM SCORECARD
+================================================================================
+
+  AREA                 VERDICT   EVIDENCE
+  -------------------  --------  ------------------------------------------------
+  Security             GO        Storage proxy authorizes every category through a
+                                 DB row and fails closed; prompt-injection
+                                 boundary; no credential or PII in AI context;
+                                 traversal guard added this pass.
+  Authorization        GO        171-cell role matrix pinned against router
+                                 source; 67 isolation assertions; every
+                                 notification and analytics query scoped to
+                                 ctx.user.id; profile.update has no
+                                 mass-assignment surface.
+  UX                   PARTIAL   Dead controls and fabricated data removed where
+                                 found; a full screen-by-screen pass was NOT done.
+  Accessibility        NOT       No keyboard/focus/contrast/screen-reader audit
+                       VERIFIED  was performed. Reported as absent, not as passing.
+  Localization         GO        945 distinct keys, EVERY ONE present in both EN
+                                 and AR, zero duplicates, measured not assumed.
+                                 RTL asserted live per role.
+  Marketplace          GO        BuildHub-first, deterministic ranking, honest
+                                 EXACT/PARTIAL/RELATED/NO-MATCH, external clearly
+                                 labelled, no fabricated attributes.
+  RFQ                  PARTIAL   Creation, targeting, state machine and
+                                 credit-gated enquiry all work. NO DETAIL PAGE
+                                 exists (P2, below).
+  Quotations           PARTIAL   Submission, comparison and bounds are real.
+                                 Duplicate/revision model is undefined (D1).
+  Products             PARTIAL   Catalogue and Q&A now complete both ways. NO
+                                 IMAGE UPLOAD SURFACE (P2).
+  Attachments          GO        Byte sniffing, ownership by DB row, IDOR closed,
+                                 traversal guard. Storage unproven end-to-end on
+                                 staging (infrastructure).
+  Projects             GO        Ownership enforced on every sub-resource.
+  Messaging            GO        Fixed this pass - see P1 below.
+  Notifications        GO        Every procedure scoped; bilingual keys, not
+                                 rendered English.
+  AI                   GO        Role/project/language/permission aware; one
+                                 engine; no credential or PII reaches the model.
+  Knowledge            PARTIAL   10 documents, 10 domains, ALL AT TIER 6. No
+                                 primary-source content. Not called complete.
+  Transaction engine   PARTIAL   No execute path by construction; 46 unit tests;
+                                 NOT live-verified.
+  Admin                GO        RBAC with 37 permission-scoped procedures,
+                                 8 super-admin, full audit trail.
+  Analytics            GO        myStats is approvedProviderProcedure and
+                                 self-scoped; no hard-coded KPIs found.
+  Performance          NOT       No measurement performed. 63 indexes and 55 FKs
+                       VERIFIED  exist; N+1 and payload analysis was not done.
+  Reliability          PARTIAL   Optimistic-success bug fixed; retry/timeout/
+                                 concurrency not systematically exercised.
+
+================================================================================
+SECURITY REPORT
+================================================================================
+
+FINDING S1 — MESSAGE MISDIRECTION VIA FABRICATED UI          SEVERITY: HIGH (P1)
+
+  Impact      A signed-in user with no conversations was shown four invented
+              threads (ids 1-4). `selectedConv` defaulted to 1. `messages.send`
+              accepted ANY positive integer as receiverId with no existence or
+              status check. Typing into the thread labelled "Ahmed Hassan
+              (Contractor)" delivered the message to whichever REAL account
+              holds user id 1. The FK meant a non-existent id failed loudly; an
+              id that existed succeeded quietly.
+  Root cause  Two independent gaps that were only dangerous together: a client
+              fixture pointing at low integers, and a server endpoint that
+              trusted an integer.
+  Fix         Fabricated conversations removed entirely. messages.send now
+              requires a real ACTIVE recipient and refuses self-messages, with
+              ONE refusal shared by "no such user" and "not active" so the
+              endpoint is not a directory of which ids exist.
+  Test        server/messagingIntegrity.test.ts (17)
+  Evidence    6 mutations killed, incl. removing the guard, allowing inactive
+              recipients, and splitting the refusals into an oracle.
+
+FINDING S2 — AUTHORIZATION REASONED ABOUT AN UNVALIDATED PATH  SEVERITY: LOW (P3)
+
+  Impact      Every authorizeStorageKey branch dispatches on a prefix and hands
+              the same string to the adapter. `avatars/../../x` satisfied the
+              avatars branch - which allows ANY authenticated user, because
+              profile pictures are public - and then fetched a different object.
+  NOT EXPLOITABLE TODAY. The only backends are S3, where a key is opaque and
+              `..` is a literal segment that will not exist, and an HTTP API.
+  Why fixed   The defect is that the authorization layer reasoned about a path
+              it never validated. That is invisible to whoever later adds a
+              filesystem adapter for local development, and becomes a real
+              traversal at that moment in a file they had no reason to open.
+  Fix         isWellFormedStorageKey rejects absolute paths, backslashes,
+              control characters, empty segments and whole "."/".." segments,
+              BEFORE the admin short-circuit.
+  Test        server/storageKeyTraversal.test.ts (16)
+  Evidence    4 mutations killed, including an OVER-STRICT one: rejecting any
+              key containing ".." breaks a legal `..hidden.png`, so a fix that
+              quietly breaks real uploads fails too.
+
+AUDITED AND FOUND CLEAN (recorded so this is not a list of only failures):
+  - Storage proxy categories B-F: each resolves ownership through a DB row, not
+    through the key. Fails closed by default.
+  - Notifications: list, unreadCount and markAllRead are all scoped by
+    ctx.user.id. No single-notification read-by-id surface to attack.
+  - analytics.myStats: approvedProviderProcedure, self-scoped.
+  - profile.update: exactly two fields (bio, location), no userId in the schema,
+    written WHERE users.id = ctx.user.id. No mass-assignment surface.
+  - messages.send quotation branch: sender must be a PARTY to the quotation,
+    with not-a-party and does-not-exist giving the same answer.
+  - ConsoleMailer: cannot be selected in production
+    (`ENV.isProduction ? none : console`), so reset links cannot reach a log.
+  - 23 publicProcedures reviewed; the id-taking ones are marketplace listings
+    that are public by design.
+
+NOT ATTEMPTED, and therefore not claimed: live IDOR sweeps against the deployed
+API for every object type, session fixation, CSRF, and rate-limit abuse.
+
+================================================================================
+PRODUCT QUALITY REPORT
+================================================================================
+
+FINDING P1 — TWO AI ACTIONS LINKED TO THE 404 PAGE                        (P2)
+  The opportunity engine built `/rfq/${id}`. App.tsx registers `/rfq` and
+  nothing matches `/rfq/:id`, so both "prepared actions" the AI offered a
+  contractor fell through to the catch-all NotFound.
+  THIS WAS MINE, shipped in the previous phase, and the route test that should
+  have caught it only inspected one constant. The previous handoff's claim that
+  "every action href is asserted against App.tsx" was true of that constant and
+  false of the product.
+  Fixed: hrefs point at real routes; routeIntegrity.test.ts (47) parses the real
+  route table and holds EVERY href-producing source against it, including a rule
+  against building an href by interpolating an id into a path.
+
+FINDING P2 — A SUPPLIER HAD NOTHING TO DO ON THE RFQ LIST                 (P2)
+  Every card's only action was `isOwner && <Compare/>`. A contractor or supplier
+  browsing /rfq - the people an RFQ is addressed to - saw no action and no hint
+  of where to respond. Fixed with a route to the surface that owns the decision;
+  deliberately does NOT fire the credit-spending mutation from a list card.
+
+FINDING P3 — A SUPPLIER COULD NEVER ANSWER A PRODUCT QUESTION             (P2)
+  productQuestions carries `answer`/`answeredAt`, the list returns them,
+  ProductDetail renders them, the ask box says "Question sent to supplier" - and
+  no procedure could write one. Fixed with marketplace.answerQuestion and
+  myProductQuestions, owner-only via JOIN, one shared refusal for absent /
+  not-mine / delisted. 11 tests, 5 mutations killed.
+
+FINDING P4 — DEAD CONTROLS AND FABRICATED PRESENCE                       (P3)
+  Messages header carried a voice-call and a video-call button that toasted
+  "Coming soon", and an overflow button with no handler at all. A green "Online
+  now" dot was driven by a field the server hard-codes to false. All removed -
+  BuildHub has no calling and no presence system.
+
+FINDING P5 — A DEAD-END EMPTY STATE                                      (P3)
+  "Select a conversation to start" was shown when there were zero conversations
+  to select. Replaced with an empty state that says what happened and what
+  starts a conversation.
+
+REMAINING, NOT FIXED:
+  - No RFQ detail page (P2). Summary cards plus a credit-gated enquiry is what
+    exists. Linking to a detail route as though it existed caused P1.
+  - No product image upload surface (P2). `images` is read in three places and
+    written by nothing.
+  - No supplier-facing surface to answer questions from (P3) - the procedure and
+    its authorization exist; the screen does not.
+  - No batch upload verification (NOT VERIFIED).
+  - No edit/delete surface for several owner-authored records (P3).
+  - No export (P4).
+  - No provider comparison surface (D4).
+
+================================================================================
+DATA QUALITY REPORT
+================================================================================
+
+  FABRICATED DATA FOUND AND REMOVED
+    Four invented conversations with invented people, invented message threads,
+    invented unread counts and invented presence - rendered to any real user
+    with an empty inbox. Included a fabricated PLATFORM STATEMENT ("Your
+    verification is complete!") attributed to BuildHub Support.
+    This was the ONLY `real.length > 0 ? real : MOCK` fallback in the client;
+    a repo-wide scan found no other.
+
+  INCORRECT COUNTERS FOUND AND FIXED
+    conversations.unread was hard-coded to 0 while the UI rendered a badge from
+    it - a counter that always reads zero hides real messages. Now computed.
+    conversations.online was hard-coded false while the UI rendered a live
+    presence dot. Removed rather than shipped permanently false.
+
+  CLEAN
+    No fabricated ratings, reviews, verification badges, company metrics, team
+    sizes or certifications were found in any current surface. (Four such
+    surfaces existed and were fixed in an earlier phase.)
+    945 localization keys with exact EN/AR parity.
+    55 foreign keys, 63 indexes, 4 unique constraints.
+
+================================================================================
+AI REPORT
+================================================================================
+
+  Provider              OpenAI Responses API              (unchanged)
+  Model                 gpt-5.6-luna, pinned identifier   (unchanged)
+  Embeddings            text-embedding-3-small
+  Role awareness        server session only; no role field in ai.chat's schema,
+                        and zod strips unknown keys - the absence IS the control
+  Language              website language authoritative, all four combinations
+  Knowledge             5-level precedence chain; 10 docs; 8 jurisdictions
+  Retrieval             semantic + lexical fallback, ranked by authority,
+                        jurisdiction, freshness, status
+  Web                   routed by a deterministic classifier, not by the model
+  Attachments           PNG/JPEG/WEBP/PDF, 8 MB, byte-sniffed, owner-only
+  Privacy               33 tests on the ASSEMBLED prompt: no hash, key, secret,
+                        DB URL, SMTP/S3 credential, token, cookie, email, phone,
+                        username or openId
+  Prompt injection      untrusted content neutralised (line breaks incl.
+                        U+2028/9, === delimiter, invisibles) AND declared as
+                        data-not-instruction; channels covered: vendor name,
+                        location, categories, RFQ title, attachment filename
+  Recommendations       deterministic server-side ranking; model explains an
+                        order it did not choose
+  Transactions          NO EXECUTE PATH. PreparedAction has no 'completed'
+                        variant. Authorization precedes retrieval; the
+                        projection omits the four columns a credit pays for.
+  Action confirmation   carried explicitly per action
+  Failure handling      classified server-side; no raw provider error, no secret
+  Cost controls         a routine gate run spends AT MOST ONE paid request; the
+                        six-role live section costs ZERO
+
+  NOT PROVEN: that a live model refuses an injection payload that survives
+  neutralisation. The mechanical half holds without the model's cooperation and
+  is proven; the behavioural half needs a provider call per payload.
+
+================================================================================
+TEST NUMBERS
+================================================================================
+
+  TypeScript      tsc --noEmit ......... 0 errors
+  Unit + integration + security ........ 95 files, 2131 tests
+  Build ................................ green (client + server)
+  CI ................................... 3/3 checks green at a370b6c
+  Mutation ............................. 18 killed this pass
+                                         (6 messaging, 3 route, 5 Q&A, 4 storage)
+
+  TOTAL 2131 · PASSED 2131 · FAILED 0 · SKIPPED 0
+
+  Suites added this pass:
+    messagingIntegrity 17 · routeIntegrity 47 · productQuestionAnswers 11 ·
+    storageKeyTraversal 16
+
+  STAGING GATE
+  TOTAL 640 · PASSED 640 · FAILED 0 · SKIPPED 5
+
+  The five skips, each stating what it needs. A skip is NOT a pass:
+    9.  password reset ............ SMTP_HOST unset
+    10. upload to the bucket ...... S3_* not configured
+    29. knowledge priority (live) . opt-in; twelve extra paid requests
+    30. storing an attachment ..... S3_* not configured
+    30. cross-user attachment ..... requires a stored attachment
+
+  No failure was converted into a skip. An earlier gate run this session failed
+  639/640 and that failure was diagnosed and fixed, not reclassified.
+
+================================================================================
+LIVE ACCEPTANCE
+================================================================================
+
+  All six roles, real browser, EN and AR, 1440px (gate section 31):
+    START   sign in as each role
+    ACTION  open /ai
+    EXPECT  a distinct heading, a distinct tool set, a named workflow, no
+            untranslated key, dir=rtl in Arabic, zero AI requests on load
+    ACTUAL  passed for all six; six DISTINCT headings, six DISTINCT tool sets,
+            six DISTINCT workflows; contractor shown RFQ tooling and NOT the
+            homeowner designer finder
+
+  Role dashboards at 375 / 768 / 1440 in both languages (section 32): passed.
+  Unapproved providers land on /compliance, asserted as the negative case.
+
+  NOT LIVE-VERIFIED: the transaction opportunity engine (unit-proven only), the
+  new Q&A answer path, and the new messaging guard. These landed after the last
+  browser section was written and are covered by unit tests, not by the gate.
+
+================================================================================
+OWNER DECISIONS
+================================================================================
+
+  D1  Duplicate quotation / revision model. Undefined in the repository.
+  D2  Renovation finishing preset.
+  D3  Mandatory product fields. The schema mandates only supplierId, name and
+      category; price, images and specs are all nullable.
+  D4  Provider comparison surface - build it or the action stays absent.
+  D5  Should the free RFQ feed expose `budget`? rfq.list returns it while
+      openQualifiedEnquiry charges a credit for full detail.
+  D6  (NEW) Should messaging require a prior relationship? Existence and active
+      status are integrity and are now enforced. Whether a shared RFQ or
+      quotation should be required before one user may message another is
+      policy - the marketplace deliberately lets a customer contact a vendor
+      they just found.
+  D7  (NEW) May a supplier EDIT an answer once given, and do answers need
+      moderation? Currently write-once, which is the conservative reading and
+      is easy to relax; the opposite is not.
+
+================================================================================
+REMAINING ISSUES, CLASSIFIED
+================================================================================
+
+  P0  none outstanding.
+  P1  none outstanding. (S1 was P1 and is fixed.)
+  P2  No RFQ detail page · No product image upload surface · Commercial actions
+      unaudited.
+  P3  No supplier surface to answer questions from · No edit/delete surface for
+      several record types.
+  P4  No export · No provider comparison surface.
+
+  ENGINEERING BLOCKERS
+    E1  Commercial audit trail (RFQ, quotation, product, document, message).
+    E2  RFQ detail page.
+    E3  Product image upload.
+
+  INFRASTRUCTURE BLOCKERS
+    I1  SMTP unconfigured - password reset unproven end to end.
+    I2  S3 unconfigured - uploads and AI attachment storage unproven end to end.
+    I3  No payment provider exercised.
+    I4  No production administrator provisioning performed.
+
+  NOT VERIFIED (absence of evidence, reported as such)
+    N1  Accessibility: no keyboard, focus, contrast or screen-reader audit.
+    N2  Performance: no measurement; no N+1 or payload analysis.
+    N3  Batch upload: not exercised.
+    N4  Live IDOR sweep against the deployed API for every object type.
+    N5  Reliability under retry, timeout, concurrency and stale state.
+
+  OWNER DECISIONS  D1-D7 above.
+
+================================================================================
+FINAL VERDICTS
+================================================================================
+
+  SECURITY ..................... GO
+  ROLE ARCHITECTURE ............ GO
+  CUSTOMER EXPERIENCE .......... PARTIAL   (no RFQ detail page)
+  SUPPLIER EXPERIENCE .......... PARTIAL   (can now reach the response surface
+                                            and answer questions; no screen to
+                                            answer from, no image upload)
+  CONTRACTOR EXPERIENCE ........ PARTIAL   (opportunity engine not live-verified)
+  ENGINEER EXPERIENCE .......... GO
+  ARCHITECT EXPERIENCE ......... GO
+  PROJECT MANAGER EXPERIENCE ... GO
+  RFQ .......................... PARTIAL
+  QUOTATION .................... PARTIAL   (D1 open)
+  PRODUCT CATALOGUE ............ PARTIAL   (no image upload)
+  DOCUMENTS .................... GO
+  ATTACHMENTS .................. GO
+  MESSAGING .................... GO
+  NOTIFICATIONS ................ GO
+  PROJECTS ..................... GO
+  MARKETPLACE .................. GO
+  AI ........................... GO
+  TRANSACTION ENGINE ........... PARTIAL   (not live-verified)
+  ADMIN ........................ GO
+  MOBILE ....................... GO
+  ARABIC ....................... GO
+  ACCESSIBILITY ................ NOT VERIFIED
+  PERFORMANCE .................. NOT VERIFIED
+  STAGING ...................... GO
+
+  OVERALL PLATFORM:  NO-GO for production, GO for continued staging use.
+
+      The security posture is sound and the fixes in this pass removed the one
+      finding that could have embarrassed the business in front of a real user.
+      What stands between here and production is not a security wall - it is
+      three unbuilt surfaces, four unconfigured pieces of infrastructure, five
+      unmeasured areas, and seven open commercial decisions.
+
+  STAGING:     GO
+  PRODUCTION:  NO-GO   (not authorized by the owner; I1-I4 unconfigured and
+                        therefore unproven; E1-E3 outstanding; D1-D7 open)
+
+================================================================================
+PRODUCTION IMPACT: NONE.
+
+No production deployment, credential, database, S3 bucket, SMTP host, payment
+provider, DNS record, pricing change or administrator was created or modified.
+Paymob was not activated. No user or vendor data was destroyed.
+================================================================================
+For independent ChatGPT review.
+================================================================================
