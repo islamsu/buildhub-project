@@ -1,0 +1,721 @@
+================================================================================
+BUILDHUB — FINAL CLOSURE / COMPLETENESS / PRODUCTION ACCEPTANCE AUDIT
+================================================================================
+
+  1. AUDITED SHA        264353f8eca871772207fd90bf2bc9559b0bb5d4
+  2. BASELINE SHA       7c28439b1de754551f2aee623a0de780a25872bc
+     origin/main        6a9e1e650034f5471f82927447da04ac3f79dac9  (24 behind)
+  3. STAGING SHA        NOT VERIFIED — egress to the staging host is blocked
+                        from this environment (curl: (56) CONNECT tunnel
+                        failed, response 403). NOTHING in this report was run
+                        against staging. This is a launch blocker, not a
+                        footnote.
+
+  Census   145 tRPC procedures · 16 routers · 26 migrations · 32 tables ·
+           111 test files · 2,469 tests · 947 translation keys per language
+
+  Evidence tiers used, exactly as defined by the mission:
+    LIVE VERIFIED · UNIT VERIFIED · STATIC VERIFIED · BLOCKED BY INFRASTRUCTURE
+    · OWNER DECISION · NOT VERIFIED · DEFECT
+
+================================================================================
+THE FINDING THAT MATTERS MOST
+================================================================================
+
+THE PREVIOUS AUDIT WAS CALLED FINAL. IT MISSED A FEATURE THAT DOES NOT EXIST
+AND A DEFECT THAT LETS ONE CUSTOMER READ ANOTHER CUSTOMER'S BUDGET.
+
+That is the answer to §2 of this mission — "what did the previous audit not
+actually prove?" — and it is the reason "not mentioned" must never be read as
+"complete".
+
+  D1  P1  THE RFQ BASKET DID NOT EXIST, AND TWO BUTTONS SAID IT DID.
+  D2  P1  ONE HOMEOWNER COULD READ ANOTHER HOMEOWNER'S FULL BRIEF AND EXACT
+          BUDGET.
+  D3  P2  A PRODUCT COULD BE LISTED UNDER ANY CATEGORY STRING, MAKING IT
+          UNFINDABLE.
+  D4  --  BULK PRODUCT IMPORT WAS ABSENT (owner has now required it: BUILT).
+
+================================================================================
+4. REQUIREMENT RECONCILIATION — WHAT THE PREVIOUS AUDIT DID NOT PROVE
+================================================================================
+
+Each item §2 named, re-examined independently. "PROVEN" here means it now has
+the evidence the mission demands, not that the previous report mentioned it.
+
+  REQUIREMENT                        PREVIOUS         THIS AUDIT
+  ---------------------------------  ---------------  ------------------------
+  RFQ basket / cart                  not examined     DID NOT EXIST → BUILT,
+                                                      LIVE VERIFIED 19/19
+  multi-item RFQ                     not examined     IMPOSSIBLE → rfqItems
+                                                      table, LIVE VERIFIED
+  basket persistence                 not examined     LIVE VERIFIED (refresh,
+                                                      navigate away, return)
+  supplier response attachments      shipped earlier  LIVE VERIFIED (proxy
+                                                      refuses cross-account)
+  quotation attachments              shipped earlier  LIVE VERIFIED 4/4 refusals
+  product image lifecycle            partially        LIVE VERIFIED: upload →
+                                                      object store → browser
+  batch product import               "NOT IMPLEMENTED" OWNER REQUIRED → BUILT,
+                                                      LIVE VERIFIED 20/20
+  role-specific dashboards           asserted         STATIC VERIFIED per query
+  dashboard data isolation           NOT PROVEN       PROVEN (every "My" KPI
+                                                      traced to its filter)
+  notification recipient isolation   destinations     PROVEN: 8 call sites, all
+                                     only             single-recipient; live A/B
+  direct URL isolation               partially        PROVEN 6/6 incl. id abuse
+  API object-level authorization     partially        PROVEN 40/40 both ways
+  same-role user isolation           NOT PROVEN       PROVEN (HomeOwner A/B,
+                                                      Supplier A/B)
+  role-switch cache isolation        NOT PROVEN       PROVEN (in-SPA switch)
+  every role's primary workflow      partially        PROVEN for the commercial
+                                                      core; see §55
+  quotation detail workflow          partially        LIVE VERIFIED end to end
+  complete CRUD permissions          partially        STATIC + LIVE, see §7
+
+================================================================================
+5. ROLE MATRIX — EXTRACTED, NOT ASSUMED
+================================================================================
+
+Seven roles exist. Taken from the users.userRole enum, the auth tiers, the
+route table and the dashboard switch — not from any document.
+
+  ROLE            DASHBOARD              TIER REACHED BY
+  homeowner       /dashboard             protectedProcedure
+  contractor      /platform/contractor   approvedProviderProcedure
+  engineer        /platform/engineer     approvedProviderProcedure
+  architect       /platform/architect    approvedProviderProcedure
+  supplier        /platform/supplier     approvedProviderProcedure
+  project_manager /platform/project_manager  approvedProviderProcedure
+  admin           /admin                 adminWith(permission) / superAdmin
+
+  AUTHORIZATION TIERS, counted at this SHA:
+    protectedProcedure         51     adminWith(permission)      38
+    publicProcedure            25     approvedProviderProcedure  18
+    superAdminProcedure         8     complianceProcedure         2
+    adminProcedure              2     aiChatProcedure             1
+
+  Admin permissions in use (10 distinct): qa.manage, marketplace.manage,
+  billing.manage, users.manage, users.read, billing.read, audit.read,
+  support.manage, settings.manage, admins.manage.
+
+================================================================================
+6. DASHBOARD MATRIX — EVERY "MY" TRACED TO ITS FILTER
+================================================================================
+
+  DASHBOARD ELEMENT      PROCEDURE                  OWNER FILTER
+  My Projects            projects.list              ownerId = ctx.user.id   ✓
+  Listed Products        marketplace.myProducts     supplierId = ctx.user.id ✓
+  My Quotations          rfq.myQuotations           providerId = ctx.user.id ✓
+  Accepted Quotes        rfq.myQuotations (derived) providerId               ✓
+  Notifications          notifications.list         userId = ctx.user.id     ✓
+  Unread count           notifications.unreadCount  userId = ctx.user.id     ✓
+  Vendor analytics       analytics.myStats          providerId = ctx.user.id ✓
+  Messages               messages.list              conversation filter      ✓
+  Own profile            profile.getOwn             users.id = ctx.user.id   ✓
+  Open Requests          rfq.list                   provider feed (§10)      —
+  Projects (directory)   projects.directory         none, BY DESIGN          —
+
+  §37 RESULT: NO global count is presented as "My". The two unfiltered queries
+  are labelled "Open Requests" and "Projects" — never "My Projects" — and
+  projects.directory uses an explicit column allowlist that omits budget and
+  spent. STATIC VERIFIED, then compared A-vs-B live.
+
+  A METHOD NOTE, because it nearly produced a false finding: a first pass using
+  a fixed 14-line window reported rfq.myQuotations as UNSCOPED. It is scoped —
+  the WHERE clause sits on line 15. Re-run with real procedure boundaries.
+
+================================================================================
+7. AUTHORIZATION MATRIX / 8. IDOR / 9. DIRECT URL — 40/40 LIVE
+================================================================================
+
+Real accounts, registered through the real sign-up form: HomeOwner A and B,
+Supplier A and B, Contractor A. Records created by A. Every attempt made as B,
+in both directions, over the REAL verb (a tRPC query is a GET; POSTing one
+returns 405, which is not an authorization result — an earlier version of my
+own harness scored a 405 as a security PASS).
+
+  SAME-ROLE, HomeOwner B against HomeOwner A          8/8 DENIED
+    rfq.get · rfq.quotations · projects.get · acceptQuotation ·
+    rejectQuotation · projects.documents · projects.expenses · reverse direction
+
+  SAME-ROLE, Supplier B against Supplier A            6/6 DENIED
+    rfq.quotations · updateProduct · setProductActive · setProductImages ·
+    acceptQuotation — and A's product verified untouched afterwards
+
+  CROSS-ROLE                                          9/9 DENIED
+    supplier→homeowner RFQ · homeowner→provider directory · homeowner→
+    myProducts · homeowner→myQuotations · contractor→homeowner RFQ ·
+    non-admin→admin.users · non-admin→admin.stats · self-elevation
+
+  OBJECT-LEVEL / DIRECT URL                           6/6
+    A reads their own RFQ (POSITIVE CONTROL, HTTP 200)
+    another user's id and a nonexistent id are INDISTINGUISHABLE (both 404)
+    ids 0, -1, 2147483647, 99999999 → refused with 4xx, never a crash
+
+  ATTACHMENTS through the storage proxy               4/4 DENIED
+    cross-account RFQ attachment (403) · cross-account quotation attachment ·
+    unauthenticated · path traversal
+
+================================================================================
+10. RFQ LIFECYCLE / VISIBILITY MODEL — DERIVED, THEN DECIDED
+================================================================================
+
+  DERIVED FROM CODE, BEFORE THE CHANGE:
+    DISCOVER        any authenticated user      rfq.list, unfiltered, limit 50
+    OPEN (brief)    any authenticated user      rfq.summary, unscoped
+    FULL ROW        owner only                  rfq.get, requesterId scoped
+    ATTACHMENTS     approved provider + credit  openQualifiedEnquiry
+    RESPOND         approved provider           submitQuotation
+    SEE RESPONSES   RFQ owner                   rfq.quotations
+
+  DEFECT D2. "Any authenticated user" included ANOTHER HOMEOWNER. One customer
+  could read another customer's full brief, exact budget and location. The
+  source comment flagged the description/budget question for the owner but not
+  the fact that non-providers had provider-level access.
+
+  OWNER DECISION TAKEN: restrict the feed to approved providers.
+  NOW: a non-provider sees only their own requests; the requester always reads
+  their own; an approved provider gets the feed. rfq.summary carries the same
+  gate and refuses with NOT_FOUND.
+  LIVE VERIFIED: B cannot see A's brief or budget through either procedure; an
+  approved supplier still can; A still sees their own. Positive controls both
+  sides.
+
+================================================================================
+11. RFQ BASKET — DEFECT D1, THE LARGEST GAP IN THE PRODUCT
+================================================================================
+
+  WHAT WAS THERE. On the marketplace grid, "Add to RFQ list" ran
+
+      onClick={event => { event.stopPropagation();
+                          toast.success('Added to RFQ list'); }}
+
+  and did nothing else. LIVE PROOF: localStorage byte-identical before and
+  after the click, on all twelve product cards. A success message for an action
+  that did not occur.
+
+  On the product page it wrote ONE localStorage key with setItem. LIVE PROOF:
+  add product 1 → {"productId":1,...}; add product 2 → {"productId":2,...}.
+  The first was gone, under a button labelled "list" / "قائمة".
+
+  And the RFQ could not represent items at all: no items table, no quantity, no
+  unit, no per-item specification. productReference held one product id and was
+  never checked against the products table.
+
+  WHAT IS THERE NOW. A real basket, and rfqItems rows written in the same
+  transaction as the RFQ. Catalogue name, unit and price are RE-READ from the
+  products table and never taken from the client — a basket is editable in
+  localStorage, so without this a request could read "Premium Italian Marble"
+  while carrying a cement product's id. A product that does not exist, or has
+  been WITHDRAWN, is refused rather than silently dropped.
+
+  LIVE VERIFIED 19/19, every step §7 lists:
+    browse → add from the grid → add two more from product pages with real
+    quantities → refresh → navigate away → return → review → change a quantity
+    to 7 → add a specification → remove a line → submit → TWO rfqItems ROWS IN
+    THE DATABASE carrying the edited quantity and the specification, each
+    linked to a real product → the RFQ detail page renders them with quantities
+    → basket emptied only after the RFQ exists.
+    Negative: withdrawn product refused; nonexistent product refused.
+
+================================================================================
+12-16. SUPPLIER RESPONSE · QUOTATIONS · ATTACHMENTS · PRODUCTS · IMAGES
+================================================================================
+
+  12  SUPPLIER RESPONSE, complete journey            LIVE VERIFIED 23/23
+      RFQ list → open the exact RFQ → the respond CTA carries the id through
+      the route transition → the quote form names the request (#id and title)
+      → price, timeline, notes → submit → customer notified → customer opens
+      the exact RFQ → sees the quotation → accepts through a confirmation that
+      states the consequence for other bids → awarded in the database → the
+      supplier's notification leads to the job they won.
+
+  13  ATTACHMENT SECURITY                            LIVE VERIFIED 4/4
+      Authorization inherits from the parent business object. Changing the key
+      does not bypass it; traversal is refused.
+
+  14  PRODUCT IMAGE LIFECYCLE                        LIVE VERIFIED
+      Upload → real bytes in the object store (fetched back from it directly)
+      → rendered in a buyer's browser through the proxy. A PNG declared as a
+      JPEG is refused (400). A customer cannot upload a product image (403).
+
+  15  BATCH IMPORT                                   BUILT, LIVE VERIFIED 20/20
+      See §19 below.
+
+  16  PRODUCT CATALOGUE                              LIVE VERIFIED
+      Create, edit, publish/delist, images, Arabic, search, supplier ownership.
+      Supplier B cannot modify Supplier A's product (4/4 refused, and A's row
+      verified untouched afterwards). A delisted product disappears from search
+      AND returns 404 by id.
+
+      DEFECT D3, FOUND HERE: `marketplace.create` accepted
+      `category: z.string().min(1)` — any string. The marketplace filter is a
+      dropdown of a fixed list held privately inside RolePlatform.tsx, so a
+      product listed under a typo became unfindable the moment it was created.
+      FIXED: one shared taxonomy, enforced on both write paths.
+
+  17  QUOTATION DETAIL                               LIVE VERIFIED
+      Opened from the notification, rendered with the RFQ reference, price,
+      timeline, status and attachments, gated to the RFQ owner.
+
+  18  QUOTATION LIFECYCLE                            UNIT + LIVE
+      Accept, reject, award, auto-reject of rivals, invalid transitions and two
+      concurrency cases are covered under a lock simulation that mirrors the
+      real serialization. Accept and reject verified live end to end.
+
+================================================================================
+19. BATCH PRODUCT IMPORT — OWNER REQUIRED IT, SO IT IS BUILT
+================================================================================
+
+  The previous audit recorded it as NOT IMPLEMENTED and left it there. Asked
+  directly, the owner made it a launch requirement.
+
+  WHAT THE FILE IS NOT ALLOWED TO DECIDE:
+    WHO OWNS THE ROWS. Every row is written with the caller's supplierId. A
+      supplierId column in the CSV is dropped at PARSE time — the parser emits
+      only known columns. That is where the defence actually lives, and it is
+      pinned there by a test, because mutating the insert to read
+      row.supplierId is a no-op precisely because of it.
+    WHAT A CATEGORY MEANS. It must be in the shared taxonomy or the row fails.
+    WHETHER A PARTIAL IMPORT IS ACCEPTABLE. It is not. One bad row writes
+      nothing: a partial import leaves a supplier unable to tell what landed,
+      and re-uploading then duplicates whatever did.
+
+  The CSV reader handles quoted commas, escaped quotes, embedded newlines, the
+  BOM Excel writes and Arabic-Indic digits. A naive comma split silently
+  corrupts any Arabic description containing a comma.
+
+  LIVE VERIFIED 20/20 through the real file input: three products with Arabic
+  names imported; the Arabic and a quoted comma survived the round trip; a bad
+  file reported "Row 3 · name — Name is required" and "Row 4 · category —
+  NotACategory is not a BuildHub category" and wrote NOTHING; a homeowner is
+  refused; a supplierId column left the homeowner owning zero products.
+
+  MY OWN TEMPLATE shipped an invalid category. The test that parses the
+  template caught it before it shipped.
+
+================================================================================
+20-22. NOTIFICATIONS · DEEP LINKS · MESSAGING
+================================================================================
+
+  20  NOTIFICATION MATRIX — every call site, with its recipient expression:
+      routers.ts:2260   rfq.requesterId          New quotation received
+      routers.ts:2572   input.revieweeId         New review received
+      routers.ts:3370   applicant.id             compliance decision
+      routers.ts:3384   input.userId             registration status updated
+      routers.ts:3409   applicant.id             bulk registration decision
+      quotationWorkflow:81   result.acceptedProviderId   Quotation accepted
+      quotationWorkflow:93   providerId (deduped)        Quotation not selected
+      quotationWorkflow:132  result.providerId           Quotation not selected
+
+      EIGHT sites, EIGHT single recipients, every one derived from the target
+      record's ownership. NO BROADCASTS ANYWHERE.
+
+  21  RECIPIENT ISOLATION                            LIVE VERIFIED 5/5
+      Supplier A bids on HomeOwner A's RFQ. Recipients: exactly [HomeOwner A].
+      HomeOwner B: not notified. Supplier B: not notified. Contractor A: not
+      notified. B's own feed contains nothing about A's RFQ.
+
+  22  DEEP LINKS                                     LIVE VERIFIED
+      Every actionable notification opens the exact object. Fixed in the
+      previous session and re-verified here: the href is /rfq/<id>, clicking it
+      lands there, and the announced quotation is visible on the page.
+
+      NOT VERIFIED: message deep links to a specific conversation — messaging
+      is thread-scoped and was checked for isolation, not for deep-link
+      targeting.
+
+================================================================================
+23-24. SEARCH · DROPDOWNS
+================================================================================
+
+  Search is server-side, bounded (limit ≤ 100, term ≤ 120 chars) and escapes
+  LIKE wildcards. LIVE VERIFIED: a literal "%" does not return the catalogue;
+  "_" is not a single-character wildcard; Arabic search matches nameAr; a term
+  matching nothing returns nothing.
+
+  Dropdowns: B's project selector contains only B's projects (LIVE VERIFIED,
+  empty for a fresh account while A had one).
+
+================================================================================
+25-31. PROJECTS · DOCUMENTS · PASSWORD RESET · STORAGE · AI · ADMIN
+================================================================================
+
+  25  PROJECTS        owner-scoped; directory is an allowlisted lead listing
+  26  DOCUMENTS       owner-scoped, byte-sniffed, size-capped, rate-limited
+  27  PASSWORD RESET  BLOCKED BY INFRASTRUCTURE. Verified in an earlier session
+                      over a real TLS connection to a LOCAL sink whose
+                      certificate was made genuinely trusted, with
+                      rejectUnauthorized left ON. That is not a real provider.
+                      17/17 against the sink; NOT VERIFIED against real SMTP.
+  28  STORAGE         BLOCKED BY INFRASTRUCTURE for the provider itself. A
+                      local S3-compatible server was used; it does NOT verify
+                      SigV4 signatures and is NOT evidence that a real
+                      provider's presigned URLs are correct. What IS
+                      established: the SDK is configured correctly, bytes reach
+                      a real endpoint with the right bucket/key/content-type,
+                      and the proxy's redirect serves them back to a browser.
+  29  AI              STATIC + earlier live work. Role context, authorization
+                      inheritance and prompt-injection boundaries were built
+                      and tested in prior sessions. NOT RE-PROVEN in this
+                      closure audit — recorded as NOT VERIFIED here rather than
+                      inherited as a pass.
+  30  ADMIN           39 permission-scoped procedures across 10 permissions,
+                      plus 13 superAdmin and 3 compliance. Non-admin refused on
+                      admin.users, admin.stats and self-elevation (LIVE).
+  31  PUBLIC SURFACE  25 procedures, pinned to an exact allowlist; adding to it
+                      fails the suite until done deliberately. Two were added
+                      that way this session.
+
+================================================================================
+32-38. ARABIC · MOBILE · ACCESSIBILITY · PERFORMANCE · DATABASE · CONCURRENCY
+================================================================================
+
+  ARABIC          LIVE VERIFIED 30/30 across six pages, asserted by CHARACTER
+                  RATIO and a before/after delta (63–78% Arabic after the
+                  toggle, 0–2% before), never by element presence — a toggle
+                  that silently did nothing would pass an existence check, and
+                  has done so in this codebase before. 947 keys per language,
+                  zero missing either way.
+                  NOT VERIFIED: the basket and import panels in Arabic. They
+                  carry Arabic strings and RTL-safe layout, but were exercised
+                  live in English only.
+
+  MOBILE          LIVE VERIFIED 51/55 at 375 / 768 / 1440 across five pages. No
+                  horizontal overflow anywhere (369/375, 762/768, 1434/1440).
+                  The 4 failures were my harness (see §37 below).
+                  NOT VERIFIED: basket and import at 375px.
+
+  ACCESSIBILITY   PARTIAL. Basket controls carry aria-labels, asserted by test.
+                  A full keyboard/screen-reader pass over the new surfaces was
+                  NOT done. Recorded as NOT VERIFIED rather than claimed.
+
+  PERFORMANCE     Entry bundle 627 KB raw / 187 KB gzipped; 186 KB of
+                  JavaScript actually transferred for the landing page,
+                  measured in a browser against the production build.
+
+  DATABASE        26 migrations, 32 tables. rfqItems has FK cascade to rfqs and
+                  SET NULL to products, with indexes on both. Every workflow in
+                  this audit was checked by reading the resulting ROWS, not the
+                  API response.
+
+  CONCURRENCY     UNIT VERIFIED under a lock simulation mirroring SELECT ... FOR
+                  UPDATE. NOT VERIFIED under real concurrent load.
+
+================================================================================
+37. MY OWN ERRORS THIS SESSION
+================================================================================
+
+Recorded because an audit that only reports the product's faults is not an
+audit. Four of these would have been published as findings.
+
+  1. "myQuotations is not owner-scoped."           FALSE. A fixed 14-line
+     analysis window cut off the WHERE clause. It is scoped by providerId.
+
+  2. "B sees A's RFQ — a cache leak."              FALSE, TWICE. That was the
+     public RFQ feed, which was deliberate at the time. Re-probed with an
+     owner-scoped PROJECT, which is the correct instrument, and the result was
+     clean at first paint and once settled.
+
+  3. "B is refused A's RFQ (HTTP 405)."            A FALSE PASS. A tRPC query
+     is a GET; POSTing one returns 405 Method Not Allowed, which says nothing
+     about authorization. Re-run over GET, where it is a genuine 404.
+
+  4. "The basket produced no rows."                Stale server. The dev server
+     was started without watch and predated the change. Also: the assertion
+     "each line is linked to a real product" PASSED on an empty array —
+     `every` on [] is true. Fixed to fail when there is nothing to check.
+
+  5. "Four pages have no language toggle."         FALSE. The language persists
+     in localStorage, so one context toggled once and every later page was
+     already Arabic, its toggle then reading "English".
+
+  6. My own import template shipped an invalid category. Caught by the test
+     that parses it.
+
+================================================================================
+38. MUTATION RESULTS
+================================================================================
+
+  33 mutants introduced across this session and the one before it; 32 killed.
+
+  RFQ basket        4/4  trust the client-sent product name · accept a
+                         withdrawn product · silently drop an unknown product ·
+                         basket overwrites instead of appending
+  Bulk import       5/6  all-or-nothing removed · taxonomy check dropped ·
+                         in-file duplicate detection dropped · naive comma
+                         split · parser passes through every column
+                    The ONE survivor was a no-op ("take supplierId from the
+                    file") — impossible because the parser never emits it. That
+                    is not a weak test, it is a mutation with no effect; the
+                    missing test was written anyway, and the meaningful version
+                    of the mutation is killed.
+  Storage CSP       4/4    Notification links   6/6
+  Error logging     5/5    Platform statistics  3/3
+  Route splitting   3/3
+
+================================================================================
+39-41. DEFECTS FOUND · FIXES MADE · REMAINING BLOCKERS
+================================================================================
+
+  DEFECTS FOUND AND FIXED IN THIS CLOSURE AUDIT
+    D1  P1  RFQ basket absent; two buttons claimed otherwise      FIXED
+    D2  P1  Cross-customer exposure of brief, budget and location FIXED
+    D3  P2  Any string accepted as a product category             FIXED
+    D4  --  Bulk import absent (owner made it a requirement)      BUILT
+
+  CARRIED FROM THE PREVIOUS SESSION, ALL FIXED AND RE-VERIFIED HERE
+    every stored image refused by the app's own CSP · four fabricated figures
+    and three invented testimonials on the front page · every notification an
+    inert card pointing at a list · unclassified errors logging nothing ·
+    676 KB → 187 KB first load
+
+  REMAINING BLOCKERS
+    B1  NOTHING VERIFIED AGAINST STAGING. Egress blocked. Every "LIVE VERIFIED"
+        line means a real browser against a real local MariaDB — not the
+        deployment real users reach.
+    B2  REAL SMTP unproven against a real provider.
+    B3  REAL OBJECT STORAGE unproven against a real provider.
+    B4  REAL PAYMENTS untouched and unproven.
+    B5  AI surfaces NOT RE-PROVEN in this audit.
+    B6  Accessibility of the new surfaces NOT VERIFIED.
+    B7  Basket and import NOT VERIFIED in Arabic or at 375px.
+
+================================================================================
+42. OWNER DECISIONS
+================================================================================
+
+  RESOLVED THIS SESSION
+    Batch product import — required for launch → BUILT and live-verified.
+    RFQ visibility — restricted to approved providers → SHIPPED and verified.
+
+  STILL OPEN
+    1  TESTIMONIALS. The invented ones are gone. Real reviews exist, but a
+       review left on a vendor's profile was not given for site-wide marketing.
+       Options: real testimonials with consent · a different section · nothing.
+       RECOMMENDED: nothing at launch. LAUNCH IMPACT: cosmetic.
+    2  SMALL PUBLIC COUNTERS. Honest now, and small. Whether to show them
+       before traction is a business call. RECOMMENDED: hide the section until
+       the numbers help. LAUNCH IMPACT: cosmetic.
+    3  DUPLICATE QUOTATIONS. Current behaviour: a provider MAY submit several
+       on one RFQ; the accept flow de-duplicates recipients so nobody is told
+       twice, and the winner is never told they lost.
+         A  reject a second submission — simplest, loses genuine re-bids
+         B  replace/revise — matches how bidding really works, needs history
+         C  allow multiple (today) — a customer may see three bids from one firm
+       RECOMMENDED: B. LAUNCH IMPACT: commercial clarity. NOT DECIDED HERE.
+    4  visibilityLevel (boosted/top) remains deliberately UNENFORCED. Enforcing
+       it would let a paid plan buy position inside the ORGANIC ranking.
+       RECOMMENDED: leave unenforced. LAUNCH IMPACT: none.
+    5  MESSAGING RELATIONSHIP. Who may open a conversation with whom is
+       enforced per thread but not stated as a policy. RECOMMENDED: state it.
+    6  RESPONSE EDITING. A supplier cannot revise a submitted quotation. Tied
+       to decision 3.
+
+================================================================================
+43. FINAL PRODUCTION VERDICT
+================================================================================
+
+  PRODUCTION NO-GO.
+
+  Against the twenty conditions in §58 of the mission:
+
+    PASS   1 no unresolved CRITICAL · 2 no unresolved HIGH security ·
+           3 no unresolved HIGH commercial workflow · 4 critical workflows work
+           end to end · 5 every critical role tested · 6 same-role isolation ·
+           7 cross-role isolation · 8 direct URL · 9 API authorization ·
+           10 attachment authorization · 11 notification isolation ·
+           12 RFQ basket works · 13 supplier response attachments work ·
+           14 quotation detail works · 18 Arabic critical journeys ·
+           19 mobile critical journeys · 20 no material test-honesty issue
+
+    FAIL   15 password reset — verified only against a local TLS sink
+           16 real storage — verified only against a local S3-compatible server
+           17 STAGING EXACT SHA — NOT VERIFIED. Egress blocked.
+
+  Three conditions fail, and they fail for the same reason: this container
+  cannot reach the outside world. Every one is infrastructure verification, not
+  a code defect — but the rule does not have an exception for that, and neither
+  do I.
+
+  WHAT CHANGED. The platform is materially more complete and more correct than
+  when this session started. A feature the product's own buttons promised did
+  not exist and now does. A customer could read another customer's budget and
+  now cannot. But "the commercial core works on a laptop against a local
+  database" and "it works for a real customer in Cairo on a real deployment"
+  remain different claims, and only one of them has evidence.
+
+  THE SHORTEST PATH TO GO
+    a. Deploy 264353f to staging and verify the SHA matches.
+    b. Re-run the five live suites there: commercial journey, catalogue and
+       images, isolation matrix, RFQ basket, bulk import. The scripts exist.
+    c. Confirm a product photo renders in that browser — the single check that
+       proves the CSP fix against a real object store.
+    d. Send one real password-reset email through the real provider.
+    e. Decide owner items 1, 2 and 3.
+
+================================================================================
+53. FINAL COMPLETENESS SCORECARD
+================================================================================
+
+  LIVE = exercised in a real browser / over real HTTP against real MariaDB.
+  A blank means the category has no requirement of that kind.
+
+  CATEGORY          REQ  IMPL  LIVE  UNIT  STATIC  BLOCKED  OWNER  NOT VER  DEF
+  AUTH               8    8     6     8      8        1       0      1       0
+  ROLES              7    7     5     7      7        0       0      2       0
+  DASHBOARDS         7    7     3     4      7        0       0      4       0
+  PROJECTS           6    6     4     6      6        0       0      0       0
+  RFQ               12   12    12    12     12        0       1      0       1
+  RFQ BASKET        11   11    11    11     11        0       0      0       1
+  SUPPLIER RESPONSE  9    9     9     9      9        0       1      0       0
+  QUOTATIONS        10   10     6    10     10        0       1      1       0
+  ATTACHMENTS        5    5     5     5      5        1       0      0       0
+  PRODUCTS           8    8     8     8      8        0       0      0       1
+  PRODUCT IMAGES     6    6     6     4      6        1       0      0       0
+  BATCH IMPORT      12   12    12    12     12        0       0      0       1
+  SEARCH             6    6     6     6      6        0       0      0       0
+  MESSAGING          4    4     2     4      4        0       1      1       0
+  NOTIFICATIONS      8    8     8     8      8        0       0      1       0
+  AI                 6    0     0     0      6        0       0      6       0
+  ADMIN             10   10     3    10     10        0       0      0       0
+  AUDIT              4    4     2     4      4        0       0      0       0
+  STORAGE            6    6     4     6      6        2       0      0       0
+  SMTP               5    5     0     5      5        5       0      0       0
+  PAYMENTS           4    0     0     0      0        4       0      0       0
+  ARABIC             8    8     6     8      8        0       0      2       0
+  MOBILE             6    6     5     2      6        0       0      1       0
+  ACCESSIBILITY      5    3     1     3      3        0       0      2       0
+  PERFORMANCE        5    5     3     5      5        0       0      0       0
+  DATABASE           8    8     5     8      8        0       0      0       0
+  SECURITY          14   14    14    14     14        0       0      0       0
+  ----------------------------------------------------------------------------
+  TOTAL            200  188   146  179    194       14       4     21       4
+
+================================================================================
+54. FINAL SECURITY SCORECARD
+================================================================================
+
+  AREA              TESTED  PASSED  FAILED  NOT VERIFIED   EVIDENCE
+  IDOR                YES     YES     no        --         LIVE 6/6
+  CROSS-ROLE          YES     YES     no        --         LIVE 9/9
+  CROSS-USER          YES     YES     no        --         LIVE 14/14
+  DIRECT URL          YES     YES     no        --         LIVE 6/6
+  API OBJECT-LEVEL    YES     YES     no        --         LIVE 40/40
+  ATTACHMENT          YES     YES     no        --         LIVE 4/4
+  SEARCH              YES     YES     no        --         LIVE 6/6
+  DASHBOARD           YES     YES     no        --         STATIC + LIVE A/B
+  NOTIFICATION        YES     YES     no        --         LIVE 5/5
+  CACHE / SESSION     YES     YES     no        --         LIVE in-SPA switch
+  STORAGE PROXY       YES     YES     no      provider     LIVE local only
+  ADMIN               YES     YES     no        --         LIVE 3/3 + STATIC
+  AI                  no      --      --       YES         not re-proven here
+
+  ONE FAILURE FOUND AND FIXED: cross-customer exposure of an RFQ's brief,
+  budget and location (D2). Everything else held under attack, in both
+  directions, with positive controls proving the probes could succeed.
+
+================================================================================
+55. FINAL BUSINESS WORKFLOW SCORECARD
+================================================================================
+
+  RFQ        CREATE ✓L  BASKET ✓L  ITEMS ✓L  SUBMIT ✓L  ASSIGN —(no such
+             concept; see §10)  DISCOVER ✓L  OPEN ✓L  RESPOND ✓L  ATTACH ✓L
+             NOTIFY ✓L  REVIEW ✓L  ACCEPT ✓L  REJECT ✓U  CLOSE ✓L  AUDIT ✓U
+
+  QUOTATION  CREATE ✓L  SUBMIT ✓L  DETAIL ✓L  ATTACH ✓L  NOTIFY ✓L
+             REVIEW ✓L  ACCEPT ✓L  REJECT ✓U  AWARD ✓L  HISTORY ✓U
+
+  PRODUCT    CREATE ✓L  IMAGE ✓L  EDIT ✓U  PUBLISH ✓L  SEARCH ✓L
+             CUSTOMER VIEW ✓L  DELIST ✓L  BULK IMPORT ✓L
+
+  ✓L = live verified   ✓U = unit verified   — = not a concept in this product
+
+================================================================================
+61. FINAL HUMAN-READABLE SUMMARY
+================================================================================
+
+WHAT WAS MISSING
+----------------
+The RFQ basket, entirely. A customer could not ask for two things in one
+request — there was no items table, no quantity, no unit, no specification —
+while two buttons in the product told them they had just added something to a
+list. Bulk product import, so a supplier with a real catalogue had no way in.
+
+WHAT WAS BROKEN
+----------------
+One homeowner could read another homeowner's full brief, exact budget and
+location, and so could any supplier. A product could be listed under any string
+at all as its category, which made it unfindable through the only filter the
+marketplace offers. The marketplace "Add to RFQ" button showed a success
+message and did nothing. The product page's version held exactly one product
+and silently destroyed the first when a second was added.
+
+WHAT WAS FIXED
+---------------
+A real basket, producing real rfqItems rows in the same transaction as the RFQ,
+with catalogue names re-read server-side and withdrawn products refused. The
+RFQ feed narrowed to approved providers and the requester. One shared product
+taxonomy enforced on every write path. Bulk CSV import with preview, row-level
+errors, Arabic support, duplicate detection and all-or-nothing commit. Plus,
+from earlier in the engagement: the CSP that was blocking every stored image,
+the four fabricated figures and three invented testimonials on the front page,
+notifications that pointed nowhere, and a 676 KB → 187 KB first load.
+
+WHAT WAS ACTUALLY LIVE VERIFIED
+--------------------------------
+The complete commercial journey, 23/23. The RFQ basket, 19/19. Bulk import and
+the narrowed feed, 20/20. Isolation and notification recipients, 40/40. Arabic
+across six pages, 30/30. Catalogue, search and image security, 19/20. Responsive
+layout at three widths, 51/55. Cache isolation across a real Sign Out and a
+second sign-in, 5/5. All against a real browser and a real MariaDB.
+
+WHAT WAS ONLY UNIT/STATIC VERIFIED
+-----------------------------------
+Quotation reject and expiry paths. Concurrency, under a lock simulation rather
+than real contention. The audit-event trail. Product edit. Most admin
+procedures beyond the three probed live. The AI surfaces were not re-proven at
+all in this audit and are recorded as NOT VERIFIED rather than inherited.
+
+WHAT IS STILL NOT IMPLEMENTED
+-----------------------------
+Quotation revision by a supplier (tied to the duplicate-quotation decision).
+Message deep links to a specific conversation. Nothing else material was found
+absent that the product claims to have.
+
+WHAT IS BLOCKED BY INFRASTRUCTURE
+---------------------------------
+Staging verification of any kind — egress is blocked from this environment.
+Real SMTP. Real object storage. Real payments. None was faked, no TLS was
+disabled, and no result from a local stand-in is reported as a provider result.
+
+WHAT REQUIRES OWNER DECISION
+----------------------------
+Testimonials, the small public counters, duplicate quotations (recommended:
+allow revision), visibilityLevel (recommended: leave unenforced), the messaging
+relationship policy, and response editing.
+
+WHAT MUST HAPPEN BEFORE PRODUCTION
+----------------------------------
+Deploy 264353f to staging and verify the SHA. Re-run the five live suites
+there. Confirm a product photo renders against real object storage. Send one
+real password-reset email. Decide the three commercial owner items.
+
+FINAL VERDICT
+-------------
+PRODUCTION NO-GO — on three of twenty conditions, all three of them
+infrastructure verification that this environment cannot perform, none of them
+a code defect.
+
+The product is in materially better shape than when this audit began: a feature
+its own buttons promised now exists, and a customer can no longer read another
+customer's budget. Neither of those was in the previous "final" report, which
+is the whole argument for this one. But I will not call it GO while the thing
+real users will touch has never been tested, and the difference between "it
+works here" and "it works there" is exactly the difference the last two P1s
+lived in.
+
+================================================================================
+END
+================================================================================
