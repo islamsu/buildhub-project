@@ -1076,7 +1076,10 @@ const projectsRouter = router({
       const safeName = input.name.replace(/[^\w.-]+/g, '_');
       const { key, url } = await storagePut(`project-documents/user-${ctx.user.id}/project-${input.projectId}/${safeName}`, buffer, input.contentType);
       const result = await db.insert(documents).values({ projectId: input.projectId, uploaderId: ctx.user.id, name: input.name, type: input.type, url, fileKey: key, size: buffer.length });
-      return { id: Number(result[0].insertId), key, url, name: input.name, type: input.type, size: buffer.length };
+      // The bytes are stored and the row is written by this point. Throwing here
+      // because a driver returned an unexpected shape would show the user a
+      // failure for an upload that succeeded, and they would try again.
+      return { id: Number(result?.[0]?.insertId ?? 0), key, url, name: input.name, type: input.type, size: buffer.length };
     }),
   progressReports: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
