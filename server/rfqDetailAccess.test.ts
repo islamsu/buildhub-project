@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 
 vi.mock('./db', () => ({ getDb: vi.fn() }));
 
@@ -80,9 +81,8 @@ describe('rfq.summary returns the feed allowlist and no more', () => {
     // Asserted against the other procedure's source rather than a copied list,
     // so widening one without the other is a failure rather than a silent
     // divergence.
-    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^\s*\/\/.*$/gm, '');
+    const source = readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'))
+      ;
 
     const columnsIn = (marker: string) => {
       const start = source.indexOf(marker);
@@ -127,7 +127,7 @@ describe('rfq.summary returns the feed allowlist and no more', () => {
   it('requires authentication', async () => {
     // protectedProcedure, asserted rather than assumed - this is the one gate
     // between the open feed and the anonymous internet.
-    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    const source = readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'));
     expect(source).toMatch(/summary: protectedProcedure/);
     expect(source).not.toMatch(/summary: publicProcedure/);
   });
@@ -137,9 +137,8 @@ describe('the owner-scoped read is unchanged', () => {
   it('rfq.get is still scoped by requesterId', async () => {
     // The detail page relies on this: it calls rfq.get only when the caller
     // owns the RFQ, and the server is what makes that true rather than the UI.
-    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^\s*\/\/.*$/gm, '');
+    const source = readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'))
+      ;
     // SCOPED TO THE RFQ ROUTER. `projects.get` has a byte-identical signature
     // and appears earlier in the file, so a bare indexOf finds that one and
     // this assertion would be about a different procedure entirely - a mistake

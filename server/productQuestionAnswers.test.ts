@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readSourceForAssertions } from './_testing/sourceText';
 
 vi.mock('./db', () => ({ getDb: vi.fn() }));
 
@@ -168,9 +169,8 @@ describe('a supplier can find the questions waiting on them', () => {
     // Asserted on the SOURCE, because the stub cannot prove a predicate it
     // does not apply - and a stub that applied it would be testing itself.
     const { readFileSync } = await import('node:fs');
-    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^\s*\/\/.*$/gm, '');
+    const source = readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'))
+      ;
     const body = source.slice(
       source.indexOf('myProductQuestions: protectedProcedure'),
       source.indexOf('myProductQuestions: protectedProcedure') + 900,

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 import { recordCommercialEvent } from './_core/commercialAudit';
 
 /**
@@ -123,7 +124,7 @@ describe('the row it writes', () => {
 // ══ 3. THE SCHEMA DECISIONS ════════════════════════════════════════════════
 
 describe('the table is shaped for an audit trail, not for convenience', () => {
-  const SCHEMA = readFileSync(new URL('../drizzle/schema.ts', import.meta.url), 'utf8');
+  const SCHEMA = readSourceForAssertions(readFileSync(new URL('../drizzle/schema.ts', import.meta.url), 'utf8'));
   const table = SCHEMA.slice(
     SCHEMA.indexOf('export const commercialAuditEvents'),
     SCHEMA.indexOf('export const commercialAuditEvents') + 2200,
@@ -168,7 +169,7 @@ describe('the table is shaped for an audit trail, not for convenience', () => {
     );
     expect(migration).toContain('CREATE TABLE `commercialAuditEvents`');
     expect(migration).toContain('ON DELETE set null');
-    const journal = readFileSync(new URL('../drizzle/meta/_journal.json', import.meta.url), 'utf8');
+    const journal = readSourceForAssertions(readFileSync(new URL('../drizzle/meta/_journal.json', import.meta.url), 'utf8'));
     expect(journal).toContain('0023_commercial_audit_events');
   });
 });
@@ -176,12 +177,11 @@ describe('the table is shaped for an audit trail, not for convenience', () => {
 // ══ 4. THE COMMERCIAL PATHS ARE ACTUALLY INSTRUMENTED ══════════════════════
 
 describe('the events that matter are recorded', () => {
-  const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8')
+  const ROUTERS = readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'))
     // Comments stripped first: this file explains at length what it records,
     // and an assertion matching its own prose would pass on a router that
     // described the trail without writing to it.
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
+    ;
 
   it.each([
     'rfq_created',
@@ -288,9 +288,8 @@ describe('the events that matter are recorded', () => {
 // ══ 5. READING THE TRAIL IS ITSELF SCOPED ══════════════════════════════════
 
 describe('audit records are permission-scoped, like the records they describe', () => {
-  const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
+  const ROUTERS = readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'))
+    ;
   const auditRouter = ROUTERS.slice(
     ROUTERS.indexOf('const auditRouter = router({'),
     ROUTERS.indexOf('const billingRouter = router({'),

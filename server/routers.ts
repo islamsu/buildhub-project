@@ -1754,7 +1754,23 @@ const rfqRouter = router({
     .input(z.object({
       title: z.string().min(1),
       description: z.string().optional(),
-      category: z.string().optional(),
+      /**
+       * REQUIRED, AND A CLOSED ENUM. Both halves of that were once wrong, and
+       * together they produced an RFQ the platform could not serve.
+       *
+       * `openQualifiedEnquiry` refuses any RFQ whose category is not one of
+       * RFQ_CATEGORIES - `unclassified_rfq`. A category-less RFQ was still
+       * accepted, still listed in the open feed, and permanently impossible to
+       * open or quote on. The customer waited for responses that could never
+       * arrive; suppliers saw a request they were forbidden to answer; nobody
+       * was told why. A free-text category did the same thing, because
+       * "Marble" is not a member of the taxonomy either.
+       *
+       * Requiring it is not a business decision - the eligibility rule that
+       * needs it already exists. This makes the contract match the requirement
+       * rather than inventing one.
+       */
+      category: z.enum(RFQ_CATEGORIES),
       budget: z.number().optional(),
       location: z.string().optional(),
       deadline: z.date().optional(),

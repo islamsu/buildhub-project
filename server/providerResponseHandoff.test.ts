@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 import { parseLinkedRfqId } from '@shared/linkedRfq';
 
 /**
@@ -15,11 +16,9 @@ import { parseLinkedRfqId } from '@shared/linkedRfq';
  * works", and it is invisible to a test that checks screens.
  */
 
-const read = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8');
+const read = (relative: string) => readSourceForAssertions(readFileSync(new URL(relative, import.meta.url), 'utf8'));
 const strip = (source: string) => source
-  .replace(/\/\*[\s\S]*?\*\//g, '')
-  .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
-  .replace(/^\s*\/\/.*$/gm, '');
+  ;
 
 // ══ 1. THE ID SURVIVES THE HOP ═════════════════════════════════════════════
 
@@ -50,14 +49,22 @@ describe('the request id travels with the provider', () => {
     expect(DETAIL).toMatch(/onboardingStatus !== 'approved'/);
   });
 
-  it('that check is PRESENTATION, and says so - the gate is elsewhere', () => {
-    // The real controls are the redirect on the platform route and
-    // approvedProviderProcedure on the server, both of which hold whatever
-    // this page renders. A reader has to be able to tell which is which.
-    const page = read('../client/src/pages/RFQDetail.tsx');
-    expect(page).toMatch(/presentation, not authorization/i);
-    // And it still never calls a credit-spending mutation, approved or not.
+  it('that check is PRESENTATION - the page holds no authority of its own', () => {
+    // THIS TEST USED TO ASSERT THAT A COMMENT EXISTED, matching the phrase
+    // "presentation, not authorization" in the source. It passed only because
+    // the comment stripper was broken and never removed it; with a correct
+    // stripper the prose is gone, as it should be. Asserting on a comment is
+    // the exact anti-pattern the stripping exists to prevent - it proves a
+    // claim was written, not that the code behaves that way.
+    //
+    // The behavioural property is what matters: this page renders differently
+    // for an unapproved provider, and it cannot grant anything. The controls
+    // are the platform-route redirect and approvedProviderProcedure, and both
+    // hold whatever this renders.
     expect(DETAIL).not.toContain('openEnquiry');
+    expect(DETAIL).not.toContain('submitQuotation');
+    // It reads status; it never writes one.
+    expect(DETAIL).not.toMatch(/useMutation/);
   });
 
   it('and it still does not spend anything on the way', () => {

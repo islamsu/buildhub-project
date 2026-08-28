@@ -201,7 +201,7 @@ describe('rfq.create - optional project link', () => {
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
     const caller = appRouter.createCaller(makeCtx(1));
-    await expect(caller.rfq.create({ title: 'Kitchen remodel', projectId: 7 })).resolves.toEqual({ id: 99 });
+    await expect(caller.rfq.create({ category: 'Materials', title: 'Kitchen remodel', projectId: 7 })).resolves.toEqual({ id: 99 });
     expect(values).toHaveBeenCalledWith(expect.objectContaining({ projectId: 7, requesterId: 1 }));
   });
 
@@ -214,7 +214,7 @@ describe('rfq.create - optional project link', () => {
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
     const caller = appRouter.createCaller(makeCtx(999));
-    await expect(caller.rfq.create({ title: 'Kitchen remodel', projectId: 7 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller.rfq.create({ category: 'Materials', title: 'Kitchen remodel', projectId: 7 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
     expect(values).not.toHaveBeenCalled();
   });
 
@@ -226,7 +226,7 @@ describe('rfq.create - optional project link', () => {
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
     const caller = appRouter.createCaller(makeCtx(1));
-    await expect(caller.rfq.create({ title: 'Standalone RFQ' })).resolves.toEqual({ id: 100 });
+    await expect(caller.rfq.create({ category: 'Materials', title: 'Standalone RFQ' })).resolves.toEqual({ id: 100 });
     expect(db.select).not.toHaveBeenCalled();
   });
 });

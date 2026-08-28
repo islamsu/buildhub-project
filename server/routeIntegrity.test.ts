@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, globSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 import { ROUTES, ROLE_EXPERIENCES } from '@shared/aiRoles';
 import { getRolePlatformPath, PLATFORM_ROLES } from '../client/src/lib/rolePlatform';
 
@@ -25,7 +26,7 @@ import { getRolePlatformPath, PLATFORM_ROLES } from '../client/src/lib/rolePlatf
  * every href-producing source against it.
  */
 
-const read = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8');
+const read = (relative: string) => readSourceForAssertions(readFileSync(new URL(relative, import.meta.url), 'utf8'));
 const APP = read('../client/src/App.tsx');
 
 /**
@@ -101,7 +102,7 @@ describe('every internal destination anywhere in the client', () => {
       .filter(path => !path.endsWith('ComponentShowcase.tsx'));
 
     for (const path of paths) {
-      const source = readFileSync(path, 'utf8');
+      const source = readSourceForAssertions(readFileSync(path, 'utf8'));
       const patterns = [
         /navigate\(\s*[`"']([^`"']+)[`"']/g,
         /<Link href=\{?[`"']([^`"']+)[`"']/g,
@@ -242,9 +243,7 @@ describe('the RFQ list offers a provider somewhere to go', () => {
     // Strip comments first: this page now explains the gap it used to have,
     // and an assertion matching its own prose would pass on a page that
     // described the fix without applying it.
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
+    ;
 
   it('the only action is no longer owner-only', () => {
     // Every card's CTA was `isOwner && <Compare/>`, so a contractor or supplier
@@ -252,15 +251,39 @@ describe('the RFQ list offers a provider somewhere to go', () => {
     expect(RFQ_PAGE).toMatch(/data-testid="rfq-respond"/);
   });
 
-  it('the respond route resolves', () => {
-    const match = /data-testid="rfq-respond"[\s\S]{0,400}?<\/Link>/.exec(RFQ_PAGE)
-      ?? /<Link href="([^"]+)">[\s\S]{0,400}?data-testid="rfq-respond"/.exec(RFQ_PAGE);
-    expect(match).not.toBeNull();
-    const href = /<Link href="([^"]+)">/.exec(
-      RFQ_PAGE.slice(Math.max(0, RFQ_PAGE.indexOf('rfq-respond') - 300), RFQ_PAGE.indexOf('rfq-respond')),
-    );
-    expect(href).not.toBeNull();
-    expect(resolves(href![1])).toBe(true);
+  /**
+   * THIS ASSERTION USED TO BE "the respond route resolves", AND IT PASSED
+   * WHILE THE FEATURE WAS BROKEN.
+   *
+   * The link was `<Link href="/provider">` - a bare link to the legacy shim.
+   * It resolves perfectly. A supplier clicking "Respond" on one specific RFQ
+   * card was dropped on a generic workspace with no memory of which request
+   * they had chosen. Resolving and carrying the user to the right place are
+   * different properties, and only the first was being checked.
+   *
+   * Found by clicking the button in a browser, not by reading the source.
+   */
+  it('the respond link carries the RFQ, not just a valid path', () => {
+    const start = RFQ_PAGE.indexOf('rfq-respond');
+    expect(start).toBeGreaterThan(-1);
+    const before = RFQ_PAGE.slice(Math.max(0, start - 400), start);
+    const href = /<Link href=\{?[`"]([^`"]+)[`"]\}?>/.exec(before);
+    expect(href, 'no <Link> wraps the respond button').not.toBeNull();
+
+    // It must interpolate the row's id. A constant path - any constant path -
+    // is the defect this test exists for.
+    expect(href![1], 'the respond link must address the specific RFQ')
+      .toMatch(/\/rfq\/\$\{rfq\.id\}/);
+    expect(resolves(href![1].replace(/\$\{[^}]+\}/g, '123'))).toBe(true);
+  });
+
+  it('and it goes to the REVIEW page, never straight to the workspace', () => {
+    // /platform/:role and /provider are workspaces. The supplier has not
+    // decided to respond yet - they have decided to look.
+    const start = RFQ_PAGE.indexOf('rfq-respond');
+    const before = RFQ_PAGE.slice(Math.max(0, start - 400), start);
+    expect(before).not.toMatch(/<Link href="\/provider">/);
+    expect(before).not.toMatch(/<Link href=\{?[`"]\/platform\//);
   });
 
   it('does NOT open the enquiry from the list - that spends a credit', () => {
@@ -280,9 +303,7 @@ describe('the RFQ list offers a provider somewhere to go', () => {
 
 describe('the RFQ detail page is role-aware, not one view for everyone', () => {
   const PAGE = read('../client/src/pages/RFQDetail.tsx')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
+    ;
 
   it('reads the OWNER-scoped procedure only when the caller owns the RFQ', () => {
     // rfq.get is `WHERE requesterId = ctx.user.id` on the server, so calling it

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 
 vi.mock('./db', () => ({ getDb: vi.fn() }));
 
@@ -126,9 +127,8 @@ describe('what the user is told', () => {
 // ══ 3. EVERY SITE, NOT THE ONE THAT LOOKED RISKIEST ════════════════════════
 
 describe('all upload paths behave the same way', () => {
-  const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
+  const ROUTERS = readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'))
+    ;
 
   it('no procedure calls storagePut directly any more', () => {
     // The census, not a spot check. This codebase has made this exact mistake
@@ -193,7 +193,7 @@ describe('all upload paths behave the same way', () => {
   });
 
   it('the download proxy already answered this way, and still does', () => {
-    const proxy = readFileSync(new URL('./_core/storageProxy.ts', import.meta.url), 'utf8');
+    const proxy = readSourceForAssertions(readFileSync(new URL('./_core/storageProxy.ts', import.meta.url), 'utf8'));
     expect(proxy).toContain('res.status(503)');
     expect(proxy).toContain('isObjectStorageConfigured()');
   });

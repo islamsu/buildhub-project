@@ -19,7 +19,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import QuotationComparison from '@/components/QuotationComparison';
 import { parseProductReference, parseRfqAttachments } from '@shared/rfqAttachments';
-import { RFQ_CATEGORIES as rfqCategories, rfqCategoryLabel } from '@shared/rfqCategories';
+import { RFQ_CATEGORIES as rfqCategories, rfqCategoryLabel, type RfqCategory } from '@shared/rfqCategories';
 
 // Phase 4B.3: the category list now comes from the shared taxonomy that RFQ
 // targeting also matches against, so the two sides can never drift apart.
@@ -65,7 +65,13 @@ export default function RFQPage() {
     && ['contractor', 'supplier', 'engineer', 'architect', 'project_manager']
       .includes((user as { userRole?: string } | null)?.userRole ?? '');
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
+  // `category` is typed to the taxonomy rather than to string, so an
+  // unclassifiable value cannot reach rfq.create even by accident - the same
+  // rule the server enforces, enforced again at compile time.
+  const [form, setForm] = useState<{
+    title: string; description: string; category: RfqCategory | '';
+    budget: string; location: string; deadline: string;
+  }>({
     title: '', description: '', category: '', budget: '', location: '', deadline: '',
   });
   const [linkedProjectId, setLinkedProjectId] = useState<string>('none');
@@ -217,8 +223,15 @@ export default function RFQPage() {
                     value={form.description}
                     onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                   />
-                  <Select onValueChange={v => setForm(f => ({ ...f, category: v }))}>
-                    <SelectTrigger><SelectValue placeholder={t('rfq.category')} /></SelectTrigger>
+                  {/* REQUIRED. An RFQ with no category is one the qualified-enquiry
+                      system can never serve: openQualifiedEnquiry refuses it as
+                      `unclassified_rfq`, so it sits in the open feed collecting
+                      no responses forever. Saying so here beats a server
+                      rejection after the form is filled. */}
+                  <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v as RfqCategory }))}>
+                    <SelectTrigger data-testid="rfq-category">
+                      <SelectValue placeholder={`${t('rfq.category')} *`} />
+                    </SelectTrigger>
                     <SelectContent>
                       {CATEGORIES.map(c => <SelectItem key={c} value={c}>{rfqCategoryLabel(c, lang)}</SelectItem>)}
                     </SelectContent>
@@ -332,19 +345,34 @@ export default function RFQPage() {
 
                   <Button
                     className="w-full gap-2"
-                    onClick={() => createRfq.mutate({
+                    onClick={() => {
+                      // Narrows `category` off '' for real rather than casting
+                      // it away. The button is disabled in this state, so this
+                      // is the type system agreeing with the UI, not a second
+                      // rule that could drift from it.
+                      if (!form.category) return;
+                      createRfq.mutate({
                       ...form,
+                      category: form.category,
                       budget: form.budget ? parseFloat(form.budget) : undefined,
                       deadline: form.deadline ? new Date(form.deadline) : undefined,
                       projectId: linkedProjectId !== 'none' ? Number(linkedProjectId) : undefined,
                       productReference: marketplaceProduct ?? undefined,
                       attachments: attachments.length > 0 ? attachments : undefined,
-                    })}
-                    disabled={createRfq.isPending || uploading || !form.title}
+                      });
+                    }}
+                    disabled={createRfq.isPending || uploading || !form.title || !form.category}
                   >
                     <Send className="w-4 h-4" />
                     {createRfq.isPending ? t('rfq.submitting') : t('rfq.submit')}
                   </Button>
+                  {!form.category && (
+                    <p className="text-xs text-muted-foreground" data-testid="rfq-category-required">
+                      {lang === 'ar'
+                        ? 'اختر فئة حتى يتمكن الموردون المطابقون من رؤية طلبك والرد عليه.'
+                        : 'Choose a category so matching suppliers can see your request and respond to it.'}
+                    </p>
+                  )}
                 </div>
               </DialogContent>
             </Dialog>
@@ -465,9 +493,19 @@ export default function RFQPage() {
                           <BarChart3 className="w-4 h-4" /> {t('rfq.compare')}
                         </Button>
                       ) : isProvider && rfq.status === 'open' ? (
-                        <Link href="/provider">
+                        /* TO THE REQUEST, not to a dashboard.
+                           This was `/provider` - a bare link to the legacy shim
+                           that forwards to /platform/:role. A supplier clicking
+                           "Respond" on one specific card was dropped on a generic
+                           workspace with no memory of which request they had
+                           chosen, and had to find it again in a list.
+                           `/rfq/:id` is the review experience: the brief, the
+                           category, the location, and an honest statement of what
+                           is free and what a credit buys. The respond CTA there
+                           carries the id onward. */
+                        <Link href={`/rfq/${rfq.id}`}>
                           <Button variant="outline" size="sm" className="gap-1.5" data-testid="rfq-respond">
-                            {lang === 'ar' ? 'الرد على هذا الطلب' : 'Respond to this request'}
+                            {lang === 'ar' ? 'عرض الطلب والرد عليه' : 'View and respond'}
                           </Button>
                         </Link>
                       ) : null}

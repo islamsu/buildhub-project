@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 import { appRouter } from './routers';
 import type { TrpcContext } from './_core/trpc';
 
@@ -176,13 +177,11 @@ describe('messages.send validates the recipient', () => {
 // ══ 2. THE PAGE CARRIES NO FABRICATED PEOPLE, THREADS OR PRESENCE ══════════
 
 describe('the Messages page shows only real data', () => {
-  const PAGE = readFileSync(new URL('../client/src/pages/MessagesPage.tsx', import.meta.url), 'utf8');
+  const PAGE = readSourceForAssertions(readFileSync(new URL('../client/src/pages/MessagesPage.tsx', import.meta.url), 'utf8'));
   // Strip comments FIRST. The file now explains what was removed and why, and
   // an assertion that matched its own explanation would pass on a file that
   // documented the fix while keeping the fabricated data.
   const CODE = PAGE
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '')
     .replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
 
   it('defines no mock conversation or message fixture', () => {
@@ -241,9 +240,8 @@ describe('the Messages page shows only real data', () => {
 // ══ 3. THE UNREAD COUNT IS REAL ════════════════════════════════════════════
 
 describe('conversation metadata is computed, not hard-coded', () => {
-  const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
+  const ROUTERS = readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'))
+    ;
 
   it('unread is derived from the messages, not pinned to zero', () => {
     expect(ROUTERS).not.toMatch(/unread: 0, online: false/);

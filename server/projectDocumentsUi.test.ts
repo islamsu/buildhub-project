@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 import { PROJECT_DOCUMENT_CONTENT_TYPES } from '@shared/projectFeatures';
 
 /**
@@ -17,11 +18,9 @@ import { PROJECT_DOCUMENT_CONTENT_TYPES } from '@shared/projectFeatures';
  * capability is simply unreachable.
  */
 
-const read = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8');
+const read = (relative: string) => readSourceForAssertions(readFileSync(new URL(relative, import.meta.url), 'utf8'));
 const strip = (source: string) => source
-  .replace(/\/\*[\s\S]*?\*\//g, '')
-  .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
-  .replace(/^\s*\/\/.*$/gm, '');
+  ;
 
 const PAGE = strip(read('../client/src/pages/ProjectDetail.tsx'));
 const DOCS = strip(read('../client/src/components/ProjectDocuments.tsx'));
