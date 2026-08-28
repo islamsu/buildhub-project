@@ -1,0 +1,576 @@
+================================================================================
+BUILDHUB — FINAL PRE-LAUNCH MASTER AUDIT
+================================================================================
+
+Branch      claude/buildhub-audit-verification-vrai7l
+Baseline    7c28439b1de754551f2aee623a0de780a25872bc
+origin/main 6a9e1e650034f5471f82927447da04ac3f79dac9
+Date        2026-08-28
+Stack       React 19 + Vite 7 + Tailwind v4 + wouter; Express 4 + tRPC 11;
+            Drizzle + mysql2; MariaDB 10.11.14; Node v22.22.2; Vitest
+Census      143 tRPC procedures / 15 routers · 25 migrations · 31 tables ·
+            109 test files · 947 translation keys per language
+
+EVIDENCE TIERS USED THROUGHOUT
+  LIVE VERIFIED     exercised in a real browser or over real HTTP against a
+                    real MariaDB, through the real UI
+  UNIT VERIFIED     asserted by the test suite
+  STATIC VERIFIED   established by reading the source
+  BLOCKED BY INFRA  could not be verified here; infrastructure absent
+  OWNER DECISION    a business question, not an engineering one
+  NOT VERIFIED      not examined
+  DEFECT            a real fault, with the evidence for it
+
+Nothing below calls unit-tested, source-inspected or locally-tested the same
+thing as live-verified. No production database, user, credential, DNS record,
+SMTP server, S3 bucket or environment variable was touched.
+
+================================================================================
+1. THE HEADLINE
+================================================================================
+
+FOUR DEFECTS SHIPPED PAST A FULLY GREEN SUITE OF 2,386 TESTS. Two of them are
+P1. Every one was found by driving a real browser, not by reading code and not
+by adding another assertion.
+
+  P1  Every stored image was refused by the application's own CSP.
+  P1  The landing and sign-up pages stated four things that were not true, and
+      quoted three customers who do not exist.
+  P2  Every notification was an inert card pointing at a list.
+  P2  An unrecognised server error told the operator to read the log they were
+      already reading, and every database error read as "unclassified".
+
+Plus one performance defect fixed and measured: 676 KB → 187 KB of gzipped
+JavaScript on first load.
+
+================================================================================
+2. DEFECT 1 (P1) — NO STORED IMAGE COULD LOAD ON ANY REAL DEPLOYMENT
+================================================================================
+
+STATUS   FIXED · LIVE VERIFIED
+
+WHAT HAPPENED
+`/manus-storage/<key>` authorises a request and then answers 307 with a
+short-lived signed URL on the object store. On every real deployment the object
+store is a different origin — S3, Vultr, any CDN. The page's own policy said:
+
+    img-src 'self' data: blob:
+
+A cross-origin redirect target is not `'self'`, so the browser refused it:
+
+    Refused to load the image 'https://<store>/product-images/user-3/...'
+    requestfailed :: csp
+
+EVIDENCE (LIVE VERIFIED)
+  Before the fix, in Chromium against the real proxy and a real object store:
+      IMG RESULT: {"ok":false,"w":0,"h":0}
+      [error] Refused to load the image 'https://127.0.0.1:4566/...'
+      [requestfailed] ... :: csp
+  After:
+      IMG RESULT: {"ok":true,"w":2,"h":2}
+      (console silent)
+
+WHAT IT AFFECTED
+Product photographs, user avatars, RFQ image attachments, quotation photos —
+every image the product stores. It fails SILENTLY: `<img>` fires onerror, a
+broken image renders, and nothing reaches the server. That is why a green suite
+and a source review both missed it.
+
+WHY IT SURVIVED THIS LONG
+`crossOriginResourcePolicy` had already been relaxed for exactly this redirect.
+The comment saying so is still in server/_core/security.ts:
+
+    // Uploads are proxied from this origin via a 307 to a presigned URL on
+    // another host; the default same-origin policy would block that redirect.
+
+The same reasoning was never applied to `img-src`.
+
+THE FIX
+`storageOrigins()` in server/_core/objectStorage.ts derives the allowed origins
+from the SAME configuration the redirect is built from, so the policy cannot
+drift from where the files actually live. It emits:
+  - the configured endpoint's origin;
+  - the virtual-hosted form (`<bucket>.<host>`), because which one the SDK
+    produces depends on forcePathStyle and being wrong fails silently again;
+  - the AWS regional endpoint when none is configured;
+  - the https form of an http endpoint, because upgrade-insecure-requests
+    rewrites the request before img-src is matched.
+It returns [] when nothing is configured. It is never a wildcard: a mutant that
+"fixed" this with `img-src *` is killed by a test.
+
+A SECOND, SMALLER DEFECT FOUND IN THE SAME FILE
+helmet's `useDefaults: true` already includes `upgrade-insecure-requests`, so
+the production-only spread beneath it was dead code and the directive was being
+sent in DEVELOPMENT too — against that file's own stated intent, silently
+rewriting a local http object store to https. Now stated explicitly in both
+directions.
+
+COVERAGE   server/storageCsp.test.ts — 14 tests, 4 mutants killed
+           (revert img-src; drop the virtual-hosted origin; drop the https
+           form; replace the allowlist with a wildcard)
+
+================================================================================
+3. DEFECT 2 (P1) — THE FRONT DOOR STATED FOUR THINGS THAT WERE NOT TRUE
+================================================================================
+
+STATUS   FIXED · LIVE VERIFIED · ONE OWNER DECISION LEFT OPEN
+
+WHAT THE PRODUCT SAID
+The landing page (client/src/pages/Home.tsx) and the sign-up page
+(client/src/pages/AuthPage.tsx) both displayed, as fact:
+
+    10K+ Registered Users        5K+ Active Projects
+    2K+ Verified Providers       98% Satisfaction Rate
+
+WHAT WAS TRUE
+Measured against the database at the time of audit: 86 users, 3 projects, 48
+verified providers — and ZERO reviews. The satisfaction figure is the one worth
+naming twice: it was not stale and it was not rounded. There was no such
+measurement in existence anywhere in the product.
+
+AND THREE CUSTOMERS WHO DO NOT EXIST
+    "Ahmed Hassan, Homeowner, Cairo, Egypt" — 5 stars
+        "the AI cost estimator alone saved me 15% on my budget"
+    "Mohamed Al-Rashidi, Contractor, Dubai, UAE" — 5 stars
+        "I receive 3x more qualified leads through BuildHub than any other
+         platform"
+    "Sara Khalil, Interior Architect, Riyadh, KSA" — 5 stars
+
+Named individuals, with cities, star ratings and specific quantitative
+performance claims, shown to a person deciding whether to trust a construction
+marketplace with a building budget. Nothing in the product ever produced them.
+
+THE FIX
+`marketplace.platformStats` (server/platformStats.ts) returns real counts. The
+rule it follows is the one this codebase had already established for provider
+ratings in marketplaceHonesty.test.ts: AN ABSENT NUMBER IS SHOWN AS ABSENT,
+NEVER AS A NUMBER.
+  - satisfaction is null until at least one review exists — the tile does not
+    render at all rather than showing 0% or a stand-in;
+  - a zero count renders nothing rather than a padded figure;
+  - seeded and QA accounts are excluded, because a headline count that includes
+    the test users is a fabricated number arrived at honestly;
+  - a small number is still the number. It is never rounded up.
+
+The testimonials are REMOVED, not rewritten. They are also deliberately NOT
+wired to the real `reviews` table.
+
+OWNER DECISION (§3 of this report is where it belongs, and it is yours)
+A review a vendor's customer left on that vendor's profile was not given for
+use as site-wide marketing. Repurposing it silently would be a privacy decision
+made by an engineer. What belongs in that section before launch — real
+testimonials with the reviewers' consent, or nothing — is your call.
+
+A TEST THAT WAS PINNING THE FABRICATION IN PLACE
+server/testimonials.test.ts contained:
+
+    it('supports keyboard and touch navigation WITHOUT FABRICATED TESTIMONIAL
+        DATA', ...)
+
+while its sibling asserted `toContain('const TESTIMONIALS = [')` — the array of
+three invented customers. The suite was holding the invented data in place
+under a name that claimed the opposite. Rewritten to assert what it said, with
+the accessibility guarantees kept as a conditional so any carousel added later
+must still be navigable.
+
+EVIDENCE (LIVE VERIFIED)   17/17 against real MariaDB — both pages, all four
+claims gone, the real count rendered, no satisfaction figure where there are no
+reviews, all three invented customers absent, both pages still render.
+
+COVERAGE   server/platformStatsHonesty.test.ts — 16 tests, 3 mutants killed
+           server/testimonials.test.ts — 7 tests, rewritten
+
+================================================================================
+4. DEFECT 3 (P2) — EVERY NOTIFICATION WAS A DEAD END
+================================================================================
+
+STATUS   FIXED · LIVE VERIFIED
+
+TWO FAULTS, ONE FEATURE
+
+(a) The `link` column was written on every notification and never read.
+    MessagesPage rendered each one as an inert card. A customer was told "New
+    quotation received" and given no way to reach it; a supplier was told their
+    bid had been accepted with nowhere to go. The destination was sitting in
+    the database the whole time.
+
+(b) The destinations themselves were generic. A supplier who had just won or
+    lost one specific job was sent to `/provider`; a customer who had received
+    one specific quotation was sent to `/rfq`, the list of every request they
+    have ever raised.
+
+    The review notification is the sharpest case: `/provider` renders no reviews
+    at all. The one notification whose entire purpose is "come and read this"
+    pointed at a page that could not show it. It now goes to the reviewed
+    provider's own profile, where VendorReputation renders the review.
+
+DELIBERATELY NOT CHANGED
+The three `/compliance` links. A registration decision is about the recipient's
+own application, and that page renders exactly that one application; there is
+no per-document route to be more specific than. A guardian test now requires
+any future hardcoded destination to be justified the same way.
+
+EVIDENCE (LIVE VERIFIED)   23/23 in a real browser against real MariaDB:
+    a customer registers, raises an RFQ, a supplier opens it, follows the
+    respond CTA with the id intact, and bids; the customer's notification is a
+    linked card whose href is /rfq/8; clicking it lands on that request; the
+    quotation is visible on it; the customer accepts through the confirmation
+    that says what accepting does to the other bids; the RFQ is awarded in the
+    database; and the supplier's notification leads to the job they won.
+
+COVERAGE   server/notificationDestinations.test.ts — 14 tests, 6 mutants killed
+
+================================================================================
+5. DEFECT 4 (P2) — THE LOG TOLD THE OPERATOR TO READ THE LOG
+================================================================================
+
+STATUS   FIXED · LIVE VERIFIED
+
+FOUND WHILE VERIFYING SOMETHING ELSE. Sign-up failed for every user on a
+deployment whose schema was behind, and the server wrote exactly this:
+
+    [trpc] mutation auth.signUp failed: unclassified - no classification
+    matched - inspect the deployment logs around this line
+
+There was nothing around that line. The remedy was circular.
+
+TWO SEPARATE CAUSES
+(a) drizzle wraps the driver error, and the classifier looked at only one level
+    of the cause chain — so the `database` rule never saw the ER_ code one
+    level down. EVERY wrapped database failure in the entire application was
+    logging as "unclassified", not just this one.
+(b) For a genuinely unrecognised error, nothing at all identified it.
+
+THE FIX
+`classifyErrorChain` walks the cause chain (bounded, with a guard proven
+necessary: removing it hangs the suite on a self-referencing error). An
+unclassified error now carries its class chain and the first frames of its own
+stack. The MESSAGE is still withheld — a driver error interpolates the offending
+value and a provider error echoes the request — and a test asserts that an email
+address inside a duplicate-key error never reaches the log.
+
+EVIDENCE (LIVE VERIFIED)   The same failure, after the fix:
+    [trpc] mutation auth.signUp failed: database - the database rejected or
+    dropped the query
+and for a genuinely unknown error:
+    ... unclassified ... [origin: Error <- Error at
+    MySql2PreparedQuery.queryWithCache (.../mysql-core/session.ts:79:11) | ...]
+
+COVERAGE   server/trpcErrorLog.test.ts — 24 tests (10 new), 5 mutants killed
+
+================================================================================
+6. DEFECT 5 (PERFORMANCE) — THE FIRST PAGE CARRIED THE WHOLE PRODUCT
+================================================================================
+
+STATUS   FIXED · LIVE MEASURED
+
+Every page was imported eagerly into the entry chunk, so a visitor landing on
+the home page downloaded the admin dashboard, the compliance review queue, the
+AI assistant and its markdown/syntax-highlighting stack before anything
+rendered.
+
+MEASURED ON THE BUILT ARTEFACT
+    before   entry 2469 KB raw · 676 KB gzipped
+    after    entry  627 KB raw · 187 KB gzipped
+    live     186 KB of JavaScript actually transferred for the landing page,
+             measured in Chromium against the production build
+
+A NUMBER I ALMOST REPORTED WRONGLY
+`du` over dist/public/assets reports 14 MB across 332 chunks, including
+emacs-lisp (762 KB), cpp (611 KB), wasm (608 KB) and wolfram (256 KB) syntax
+grammars pulled in by `streamdown` on the AI page. It would have been easy to
+report "BuildHub ships 14 MB of JavaScript". It does not: those are lazy shiki
+grammars that a landing-page visitor never requests. The honest number is the
+one measured in a browser — 186 KB.
+
+Home and AuthPage stay eager on purpose: they are the first and second thing
+almost every visitor sees, and deferring them trades a smaller download for a
+visible blank frame on the pages that matter most.
+
+COVERAGE   server/routeSplitting.test.ts — 17 tests, 3 mutants killed
+
+================================================================================
+7. WHAT WAS VERIFIED AND FOUND CORRECT
+================================================================================
+
+Naming what was NOT wrong matters as much as naming what was, because it is the
+part a reader cannot reconstruct from the diff.
+
+7.1 THE COMMERCIAL JOURNEY, END TO END          LIVE VERIFIED · 23/23
+Customer registers → raises an RFQ (category enum-validated server-side) →
+supplier opens the full RFQ → follows the respond CTA WITH the RFQ id intact →
+the quote form names the request being bid on (#id and title) → submits →
+customer is notified → clicks through to that RFQ → sees the quotation →
+accepts through a confirmation that states the consequence for other bids →
+the RFQ is awarded in the database → the supplier's notification leads to the
+job they won.
+
+7.2 PRODUCT CATALOGUE AND SEARCH                LIVE VERIFIED · 19/20
+  · A supplier lists a product through the real UI; it reaches the database
+    owned by that supplier, with its Arabic name stored byte-for-byte intact.
+  · A buyer finds it by product name, by brand, AND by its ARABIC name —
+    `nameAr` is in the LIKE, so a customer browsing in Arabic can search in
+    Arabic.
+  · A term matching nothing returns nothing, not everything.
+  · A literal `%` is searched for, NOT treated as a wildcard. Live-confirmed:
+    one unauthenticated request cannot dump the whole catalogue. `_` likewise.
+  · A deactivated product disappears from search AND returns 404 by id — absent
+    and withdrawn are the same answer to a buyer.
+  (The one FAIL in that run was my own broken PNG fixture; see §9.)
+
+7.3 IMAGE UPLOAD AND AUTHORIZATION              LIVE VERIFIED
+  · A supplier can upload a product image; the bytes really reach the object
+    store (verified by fetching them back from it directly), under that
+    supplier's own key prefix.
+  · A PNG's bytes declared as a JPEG is REFUSED (400). Extension and
+    content-type are caller-controlled; the magic number is not.
+  · A customer cannot upload a product image (403).
+  · The same proxy still refuses another account's PRIVATE attachment (403)
+    while serving the public product photo — the fix in §2 widened the CSP, not
+    the authorization.
+
+7.4 ARABIC                                      LIVE VERIFIED · 30/30
+Six pages — landing, sign-up, catalogue, directory, pricing, requests. Each
+asserted by CHARACTER RATIO and by a before/after delta, never by element
+presence: a toggle that silently did nothing would pass an existence check, and
+has done so in this codebase before. Measured 63–78% Arabic characters after
+the toggle, 0–2% before, `dir="rtl"` present, no error state.
+STATIC: 947 translation keys in each language, zero missing on either side.
+
+7.5 RESPONSIVE LAYOUT                           LIVE VERIFIED · 51/55
+375 px, 768 px and 1440 px across five pages. No horizontal overflow anywhere
+(369/375, 762/768, 1434/1440), no error state, no uncaught page errors.
+(The 4 failures were my harness, not the product; see §9.)
+
+7.6 EVERY ROUTE STILL RENDERS AFTER CODE SPLITTING   LIVE VERIFIED · 52/52
+All 25 routes exercised against the PRODUCTION build, each checked for real
+content and explicitly checked NOT to be stuck on the Suspense fallback — a
+stuck chunk renders an empty div and looks like a blank page, not an error.
+No JS chunk failed to load; no uncaught page error on any route. An unknown
+path still resolves to the 404 page rather than a blank frame.
+
+7.7 PRIVATE FIELD EXPOSURE                      STATIC VERIFIED
+Four sites use `select().from(users)` without a column allowlist
+(routers.ts:368, 726, 2812, 2827 — QA token, password-reset token, admin
+invitation, invitation redemption). Each was traced: all four use the row only
+server-side for checks and derived fields. NONE returns it to a caller.
+
+7.8 DEAD CONTROLS                               STATIC VERIFIED
+A sweep for `<Button>` elements with no onClick, no submit type, and no
+Link/Trigger wrapper found 21 candidates. All were in `ComponentShowcase.tsx`
+(not routed, not imported, tree-shaken out of the bundle) or shadcn internals.
+The one real-page candidate — the "Get Started" button on Home — is inside a
+Card whose onClick navigates; the event bubbles. NO dead controls on any
+user-reachable page.
+
+7.9 CONCURRENCY                                 UNIT VERIFIED
+Quotation acceptance runs in one transaction with SELECT ... FOR UPDATE on the
+RFQ row then the quotation row. Two simultaneous accepts of the same quotation,
+and of two different quotations on the same RFQ, each resolve to exactly one
+winner under a lock simulation that mirrors the real serialization.
+
+7.10 ADMIN SURFACE                              STATIC VERIFIED
+39 permission-scoped procedures across 10 distinct permissions, plus 13
+superAdmin and 3 compliance. The public surface is pinned to an exact 24-entry
+allowlist; adding to it fails the suite until the addition is made deliberately
+(which is how `marketplace.platformStats` entered it in this session).
+
+================================================================================
+8. NOT IMPLEMENTED — REPORTED, NOT INVENTED
+================================================================================
+
+§17 BATCH / BULK PRODUCT IMPORT — NOT IMPLEMENTED.
+No procedure, no CSV parser, no UI control, and no client surface that offers
+it. The only CSV in the product is an admin EXPORT of registration metrics,
+which is a different feature. Nothing in the product PROMISES batch import, so
+this is an absent capability rather than a broken one — but it is absent, and a
+supplier with a 400-line catalogue has no way to load it.
+
+================================================================================
+9. MY OWN ERRORS IN THIS SESSION
+================================================================================
+
+Recorded because an audit that only reports the product's faults is not an
+audit of anything. Every one of these was a harness or fixture defect that
+LOOKED exactly like a product defect, and three of them would have been
+published as findings if I had not checked.
+
+9.1 "The Arabic product name was not stored."   FALSE.
+    The mysql CLI returned `???? ????? ??????????` without
+    `--default-character-set=utf8mb4`. `HEX(nameAr)` proved the bytes were
+    correct all along: D8ADD8AFD98AD8AF... The harness was misreporting, not
+    the database.
+
+9.2 "Buyers cannot see product photos."          PARTLY FALSE, THEN TRUE.
+    My first test PNG had a CORRUPT IDAT CRC — the browser was right to refuse
+    it. I generated a valid 2×2 PNG and verified every chunk CRC before
+    re-testing. The failure then persisted, and THAT one was real (§2). A
+    fixture that is not what it claims to be produces a finding about nothing;
+    a fixture that is correct produces a P1.
+
+9.3 "The language toggle is missing on four pages."  FALSE.
+    The choice persists in localStorage, so my loop toggled once on the landing
+    page and every later page in the same browser context was ALREADY Arabic —
+    its toggle then read "English" and my selector found nothing. Re-run with a
+    fresh context per page: 30/30 pass.
+
+9.4 "287 translation keys are missing from Arabic."  FALSE.
+    My first split of the dictionary file used a text anchor and landed in the
+    wrong place. Parsed on the real line ranges: 947 keys in each language,
+    zero missing on either side.
+
+9.5 "BuildHub ships 14 MB of JavaScript."        MISLEADING.
+    True of `du` over the assets directory; not true of what a visitor
+    downloads. The honest figure is the one measured in a browser: 186 KB.
+
+9.6 A test I wrote passed for the wrong reason.
+    `it('survives a non-Error being thrown')` asserted a fallback branch that
+    tRPC makes unreachable — it normalises whatever was thrown into an Error
+    before onError sees it. Rewritten to assert what actually happens and to
+    say plainly that the fallback is defensive and not on that path.
+
+9.7 A destructive command was correctly refused.
+    Recovering a corrupted local MariaDB, I reached for DROP DATABASE on two
+    disposable test schemas. The tooling refused it. I did not work around the
+    refusal — I created a NEW database and applied all 25 migrations to it
+    instead, which was non-destructive and equally sufficient.
+
+================================================================================
+10. INFRASTRUCTURE THAT COULD NOT BE VERIFIED HERE
+================================================================================
+
+BLOCKED BY INFRASTRUCTURE — stated plainly, not worked around and not faked.
+
+10.1 STAGING DEPLOYMENT.       Egress to onrender.com is blocked in this
+     environment (`curl: (56) CONNECT tunnel failed, response 403`). Nothing in
+     this report was verified against the deployed staging instance.
+
+10.2 REAL OBJECT STORAGE.      Verification used a local S3-compatible server.
+     It does NOT verify SigV4 signatures. It stands in for the provider; it is
+     NOT evidence that a real provider's presigned URLs are correct. What it
+     DOES establish is BuildHub's side: the SDK is configured correctly, the
+     bytes reach a real endpoint with the right bucket, key and content type,
+     and the proxy's redirect serves them back.
+
+10.3 REAL SMTP.                Password reset was verified in an earlier
+     session over a real TLS connection to a local sink whose certificate was
+     made genuinely trusted via NODE_EXTRA_CA_CERTS, with
+     `rejectUnauthorized: true` left ON. No TLS was disabled and no SMTP was
+     faked. It is still not a real provider.
+
+10.4 REAL PAYMENTS.            No Paymob behaviour was invented, exercised or
+     asserted.
+
+10.5 LOAD AND CONCURRENCY AT SCALE.  Serialization is proven by a lock
+     simulation and by transaction structure, not by concurrent load against a
+     real database under contention.
+
+================================================================================
+11. OWNER DECISIONS — YOURS, NOT MINE
+================================================================================
+
+11.1 WHAT REPLACES THE TESTIMONIALS.
+     The invented ones are gone. Real reviews exist in the `reviews` table, but
+     a review left on a vendor's profile was not given for use as site-wide
+     marketing. Options: real testimonials with the reviewers' explicit
+     consent; a different section; or nothing. I did not choose, and I did not
+     write replacement copy.
+
+11.2 WHETHER TO SHOW SMALL REAL NUMBERS AT ALL.
+     The counters are honest now and, at launch, they will be small. Showing
+     "12 Registered Users" is accurate and may not be the marketing you want.
+     The engineering position is fixed — the numbers rendered are real, and a
+     zero renders nothing. Whether that section appears on the landing page
+     before you have traction is a business call.
+
+11.3 BATCH PRODUCT IMPORT (§8).
+     Whether a supplier with a large catalogue is a launch requirement.
+
+11.4 WHETHER `visibilityLevel` (boosted/top) IS EVER ENFORCED.
+     It remains deliberately unenforced. Enforcing it would let a paid plan buy
+     position INSIDE the organic ranking, reversing the guarantee that a paid
+     plan never buys a higher organic position. That reversal is a commercial
+     policy decision, not something to infer from a plan table.
+
+================================================================================
+12. VERIFICATION GATE
+================================================================================
+
+    npx tsc --noEmit          0 errors
+    npx vitest run            109 files · 2,403 tests · all passing
+    vite build                entry 627 KB raw / 187 KB gzipped
+    esbuild server            dist/index.js 628 KB
+    mutation testing          21 mutants introduced, 21 killed, across the five
+                              fixes in this session
+
+Mutants killed, by fix:
+    notification destinations   6   (generic /rfq · /provider on accept ·
+                                    /provider on reject · /provider on review ·
+                                    never following the link · wrong-id link)
+    error logging               5   (single-level classification · no origin ·
+                                    message leaked into origin · depth-1 walk ·
+                                    removed loop guard, which HANGS the suite)
+    storage CSP                 4   (revert img-src · drop virtual-hosted origin
+                                    · drop https form · wildcard "fix")
+    platform statistics         3   (satisfaction falls back to a number ·
+                                    stop filtering zeroes · always show the tile)
+    route splitting             3   (admin back in the entry · no Suspense ·
+                                    Home made lazy)
+
+Live verification, by area:
+    commercial journey         23/23
+    catalogue, search, images  19/20  (1 = my broken PNG fixture, §9.2)
+    platform statistics        17/17
+    Arabic                     30/30
+    responsive layout          51/55  (4 = my harness, §9.3)
+    every route after split    see §7.6
+
+================================================================================
+13. VERDICT
+================================================================================
+
+NO-GO FOR PRODUCTION — but for a shorter and more specific list than before.
+
+WHAT CHANGED THIS SESSION. The core supplier→quotation journey the owner named
+as the thing that most needed proving has now been proven end to end in a real
+browser, and proving it surfaced four defects that 2,386 passing tests did not.
+Two were P1. One of them — the CSP blocking every stored image — would have
+meant that on launch day every product photograph, avatar and attachment in the
+product was an empty box, with no error anywhere to explain it.
+
+WHAT STILL BLOCKS A GO, AND WHY IT IS NOT AN ENGINEERING JUDGEMENT
+
+  1. NOTHING HERE WAS VERIFIED AGAINST THE DEPLOYED STAGING INSTANCE. Egress is
+     blocked from this environment. Every "LIVE VERIFIED" line above means a
+     real browser against a real local MariaDB — not the deployment real users
+     will reach. The image fix in particular is exactly the class of defect that
+     behaves differently against a real object store on a real domain, and it
+     MUST be re-verified there before launch.
+
+  2. REAL OBJECT STORAGE, REAL SMTP AND REAL PAYMENTS ARE STILL UNPROVEN
+     against their actual providers (§10).
+
+  3. THE TESTIMONIAL SECTION IS AN OPEN OWNER DECISION (§11.1). The falsehood
+     is removed; what replaces it is not mine to decide.
+
+WHAT I WILL NOT SAY. I will not call this Production GO. Not because the code
+is bad — the commercial core is in good shape and the security posture held up
+under every cross-account probe run against it — but because "it works on a
+laptop against a local database" and "it works for a real customer in Cairo on
+a real deployment" are different claims, and only one of them has evidence.
+
+THE SHORTEST PATH TO A GO
+  a. Deploy this branch to staging.
+  b. Re-run the three live suites there: the commercial journey, the catalogue
+     and image journey, and the Arabic/responsive sweep. The scripts exist.
+  c. Confirm in that browser that a product photo renders — the single check
+     that proves §2 against a real object store.
+  d. Send one real password-reset email through the real SMTP provider.
+  e. Decide §11.1 and §11.2.
+
+None of that is more than a day's work, and after it the verdict is evidence,
+not opinion.
+
+================================================================================
+END
+================================================================================
