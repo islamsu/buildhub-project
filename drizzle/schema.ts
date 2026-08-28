@@ -814,3 +814,43 @@ export type VendorSubscription = typeof vendorSubscriptions.$inferSelect;
 export type InsertVendorSubscription = typeof vendorSubscriptions.$inferInsert;
 export type BillingEvent = typeof billingEvents.$inferSelect;
 export type TestLoginToken = typeof testLoginTokens.$inferSelect;
+
+// ── Commercial audit trail ─────────────────────────────────────────────────
+//
+// SEPARATE FROM userAccountAuditEvents, deliberately. That table records what
+// happened to an ACCOUNT - created, role changed, password reset, admin action
+// - and its shape says so: userId is the subject. A commercial event has a
+// different subject (an RFQ, a quotation, a product, a document) and a
+// different audience, and forcing both through one table would mean either
+// column names that lie or a subject that has to be inferred from the action
+// string.
+//
+// WHY ownerId IS DENORMALISED HERE. An audit read has to be permission-scoped -
+// a supplier may see the trail for their own products, not everyone's - and
+// resolving that at read time would mean a different join per subject type,
+// four of them, each able to drift. Recording who the record belonged to AT THE
+// TIME is also more truthful for an audit trail than looking it up later, when
+// ownership may have changed.
+export const commercialAuditEvents = mysqlTable('commercialAuditEvents', {
+  id:          int('id').autoincrement().primaryKey(),
+  // SET NULL, like userAccountAuditEvents: the trail must outlive its actor, and
+  // RESTRICT here would make a user undeletable by virtue of having done work.
+  actorId:     int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  // Who the subject record belonged to when the event happened.
+  ownerId:     int('ownerId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  subjectType: mysqlEnum('subjectType', ['rfq', 'quotation', 'product', 'document', 'enquiry', 'message']).notNull(),
+  // Deliberately NOT a foreign key. An audit row must survive its subject being
+  // deleted - that deletion is often the very thing worth auditing - and a FK
+  // would either block it or cascade the evidence away.
+  subjectId:   int('subjectId').notNull(),
+  action:      varchar('action', { length: 64 }).notNull(),
+  // Free-text context: the status transition, the price, the filename. Never
+  // credentials, and never the full body of a private document.
+  detail:      text('detail'),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  subjectIdx:  index('commercialAuditEvents_subject_idx').on(table.subjectType, table.subjectId),
+  actorIdx:    index('commercialAuditEvents_actorId_idx').on(table.actorId),
+  ownerIdx:    index('commercialAuditEvents_ownerId_idx').on(table.ownerId),
+  createdIdx:  index('commercialAuditEvents_createdAt_idx').on(table.createdAt),
+}));

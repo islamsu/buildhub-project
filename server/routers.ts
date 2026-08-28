@@ -40,6 +40,7 @@ import {
   projects, milestones, tasks, documents, products,
   rfqs, quotations, messages, notifications, reviews,
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
+  commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments,
 } from '../drizzle/schema';
@@ -58,6 +59,7 @@ import {
 } from './billing/service';
 import { deriveBillingState } from './billing/domain';
 import { MAX_PRODUCT_IMAGE_SIZE, MAX_PRODUCT_IMAGES } from '@shared/productImages';
+import { recordCommercialEvent } from './_core/commercialAudit';
 import {
   changeVendorPlan,
   getLifecycleSnapshot,
@@ -1273,6 +1275,13 @@ const marketplaceRouter = router({
 
       await db.update(products).set(patch)
         .where(and(eq(products.id, id), eq(products.supplierId, ctx.user.id)));
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        subjectType: 'product', subjectId: id, action: 'product_updated',
+        // WHICH fields changed, never their old and new values: an audit row
+        // is read by more people than the record it describes.
+        detail: `changed: ${Object.keys(patch).sort().join(', ')}`,
+      });
       return { id };
     }),
 
@@ -1300,6 +1309,11 @@ const marketplaceRouter = router({
       if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
       await db.update(products).set({ active: input.active })
         .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        subjectType: 'product', subjectId: input.id,
+        action: input.active ? 'product_published' : 'product_delisted',
+      });
       return { id: input.id, active: input.active };
     }),
 
@@ -1405,6 +1419,11 @@ const marketplaceRouter = router({
       await db.update(products)
         .set({ images: input.images.length > 0 ? JSON.stringify(input.images) : null })
         .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        subjectType: 'product', subjectId: input.id, action: 'product_images_changed',
+        detail: `${input.images.length} image(s)`,
+      });
       return { id: input.id, images: input.images };
     }),
 
@@ -1508,6 +1527,11 @@ const marketplaceRouter = router({
       await db.update(productQuestions)
         .set({ answer: input.answer, answeredAt: new Date() })
         .where(eq(productQuestions.id, input.questionId));
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        subjectType: 'product', subjectId: input.questionId,
+        action: 'product_question_answered',
+      });
       return { id: input.questionId };
     }),
   /**
@@ -1706,6 +1730,11 @@ const rfqRouter = router({
         subjectId: rfqId,
         metadata: { category: rest.category ?? undefined },
       });
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        subjectType: 'rfq', subjectId: rfqId, action: 'rfq_created',
+        detail: `${rest.category ?? 'uncategorised'}${attachments?.length ? `, ${attachments.length} attachment(s)` : ''}`,
+      });
       return { id: rfqId };
     }),
   uploadAttachment: protectedProcedure
@@ -1856,6 +1885,17 @@ const rfqRouter = router({
             message: `You have used all ${result.usage.allowance} qualified enquiries for this month. Your allowance resets on ${result.usage.resetsAt.toISOString().slice(0, 10)}.`,
           });
         case 'granted':
+          // The paid lead. `alreadyConsumed` distinguishes a re-open (free)
+          // from a fresh charge, and the trail records which - otherwise a
+          // billing dispute has no way to tell them apart.
+          await recordCommercialEvent(await getDb(), {
+            actorId: ctx.user.id,
+            ownerId: result.rfq?.requesterId ?? null,
+            subjectType: 'enquiry',
+            subjectId: input.rfqId,
+            action: 'enquiry_opened',
+            detail: result.alreadyConsumed ? 'reopened, no credit charged' : 'credit charged',
+          });
           return { rfq: result.rfq, alreadyConsumed: result.alreadyConsumed, usage: result.usage };
       }
     }),
@@ -1916,6 +1956,16 @@ const rfqRouter = router({
         subjectType: 'rfq',
         subjectId: input.rfqId,
       });
+      // Commercial trail. AFTER the insert succeeded - an audit row for a
+      // quotation that was never stored would be worse than no row at all.
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id,
+        ownerId: rfq.requesterId,
+        subjectType: 'quotation',
+        subjectId: input.rfqId,
+        action: 'quotation_submitted',
+        detail: `price ${input.price}${input.timeline ? `, ${input.timeline} days` : ''}`,
+      });
       return { success: true };
     }),
   acceptQuotation: protectedProcedure
@@ -1928,12 +1978,31 @@ const rfqRouter = router({
         subjectType: 'quotation',
         subjectId: input.quotationId,
       });
+      // The award. If any single event in this product deserves a permanent
+      // record, it is the one where a customer commits to a supplier.
+      await recordCommercialEvent(await getDb(), {
+        actorId: ctx.user.id,
+        ownerId: ctx.user.id,
+        subjectType: 'quotation',
+        subjectId: input.quotationId,
+        action: 'quotation_accepted',
+        detail: `rfq ${input.rfqId}`,
+      });
       return accepted;
     }),
   rejectQuotation: protectedProcedure
     .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      return rejectQuotationSecure(input.rfqId, input.quotationId, ctx.user.id);
+      const rejected = await rejectQuotationSecure(input.rfqId, input.quotationId, ctx.user.id);
+      await recordCommercialEvent(await getDb(), {
+        actorId: ctx.user.id,
+        ownerId: ctx.user.id,
+        subjectType: 'quotation',
+        subjectId: input.quotationId,
+        action: 'quotation_rejected',
+        detail: `rfq ${input.rfqId}`,
+      });
+      return rejected;
     }),
 });
 
@@ -3830,6 +3899,60 @@ function lifecycleResult(outcome: LifecycleOutcome) {
   };
 }
 
+/**
+ * READING THE COMMERCIAL TRAIL.
+ *
+ * Audit records are themselves permission-scoped, which is the part most audit
+ * features get wrong: a log of who did what to whose money is MORE sensitive
+ * than the records it describes, not less, because it aggregates across
+ * everyone in one place.
+ *
+ * Two reads, and no third:
+ *
+ *   mine   - the caller's own trail, as actor or as owner. A supplier sees
+ *            what they did and what was done to their products; a customer
+ *            sees their RFQs and the quotations against them.
+ *   all    - administrators only, gated on the existing audit permission.
+ *
+ * There is deliberately NO "trail for subject X" endpoint. It would need its
+ * own authorization rule per subject type - four of them, each able to drift -
+ * and the two reads above already answer the questions anyone actually has.
+ */
+const auditRouter = router({
+  mine: protectedProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(100).default(50) }).optional())
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({
+        id: commercialAuditEvents.id,
+        subjectType: commercialAuditEvents.subjectType,
+        subjectId: commercialAuditEvents.subjectId,
+        action: commercialAuditEvents.action,
+        detail: commercialAuditEvents.detail,
+        createdAt: commercialAuditEvents.createdAt,
+        // actorId is returned ONLY when it is the caller. Whose account
+        // performed an action on somebody else's record is not the caller's
+        // business, and returning it here would make this a way to learn which
+        // accounts touched which records.
+      })
+        .from(commercialAuditEvents)
+        .where(sql`${commercialAuditEvents.actorId} = ${ctx.user.id} OR ${commercialAuditEvents.ownerId} = ${ctx.user.id}`)
+        .orderBy(desc(commercialAuditEvents.createdAt))
+        .limit(input?.limit ?? 50);
+    }),
+  all: adminWith('audit.read')
+    .input(z.object({ limit: z.number().int().min(1).max(200).default(100) }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select()
+        .from(commercialAuditEvents)
+        .orderBy(desc(commercialAuditEvents.createdAt))
+        .limit(input?.limit ?? 100);
+    }),
+});
+
 const billingRouter = router({
   // The public commercial catalogue, straight from shared/billing.ts - the one
   // source of truth. Prices are never duplicated into the client bundle.
@@ -3967,6 +4090,7 @@ export const appRouter = router({
   compliance: registrationRouter,
   billing: billingRouter,
   ai: aiRouter,
+  audit: auditRouter,
 });
 
 export type AppRouter = typeof appRouter;

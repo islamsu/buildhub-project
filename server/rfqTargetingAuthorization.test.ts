@@ -12,6 +12,7 @@ import { allowancePeriodFor } from './billing/entitlements';
 import { getEnquiryUsage, openQualifiedEnquiry } from './billing/enquiries';
 import {
   analyticsEvents as analyticsEventsTable,
+  commercialAuditEvents as commercialAuditEventsTable,
   qualifiedEnquiries as qualifiedEnquiriesTable,
   reviews as reviewsTable,
   rfqs as rfqsTable,
@@ -177,10 +178,18 @@ function fakeDb(scenario: Scenario = {}) {
     }),
     insert: (table: unknown) => ({
       values: (values: Record<string, unknown> | Record<string, unknown>[]) => {
-        if (table === analyticsEventsTable) {
+        if (table === analyticsEventsTable || table === commercialAuditEventsTable) {
           // Not counted as an insert attempt, and not subject to the
-          // duplicate-key race simulation: it is a different table on a
-          // fire-and-forget path.
+          // duplicate-key race simulation: these are different tables on
+          // fire-and-forget paths.
+          //
+          // commercialAuditEvents joined analyticsEvents here when the
+          // commercial trail was added. The assertions in this file count
+          // inserts to prove "exactly ONE credit was consumed", and an audit
+          // row written beside the credit would inflate that count and make
+          // the test fail for a reason that has nothing to do with billing.
+          // Counting the table that is meant is a better instrument than
+          // counting every write.
           for (const row of Array.isArray(values) ? values : [values]) analyticsInserted.push(row);
           return Promise.resolve();
         }
