@@ -11,40 +11,37 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
+import { Link } from 'wouter';
 import {
   MessageSquare, Bell, Send, Paperclip, Search, CheckCheck,
-  Clock, FileText, Image, MoreVertical, Phone, Video
+  Clock, FileText, Image,
 } from 'lucide-react';
 
-// Mock conversations for demonstration
-const MOCK_CONVERSATIONS = [
-  { id: 1, name: 'Ahmed Hassan (Contractor)', initials: 'AH', lastMessage: 'I can start the project next week', time: '10:30 AM', unread: 2, online: true, role: 'Contractor' },
-  { id: 2, name: 'Sara Khalil (Architect)', initials: 'SK', lastMessage: 'Please review the updated drawings', time: 'Yesterday', unread: 0, online: false, role: 'Architect' },
-  { id: 3, name: 'Mohamed Supplier', initials: 'MS', lastMessage: 'Quotation attached for the tiles', time: 'Mon', unread: 1, online: true, role: 'Supplier' },
-  { id: 4, name: 'BuildHub Support', initials: 'BH', lastMessage: 'Your verification is complete!', time: 'Sun', unread: 0, online: true, role: 'Support' },
-];
-
-const MOCK_MESSAGES: Record<number, Array<{ id: number; from: 'me' | 'them'; content: string; time: string; type: 'text' | 'file'; fileUrl?: string; quotationId?: number }>> = {
-  1: [
-    { id: 1, from: 'them', content: 'Hello! I saw your RFQ for the apartment renovation.', time: '10:00 AM', type: 'text' },
-    { id: 2, from: 'me', content: 'Hi Ahmed! Yes, I need a contractor for a 150m² apartment finishing.', time: '10:05 AM', type: 'text' },
-    { id: 3, from: 'them', content: 'I have 8 years of experience in residential finishing. Can you share the drawings?', time: '10:10 AM', type: 'text' },
-    { id: 4, from: 'me', content: 'Sure, I will upload them to the project. What is your estimated timeline?', time: '10:15 AM', type: 'text' },
-    { id: 5, from: 'them', content: 'I can start the project next week', time: '10:30 AM', type: 'text' },
-  ],
-  2: [
-    { id: 1, from: 'them', content: 'I have completed the initial design concepts for your villa.', time: 'Yesterday 2:00 PM', type: 'text' },
-    { id: 2, from: 'them', content: 'Please review the updated drawings', time: 'Yesterday 2:01 PM', type: 'file' },
-  ],
-  3: [
-    { id: 1, from: 'them', content: 'We have the Italian marble tiles you requested in stock.', time: 'Mon 9:00 AM', type: 'text' },
-    { id: 2, from: 'them', content: 'Quotation attached for the tiles', time: 'Mon 9:05 AM', type: 'file' },
-  ],
-  4: [
-    { id: 1, from: 'them', content: 'Welcome to BuildHub! Your account has been created successfully.', time: 'Sun 8:00 AM', type: 'text' },
-    { id: 2, from: 'them', content: 'Your verification is complete!', time: 'Sun 8:01 AM', type: 'text' },
-  ],
-};
+/**
+ * REMOVED: MOCK_CONVERSATIONS and MOCK_MESSAGES.
+ *
+ * This page shipped four fabricated conversations - invented people ("Ahmed
+ * Hassan (Contractor)", "Sara Khalil (Architect)"), invented message threads,
+ * invented unread badges and a green "Online now" dot - and rendered them to
+ * any signed-in user who had no real conversations yet:
+ *
+ *     conversations = persisted.length > 0 ? persisted : MOCK_CONVERSATIONS
+ *
+ * Two things followed from that, and the second is the serious one.
+ *
+ * It fabricated a platform statement. One mock thread contained "Your
+ * verification is complete!" attributed to "BuildHub Support". A real supplier
+ * waiting on verification could read that as BuildHub telling them they had
+ * been approved.
+ *
+ * It MISDIRECTED REAL MESSAGES. The mock ids were 1-4 and selectedConv
+ * defaulted to 1, so typing into the thread labelled "Ahmed Hassan" fired
+ * messages.send({ receiverId: 1 }) - delivering the text to whichever real
+ * account holds user id 1. The server has been fixed to require a real active
+ * recipient, and the fabricated list that pointed at those ids is gone.
+ *
+ * An empty inbox now says it is empty, which is the honest thing for it to say.
+ */
 
 export default function MessagesPage() {
   const { t, lang, dir } = useLanguage();
@@ -53,9 +50,10 @@ export default function MessagesPage() {
   const { data: persistedConversations = [] } = trpc.messages.conversations.useQuery(undefined, { enabled: isAuthenticated });
   const markRead = trpc.notifications.markAllRead.useMutation({ onSuccess: () => toast.success(lang === 'ar' ? 'تم تحديد الكل كمقروء' : 'All marked as read') });
 
-  const [selectedConv, setSelectedConv] = useState<number | null>(1);
+  // Was `useState(1)`. A default of 1 is a real user id, and combined with the
+  // fabricated conversation list it aimed the composer at that account.
+  const [selectedConv, setSelectedConv] = useState<number | null>(null);
   const [messageText, setMessageText] = useState('');
-  const [localMessages, setLocalMessages] = useState(MOCK_MESSAGES);
   const [searchConv, setSearchConv] = useState('');
   const [quotationId, setQuotationId] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -66,7 +64,7 @@ export default function MessagesPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [selectedConv, localMessages]);
+  }, [selectedConv, persistedMessages]);
 
   useEffect(() => {
     if (persistedConversations.length > 0 && !persistedConversations.some(conversation => conversation.id === selectedConv)) setSelectedConv(persistedConversations[0].id);
@@ -85,26 +83,22 @@ export default function MessagesPage() {
     );
   }
 
-  const conversations = persistedConversations.length > 0 ? persistedConversations : MOCK_CONVERSATIONS;
+  const conversations = persistedConversations;
   const filteredConvs = conversations.filter(c =>
     !searchConv || c.name.toLowerCase().includes(searchConv.toLowerCase())
   );
 
   const activeConv = conversations.find(c => c.id === selectedConv);
   const persistedDisplayMessages = persistedMessages.map(message => ({ id: message.id, from: message.senderId === (user as any)?.id ? 'me' as const : 'them' as const, content: message.content, time: new Date(message.createdAt).toLocaleTimeString(lang === 'ar' ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' }), type: message.type === 'text' ? 'text' as const : 'file' as const, fileUrl: message.fileUrl ?? undefined, quotationId: message.quotationId ?? undefined }));
-  const activeMessages = persistedDisplayMessages.length > 0 ? persistedDisplayMessages : (selectedConv ? (localMessages[selectedConv] ?? []) : []);
-
-  const appendLocalMessage = (content: string, type: 'text' | 'file') => {
-    if (!selectedConv) return;
-    const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    setLocalMessages(prev => ({ ...prev, [selectedConv]: [...(prev[selectedConv] ?? []), { id: Date.now(), from: 'me', content, time: now, type }] }));
-  };
+  const activeMessages = persistedDisplayMessages;
 
   const sendMessage = () => {
     if (!messageText.trim() || !selectedConv) return;
     const content = messageText.trim();
+    // No optimistic append. It used to run unconditionally, so a message the
+    // server REFUSED still appeared in the thread as though it had been sent.
+    // refetchMessages() on success is the only thing that puts it on screen.
     sendMutation.mutate({ receiverId: selectedConv, content, type: 'text' });
-    appendLocalMessage(content, 'text');
     setMessageText('');
   };
 
@@ -112,7 +106,6 @@ export default function MessagesPage() {
     if (!selectedConv || !quotationId.trim()) { toast.error(lang === 'ar' ? 'أدخل رقم عرض السعر' : 'Enter a quotation ID'); return; }
     const content = lang === 'ar' ? `تمت مشاركة عرض السعر #${quotationId}` : `Quotation #${quotationId} shared for review`;
     sendMutation.mutate({ receiverId: selectedConv, content, type: 'quotation', quotationId: Number(quotationId) });
-    appendLocalMessage(content, 'file');
     setQuotationId('');
   };
 
@@ -126,7 +119,7 @@ export default function MessagesPage() {
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = String(reader.result).split(',')[1] ?? '';
-      uploadMutation.mutate({ fileName: file.name, contentType: file.type as 'application/pdf', base64 }, { onSuccess: attachment => { sendMutation.mutate({ receiverId: selectedConv, content: attachment.name, type: 'file', fileUrl: attachment.url }); appendLocalMessage(attachment.name, 'file'); } });
+      uploadMutation.mutate({ fileName: file.name, contentType: file.type as 'application/pdf', base64 }, { onSuccess: attachment => { sendMutation.mutate({ receiverId: selectedConv, content: attachment.name, type: 'file', fileUrl: attachment.url }); } });
     };
     reader.readAsDataURL(file);
   };
@@ -163,6 +156,13 @@ export default function MessagesPage() {
                   </div>
                 </div>
                 <div className="flex-1 overflow-y-auto">
+                  {filteredConvs.length === 0 && (
+                    <p className="p-4 text-xs text-muted-foreground text-center">
+                      {searchConv
+                        ? (lang === 'ar' ? 'لا توجد محادثات مطابقة' : 'No conversations match that search')
+                        : (lang === 'ar' ? 'لا توجد محادثات بعد' : 'No conversations yet')}
+                    </p>
+                  )}
                   {filteredConvs.map(conv => (
                     <button
                       key={conv.id}
@@ -173,7 +173,6 @@ export default function MessagesPage() {
                         <Avatar className="w-10 h-10">
                           <AvatarFallback className="text-xs font-semibold gradient-brand text-white">{conv.initials}</AvatarFallback>
                         </Avatar>
-                        {conv.online && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-0.5">
@@ -202,18 +201,16 @@ export default function MessagesPage() {
                         <Avatar className="w-9 h-9">
                           <AvatarFallback className="text-xs font-semibold gradient-brand text-white">{activeConv.initials}</AvatarFallback>
                         </Avatar>
-                        {activeConv.online && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-background" />}
                       </div>
                       <div>
                         <p className="font-semibold text-sm">{activeConv.name}</p>
-                        <p className="text-xs text-muted-foreground">{activeConv.online ? (lang === 'ar' ? 'متصل الآن' : 'Online now') : (lang === 'ar' ? 'غير متصل' : 'Offline')}</p>
+                        <p className="text-xs text-muted-foreground">{activeConv.role}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="sm" className="w-8 h-8 p-0" onClick={() => toast.info(lang === 'ar' ? 'قريباً' : 'Coming soon')}><Phone className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="sm" className="w-8 h-8 p-0" onClick={() => toast.info(lang === 'ar' ? 'قريباً' : 'Coming soon')}><Video className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="sm" className="w-8 h-8 p-0"><MoreVertical className="w-4 h-4" /></Button>
-                    </div>
+                    {/* The voice-call, video-call and overflow buttons that sat
+                        here did nothing: two toasted "Coming soon" and the third
+                        had no handler at all. BuildHub has no calling feature, so
+                        the honest thing is not to offer the control. */}
                   </div>
 
                   {/* Messages */}
@@ -266,11 +263,33 @@ export default function MessagesPage() {
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                  <div className="text-center">
-                    <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p>{lang === 'ar' ? 'اختر محادثة للبدء' : 'Select a conversation to start'}</p>
-                  </div>
+                <div className="flex-1 flex items-center justify-center text-muted-foreground p-6">
+                  {/* Two DIFFERENT empty states. "Select a conversation" was
+                      shown even when there were none to select, which is a dead
+                      end: it tells you to do something the screen cannot do. */}
+                  {conversations.length === 0 ? (
+                    <div className="text-center max-w-sm">
+                      <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                      <p className="font-medium text-foreground mb-1">
+                        {lang === 'ar' ? 'لا توجد رسائل بعد' : 'No messages yet'}
+                      </p>
+                      <p className="text-sm mb-4">
+                        {lang === 'ar'
+                          ? 'تبدأ المحادثات عندما تتواصل مع مورّد من السوق أو عندما يرد أحدهم على طلب عرض سعر خاص بك.'
+                          : 'Conversations start when you contact a vendor from the marketplace, or when someone responds to one of your requests for quotation.'}
+                      </p>
+                      <Link href="/marketplace/vendors">
+                        <Button size="sm" data-testid="messages-empty-browse">
+                          {lang === 'ar' ? 'تصفح المورّدين' : 'Browse vendors'}
+                        </Button>
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                      <p>{lang === 'ar' ? 'اختر محادثة للبدء' : 'Select a conversation to start'}</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -49,7 +49,13 @@ function stubDb() {
   const values = vi.fn().mockResolvedValue([{ insertId: 7 }]);
   (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
     insert: vi.fn(() => ({ values })),
-    select: vi.fn(() => ({ from: () => ({ innerJoin: () => ({ where: () => Promise.resolve([]) }), where: () => Promise.resolve([]) }) })),
+    // The recipient lookup must find an ACTIVE account. `messages.send` gained
+    // a guard requiring the receiver to be a real active user - it previously
+    // accepted any positive integer, which (with the fabricated conversation
+    // list the Messages page used to render) delivered messages to whichever
+    // real account held that id. This stub returns one so these tests keep
+    // testing what they are about, which is ATTACHMENT authorization.
+    select: vi.fn(() => ({ from: () => ({ innerJoin: () => ({ where: () => Promise.resolve([]) }), where: () => Promise.resolve([{ id: 2, accountStatus: 'active' }]) }) })),
   });
   return values;
 }

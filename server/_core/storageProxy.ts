@@ -17,7 +17,39 @@ async function authenticateStorageRequest(req: Request): Promise<AuthenticatedUs
 // Storage keys are classified by their prefix (set at upload time in server/routers.ts /
 // server/storage.ts) into the categories below. Unpredictability of the key itself is never
 // treated as authorization - every private category is verified against the owning DB record.
+/**
+ * A key that is safe to make an authorization DECISION about.
+ *
+ * Every branch below dispatches on a prefix - `key.startsWith('avatars/')` and
+ * so on - and the same string is then handed to the storage adapter. If the key
+ * can contain a `..` segment those two are no longer talking about the same
+ * object: `avatars/../../something-else` satisfies the avatars branch, which
+ * allows any authenticated user, and then asks the backend for a different
+ * path entirely.
+ *
+ * THIS IS NOT EXPLOITABLE TODAY and the fix is still worth having. The only
+ * configured backends are S3, where a key is an opaque string and `..` is a
+ * literal segment that simply will not exist, and an HTTP API. It becomes a
+ * real traversal the day anyone adds a filesystem-backed adapter, and the
+ * person adding it would have no reason to suspect that the authorization
+ * layer had been reasoning about a path it never validated.
+ *
+ * Fails closed, and is checked BEFORE the admin short-circuit: an admin is
+ * allowed to read any legitimate key, not to read a malformed one.
+ */
+function isWellFormedStorageKey(key: string): boolean {
+  if (key.length === 0 || key.length > 1024) return false;
+  // No absolute paths, no Windows separators, no NUL or other control bytes.
+  if (key.startsWith('/') || key.includes('\\')) return false;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001F]/.test(key)) return false;
+  // No traversal or empty segments - `a//b` and `a/./b` also address something
+  // other than what they appear to.
+  return key.split('/').every(segment => segment.length > 0 && segment !== '.' && segment !== '..');
+}
+
 export async function authorizeStorageKey(key: string, user: AuthenticatedUser | null): Promise<boolean> {
+  if (!isWellFormedStorageKey(key)) return false;
   if (!user) return false;
   if (user.role === 'admin') return true; // Admins already have full user-data visibility elsewhere (compliance review, audit reports).
 

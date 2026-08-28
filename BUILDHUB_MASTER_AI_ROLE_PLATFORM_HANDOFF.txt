@@ -1,0 +1,540 @@
+================================================================================
+BUILDHUB — MASTER AI + ROLE-BASED PLATFORM HANDOFF
+Comprehensive end-to-end implementation and final hardening
+Date: 2026-08-27
+================================================================================
+
+Claude  = engineering, implementation, research execution, testing, staging.
+ChatGPT = independent architecture / security / product review.
+Owner   = final business / product / production decisions.
+
+CURRENT MAIN SHA:     6564e36dc86d0fd7b8bf1b463e57ca52ece8563a
+CURRENT STAGING SHA:  6564e36dc86d0fd7b8bf1b463e57ca52ece8563a
+GATE SHA:             6564e36dc86d0fd7b8bf1b463e57ca52ece8563a
+
+All three equal, verified with expect_commit rather than assumed. A mismatch
+FAILS the gate; that the check reaches check() and not skip() is pinned by a
+unit test, because a provenance check that degrades to a skip proves nothing.
+
+--------------------------------------------------------------------------------
+PART 1 — WHAT THE AUDIT FOUND
+--------------------------------------------------------------------------------
+
+The repository was audited directly rather than from the previous handoffs.
+Most of the brief was already implemented across earlier phases. THREE things
+were genuinely absent, and two of them were built this phase:
+
+  GAP 1 (BUILT)   No untrusted-content boundary anywhere. Vendor-authored text
+                  reached the model in the same channel as BuildHub's own
+                  instructions, raw. A real injection vector, not theoretical.
+  GAP 2 (BUILT)   No transaction opportunity engine. The AI could recommend
+                  providers to customers and had nothing for providers.
+  GAP 3 (NOT BUILT) No audit-trail table. See PART P.
+
+Two commits landed. Everything else described below was verified as already
+present and is reported with measured figures, not restated from a handoff.
+
+================================================================================
+A. ROLE ARCHITECTURE
+================================================================================
+
+Six roles. ONE shared AI engine. The role is read from the authenticated
+server-side session (ctx.user.userRole). `ai.chat` has NO role field in its
+input schema; zod strips unknown keys, so a client cannot assert a role it does
+not hold. Both spoofing routes are tested: a role smuggled into the request
+body, and a role asserted inside the conversation.
+
+  ROLE              WORKFLOW                                        TOOLS  ACTIONS
+  ----------------  ----------------------------------------------  -----  -------
+  Customer          plan > estimate > find > compare > decide          8       5
+  Contractor        findOpportunity > analyze > estimate > quote >     8       5
+                    execute
+  Engineer          analyze > verify > qaqc > manageRisk               8       4
+  Architect         design > specify > coordinate > source             8       4
+  Supplier          findDemand > matchProducts > quote > sell          8       5
+  Project Manager   plan > track > control > report                    8       4
+
+Eight tools per role, as the brief specifies. Every action href is asserted
+against App.tsx, so a route typo is a compile-or-test failure, not a dead link.
+
+DELIBERATELY ABSENT: a "Compare Providers" action. BuildHub has no comparison
+surface - no route, no component, no endpoint. Shipping the button would be the
+decorative control the brief forbids. Recorded as owner decision D4.
+
+================================================================================
+B. DASHBOARDS
+================================================================================
+
+Six distinct role dashboards with role-appropriate KPIs, widgets, shortcuts,
+recent records and alerts. Backend queries scoped by user / ownership /
+assignment / approval as applicable.
+
+Verified live at three widths (375 / 768 / 1440) in both languages, gate
+section 32. An unapproved provider lands on /compliance rather than a
+dashboard, and that negative case is asserted for the four provider roles the
+gate does not approve.
+
+================================================================================
+C. NAVIGATION
+================================================================================
+
+Navigation reflects real role capability. Frontend hiding is NEVER the security
+mechanism: direct URL and direct tRPC access to unauthorized areas fails at the
+server. The 171-cell role matrix (six roles x resources x verbs) pins each
+claim against the router source, and a single-role claim must point at a body
+that actually checks userRole.
+
+================================================================================
+D. AI
+================================================================================
+
+  Provider:        OpenAI Responses API                (UNCHANGED, as required)
+  Model:           gpt-5.6-luna                        (UNCHANGED, as required)
+                   - the pinned identifier, not the bare alias
+  Embeddings:      text-embedding-3-small
+  Shared engine:   ONE. Six experiences, not six backends.
+  Role context:    server-side session only
+  Project context: server/_core/projectContext.ts
+
+PROJECT CONTEXT is built on three refusals:
+  - Authorization before retrieval. projectId is a SELECTOR among rows the
+    caller may already see. Naming someone else's project yields "not among the
+    ones you may see", and the block says outright: do NOT substitute another.
+  - A provider never receives budget or spend. projects.directory withholds
+    them; the AI path does not become the way around that.
+  - Ask, don't guess. Multiple projects plus a vague question returns a question
+    with the titles offered. A question with no project bearing costs NO QUERY.
+
+================================================================================
+E. KNOWLEDGE
+================================================================================
+
+MEASURED, not estimated:
+
+  Knowledge documents:      10
+  Distinct domains covered: 10  (of 23 declared in the taxonomy)
+  Authority tiers present:  tier 6 (synthesised) for all 10
+  Regulatory references:     8
+  Jurisdictions:            EG, SA, AE, QA, KW, BH, OM, JO  (all 8 required)
+  Semantic retrieval:       IMPLEMENTED (text-embedding-3-small, ranked by
+                            metadata, authority, jurisdiction, freshness,
+                            status; lexical fallback)
+  Web research:             IMPLEMENTED (Responses API web_search tool, routed
+                            by a deterministic classifier, not by the model)
+  BuildHub knowledge:       IMPLEMENTED - derived from actual application
+                            behaviour, with a 5-level precedence chain
+
+THE COVERAGE NUMBER IS SMALL AND THAT IS A DELIBERATE POSITION, NOT AN OMISSION.
+Part 14 lists roughly seventy domains; Part 14 also says "do NOT create shallow
+filler documents merely to inflate coverage numbers." Those two instructions
+pull against each other and the code resolves them explicitly: a paragraph per
+domain would be material the model already knows, dressed as authoritative
+BuildHub knowledge - which is worse than nothing, because it launders general
+knowledge into apparent authority. What earns a document is knowledge specific
+enough that a general answer would be materially worse. The assistant is told
+which domains have documents, so it does not imply BuildHub has a position
+where it has none.
+
+  THE CORPUS IS NOT COMPLETE AND IS NOT DESCRIBED AS COMPLETE.
+  Every document is tier 6. There is no tier 1-5 primary-source content.
+  Expanding it with genuine higher-authority material is real remaining work.
+
+PRECEDENCE CHAIN (five levels): attachment > BuildHub documented behaviour >
+live authorized records > current/regulatory > general expertise. Stated as
+"where two sources disagree, the EARLIER one wins - a precedence chain, not a
+list of things you have available."
+
+Four documented false premises are corrected from what the code does, including
+the honest other half: an approved provider is NOT restricted to their declared
+categories when QUOTING (though opening a qualified enquiry does require one).
+
+================================================================================
+F. MARKETPLACE
+================================================================================
+
+  Provider search:   BuildHub-listed providers first, always
+  Ranking:           deterministic, server-side, over real fields only
+  Match quality:     EXACT / PARTIAL / RELATED / NO-MATCH
+  BuildHub priority: enforced - external only when nothing suitable exists or
+                     the user explicitly asks
+  External fallback: labelled "External recommendation - not currently listed
+                     on BuildHub", with no implication of endorsement
+
+A partial match is never presented as exact. Terms BuildHub could not map are
+carried forward and named, so a role-only match cannot be framed as exact - the
+fix for a real staging answer where "swimming pool specialist in Aswan" matched
+a generic contractor and reported EXACT.
+
+No fabricated attributes: no invented rating, availability, specialization or
+experience. The block names what BuildHub does NOT know and forbids estimating
+it.
+
+================================================================================
+G. TRANSACTION ENGINE                                              (NEW)
+================================================================================
+
+server/opportunity.ts
+
+  Opportunity detection:  intent classifier (phrases + patterns) AND the
+                          server-side role. A homeowner asking about "available
+                          projects" gets nothing.
+  Role-specific:          contractors and suppliers get ranked open RFQs
+  Scoring:                deterministic, server-side, named weights
+  Confirmation:           carried explicitly per action
+  Execution:              NONE - see below
+  Audit:                  not implemented (PART P)
+
+THE ARCHITECTURAL DECISION, which is the whole safety argument:
+
+  THE AI HAS NO EXECUTE PATH.
+
+Nothing in the module opens an enquiry, spends a credit, or submits a
+quotation. It emits a PREPARED action - a real route and an id - and the person
+confirms by going there, where the existing procedure runs with its existing
+approval check, declared-category eligibility, monthly allowance and credit
+accounting. "The AI must never become a transaction authorization bypass" is
+not enforced by a check that could be forgotten; there is nothing to bypass
+with. The PreparedAction type has no 'completed' variant, and a test asserts no
+literal sneaks past it via a cast.
+
+The five states the brief distinguishes are split across that boundary:
+
+  RECOMMENDATION -> MATCH -> PREPARED ACTION | CONFIRMED ACTION -> COMPLETED
+                                             ^
+                                    the engine stops here
+
+Authorization precedes retrieval: a role with no RFQ opportunities causes NO
+QUERY, not a filtered one. The projection deliberately omits description,
+budget, productReference and requesterId - the columns openQualifiedEnquiry
+charges a credit to reveal. Ranking a feed must not become a way to read the
+part of it that is paid for.
+
+Match quality reflects a CONSEQUENCE: opening a qualified enquiry requires a
+declared category, so anything outside them is RELATED and the block states
+plainly that the provider cannot open it as things stand.
+
+================================================================================
+H. ATTACHMENTS
+================================================================================
+
+  Supported formats:  PNG, JPEG, WEBP, PDF
+  Size:               8 MB
+  Validation:         byte sniffing (not the declared type), extension/type
+                      agreement, SVG/HTML/XML refused outright
+  Storage:            object storage, keyed per user
+  Authorization:      ownership re-checked against the database on every use;
+                      the same refusal whether the id never existed, belongs to
+                      someone else, or was deleted - so it is not an oracle
+  AI analysis:        attachment outranks every other source for facts about
+                      itself; if unreadable the assistant says so and does not
+                      answer as though it had read it
+  Multi-file:         TRANSPORT CONTRACT IS ALREADY attachmentIds[]. The UI
+                      limit is 1. Raising the constant is explicitly NOT
+                      sufficient - the answer must attribute each fact to the
+                      right document, and nothing in the prompt or the
+                      evaluation suite checks that it does. Documented as a
+                      limitation rather than shipped as a bumped number.
+  Retention:          soft delete (deletedAt), excluded from every lookup
+
+================================================================================
+I. RFQ / QUOTATIONS
+================================================================================
+
+State transitions enforced server-side. Closed / awarded / cancelled / expired
+RFQs do not accept quotations. rfq.get is scoped by requesterId - it previously
+had no ownership check at all, which made the credit mechanism optional for
+anyone willing to guess an integer.
+
+Quotation bounds match the columns: price is decimal(12,2), warranty is
+varchar(100), timeline is an int. None were bounded, so a negative price was
+accepted as a bid. That is input validation, not policy.
+
+DUPLICATE QUOTATIONS: the repository does not establish the intended model.
+NOT decided here. Owner decision D1.
+
+================================================================================
+J. PRODUCTS
+================================================================================
+
+Schema-mandatory fields (notNull) are exactly three: supplierId, name,
+category. Everything else - price, currency, unit, brand, origin, stock,
+warranty, deliveryDays, images, specs - is nullable.
+
+That is the measured answer to "use the actual schema to determine mandatory
+fields": the schema mandates almost nothing. Whether a product should be
+publishable without a price or a photo is a product rule the schema does not
+express. NOT decided here. Owner decision D3.
+
+Product images have no upload surface. Recorded as a blocker, not worked
+around.
+
+================================================================================
+K. MESSAGING / NOTIFICATIONS
+================================================================================
+
+Conversation and message access is limited to legitimate participants; id
+manipulation, direct URLs and participant changes are covered by tests.
+Message attachments were repaired in an earlier phase - repairing them naively
+would have opened an IDOR, and that was found and closed.
+
+Unread counts are user-scoped. Notifications are stored with translation keys
+and parameters rather than English-only rendered prose, so a bilingual system
+does not persist one language as authoritative.
+
+================================================================================
+L. SECURITY
+================================================================================
+
+UNTRUSTED CONTENT (new this phase). The assembled prompt is one string, and it
+mixed text BuildHub wrote with text other people wrote, unmarked. v.name,
+v.location and v.categories were raw interpolations. A supplier could name
+themselves across several lines and close the candidate block early. Two
+defences:
+
+  MECHANICAL - neutralizeUntrusted removes what text needs in order to POSE as
+  structure: its own line breaks (including U+2028/U+2029, which are real line
+  terminators), the === delimiter even inline, and the invisible characters
+  that hide a payload from whoever reviews the listing. It does NOT guess at
+  malicious phrasing - a blocklist of "ignore previous instructions" is a guess
+  about wording, and wording is the cheapest thing to vary. The words survive;
+  the structure does not, so the model can still REPORT a hostile listing.
+
+  DECLARED - UNTRUSTED_CONTENT_RULE enters the system prompt after the
+  precedence chain, phrased as a property of the channel, and closes the
+  loophole that matters: not "ignore previous instructions" but a payload
+  dressed as a system message or a note from the developers.
+
+Channels covered: vendor name, vendor location, vendor categories, RFQ title,
+attachment filename. Arabic payloads behave identically.
+
+PRIVACY. server/aiPromptPrivacy.test.ts builds the WHOLE assembled prompt from
+a poisoned viewer and asserts none of these survives, in both languages:
+bcrypt hash, OpenAI key, JWT secret, database URL, SMTP password, S3 secret,
+invitation token, session cookie, email, phone, username, openId.
+
+A MUTATION SURVIVED AND CHANGED THE RULE: interpolating viewer.email passed,
+because the forbidden list held only secrets. PII to a third-party provider is
+a cost with no benefit; contact details are now forbidden too, and the POSITIVE
+half is pinned so a privacy rule that also stripped the useful context fails.
+
+Authorization precedes retrieval everywhere. No admin-internal information
+reaches the model.
+
+================================================================================
+M. TESTS
+================================================================================
+
+  Typecheck:      tsc --noEmit, 0 errors
+  Tests:          91 files, 2039 tests, all passing
+  Build:          green (client + server)
+
+  AI:             aiRoles 39 | aiProjectContext 24 | aiFalsePremises 20
+                  aiAttachments | aiChatSecurity | aiIntent | aiAvailability
+  Role:           roleMatrix 76 | crossRoleIsolation
+  Authorization:  dataIsolationMatrix 67 | authorizationSweep | negativeControls 20
+                  billingAuthorization | projectsAuthorization | rfqTargetingAuthorization
+  Marketplace:    marketplaceHonesty 10 | rfqTargeting | featuredPlacement
+  Recommendation: recommendation ranking + match quality
+  Transaction:    opportunityEngine 46                                   (NEW)
+  Attachment:     aiAttachments | rfqAttachments | messageAttachmentFlow
+                  storageAuthorizationCoupling
+  Retrieval:      knowledgeRetrieval 18 | semanticRetrieval
+  Security:       aiPromptPrivacy 33 | promptInjection 27                (NEW)
+                  authSecurityHardening | accountSessionSecurity
+  Staging gate:   stagingGate 63
+  Mutation:       13 killed this phase; 22 in the preceding phase
+
+MUTATION TESTING CHANGED THE CODE, NOT JUST THE TESTS. Recorded because the
+record is the point:
+
+  - A recency weight worth 5 points could be set to 0 OR to 500 without
+    changing a single outcome: the match-quality bucket or the tiebreak had
+    already decided every case. A weight that cannot change a result makes the
+    scoring look more considered than it is. Removed from the score, kept as a
+    REASON, and the tiebreak now orders on createdAt instead of letting id
+    stand in for "newest".
+  - Two ranking tests were then unfalsifiable for the same reason - the exact
+    and partial buckets are homogeneous by construction, so the weights never
+    decide there. They decide in the RELATED bucket, which is where the tests
+    now exercise them, with ids chosen so the tiebreak cannot reproduce the
+    right order by coincidence (which is how the first rewrite passed).
+  - Deleting the newline pass from neutralizeUntrusted left all 26 injection
+    assertions green: every newline in the payload sat beside other whitespace,
+    so the whitespace-collapse absorbed it. A lone \n between two word
+    characters survives that collapse and is now its own test.
+  - Two real source gaps surfaced from test failures rather than review: the
+    RFQ title was neutralised at only one of two entry points, and the intent
+    cues missed "find me finishing projects" because an adjective sits between
+    the verb and the noun.
+
+================================================================================
+N. STAGING QA
+================================================================================
+
+  Total:    640
+  Passed:   640
+  Failed:     0
+  Skipped:    5
+
+  Exact deployed SHA:  6564e36dc86d0fd7b8bf1b463e57ca52ece8563a
+  GitHub Actions run:  https://github.com/islamsu/buildhub-project/actions/runs/33117248555
+
+The five skips, each stating what it needs. A skip is NOT a pass and they are
+counted separately:
+
+  9.  password reset ............ SMTP_HOST unset
+  10. upload to the bucket ...... S3_* not configured
+  29. knowledge priority (live) . opt-in; twelve extra paid provider requests
+  30. storing an attachment ..... S3_* not configured
+  30. cross-user attachment ..... requires a stored attachment
+
+No failure was converted into a skip. The previous phase's gate run failed
+639/640 and that failure was diagnosed and fixed rather than reclassified.
+
+================================================================================
+O. LIVE TESTS
+================================================================================
+
+All six roles exercised in a real browser, English and Arabic, gate section 31:
+
+  Customer         distinct heading, distinct tool set, named workflow, actions
+  Contractor       as above, and asserted NOT to be shown the homeowner
+                   designer finder while IS shown RFQ tooling
+  Engineer         distinct experience
+  Architect        distinct experience
+  Supplier         distinct experience
+  Project Manager  distinct experience
+
+  BuildHub question ......... covered (sections 27, 28)
+  Construction question ..... covered
+  Recommendation ............ covered
+  BuildHub recommendation ... covered
+  Transaction opportunity ... NOT COVERED LIVE - see PART P
+  Arabic .................... covered (dir=rtl, translated not copied, per role)
+  English ................... covered
+  Attachment ................ SKIPPED - S3 not configured
+  Web / current information . covered
+  Security .................. covered (secret exposure, section 21)
+
+Six distinct headings, six DISTINCT tool sets and six DISTINCT workflows are
+asserted - the failure mode this feature is most likely to have is one page
+with six headings, and that is the assertion that catches it.
+
+MINIMAL LIVE PROVIDER CALLS, as required: the whole six-role section costs ZERO
+provider requests (opening /ai must fire none, and that is asserted). A routine
+gate run spends AT MOST ONE PAID REQUEST in total. The twelve-request knowledge
+suite is opt-in and stayed off.
+
+================================================================================
+P. REMAINING LIMITATIONS
+================================================================================
+
+  L1  NO AUDIT TRAIL. There is no audit-log table. Part 42 asks for one over
+      RFQ creation, submission, assignment, quotation, approval, product
+      change, document upload/delete, status transition and AI-triggered state
+      changes. This was NOT built: it is a schema change plus a
+      permission-scoped read surface, and it is a larger piece than it looks.
+      Reported as absent rather than half-built.
+
+  L2  THE TRANSACTION ENGINE HAS NO LIVE GATE COVERAGE. It is proven by 46
+      unit tests against a database stub that honours its predicates, but no
+      staging section exercises it in a browser. Adding one costs a paid
+      provider call per role, against the brief's "minimal live provider
+      calls". Named here rather than implied to be covered.
+
+  L3  LIVE PROMPT-INJECTION BEHAVIOUR IS UNPROVEN. The MECHANICAL half is
+      proven - untrusted text cannot forge prompt structure, and that half
+      holds without the model cooperating. Whether a live model REFUSES a
+      payload that survives neutralisation needs a real provider call per
+      payload and has not been observed.
+
+  L4  KNOWLEDGE CORPUS IS TIER 6 ONLY. Ten documents, all synthesised. No
+      primary-source tier 1-5 content. Genuine remaining work.
+
+  L5  MULTI-FILE ATTACHMENT ANALYSIS is not implemented. The transport
+      contract is already an array; the UI limit is 1. Raising the constant
+      would not deliver it.
+
+  L6  NO PRODUCT IMAGE UPLOAD SURFACE.
+  L7  NO EDIT/DELETE SURFACE for several owner-authored records.
+  L8  NO EXPORT.
+  L9  NO COMPARISON SURFACE (see D4).
+
+================================================================================
+Q. OWNER DECISIONS
+================================================================================
+
+  D1  Duplicate quotation / revision model. The repository does not establish
+      the intended behaviour. OWNER DECISION REQUIRED - not decided here.
+  D2  Renovation finishing preset.
+  D3  Mandatory product fields. The schema mandates only supplierId, name and
+      category. Whether a product may publish without a price or a photo is a
+      product rule the schema does not express.
+  D4  Provider comparison surface. Either build it or the action stays absent.
+      It will not ship as a button that does nothing.
+  D5  (NEW) Should the free RFQ feed expose `budget`? rfq.list currently
+      returns it, while openQualifiedEnquiry charges a credit for "full
+      detail". That is a pricing question, not something to infer from a table.
+      The opportunity engine does NOT read budget, so this decision is not
+      pre-empted either way.
+
+================================================================================
+R. PRODUCTION BLOCKERS
+================================================================================
+
+  B1  SMTP not configured on staging - password reset unproven end to end
+  B2  S3 not configured on staging - uploads and AI attachment storage unproven
+  B3  No payment provider exercised on staging
+  B4  No production administrator provisioning performed
+  B5  No product image surface
+  B6  No edit/delete surface for several record types
+  B7  No export
+  B8  No audit trail (L1)
+
+================================================================================
+S. PRODUCTION IMPACT
+================================================================================
+
+NONE.
+
+No production deployment, credential, database, S3 bucket, SMTP host, payment
+provider, pricing change or administrator was created or modified. Paymob was
+not activated. No production DNS was touched. No user or vendor data was
+destroyed.
+
+================================================================================
+T. FINAL DECISIONS
+================================================================================
+
+  ROLE-BASED PLATFORM ....... GO
+      Six roles, six dashboards, six AI experiences, one engine, server-side
+      role. 171-cell matrix pinned against router source. 640/640 live.
+
+  AI ........................ GO
+      Role and project aware, authorization before retrieval, precedence chain,
+      bilingual with the website language authoritative, no credential or PII
+      in the prompt, and untrusted content can no longer pose as instruction.
+
+  MARKETPLACE ............... GO
+      BuildHub-first, deterministic ranking, honest match quality, no
+      fabricated attributes, external clearly labelled.
+
+  TRANSACTION ENGINE ........ GO FOR STAGING, WITH L2 STATED
+      The safety property is structural: there is no execute path. Ranking is
+      deterministic and server-side; the model explains an order it did not
+      choose. It is unit-proven and NOT live-proven, and that is L2 rather than
+      a claim of coverage.
+
+  STAGING ................... GO
+      640/640, 0 failures, 5 environment skips stated as skips, at a deployed
+      SHA verified equal to main.
+
+  PRODUCTION ................ NO-GO
+      B1-B8. Email, storage, payments, administrator provisioning and audit
+      trail are unconfigured or absent and therefore unproven. Five owner
+      decisions are open. Nothing in this phase was intended to change this
+      verdict.
+
+================================================================================
+For independent ChatGPT review.
+================================================================================

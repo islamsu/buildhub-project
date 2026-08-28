@@ -1258,6 +1258,83 @@ const marketplaceRouter = router({
     const result = await db.insert(productQuestions).values({ productId: input.productId, askerId: ctx.user.id, question: input.question });
     return { id: Number(result[0].insertId) };
   }),
+  /**
+   * THE OTHER HALF OF THE Q&A, which did not exist.
+   *
+   * productQuestions carries `answer` and `answeredAt`, marketplace.questions
+   * returns both, and ProductDetail renders the answer when present - but
+   * nothing could ever write one. A customer asked a question on a listing and
+   * the supplier had no procedure and no surface to reply with, so every
+   * thread was permanently one-sided while the buyer-facing UI implied a reply
+   * was coming.
+   *
+   * AUTHORIZATION: the supplier who owns the product, and nobody else. Not the
+   * asker, not another supplier, not an approved provider in general. The
+   * ownership check is a JOIN rather than two reads, so there is no window
+   * between "this question exists" and "this product is mine".
+   *
+   * A question on a delisted product cannot be answered, matching askQuestion:
+   * a withdrawn product and an absent one are the same answer to a buyer, and
+   * an answer that appears on nothing would contradict that.
+   *
+   * NOT DECIDED HERE: whether a supplier may EDIT an answer once given, and
+   * whether answers need moderation before they are public. Both are policy.
+   * This writes an answer once and refuses to overwrite one.
+   */
+  answerQuestion: protectedProcedure
+    .input(z.object({ questionId: z.number().int().positive(), answer: z.string().min(2).max(2000) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [row] = await db
+        .select({
+          questionId: productQuestions.id,
+          answer: productQuestions.answer,
+          supplierId: products.supplierId,
+          active: products.active,
+        })
+        .from(productQuestions)
+        .innerJoin(products, eq(productQuestions.productId, products.id))
+        .where(eq(productQuestions.id, input.questionId));
+
+      // One refusal for "no such question", "not your product" and "delisted".
+      // Distinguishing them would tell a caller which question ids exist and
+      // which products are theirs to guess at.
+      if (!row || row.supplierId !== ctx.user.id || !row.active) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Question not found' });
+      }
+      if (row.answer) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'That question has already been answered.' });
+      }
+
+      await db.update(productQuestions)
+        .set({ answer: input.answer, answeredAt: new Date() })
+        .where(eq(productQuestions.id, input.questionId));
+      return { id: input.questionId };
+    }),
+  /**
+   * The questions on THIS supplier's own products, so they have somewhere to
+   * answer from. Scoped by supplierId in the join - a supplier sees their own
+   * threads and no one else's.
+   */
+  myProductQuestions: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return [];
+    return db
+      .select({
+        id: productQuestions.id,
+        productId: productQuestions.productId,
+        productName: products.name,
+        question: productQuestions.question,
+        answer: productQuestions.answer,
+        answeredAt: productQuestions.answeredAt,
+        createdAt: productQuestions.createdAt,
+      })
+      .from(productQuestions)
+      .innerJoin(products, eq(productQuestions.productId, products.id))
+      .where(and(eq(products.supplierId, ctx.user.id), eq(products.active, true)))
+      .orderBy(desc(productQuestions.createdAt));
+  }),
 });
 
 // ── RFQ Router ─────────────────────────────────────────────────────────────
@@ -1619,14 +1696,23 @@ const messagesRouter = router({
   conversations: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.select({ senderId: messages.senderId, receiverId: messages.receiverId, content: messages.content, createdAt: messages.createdAt }).from(messages).where(sql`${messages.senderId} = ${ctx.user.id} OR ${messages.receiverId} = ${ctx.user.id}`).orderBy(desc(messages.createdAt));
+    const rows = await db.select({ senderId: messages.senderId, receiverId: messages.receiverId, content: messages.content, createdAt: messages.createdAt, read: messages.read }).from(messages).where(sql`${messages.senderId} = ${ctx.user.id} OR ${messages.receiverId} = ${ctx.user.id}`).orderBy(desc(messages.createdAt));
     const otherIds = Array.from(new Set(rows.map(row => row.senderId === ctx.user.id ? row.receiverId : row.senderId)));
     if (!otherIds.length) return [];
     const people = await db.select({ id: users.id, name: users.name, userRole: users.userRole }).from(users).where(inArray(users.id, otherIds));
     return people.map(person => {
       const latest = rows.find(row => row.senderId === person.id || row.receiverId === person.id);
       const name = person.name || 'BuildHub user';
-      return { id: person.id, name, initials: name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase(), lastMessage: latest?.content ?? '', time: latest?.createdAt ? new Date(latest.createdAt).toLocaleDateString() : '', unread: 0, online: false, role: person.userRole || 'Member' };
+      // `unread` was hard-coded to 0 and `online` to false, while the UI
+      // rendered a live-presence dot and an unread badge from them. A counter
+      // that is always zero is not a conservative default, it is a broken
+      // counter that hides real messages; and BuildHub has no presence system
+      // at all, so `online` could only ever have been decoration. The count is
+      // now computed from the rows already loaded, and `online` is gone rather
+      // than shipped as a permanently-false field the UI can misread.
+      const unread = rows.filter(row =>
+        row.senderId === person.id && row.receiverId === ctx.user.id && !row.read).length;
+      return { id: person.id, name, initials: name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase(), lastMessage: latest?.content ?? '', time: latest?.createdAt ? new Date(latest.createdAt).toLocaleDateString() : '', unread, role: person.userRole || 'Member' };
     });
   }),
   list: protectedProcedure.input(z.object({ otherUserId: z.number().optional() })).query(async ({ ctx, input }) => {
@@ -1686,6 +1772,37 @@ const messagesRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Quotation not found' });
       }
     }
+    // THE RECEIVER MUST BE A REAL, ACTIVE ACCOUNT, AND NOT THE SENDER.
+    //
+    // This endpoint accepted any positive integer as `receiverId`. The FK on
+    // messages.receiverId meant a NON-existent id failed - loudly, as an
+    // INTERNAL_SERVER_ERROR - but an id that happened to exist succeeded, and
+    // the message was delivered to that account. Combined with the mock
+    // conversation list the Messages page used to render for new users (ids
+    // 1-4, removed in the same change), a person could type into a thread
+    // labelled "Ahmed Hassan (Contractor)" and have it delivered to whichever
+    // real account holds user id 1.
+    //
+    // Existence and active status are INTEGRITY, not policy - a message to a
+    // deleted or suspended account has nowhere to go. Whether BuildHub should
+    // additionally require a prior relationship (a shared RFQ, a quotation, a
+    // directory enquiry) before one user may message another is a product
+    // decision and is NOT decided here: the marketplace deliberately lets a
+    // customer contact a vendor they just found. It is recorded as an owner
+    // decision in the audit report.
+    const [receiver] = await db
+      .select({ id: users.id, accountStatus: users.accountStatus })
+      .from(users)
+      .where(eq(users.id, input.receiverId));
+    if (!receiver || receiver.accountStatus !== 'active') {
+      // Same answer for "no such user" and "not active", so the endpoint does
+      // not become a directory of which account ids exist.
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'That recipient is not available.' });
+    }
+    if (input.receiverId === ctx.user.id) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot send a message to yourself.' });
+    }
+
     const result = await db.insert(messages).values({ ...input, senderId: ctx.user.id });
     return { id: Number(result[0].insertId), ...input, senderId: ctx.user.id };
   }),
