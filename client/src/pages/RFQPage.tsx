@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
+import { Link } from 'wouter';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -57,6 +58,12 @@ function formatSize(bytes: number): string {
 export default function RFQPage() {
   const { t, lang } = useLanguage();
   const { isAuthenticated, user } = useAuth();
+  // The roles for whom an RFQ is an opportunity to respond to rather than
+  // something they raised. Mirrors RFQ_SEEKING_ROLES on the server; the server
+  // remains the authority - this only decides whether to OFFER the route.
+  const isProvider = isAuthenticated
+    && ['contractor', 'supplier', 'engineer', 'architect', 'project_manager']
+      .includes((user as { userRole?: string } | null)?.userRole ?? '');
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     title: '', description: '', category: '', budget: '', location: '', deadline: '',
@@ -430,9 +437,20 @@ export default function RFQPage() {
                       })()}
                     </div>
 
-                    {/* CTA */}
+                    {/* CTA
+                        The only action here used to be the OWNER's compare
+                        button, so a contractor or supplier browsing this page -
+                        the people the RFQ exists for - saw a card with nothing
+                        to do and no indication of where to respond. The
+                        response workflow was real but reachable only from the
+                        role platform, which is not where anyone looks after
+                        reading an RFQ.
+
+                        This does NOT open the enquiry: that spends a credit and
+                        is gated on approval and declared categories. It routes
+                        to the surface that owns the decision. */}
                     <div className="flex flex-col items-end gap-2 shrink-0">
-                      {isOwner && (
+                      {isOwner ? (
                         <Button
                           variant="default"
                           size="sm"
@@ -441,7 +459,13 @@ export default function RFQPage() {
                         >
                           <BarChart3 className="w-4 h-4" /> {t('rfq.compare')}
                         </Button>
-                      )}
+                      ) : isProvider && rfq.status === 'open' ? (
+                        <Link href="/provider">
+                          <Button variant="outline" size="sm" className="gap-1.5" data-testid="rfq-respond">
+                            {lang === 'ar' ? 'الرد على هذا الطلب' : 'Respond to this request'}
+                          </Button>
+                        </Link>
+                      ) : null}
                     </div>
                   </div>
                 </CardContent>
