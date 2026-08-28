@@ -218,3 +218,62 @@ export function setObjectStorage(storage: ObjectStorage | null): void {
 export function isObjectStorageConfigured(): boolean {
   return getObjectStorage().id !== "none";
 }
+
+/**
+ * THE ORIGINS A STORED FILE CAN ACTUALLY BE SERVED FROM.
+ *
+ * `/manus-storage/<key>` authorises the request and then answers 307 to a
+ * short-lived signed URL on the object store - a DIFFERENT ORIGIN. The page's
+ * own Content-Security-Policy said `img-src 'self' data: blob:`, and a
+ * cross-origin redirect target is not `'self'`, so Chromium refused every one
+ * of them:
+ *
+ *   Refused to load the image 'https://<store>/...'   (requestfailed :: csp)
+ *
+ * Silently. `<img>` fires onerror, the layout shows a broken image, and no
+ * error reaches the server. Product photos, avatars, RFQ image attachments and
+ * quotation photos were all affected on any deployment whose object store is a
+ * separate host - which is every real one.
+ *
+ * `crossOriginResourcePolicy` had already been relaxed for exactly this
+ * redirect (see security.ts); `img-src` was missed.
+ *
+ * The origins are derived HERE, from the same configuration the redirect is
+ * built from, so the policy cannot drift away from where the files actually
+ * live. It stays an allowlist of the configured store - never a wildcard, and
+ * never `*`.
+ */
+export function storageOrigins(env = ENV): string[] {
+  const origins = new Set<string>();
+  const add = (value: string | undefined) => {
+    if (!value) return;
+    try {
+      const url = new URL(value);
+      origins.add(url.origin);
+      // `upgrade-insecure-requests` is part of the production policy, so an
+      // http endpoint is REQUESTED as https and an http-only entry could never
+      // match it. Allowing the https form of a host already trusted over http
+      // grants nothing new, and omitting it guarantees the silent failure this
+      // whole function exists to prevent.
+      if (url.protocol === 'http:') origins.add(`https://${url.host}`);
+    } catch { /* an unparseable endpoint adds nothing */ }
+  };
+
+  if (env.s3Bucket && env.s3AccessKeyId && env.s3SecretAccessKey) {
+    const region = env.s3Region || 'us-east-1';
+    const endpoint = env.s3Endpoint || `https://s3.${region}.amazonaws.com`;
+    add(endpoint);
+    // Virtual-hosted addressing puts the bucket in the HOST, so the origin is
+    // not the endpoint's. Both forms are added: which one the SDK produces
+    // depends on forcePathStyle, and being wrong here fails silently again.
+    try {
+      const url = new URL(endpoint);
+      add(`${url.protocol}//${env.s3Bucket}.${url.host}`);
+    } catch { /* handled by the add() above */ }
+  } else if (env.forgeApiUrl && env.forgeApiKey) {
+    add(env.forgeApiUrl);
+  }
+
+  // No spread: this TypeScript target has no downlevelIteration.
+  return Array.from(origins);
+}

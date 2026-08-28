@@ -1,16 +1,16 @@
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useRef, useState, type TouchEvent } from 'react';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Link, useLocation } from 'wouter';
 import { startLogin } from '@/const';
+import { trpc } from '@/lib/trpc';
 import {
-  Building2, ShoppingBag, FileText, Bot, Users, Star, ArrowRight,
+  Building2, ShoppingBag, FileText, Bot, Users, ArrowRight,
   CheckCircle2, Zap, Shield, Globe, HardHat, Layers,
   Package, UserCog, ChevronRight, TrendingUp, Clock, MapPin,
-  BarChart3, MessageSquare, Sparkles, Play, ChevronLeft
+  BarChart3, MessageSquare, Sparkles, Play
 } from 'lucide-react';
 import { Home as HomeIcon } from 'lucide-react';
 
@@ -80,45 +80,49 @@ const ROLES = [
   { id: 'project_manager', icon: UserCog, color: 'text-teal-600', bg: 'bg-teal-50', border: 'border-teal-200', href: '/auth' },
 ];
 
-const STATS = [
-  { value: '10K+', labelEn: 'Registered Users', labelAr: 'مستخدم مسجل' },
-  { value: '5K+', labelEn: 'Active Projects', labelAr: 'مشروع نشط' },
-  { value: '2K+', labelEn: 'Verified Providers', labelAr: 'مزود موثق' },
-  { value: '98%', labelEn: 'Satisfaction Rate', labelAr: 'معدل الرضا' },
-];
+/**
+ * THE COUNTERS UNDER THE HEADLINE.
+ *
+ * These were four hardcoded strings - "10K+ Registered Users", "5K+ Active
+ * Projects", "2K+ Verified Providers", "98% Satisfaction Rate" - presented as
+ * fact to somebody deciding whether to trust the platform with a construction
+ * budget. None came from anywhere. The satisfaction figure is worth naming
+ * twice: there were no reviews in the database at all, so it was not stale or
+ * rounded - no such measurement existed.
+ *
+ * They now come from marketplace.platformStats. A figure that does not exist
+ * yet is not rendered, following the rule this codebase already applies to
+ * provider ratings: an absent number is shown as absent, never as a number.
+ */
+const STAT_LABELS = {
+  registeredUsers: { en: 'Registered Users', ar: 'مستخدم مسجل' },
+  activeProjects: { en: 'Active Projects', ar: 'مشروع نشط' },
+  verifiedProviders: { en: 'Verified Providers', ar: 'مزود موثق' },
+  satisfaction: { en: 'Average Rating', ar: 'متوسط التقييم' },
+} as const;
 
-const TESTIMONIALS = [
-  {
-    name: 'Ahmed Hassan',
-    nameAr: 'أحمد حسن',
-    role: 'Homeowner',
-    roleAr: 'صاحب منزل',
-    text: 'BuildHub transformed how I managed my apartment renovation. The AI cost estimator alone saved me 15% on my budget.',
-    textAr: 'غيّر BuildHub طريقة إدارتي لتجديد شقتي. مقدّر التكلفة بالذكاء الاصطناعي وحده وفّر لي 15% من ميزانيتي.',
-    rating: 5,
-    location: 'Cairo, Egypt',
-  },
-  {
-    name: 'Mohamed Al-Rashidi',
-    nameAr: 'محمد الراشدي',
-    role: 'Contractor',
-    roleAr: 'مقاول',
-    text: 'I receive 3x more qualified leads through BuildHub than any other platform. The RFQ system is incredibly efficient.',
-    textAr: 'أتلقى 3 أضعاف العملاء المؤهلين عبر BuildHub مقارنة بأي منصة أخرى. نظام طلبات العروض فعّال بشكل لا يصدق.',
-    rating: 5,
-    location: 'Dubai, UAE',
-  },
-  {
-    name: 'Sara Khalil',
-    nameAr: 'سارة خليل',
-    role: 'Interior Architect',
-    roleAr: 'مهندسة ديكور',
-    text: 'The marketplace has everything I need for my projects. Finding the right materials used to take days — now it takes minutes.',
-    textAr: 'السوق يحتوي على كل ما أحتاجه لمشاريعي. إيجاد المواد المناسبة كان يستغرق أياماً — الآن يستغرق دقائق.',
-    rating: 5,
-    location: 'Riyadh, KSA',
-  },
-];
+/**
+ * THE TESTIMONIALS WERE INVENTED.
+ *
+ * Three named individuals - "Ahmed Hassan, Homeowner, Cairo", "Mohamed
+ * Al-Rashidi, Contractor, Dubai", "Sara Khalil, Interior Architect, Riyadh" -
+ * each with a five-star rating and a specific quantitative claim: that the AI
+ * cost estimator "saved me 15% on my budget", that BuildHub delivers "3x more
+ * qualified leads than any other platform". No such people, reviews, or
+ * measurements existed anywhere in the product. The reviews table was empty.
+ *
+ * Fabricated endorsements attributed to named people, carrying performance
+ * claims, shown to prospective customers, are a different order of problem
+ * from a rounded user count, and they are removed rather than adjusted.
+ *
+ * They are NOT replaced with invented honest-looking copy, and they are not
+ * wired to the real `reviews` table either: a review a vendor's customer left
+ * on that vendor's profile was not given for use as site-wide marketing, and
+ * deciding otherwise is the owner's call, not an engineering one.
+ *
+ * OWNER DECISION: what belongs in this section before launch - real
+ * testimonials with the reviewers' consent, or nothing.
+ */
 
 const HOW_IT_WORKS = [
   { step: '01', titleEn: 'Create Your Account', titleAr: 'أنشئ حسابك', descEn: 'Sign up and select your role — homeowner, contractor, engineer, or supplier.', descAr: 'سجّل واختر دورك — صاحب منزل، مقاول، مهندس، أو مورد.' },
@@ -130,6 +134,22 @@ const HOW_IT_WORKS = [
 export default function Home() {
   const { t, lang, dir } = useLanguage();
   const [, navigate] = useLocation();
+
+  /**
+   * A figure is rendered only if it is a real, non-zero count. Zero is not a
+   * headline anybody needs to read, and it is not a placeholder either - the
+   * tile simply does not appear. Nothing here invents a number when the query
+   * has not resolved or the database is unreachable.
+   */
+  const { data: stats } = trpc.marketplace.platformStats.useQuery();
+  const liveStats = !stats ? [] : [
+    { key: 'registeredUsers', value: stats.registeredUsers.toLocaleString(), label: STAT_LABELS.registeredUsers, show: stats.registeredUsers > 0 },
+    { key: 'activeProjects', value: stats.activeProjects.toLocaleString(), label: STAT_LABELS.activeProjects, show: stats.activeProjects > 0 },
+    { key: 'verifiedProviders', value: stats.verifiedProviders.toLocaleString(), label: STAT_LABELS.verifiedProviders, show: stats.verifiedProviders > 0 },
+    // Null until somebody has actually left a review. It is an average out of
+    // five, not a satisfaction percentage - the percentage measured nothing.
+    { key: 'satisfaction', value: `${stats.satisfaction?.averageRating ?? 0}/5`, label: STAT_LABELS.satisfaction, show: stats.satisfaction !== null },
+  ].filter(stat => stat.show);
 
   const roleLabels: Record<string, string> = {
     homeowner: t('roles.homeowner'),
@@ -147,24 +167,6 @@ export default function Home() {
     architect: t('roles.architect.desc'),
     supplier: t('roles.supplier.desc'),
     project_manager: lang === 'ar' ? 'أدر مشاريع البناء من البداية للنهاية.' : 'Manage construction projects end-to-end.',
-  };
-
-  const [activeTestimonial, setActiveTestimonial] = useState(0);
-  const touchStartX = useRef<number | null>(null);
-  const goToTestimonial = (nextIndex: number) => {
-    setActiveTestimonial((nextIndex + TESTIMONIALS.length) % TESTIMONIALS.length);
-  };
-  const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
-    touchStartX.current = event.touches[0]?.clientX ?? null;
-  };
-  const handleTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
-    if (touchStartX.current === null) return;
-    const endX = event.changedTouches[0]?.clientX;
-    if (endX === undefined) return;
-    const deltaX = endX - touchStartX.current;
-    touchStartX.current = null;
-    if (Math.abs(deltaX) < 40) return;
-    goToTestimonial(activeTestimonial + (deltaX < 0 ? 1 : -1));
   };
 
   return (
@@ -216,15 +218,17 @@ export default function Home() {
               </Button>
             </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 max-w-2xl mx-auto">
-              {STATS.map(stat => (
-                <div key={stat.value} className="text-center">
-                  <p className="text-3xl font-bold text-white">{stat.value}</p>
-                  <p className="text-sm text-white/60 mt-1">{lang === 'ar' ? stat.labelAr : stat.labelEn}</p>
-                </div>
-              ))}
-            </div>
+            {/* Stats - real counts, and nothing where there is no count yet. */}
+            {liveStats.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 max-w-2xl mx-auto" data-testid="platform-stats">
+                {liveStats.map(stat => (
+                  <div key={stat.key} className="text-center">
+                    <p className="text-3xl font-bold text-white">{stat.value}</p>
+                    <p className="text-sm text-white/60 mt-1">{lang === 'ar' ? stat.label.ar : stat.label.en}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -324,107 +328,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── TESTIMONIALS ─────────────────────────────────────────────────── */}
-      <section className="py-24 bg-muted/30">
-        <div className="container">
-          <div className="text-center mb-16">
-            <Badge variant="secondary" className="mb-4 text-sm px-4 py-1">{lang === 'ar' ? 'آراء العملاء' : 'Testimonials'}</Badge>
-            <h2 className="text-4xl font-bold mb-4">{lang === 'ar' ? 'ماذا يقول عملاؤنا' : 'What Our Users Say'}</h2>
-          </div>
-          <div
-            className="flex items-center gap-3 sm:gap-5 max-w-4xl mx-auto"
-            role="region"
-            aria-roledescription="carousel"
-            aria-label={lang === 'ar' ? 'آراء العملاء' : 'Customer testimonials'}
-          >
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="shrink-0 rounded-full bg-background/90 shadow-sm"
-              aria-label={lang === 'ar' ? 'الرأي السابق' : 'Previous testimonial'}
-              onClick={() => goToTestimonial(activeTestimonial - 1)}
-            >
-              <ChevronLeft className="w-5 h-5" aria-hidden="true" />
-            </Button>
-
-            <div
-              className="min-w-0 flex-1 outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-4 rounded-xl"
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === 'ArrowLeft') {
-                  event.preventDefault();
-                  goToTestimonial(activeTestimonial - 1);
-                } else if (event.key === 'ArrowRight') {
-                  event.preventDefault();
-                  goToTestimonial(activeTestimonial + 1);
-                } else if (event.key === 'Home') {
-                  event.preventDefault();
-                  goToTestimonial(0);
-                } else if (event.key === 'End') {
-                  event.preventDefault();
-                  goToTestimonial(TESTIMONIALS.length - 1);
-                }
-              }}
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
-              aria-live="polite"
-            >
-              {(() => {
-                const t_ = TESTIMONIALS[activeTestimonial];
-                return (
-                  <Card className="border-border h-full select-none">
-                    <CardContent className="p-6 sm:p-8">
-                      <div className="flex gap-0.5 mb-4" aria-label={`${t_.rating} ${lang === 'ar' ? 'نجوم' : 'stars'}`}>
-                        {Array.from({ length: t_.rating }).map((_, i) => (
-                          <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" aria-hidden="true" />
-                        ))}
-                      </div>
-                      <p className="text-sm sm:text-base leading-relaxed text-foreground mb-6">
-                        "{lang === 'ar' ? t_.textAr : t_.text}"
-                      </p>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full gradient-brand flex items-center justify-center text-white font-bold text-sm flex-shrink-0" aria-hidden="true">
-                          {(lang === 'ar' ? t_.nameAr : t_.name).charAt(0)}
-                        </div>
-                        <div>
-                          <p className="font-semibold text-sm">{lang === 'ar' ? t_.nameAr : t_.name}</p>
-                          <p className="text-xs text-muted-foreground">{lang === 'ar' ? t_.roleAr : t_.role} · {t_.location}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })()}
-            </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="shrink-0 rounded-full bg-background/90 shadow-sm"
-              aria-label={lang === 'ar' ? 'الرأي التالي' : 'Next testimonial'}
-              onClick={() => goToTestimonial(activeTestimonial + 1)}
-            >
-              <ChevronLeft className="w-5 h-5 rotate-180" aria-hidden="true" />
-            </Button>
-          </div>
-
-          <div className="flex items-center justify-center gap-2 mt-6" role="tablist" aria-label={lang === 'ar' ? 'التنقل بين الآراء' : 'Choose testimonial'}>
-            {TESTIMONIALS.map((t_, index) => (
-              <button
-                key={t_.name}
-                type="button"
-                role="tab"
-                aria-selected={activeTestimonial === index}
-                aria-label={`${lang === 'ar' ? 'الرأي' : 'Testimonial'} ${index + 1}`}
-                className={`h-2.5 rounded-full transition-all ${activeTestimonial === index ? 'w-8 bg-primary' : 'w-2.5 bg-primary/25 hover:bg-primary/50'}`}
-                onClick={() => goToTestimonial(index)}
-              />
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* ── CTA BANNER ───────────────────────────────────────────────────── */}
       <section className="py-24 gradient-hero relative overflow-hidden">

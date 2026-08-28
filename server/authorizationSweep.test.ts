@@ -138,6 +138,11 @@ describe('§1 every procedure is pinned to a tier', () => {
       'marketplace.featuredVendors',
       'marketplace.get',
       'marketplace.list',
+      // Real platform counts for the landing and sign-up pages, which are
+      // both seen while logged out. It returns four aggregate numbers and no
+      // row, no id and nothing about any individual - see
+      // server/platformStats.ts. It replaced four hardcoded marketing figures.
+      'marketplace.platformStats',
       'marketplace.questions',
       'marketplace.vendorCategories',
       'marketplace.vendors',

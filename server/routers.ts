@@ -82,6 +82,7 @@ import {
   FEATURED_PLACEMENT_SLOTS, getVendorTargetingDiagnostics, listDirectoryCategories,
   listDirectoryVendors, listFeaturedVendors,
 } from './vendorDirectory';
+import { getPlatformStats } from './platformStats';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSubscriptions } from '../drizzle/schema';
 import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
@@ -1168,6 +1169,22 @@ const marketplaceRouter = router({
     }).optional())
     .query(async ({ input }) => listDirectoryVendors(input ?? {})),
   vendorCategories: publicProcedure.query(async () => listDirectoryCategories()),
+
+  /**
+   * The counts on the landing and sign-up pages, from the database.
+   *
+   * They used to be four hardcoded strings. `satisfaction` is null until a
+   * review exists, and the pages render nothing in that case - see
+   * server/platformStats.ts for why that is the rule rather than a fallback
+   * number.
+   */
+  platformStats: publicProcedure.query(async () => {
+    const db = await getDb();
+    // No database is not an excuse to invent figures. Zeroes with a null
+    // satisfaction render as "no figure yet", which is accurate.
+    if (!db) return { registeredUsers: 0, activeProjects: 0, verifiedProviders: 0, satisfaction: null };
+    return getPlatformStats(db);
+  }),
 
   // Featured placement (Slice 8). A SEPARATE endpoint from `vendors` above, on
   // purpose: the organic list and the sponsored strip are two different things

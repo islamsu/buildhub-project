@@ -2,6 +2,7 @@ import compression from "compression";
 import type { Express } from "express";
 import helmet from "helmet";
 import { ENV } from "./env";
+import { storageOrigins } from "./objectStorage";
 
 /**
  * ── Security headers and compression (Slice 4) ─────────────────────────────
@@ -43,8 +44,11 @@ export function registerSecurity(app: Express) {
           scriptSrc: ENV.isProduction ? ["'self'"] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
           styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
           fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
-          imgSrc: ["'self'", "data:", "blob:"],
-          mediaSrc: ["'self'", "blob:"],
+          // The object store the /manus-storage proxy redirects to, derived
+          // from this deployment's own configuration - see storageOrigins().
+          // Without it every stored image is refused by this very policy.
+          imgSrc: ["'self'", "data:", "blob:", ...storageOrigins()],
+          mediaSrc: ["'self'", "blob:", ...storageOrigins()],
           connectSrc: ENV.isProduction ? ["'self'"] : ["'self'", "ws:", "wss:"],
           // Nothing in BuildHub is meant to be embedded anywhere, and nothing
           // embeds a third party.
@@ -53,7 +57,13 @@ export function registerSecurity(app: Express) {
           objectSrc: ["'none'"],
           baseUri: ["'self'"],
           formAction: ["'self'"],
-          ...(ENV.isProduction ? { upgradeInsecureRequests: [] } : {}),
+          // `useDefaults: true` already includes upgrade-insecure-requests, so
+          // the previous production-only spread was dead: the directive was
+          // being sent in DEVELOPMENT too, against this file's own stated
+          // intent, and it silently rewrote every http subresource - including
+          // a local object store - to https. It is stated explicitly in both
+          // directions now: kept in production, off in development.
+          upgradeInsecureRequests: ENV.isProduction ? [] : null,
         },
       },
       // Uploads are proxied from this origin via a 307 to a presigned URL on
