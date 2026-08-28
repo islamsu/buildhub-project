@@ -2,6 +2,7 @@ import { useParams, Link } from 'wouter';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/_core/hooks/useAuth';
+import { getRolePlatformPath } from '@/lib/rolePlatform';
 import Navbar from '@/components/Navbar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -233,7 +234,14 @@ export default function RFQDetail() {
                   // The id travels with them. This used to be a bare
                   // `/provider`, which landed a provider on a dashboard with no
                   // memory of which request they had just been reading.
-                  <Link href={`/provider?rfq=${rfq.id}`}>
+                  //
+                  // It addresses `/platform/:role` DIRECTLY rather than
+                  // `/provider`, which is a legacy compatibility shim that
+                  // redirects here. Routing a new feature through a redirect
+                  // meant one extra place for the address to be rewritten - and
+                  // the first version of that shim dropped the query string,
+                  // so the id vanished between the click and the destination.
+                  <Link href={`${getRolePlatformPath((user as { userRole?: string } | null)?.userRole)}?rfq=${rfq.id}`}>
                     <Button className="mt-3 gap-2" data-testid="rfq-detail-respond">
                       <Package className="h-4 w-4" />
                       {ar ? 'المتابعة إلى الردود' : 'Continue to respond'}

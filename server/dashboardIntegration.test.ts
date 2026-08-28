@@ -47,7 +47,19 @@ describe('dashboard reachability - root cause fix (items 1-2)', () => {
   it('the legacy /provider route still exists and still forwards an authenticated user to the correct platform path (old bookmarks/links keep working) - the redirect itself was correct and was intentionally NOT removed', () => {
     const legacy = read('../client/src/pages/ProviderDashboard.tsx');
     expect(legacy).toContain('getRolePlatformPath');
-    expect(legacy).toMatch(/if \(isAuthenticated\) navigate\(getRolePlatformPath\(userRole\)\)/);
+    expect(legacy).toMatch(/if \(isAuthenticated\) navigate\(`\$\{getRolePlatformPath\(userRole\)\}/);
+  });
+
+  it('and the forward carries the QUERY STRING, which it once discarded', () => {
+    // A redirect that drops half the address is not forwarding, it is
+    // truncating. This silently broke a feature: `/rfq/:id` sent a provider
+    // here carrying `?rfq=<id>`, the link resolved, the redirect fired, and the
+    // parameter was gone before anything could read it. Every source-level test
+    // passed - the link, the parser and the destination were all correct - and
+    // the journey still did not work. Found by clicking it in a browser.
+    const legacy = read('../client/src/pages/ProviderDashboard.tsx');
+    expect(legacy).toContain('useSearch');
+    expect(legacy).toMatch(/navigate\(`\$\{getRolePlatformPath\(userRole\)\}\$\{search \?/);
   });
 });
 

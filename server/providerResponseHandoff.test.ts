@@ -27,7 +27,17 @@ describe('the request id travels with the provider', () => {
   const DETAIL = strip(read('../client/src/pages/RFQDetail.tsx'));
 
   it('the respond CTA carries the RFQ id, not a bare dashboard link', () => {
-    expect(DETAIL).toMatch(/<Link href=\{`\/provider\?rfq=\$\{rfq\.id\}`\}>/);
+    expect(DETAIL).toMatch(/<Link href=\{`\$\{getRolePlatformPath\([^`]*\)\}\?rfq=\$\{rfq\.id\}`\}>/);
+  });
+
+  it('and it addresses the canonical route, not the legacy /provider shim', () => {
+    // `/provider` is a compatibility redirect to `/platform/:role`. Routing a
+    // new feature through it added a place for the address to be rewritten -
+    // and that shim dropped the query string, so the id vanished between the
+    // click and the destination. Every source-level test still passed: the
+    // link was right, the parser was right, the destination was right, and the
+    // journey did not work. Found by clicking it in a browser.
+    expect(DETAIL).not.toContain('/provider?rfq=');
   });
 
   it('and it still does not spend anything on the way', () => {

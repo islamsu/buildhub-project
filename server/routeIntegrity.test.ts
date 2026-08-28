@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, globSync } from 'node:fs';
 import { ROUTES, ROLE_EXPERIENCES } from '@shared/aiRoles';
+import { getRolePlatformPath, PLATFORM_ROLES } from '../client/src/lib/rolePlatform';
 
 /**
  * EVERY LINK THE PRODUCT OFFERS MUST GO SOMEWHERE.
@@ -125,9 +126,20 @@ describe('every internal destination anywhere in the client', () => {
     expect(targets.size).toBeGreaterThan(15);
   });
 
-  it('every one of them resolves to a registered route', () => {
+  /**
+   * A template whose FIRST segment is an interpolation has no statically
+   * knowable path - `${getRolePlatformPath(role)}?rfq=1` could be anything.
+   * Substituting a placeholder would turn it into `123?rfq=1` and report a
+   * false dead link, so those are separated out and their helper is checked
+   * exhaustively instead, in the describe below. Everything else is checked by
+   * shape as before.
+   */
+  const computed = [...targets.keys()].filter(target => target.startsWith('${'));
+  const literal = [...targets.entries()].filter(([target]) => !target.startsWith('${'));
+
+  it('every literal destination resolves to a registered route', () => {
     const dead: string[] = [];
-    for (const [target, files] of targets) {
+    for (const [target, files] of literal) {
       // A template arrives with its interpolation intact; substituting a
       // placeholder tests the SHAPE, so `/rfq/${id}` passes and
       // `/quotation/${id}` - no such route - still fails.
@@ -135,6 +147,41 @@ describe('every internal destination anywhere in the client', () => {
       if (!resolves(concrete)) dead.push(`${target}  (in ${[...files].join(', ')})`);
     }
     expect(dead, `dead internal links:\n  ${dead.join('\n  ')}`).toEqual([]);
+  });
+
+  it('the only computed destinations are ones a helper below proves out', () => {
+    // An unrecognised computed href is NOT waved through: it has to be added
+    // here deliberately, together with a test that covers whatever builds it.
+    // Otherwise this exemption becomes the hole the whole file exists to close.
+    for (const target of computed) {
+      expect(target, `computed href ${target} has no exhaustive coverage`)
+        .toMatch(/^\$\{getRolePlatformPath\(/);
+    }
+  });
+});
+
+/**
+ * THE ONE COMPUTED DESTINATION, CHECKED EXHAUSTIVELY.
+ *
+ * `getRolePlatformPath` is a closed mapping - six platform roles, 'admin', and
+ * a fallback - so every value it can return is enumerable, and every one of
+ * them must be a registered route. That is a stronger guarantee than the
+ * shape check the literal sweep applies, not a weaker one.
+ */
+describe('getRolePlatformPath only ever returns a real route', () => {
+  it.each([...PLATFORM_ROLES, 'admin', 'nonsense', undefined, null])(
+    'role %s -> a registered route', role => {
+      const path = getRolePlatformPath(role);
+      expect(resolves(path), `${String(role)} -> ${path} does not resolve`).toBe(true);
+    },
+  );
+
+  it('and the RFQ detail page uses exactly that helper for its respond CTA', () => {
+    // Rather than hand-building `/platform/${role}`, which would be a second
+    // copy of the mapping and free to drift from the route table.
+    const page = read('../client/src/pages/RFQDetail.tsx');
+    expect(page).toContain('getRolePlatformPath(');
+    expect(page).not.toMatch(/href=\{`\/platform\//);
   });
 });
 
@@ -278,6 +325,16 @@ describe('the RFQ detail page is role-aware, not one view for everyone', () => {
     const hrefs = [...PAGE.matchAll(/<Link href=\{?[`"]([^`"]+)[`"]/g)].map(m => m[1]);
     expect(hrefs.length).toBeGreaterThan(0);
     for (const href of hrefs) {
+      if (href.startsWith('${')) {
+        // The respond CTA's destination depends on the caller's role and is
+        // computed by getRolePlatformPath, whose every possible return value is
+        // checked against the route table in its own describe above. Replacing
+        // the interpolation with a placeholder here would produce `123?rfq=123`
+        // and report a false dead link.
+        expect(href, 'the only computed href on this page is the role platform path')
+          .toMatch(/^\$\{getRolePlatformPath\(/);
+        continue;
+      }
       expect(resolves(href.replace(/\$\{[^}]+\}/g, '123')), `${href} does not resolve`).toBe(true);
     }
   });
