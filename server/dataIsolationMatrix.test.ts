@@ -94,6 +94,8 @@ const DELIBERATELY_SHARED: Record<string, string> = {
     'Consuming a lead credit against an RFQ the vendor does not own is the point of the endpoint. Gated on approvedProvider and on category eligibility.',
   'rfq.submitQuotation':
     'Same: quoting on somebody else\'s RFQ is the marketplace working.',
+  'rfq.summary':
+    'One row from the OPEN FEED, addressed by id. Returns exactly the column allowlist rfq.list already gives every authenticated caller - and deliberately not `attachments`, which openQualifiedEnquiry charges a credit to reveal. An RFQ is addressed to providers; owner-scoping it would make a detail page impossible for the very people meant to respond.',
   'reviews.eligibleReviewees':
     'Answers "who on this project may I review", which is by definition about other people. Scoped by the project the caller is party to.',
 };

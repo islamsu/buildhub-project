@@ -31,7 +31,14 @@ const PROXY = read('../server/_core/storageProxy.ts');
 const rfqBlock = () => {
   const start = ROUTERS.indexOf('const rfqRouter');
   expect(start, 'rfqRouter not found - this test needs rewiring').toBeGreaterThan(-1);
-  return ROUTERS.slice(start, start + 4000);
+  // Bounded at the NEXT router rather than by a fixed byte count. It used to
+  // slice 4000 characters, which silently stopped covering `rfq.get` the moment
+  // a procedure was added above it - the assertion then failed for a reason
+  // that had nothing to do with what it was asserting. A window measured in
+  // bytes is a window that expires.
+  const end = ROUTERS.indexOf('const messagesRouter', start);
+  expect(end, 'the router after rfqRouter moved - this test needs rewiring').toBeGreaterThan(start);
+  return ROUTERS.slice(start, end);
 };
 
 /**

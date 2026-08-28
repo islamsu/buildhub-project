@@ -450,6 +450,11 @@ export default function RFQPage() {
                         is gated on approval and declared categories. It routes
                         to the surface that owns the decision. */}
                     <div className="flex flex-col items-end gap-2 shrink-0">
+                      <Link href={`/rfq/${rfq.id}`}>
+                        <Button variant="ghost" size="sm" className="gap-1.5" data-testid="rfq-open-detail">
+                          {lang === 'ar' ? 'عرض التفاصيل' : 'View details'}
+                        </Button>
+                      </Link>
                       {isOwner ? (
                         <Button
                           variant="default"

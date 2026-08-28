@@ -21,6 +21,7 @@ import Marketplace from "./pages/Marketplace";
 import ProductDetail from "./pages/ProductDetail";
 import ProjectDetail from "./pages/ProjectDetail";
 import RFQPage from "./pages/RFQPage";
+import RFQDetail from "./pages/RFQDetail";
 import MessagesPage from "./pages/MessagesPage";
 import AIAssistantPage from "./pages/AIAssistantPage";
 import CompliancePage from "./pages/CompliancePage";
@@ -59,6 +60,7 @@ function Router() {
       <Route path={"/marketplace/finishing"} component={FinishingDirectory} />
       <Route path={"/projects/:id"} component={ProjectDetail} />
       <Route path={"/rfq"} component={RFQPage} />
+      <Route path={"/rfq/:id"} component={RFQDetail} />
       <Route path={"/messages"} component={MessagesPage} />
       <Route path={"/compliance"} component={CompliancePage} />
       <Route path={"/auth/setup-password"} component={PasswordSetupPage} />

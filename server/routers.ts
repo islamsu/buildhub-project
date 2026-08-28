@@ -1596,6 +1596,54 @@ const rfqRouter = router({
     if (!db) return [];
     return db.select().from(rfqs).where(eq(rfqs.requesterId, ctx.user.id)).orderBy(desc(rfqs.createdAt));
   }),
+  /**
+   * ONE RFQ, at the same visibility the open feed already gives.
+   *
+   * WHY THIS EXISTS. `rfq.get` is scoped `WHERE requesterId = ctx.user.id`, so
+   * a provider cannot read a single RFQ at all - they only ever saw RFQs as
+   * rows inside `rfq.list`. That made a detail PAGE impossible for the very
+   * people an RFQ is addressed to, which is why the product had none.
+   *
+   * WHY IT IS NOT A NEW EXPOSURE. The projection below is EXACTLY the column
+   * allowlist `rfq.list` already returns to any authenticated caller - and
+   * deliberately not `attachments`, which is what `openQualifiedEnquiry`
+   * charges a credit to reveal. The only difference is that a row is addressed
+   * by id instead of arriving inside a page of fifty.
+   *
+   * The one honest asymmetry: `rfq.list` is `limit(50)` ordered by newest, so
+   * an older RFQ is not in the feed while it IS fetchable here. That limit is
+   * pagination, not an authorization boundary - it protects the payload size,
+   * not the record - and treating it as a boundary would mean an RFQ became
+   * private simply by ageing, which is not a rule this product has anywhere
+   * else. Stated rather than glossed, because it is the kind of difference
+   * that deserves an owner's eye.
+   *
+   * VIEWING IS FREE. Opening this page charges nothing. The credit is spent on
+   * `openEnquiry`, which reveals the attachments and the full brief, and that
+   * separation is the whole reason a supplier can review before they buy.
+   */
+  summary: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [rfq] = await db.select({
+        id: rfqs.id,
+        requesterId: rfqs.requesterId,
+        projectId: rfqs.projectId,
+        title: rfqs.title,
+        description: rfqs.description,
+        category: rfqs.category,
+        budget: rfqs.budget,
+        location: rfqs.location,
+        deadline: rfqs.deadline,
+        productReference: rfqs.productReference,
+        status: rfqs.status,
+        createdAt: rfqs.createdAt,
+      }).from(rfqs).where(eq(rfqs.id, input.id));
+      if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
+      return rfq;
+    }),
   // The requester's own RFQ, in full. Scoped by requesterId in the WHERE clause.
   //
   // This had no ownership check at all: any authenticated caller could read any

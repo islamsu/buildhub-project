@@ -10,9 +10,13 @@ import { ROUTES, ROLE_EXPERIENCES } from '@shared/aiRoles';
  *
  * `aiRoles.test.ts` checks that every ROUTES entry appears in App.tsx. The
  * opportunity engine does not use ROUTES - it BUILDS hrefs from a template,
- * `/rfq/${id}` - so the check never saw them, and `/rfq/:id` is not a route.
- * App.tsx registers `/rfq` and ends with a catch-all NotFound, so both
- * "prepared actions" the AI offered a contractor led to the 404 page.
+ * `/rfq/${id}` - so the check never saw them, and at the time `/rfq/:id` was
+ * not a route. App.tsx registers a catch-all NotFound last, so both "prepared
+ * actions" the AI offered a contractor led silently to the 404 page.
+ *
+ * `/rfq/:id` EXISTS NOW - the detail page was built - and the assertions below
+ * were flipped deliberately rather than deleted, so the reason the engine's
+ * hrefs changed twice stays readable.
  *
  * The lesson is about the SHAPE of the check, not the one link: a route test
  * that only inspects one constant proves nothing about hrefs assembled
@@ -65,11 +69,13 @@ describe('the route table itself', () => {
     expect(APP).toMatch(/<Route component=\{?NotFound/);
   });
 
-  it('confirms /rfq/:id is NOT a route', () => {
-    // The premise of the bug this file was written for. If an RFQ detail page
-    // is ever added, this test should be updated deliberately - and the
-    // opportunity engine's hrefs revisited at the same time.
-    expect(resolves('/rfq/123')).toBe(false);
+  it('/rfq/:id IS a route, and the engine may address a record directly', () => {
+    // This test used to assert the OPPOSITE, and said so: "if an RFQ detail
+    // page is ever added, update this deliberately - and revisit the
+    // opportunity engine's hrefs at the same time." Both have now happened.
+    // Recording the flip here rather than deleting the test keeps the history
+    // of why the engine's hrefs changed twice.
+    expect(resolves('/rfq/123')).toBe(true);
   });
 });
 
@@ -107,10 +113,21 @@ describe('every href the opportunity engine builds', () => {
     expect(resolves(href)).toBe(true);
   });
 
-  it('builds no href by interpolating an id into a path', () => {
-    // The specific defect, named. `/rfq/${entry.row.id}` looked like a detail
-    // link and was a 404.
-    expect(SOURCE).not.toMatch(/href: `[^`]*\$\{/);
+  it('every INTERPOLATED href resolves against a parameterised route', () => {
+    // The rule this replaces was "never interpolate an id into a path at all",
+    // which was the right rule while no parameterised route existed - the
+    // template could only ever produce a 404. Now that /rfq/:id is real, a
+    // blanket ban would forbid the correct thing.
+    //
+    // So the check moves from the SHAPE to the OUTCOME: substitute a
+    // placeholder id into each template and require the result to resolve.
+    // `/rfq/${id}` passes; `/quotation/${id}` - a route that does not exist -
+    // still fails, which is the defect this file was written for.
+    const templates = [...SOURCE.matchAll(/href: `([^`]+)`/g)].map(m => m[1]);
+    for (const template of templates) {
+      const concrete = template.replace(/\$\{[^}]+\}/g, '123');
+      expect(resolves(concrete), `interpolated href ${template} does not resolve`).toBe(true);
+    }
   });
 });
 
@@ -144,5 +161,65 @@ describe('the RFQ list offers a provider somewhere to go', () => {
     // Routing to the surface that owns the decision is correct; firing the
     // chargeable mutation from a list card would not be.
     expect(RFQ_PAGE).not.toContain('openEnquiry');
+  });
+});
+
+// ── The RFQ detail page ────────────────────────────────────────────────────
+//
+// BuildHub had no RFQ detail page: `/rfq` listed cards and `/rfq/:id` was not a
+// route, so the people an RFQ is addressed to could read a summary card and
+// nothing more. These assertions are about the page's AUTHORIZATION SHAPE,
+// which is where a detail page most easily goes wrong - the server procedures
+// it calls are tested directly in rfqDetailAccess.test.ts.
+
+describe('the RFQ detail page is role-aware, not one view for everyone', () => {
+  const PAGE = read('../client/src/pages/RFQDetail.tsx')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  it('reads the OWNER-scoped procedure only when the caller owns the RFQ', () => {
+    // rfq.get is `WHERE requesterId = ctx.user.id` on the server, so calling it
+    // for a non-owner would simply fail - but firing it at all would produce a
+    // pointless error on every provider's screen.
+    expect(PAGE).toMatch(/trpc\.rfq\.get\.useQuery\([^)]*\{[^}]*enabled: isOwner/s);
+  });
+
+  it('everyone else reads the feed-equivalent summary', () => {
+    expect(PAGE).toMatch(/trpc\.rfq\.summary\.useQuery/);
+  });
+
+  it('attachments are shown to the OWNER only', () => {
+    // For a provider the attachments sit behind the qualified enquiry, which is
+    // what the credit buys. Rendering them here would give away the paid part.
+    const block = PAGE.slice(PAGE.indexOf('rfq-detail-attachments') - 600, PAGE.indexOf('rfq-detail-attachments'));
+    expect(block).toMatch(/isOwner && attachments\.length > 0/);
+  });
+
+  it('the quotation comparison is rendered for the OWNER only', () => {
+    expect(PAGE).toMatch(/isOwner && \(\s*<div[^>]*rfq-detail-quotations/s);
+  });
+
+  it('VIEWING CHARGES NOTHING - the page never calls the credit-spending mutation', () => {
+    // The separation that makes "review before you buy" real.
+    expect(PAGE).not.toContain('openEnquiry');
+    expect(PAGE).not.toContain('submitQuotation');
+  });
+
+  it('says out loud what the credit costs rather than hiding the gap', () => {
+    expect(PAGE).toMatch(/rfq-detail-provider-panel/);
+    expect(PAGE).toMatch(/one of your monthly credits/i);
+  });
+
+  it('gives the same answer for "no such RFQ" and "not yours"', () => {
+    expect(PAGE).toMatch(/rfq-detail-notfound/);
+  });
+
+  it('every link on the page resolves', () => {
+    const hrefs = [...PAGE.matchAll(/<Link href=\{?[`"]([^`"]+)[`"]/g)].map(m => m[1]);
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs) {
+      expect(resolves(href.replace(/\$\{[^}]+\}/g, '123')), `${href} does not resolve`).toBe(true);
+    }
   });
 });
