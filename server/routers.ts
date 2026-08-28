@@ -42,7 +42,7 @@ import {
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
   commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
-  aiAttachments,
+  aiAttachments, rfqItems,
 } from '../drizzle/schema';
 import { and, desc, eq, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -83,6 +83,10 @@ import {
   listDirectoryVendors, listFeaturedVendors,
 } from './vendorDirectory';
 import { getPlatformStats } from './platformStats';
+import {
+  MAX_BASKET_ITEMS, MAX_ITEM_NAME, MAX_ITEM_SPECIFICATIONS, MAX_ITEM_UNIT,
+  MAX_ITEM_VARIANT, MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY,
+} from '../shared/rfqBasket';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSubscriptions } from '../drizzle/schema';
 import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
@@ -1745,7 +1749,19 @@ const rfqRouter = router({
         createdAt: rfqs.createdAt,
       }).from(rfqs).where(eq(rfqs.id, input.id));
       if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
-      return rfq;
+      /**
+       * The lines are part of the BRIEF, and the brief is free to read - the
+       * same rule already applied to `description`, `budget` and `location` by
+       * `rfq.list`. A supplier deciding whether to spend a credit needs to know
+       * what is being asked for; the attachments remain what the credit buys.
+       */
+      const items = await db.select({
+        id: rfqItems.id, productId: rfqItems.productId, name: rfqItems.name,
+        variantLabel: rfqItems.variantLabel, quantity: rfqItems.quantity,
+        unit: rfqItems.unit, specifications: rfqItems.specifications,
+        unitPriceSnapshot: rfqItems.unitPriceSnapshot,
+      }).from(rfqItems).where(eq(rfqItems.rfqId, input.id)).orderBy(rfqItems.position, rfqItems.id);
+      return { ...rfq, items };
     }),
   // The requester's own RFQ, in full. Scoped by requesterId in the WHERE clause.
   //
@@ -1765,7 +1781,11 @@ const rfqRouter = router({
     const [rfq] = await db.select().from(rfqs)
       .where(and(eq(rfqs.id, input.id), eq(rfqs.requesterId, ctx.user.id)));
     if (!rfq) throw new TRPCError({ code: 'NOT_FOUND' });
-    return rfq;
+    // Read only AFTER ownership is established, so the items query cannot
+    // become a second way to learn what an RFQ contains.
+    const items = await db.select().from(rfqItems)
+      .where(eq(rfqItems.rfqId, rfq.id)).orderBy(rfqItems.position, rfqItems.id);
+    return { ...rfq, items };
   }),
   create: protectedProcedure
     .input(z.object({
@@ -1793,6 +1813,24 @@ const rfqRouter = router({
       deadline: z.date().optional(),
       projectId: z.number().optional(),
       productReference: z.object({ productId: z.number(), variantId: z.string().min(1), variantLabel: z.string().min(1) }).optional(),
+      /**
+       * THE LINES OF THE REQUEST — what the customer is actually asking to be
+       * priced. Before this, an RFQ could carry ONE `productReference` and no
+       * quantity at all, while the UI offered a button labelled "Add to RFQ
+       * list". See shared/rfqBasket.ts.
+       *
+       * `name`, `unit` and the price are NOT taken from this input for a
+       * catalogue line: they are re-read from the products table below, so a
+       * caller cannot post an item claiming to be a product it is not.
+       */
+      items: z.array(z.object({
+        productId: z.number().int().positive().nullable().optional(),
+        name: z.string().min(1).max(MAX_ITEM_NAME),
+        variantLabel: z.string().max(MAX_ITEM_VARIANT).nullable().optional(),
+        quantity: z.number().min(MIN_ITEM_QUANTITY).max(MAX_ITEM_QUANTITY),
+        unit: z.string().max(MAX_ITEM_UNIT).nullable().optional(),
+        specifications: z.string().max(MAX_ITEM_SPECIFICATIONS).nullable().optional(),
+      })).max(MAX_BASKET_ITEMS).optional(),
       attachments: z.array(z.object({
         key: z.string(),
         url: z.string(),
@@ -1809,15 +1847,86 @@ const rfqRouter = router({
         const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
         if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
       }
-      const { attachments, productReference, ...rest } = input;
-      const result = await db.insert(rfqs).values({
-        ...rest,
-        requesterId: ctx.user.id,
-        budget: input.budget != null ? String(input.budget) : undefined,
-        attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : undefined,
-        productReference: productReference ?? undefined,
+      const { attachments, productReference, items, ...rest } = input;
+
+      /**
+       * EVERY CATALOGUE LINE IS RE-READ FROM THE CATALOGUE.
+       *
+       * The client sends a productId and a name. Only the id is trusted: the
+       * name, unit and price are taken from the products row, so a basket
+       * edited in localStorage cannot put "Premium Italian Marble" next to a
+       * cement product's id, and a supplier cannot be sent a request naming
+       * something they never listed.
+       *
+       * An id that does not exist, or points at a WITHDRAWN product, is
+       * refused rather than silently dropped - a customer who thinks they
+       * asked for three things must not receive quotes for two.
+       */
+      const resolvedItems: {
+        productId: number | null; name: string; variantLabel: string | null;
+        quantity: string; unit: string | null; specifications: string | null;
+        unitPriceSnapshot: string | null; position: number;
+      }[] = [];
+      if (items && items.length > 0) {
+        const catalogueIds = Array.from(new Set(
+          items.map(item => item.productId).filter((id): id is number => typeof id === 'number'),
+        ));
+        const catalogue = catalogueIds.length > 0
+          ? await db.select({
+              id: products.id, name: products.name, unit: products.unit,
+              price: products.price, active: products.active,
+            }).from(products).where(inArray(products.id, catalogueIds))
+          : [];
+        const byId = new Map(catalogue.map(row => [row.id, row]));
+        items.forEach((item, index) => {
+          if (item.productId == null) {
+            // A free-text line. The customer's own words, length-capped by zod.
+            resolvedItems.push({
+              productId: null, name: item.name, variantLabel: item.variantLabel ?? null,
+              quantity: String(item.quantity), unit: item.unit ?? null,
+              specifications: item.specifications ?? null, unitPriceSnapshot: null, position: index,
+            });
+            return;
+          }
+          const product = byId.get(item.productId);
+          if (!product) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'One of the requested products is no longer available' });
+          }
+          if (!product.active) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `"${product.name}" has been withdrawn by its supplier and cannot be quoted` });
+          }
+          resolvedItems.push({
+            productId: product.id,
+            name: product.name,
+            variantLabel: item.variantLabel ?? null,
+            quantity: String(item.quantity),
+            unit: item.unit ?? product.unit ?? null,
+            specifications: item.specifications ?? null,
+            unitPriceSnapshot: product.price ?? null,
+            position: index,
+          });
+        });
+      }
+
+      /**
+       * The RFQ and its lines are written together. A request that exists with
+       * no lines, because the second insert failed, is a request a supplier
+       * cannot answer and a customer believes they made.
+       */
+      const rfqId = await db.transaction(async (tx) => {
+        const result = await tx.insert(rfqs).values({
+          ...rest,
+          requesterId: ctx.user.id,
+          budget: input.budget != null ? String(input.budget) : undefined,
+          attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : undefined,
+          productReference: productReference ?? undefined,
+        });
+        const id = Number(result[0].insertId);
+        if (resolvedItems.length > 0) {
+          await tx.insert(rfqItems).values(resolvedItems.map(item => ({ ...item, rfqId: id })));
+        }
+        return id;
       });
-      const rfqId = Number(result[0].insertId);
       recordEventAsync({
         type: ANALYTICS_EVENTS.RFQ_POSTED,
         userId: ctx.user.id,
@@ -1828,7 +1937,9 @@ const rfqRouter = router({
       await recordCommercialEvent(db, {
         actorId: ctx.user.id, ownerId: ctx.user.id,
         subjectType: 'rfq', subjectId: rfqId, action: 'rfq_created',
-        detail: `${rest.category ?? 'uncategorised'}${attachments?.length ? `, ${attachments.length} attachment(s)` : ''}`,
+        detail: `${rest.category ?? 'uncategorised'}`
+          + `${resolvedItems.length ? `, ${resolvedItems.length} item(s)` : ''}`
+          + `${attachments?.length ? `, ${attachments.length} attachment(s)` : ''}`,
       });
       return { id: rfqId };
     }),

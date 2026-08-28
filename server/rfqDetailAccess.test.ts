@@ -37,9 +37,17 @@ function stubDb(row: Record<string, unknown> | null) {
   (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
     select: vi.fn((projection: Record<string, unknown>) => {
       projections.push(Object.keys(projection ?? {}));
+      // `where(...)` is awaited directly in some places and CHAINED with
+      // `.orderBy(...)` in others (rfq.summary now reads the RFQ's items after
+      // the RFQ row). It has to be both: a thenable that also chains.
+      const result = (rows: unknown[]) => {
+        const thenable = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
+        thenable.orderBy = () => Promise.resolve(rows);
+        return thenable;
+      };
       return {
         from: () => ({
-          where: () => Promise.resolve(row ? [row] : []),
+          where: () => result(row ? [row] : []),
           orderBy: () => ({ limit: () => Promise.resolve(row ? [row] : []) }),
         }),
       };

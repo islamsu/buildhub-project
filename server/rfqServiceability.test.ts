@@ -45,6 +45,12 @@ const ctx = (id = 1): TrpcContext => ({
 function stubDb() {
   const inserted: Record<string, unknown>[] = [];
   (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+    // rfq.create writes the RFQ and its items in one transaction now. The
+    // callback must run against the SAME recording insert, or the rows this
+    // test inspects are written into a fake nobody reads.
+    transaction: async (cb: (t: unknown) => Promise<unknown>) => cb({
+      insert: () => ({ values: (row: Record<string, unknown>) => { inserted.push(row); return Promise.resolve([{ insertId: 1 }]); } }),
+    }),
     insert: () => ({ values: (row: Record<string, unknown>) => { inserted.push(row); return Promise.resolve([{ insertId: 1 }]); } }),
     select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
   });

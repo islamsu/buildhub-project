@@ -192,6 +192,42 @@ export default function RFQDetail() {
               </p>
             )}
 
+            {/*
+              WHAT IS ACTUALLY BEING ASKED FOR.
+              A supplier could previously read a title, a paragraph and a
+              category, and had to infer the quantities from prose. These are
+              the RFQ's real lines, with the quantity and unit the customer
+              specified. Read-only here for everyone: the request has been
+              submitted, and a line a supplier could edit is not a request.
+            */}
+            {rfq.items && rfq.items.length > 0 && (
+              <div className="rounded-lg border" data-testid="rfq-detail-items">
+                <div className="border-b px-4 py-2">
+                  <p className="text-sm font-medium">
+                    {ar ? `الأصناف المطلوبة (${rfq.items.length})` : `Requested items (${rfq.items.length})`}
+                  </p>
+                </div>
+                <ul className="divide-y">
+                  {rfq.items.map(item => (
+                    <li key={item.id} className="flex items-start justify-between gap-3 px-4 py-3" data-testid="rfq-detail-item">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium" data-testid="rfq-detail-item-name">{item.name}</p>
+                        {item.variantLabel && <p className="text-xs text-muted-foreground">{item.variantLabel}</p>}
+                        {item.specifications && (
+                          <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground" data-testid="rfq-detail-item-spec">
+                            {item.specifications}
+                          </p>
+                        )}
+                      </div>
+                      <p className="shrink-0 text-sm font-medium" data-testid="rfq-detail-item-quantity">
+                        {Number(item.quantity).toLocaleString()} {item.unit || (ar ? 'وحدة' : 'unit')}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <div className="grid gap-3 sm:grid-cols-2">
               {rfq.category && (
                 <Detail icon={<FileText className="h-4 w-4" />} label={ar ? 'الفئة' : 'Category'} value={rfq.category} />

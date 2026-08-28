@@ -402,6 +402,48 @@ export const rfqs = mysqlTable('rfqs', {
 }));
 
 // ── Quotations ─────────────────────────────────────────────────────────────
+/**
+ * THE LINES OF AN RFQ.
+ *
+ * An RFQ could not say WHAT was being asked for. It had a title, a free-text
+ * description and `productReference` - ONE optional {productId, variantId,
+ * variantLabel}. No quantities. No units. No per-item specifications. No
+ * second item.
+ *
+ * The UI promised otherwise: a button labelled "Add to RFQ list" / "أضف إلى
+ * طلب الأسعار" on the product page wrote a SINGLE localStorage key, so adding
+ * a second product silently discarded the first; and the same button on the
+ * marketplace grid fired a success toast and did nothing at all. A customer
+ * pricing a bathroom needs tiles AND cement AND rebar in one request, and
+ * could not express it.
+ *
+ * WHY THE SNAPSHOT COLUMNS EXIST. `productId` is SET NULL on delete and the
+ * name, unit and price are copied at submission time. A supplier who later
+ * renames, reprices or withdraws a product must not retroactively change what
+ * a customer asked for or what a supplier quoted against - the request is a
+ * commercial record, not a live join.
+ */
+export const rfqItems = mysqlTable('rfqItems', {
+  id:        int('id').autoincrement().primaryKey(),
+  rfqId:     int('rfqId').notNull().references(() => rfqs.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  /** Null for a free-text line, or once the catalogue product is gone. */
+  productId: int('productId').references(() => products.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  /** What the customer asked for, as it read when they asked. Never re-derived. */
+  name:      varchar('name', { length: 255 }).notNull(),
+  variantLabel: varchar('variantLabel', { length: 120 }),
+  quantity:  decimal('quantity', { precision: 12, scale: 2 }).notNull(),
+  unit:      varchar('unit', { length: 40 }),
+  /** The customer's own words for this line: grade, finish, tolerance. */
+  specifications: text('specifications'),
+  /** The catalogue price when it was added, for reference only - not a quote. */
+  unitPriceSnapshot: decimal('unitPriceSnapshot', { precision: 12, scale: 2 }),
+  position:  int('position').notNull().default(0),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  rfqIdIdx: index('rfqItems_rfqId_idx').on(table.rfqId),
+  productIdIdx: index('rfqItems_productId_idx').on(table.productId),
+}));
+
 export const quotations = mysqlTable('quotations', {
   id:           int('id').autoincrement().primaryKey(),
   rfqId:        int('rfqId').notNull().references(() => rfqs.id, { onDelete: 'restrict', onUpdate: 'restrict' }),

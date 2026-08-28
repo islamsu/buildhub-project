@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
+import { clearBasketStorage, reconcileBasketOwner } from "@/hooks/useRfqBasket";
 
 type UseAuthOptions = {
   redirectOnUnauthenticated?: boolean;
@@ -44,10 +45,26 @@ export function useAuth(options?: UseAuthOptions) {
       try {
         sessionStorage.removeItem("manus-cookie");
       } catch {}
+      // Deterministically, here rather than in an effect: a logout that
+      // navigates away, or one triggered by an expired session, must still
+      // leave no basket behind for the next person at this browser.
+      clearBasketStorage();
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
     }
   }, [logoutMutation, utils]);
+
+  /**
+   * The RFQ basket belongs to the account that filled it. On a shared machine
+   * a basket left by the previous person must not reappear under the next
+   * person's account - the contents are only public catalogue ids, but a
+   * request submitted with somebody else's lines is still somebody else's
+   * request. Runs on every identity change, including logout (null).
+   */
+  useEffect(() => {
+    if (meQuery.isLoading) return;
+    reconcileBasketOwner(meQuery.data?.id ?? null);
+  }, [meQuery.data?.id, meQuery.isLoading]);
 
   const state = useMemo(() => {
     localStorage.setItem(

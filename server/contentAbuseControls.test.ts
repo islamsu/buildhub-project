@@ -97,10 +97,15 @@ describe('the limiter is actually wired to the endpoints that needed it', () => 
   it('rfq.create enforces the RFQ limit before it writes anything', () => {
     const body = procedureBody('  create: protectedProcedure', 'uploadAttachment: protectedProcedure');
     expect(body, 'rfq.create is unbounded again').toContain('enforceRfqRateLimit(ctx.user.id)');
+    // The write moved inside a transaction when RFQ items were added, so the
+    // insert is `tx.insert(rfqs)` now. The rule under test is unchanged: the
+    // limiter runs BEFORE anything is written.
+    const writeAt = body.indexOf('insert(rfqs)');
+    expect(writeAt, 'the RFQ insert must still be findable in this procedure').toBeGreaterThan(-1);
     expect(
       body.indexOf('enforceRfqRateLimit'),
       'the limit must be checked before the insert, not after',
-    ).toBeLessThan(body.indexOf('db.insert(rfqs)'));
+    ).toBeLessThan(writeAt);
   });
 
   it('all eight upload endpoints enforce the upload limit', () => {

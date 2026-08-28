@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { trpc } from '@/lib/trpc';
+import { useRfqBasket } from '@/hooks/useRfqBasket';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { Link } from 'wouter';
 import { useEffect, useRef, useState } from 'react';
@@ -85,6 +86,7 @@ export default function RFQPage() {
   const [uploadSpeed, setUploadSpeed] = useState(0);
   const [uploadEta, setUploadEta] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const basket = useRfqBasket();
   const uploadAttachment = trpc.rfq.uploadAttachment.useMutation();
 
   useEffect(() => {
@@ -177,6 +179,8 @@ export default function RFQPage() {
       setAttachments([]);
       setMarketplaceProduct(null);
       localStorage.removeItem('bh-rfq-product');
+      // The lines are rows in the database now; the draft has served its purpose.
+      basket.clear();
       refetch();
     },
     onError: (e) => toast.error(e.message),
@@ -269,7 +273,64 @@ export default function RFQPage() {
                       </Select>
                     </div>
                   )}
-                  {marketplaceProduct && <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm"><div><p className="font-medium">{lang === 'ar' ? 'منتج مرتبط بطلب الأسعار' : 'Linked marketplace product'}</p><p className="text-xs text-muted-foreground">#{marketplaceProduct.productId} · {marketplaceProduct.variantLabel}</p></div><button type="button" className="text-xs text-muted-foreground underline" onClick={() => { setMarketplaceProduct(null); localStorage.removeItem('bh-rfq-product'); }}>{lang === 'ar' ? 'إزالة' : 'Remove'}</button></div>}
+                  {/*
+                    THE BASKET, REVIEWED BEFORE IT IS SENT.
+                    Every line the customer collected, with the quantity they
+                    can still change here, the specification they can add, and
+                    the line they can drop. These become rfqItems rows.
+                  */}
+                  {basket.count > 0 && (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3" data-testid="rfq-basket">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-sm font-medium">
+                          {lang === 'ar' ? `الأصناف المطلوبة (${basket.count})` : `Requested items (${basket.count})`}
+                        </p>
+                        <button type="button" className="text-xs text-muted-foreground underline"
+                          data-testid="rfq-basket-clear" onClick={() => basket.clear()}>
+                          {lang === 'ar' ? 'إفراغ القائمة' : 'Clear list'}
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {basket.items.map(item => (
+                          <div key={item.key} className="rounded-md border bg-background p-2" data-testid="rfq-basket-item">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium" data-testid="rfq-basket-item-name">{item.name}</p>
+                                {item.variantLabel && <p className="text-xs text-muted-foreground">{item.variantLabel}</p>}
+                              </div>
+                              <button type="button" className="shrink-0 text-xs text-muted-foreground underline"
+                                data-testid="rfq-basket-remove"
+                                aria-label={lang === 'ar' ? `إزالة ${item.name}` : `Remove ${item.name}`}
+                                onClick={() => basket.remove(item.key)}>
+                                {lang === 'ar' ? 'إزالة' : 'Remove'}
+                              </button>
+                            </div>
+                            <div className="mt-2 flex items-center gap-2">
+                              <Input type="number" min={0.01} step="any" className="h-8 w-24"
+                                data-testid="rfq-basket-quantity"
+                                aria-label={lang === 'ar' ? `الكمية لـ ${item.name}` : `Quantity for ${item.name}`}
+                                value={String(item.quantity)}
+                                onChange={event => basket.update(item.key, Number(event.target.value))} />
+                              <span className="text-xs text-muted-foreground">{item.unit || (lang === 'ar' ? 'وحدة' : 'unit')}</span>
+                            </div>
+                            <Input className="mt-2 h-8 text-xs"
+                              data-testid="rfq-basket-spec"
+                              aria-label={lang === 'ar' ? `المواصفات لـ ${item.name}` : `Specifications for ${item.name}`}
+                              placeholder={lang === 'ar' ? 'مواصفات (اختياري)' : 'Specifications (optional)'}
+                              value={item.specifications ?? ''}
+                              onChange={event => basket.specify(item.key, event.target.value)} />
+                          </div>
+                        ))}
+                      </div>
+                      {basket.subtotal != null && (
+                        <p className="mt-2 text-xs text-muted-foreground" data-testid="rfq-basket-subtotal">
+                          {lang === 'ar'
+                            ? `السعر المعروض في السوق: ${basket.subtotal.toLocaleString()} ج.م — ليس عرض سعر`
+                            : `Catalogue value: EGP ${basket.subtotal.toLocaleString()} — not a quotation`}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {/* Attachments */}
                   <div className="space-y-2">
                     <label className="text-xs text-muted-foreground flex items-center gap-1">
@@ -358,6 +419,16 @@ export default function RFQPage() {
                       deadline: form.deadline ? new Date(form.deadline) : undefined,
                       projectId: linkedProjectId !== 'none' ? Number(linkedProjectId) : undefined,
                       productReference: marketplaceProduct ?? undefined,
+                      items: basket.items.length > 0
+                        ? basket.items.map(item => ({
+                            productId: item.productId,
+                            name: item.name,
+                            variantLabel: item.variantLabel,
+                            quantity: item.quantity,
+                            unit: item.unit,
+                            specifications: item.specifications,
+                          }))
+                        : undefined,
                       attachments: attachments.length > 0 ? attachments : undefined,
                       });
                     }}

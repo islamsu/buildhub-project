@@ -1,4 +1,5 @@
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useRfqBasket } from '@/hooks/useRfqBasket';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +37,7 @@ const CATEGORY_AR: Record<string, string> = {
 
 export default function Marketplace() {
   const { t, lang } = useLanguage();
+  const basket = useRfqBasket();
   const [, navigate] = useLocation();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -227,7 +229,36 @@ export default function Marketplace() {
                           <span className="font-bold text-primary">{Number(product.price).toLocaleString()} {product.currency}</span>
                           <span className="text-xs text-muted-foreground">/{product.unit}</span>
                         </div>
-                        <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={event => { event.stopPropagation(); toast.success(lang === 'ar' ? 'تمت الإضافة إلى قائمة الطلبات' : 'Added to RFQ list'); }}>
+                        {/*
+                          This button previously fired the success toast below
+                          and did NOTHING ELSE - no storage, no state, no
+                          navigation. The customer was told their product had
+                          been added to a list that did not exist. It now adds
+                          a real basket line.
+                        */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1 text-xs"
+                          data-testid="product-add-to-rfq"
+                          onClick={event => {
+                            event.stopPropagation();
+                            if (basket.isFull) {
+                              toast.error(lang === 'ar' ? 'قائمة طلب الأسعار ممتلئة' : 'Your RFQ list is full');
+                              return;
+                            }
+                            basket.add({
+                              productId: product.id,
+                              name: (lang === 'ar' && product.nameAr) ? product.nameAr : product.name,
+                              variantLabel: null,
+                              quantity: 1,
+                              unit: product.unit ?? null,
+                              specifications: null,
+                              unitPrice: product.price != null ? Number(product.price) : null,
+                            });
+                            toast.success(lang === 'ar' ? 'تمت الإضافة إلى قائمة الطلبات' : 'Added to RFQ list');
+                          }}
+                        >
                           <ShoppingCart className="w-3.5 h-3.5" /> {t('market.add_to_rfq')}
                         </Button>
                       </div>
