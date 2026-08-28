@@ -103,17 +103,17 @@ describe('the limiter is actually wired to the endpoints that needed it', () => 
     ).toBeLessThan(body.indexOf('db.insert(rfqs)'));
   });
 
-  it('all seven upload endpoints enforce the upload limit', () => {
+  it('all eight upload endpoints enforce the upload limit', () => {
     // Counted rather than spot-checked: the gap was identical at every one of
     // them, and a fix applied to four out of five is not a fix.
     const wired = SOURCE.match(/enforceUploadRateLimit\(ctx\.user\.id\)/g) ?? [];
-    expect(wired).toHaveLength(7);
+    expect(wired).toHaveLength(8);
 
     const uploadEndpoints = SOURCE.match(/^\s+upload[A-Za-z]+:/gm) ?? [];
     expect(
       uploadEndpoints,
       'an upload endpoint was added or removed - it needs a rate limit too',
-    ).toHaveLength(7);
+    ).toHaveLength(8);
   });
 
   it('the limit runs before the file is decoded, not after', () => {

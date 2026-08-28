@@ -412,6 +412,20 @@ export const quotations = mysqlTable('quotations', {
   warranty:     varchar('warranty', { length: 100 }),
   paymentTerms: text('paymentTerms'),
   notes:        text('notes'),
+  /**
+   * The supplier's supporting files: a proposal, a technical specification, a
+   * certificate, product photos. JSON array of {key,url,name,type,size}, the
+   * same shape rfqs.attachments uses.
+   *
+   * A quotation without them is a price and a sentence. Real construction
+   * bidding is not conducted that way, and until this column existed a
+   * supplier could not send a single document with their bid.
+   *
+   * Read access is NOT public and not "any authenticated user": it is the
+   * uploading supplier and the requester of the RFQ being quoted on. Enforced
+   * in storageProxy.ts under the `quotation-attachments/` prefix.
+   */
+  attachments:  text('attachments'),
   status:       mysqlEnum('status', ['pending', 'accepted', 'rejected']).default('pending'),
   createdAt:    timestamp('createdAt').defaultNow().notNull(),
 }, table => ({

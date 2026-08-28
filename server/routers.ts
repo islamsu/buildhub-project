@@ -1881,6 +1881,12 @@ const rfqRouter = router({
         warranty:         quotations.warranty,
         paymentTerms:     quotations.paymentTerms,
         notes:            quotations.notes,
+        // Added to the allowlist deliberately. This read is already scoped to
+        // the RFQ's requester and refuses everybody else, so the customer
+        // evaluating the bid is exactly the audience these files are for. The
+        // BYTES stay behind the storage proxy, which re-derives the same rule
+        // rather than trusting that this list was reached legitimately.
+        attachments:      quotations.attachments,
         status:           quotations.status,
         createdAt:        quotations.createdAt,
         providerName:     users.name,
@@ -1988,6 +1994,48 @@ const rfqRouter = router({
           return { rfq: result.rfq, alreadyConsumed: result.alreadyConsumed, usage: result.usage };
       }
     }),
+  /**
+   * A SUPPLIER'S SUPPORTING FILES FOR A QUOTATION.
+   *
+   * Until this existed a supplier could send a price, a timeline, a warranty
+   * string and free-text notes - and nothing else. No proposal, no technical
+   * specification, no certificate, no product photograph. Real construction
+   * bidding is not conducted that way, and a customer comparing two numbers
+   * with no supporting documents is not really comparing anything.
+   *
+   * approvedProviderProcedure, the same gate submitQuotation sits behind: a
+   * vendor who may not quote may not stage files for a quotation either.
+   *
+   * The written key is `quotation-attachments/user-<id>/...`, its own prefix
+   * so the storage proxy can authorise it as its own category. It is NOT
+   * shared with `rfq-attachments/`, whose rule is "the requester, plus a
+   * provider who has PAID for the enquiry" - the opposite direction of travel
+   * and the opposite audience.
+   */
+  uploadQuotationAttachment: approvedProviderProcedure
+    .input(z.object({
+      fileName: z.string().min(1).max(255),
+      contentType: z.string().refine(
+        isAllowedRfqAttachmentType,
+        { message: 'Only images and PDF documents are allowed' },
+      ),
+      base64: z.string().max(11_000_000, 'File too large (max ~8MB)'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      enforceUploadRateLimit(ctx.user.id);
+      const buffer = Buffer.from(input.base64, 'base64');
+      if (buffer.length > MAX_RFQ_ATTACHMENT_SIZE) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
+      }
+      assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
+      const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
+      const { key, url } = await storagePutOrUnavailable(
+        `quotation-attachments/user-${ctx.user.id}/${safeName}`,
+        buffer,
+        input.contentType,
+      );
+      return { key, url, name: input.fileName, type: input.contentType, size: buffer.length };
+    }),
   submitQuotation: approvedProviderProcedure
     // BOUNDS MATCH THE COLUMNS. `price` is decimal(12,2), `warranty` is
     // varchar(100), `timeline` is an int. None of these were bounded, so a
@@ -2002,6 +2050,18 @@ const rfqRouter = router({
       warranty: z.string().max(100).optional(),
       paymentTerms: z.string().max(2000).optional(),
       notes: z.string().max(4000).optional(),
+      /**
+       * Bounded at 6 like the RFQ side. Each entry must have been produced by
+       * uploadQuotationAttachment - the key prefix is re-checked below rather
+       * than trusted, because this array arrives from the client.
+       */
+      attachments: z.array(z.object({
+        key: z.string().min(1).max(1024),
+        url: z.string().min(1).max(2048),
+        name: z.string().min(1).max(255),
+        type: z.string().max(128),
+        size: z.number().int().nonnegative(),
+      })).max(6).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -2031,10 +2091,40 @@ const rfqRouter = router({
       // refused, or should REPLACE the first as a revision, is a product
       // decision about how bidding works on BuildHub - not something to infer
       // from the schema. Recorded in the Phase 1B handoff for the owner.
+      // EVERY KEY MUST BE THIS SUPPLIER'S OWN.
+      //
+      // The array is client-supplied. Without this check a supplier could name
+      // `quotation-attachments/user-<someone else>/...` - or an
+      // `rfq-attachments/` key belonging to the customer - and attach another
+      // party's file to their own quotation. The storage proxy would then be
+      // asked to authorise it against THIS quotation and could reasonably say
+      // yes, which is how a file crosses an ownership boundary by being
+      // referenced rather than by being read.
+      //
+      // The traversal check is separate from the prefix check on purpose:
+      // `quotation-attachments/user-1/../user-2/secret.pdf` starts with the
+      // right prefix and is not the right file.
+      const prefix = `quotation-attachments/user-${ctx.user.id}/`;
+      for (const attachment of input.attachments ?? []) {
+        const remainder = attachment.key.startsWith(prefix)
+          ? attachment.key.slice(prefix.length)
+          : null;
+        const traverses = remainder === null || remainder.length === 0
+          || remainder.split('/').some(part => part.length === 0 || part === '.' || part === '..');
+        if (traverses) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'An attachment on this quotation is not one you uploaded.',
+          });
+        }
+      }
+
+      const { attachments, ...quotationFields } = input;
       const inserted = await db.insert(quotations).values({
-        ...input,
+        ...quotationFields,
         providerId: ctx.user.id,
         price: String(input.price),
+        attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : null,
       });
       // The QUOTATION's own id, because that is what the audit trail records.
       // See the note beside recordCommercialEvent below.
@@ -2063,7 +2153,9 @@ const rfqRouter = router({
         subjectType: 'quotation',
         subjectId: quotationId,
         action: 'quotation_submitted',
-        detail: `rfq ${input.rfqId}, price ${input.price}${input.timeline ? `, ${input.timeline} days` : ''}`,
+        detail: `rfq ${input.rfqId}, price ${input.price}`
+          + `${input.timeline ? `, ${input.timeline} days` : ''}`
+          + `${attachments?.length ? `, ${attachments.length} attachment(s)` : ''}`,
       });
       return { success: true };
     }),

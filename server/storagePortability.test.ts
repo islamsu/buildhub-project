@@ -166,7 +166,10 @@ describe('§2 storage.ts keeps its contract', () => {
     // SEVEN since the supplier catalogue gained image management. Asserted
     // exactly so a new upload path has to be acknowledged here rather than
     // bypassing the adapter unnoticed.
-    expect(calls.length).toBe(7);
+    // EIGHT since a supplier gained the ability to attach a proposal, a
+    // specification, a certificate or a photograph to their quotation - the
+    // eighth upload path, and the first that flows provider -> customer.
+    expect(calls.length).toBe(8);
     for (const prefix of [
       'registration/', 'project-documents/', 'message-attachments/', 'avatars/',
       // AI attachments get their own prefix so the proxy can classify them,

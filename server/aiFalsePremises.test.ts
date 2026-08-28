@@ -26,7 +26,17 @@ function procedureBody(qualified: string): string {
   const block = ROUTERS.slice(routerStart, ROUTERS.indexOf('\n});', routerStart));
   const start = block.indexOf(`\n  ${procedure}: `);
   expect(start, qualified).toBeGreaterThan(-1);
-  return block.slice(start, start + 2500);
+
+  // BOUNDED BY THE NEXT PROCEDURE, not by a character count.
+  //
+  // This used to return a fixed 2,500-character window. That is fine until a
+  // procedure grows: adding an attachments schema to submitQuotation pushed
+  // `rfq.status !== 'open'` past the edge, and the test failed claiming the
+  // status check was gone when it was three lines further down. A window that
+  // silently truncates its subject reports absence it has not established.
+  const rest = block.slice(start + 1);
+  const nextProcedure = /\n  \w+: (?:public|protected|admin|approvedProvider|superAdmin|compliance|aiChat)/.exec(rest);
+  return block.slice(start, nextProcedure ? start + 1 + nextProcedure.index : block.length);
 }
 
 const PROMPTS = {

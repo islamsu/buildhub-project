@@ -20,7 +20,7 @@ import { toast } from 'sonner';
 import {
   Star, CheckCircle2, XCircle, Shield, Clock, DollarSign,
   Award, TrendingDown, Zap, User, MapPin, ChevronUp, ChevronDown,
-  Trophy, ThumbsUp, ThumbsDown, Info,
+  Trophy, ThumbsUp, ThumbsDown, Info, Paperclip, FileText
 } from 'lucide-react';
 
 type QuotationRow = {
@@ -33,6 +33,8 @@ type QuotationRow = {
   warranty: string | null;
   paymentTerms: string | null;
   notes: string | null;
+  /** JSON array of {key,url,name,type,size}, or null. */
+  attachments: string | null;
   status: 'pending' | 'accepted' | 'rejected' | null;
   createdAt: Date;
   providerName: string | null;
@@ -116,6 +118,21 @@ interface Props {
   rfqStatus?: string | null;
   isOwner: boolean;
   onClose: () => void;
+}
+
+/**
+ * The same shape rfqs.attachments uses, parsed defensively: this is a text
+ * column and a malformed value must render as "no attachments" rather than
+ * breaking the comparison the customer is trying to read.
+ */
+function parseQuotationAttachments(value: string | null): { key: string; url: string; name: string }[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter(a => a?.key && a?.url && a?.name) : [];
+  } catch {
+    return [];
+  }
 }
 
 export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqStatus, isOwner, onClose }: Props) {
@@ -363,6 +380,32 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                   {q.notes && (
                     <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground leading-relaxed">
                       {q.notes}
+                    </div>
+                  )}
+
+                  {/* The supplier's supporting files. The bytes stay behind the
+                      storage proxy, which re-derives "am I the requester of the
+                      RFQ this quotation is against?" per request rather than
+                      trusting that this list was reached legitimately. */}
+                  {parseQuotationAttachments(q.attachments).length > 0 && (
+                    <div className="space-y-1" data-testid="quotation-attachments">
+                      <p className="flex items-center gap-1.5 text-xs font-medium">
+                        <Paperclip className="h-3 w-3" />
+                        {t('quotation.supplierDocuments')}
+                      </p>
+                      {parseQuotationAttachments(q.attachments).map(file => (
+                        <a
+                          key={file.key}
+                          href={file.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1.5 rounded-md border bg-muted/30 px-2 py-1.5 text-xs transition-colors hover:bg-muted/60"
+                          data-testid="quotation-attachment"
+                        >
+                          <FileText className="h-3 w-3 shrink-0 text-red-500" />
+                          <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                        </a>
+                      ))}
                     </div>
                   )}
 

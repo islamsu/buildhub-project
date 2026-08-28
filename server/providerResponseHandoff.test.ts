@@ -178,7 +178,10 @@ describe('the quotation form names its target', () => {
   it('cannot be submitted with no target at all', () => {
     // rfqId 0 reached the server and came back a BAD_REQUEST toast, which is
     // safe and useless.
-    expect(PLATFORM).toMatch(/disabled=\{submitQuote\.isPending \|\| !quoteForm\.price \|\| !quoteForm\.rfqId\}/);
+    // `quoteUploading` joined the guard when quotation attachments arrived:
+    // submitting mid-upload would send a quotation whose files had not
+    // finished being staged, so the bid would arrive without them.
+    expect(PLATFORM).toMatch(/disabled=\{submitQuote\.isPending \|\| quoteUploading \|\| !quoteForm\.price \|\| !quoteForm\.rfqId\}/);
   });
 });
 

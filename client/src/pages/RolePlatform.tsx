@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useLocation, useSearch } from 'wouter';
 import { parseLinkedRfqId } from '@shared/linkedRfq';
 import { toast } from 'sonner';
@@ -24,7 +24,7 @@ import SupplierCatalogue from '@/components/SupplierCatalogue';
 import {
   ArrowUpRight, BarChart3, BriefcaseBusiness, Camera, CheckCircle2, ClipboardList,
   Clock3, DollarSign, FileText, FolderKanban, KanbanSquare, Layers3, MapPin, MessageSquare,
-  Package, PackagePlus, PenTool, Plus, Send, ShoppingBag, Sparkles, Star, Users,
+  Package, PackagePlus, PenTool, Plus, Send, ShoppingBag, Sparkles, Star, Users, Paperclip, X
 } from 'lucide-react';
 
 const PRODUCT_CATEGORIES = ['Materials', 'Furniture', 'Lighting', 'Electrical', 'Plumbing', 'HVAC', 'Paint', 'Ceramics', 'Granite', 'Marble', 'Wood', 'Doors', 'Windows', 'Roofing', 'Glass', 'Steel', 'Concrete', 'Solar', 'Smart Home'];
@@ -111,6 +111,50 @@ export default function RolePlatform() {
   // Preselected from `?rfq=` so a provider who followed a link from the request
   // does not have to find it again in the list.
   const [quoteForm, setQuoteForm] = useState({ rfqId: linkedRfqId ?? 0, price: '', timeline: '', warranty: '', notes: '' });
+  /**
+   * The supplier's supporting files for this quotation.
+   *
+   * Until this existed a supplier could send a price, a timeline, a warranty
+   * string and free text - and no proposal, specification, certificate or
+   * photograph. A customer comparing two numbers with no documents behind them
+   * is not really comparing anything.
+   */
+  const [quoteFiles, setQuoteFiles] = useState<{ key: string; url: string; name: string; type: string; size: number }[]>([]);
+  const [quoteUploading, setQuoteUploading] = useState(false);
+  const quoteFileInput = useRef<HTMLInputElement | null>(null);
+  const uploadQuoteFile = trpc.rfq.uploadQuotationAttachment.useMutation();
+
+  async function attachQuoteFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setQuoteUploading(true);
+    for (const file of Array.from(files).slice(0, 6 - quoteFiles.length)) {
+      // Mirrors the server's own limits so the answer arrives before the
+      // upload, not after it. The server repeats both and its verdict counts.
+      if (file.size > 8 * 1024 * 1024) {
+        toast.error(lang === 'ar' ? `${file.name}: الحد الأقصى 8 ميجابايت` : `${file.name}: maximum 8MB`);
+        continue;
+      }
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '');
+          reader.onerror = () => reject(new Error('read failed'));
+          reader.readAsDataURL(file);
+        });
+        const uploaded = await uploadQuoteFile.mutateAsync({
+          fileName: file.name, contentType: file.type, base64,
+        });
+        setQuoteFiles(prev => [...prev, uploaded]);
+      } catch (error) {
+        // The server owns the refusal reason - wrong bytes, too large, rate
+        // limited, storage unconfigured. Its message is shown, not a guess.
+        toast.error((error as { message?: string })?.message
+          ?? (lang === 'ar' ? `تعذر رفع ${file.name}` : `Could not upload ${file.name}`));
+      }
+    }
+    setQuoteUploading(false);
+    if (quoteFileInput.current) quoteFileInput.current.value = '';
+  }
   // The request the open quotation form is actually about. A form that says
   // only "Your price" is a way to bid on the wrong thing.
   const quoteTarget = rfqs.find(rfq => rfq.id === quoteForm.rfqId);
@@ -128,6 +172,7 @@ export default function RolePlatform() {
       toast.success(lang === 'ar' ? 'تم تقديم عرض السعر' : 'Quotation submitted');
       setQuoteDialogOpen(false);
       setQuoteForm({ rfqId: 0, price: '', timeline: '', warranty: '', notes: '' });
+      setQuoteFiles([]);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -341,7 +386,55 @@ export default function RolePlatform() {
               <Input placeholder={lang === 'ar' ? 'المدة بالأيام' : 'Timeline in days'} type="number" value={quoteForm.timeline} onChange={e => setQuoteForm(form => ({ ...form, timeline: e.target.value }))} />
               <Input placeholder={t('common.warranty')} value={quoteForm.warranty} onChange={e => setQuoteForm(form => ({ ...form, warranty: e.target.value }))} />
               <Textarea placeholder={t('common.notes')} rows={3} value={quoteForm.notes} onChange={e => setQuoteForm(form => ({ ...form, notes: e.target.value }))} />
-              <Button className="w-full gap-2" onClick={() => submitQuote.mutate({ rfqId: quoteForm.rfqId, price: Number(quoteForm.price), timeline: quoteForm.timeline ? Number(quoteForm.timeline) : undefined, warranty: quoteForm.warranty || undefined, notes: quoteForm.notes || undefined })} disabled={submitQuote.isPending || !quoteForm.price || !quoteForm.rfqId}><Send className="h-4 w-4" />{submitQuote.isPending ? t('common.loading') : t('platform.create_quote')}</Button>
+
+              {/* Supporting files: proposal, specification, certificate, photos. */}
+              <div>
+                <input
+                  ref={quoteFileInput}
+                  type="file"
+                  className="hidden"
+                  multiple
+                  accept="image/png,image/jpeg,image/gif,image/webp,application/pdf"
+                  onChange={event => attachQuoteFiles(event.target.files)}
+                  data-testid="quote-file-input"
+                />
+                <Button
+                  type="button" variant="outline" size="sm" className="w-full gap-2"
+                  onClick={() => quoteFileInput.current?.click()}
+                  disabled={quoteUploading || quoteFiles.length >= 6}
+                  data-testid="quote-attach"
+                >
+                  <Paperclip className="h-4 w-4" />
+                  {quoteUploading
+                    ? (lang === 'ar' ? 'جاري الرفع…' : 'Uploading…')
+                    : (lang === 'ar' ? 'إرفاق ملفات (عرض فني، شهادات، صور)' : 'Attach files (proposal, certificates, photos)')}
+                </Button>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {lang === 'ar'
+                    ? 'صور أو ملفات PDF، حتى 6 ملفات، 8 ميجابايت لكل ملف. يراها صاحب الطلب فقط.'
+                    : 'Images or PDFs, up to 6 files, 8MB each. Only the customer who posted the request can see them.'}
+                </p>
+                {quoteFiles.length > 0 && (
+                  <div className="mt-2 space-y-1" data-testid="quote-attachments">
+                    {quoteFiles.map((file, index) => (
+                      <div key={file.key} className="flex items-center gap-2 rounded-md border bg-muted/30 px-2 py-1.5 text-xs">
+                        <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setQuoteFiles(prev => prev.filter((_, i) => i !== index))}
+                          aria-label={lang === 'ar' ? `إزالة ${file.name}` : `Remove ${file.name}`}
+                          className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
+                          data-testid="quote-remove-attachment"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <Button className="w-full gap-2" onClick={() => submitQuote.mutate({ rfqId: quoteForm.rfqId, price: Number(quoteForm.price), timeline: quoteForm.timeline ? Number(quoteForm.timeline) : undefined, warranty: quoteForm.warranty || undefined, notes: quoteForm.notes || undefined, attachments: quoteFiles.length > 0 ? quoteFiles : undefined })} disabled={submitQuote.isPending || quoteUploading || !quoteForm.price || !quoteForm.rfqId}><Send className="h-4 w-4" />{submitQuote.isPending ? t('common.loading') : t('platform.create_quote')}</Button>
             </div>
           </DialogContent>
         </Dialog>

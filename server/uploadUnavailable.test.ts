@@ -152,7 +152,10 @@ describe('all upload paths behave the same way', () => {
     // Guards the other direction: satisfying the check above by deleting
     // uploads would be worse than the defect.
     const wrapped = [...ROUTERS.matchAll(/await storagePutOrUnavailable\(/g)];
-    expect(wrapped.length).toBe(7);
+    // EIGHT since a supplier gained the ability to attach a proposal, a
+    // specification, a certificate or a photograph to their quotation - the
+    // eighth upload path, and the first that flows provider -> customer.
+    expect(wrapped.length).toBe(8);
   });
 
   it('anything that is NOT a configuration problem still propagates', () => {

@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getObjectStorage, isObjectStorageConfigured } from "./objectStorage";
 import { sdk, type AuthenticatedUser } from "./sdk";
 import { getDb } from "../db";
-import { aiAttachments, documents, messages, projects, qualifiedEnquiries, registrationDocumentSubmissions, rfqs } from "../../drizzle/schema";
+import { aiAttachments, documents, messages, projects, qualifiedEnquiries, quotations, registrationDocumentSubmissions, rfqs } from "../../drizzle/schema";
 import { parseRfqAttachments } from "../../shared/rfqAttachments";
 
 async function authenticateStorageRequest(req: Request): Promise<AuthenticatedUser | null> {
@@ -111,6 +111,42 @@ export async function authorizeStorageKey(key: string, user: AuthenticatedUser |
       .from(qualifiedEnquiries)
       .where(and(eq(qualifiedEnquiries.rfqId, match.id), eq(qualifiedEnquiries.userId, user.id)));
     return !!enquiry;
+  }
+
+  // Category H: QUOTATION attachments - the supplier who uploaded them, and the
+  // customer whose RFQ is being quoted on. Nobody else, and in particular NOT a
+  // rival supplier bidding on the same RFQ.
+  //
+  // The direction of travel is the opposite of Category B. An RFQ attachment
+  // flows customer -> provider and is what a credit buys. A quotation
+  // attachment flows provider -> customer and is not sold to anybody: it is a
+  // supplier's proposal, pricing sheet or certificate, and the whole value of
+  // a sealed bid is that competitors cannot read it.
+  //
+  // Same defence as Category B, for the same reason. The uploader id is read
+  // from the key because uploadQuotationAttachment is the only writer and it
+  // writes exactly `quotation-attachments/user-<id>/...`; candidate quotations
+  // are then scoped to that provider, so a caller who learns a key cannot
+  // reference it from a quotation of their own to grant themselves access. The
+  // key is a hint about where to look, never the authorization.
+  if (key.startsWith("quotation-attachments/")) {
+    const uploaderId = Number(/^quotation-attachments\/user-(\d+)\//.exec(key)?.[1]);
+    if (!Number.isInteger(uploaderId)) return false;
+    // The supplier's own file. The common case, and no query needed.
+    if (uploaderId === user.id) return true;
+
+    // Otherwise the caller must be the requester of an RFQ this provider
+    // actually attached this file to.
+    const owning = await db
+      .select({ rfqId: quotations.rfqId, attachments: quotations.attachments })
+      .from(quotations)
+      .where(eq(quotations.providerId, uploaderId));
+    const match = owning.find(row => parseRfqAttachments(row.attachments).some(a => a.key === key));
+    if (!match) return false;
+
+    const [rfq] = await db.select({ requesterId: rfqs.requesterId })
+      .from(rfqs).where(eq(rfqs.id, match.rfqId));
+    return !!rfq && rfq.requesterId === user.id;
   }
 
   // Category F: AI attachments - the uploader ONLY.
