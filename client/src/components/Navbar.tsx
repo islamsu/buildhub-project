@@ -81,10 +81,14 @@ export default function Navbar() {
 
             {isAuthenticated && user ? (
               <>
-                {/* Notifications */}
+                {/* Notifications.
+                    aria-label because this button's only content is an icon and
+                    a count badge. A screen reader announced it as "button", and
+                    the unread number without a noun means nothing. */}
                 <Button
                   variant="ghost"
                   size="icon"
+                  aria-label={lang === 'ar' ? 'الرسائل والإشعارات' : 'Messages and notifications'}
                   className={`relative ${isTransparent ? 'text-white/80 hover:text-white hover:bg-white/10' : ''}`}
                   onClick={() => navigate('/messages')}
                 >
@@ -143,10 +147,16 @@ export default function Navbar() {
               </div>
             )}
 
-            {/* Mobile menu toggle */}
+            {/* Mobile menu toggle. Icon-only, and the ONE control that reveals
+                navigation on a phone - unnamed, it was unusable with a screen
+                reader on the viewport where it is the only way to navigate. */}
             <Button
               variant="ghost"
               size="icon"
+              aria-label={mobileOpen
+                ? (lang === 'ar' ? 'إغلاق القائمة' : 'Close menu')
+                : (lang === 'ar' ? 'فتح القائمة' : 'Open menu')}
+              aria-expanded={mobileOpen}
               className={`md:hidden ${isTransparent ? 'text-white/80 hover:text-white hover:bg-white/10' : ''}`}
               onClick={() => setMobileOpen(!mobileOpen)}
             >
