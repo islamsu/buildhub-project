@@ -40,6 +40,26 @@ describe('the request id travels with the provider', () => {
     expect(DETAIL).not.toContain('/provider?rfq=');
   });
 
+  it('an UNAPPROVED provider is told why, not sent somewhere they did not ask for', () => {
+    // The response surface redirects an unapproved provider to /compliance.
+    // Offering them "Continue to respond" therefore bounced them to a page
+    // about document verification with nothing connecting the two. Found by
+    // following the button as an unapproved supplier in a real browser.
+    expect(DETAIL).toContain('data-testid="rfq-detail-awaiting-approval"');
+    expect(DETAIL).toMatch(/awaitingApproval \? \(/);
+    expect(DETAIL).toMatch(/onboardingStatus !== 'approved'/);
+  });
+
+  it('that check is PRESENTATION, and says so - the gate is elsewhere', () => {
+    // The real controls are the redirect on the platform route and
+    // approvedProviderProcedure on the server, both of which hold whatever
+    // this page renders. A reader has to be able to tell which is which.
+    const page = read('../client/src/pages/RFQDetail.tsx');
+    expect(page).toMatch(/presentation, not authorization/i);
+    // And it still never calls a credit-spending mutation, approved or not.
+    expect(DETAIL).not.toContain('openEnquiry');
+  });
+
   it('and it still does not spend anything on the way', () => {
     // The whole argument for letting a provider read before they buy.
     expect(DETAIL).not.toContain('openEnquiry');

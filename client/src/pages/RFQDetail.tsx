@@ -3,6 +3,7 @@ import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
+import { isComplianceRole } from '@shared/compliance';
 import Navbar from '@/components/Navbar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -72,9 +73,24 @@ export default function RFQDetail() {
   // deciding whether they may see it.
   const owned = trpc.rfq.get.useQuery({ id: rfqId }, { enabled: isOwner, retry: false });
 
+  const account = user as { userRole?: string; onboardingStatus?: string } | null;
   const providerRoles = ['contractor', 'supplier', 'engineer', 'architect', 'project_manager'];
-  const isProvider = isAuthenticated
-    && providerRoles.includes((user as { userRole?: string } | null)?.userRole ?? '');
+  const isProvider = isAuthenticated && providerRoles.includes(account?.userRole ?? '');
+  /**
+   * A provider whose verification is not approved yet.
+   *
+   * The response surface is gated on this server-side and redirects them to
+   * `/compliance`, so offering "Continue to respond" sent them somewhere they
+   * had not asked to go, with nothing connecting the two. Found by following
+   * the button as an unapproved supplier in a real browser.
+   *
+   * This is presentation, not authorization: the gate is the redirect and the
+   * `approvedProviderProcedure` behind it, both of which still hold whatever
+   * this renders.
+   */
+  const awaitingApproval = isProvider
+    && isComplianceRole(account?.userRole)
+    && account?.onboardingStatus !== 'approved';
 
   if (!isAuthenticated) {
     return (
@@ -230,7 +246,21 @@ export default function RFQDetail() {
                     ? 'عرض هذا الطلب مجاني. فتح الطلب المؤهل يكشف الملف الكامل والمرفقات ويستهلك رصيداً واحداً من رصيدك الشهري، ويتطلب أن يكون الطلب ضمن فئات خدماتك المعلنة.'
                     : 'Viewing this request is free. Opening the qualified enquiry reveals the full brief and its attachments, uses one of your monthly credits, and requires the request to fall inside your declared service categories.'}
                 </p>
-                {isOpen ? (
+                {awaitingApproval ? (
+                  <div className="mt-3" data-testid="rfq-detail-awaiting-approval">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      {ar
+                        ? 'لا يمكنك الرد على الطلبات حتى تكتمل مراجعة توثيق حسابك.'
+                        : 'You cannot respond to requests until your account verification has been reviewed.'}
+                    </p>
+                    <Link href="/compliance">
+                      <Button variant="outline" className="mt-3 gap-2">
+                        <Package className="h-4 w-4" />
+                        {ar ? 'أكمل التوثيق' : 'Complete verification'}
+                      </Button>
+                    </Link>
+                  </div>
+                ) : isOpen ? (
                   // The id travels with them. This used to be a bare
                   // `/provider`, which landed a provider on a dashboard with no
                   // memory of which request they had just been reading.
