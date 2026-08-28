@@ -156,7 +156,13 @@ describe('§2 storage.ts keeps its contract', () => {
   });
 
   it('every upload call site in routers.ts still goes through the adapter', () => {
-    const calls = ROUTERS_SOURCE.match(/storagePut\(/g) ?? [];
+    // `storagePutOrUnavailable` wraps `storagePut` so an unconfigured
+    // deployment answers 503 rather than 500. It still goes through the
+    // adapter - it IS the adapter call plus one translated error - so this
+    // counts the wrapper and the invariant is untouched.
+    // `await` anchors this to CALL SITES: a bare name match also catches the
+    // wrapper's own declaration and reads 8 where there are 7.
+    const calls = ROUTERS_SOURCE.match(/await storagePutOrUnavailable\(/g) ?? [];
     // SEVEN since the supplier catalogue gained image management. Asserted
     // exactly so a new upload path has to be acknowledged here rather than
     // bypassing the adapter unnoticed.

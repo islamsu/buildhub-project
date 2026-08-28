@@ -40,6 +40,17 @@ const providerStatus = (message: string): number | undefined => {
 export function classifyError(error: unknown): { category: ErrorCategory; status?: number } {
   const message = error instanceof Error ? error.message : String(error ?? '');
 
+  // MATCHED BY TYPE, NOT BY PROSE. `ObjectStorageNotConfiguredError` says "No
+  // object storage backend is configured" - which does not contain the literal
+  // "is not configured" the regex below looks for, so every upload on a
+  // deployment with no storage configured logged as 'unclassified' and told
+  // the operator to go read the deployment logs. It WAS the deployment log.
+  //
+  // A classifier that recognises errors by their message is one rewording away
+  // from being wrong, so the errors this codebase defines are matched by name.
+  const name = error instanceof Error ? error.name : '';
+  if (name === 'ObjectStorageNotConfiguredError') return { category: 'config-missing' };
+
   if (/is not configured/i.test(message)) return { category: 'config-missing' };
 
   const status = providerStatus(message);

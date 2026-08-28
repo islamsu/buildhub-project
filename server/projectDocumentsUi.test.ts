@@ -112,10 +112,29 @@ describe('what it tells the user', () => {
     expect(englishOnly, 'these toasts have no Arabic form').toEqual([]);
   });
 
-  it('a failed FILE READ is reported - it never reaches the mutation', () => {
-    // onError only fires for server refusals. A FileReader failure would
-    // otherwise leave the dialog sitting there having done nothing.
-    expect(DOCS).toMatch(/catch \{[\s\S]*?upload\.isError[\s\S]*?toast\.error/);
+  it('a READ failure and a SERVER refusal get different messages', () => {
+    // These were once one try/catch that used `upload.isError` to tell them
+    // apart - React state captured at render time, so still false inside the
+    // catch. A server refusal therefore announced "That file could not be
+    // read" about a file that had been read perfectly well.
+    //
+    // The two steps are separated now, so there is nothing to distinguish:
+    // the read has its own catch and returns, and the mutation's catch is
+    // deliberately silent because onError has already spoken.
+    expect(DOCS, 'stale React state must not be used to classify a failure')
+      .not.toContain('upload.isError');
+    // The read failure has its own catch that returns before the mutation.
+    expect(DOCS).toMatch(
+      /base64 = await readAsBase64\(file\);\s*\} catch \{[\s\S]{0,400}?toast\.error\([\s\S]{0,120}?\);\s*setUploading\(false\);\s*return;/,
+    );
+  });
+
+  it('the server refusal is shown ONCE, by onError alone', () => {
+    // A second toast beside the server's own would either repeat it or, as it
+    // did, contradict it.
+    const mutationCatch = DOCS.slice(DOCS.indexOf('await upload.mutateAsync'));
+    const body = mutationCatch.slice(0, mutationCatch.indexOf('finally'));
+    expect(body).not.toContain('toast.error');
   });
 
   it('cannot be submitted without both a file and a name', () => {

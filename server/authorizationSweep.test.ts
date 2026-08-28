@@ -481,7 +481,11 @@ describe('§3 uploads are checked against their bytes', () => {
     // rather than assertUploadedFileMatches (it returns a typed rejection
     // instead of throwing), and a test that counted only the latter would have
     // read a genuinely-verified sixth endpoint as an unverified one.
-    const puts = (ROUTERS.match(/await storagePut\(/g) ?? []).length;
+    // COUNTS THE WRAPPER NOW. Every upload site moved to
+    // `storagePutOrUnavailable`, so that an unconfigured deployment answers
+    // 503 with a readable reason instead of a generic 500 - the invariant this
+    // test protects is unchanged, only the name of the call it counts.
+    const puts = (ROUTERS.match(/await storagePutOrUnavailable\(/g) ?? []).length;
     // Minus one for the helper's own definition.
     const asserted = (ROUTERS.match(/assertUploadedFileMatches\(/g) ?? []).length - 1;
     const validated = (ROUTERS.match(/validateAiAttachment\(/g) ?? []).length;

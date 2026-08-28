@@ -110,13 +110,35 @@ export default function ProjectDocuments({ projectId }: { projectId: number }) {
   async function submit() {
     if (!file || !name.trim()) return;
     setUploading(true);
+
+    // TWO FAILURES, TWO MESSAGES, AND THEY MUST NOT BE CONFUSED.
+    //
+    // The first version wrapped both steps in one catch and used
+    // `upload.isError` to tell them apart. That value is React state captured
+    // at render time, so inside the catch it still reads false - and a server
+    // refusal announced "That file could not be read", about a file that had
+    // been read perfectly well. Caught by running a real upload in a real
+    // browser against a deployment with no storage configured; no unit test
+    // would have noticed, because the lie is in which message appears.
+    //
+    // Separating the steps removes the need to distinguish them at all.
+    let base64: string;
     try {
-      const base64 = await readAsBase64(file);
+      base64 = await readAsBase64(file);
+    } catch {
+      // Genuinely a read failure - the mutation never ran, so onError cannot
+      // speak for it.
+      toast.error(ar ? 'تعذر قراءة الملف.' : 'That file could not be read.');
+      setUploading(false);
+      return;
+    }
+
+    try {
       await upload.mutateAsync({ projectId, name: name.trim(), type, contentType: file.type, base64 });
     } catch {
-      // mutateAsync rejections already surfaced by onError; this catches the
-      // FileReader failing, which onError never sees.
-      if (!upload.isError) toast.error(ar ? 'تعذر قراءة الملف.' : 'That file could not be read.');
+      // Deliberately silent: the mutation's onError has already shown the
+      // server's own message, and a second toast would either repeat it or
+      // contradict it.
     } finally {
       setUploading(false);
     }

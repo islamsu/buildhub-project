@@ -804,6 +804,59 @@ const complianceProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+/**
+ * STORING A FILE, WITH THE ONE FAILURE A DEPLOYMENT ACTUALLY CAUSES.
+ *
+ * If no object storage backend is configured, `storagePut` throws
+ * `ObjectStorageNotConfiguredError` - a deliberate, loud refusal. Exactly one
+ * of the seven upload sites caught it and turned it into something a user
+ * could read. The other six let it become a generic 500: the customer was told
+ * "Something went wrong. Please try again." for a condition that retrying can
+ * never fix, and the operator got a log line reading "unclassified - inspect
+ * the deployment logs", which WAS the deployment log.
+ *
+ * Found by running the product against a real database with no storage
+ * configured - which is precisely the state a deployment is in when an S3
+ * environment variable is missing on launch day.
+ *
+ * SERVICE_UNAVAILABLE rather than INTERNAL_SERVER_ERROR, because that is what
+ * it is: the feature is off on this deployment, the request was fine, and
+ * saying so stops a user retrying into the same wall.
+ */
+async function storagePutOrUnavailable(
+  relKey: string,
+  data: Buffer | Uint8Array | string,
+  contentType: string,
+): Promise<{ key: string; url: string }> {
+  try {
+    return await storagePut(relKey, data, contentType);
+  } catch (error) {
+    if (error instanceof ObjectStorageNotConfiguredError) {
+      // LOGGED HERE, DELIBERATELY, and not left to the tRPC error classifier.
+      //
+      // That classifier only reports INTERNAL_SERVER_ERROR, on the sound
+      // reasoning that a server-authored refusal already says what it means to
+      // the caller. It does - to the CALLER. Turning this into a 503 therefore
+      // fixed the customer's half and silently removed the operator's: the
+      // access log would show 503s on every upload and never say why.
+      //
+      // So the diagnosis is emitted where it is known. It names the variables
+      // to set, because this line goes to a deployment log, not to a customer.
+      console.error(JSON.stringify({
+        level: 'error',
+        event: 'upload_rejected_storage_unconfigured',
+        remedy: 'set S3_BUCKET, S3_ENDPOINT, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY '
+          + '(or BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY) on this deployment',
+      }));
+      throw new TRPCError({
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'File uploads are not available on this deployment.',
+      });
+    }
+    throw error;
+  }
+}
+
 const MAX_REGISTRATION_DOCUMENT_SIZE = 10 * 1024 * 1024;
 
 /**
@@ -862,7 +915,7 @@ const registrationRouter = router({
     if (bytes.length === 0 || bytes.length > MAX_REGISTRATION_DOCUMENT_SIZE) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Registration documents must be between 1 byte and 10MB' });
     assertUploadedFileMatches(input.contentType, bytes, DOCUMENT_TYPES);
     const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const { key, url } = await storagePut(`registration/${ctx.user.id}/${Date.now()}-${safeName}`, bytes, input.contentType);
+    const { key, url } = await storagePutOrUnavailable(`registration/${ctx.user.id}/${Date.now()}-${safeName}`, bytes, input.contentType);
     const result = await db.insert(registrationDocuments).values({ userId: ctx.user.id, documentType: input.documentType, displayName: requirement.name, fileName: input.fileName, url, fileKey: key, mimeType: input.contentType, size: bytes.length, status: 'submitted', applicantNote: input.applicantNote });
     const documentId = Number(result[0].insertId);
     await db.insert(registrationDocumentSubmissions).values({ documentId, userId: ctx.user.id, documentType: input.documentType, fileName: input.fileName, url, fileKey: key, mimeType: input.contentType, size: bytes.length, status: 'submitted', applicantNote: input.applicantNote });
@@ -1074,7 +1127,7 @@ const projectsRouter = router({
       if (buffer.length > 8 * 1024 * 1024) throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
       assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
       const safeName = input.name.replace(/[^\w.-]+/g, '_');
-      const { key, url } = await storagePut(`project-documents/user-${ctx.user.id}/project-${input.projectId}/${safeName}`, buffer, input.contentType);
+      const { key, url } = await storagePutOrUnavailable(`project-documents/user-${ctx.user.id}/project-${input.projectId}/${safeName}`, buffer, input.contentType);
       const result = await db.insert(documents).values({ projectId: input.projectId, uploaderId: ctx.user.id, name: input.name, type: input.type, url, fileKey: key, size: buffer.length });
       // The bytes are stored and the row is written by this point. Throwing here
       // because a driver returned an unexpected shape would show the user a
@@ -1352,7 +1405,7 @@ const marketplaceRouter = router({
       }
       assertUploadedFileMatches(input.contentType, buffer, IMAGE_TYPES);
       const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
-      const { key, url } = await storagePut(
+      const { key, url } = await storagePutOrUnavailable(
         `product-images/user-${ctx.user.id}/${safeName}`,
         buffer,
         input.contentType,
@@ -1763,7 +1816,7 @@ const rfqRouter = router({
       }
       assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
       const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
-      const { key, url } = await storagePut(
+      const { key, url } = await storagePutOrUnavailable(
         `rfq-attachments/user-${ctx.user.id}/${safeName}`,
         buffer,
         input.contentType,
@@ -2162,7 +2215,7 @@ const messagesRouter = router({
     // replaced: "site-plan.pdf" became "_-_._". The other three upload
     // endpoints already had this right.
     const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
-    const { key, url } = await storagePut(`message-attachments/user-${ctx.user.id}/${Date.now()}-${safeName}`, buffer, input.contentType);
+    const { key, url } = await storagePutOrUnavailable(`message-attachments/user-${ctx.user.id}/${Date.now()}-${safeName}`, buffer, input.contentType);
     return { key, url, name: input.fileName, size: buffer.length, type: input.contentType };
   }),
 });
@@ -2400,7 +2453,7 @@ const profileRouter = router({
     const bytes = Buffer.from(input.base64, 'base64');
     if (bytes.length === 0 || bytes.length > MAX_AVATAR_SIZE) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Avatar images must be between 1 byte and 2MB' });
     assertUploadedFileMatches(input.contentType, bytes, IMAGE_TYPES);
-    const { url } = await storagePut(`avatars/${ctx.user.id}/${Date.now()}-avatar`, bytes, input.contentType);
+    const { url } = await storagePutOrUnavailable(`avatars/${ctx.user.id}/${Date.now()}-avatar`, bytes, input.contentType);
     await db.update(users).set({ avatar: url }).where(eq(users.id, ctx.user.id));
     return { url };
   }),
@@ -3835,22 +3888,14 @@ const aiRouter = router({
       // thing to say about an operator who has not configured storage yet: it
       // sends them looking for a bug instead of a setting. This is the same
       // masking that made the original AI outage take a day to diagnose.
-      let key: string;
-      try {
-        ({ key } = await storagePut(
-          `ai-attachments/user-${ctx.user.id}/${validated.name}`,
-          validated.bytes,
-          validated.contentType,
-        ));
-      } catch (error) {
-        if (error instanceof ObjectStorageNotConfiguredError) {
-          throw new TRPCError({
-            code: 'SERVICE_UNAVAILABLE',
-            message: 'File attachments are not available on this deployment.',
-          });
-        }
-        throw error;
-      }
+      // The unconfigured-storage case is handled by storagePutOrUnavailable,
+      // which is where it now lives for all seven upload sites rather than
+      // only this one.
+      const { key } = await storagePutOrUnavailable(
+        `ai-attachments/user-${ctx.user.id}/${validated.name}`,
+        validated.bytes,
+        validated.contentType,
+      );
       const inserted = await db.insert(aiAttachments).values({
         userId: ctx.user.id,
         name: validated.name,
