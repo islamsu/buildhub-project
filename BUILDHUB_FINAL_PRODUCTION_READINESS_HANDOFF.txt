@@ -1,0 +1,388 @@
+================================================================================
+BUILDHUB — FINAL PRODUCTION READINESS HANDOFF
+================================================================================
+
+Date        28 August 2026
+Branch      claude/buildhub-audit-verification-vrai7l
+HEAD        cb25d71
+Base        origin/main @ 6a9e1e6   (18 commits ahead)
+Staging     https://buildhub-staging.onrender.com   NOT REACHABLE — see §7
+Gate SHA    not run — requires staging
+
+Suite       105 files / 2328 tests, tsc clean, client and server builds green
+CI          green on every pushed commit
+
+================================================================================
+1.  VERDICT
+================================================================================
+
+                        PRODUCTION NO-GO
+
+Not because the platform is broken. The core commercial transaction now works
+end to end and its security boundaries hold under direct attack. It is NO-GO
+because three things required for a GO have not been established, and one
+measured result is bad enough to stop a launch on its own.
+
+  BLOCKING — verification not possible in this environment
+    · The deployed staging instance has never been reached. No deployed-SHA
+      check, no staging gate, no acceptance against the artefact that would
+      actually serve customers. Everything below was proven against a locally
+      built and locally run instance of the same commit.
+
+  BLOCKING — measured, reproducible, and severe
+    · 12.8 SECONDS TO INTERACTIVE, on every page, on a normal 4-core CPU.
+      The server answers in 2ms; the browser spends 12,801ms parsing and
+      executing a 2.5 MB main bundle. A first-time visitor on a mid-range
+      phone will be materially worse. This is a P1: it does not corrupt
+      anything, but a marketplace nobody waits for has no transactions to
+      protect.
+
+  NOT BLOCKING but unfinished
+    · Accessibility was audited partially, by hand, because no axe-core could
+      be fetched. Three real defects were found and fixed; a full WCAG pass
+      has not been done and is not claimed.
+
+Everything else that was previously unverified — object storage, the
+password-reset round trip, and the complete supplier→quotation journey — is
+now LIVE VERIFIED. Those are no longer reasons to hold.
+
+================================================================================
+2.  THE JOURNEY YOU ASKED ME TO PROVE
+================================================================================
+
+"Customer creates RFQ → supplier sees it → supplier opens full RFQ → supplier
+reviews it → supplier responds → supplier uploads PDF/photo → supplier submits
+quotation → customer gets notification → customer opens quotation → customer
+reviews attachments → customer communicates → customer accepts/rejects → audit
+trail records it."
+
+You were right that it would expose more than another thousand static tests.
+It exposed THREE P1 defects, and one of them was a capability that did not
+exist at all.
+
+STATUS: the journey now completes. 31 of 31 checks, live, against a real
+MariaDB, real object storage, the built production server, and a real browser.
+
+  1  customer posts an RFQ with a BOQ attachment            LIVE VERIFIED
+  2  supplier sees it in the open feed                      LIVE VERIFIED
+  3  supplier opens the FULL RFQ detail page                LIVE VERIFIED  ← was broken
+  4  supplier reviews brief, category, location, budget     LIVE VERIFIED
+  5  free vs credit-gated is stated before spending         LIVE VERIFIED
+  6  the customer's attachment is NOT free                  LIVE VERIFIED
+  7  supplier follows through, carrying the RFQ id          LIVE VERIFIED  ← was broken
+  8  opening the enquiry spends one credit, once            LIVE VERIFIED
+  9  the full brief and attachment are then revealed        LIVE VERIFIED
+ 10  supplier uploads a PDF proposal                        LIVE VERIFIED  ← did not exist
+ 11  supplier uploads a product photo                       LIVE VERIFIED  ← did not exist
+ 12  quotation submitted with both files + terms            LIVE VERIFIED  ← did not exist
+ 13  customer is NOTIFIED                                   LIVE VERIFIED
+ 14  customer opens the quotation                           LIVE VERIFIED
+ 15  customer sees both supplier documents                  LIVE VERIFIED  ← did not exist
+ 16  customer messages the supplier                         LIVE VERIFIED
+ 17  supplier receives it and replies                       LIVE VERIFIED
+ 18  customer AWARDS the quotation                          LIVE VERIFIED
+ 19  the RFQ closes to further bids                         LIVE VERIFIED
+ 20  the audit trail records creation, enquiry, bid, award  LIVE VERIFIED
+
+================================================================================
+3.  DEFECTS FOUND AND FIXED THIS SESSION
+================================================================================
+
+P1-01  AN RFQ COULD BE CREATED THAT NO SUPPLIER COULD EVER ANSWER.
+
+  `openQualifiedEnquiry` refuses any RFQ whose category is not in
+  RFQ_CATEGORIES. Creation accepted `category: z.string().optional()` and the
+  submit button was guarded only on the title.
+
+  So a customer could post a request that was stored, listed in the feed every
+  supplier sees, and permanently impossible to open or quote on. Proven live:
+  create returned 200, openEnquiry returned 403 FORBIDDEN, forever. The
+  customer waits for responses that cannot arrive; suppliers see a request
+  they are forbidden to answer; nobody is told.
+
+  FIXED. Category required and typed to the taxonomy on both sides. Not a
+  business decision — the eligibility rule needing it already existed. A
+  free-text category failed identically ("Marble" is not a member), so the
+  enum closes both holes.
+
+P1-02  THE FEED'S RESPOND BUTTON WENT TO A DASHBOARD, NOT TO THE REQUEST.
+
+  `<Link href="/provider">` on every RFQ card — while the card's own title
+  link, three lines above, already pointed at `/rfq/:id`. A supplier clicking
+  "Respond" on one specific request landed on a generic workspace with no
+  memory of which one. Exactly the "generic dashboard" failure your §8 names.
+
+  FIXED. It goes to the review page. The guardian that should have caught it
+  asserted "the respond route resolves" — and `/provider` resolves perfectly.
+  Resolving and carrying the user to the right place are different properties.
+
+P1-03  A SUPPLIER COULD NOT SEND A SINGLE DOCUMENT WITH A BID.
+
+  `quotations` had no attachments column, `submitQuotation` had no attachments
+  input, the quote dialog had four fields. No proposal, no specification, no
+  certificate, no photograph. Your §11 calls this mandatory; it did not exist.
+
+  BUILT. Column, migration, upload procedure, storage category, supplier form,
+  customer review surface, audit detail.
+
+  THE AUTHORIZATION DIRECTION IS THE OPPOSITE OF AN RFQ ATTACHMENT and that is
+  the design. An RFQ attachment flows customer→provider and is what a credit
+  BUYS. A quotation attachment flows provider→customer and is sold to nobody:
+  the value of a sealed bid is that rivals cannot read it. Sharing the
+  `rfq-attachments/` prefix would have inherited "any provider who paid for
+  the enquiry" and published every supplier's bid to every rival on the lead.
+
+P2-04  A TEST HELPER WAS SILENTLY DELETING THE CODE UNDER TEST.
+
+  Twelve test files stripped comments with `replace(/\/\*[\s\S]*?\*\//g, '')`.
+  `accept="image/*,application/pdf"` contains `/*`. In RFQPage.tsx that opened
+  a false comment which swallowed 6,045 characters including the submit button.
+
+  The failures that shout are harmless. The dangerous case is
+  `expect(source).not.toContain(x)`, which passes on text deleted before
+  anybody looked — a guardian asserting something bad is ABSENT cannot tell
+  absent from never examined. I checked the one that mattered: the
+  `not.toContain('openEnquiry')` assertion on RFQPage is genuinely true under
+  both strippers, so that invariant held.
+
+  FIXED. All twelve migrated to a scanner that tracks string literals, unit
+  tested with a negative control proving the old idiom really does lose code.
+
+P2-05  THREE CONTROLS HAD NO ACCESSIBLE NAME.
+
+  The notifications button and the mobile menu toggle (icon-only, announced as
+  "button"), and the marketplace search field (named only by a placeholder,
+  which vanishes once there is text in it). The mobile toggle is the only way
+  to navigate on a phone. FIXED, bilingually, with aria-expanded on the toggle.
+
+P3-06  A FIXED-WINDOW TEST HELPER REPORTED AN ABSENCE IT HAD NOT ESTABLISHED.
+
+  `procedureBody` returned a 2,500-character slice; adding the attachments
+  schema pushed `rfq.status !== 'open'` past the edge and the test reported the
+  status check missing when it was three lines below. FIXED to bound on the
+  next procedure.
+
+================================================================================
+4.  SECURITY — ATTACKED, NOT INSPECTED
+================================================================================
+
+Four accounts (two customers, two suppliers) plus an unapproved contractor,
+each with real projects, RFQs, products and quotations. Every attack executed
+against the running server over HTTP.
+
+  CROSS-ACCOUNT — 14 of 14 REFUSED
+    customer A → B's project                              404
+    customer A → B's RFQ detail                           404
+    customer A → quotations on B's RFQ                    403
+    supplier B → edit A's product                         404
+    supplier B → delist A's product                       404
+    supplier B → set images on A's product                404
+    supplier A → award decision on B's RFQ                403
+    supplier B → accept a quotation on A's RFQ            403
+    customer B → accept a quotation on A's RFQ            403
+    unapproved contractor → open an enquiry               403
+    unapproved contractor → submit a quotation            403
+    customer A → B's project documents                    403
+    supplier A → upload into B's project                  403
+    customer B → the admin audit trail                    403
+
+  QUOTATION ATTACHMENT CONFIDENTIALITY — 5 of 5 REFUSED
+    the uploading supplier reads their own file           allowed (control)
+    the RFQ owner reads it                                allowed (control)
+    A RIVAL SUPPLIER reads it                             403
+    an unrelated customer reads it                        403
+    an anonymous caller                                   401
+    attaching another supplier's file to your own bid     403 FORBIDDEN
+    the same via path traversal                           403 FORBIDDEN
+
+  ID ABUSE — 0, -1, 999999, 2147483647 on rfq.summary
+    all refused with 400 or 404. No 500, no crash, no leak.
+
+  MESSAGING ISOLATION
+    an unrelated supplier reading a customer↔supplier thread returned 0 rows.
+
+  PASSWORD RESET — 17 of 17
+    delivered over real TLS with certificate verification INTACT (the cert was
+    made genuinely trusted via NODE_EXTRA_CA_CERTS rather than verification
+    being disabled — the difference between testing the real path and a
+    weakened one).
+      an email is actually delivered                      yes
+      the response body carries no token or link          yes
+      an unknown address gets an identical response       yes, and no email
+      a forged token                                      404
+      the password policy at reset                        400
+      the token is SINGLE USE                             404 on replay
+      the old password stops working                      401
+      the new password works                              yes
+      an attacker's pre-reset session is KILLED           yes
+      a post-reset session still works                    yes (negative control)
+
+    ONE NUANCE, REPORTED RATHER THAN BURIED. My first run said the pre-reset
+    session survived. It did — because the script signed in and reset inside
+    the same wall-clock second, and the cutoff compares whole seconds
+    deliberately so a reset does not kill the session it just minted. With a
+    realistic 2.5s gap the attacker session is correctly rejected. The residual
+    is a ≤1 second window, documented in the code, and is P4 not P0.
+
+================================================================================
+5.  THREE TESTS OF MINE THAT PASSED FOR THE WRONG REASON
+================================================================================
+
+Your §67 said to check this. It mattered three times.
+
+  · "the pre-reset session is invalidated" asserted on `me.data.username`.
+    `auth.me` returns a trimmed DTO with NO username, so the assertion was
+    always true. It would have reported success with the session fully alive.
+    Re-asserted on `id`, plus a negative control that a post-reset session DOES
+    work — otherwise "invalidated" could just mean "auth is broken".
+
+  · "the quotation upload writes its own prefix" was satisfied by
+    submitQuotation's prefix CHECK rather than by the upload's WRITE. It passed
+    with the write pointed at `rfq-attachments/`. Now scoped to the procedure.
+
+  · Two live checks passed vacuously because the page under test had failed to
+    load at all ("attachments are not shown" is trivially true on a blank page).
+
+  And one FALSE finding I nearly reported: "the primary CTA has no focus
+  indicator". It has one. I measured `outlineStyle`, which is `none` by design
+  — the buttons draw focus with a Tailwind ring, a box-shadow. Checked
+  properly, all 23 focusable elements have a visible indicator. A false P2 in a
+  readiness report costs someone a day chasing a problem that is not there.
+
+================================================================================
+6.  VERIFICATION TABLE
+================================================================================
+
+  AREA                     STATUS              EVIDENCE / REMAINING RISK
+  ------------------------ ------------------- ---------------------------------
+  Authentication           LIVE VERIFIED       sign-up, sign-in, role redirect
+  Password reset           LIVE VERIFIED       17/17 over real TLS SMTP
+  Session invalidation     LIVE VERIFIED       attacker session killed
+  Authorization            LIVE VERIFIED       14/14 cross-account refused
+  Role isolation           LIVE VERIFIED       incl. unapproved provider
+  Customer journey         LIVE VERIFIED       RFQ → award, end to end
+  Supplier journey         LIVE VERIFIED       review → quote → attach → submit
+  RFQ creation             LIVE VERIFIED       un-servable RFQ now refused
+  RFQ detail page          LIVE VERIFIED       role-aware, credit-gating honest
+  Quotations               LIVE VERIFIED       submit, review, award, close
+  Quotation attachments    LIVE VERIFIED       incl. 5/5 confidentiality attacks
+  RFQ attachments          LIVE VERIFIED       credit-gated reveal proven
+  Object storage           LIVE VERIFIED       real S3 API, correct magic bytes
+  Storage authorization    LIVE VERIFIED       per-category, attacked
+  Messaging                LIVE VERIFIED       send, receive, reply, isolated
+  Notifications            LIVE VERIFIED       quotation notification delivered
+  Email delivery           LIVE VERIFIED       reset mail over TLS
+  Commercial audit         LIVE VERIFIED       4 actions written and scoped
+  Project documents        PARTIAL             upload path live; UI verified
+  Products / images        UNIT VERIFIED       not re-driven in browser today
+  Marketplace              UNIT VERIFIED       not re-driven in browser today
+  Batch upload             NOT VERIFIED        not examined this session
+  AI subsystem             UNIT VERIFIED       no live AI key in this env
+  Search / filters         NOT VERIFIED        not examined this session
+  Arabic / RTL             PARTIAL             RFQ detail verified in AR + RTL
+  Mobile / responsive      NOT VERIFIED        not re-run this session
+  Accessibility            PARTIAL             3 defects fixed; no WCAG pass
+  Performance              LIVE VERIFIED BAD   12.8s to interactive — P1
+  Database                 LIVE VERIFIED       25 migrations from empty
+  Deployment               STATIC VERIFIED     config read; never deployed
+  Staging                  BLOCKED             proxy 403 on CONNECT
+  Security headers         NOT VERIFIED        not examined this session
+
+================================================================================
+7.  BLOCKED BY ENVIRONMENT — WITH THE ATTEMPTS MADE
+================================================================================
+
+  STAGING. Every attempt returns `curl: (56) CONNECT tunnel failed, response
+  403`. The agent proxy's own status endpoint confirms an allowlist that does
+  not include onrender.com. I did not write "staging unavailable" and stop: I
+  rebuilt the equivalent locally — the real production bundle, a real MariaDB
+  with all 25 migrations applied from empty, real S3-compatible object storage,
+  real TLS SMTP, a real browser. LOCAL IS NOT STAGING and nothing here is
+  presented as staging verification.
+
+  Two things local verification structurally cannot tell you: whether the
+  deployed SHA matches this commit, and whether Render's own environment
+  (its TLS, its database, its variables) behaves the same way.
+
+  WHAT I BUILT TO REMOVE THE OTHER TWO BLOCKERS
+    · A local S3-compatible object server. It does not verify signatures and is
+      NOT evidence that BuildHub's signed URLs are correct; it stands in for
+      the provider so the application's own authorization could be exercised.
+    · A TLS SMTP sink with a certificate trusted through NODE_EXTRA_CA_CERTS.
+      BuildHub's `rejectUnauthorized: true` was never relaxed.
+
+================================================================================
+8.  OWNER DECISIONS — STILL OPEN
+================================================================================
+
+  D1  DUPLICATE QUOTATIONS.  ← the one that touches money
+      CURRENT: nothing stops one supplier submitting several quotations on one
+      RFQ; each notifies the requester again.
+      PROBLEM: win-rate reporting counts rows, not attempts. One win against
+      five duplicate bids from the same supplier reads as 20% when commercially
+      it was one attempt.
+      OPTIONS: (A) one active quotation per supplier per RFQ, later submissions
+      rejected; (B) revisions — a new submission supersedes and the history is
+      kept; (C) multiple independent bids, and reporting counts DISTINCT
+      suppliers.
+      RECOMMENDED: (B). It matches how construction bidding actually works,
+      keeps an audit trail, and fixes the reporting distortion without
+      forbidding a supplier from correcting a price.
+      IMPACT: a `supersededBy` or `revision` column plus a unique partial
+      index; the comparison surface shows the current revision with history;
+      analytics count distinct suppliers. Not implemented — this is a
+      commercial rule and I will not invent it.
+
+  D2  Renovation finishing preset.
+  D3  Mandatory product fields before a listing may publish.
+  D4  Comparison surface — is provider identity revealed before award?
+  D5  RFQ budget visibility to providers (the open feed currently shows it).
+  D6  Messaging relationship rule — who may message whom, and after what.
+  D7  Q&A answer editing and moderation (answers are currently write-once).
+
+================================================================================
+9.  WHAT TO DO NEXT, IN ORDER
+================================================================================
+
+  1. FIX THE 12.8 SECOND LOAD. Route-level code splitting on a 2.5 MB main
+     bundle. The heavy chunks (mermaid, cytoscape, syntax-highlighter
+     languages) are already split and off the critical path — the problem is
+     the main entry. This is the single largest gap between "works" and
+     "usable", and it is a P1.
+
+  2. DEPLOY TO STAGING and re-run everything in §2 and §4 against the deployed
+     SHA, with expect_commit pinned so a stale deploy fails the gate.
+
+  3. CONFIGURE S3 AND SMTP ON STAGING and repeat the two round trips there.
+     Both are proven in code; neither is proven on Render.
+
+  4. SETTLE D1.
+
+  5. FINISH ACCESSIBILITY with a real engine, and audit the areas marked NOT
+     VERIFIED above: batch upload, search, filters, security headers, mobile.
+
+================================================================================
+10. THE PRINCIPLE THIS SESSION CONFIRMED
+================================================================================
+
+The previous session ended with 2,285 tests and 52 killed mutants beside a
+broken user journey. This session began by running the journey.
+
+It found three P1 defects in the first hour, one of which was a capability
+that did not exist at all — and it found them in the order a real supplier
+would: post, look, click, respond, attach, send.
+
+The suite is now 2,328 tests and they are worth more than they were, because
+several of them were rewritten after being shown to pass for the wrong reason.
+But the tests are not the evidence. The journey is.
+
+Do not read a green suite as readiness. Read §6, and note how many rows say
+LIVE VERIFIED and how many still do not.
+
+================================================================================
+Nothing in production was touched. No production deployment, database,
+credential, S3 bucket, SMTP relay, payment configuration, DNS record or user
+account was created or modified. All local verification infrastructure was
+torn down. No credential, token or reset link appears in any commit, log,
+test, screenshot or document produced by this session.
+================================================================================
