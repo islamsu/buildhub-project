@@ -19,6 +19,7 @@ import VendorAnalytics from '@/components/VendorAnalytics';
 import VendorServiceCategories from '@/components/VendorServiceCategories';
 import QualifiedEnquiries from '@/components/QualifiedEnquiries';
 import VendorBilling from '@/components/VendorBilling';
+import SupplierCatalogue from '@/components/SupplierCatalogue';
 import {
   ArrowUpRight, BarChart3, BriefcaseBusiness, Camera, CheckCircle2, ClipboardList,
   Clock3, DollarSign, FileText, FolderKanban, KanbanSquare, Layers3, MapPin, MessageSquare,
@@ -222,7 +223,13 @@ export default function RolePlatform() {
         {role === 'homeowner' ? (
           <HomeownerWorkspace projects={projects} t={t} lang={lang} navigate={navigate} />
         ) : role === 'supplier' ? (
+          <>
+          {/* Full catalogue management: edit, images, publish/delist, and the
+              answer side of the product Q&A. The workspace card below is a
+              read-only summary; this is where a supplier actually works. */}
+          <SupplierCatalogue />
           <SupplierWorkspace products={products} rfqs={matchingRfqs} projects={projectDirectory} t={t} lang={lang} navigate={navigate} onQuote={(rfqId) => { setQuoteForm(form => ({ ...form, rfqId })); setQuoteDialogOpen(true); }} />
+          </>
         ) : role === 'contractor' ? (
           <ContractorWorkspace rfqs={matchingRfqs} projects={projectDirectory} quotations={myQuotations} t={t} lang={lang} navigate={navigate} onQuote={(rfqId: number) => { setQuoteForm(form => ({ ...form, rfqId })); setQuoteDialogOpen(true); }} />
         ) : role === 'engineer' ? (

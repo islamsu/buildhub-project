@@ -133,6 +133,22 @@ export async function authorizeStorageKey(key: string, user: AuthenticatedUser |
     return !!row && row.userId === user.id && row.deletedAt === null;
   }
 
+  // Category G: product images - PUBLIC to any authenticated user, because a
+  // product photo appears on the marketplace card and the public product page.
+  //
+  // Deliberately NOT owner-only. The mistake to avoid here is the opposite of
+  // the usual one: locking these down would break every catalogue listing for
+  // every buyer, which is the failure the missing `avatars/` branch already
+  // caused once.
+  //
+  // The ownership rule that matters for these lives on the WRITE side, not
+  // here: setProductImages refuses any URL outside the caller's own
+  // product-images/user-<id>/ prefix, so a supplier cannot point their listing
+  // at another supplier's photo. Reading one is not sensitive; claiming one is.
+  if (key.startsWith('product-images/')) {
+    return true;
+  }
+
   // Category D: compliance/registration documents - owner only (+ admin above).
   if (key.startsWith('registration/')) {
     const [row] = await db.select({ userId: registrationDocumentSubmissions.userId })

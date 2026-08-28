@@ -379,8 +379,9 @@ describe('§2c messages', () => {
     // literal backslash-backslash inside a regex literal.
     expect(ROUTERS_CODE.includes('[^' + String.fromCharCode(92, 92) + 'w.-]')).toBe(false);
     // And the correct single-backslash form is there, once per endpoint that
-    // uses it (project documents, RFQ attachments, message attachments).
-    expect((ROUTERS_CODE.match(/\[\^\\w\.-\]\+/g) ?? []).length).toBe(3);
+    // uses it: project documents, RFQ attachments, message attachments, and
+    // product images (added with the supplier catalogue).
+    expect((ROUTERS_CODE.match(/\[\^\\w\.-\]\+/g) ?? []).length).toBe(4);
   });
 });
 
@@ -485,7 +486,11 @@ describe('§3 uploads are checked against their bytes', () => {
     const asserted = (ROUTERS.match(/assertUploadedFileMatches\(/g) ?? []).length - 1;
     const validated = (ROUTERS.match(/validateAiAttachment\(/g) ?? []).length;
 
-    expect(puts).toBe(6);
+    // SEVEN, not six: uploadProductImage joined the set when the supplier
+    // catalogue gained image management. The number is asserted rather than
+    // ranged so that adding an eighth upload path is a deliberate edit here
+    // and not something that slips in unvalidated.
+    expect(puts).toBe(7);
     expect(asserted + validated).toBe(puts);
   });
 

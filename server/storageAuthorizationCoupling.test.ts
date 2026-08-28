@@ -57,7 +57,16 @@ describe('storage authorization stays coupled to RFQ visibility', () => {
     const branch = fn.slice(fn.indexOf("key.startsWith('rfq-attachments/')"));
     expect(branch.length, 'the rfq-attachments branch has vanished').toBeGreaterThan(0);
     // The exact shape of the old bug: an unconditional true inside the branch.
-    const firstReturn = branch.slice(0, branch.indexOf('// Category D'));
+    //
+    // Bounded at the NEXT category marker, whatever it happens to be, rather
+    // than at a named one. It used to stop at '// Category D', and when
+    // 'Category G: product images' - a deliberate public blanket-allow - was
+    // inserted above D, its `return true` fell inside this slice and failed a
+    // test about a different branch entirely. The assertion was right; its
+    // window was tied to file order.
+    const nextCategory = branch.indexOf('// Category', 1);
+    expect(nextCategory, 'the branch is no longer followed by another category').toBeGreaterThan(0);
+    const firstReturn = branch.slice(0, nextCategory);
     expect(
       firstReturn,
       'rfq-attachments must not return true on the prefix alone - that was the finding',
@@ -131,13 +140,23 @@ describe('storage authorization stays coupled to RFQ visibility', () => {
     expect(fn.indexOf('if (!user) return false;')).toBeLessThan(fn.indexOf('rfq-attachments/'));
   });
 
-  it('avatars are the ONLY category left that a prefix alone unlocks', () => {
-    // Deliberate: avatars already appear on every public vendor card. Recording
-    // it as an assertion means a future blanket-allow has to be argued for here
-    // rather than added quietly.
+  it('only the two PUBLIC-BY-DESIGN categories are unlocked by prefix alone', () => {
+    // Deliberate, and the list is short on purpose. Recording it as an
+    // assertion means a future blanket-allow has to be ARGUED FOR HERE rather
+    // than added quietly - which is exactly what happened when product images
+    // were added, and why this test needed a considered edit rather than a
+    // relaxed regex.
+    //
+    //   avatars/        - already on every public vendor card and directory row
+    //   product-images/ - on every marketplace card and public product page
+    //
+    // Both are content a buyer is meant to see. The ownership rule for product
+    // images lives on the WRITE side instead: setProductImages refuses any URL
+    // outside the caller's own prefix, so a supplier cannot claim another
+    // supplier's photo. Reading one is not sensitive; claiming one is.
     const fn = authorizeFn();
     const blanket = [...fn.matchAll(/key\.startsWith\('([^']+)'\)\)\s*\{\s*\n\s*return true;/g)]
       .map(m => m[1]);
-    expect(blanket).toEqual(['avatars/']);
+    expect(blanket).toEqual(['avatars/', 'product-images/']);
   });
 });

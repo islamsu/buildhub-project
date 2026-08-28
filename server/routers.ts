@@ -57,6 +57,7 @@ import {
   ADMIN_SUBSCRIPTION_COLUMNS, checkFounderEligibility, getBillingState, getBillingEvents, getSubscription,
 } from './billing/service';
 import { deriveBillingState } from './billing/domain';
+import { MAX_PRODUCT_IMAGE_SIZE, MAX_PRODUCT_IMAGES } from '@shared/productImages';
 import {
   changeVendorPlan,
   getLifecycleSnapshot,
@@ -1210,6 +1211,203 @@ const marketplaceRouter = router({
       });
       return { id: Number(result[0].insertId) };
     }),
+  /**
+   * SUPPLIER CATALOGUE MANAGEMENT.
+   *
+   * `create` existed and nothing else did: once a supplier listed a product
+   * they could never correct a price, fix a typo, add a photo or take it down.
+   * A catalogue you cannot edit is not a catalogue, and "delete the row in the
+   * database" is not a product feature.
+   *
+   * All three procedures below share one ownership rule, applied the same way:
+   * the row is read WITH the supplierId predicate, so a product that is not
+   * yours simply does not come back. Absent and not-mine give the same NOT_FOUND
+   * so the endpoint is not an oracle for which product ids exist.
+   */
+  updateProduct: approvedProviderProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      // Every field optional: this is a PATCH. `name` and `category` are
+      // notNull in the schema, so they may be changed but not cleared.
+      name: z.string().min(1).max(255).optional(),
+      nameAr: z.string().max(255).optional(),
+      description: z.string().max(5000).optional(),
+      category: z.string().min(1).max(100).optional(),
+      brand: z.string().max(100).optional(),
+      origin: z.string().max(100).optional(),
+      // Bounds match decimal(12,2). A negative price is not a discount.
+      price: z.number().min(0).max(9_999_999_999).optional(),
+      currency: z.string().max(10).optional(),
+      stock: z.number().int().min(0).optional(),
+      unit: z.string().max(50).optional(),
+      warranty: z.string().max(100).optional(),
+      deliveryDays: z.number().int().min(0).max(3650).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.userRole !== 'supplier') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const { id, price, ...rest } = input;
+      const [owned] = await db.select({ id: products.id })
+        .from(products)
+        .where(and(eq(products.id, id), eq(products.supplierId, ctx.user.id)));
+      if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
+
+      // Drop undefined keys so a PATCH cannot blank the columns it omitted.
+      //
+      // Over JSON this is belt-and-braces: `undefined` does not survive
+      // serialisation and zod omits absent optionals entirely, so `{ ...rest }`
+      // would behave identically today - mutation testing confirmed the two are
+      // equivalent rather than one being a fix for the other. It is kept
+      // because the guarantee should hold for any caller, not only for the ones
+      // that happen to arrive as JSON.
+      const patch: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(rest)) {
+        if (value !== undefined) patch[key] = value;
+      }
+      if (price !== undefined) patch.price = String(price);
+      if (Object.keys(patch).length === 0) return { id };
+
+      await db.update(products).set(patch)
+        .where(and(eq(products.id, id), eq(products.supplierId, ctx.user.id)));
+      return { id };
+    }),
+
+  /**
+   * Publish or delist. `active` already governs whether a product is visible to
+   * buyers - marketplace.get and askQuestion both check it - but nothing could
+   * ever set it, so a supplier who listed something by mistake had no way to
+   * withdraw it.
+   *
+   * Delisting is reversible and does NOT delete: questions, quotations and
+   * order history reference the row, and destroying it to hide it would take
+   * the history with it.
+   */
+  setProductActive: approvedProviderProcedure
+    .input(z.object({ id: z.number().int().positive(), active: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.userRole !== 'supplier') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [owned] = await db.select({ id: products.id })
+        .from(products)
+        .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
+      if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
+      await db.update(products).set({ active: input.active })
+        .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
+      return { id: input.id, active: input.active };
+    }),
+
+  /**
+   * Upload one product image.
+   *
+   * Bytes are SNIFFED, not trusted: assertUploadedFileMatches reads the real
+   * header and refuses a file whose content disagrees with its declared type,
+   * which is what stops an executable wearing a .png extension. Images only -
+   * a product photo has no reason to be a PDF, and narrowing the allowlist
+   * here costs nothing.
+   *
+   * The key is `product-images/user-<id>/...`, written by this procedure and
+   * nothing else. Ownership is still resolved through the database row on
+   * read (see authorizeStorageKey), because a key is a string an attacker may
+   * come to possess.
+   */
+  uploadProductImage: approvedProviderProcedure
+    .input(z.object({
+      fileName: z.string().min(1).max(255),
+      contentType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+      base64: z.string().max(11_000_000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.userRole !== 'supplier') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
+      }
+      enforceUploadRateLimit(ctx.user.id);
+      const buffer = Buffer.from(input.base64, 'base64');
+      if (buffer.length === 0) throw new TRPCError({ code: 'BAD_REQUEST', message: 'That file is empty' });
+      if (buffer.length > MAX_PRODUCT_IMAGE_SIZE) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Image too large (max 5MB)' });
+      }
+      assertUploadedFileMatches(input.contentType, buffer, IMAGE_TYPES);
+      const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
+      const { key, url } = await storagePut(
+        `product-images/user-${ctx.user.id}/${safeName}`,
+        buffer,
+        input.contentType,
+      );
+      return { key, url, name: input.fileName, type: input.contentType, size: buffer.length };
+    }),
+
+  /**
+   * Set the ordered image list for one product.
+   *
+   * ORDER IS THE FEATURE: `images[0]` is what ProductDetail and the marketplace
+   * card render as the primary photo, so reordering and choosing a primary are
+   * the same operation and there is no separate `primaryImageId` to drift out
+   * of sync with the array.
+   *
+   * Every URL must be one this supplier uploaded. Without that check a supplier
+   * could point their listing at a competitor's photo, or at any storage path
+   * they could name - the product row would then be a way to launder a key past
+   * the proxy's ownership check.
+   */
+  setProductImages: approvedProviderProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      images: z.array(z.string().max(512)).max(MAX_PRODUCT_IMAGES),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.userRole !== 'supplier') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const prefix = `/manus-storage/product-images/user-${ctx.user.id}/`;
+      for (const image of input.images) {
+        // startsWith ALONE IS NOT ENOUGH. `.../user-5/../../secret.png` begins
+        // with the caller's own prefix and then climbs out of it, so the
+        // remainder is checked for traversal too. The storage proxy would
+        // refuse such a key on READ, but without this the row would still
+        // store a path that means something other than it appears to - and the
+        // next reader of that column has no reason to expect one.
+        if (!image.startsWith(prefix)) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'You may only use images you uploaded.',
+          });
+        }
+        const remainder = image.slice(prefix.length);
+        const traverses = remainder.length === 0
+          || remainder.split('/').some(segment => segment.length === 0 || segment === '.' || segment === '..');
+        if (traverses) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'You may only use images you uploaded.',
+          });
+        }
+      }
+      // Duplicates would render the same photo twice and make "reorder" lie.
+      if (new Set(input.images).size !== input.images.length) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That image is already on this product.' });
+      }
+
+      const [owned] = await db.select({ id: products.id })
+        .from(products)
+        .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
+      if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
+
+      await db.update(products)
+        .set({ images: input.images.length > 0 ? JSON.stringify(input.images) : null })
+        .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
+      return { id: input.id, images: input.images };
+    }),
+
   categories: publicProcedure.query(async () => {
     return [
       'Materials', 'Furniture', 'Lighting', 'Electrical', 'Plumbing',
