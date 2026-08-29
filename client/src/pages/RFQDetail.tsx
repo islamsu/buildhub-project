@@ -156,7 +156,7 @@ export default function RFQDetail() {
   return (
     <div className="min-h-screen bg-background" dir={ar ? 'rtl' : 'ltr'}>
       <Navbar />
-      <div className="mx-auto max-w-4xl px-4 py-8">
+      <div className="mx-auto max-w-4xl px-4 pt-24 pb-16">
         <Link href="/rfq">
           <Button variant="ghost" size="sm" className="mb-4 gap-2" data-testid="rfq-detail-back">
             <ArrowLeft className="h-4 w-4" />{ar ? 'كل الطلبات' : 'All requests'}

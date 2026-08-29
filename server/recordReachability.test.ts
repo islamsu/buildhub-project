@@ -161,3 +161,70 @@ describe('every business entity BuildHub stores is either openable or deliberate
     expect(card).not.toContain('card-hover');
   });
 });
+
+describe('a control must not be hidden under the fixed navbar', () => {
+  // The navbar is `fixed top-0 h-16`. RFQDetail's container used py-8 (32px),
+  // so the top of the page - including its "All requests" back button - sat
+  // UNDERNEATH it. elementFromPoint at the centre of that button returned the
+  // navbar, not the button, and both a real click and Playwright's timed out.
+  // A control that cannot be reached is dead however correct its handler is.
+  const NAVBAR_HEIGHT_CLASS = 'h-16';
+  const navbar = read('../client/src/components/Navbar.tsx');
+
+  it('the navbar is still fixed and still that tall', () => {
+    // If either changes, the clearance below has to be re-derived.
+    expect(navbar).toContain('fixed top-0 inset-x-0 z-50');
+    expect(navbar).toContain(NAVBAR_HEIGHT_CLASS);
+  });
+
+  it.each([
+    ['RFQDetail', '../client/src/pages/RFQDetail.tsx'],
+    ['RFQPage', '../client/src/pages/RFQPage.tsx'],
+    ['ProjectDetail', '../client/src/pages/ProjectDetail.tsx'],
+    ['VendorProfile', '../client/src/pages/VendorProfile.tsx'],
+    ['AIAssistantPage', '../client/src/pages/AIAssistantPage.tsx'],
+  ])('%s clears it, in EVERY state it renders', (_name, path) => {
+    const source = read(path);
+    // Anchored to the SHELL, not to "any container". Every one of these pages
+    // renders <Navbar /> followed immediately by the page's top-level box, and
+    // a page has several such states - loading, not-found, and the record
+    // itself. The first version of this test looked only at the first one,
+    // which on RFQDetail is the loading state and was already fine, so
+    // reverting the real container to py-8 passed. Matching every <Navbar />
+    // catches every state; anchoring to it skips the nested boxes inside,
+    // which inherit their parent's clearance and need none of their own.
+    const shells = [...source.matchAll(/<Navbar\s*\/>\s*(?:\{[^\n]*\n\s*)?<\w+[^>]*?className="([^"]*)"/g)].map(m => m[1]);
+    expect(shells.length, 'no page shell found after <Navbar />').toBeGreaterThan(0);
+    for (const cls of shells) {
+      const top = cls.match(/\bp[ty]-(\d+)\b/);
+      expect(top, `"${cls}" sits directly under the navbar and sets no top padding`).not.toBeNull();
+      expect(
+        Number(top![1]) * 4,
+        `"${cls}" gives ${Number(top![1]) * 4}px of clearance under a 64px navbar`,
+      ).toBeGreaterThanOrEqual(80);
+    }
+  });
+});
+
+describe('context travels with the click', () => {
+  const projectDetail = read('../client/src/pages/ProjectDetail.tsx');
+  const ai = read('../client/src/pages/AIAssistantPage.tsx');
+
+  it('AI Help from a project names that project', () => {
+    // It opened a bare /ai, so the assistant's project selector read "No
+    // specific project" for someone who had clicked from a project page.
+    // Confirmed in a browser before and after.
+    expect(projectDetail).toContain('window.open(`/ai?project=${projectId}`');
+  });
+
+  it('the assistant honours it only for a project the account can already see', () => {
+    // The id is a selector, not an authorization. It is applied only if it is
+    // in the list the server already returned for this session.
+    expect(ai).toContain("new URLSearchParams(search).get('project')");
+    expect(ai).toContain('selectableProjects.some(project => String(project.id) === requestedProjectId)');
+  });
+
+  it('and it does not fight a choice the reader has made', () => {
+    expect(ai).toContain("if (projectId !== 'none') return;");
+  });
+});

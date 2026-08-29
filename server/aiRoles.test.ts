@@ -170,10 +170,32 @@ describe('the page renders the authenticated role, and keeps the general compose
   it('reads the role from auth.me, with no override on the page', () => {
     expect(PAGE).toContain('trpc.auth.me.useQuery()');
     expect(PAGE).toContain('experienceFor(me?.userRole)');
-    // No local role picker, query param or prop - changing experience should
-    // require changing who you are signed in as.
+    // No local role picker or prop - changing experience must require changing
+    // who you are signed in as.
     expect(PAGE).not.toMatch(/useState[^\n]*role/i);
-    expect(PAGE).not.toMatch(/searchParams|useSearch\(/);
+    // The role is never derived from anything the address bar says.
+    expect(PAGE).not.toMatch(/experienceFor\([^)]*(search|param|query)/i);
+  });
+
+  it('reads EXACTLY ONE thing from the query string, and it is not the role', () => {
+    // This used to be a blanket ban on useSearch(), which was a proxy for the
+    // real rule rather than the rule. The project page's "AI Help" now hands
+    // the project over as /ai?project=<id> - context that was being lost
+    // between two correct screens - so the ban had to become specific: name
+    // every key read from the query string, and require that set to be exactly
+    // {project}. A ?role= or ?mode= appearing here fails this.
+    const keys = [...PAGE.matchAll(/URLSearchParams\([^)]*\)\.get\('([^']+)'\)/g)].map(m => m[1]);
+    expect(keys.sort()).toEqual(['project']);
+  });
+
+  it('and that one thing is a selector, checked against what the server returned', () => {
+    // An id in the address bar must not be able to name a project this account
+    // cannot see. It is applied only if it is in the list the server already
+    // returned for this session, and the server re-derives permission on every
+    // request regardless. Verified live: owner A's project id typed into owner
+    // B's address bar selects nothing and never renders A's title.
+    expect(PAGE).toContain('selectableProjects.some(project => String(project.id) === requestedProjectId)');
+    expect(PAGE).toContain('Number.isInteger(id) && id > 0');
   });
 
   it('renders the role title, tools and actions from the config', () => {
