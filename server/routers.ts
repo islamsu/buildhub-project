@@ -1246,6 +1246,24 @@ const marketplaceRouter = router({
         .orderBy(desc(products.featured), desc(products.createdAt))
         .limit(input.limit);
     }),
+  /**
+   * ONE VENDOR'S PUBLISHED CATALOGUE.
+   *
+   * The vendor detail page listed no products at all, so a buyer who found a
+   * supplier in the directory could see their rating and nothing they sell.
+   * Same visibility rule as `list`: published rows only, so a delisted product
+   * is no more visible here than it is on the marketplace.
+   */
+  vendorProducts: publicProcedure
+    .input(z.object({ vendorId: z.number().int().positive(), limit: z.number().int().positive().max(60).default(24) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(products)
+        .where(and(eq(products.supplierId, input.vendorId), eq(products.active, true)))
+        .orderBy(desc(products.createdAt))
+        .limit(input.limit);
+    }),
   get: publicProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
@@ -2470,6 +2488,40 @@ const messagesRouter = router({
       return { id: person.id, name, initials: name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase(), lastMessage: latest?.content ?? '', time: latest?.createdAt ? new Date(latest.createdAt).toLocaleDateString() : '', unread, role: person.userRole || 'Member' };
     });
   }),
+  /**
+   * WHO AM I ABOUT TO WRITE TO.
+   *
+   * `conversations` lists only people you have ALREADY exchanged messages
+   * with, so there was no way to open a thread with a vendor you just found:
+   * the messages page could select nothing, and the empty state's own advice -
+   * "conversations start when you contact a vendor from the marketplace" -
+   * described a route that did not exist.
+   *
+   * This resolves the display identity of one messageable account, for
+   * /messages?to=<id>. It reveals nothing new: messages.send already accepts
+   * any active account id and already answers NOT_FOUND identically for "no
+   * such user" and "not active", so this is the same oracle with the same
+   * answer, not a wider one. Name and role are exactly the two fields
+   * `conversations` would return the moment the first message is sent.
+   */
+  recipient: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    if (input.userId === ctx.user.id) throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot send a message to yourself.' });
+    const [person] = await db
+      .select({ id: users.id, name: users.name, userRole: users.userRole, accountStatus: users.accountStatus })
+      .from(users).where(eq(users.id, input.userId));
+    if (!person || person.accountStatus !== 'active') {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'That recipient is not available.' });
+    }
+    const name = person.name || 'BuildHub user';
+    return {
+      id: person.id,
+      name,
+      initials: name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase(),
+      role: person.userRole || 'Member',
+    };
+  }),
   list: protectedProcedure.input(z.object({ otherUserId: z.number().optional() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
@@ -2730,11 +2782,44 @@ const profileRouter = router({
   getPublic: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [target] = await db.select(PUBLIC_PROFILE_COLUMNS).from(users).where(eq(users.id, input.userId));
+    // accountStatus is read here and DELIBERATELY not returned: it decides
+    // whether the contact button is offered, and telling a stranger that a
+    // particular account is frozen is not the vendor's public record.
+    const [target] = await db
+      .select({ ...PUBLIC_PROFILE_COLUMNS, accountStatus: users.accountStatus })
+      .from(users).where(eq(users.id, input.userId));
     if (!target || !providerRoles.includes(target.userRole as typeof providerRoles[number])) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor profile not found' });
     }
-    return { ...target, completedProjects: await completedProjectCount(db, target.id) };
+    const { accountStatus, ...publicFields } = target;
+    // THE CONTACT MODEL, DERIVED - NOT INVENTED.
+    //
+    // Three tiers exist in this codebase already and this endpoint does not
+    // add a fourth:
+    //
+    //  PUBLIC     - what marketplace.vendors returns without a session: name,
+    //               location, verification, categories, reputation.
+    //  AUTHORIZED - this response, and the in-platform message channel.
+    //               messages.send already lets any signed-in account write to
+    //               any active account; that was a deliberate marketplace
+    //               decision recorded in an earlier audit, and it is the one
+    //               contact route BuildHub actually operates.
+    //  PRIVATE    - users.phone and users.email. They are not in
+    //               PUBLIC_PROFILE_COLUMNS and they are NOT added here. There
+    //               is no flow in this repository that releases a vendor's
+    //               direct line to a customer, so inventing one would be
+    //               inventing a business rule.
+    //
+    // `contactChannel` states which of those the reader is entitled to, so the
+    // page renders the truth rather than each client guessing.
+    return {
+      ...publicFields,
+      categories: await getVendorCategories(target.id),
+      completedProjects: await completedProjectCount(db, target.id),
+      // A frozen or deactivated vendor cannot receive messages - messages.send
+      // refuses them - so the page must not offer a button that will fail.
+      contactChannel: accountStatus === 'active' ? 'message' as const : 'none' as const,
+    };
   }),
   // A vendor's own profile, for the edit form. Identical field set to getPublic
   // (no additional private data) - self-scoping comes entirely from using

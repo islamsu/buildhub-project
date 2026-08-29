@@ -234,6 +234,22 @@
   }
 
   /* Subtle card hover */
+
+  /* A section you were sent to says so.
+     Sidebar entries like Catalogue and Performance jump to a section of the
+     workspace. When that section was already on screen the jump was invisible
+     and the click read as broken, which is what the click audit recorded. This
+     is the acknowledgement. */
+  [data-section-landed] {
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 6px;
+    border-radius: 0.75rem;
+    transition: outline-color 220ms ease-out;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-section-landed] { transition: none; }
+  }
+
   .card-hover {
     transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
   }

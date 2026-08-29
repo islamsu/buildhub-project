@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import VendorReputation from '@/components/VendorReputation';
-import { ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Calendar, MapPin, Star, Store } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Calendar, MapPin, MessageSquare, Package, Star, Store } from 'lucide-react';
 
 function initials(name: string | null | undefined) {
   if (!name) return '?';
@@ -19,7 +19,7 @@ export default function VendorProfile() {
   const { id } = useParams<{ id: string }>();
   const userId = Number(id);
   const { t, lang } = useLanguage();
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { isAuthenticated, loading: authLoading, user } = useAuth();
   const BackIcon = lang === 'ar' ? ArrowRight : ArrowLeft;
 
   // Public vendor profile access currently requires sign-in (protectedProcedure) -
@@ -30,6 +30,11 @@ export default function VendorProfile() {
     { userId },
     { enabled: isAuthenticated && Number.isFinite(userId) && userId > 0, retry: false },
   );
+  const { data: catalogue = [] } = trpc.marketplace.vendorProducts.useQuery(
+    { vendorId: userId },
+    { enabled: Number.isFinite(userId) && userId > 0 },
+  );
+  const isSelf = Boolean(user && (user as { id?: number }).id === userId);
 
   const Shell = ({ children }: { children: React.ReactNode }) => (
     <div className="min-h-screen bg-background" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
@@ -96,6 +101,21 @@ export default function VendorProfile() {
             <div className="flex items-center gap-2 text-muted-foreground"><Briefcase className="w-4 h-4 flex-shrink-0" /><span>{profile.completedProjects} {t('profile.completed_projects')}</span></div>
           </div>
 
+          {/* THE SERVICES THIS VENDOR DECLARED.
+              From vendorCategories - the same list that decides which RFQs
+              they are eligible for - so the page cannot advertise work the
+              matching engine would not send them. */}
+          {profile.categories.length > 0 && (
+            <div>
+              <h2 className="text-sm font-semibold mb-2">{t('vendor.services')}</h2>
+              <div className="flex flex-wrap gap-1.5" data-testid="vendor-categories">
+                {profile.categories.map(category => (
+                  <Badge key={category} variant="secondary" className="font-normal">{category}</Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <h2 className="text-sm font-semibold mb-1">{t('profile.bio_label')}</h2>
             {profile.bio ? (
@@ -104,8 +124,57 @@ export default function VendorProfile() {
               <p className="text-sm text-muted-foreground italic">{t('profile.empty_bio')}</p>
             )}
           </div>
+
+          {/* CONTACT.
+              BuildHub operates exactly one contact route between a customer
+              and a vendor: the in-platform thread. Phone and email are not
+              part of the public profile in this codebase and this page does
+              not become the first place they leak. The note says so, so nobody
+              reads the absence of a phone number as missing data. */}
+          <div className="border-t pt-4">
+            <h2 className="text-sm font-semibold mb-2">{t('vendor.contact')}</h2>
+            {isSelf ? (
+              <p className="text-sm text-muted-foreground">{t('vendor.contact.self')}</p>
+            ) : profile.contactChannel === 'message' ? (
+              <>
+                <Link href={`/messages?to=${userId}`}>
+                  <Button className="gap-2" data-testid="vendor-contact">
+                    <MessageSquare className="w-4 h-4" />{t('vendor.contact.cta')}
+                  </Button>
+                </Link>
+                <p className="mt-2 text-xs text-muted-foreground">{t('vendor.contact.note')}</p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground" data-testid="vendor-contact-unavailable">{t('vendor.contact.unavailable')}</p>
+            )}
+          </div>
         </CardContent>
       </Card>
+
+      {/* WHAT THEY SELL.
+          Published rows only, from marketplace.vendorProducts. A supplier
+          profile with a rating and no catalogue is not a vendor record. */}
+      {catalogue.length > 0 && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base"><Package className="w-4 h-4" /> {t('vendor.catalogue')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2" data-testid="vendor-catalogue">
+              {catalogue.map(product => (
+                <Link key={product.id} href={`/marketplace/products/${product.id}`}>
+                  <div className="rounded-xl border p-3 hover:border-primary/40 transition-colors cursor-pointer">
+                    <p className="font-medium text-sm truncate">{lang === 'ar' ? (product.nameAr || product.name) : product.name}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t('common.egp')} {Number(product.price).toLocaleString()}{product.unit ? ` / ${product.unit}` : ''}
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="mt-6">
         <CardHeader>

@@ -469,7 +469,12 @@ export default function RFQPage() {
             const statusStyle = STATUS_STYLES[rfq.status ?? 'open'] ?? STATUS_STYLES.open;
 
             return (
-              <Card key={rfq.id} className="card-hover transition-shadow hover:shadow-md">
+              /* NOT card-hover. The lift on hover said "this card is a link",
+                 and the card body is not one: it holds its own attachment
+                 links and its own CTAs, so making the whole card navigate
+                 would swallow them. The affordance now belongs to the "View
+                 details" button, which is what actually opens the request. */
+              <Card key={rfq.id} className="transition-shadow hover:shadow-md">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div className="flex-1 min-w-0">

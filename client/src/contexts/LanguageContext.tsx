@@ -551,6 +551,17 @@ const translations: Record<Language, Record<string, string>> = {
     // ── Vendor Profile ───────────────────────────────────────────────────────
     'profile.title': 'Vendor Profile',
     'profile.bio_label': 'Description',
+    // The vendor detail page. "Contact" says exactly what BuildHub operates -
+    // an in-platform thread - and never implies a phone number or an email
+    // address is being withheld, because neither is part of a vendor's public
+    // record in this product.
+    'vendor.services': 'Services offered',
+    'vendor.contact': 'Contact',
+    'vendor.contact.cta': 'Message this vendor',
+    'vendor.contact.note': 'Messages are exchanged on BuildHub. Direct phone numbers and email addresses are not published on vendor profiles.',
+    'vendor.contact.self': 'This is your own public profile. This is the page clients see.',
+    'vendor.contact.unavailable': 'This vendor is not accepting messages at the moment.',
+    'vendor.catalogue': 'Published products',
     'profile.bio_placeholder': 'Tell customers about your business…',
     'profile.location_label': 'Location',
     'profile.location_placeholder': 'e.g. Cairo, Egypt',
@@ -1530,6 +1541,13 @@ const translations: Record<Language, Record<string, string>> = {
     // ── Vendor Profile ───────────────────────────────────────────────────────
     'profile.title': 'الملف الشخصي للمزود',
     'profile.bio_label': 'الوصف',
+    'vendor.services': 'الخدمات المقدمة',
+    'vendor.contact': 'التواصل',
+    'vendor.contact.cta': 'راسل هذا المورد',
+    'vendor.contact.note': 'تتم المراسلة داخل BuildHub. أرقام الهاتف والبريد الإلكتروني المباشرة غير منشورة في ملفات المزودين.',
+    'vendor.contact.self': 'هذا ملفك العام. هذه هي الصفحة التي يراها العملاء.',
+    'vendor.contact.unavailable': 'هذا المورد لا يستقبل الرسائل حالياً.',
+    'vendor.catalogue': 'المنتجات المنشورة',
     'profile.bio_placeholder': 'أخبر العملاء عن نشاطك التجاري…',
     'profile.location_label': 'الموقع',
     'profile.location_placeholder': 'مثال: القاهرة، مصر',

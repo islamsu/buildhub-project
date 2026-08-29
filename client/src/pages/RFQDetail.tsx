@@ -76,6 +76,11 @@ export default function RFQDetail() {
   const account = user as { userRole?: string; onboardingStatus?: string } | null;
   const providerRoles = ['contractor', 'supplier', 'engineer', 'architect', 'project_manager'];
   const isProvider = isAuthenticated && providerRoles.includes(account?.userRole ?? '');
+  // Self-scoped on the server: myQuotations is approvedProviderProcedure and
+  // filters on quotations.providerId = ctx.user.id, so no id from this page
+  // can widen what comes back.
+  const { data: myQuotations = [] } = trpc.rfq.myQuotations.useQuery(undefined, { enabled: isProvider, retry: false });
+  const myQuotation = myQuotations.find(quote => quote.rfqId === rfqId);
   /**
    * A provider whose verification is not approved yet.
    *
@@ -270,9 +275,33 @@ export default function RFQDetail() {
               </div>
             )}
 
+            {/* YOUR OWN RESPONSE, ON THE REQUEST IT ANSWERS.
+                A provider who had already quoted saw nothing here, and their
+                own quotation existed only as an unclickable summary tile in
+                their workspace - there was no page anywhere that showed a
+                submitted response and its outcome. This is that record: read
+                from myQuotations, which is scoped to the caller on the server,
+                so it can only ever show the reader their own bid and never a
+                rival's. */}
+            {!isOwner && myQuotation && (
+              <div className="rounded-lg border p-4" data-testid="rfq-detail-my-quotation">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium">{ar ? 'ردك على هذا الطلب' : 'Your response to this request'}</p>
+                  <Badge variant={myQuotation.status === 'accepted' ? 'default' : 'secondary'}>
+                    {myQuotation.status ?? 'pending'}
+                  </Badge>
+                </div>
+                <div className="mt-2 grid gap-1 text-sm text-muted-foreground sm:grid-cols-3">
+                  <span>{ar ? 'السعر' : 'Price'}: {ar ? 'ج.م' : 'EGP'} {Number(myQuotation.price).toLocaleString()}</span>
+                  <span>{ar ? 'المدة' : 'Timeline'}: {myQuotation.timeline ?? '—'}</span>
+                  <span>{ar ? 'أُرسل' : 'Submitted'}: {new Date(myQuotation.createdAt).toLocaleDateString(ar ? 'ar-EG' : 'en-US')}</span>
+                </div>
+              </div>
+            )}
+
             {/* A provider is told plainly what they are NOT seeing and what it
                 costs, rather than being shown a gap they have to guess at. */}
-            {!isOwner && isProvider && (
+            {!isOwner && isProvider && !myQuotation && (
               <div className="rounded-lg border bg-muted/30 p-4" data-testid="rfq-detail-provider-panel">
                 <p className="text-sm font-medium">
                   {ar ? 'الرد على هذا الطلب' : 'Responding to this request'}

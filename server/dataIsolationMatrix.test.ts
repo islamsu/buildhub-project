@@ -80,6 +80,8 @@ function allProcedures(): Procedure[] {
 const DELIBERATELY_SHARED: Record<string, string> = {
   'marketplace.get':
     'The product catalogue is the shop window. Scoped instead by `active`: a withdrawn product is NOT_FOUND, same as an absent one.',
+  'marketplace.vendorProducts':
+    'One vendor\'s shop window, addressed by vendorId. Scoped by the same `active` predicate as marketplace.list, so it shows exactly the rows the catalogue already shows anyone - and a delisted product no more than the catalogue does.',
   'marketplace.questions':
     'Public Q&A on a public listing. Returns a column allowlist that omits askerId, so the thread cannot be walked back to the buyers.',
   'marketplace.askQuestion':
@@ -98,6 +100,23 @@ const DELIBERATELY_SHARED: Record<string, string> = {
     'One row from the OPEN FEED, addressed by id. Returns exactly the column allowlist rfq.list already gives every authenticated caller - and deliberately not `attachments`, which openQualifiedEnquiry charges a credit to reveal. An RFQ is addressed to providers; owner-scoping it would make a detail page impossible for the very people meant to respond.',
   'reviews.eligibleReviewees':
     'Answers "who on this project may I review", which is by definition about other people. Scoped by the project the caller is party to.',
+};
+
+/**
+ * THE ONLY LEGITIMATE REASON TO FILTER BY SOMEONE ELSE'S OWNER COLUMN.
+ *
+ * "Show me everything vendor X sells" is a question about another account's
+ * owner column by definition, and a vendor detail page cannot be written any
+ * other way. It is safe ONLY when every row it can return is already public,
+ * so an entry here is not a waiver: the test below re-reads the procedure and
+ * fails unless it also constrains on the public predicate. Listing something
+ * here that quietly returns private rows does not get it past this file.
+ */
+const PUBLIC_BY_OWNER: Record<string, { reason: string; mustAlsoConstrain: RegExp }> = {
+  'marketplace.vendorProducts': {
+    reason: 'One vendor\'s shop window. Every row it returns is already returned by marketplace.list to anyone at all; withholding it would only mean a vendor page that cannot show what the vendor sells.',
+    mustAlsoConstrain: /eq\(products\.active,\s*true\)/,
+  },
 };
 
 // Every procedure in every router...
@@ -125,6 +144,21 @@ describe('the census found the surface it is meant to police', () => {
     const names = new Set(PROCEDURES.map(p => p.qualified));
     for (const entry of Object.keys(DELIBERATELY_SHARED)) {
       expect(names, `${entry} is allowlisted but no longer exists`).toContain(entry);
+    }
+  });
+
+  it('an owner-column exception only holds if the procedure re-filters to the public rows', () => {
+    // The exception is earned, not declared. If marketplace.vendorProducts
+    // ever stops filtering on `active`, this fails and the procedure goes back
+    // to being an offender.
+    for (const [name, entry] of Object.entries(PUBLIC_BY_OWNER)) {
+      const procedure = ALL_PROCEDURES.find(p => p.qualified === name);
+      expect(procedure, `${name} is excepted but no longer exists`).toBeDefined();
+      expect(entry.reason.length, `${name} needs a reason`).toBeGreaterThan(40);
+      expect(
+        entry.mustAlsoConstrain.test(codeOnly(procedure!.body)),
+        `${name} filters by an owner id from the request but no longer restricts itself to publicly visible rows`,
+      ).toBe(true);
     }
   });
 
@@ -190,6 +224,7 @@ describe('an id is never trusted as a substitute for the session', () => {
       if (/^(adminWith\(|superAdminProcedure|adminProcedure)/.test(procedure.tier)) continue;
       const code = codeOnly(procedure.body);
       if (/eq\(\w+\.(ownerId|userId|senderId|authorId|supplierId|askerId|reviewerId|requesterId|providerId),[^)]*input\./.test(code)) {
+        if (procedure.qualified in PUBLIC_BY_OWNER) continue;
         offenders.push(procedure.qualified);
       }
     }

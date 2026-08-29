@@ -21,75 +21,104 @@ import {
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, ShoppingBag, FileText, MessageSquare, Bot, Star, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, BookOpenCheck, CreditCard } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import LanguageToggle from "./LanguageToggle";
+import { workspaceHref, type SectionId, type WorkspaceRole } from "@shared/roleWorkspaceSections";
+import { useHashSection, revealSection } from "@/hooks/useSectionAnchor";
 
-const HOMEOWNER_MENU_KEYS = [
-  { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/homeowner' },
+/**
+ * THE ROLE MENUS.
+ *
+ * Every entry names a destination. Where that destination is a section of the
+ * role workspace, the entry carries the section id and the href is built by
+ * `workspaceHref`, which refuses to produce an anchor for a section the role
+ * does not render. Four contractor entries, three supplier entries and four
+ * project-manager entries used to share the bare `/platform/:role` path: they
+ * all rendered as active at the same time and clicking any of them did
+ * nothing. See shared/roleWorkspaceSections.ts.
+ *
+ * An entry with no destination is not listed. "Reviews" pointed at /messages
+ * and "Settings" at the workspace root; reviews are written on a completed
+ * project and there is no settings page, so neither is advertised as a place
+ * to go. Editing your own profile IS real, so it is listed as Profile and
+ * points at the section that holds the editor.
+ */
+type MenuItem = {
+  icon: typeof LayoutDashboard;
+  labelKey: string;
+  path: string;
+  section?: SectionId;
+};
+
+const COMPLIANCE_MENU_ITEM = { icon: Shield, labelKey: 'platform.compliance', path: '/compliance' } as const;
+
+function workspaceItem(role: WorkspaceRole, icon: typeof LayoutDashboard, labelKey: string, section: SectionId): MenuItem {
+  return { icon, labelKey, path: workspaceHref(role, section), section };
+}
+
+const HOMEOWNER_MENU_KEYS: MenuItem[] = [
+  workspaceItem('homeowner', LayoutDashboard, 'dash.overview', 'role-overview'),
   { icon: FolderOpen, labelKey: 'dash.projects', path: '/dashboard' },
   { icon: ShoppingBag, labelKey: 'nav.marketplace', path: '/marketplace' },
   { icon: FileText, labelKey: 'dash.get_quotes', path: '/rfq' },
   { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
   { icon: Bot, labelKey: 'dash.ai', path: '/ai' },
-  { icon: Star, labelKey: 'dash.reviews', path: '/messages' },
-  { icon: Settings, labelKey: 'dash.settings', path: '/platform/homeowner' },
+  workspaceItem('homeowner', Settings, 'profile.title', 'role-profile'),
 ];
 
-const COMPLIANCE_MENU_ITEM = { icon: Shield, labelKey: 'platform.compliance', path: '/compliance' } as const;
-
-const ROLE_MENU_KEYS = {
+const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
+  homeowner: HOMEOWNER_MENU_KEYS,
   contractor: [
-    { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/contractor' },
+    workspaceItem('contractor', LayoutDashboard, 'dash.overview', 'role-overview'),
     COMPLIANCE_MENU_ITEM,
-    { icon: ClipboardList, labelKey: 'platform.pipeline', path: '/platform/contractor' },
+    workspaceItem('contractor', ClipboardList, 'platform.pipeline', 'role-pipeline'),
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
-    { icon: FolderOpen, labelKey: 'platform.projects', path: '/platform/contractor' },
+    workspaceItem('contractor', FolderOpen, 'platform.projects', 'role-projects'),
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
-    { icon: BarChart3, labelKey: 'platform.performance', path: '/platform/contractor' },
+    workspaceItem('contractor', BarChart3, 'platform.performance', 'role-performance'),
   ],
   engineer: [
-    { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/engineer' },
+    workspaceItem('engineer', LayoutDashboard, 'dash.overview', 'role-overview'),
     COMPLIANCE_MENU_ITEM,
-    { icon: PenTool, labelKey: 'platform.documents', path: '/platform/engineer' },
-    { icon: BriefcaseBusiness, labelKey: 'platform.project_queue', path: '/platform/engineer' },
+    workspaceItem('engineer', PenTool, 'platform.documents', 'role-documents'),
+    workspaceItem('engineer', BriefcaseBusiness, 'platform.project_queue', 'role-projects'),
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
-    { icon: BarChart3, labelKey: 'platform.performance', path: '/platform/engineer' },
+    workspaceItem('engineer', BarChart3, 'platform.performance', 'role-performance'),
   ],
   architect: [
-    { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/architect' },
+    workspaceItem('architect', LayoutDashboard, 'dash.overview', 'role-overview'),
     COMPLIANCE_MENU_ITEM,
-    { icon: PenTool, labelKey: 'platform.portfolio', path: '/platform/architect' },
-    { icon: FolderOpen, labelKey: 'platform.projects', path: '/platform/architect' },
+    workspaceItem('architect', PenTool, 'platform.portfolio', 'role-portfolio'),
+    workspaceItem('architect', FolderOpen, 'platform.projects', 'role-projects'),
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
-    { icon: BarChart3, labelKey: 'platform.performance', path: '/platform/architect' },
+    workspaceItem('architect', BarChart3, 'platform.performance', 'role-performance'),
   ],
   supplier: [
-    { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/supplier' },
+    workspaceItem('supplier', LayoutDashboard, 'dash.overview', 'role-overview'),
     COMPLIANCE_MENU_ITEM,
-    { icon: Package, labelKey: 'platform.catalogue', path: '/platform/supplier' },
+    workspaceItem('supplier', Package, 'platform.catalogue', 'role-catalogue'),
     { icon: ClipboardList, labelKey: 'platform.review_requests', path: '/rfq' },
     { icon: ShoppingBag, labelKey: 'nav.marketplace', path: '/marketplace/products' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
-    { icon: BarChart3, labelKey: 'platform.performance', path: '/platform/supplier' },
+    workspaceItem('supplier', BarChart3, 'platform.performance', 'role-performance'),
   ],
   project_manager: [
-    { icon: LayoutDashboard, labelKey: 'dash.overview', path: '/platform/project_manager' },
+    workspaceItem('project_manager', LayoutDashboard, 'dash.overview', 'role-overview'),
     COMPLIANCE_MENU_ITEM,
-    { icon: KanbanSquare, labelKey: 'platform.project_queue', path: '/platform/project_manager' },
-    { icon: FolderOpen, labelKey: 'platform.projects', path: '/platform/project_manager' },
+    workspaceItem('project_manager', KanbanSquare, 'platform.project_queue', 'role-queue'),
+    { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: Users, labelKey: 'platform.team', path: '/messages' },
-    { icon: BookOpenCheck, labelKey: 'platform.documents', path: '/platform/project_manager' },
-    { icon: BarChart3, labelKey: 'platform.performance', path: '/platform/project_manager' },
+    workspaceItem('project_manager', BarChart3, 'platform.performance', 'role-performance'),
   ],
-} as const;
+};
 
-const ADMIN_MENU_KEYS = [
+const ADMIN_MENU_KEYS: MenuItem[] = [
   { icon: LayoutDashboard, labelKey: 'admin.title', path: '/admin' },
   { icon: Users, labelKey: 'admin.users', path: '/admin/users' },
   { icon: Shield, labelKey: 'admin.pending_verifications', path: '/admin/compliance' },
@@ -193,8 +222,42 @@ function DashboardLayoutContent({
     : ROLE_MENU_KEYS[userRole as keyof typeof ROLE_MENU_KEYS] ?? HOMEOWNER_MENU_KEYS;
   const menuItems = menuKeys.map(item => ({ ...item, label: t(item.labelKey) }));
 
-  const activeMenuItem = menuItems.find(item => item.path === location)
-    ?? (location === '/admin' ? menuItems.find(item => item.path === '/admin') : undefined);
+  // WHICH ITEM IS ACTUALLY CURRENT.
+  //
+  // `location` is the path alone, so comparing it to a menu path marked every
+  // workspace entry active at once - Overview, Pipeline, Projects and
+  // Performance all lit up together on /platform/contractor. The section in
+  // the address bar is what separates them.
+  const hashSection = useHashSection();
+  const isCurrent = (item: MenuItem) => {
+    const [itemPath] = item.path.split('#');
+    if (itemPath !== location) return false;
+    if (!item.section) return true;
+    // With no section in the URL the workspace is showing its top, which is
+    // what Overview means; every other section entry is inactive.
+    return hashSection ? item.section === hashSection : item.section === 'role-overview';
+  };
+  const activeMenuItem = menuItems.find(isCurrent);
+
+  /**
+   * Going to a section of the page you are already on.
+   *
+   * setLocation cannot express this: wouter compares paths, so navigating from
+   * /platform/supplier to /platform/supplier#role-catalogue is a no-op to the
+   * router and the click produces nothing at all. Pushing the hash directly and
+   * announcing it keeps back/forward working and gives the click a visible
+   * consequence even when the section is already on screen.
+   */
+  const goTo = (item: MenuItem) => {
+    const [itemPath, itemHash] = item.path.split('#');
+    if (itemPath !== location) { setLocation(item.path); return; }
+    const next = itemHash ? `${itemPath}#${itemHash}` : itemPath;
+    if (window.location.pathname + window.location.hash !== next) {
+      window.history.pushState(null, '', next);
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    }
+    if (itemHash) revealSection(itemHash);
+  };
 
   useEffect(() => {
     if (isCollapsed) {
@@ -261,12 +324,14 @@ function DashboardLayoutContent({
           <SidebarContent className="gap-0">
             <SidebarMenu className="px-2 py-1">
               {menuItems.map(item => {
-                const isActive = location === item.path;
+                const isActive = isCurrent(item);
                 return (
                   <SidebarMenuItem key={`${item.path}-${item.labelKey}`}>
                     <SidebarMenuButton
                       isActive={isActive}
-                      onClick={() => setLocation(item.path)}
+                      aria-current={isActive ? 'page' : undefined}
+                      data-testid={`nav-${item.labelKey}`}
+                      onClick={() => goTo(item)}
                       tooltip={item.label}
                       className={`h-10 transition-all font-normal`}
                     >

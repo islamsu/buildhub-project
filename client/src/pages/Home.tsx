@@ -403,15 +403,19 @@ export default function Home() {
                   { label: t('roles.supplier'), href: '/auth' },
                 ],
               },
-              {
-                title: lang === 'ar' ? 'الشركة' : 'Company',
-                links: [
-                  { label: lang === 'ar' ? 'عن BuildHub' : 'About Us', href: '/' },
-                  { label: lang === 'ar' ? 'تواصل معنا' : 'Contact', href: '/' },
-                  { label: lang === 'ar' ? 'الخصوصية' : 'Privacy Policy', href: '/' },
-                  { label: lang === 'ar' ? 'الشروط' : 'Terms of Service', href: '/' },
-                ],
-              },
+              /* THE "COMPANY" COLUMN IS GONE, ON PURPOSE.
+                 It listed About Us, Contact, Privacy Policy and Terms of
+                 Service. All four pointed at href '/' - the page the reader was
+                 already on - so all four did nothing. A live click audit
+                 confirmed it from every page of the site.
+                 Three of them cannot be fixed in code: an about page, a support
+                 address and two legal documents are things BuildHub has to
+                 decide and publish, and writing a privacy policy or terms of
+                 service on the owner's behalf would be inventing a commitment
+                 the company has not made. Advertising them and delivering
+                 nothing is worse than not advertising them, so they are
+                 withdrawn until there is something to link to. Recorded as an
+                 OWNER DECISION in the zero-gap audit. */
             ].map(col => (
               <div key={col.title}>
                 <h4 className="font-semibold text-background mb-4 text-sm uppercase tracking-wide">{col.title}</h4>

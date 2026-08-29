@@ -11,7 +11,7 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
-import { Link } from 'wouter';
+import { Link, useSearch } from 'wouter';
 import {
   MessageSquare, Bell, Send, Paperclip, Search, CheckCheck,
   Clock, FileText, Image, ChevronRight,
@@ -52,6 +52,7 @@ export default function MessagesPage() {
 
   // Was `useState(1)`. A default of 1 is a real user id, and combined with the
   // fabricated conversation list it aimed the composer at that account.
+  const search = useSearch();
   const [selectedConv, setSelectedConv] = useState<number | null>(null);
   const [messageText, setMessageText] = useState('');
   const [searchConv, setSearchConv] = useState('');
@@ -66,9 +67,29 @@ export default function MessagesPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [selectedConv, persistedMessages]);
 
+  // OPENING A THREAD WITH SOMEONE WHO HAS NOT WRITTEN TO YOU YET.
+  //
+  // /messages?to=<userId>. The empty state on this very page tells people that
+  // "conversations start when you contact a vendor from the marketplace" -
+  // that route did not exist, because `conversations` returns only accounts
+  // with an existing message and nothing could select anyone else. This is the
+  // route. The id in the query string is a SELECTOR: the server re-resolves
+  // who that is and refuses anything that is not an active account, exactly as
+  // messages.send does.
+  const requestedRecipientId = (() => {
+    const raw = new URLSearchParams(search).get('to');
+    const id = Number(raw);
+    return raw && Number.isInteger(id) && id > 0 ? id : null;
+  })();
+  const { data: requestedRecipient } = trpc.messages.recipient.useQuery(
+    { userId: requestedRecipientId ?? 0 },
+    { enabled: isAuthenticated && requestedRecipientId !== null, retry: false },
+  );
+
   useEffect(() => {
+    if (requestedRecipientId !== null) { setSelectedConv(requestedRecipientId); return; }
     if (persistedConversations.length > 0 && !persistedConversations.some(conversation => conversation.id === selectedConv)) setSelectedConv(persistedConversations[0].id);
-  }, [persistedConversations, selectedConv]);
+  }, [persistedConversations, selectedConv, requestedRecipientId]);
 
   if (!isAuthenticated) {
     return (
@@ -83,7 +104,12 @@ export default function MessagesPage() {
     );
   }
 
-  const conversations = persistedConversations;
+  // The requested recipient joins the list until the first message makes it a
+  // real conversation. Placed first so the person you just chose to contact is
+  // the one selected, and never duplicated if you already have a thread.
+  const conversations = requestedRecipient && !persistedConversations.some(c => c.id === requestedRecipient.id)
+    ? [{ ...requestedRecipient, lastMessage: '', time: '', unread: 0 }, ...persistedConversations]
+    : persistedConversations;
   const filteredConvs = conversations.filter(c =>
     !searchConv || c.name.toLowerCase().includes(searchConv.toLowerCase())
   );

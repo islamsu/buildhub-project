@@ -146,6 +146,9 @@ describe('§1 every procedure is pinned to a tier', () => {
       'marketplace.platformStats',
       'marketplace.questions',
       'marketplace.vendorCategories',
+      // One vendor's published catalogue, for the vendor detail page. Public
+      // for the same reason marketplace.list is: it is the shop window.
+      'marketplace.vendorProducts',
       'marketplace.vendors',
       // A vendor's public reputation, shown on their profile.
       'reviews.forUser',

@@ -232,7 +232,10 @@ describe('the notification list follows the link it was given', () => {
   });
 
   it('it navigates in-app rather than reloading the page', () => {
-    expect(MESSAGES).toContain("import { Link } from 'wouter'");
+    // The property is "the router handles it", not the exact import line -
+    // the page later needed useSearch from the same module and that is not a
+    // regression in how a notification navigates.
+    expect(MESSAGES).toMatch(/import \{[^}]*\bLink\b[^}]*\} from 'wouter'/);
     expect(MESSAGES).not.toMatch(/<a href=\{n\.link\}/);
   });
 
