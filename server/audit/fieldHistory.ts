@@ -80,8 +80,9 @@ export async function recordFieldChange(db: unknown, change: FieldChange): Promi
     if (!isRecordableField(change.field)) return;
     // Nothing changed, nothing to record. Without this every save writes a row
     // per untouched field and the history becomes unreadable exactly when
-    // somebody needs it.
-    if (change.oldValue === change.newValue) return;
+    // somebody needs it - and, worse, records price changes that never
+    // happened. See valuesEqual for why this is not a string comparison.
+    if (valuesEqual(change.oldValue, change.newValue)) return;
     await (db as { insert: (t: unknown) => { values: (v: unknown) => Promise<unknown> } })
       .insert(fieldValueHistory).values({
         subjectType: change.subjectType,
@@ -115,6 +116,41 @@ export async function recordFieldChanges(
 }
 
 /**
+ * ARE THESE THE SAME VALUE?
+ *
+ * Not `===` on the strings, and the difference is not cosmetic. A DECIMAL(12,2)
+ * column reads back as "1720.00" while the patch that "changed" it supplies
+ * 1720, so a save that altered nothing compared "1720.00" against "1720",
+ * called it a change, and wrote a history row saying the price moved from
+ * 1720.00 to 1720.
+ *
+ * Found by saving a product twice in a browser. Nothing in the unit tests
+ * could see it: they pass the same string shape to both sides, which is
+ * exactly what the database does not do.
+ *
+ * That phantom row is worse than clutter. The history is read by an
+ * administrator settling a dispute, and a fabricated price change is precisely
+ * the kind of thing that would be taken as evidence of one.
+ *
+ * So numeric values are compared as numbers. Everything else is compared as
+ * text. The values RECORDED stay exactly as the database and the caller gave
+ * them - "1450.00" is what the column held and 1600 is what the supplier
+ * typed, and rewriting either into a tidier form would be inventing a figure
+ * neither side used.
+ */
+export function valuesEqual(a: string | null, b: string | null): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  const left = Number(a);
+  const right = Number(b);
+  // Both sides must be genuine numbers. Number('') is 0 and Number(' ') is 0,
+  // so blank-vs-zero would otherwise compare equal and hide a real edit.
+  if (a.trim() === '' || b.trim() === '') return false;
+  if (Number.isFinite(left) && Number.isFinite(right)) return left === right;
+  return false;
+}
+
+/**
  * How a value is written down. Deliberately simple and lossless enough to read:
  * null becomes null (an absent value), everything else its string form. A
  * decimal column arrives as a string already, so "1450.00" stays exactly that
@@ -141,7 +177,7 @@ export async function recordChangedFields(
   const moved = fields
     .filter(field => field in after)
     .map(field => ({ field, oldValue: before[field], newValue: after[field] }))
-    .filter(entry => stringifyValue(entry.oldValue) !== stringifyValue(entry.newValue));
+    .filter(entry => !valuesEqual(stringifyValue(entry.oldValue), stringifyValue(entry.newValue)));
   await recordFieldChanges(db, common, moved);
 }
 

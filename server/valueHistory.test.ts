@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs';
 import { readSourceForAssertions } from './_testing/sourceText';
 import {
   HISTORY_FIELDS, isRecordableField, recordChangedFields, recordFieldChange,
-  recordFieldChanges, stringifyValue,
+  recordFieldChanges, stringifyValue, valuesEqual,
 } from './audit/fieldHistory';
 
 const read = (p: string) => readSourceForAssertions(readFileSync(new URL(p, import.meta.url), 'utf8'));
@@ -62,6 +62,50 @@ describe('what it records', () => {
   it('an absent value is null, not the string "null"', () => {
     expect(stringifyValue(null)).toBeNull();
     expect(stringifyValue(undefined)).toBeNull();
+  });
+
+  // ── The phantom price change ─────────────────────────────────────────────
+  //
+  // Found by saving a product twice in a browser, not by any test here: a
+  // DECIMAL column reads back "1720.00" while the patch supplies 1720, so a
+  // save that altered nothing recorded a price moving from 1720.00 to 1720.
+  // An administrator settling a dispute would read that as a real change.
+  //
+  // The unit tests could not have caught it, because they hand the same string
+  // shape to both sides - which is exactly what the database does not do.
+  it('a decimal that reads back with scale is NOT a change', async () => {
+    const { db, rows } = stubDb();
+    await recordFieldChange(db, { ...common, field: 'price', oldValue: '1720.00', newValue: '1720' });
+    expect(rows, 'a save that changed nothing must record nothing').toHaveLength(0);
+  });
+
+  it('and neither is 0 vs 0.00, or 1e3 vs 1000', () => {
+    for (const [a, b] of [['1720.00', '1720'], ['0.00', '0'], ['1000', '1e3'], ['5.50', '5.5']]) {
+      expect(valuesEqual(a, b), `${a} vs ${b}`).toBe(true);
+    }
+  });
+
+  it('but a REAL price change still is one', async () => {
+    // POSITIVE CONTROL. A numeric comparison that returned true for everything
+    // would satisfy every assertion above and silently switch the feature off.
+    const { db, rows } = stubDb();
+    await recordFieldChange(db, { ...common, field: 'price', oldValue: '1720.00', newValue: '1721' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ oldValue: '1720.00', newValue: '1721' });
+  });
+
+  it('an empty value is never numerically equal to zero', () => {
+    // Number('') is 0, so a blank-vs-zero edit would otherwise vanish - and
+    // clearing a price is exactly the kind of change worth recording.
+    expect(valuesEqual('', '0')).toBe(false);
+    expect(valuesEqual(' ', '0')).toBe(false);
+    expect(valuesEqual(null, '0')).toBe(false);
+  });
+
+  it('non-numeric text is still compared as text', () => {
+    expect(valuesEqual('pending', 'accepted')).toBe(false);
+    expect(valuesEqual('pending', 'pending')).toBe(true);
+    expect(valuesEqual('true', 'false')).toBe(false);
   });
 
   it('records nothing when the value did not move', async () => {
