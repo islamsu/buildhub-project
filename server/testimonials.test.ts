@@ -48,6 +48,57 @@ describe('the invented testimonials stay gone', () => {
   });
 });
 
+/**
+ * THE GUARD WAS WATCHING THE WRONG FILE.
+ *
+ * Everything above reads Home.tsx, and Home.tsx has been clean since the
+ * carousel was removed. The TRANSLATION CATALOGUE still carried a SECOND,
+ * DIFFERENT set of invented customers that no assertion here ever looked at:
+ *
+ *   'testimonials.title'   "Trusted by Thousands"
+ *   'testimonials.1.name'  "Layla Ahmed"        / "ليلى أحمد"
+ *   'testimonials.2.name'  "Khaled Mostafa"     / "خالد مصطفى"
+ *   'testimonials.3.name'  "Nour Hassan"        / "نور حسن"
+ *   'testimonials.2.text'  "My business has grown 40% since joining."
+ *
+ * Twenty-four keys, twelve English and twelve Arabic, with names, cities,
+ * professions and a quantified revenue claim attributed to a person who does
+ * not exist. Nothing rendered them - and that is the whole reason they
+ * survived a removal that was otherwise thorough. They shipped in the bundle
+ * and were one t('testimonials.1.name') away from being published.
+ *
+ * These tests read the catalogue, so the next set cannot hide in it either.
+ */
+describe('no invented endorsement survives in the translation catalogue', () => {
+  const catalogue = readFileSync(new URL('../client/src/contexts/LanguageContext.tsx', import.meta.url), 'utf8');
+
+  it('there are no testimonial keys at all', () => {
+    expect([...catalogue.matchAll(/'testimonials\.[^']*'/g)]).toEqual([]);
+  });
+
+  it('none of the invented customers is named, in either language', () => {
+    for (const name of [
+      'Layla Ahmed', 'Khaled Mostafa', 'Nour Hassan',
+      'ليلى أحمد', 'خالد مصطفى', 'نور حسن',
+    ]) {
+      expect(catalogue, `${name} is an invented customer`).not.toContain(name);
+    }
+  });
+
+  it('no quantified business claim is attributed to anybody', () => {
+    for (const claim of ['grown 40%', 'نمت أعمالي بنسبة 40%']) {
+      expect(catalogue).not.toContain(claim);
+    }
+  });
+
+  it('and the product does not claim to be trusted by thousands', () => {
+    // A volume claim about a platform with no launched user base is the same
+    // fabrication as a named quote, with the name left off.
+    expect(catalogue).not.toContain('Trusted by Thousands');
+    expect(catalogue).not.toContain('موثوق به من الآلاف');
+  });
+});
+
 describe('if a carousel is ever added back, it must be usable', () => {
   const hasCarousel = homeSource.includes('aria-roledescription="carousel"');
 
