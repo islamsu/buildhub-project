@@ -1656,10 +1656,29 @@ const marketplaceRouter = router({
     // that a withdrawn product and an absent one are the same answer to a
     // buyer; a question thread attached to a product the supplier has delisted
     // contradicted that, and had nowhere to be displayed.
-    const [product] = await db.select({ id: products.id }).from(products)
+    const [product] = await db.select({ id: products.id, name: products.name, supplierId: products.supplierId })
+      .from(products)
       .where(and(eq(products.id, input.productId), eq(products.active, true)));
     if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
     const result = await db.insert(productQuestions).values({ productId: input.productId, askerId: ctx.user.id, question: input.question });
+    // The supplier is the only person who can answer, and nothing told them a
+    // question existed. Every thread stayed one-sided while the buyer-facing
+    // listing implied a reply was coming.
+    //
+    // The asker's identity is deliberately NOT in the notification: the Q&A is
+    // public on the listing and marketplace.questions omits askerId precisely
+    // so the thread cannot be walked back to the buyers.
+    if (product.supplierId && product.supplierId !== ctx.user.id) {
+      await notifyUser(db, {
+        userId: product.supplierId,
+        title: 'New question on your product',
+        body: `Someone asked a question about "${product.name}"`,
+        type: 'product',
+        link: `/marketplace/products/${input.productId}`,
+        messageKey: 'notif.product.question',
+        messageParams: { productName: product.name },
+      });
+    }
     return { id: Number(result[0].insertId) };
   }),
   /**
@@ -1694,7 +1713,9 @@ const marketplaceRouter = router({
         .select({
           questionId: productQuestions.id,
           productId: productQuestions.productId,
+          askerId: productQuestions.askerId,
           answer: productQuestions.answer,
+          productName: products.name,
           supplierId: products.supplierId,
           active: products.active,
         })
@@ -1725,6 +1746,19 @@ const marketplaceRouter = router({
         action: 'product_question_answered',
         detail: `question ${input.questionId}`,
       });
+      // And the person who asked is told there is an answer, on the listing
+      // that now carries it.
+      if (row.askerId && row.askerId !== ctx.user.id) {
+        await notifyUser(db, {
+          userId: row.askerId,
+          title: 'Your question was answered',
+          body: `The supplier answered your question about "${row.productName}"`,
+          type: 'product',
+          link: `/marketplace/products/${row.productId}`,
+          messageKey: 'notif.product.answered',
+          messageParams: { productName: row.productName ?? '' },
+        });
+      }
       return { id: input.questionId };
     }),
   /**
@@ -2611,6 +2645,25 @@ const messagesRouter = router({
     }
 
     const result = await db.insert(messages).values({ ...input, senderId: ctx.user.id });
+    // THE RECIPIENT IS TOLD.
+    //
+    // Nothing notified anyone about a message, so the in-platform thread - the
+    // ONE contact channel BuildHub operates between a customer and a vendor -
+    // was silent until the other person happened to open /messages. That made
+    // "Contact this vendor" a message into a void.
+    //
+    // The link opens the conversation with the SENDER, which is the thread the
+    // notification is about. Best-effort by design: notifyUser never throws, so
+    // a notification problem cannot fail a message that was already stored.
+    await notifyUser(db, {
+      userId: input.receiverId,
+      title: 'New message',
+      body: `${ctx.user.name || 'A BuildHub user'} sent you a message`,
+      type: 'message',
+      link: `/messages?to=${ctx.user.id}`,
+      messageKey: 'notif.message.received',
+      messageParams: { senderName: ctx.user.name || 'A BuildHub user' },
+    });
     return { id: Number(result[0].insertId), ...input, senderId: ctx.user.id };
   }),
   uploadAttachment: protectedProcedure.input(z.object({ fileName: z.string().min(1).max(255), contentType: z.string().startsWith('image/').or(z.literal('application/pdf')), base64: z.string().max(11_000_000) })).mutation(async ({ ctx, input }) => {

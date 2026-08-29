@@ -53,6 +53,7 @@ export default function MessagesPage() {
   // Was `useState(1)`. A default of 1 is a real user id, and combined with the
   // fabricated conversation list it aimed the composer at that account.
   const search = useSearch();
+  const [tab, setTab] = useState<string>('messages');
   const [selectedConv, setSelectedConv] = useState<number | null>(null);
   const [messageText, setMessageText] = useState('');
   const [searchConv, setSearchConv] = useState('');
@@ -87,7 +88,9 @@ export default function MessagesPage() {
   );
 
   useEffect(() => {
-    if (requestedRecipientId !== null) { setSelectedConv(requestedRecipientId); return; }
+    // Arriving with a recipient in the URL means "show me this conversation",
+    // whichever tab was last open.
+    if (requestedRecipientId !== null) { setSelectedConv(requestedRecipientId); setTab('messages'); return; }
     if (persistedConversations.length > 0 && !persistedConversations.some(conversation => conversation.id === selectedConv)) setSelectedConv(persistedConversations[0].id);
   }, [persistedConversations, selectedConv, requestedRecipientId]);
 
@@ -155,7 +158,14 @@ export default function MessagesPage() {
       <Navbar />
       <div className="container pt-24 pb-16">
         <h1 className="text-3xl font-bold mb-6">{t('dash.messages')} & {t('dash.notifications')}</h1>
-        <Tabs defaultValue="messages">
+        {/* CONTROLLED, because a notification decides which tab is right.
+            A message notification links to /messages?to=<sender>. The router
+            stays on the same route, so the component does not remount and an
+            uncontrolled Tabs kept whatever tab the reader was on - which, since
+            they arrived by clicking a notification, was the notifications tab.
+            The conversation opened correctly and was hidden behind the tab they
+            were already looking at. */}
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="mb-6">
             <TabsTrigger value="messages" className="gap-2">
               <MessageSquare className="w-4 h-4" /> {t('dash.messages')}

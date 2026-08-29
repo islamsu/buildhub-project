@@ -34,7 +34,13 @@ import {
 
 type RoleCardAction = { label: string; icon: React.ComponentType<{ className?: string }>; onClick: () => void; tone: string };
 
-type Metric = { label: string; value: string | number; icon: React.ComponentType<{ className?: string }>; tone: string };
+/**
+ * `section` is where this number LIVES. A KPI that counts records the reader
+ * can then go and look at is navigation; one that counts records with no
+ * surface is decoration. Metrics without a section stay deliberately
+ * non-interactive rather than becoming a card that looks clickable and is not.
+ */
+type Metric = { label: string; value: string | number; icon: React.ComponentType<{ className?: string }>; tone: string; section?: SectionId };
 
 function compactNumber(value: number): string {
   return value.toLocaleString();
@@ -194,25 +200,28 @@ export default function RolePlatform() {
     : 0;
 
   const metrics: Metric[] = role === 'homeowner' ? [
-    { label: lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects', value: projects.length, icon: FolderKanban, tone: 'text-blue-600 bg-blue-50' },
-    { label: t('dash.active_projects'), value: activeProjects.length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50' },
+    { label: lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects', value: projects.length, icon: FolderKanban, tone: 'text-blue-600 bg-blue-50', section: 'role-projects' },
+    { label: t('dash.active_projects'), value: activeProjects.length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50', section: 'role-projects' },
     { label: t('project.budget'), value: `${t('common.egp')} ${compactNumber(projects.reduce((sum, project) => sum + Number(project.budget ?? 0), 0))}`, icon: DollarSign, tone: 'text-amber-600 bg-amber-50' },
     { label: t('dash.total_spent'), value: `${t('common.egp')} ${compactNumber(projects.reduce((sum, project) => sum + Number(project.spent ?? 0), 0))}`, icon: BarChart3, tone: 'text-violet-600 bg-violet-50' },
   ] : role === 'supplier' ? [
-    { label: lang === 'ar' ? 'المنتجات المدرجة' : 'Listed Products', value: products.length, icon: Package, tone: 'text-orange-600 bg-orange-50' },
-    { label: lang === 'ar' ? 'طلبات مفتوحة' : 'Open Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-blue-600 bg-blue-50' },
-    { label: lang === 'ar' ? 'مخزون منخفض' : 'Low Stock', value: products.filter(product => Number(product.stock ?? 0) < 10).length, icon: PackagePlus, tone: 'text-rose-600 bg-rose-50' },
-    { label: lang === 'ar' ? 'عروض الأسعار' : 'My Quotations', value: myQuotations.length, icon: FileText, tone: 'text-violet-600 bg-violet-50' },
+    { label: lang === 'ar' ? 'المنتجات المدرجة' : 'Listed Products', value: products.length, icon: Package, tone: 'text-orange-600 bg-orange-50', section: 'role-catalogue' },
+    { label: lang === 'ar' ? 'طلبات مفتوحة' : 'Open Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-blue-600 bg-blue-50', section: 'role-rfqs' },
+    { label: lang === 'ar' ? 'مخزون منخفض' : 'Low Stock', value: products.filter(product => Number(product.stock ?? 0) < 10).length, icon: PackagePlus, tone: 'text-rose-600 bg-rose-50', section: 'role-catalogue' },
+    { label: lang === 'ar' ? 'عروض الأسعار' : 'My Quotations', value: myQuotations.length, icon: FileText, tone: 'text-violet-600 bg-violet-50', section: 'role-quotations' },
   ] : role === 'project_manager' ? [
-    { label: t('platform.projects'), value: projectDirectory.length, icon: FolderKanban, tone: 'text-cyan-600 bg-cyan-50' },
-    { label: t('dash.active_projects'), value: projectDirectory.filter(project => project.status === 'active').length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50' },
-    { label: lang === 'ar' ? 'متوسط الإنجاز' : 'Average Progress', value: `${averageProgress}%`, icon: BarChart3, tone: 'text-violet-600 bg-violet-50' },
-    { label: lang === 'ar' ? 'الطلبات المفتوحة' : 'Open Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-amber-600 bg-amber-50' },
+    { label: t('platform.projects'), value: projectDirectory.length, icon: FolderKanban, tone: 'text-cyan-600 bg-cyan-50', section: 'role-queue' },
+    { label: t('dash.active_projects'), value: projectDirectory.filter(project => project.status === 'active').length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50', section: 'role-queue' },
+    { label: lang === 'ar' ? 'متوسط الإنجاز' : 'Average Progress', value: `${averageProgress}%`, icon: BarChart3, tone: 'text-violet-600 bg-violet-50', section: 'role-queue' },
+    { label: lang === 'ar' ? 'الطلبات المفتوحة' : 'Open Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-amber-600 bg-amber-50', section: 'role-rfqs' },
   ] : [
-    { label: lang === 'ar' ? 'الطلبات المؤهلة' : 'Qualified Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-blue-600 bg-blue-50' },
-    { label: lang === 'ar' ? 'عروض الأسعار' : 'My Quotations', value: myQuotations.length, icon: FileText, tone: 'text-violet-600 bg-violet-50' },
-    { label: lang === 'ar' ? 'العروض المقبولة' : 'Accepted Quotes', value: awardedQuotes.length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50' },
-    { label: lang === 'ar' ? 'مشاريع متاحة' : 'Project Opportunities', value: projectDirectory.length, icon: BriefcaseBusiness, tone: 'text-amber-600 bg-amber-50' },
+    // The contractor's requests card is the pipeline; engineer and architect
+    // carry role-rfqs. Only the contractor has a quotations surface among these
+    // three, so only the contractor's quotation KPIs lead anywhere.
+    { label: lang === 'ar' ? 'الطلبات المؤهلة' : 'Qualified Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-blue-600 bg-blue-50', section: role === 'contractor' ? 'role-pipeline' : 'role-rfqs' },
+    { label: lang === 'ar' ? 'عروض الأسعار' : 'My Quotations', value: myQuotations.length, icon: FileText, tone: 'text-violet-600 bg-violet-50', section: role === 'contractor' ? 'role-quotations' : undefined },
+    { label: lang === 'ar' ? 'العروض المقبولة' : 'Accepted Quotes', value: awardedQuotes.length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50', section: role === 'contractor' ? 'role-quotations' : undefined },
+    { label: lang === 'ar' ? 'مشاريع متاحة' : 'Project Opportunities', value: projectDirectory.length, icon: BriefcaseBusiness, tone: 'text-amber-600 bg-amber-50', section: 'role-projects' },
   ];
 
   const actions: RoleCardAction[] = role === 'homeowner' ? [
@@ -301,7 +310,17 @@ export default function RolePlatform() {
 
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {metrics.map(metric => (
-            <Card key={metric.label}>
+            <Card
+              key={metric.label}
+              {...(metric.section ? {
+                role: 'button' as const,
+                tabIndex: 0,
+                'data-testid': `kpi-${metric.section}`,
+                className: 'cursor-pointer transition-colors hover:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                onClick: () => goToSection(metric.section!),
+                onKeyDown: (event: React.KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); goToSection(metric.section!); } },
+              } : {})}
+            >
               {/* Stacks below `sm`. Two columns minus a fixed 44px icon, the gap
                   and the padding left about 63px for the label, and `truncate`
                   then clipped it: measured at 375px, "Total Projects" wanted
@@ -355,7 +374,7 @@ export default function RolePlatform() {
           {/* Bulk import: a vendor with a real catalogue cannot add products
               one dialog at a time. Preview first, then commit. */}
           <ProductImport onImported={() => { void utils.marketplace.myProducts.invalidate(); }} />
-          <SupplierWorkspace products={products} rfqs={matchingRfqs} projects={projectDirectory} t={t} lang={lang} navigate={navigate} onQuote={(rfqId) => { setQuoteForm(form => ({ ...form, rfqId })); setQuoteDialogOpen(true); }} />
+          <SupplierWorkspace products={products} rfqs={matchingRfqs} projects={projectDirectory} quotations={myQuotations} t={t} lang={lang} navigate={navigate} onQuote={(rfqId) => { setQuoteForm(form => ({ ...form, rfqId })); setQuoteDialogOpen(true); }} />
           </>
         ) : role === 'contractor' ? (
           <ContractorWorkspace rfqs={matchingRfqs} projects={projectDirectory} quotations={myQuotations} t={t} lang={lang} navigate={navigate} onQuote={(rfqId: number) => { setQuoteForm(form => ({ ...form, rfqId })); setQuoteDialogOpen(true); }} />
@@ -525,12 +544,50 @@ function HomeownerWorkspace({ projects, t, lang, navigate }: { projects: any[]; 
   );
 }
 
+/**
+ * A PROVIDER'S OWN SUBMITTED RESPONSES.
+ *
+ * Both the contractor and the supplier bid, and both had a "My Quotations"
+ * count on their dashboard; only the contractor had anywhere to see what the
+ * count referred to, and even there the tiles could not be clicked. A number
+ * that counts records with no surface is not a KPI, it is a rumour.
+ *
+ * Each tile opens the request it answers, which is where the response and its
+ * outcome actually live.
+ */
+function QuotationTiles({ quotations, t, lang, navigate }: { quotations: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void }) {
+  if (quotations.length === 0) return <EmptyState text={t('platform.no_items')} />;
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {quotations.slice(0, 6).map(quote => (
+        <div
+          key={quote.id}
+          role="button"
+          tabIndex={0}
+          data-testid="my-quotation"
+          className="rounded-xl border p-3 cursor-pointer transition-colors hover:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          onClick={() => navigate(`/rfq/${quote.rfqId}`)}
+          onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') navigate(`/rfq/${quote.rfqId}`); }}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-medium">{quote.rfqTitle || `RFQ #${quote.rfqId}`}</p>
+            <Badge variant={quote.status === 'accepted' ? 'default' : 'secondary'}>{localizedStatus(quote.status, t)}</Badge>
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {t('common.egp')} {Number(quote.price).toLocaleString()} · {quote.timeline || '—'} {t('common.days')}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ContractorWorkspace({ rfqs, projects, quotations, t, lang, navigate, onQuote }: { rfqs: any[]; projects: any[]; quotations: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
       <Card id="role-pipeline"><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{lang === 'ar' ? 'مسار استلام طلبات الأسعار' : 'Contractor RFQ Pipeline'}</CardTitle><Button variant="outline" size="sm" onClick={() => navigate('/rfq')}>{t('platform.view')}</Button></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 6).map(rfq => <div key={rfq.id} className="rounded-xl border p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-semibold">{rfq.title}</p><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{rfq.description}</p><div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">{rfq.category && <span className="flex items-center gap-1"><FileText className="h-3 w-3" />{rfq.category}</span>}{rfq.budget && <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{t('common.egp')} {Number(rfq.budget).toLocaleString()}</span>}{rfq.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{rfq.location}</span>}</div></div><Button size="sm" className="shrink-0 gap-1.5" onClick={() => onQuote(rfq.id)}><Send className="h-3.5 w-3.5" />{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
       <Card id="role-projects"><CardHeader><CardTitle className="flex items-center gap-2"><BriefcaseBusiness className="h-5 w-5" />{lang === 'ar' ? 'إدارة المشاريع الميدانية' : 'Active Field Projects'}</CardTitle></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{projects.slice(0, 5).map(project => <div key={project.id} className="rounded-xl border p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-medium">{project.title}</p><Badge variant="outline">{localizedStatus(project.status, t)}</Badge></div><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{project.location || (lang === 'ar' ? 'الموقع غير محدد' : 'Location not set')}</span><span>{project.progress ?? 0}%</span></div></div>)}</div>}</CardContent></Card>
-      <Card className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{lang === 'ar' ? 'عروض أسعار المقاول' : 'Submitted Quotations & Team Execution'}</CardTitle></CardHeader><CardContent>{quotations.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="grid gap-3 md:grid-cols-2">{quotations.slice(0, 6).map(quote => <div key={quote.id} role="button" tabIndex={0} data-testid="my-quotation" className="rounded-xl border p-3 cursor-pointer transition-colors hover:border-primary/40" onClick={() => navigate(`/rfq/${quote.rfqId}`)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') navigate(`/rfq/${quote.rfqId}`); }}><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-medium">{quote.rfqTitle || `RFQ #${quote.rfqId}`}</p><Badge variant={quote.status === 'accepted' ? 'default' : 'secondary'}>{localizedStatus(quote.status, t)}</Badge></div><p className="mt-2 text-sm text-muted-foreground">{t('common.egp')} {Number(quote.price).toLocaleString()} · {quote.timeline || '—'} {t('common.days')}</p></div>)}</div>}</CardContent></Card>
+      <Card id="role-quotations" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{lang === 'ar' ? 'عروض أسعار المقاول' : 'Submitted Quotations & Team Execution'}</CardTitle></CardHeader><CardContent><QuotationTiles quotations={quotations} t={t} lang={lang} navigate={navigate} /></CardContent></Card>
     </div>
   );
 }
@@ -555,11 +612,14 @@ function ArchitectWorkspace({ rfqs, projects, t, lang, navigate, onQuote, ownPro
   );
 }
 
-function SupplierWorkspace({ products, rfqs, projects, t, lang, navigate, onQuote }: { products: any[]; rfqs: any[]; projects: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void }) {
+function SupplierWorkspace({ products, rfqs, projects, quotations, t, lang, navigate, onQuote }: { products: any[]; rfqs: any[]; projects: any[]; quotations: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
       <Card><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" />{t('platform.catalogue')}</CardTitle><Button variant="outline" size="sm" onClick={() => navigate('/marketplace/products')}>{t('platform.view')}</Button></CardHeader><CardContent>{products.length === 0 ? <EmptyState text={lang === 'ar' ? 'أضف أول منتج إلى كتالوجك' : 'Add your first product to the catalogue'} /> : <div className="space-y-3">{products.slice(0, 6).map(product => <div key={product.id} className="flex items-center justify-between gap-3 rounded-xl border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{lang === 'ar' && product.nameAr ? product.nameAr : product.name}</p><p className="mt-1 text-xs text-muted-foreground">{product.category} · {product.stock ?? 0} {product.unit || (lang === 'ar' ? 'وحدة' : 'units')}</p></div><span className="text-sm font-semibold">{product.price ? `${t('common.egp')} ${Number(product.price).toLocaleString()}` : '—'}</span></div>)}</div>}</CardContent></Card>
       <Card id="role-rfqs"><CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{t('platform.review_requests')}</CardTitle></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 5).map(rfq => <div key={rfq.id} className="rounded-xl border p-3"><p className="truncate text-sm font-medium">{rfq.title}</p><div className="mt-2 flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{rfq.category || (lang === 'ar' ? 'عام' : 'General')}</span><Button size="sm" onClick={() => onQuote(rfq.id)} className="gap-1.5"><Send className="h-3 w-3" />{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
+      {/* A supplier who bids had a "My Quotations" count and nowhere to see
+          what it counted. Same record, same destination as the contractor's. */}
+      <Card id="role-quotations" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{lang === 'ar' ? 'عروض الأسعار المقدمة' : 'Submitted Quotations'}</CardTitle></CardHeader><CardContent><QuotationTiles quotations={quotations} t={t} lang={lang} navigate={navigate} /></CardContent></Card>
       <Card id="role-projects" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><BriefcaseBusiness className="h-5 w-5" />{t('platform.projects')}</CardTitle></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="grid gap-3 md:grid-cols-2">{projects.slice(0, 6).map(project => <div key={project.id} className="rounded-xl border p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-medium">{project.title}</p><Badge variant="outline">{localizedStatus(project.status, t)}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{project.location || (lang === 'ar' ? 'الموقع غير محدد' : 'Location not set')}</p><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{t('project.progress')}</span><span>{project.progress ?? 0}%</span></div></div>)}</div>}</CardContent></Card>
     </div>
   );

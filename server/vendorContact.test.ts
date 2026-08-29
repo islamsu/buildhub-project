@@ -161,6 +161,16 @@ describe('the vendor detail page', () => {
   it('the ?to= value is validated, not trusted as a number', () => {
     expect(messages).toContain('Number.isInteger(id) && id > 0');
   });
+
+  it('arriving with a recipient shows the CONVERSATION, not the tab you came from', () => {
+    // A message notification links to /messages?to=<sender>. wouter stays on
+    // the same route, so the page does not remount and an uncontrolled Tabs
+    // kept the notifications tab the reader had just clicked from. The thread
+    // opened correctly and was invisible behind it - verified in a browser.
+    expect(messages).toContain('<Tabs value={tab} onValueChange={setTab}>');
+    expect(messages).not.toContain('<Tabs defaultValue="messages">');
+    expect(messages).toContain("setSelectedConv(requestedRecipientId); setTab('messages');");
+  });
 });
 
 describe('both languages carry the new strings', () => {

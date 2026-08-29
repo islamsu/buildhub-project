@@ -204,6 +204,16 @@ const translations: Record<Language, Record<string, string>> = {
     // theirs, in whatever language they wrote it, and is passed through as-is.
     'notif.quotation.received.title': 'New quotation received',
     'notif.quotation.received.body': 'You received a new quotation for "{rfqTitle}".',
+    // The in-platform thread is the only contact channel between a customer and
+    // a vendor, and nothing announced a message on it. The asker's identity is
+    // deliberately absent from the product-question notification: that Q&A is
+    // public on the listing and askerId is withheld from it on purpose.
+    'notif.message.received.title': 'New message',
+    'notif.message.received.body': '{senderName} sent you a message.',
+    'notif.product.question.title': 'New question on your product',
+    'notif.product.question.body': 'Someone asked a question about "{productName}".',
+    'notif.product.answered.title': 'Your question was answered',
+    'notif.product.answered.body': 'The supplier answered your question about "{productName}".',
     'notif.quotation.accepted.title': 'Quotation accepted',
     'notif.quotation.accepted.body': 'Your quotation for "{rfqTitle}" was accepted.',
     'notif.quotation.notSelected.title': 'Quotation not selected',
@@ -1196,6 +1206,12 @@ const translations: Record<Language, Record<string, string>> = {
     // ملاحظة: نص المراجع الحر يمرَّر كما هو - هو كلامه بلغته.
     'notif.quotation.received.title': 'عرض سعر جديد',
     'notif.quotation.received.body': 'وصلك عرض سعر جديد على "{rfqTitle}".',
+    'notif.message.received.title': 'رسالة جديدة',
+    'notif.message.received.body': 'أرسل لك {senderName} رسالة.',
+    'notif.product.question.title': 'سؤال جديد على منتجك',
+    'notif.product.question.body': 'طرح أحدهم سؤالاً عن "{productName}".',
+    'notif.product.answered.title': 'تمت الإجابة على سؤالك',
+    'notif.product.answered.body': 'أجاب المورد على سؤالك عن "{productName}".',
     'notif.quotation.accepted.title': 'تم قبول عرض السعر',
     'notif.quotation.accepted.body': 'تم قبول عرض سعرك على "{rfqTitle}".',
     'notif.quotation.notSelected.title': 'لم يتم اختيار عرض السعر',

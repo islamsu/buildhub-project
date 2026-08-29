@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { readSourceForAssertions } from './_testing/sourceText';
 import { appRouter } from './routers';
 import type { TrpcContext } from './_core/trpc';
+import { messages as messagesTable, notifications as notificationsTable } from '../drizzle/schema';
 
 /**
  * MESSAGING INTEGRITY.
@@ -69,9 +70,14 @@ function stubDb(users: { id: number; accountStatus: string }[]) {
         },
       }),
     }),
-    insert: (_table: unknown) => ({
+    // The TABLE is recorded, not just the row. Sending a message now also
+    // writes a notification, and a stub that cannot tell the two apart turns
+    // "exactly one message was stored" into "exactly one row was stored" -
+    // which would have to be relaxed every time a side effect is added, and
+    // would stop policing the thing it was written for.
+    insert: (table: unknown) => ({
       values: (row: Record<string, unknown>) => {
-        inserted.push(row);
+        inserted.push({ ...row, __table: table === messagesTable ? 'messages' : table === notificationsTable ? 'notifications' : 'other' });
         return Promise.resolve([{ insertId: 99 }]);
       },
     }),
@@ -154,8 +160,35 @@ describe('messages.send validates the recipient', () => {
         .send({ receiverId: 8, content: 'hello' });
       expect(sent).toMatchObject({ senderId: 5, receiverId: 8, content: 'hello' });
     });
-    expect(inserted).toHaveLength(1);
-    expect(inserted[0]).toMatchObject({ senderId: 5, receiverId: 8 });
+    const messageRows = inserted.filter(row => row.__table === 'messages');
+    expect(messageRows).toHaveLength(1);
+    expect(messageRows[0]).toMatchObject({ senderId: 5, receiverId: 8 });
+  });
+
+  it('TELLS THE RECIPIENT, and points them at the thread', async () => {
+    // Nothing notified anyone about a message, so the one contact channel
+    // BuildHub operates was silent until the other person happened to open
+    // /messages. The link must open the conversation with the SENDER.
+    const { db, inserted } = stubDb([
+      { id: 5, accountStatus: 'active' },
+      { id: 8, accountStatus: 'active' },
+    ]);
+    await withDb(db, async () => {
+      await appRouter.createCaller(ctx(5)).messages.send({ receiverId: 8, content: 'hello' });
+    });
+    const notes = inserted.filter(row => row.__table === 'notifications');
+    expect(notes, 'the recipient must be notified').toHaveLength(1);
+    expect(notes[0]).toMatchObject({ userId: 8, type: 'message', link: '/messages?to=5', messageKey: 'notif.message.received' });
+  });
+
+  it('and a refused message notifies nobody', async () => {
+    // A notification for a message that was never stored would be worse than
+    // no notification at all.
+    const { db, inserted } = stubDb([{ id: 5, accountStatus: 'active' }]);
+    await withDb(db, async () => {
+      await appRouter.createCaller(ctx(5)).messages.send({ receiverId: 4242, content: 'x' }).catch(() => undefined);
+    });
+    expect(inserted.filter(row => row.__table === 'notifications')).toHaveLength(0);
   });
 
   it('stamps senderId from the SESSION, never from the input', async () => {

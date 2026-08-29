@@ -16,6 +16,8 @@ import { readFileSync } from 'node:fs';
  * it is not presented as something to click.
  */
 
+import { ROLE_SECTIONS } from '@shared/roleWorkspaceSections';
+
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const workspace = read('../client/src/pages/RolePlatform.tsx');
 const rfqDetail = read('../client/src/pages/RFQDetail.tsx');
@@ -25,15 +27,37 @@ const routes = read('../client/src/App.tsx');
 describe('a submitted quotation is reachable', () => {
   it('the workspace tile opens the request it answers', () => {
     expect(workspace).toContain('data-testid="my-quotation"');
-    expect(workspace).toContain('navigate(`/rfq/${quote.rfqId}`)');
+    // The HANDLER, not the file. Asserting the file merely contained the
+    // navigate call let a mutation that replaced onClick with a no-op survive:
+    // the identical call in onKeyDown kept the assertion true, so a tile that
+    // was dead to the mouse and alive to the keyboard would have passed.
+    const onClick = /onClick=\{\(\) => navigate\(`\/rfq\/\$\{quote\.rfqId\}`\)\}/;
+    const onKeyDown = /onKeyDown=\{event => \{ if \(event\.key === 'Enter' \|\| event\.key === ' '\) navigate\(`\/rfq\/\$\{quote\.rfqId\}`\); \}\}/;
+    expect(onClick.test(workspace), 'the tile must navigate on click').toBe(true);
+    expect(onKeyDown.test(workspace), 'and on Enter or Space').toBe(true);
   });
 
   it('and it is reachable by keyboard, not only by mouse', () => {
     const at = workspace.indexOf('data-testid="my-quotation"');
-    const tile = workspace.slice(at - 200, at + 600);
+    const tile = workspace.slice(at - 400, at + 600);
     expect(tile).toContain('role="button"');
     expect(tile).toContain('tabIndex={0}');
     expect(tile).toContain('onKeyDown');
+  });
+
+  it('BOTH roles that bid have somewhere to see their bids', () => {
+    // The supplier dashboard carried a "My Quotations" count with no surface
+    // anywhere behind it - the contractor was the only bidder whose responses
+    // were rendered at all.
+    expect(ROLE_SECTIONS.contractor).toContain('role-quotations');
+    expect(ROLE_SECTIONS.supplier).toContain('role-quotations');
+    expect(workspace.split('id="role-quotations"').length - 1).toBe(2);
+  });
+
+  it('and both render the same tiles from the same component', () => {
+    // One implementation, so a fix to one is a fix to both.
+    expect(workspace).toContain('function QuotationTiles(');
+    expect(workspace.split('<QuotationTiles').length - 1).toBe(2);
   });
 
   it('the RFQ page shows a provider the response they sent', () => {
@@ -56,6 +80,43 @@ describe('a submitted quotation is reachable', () => {
   it('the free-response panel is not shown alongside a response already sent', () => {
     // Otherwise a provider who has already quoted is invited to quote again.
     expect(rfqDetail).toContain('{!isOwner && isProvider && !myQuotation && (');
+  });
+});
+
+describe('dashboard KPIs lead to the records they count', () => {
+  it('a KPI with a destination is clickable, and one without is not', () => {
+    // The rule is symmetric. A number that counts records the reader can go
+    // and look at should take them there; a number with nowhere to go must not
+    // dress itself up as a control.
+    expect(workspace).toContain("type Metric = { label: string; value: string | number; icon: React.ComponentType<{ className?: string }>; tone: string; section?: SectionId };");
+    expect(workspace).toContain("{...(metric.section ? {");
+    expect(workspace).toContain("onClick: () => goToSection(metric.section!)");
+  });
+
+  it('a clickable KPI is operable from the keyboard', () => {
+    const at = workspace.indexOf('{...(metric.section ? {');
+    const card = workspace.slice(at, at + 700);
+    expect(card).toContain("role: 'button' as const");
+    expect(card).toContain('tabIndex: 0');
+    expect(card).toContain('onKeyDown');
+  });
+
+  it('every section a KPI points at is one the role actually renders', () => {
+    // Same rule as the sidebar: a destination that does not exist for the role
+    // is a click that does nothing.
+    const named = [...workspace.matchAll(/section: '(role-[a-z]+)'/g)].map(m => m[1]);
+    expect(named.length).toBeGreaterThan(5);
+    const everySection = new Set(Object.values(ROLE_SECTIONS).flat());
+    for (const section of named) expect(everySection).toContain(section);
+  });
+
+  it('the roles with no quotations surface do not point a KPI at one', () => {
+    // Engineer and architect bid through the same endpoint but have no
+    // quotations card, so their My Quotations tile stays informational rather
+    // than jumping somewhere unrelated.
+    expect(ROLE_SECTIONS.engineer).not.toContain('role-quotations');
+    expect(ROLE_SECTIONS.architect).not.toContain('role-quotations');
+    expect(workspace).toContain("section: role === 'contractor' ? 'role-quotations' : undefined");
   });
 });
 
