@@ -1297,7 +1297,23 @@ const marketplaceRouter = router({
     const [product] = await db.select().from(products)
       .where(and(eq(products.id, input.id), eq(products.active, true)));
     if (!product) throw new TRPCError({ code: 'NOT_FOUND' });
-    return product;
+    // WHO SELLS THIS.
+    //
+    // The page invited buyers to "ask the supplier a question" without ever
+    // saying who the supplier was, and there was no route from a product to
+    // the vendor's record or to the rest of their catalogue.
+    //
+    // Name and verification ONLY - exactly the two fields marketplace.vendors
+    // already publishes to anyone, with no session at all. Nothing here widens
+    // what the directory already shows, and email and phone are no more
+    // present than they are anywhere else on a public surface.
+    let supplier: { id: number; name: string | null; verified: boolean | null } | null = null;
+    if (product.supplierId) {
+      const [row] = await db.select({ id: users.id, name: users.name, verified: users.verified })
+        .from(users).where(eq(users.id, product.supplierId));
+      supplier = row ?? null;
+    }
+    return { ...product, supplier };
   }),
   myProducts: approvedProviderProcedure.query(async ({ ctx }) => {
     if (ctx.user.userRole !== 'supplier') {

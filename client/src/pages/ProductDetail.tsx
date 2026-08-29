@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, ArrowRight, CheckCircle2, Package, Send, ShoppingCart, Star, Truck, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Package, Send, ShoppingCart, Star, Truck, ShieldCheck, Store, BadgeCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRfqBasket } from '@/hooks/useRfqBasket';
 import { getProductVariants } from '@/lib/marketplaceCatalog';
@@ -104,6 +104,28 @@ export default function ProductDetail() {
     <Button variant="outline" className="w-full gap-2" data-testid="product-view-basket">
       {lang === 'ar' ? `عرض قائمة الطلبات (${basket.count})` : `View RFQ list (${basket.count})`}
     </Button>
+  </Link>
+)}
+{/* WHO SELLS IT.
+    The page invited buyers to "ask the supplier a question" and never said
+    who the supplier was, and there was no way to get from a product to that
+    vendor's record or the rest of their catalogue. Name and verification
+    only - the two fields the public vendor directory already shows. */}
+{product.supplier && (
+  <Link href={`/vendor/${product.supplier.id}`}>
+    <div
+      className="mt-2 flex items-center gap-2 rounded-xl border p-3 transition-colors hover:border-primary/40 cursor-pointer"
+      data-testid="product-supplier"
+    >
+      <Store className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0">
+        <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'المورد' : 'Sold by'}</p>
+        <p className="truncate text-sm font-medium">
+          {product.supplier.name ?? (lang === 'ar' ? 'مورد على BuildHub' : 'A BuildHub supplier')}
+        </p>
+      </div>
+      {product.supplier.verified && <BadgeCheck className="ms-auto h-4 w-4 shrink-0 text-emerald-600" />}
+    </div>
   </Link>
 )}</div>
         </div>

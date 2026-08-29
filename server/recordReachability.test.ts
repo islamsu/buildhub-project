@@ -228,3 +228,39 @@ describe('context travels with the click', () => {
     expect(ai).toContain("if (projectId !== 'none') return;");
   });
 });
+
+describe('a product names who sells it, and links there', () => {
+  const productDetail = read('../client/src/pages/ProductDetail.tsx');
+  const routers = read('./routers.ts');
+
+  it('marketplace.get returns the supplier identity', () => {
+    // The page invited buyers to "ask the supplier a question" and never said
+    // who the supplier was; nothing on it led to the vendor's record or to the
+    // rest of their catalogue.
+    const at = routers.indexOf('  get: publicProcedure.input(z.object({ id: z.number() }))');
+    expect(at).toBeGreaterThan(-1);
+    const body = routers.slice(at, routers.indexOf('  myProducts:', at));
+    expect(body).toContain('return { ...product, supplier };');
+    expect(body).toContain('select({ id: users.id, name: users.name, verified: users.verified })');
+  });
+
+  it('and NOTHING more than the public directory already publishes', () => {
+    // Name and verification only. Not email, not phone, not account state.
+    const at = routers.indexOf('  get: publicProcedure.input(z.object({ id: z.number() }))');
+    const body = routers.slice(at, routers.indexOf('  myProducts:', at));
+    for (const forbidden of ['users.email', 'users.phone', 'users.accountStatus', 'users.openId', 'users.passwordHash']) {
+      expect(body, `${forbidden} must not reach a public product response`).not.toContain(forbidden);
+    }
+  });
+
+  it('the page renders it as a route to that vendor', () => {
+    expect(productDetail).toContain('data-testid="product-supplier"');
+    expect(productDetail).toContain('href={`/vendor/${product.supplier.id}`}');
+  });
+
+  it('and degrades honestly when a supplier row is missing', () => {
+    // A product whose supplier account was removed must not render "undefined".
+    expect(productDetail).toContain('{product.supplier && (');
+    expect(productDetail).toContain("product.supplier.name ?? (lang === 'ar' ? 'مورد على BuildHub' : 'A BuildHub supplier')");
+  });
+});
