@@ -2375,6 +2375,94 @@ const rfqRouter = router({
       );
       return { key, url, name: input.fileName, type: input.contentType, size: buffer.length };
     }),
+  /**
+   * ONE quotation, by id, for its detail page.
+   *
+   * Until this existed a quotation had no page. It was a row inside RFQDetail
+   * for the customer and a tile in the supplier's workspace, and neither could
+   * be linked to, bookmarked, or opened from the notification announcing it.
+   * "Supplier X responded to your RFQ" led to a list and left the reader to
+   * find the bid themselves.
+   *
+   * TWO READERS, DIFFERENT COLUMNS. This is the whole reason the procedure is
+   * written out rather than reusing the list's select:
+   *
+   *   - the RFQ's requester is evaluating a bid addressed to them, so they see
+   *     the commercial terms and the supplier's contact details - the same
+   *     fields marketplace.quotations already hands them.
+   *   - the supplier who WROTE it sees their own bid in full, but nothing about
+   *     the requester beyond the RFQ they answered. They are not the customer.
+   *
+   * Everybody else is refused, and that includes a RIVAL SUPPLIER WHO BID ON
+   * THE SAME RFQ. They hold a legitimate quotation id from their own bid, the
+   * ids are sequential, and the competitor's price sits one integer away. That
+   * is the attack this ownership predicate exists to stop.
+   *
+   * NOT FOUND, not FORBIDDEN, for a quotation the caller may not read: telling
+   * a rival "that exists but is not yours" confirms a bid was placed and by
+   * how many, which is itself the competitive intelligence being protected.
+   */
+  quotation: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'NOT_FOUND', message: 'Quotation not found' });
+
+    const [row] = await db
+      .select({
+        id:           quotations.id,
+        rfqId:        quotations.rfqId,
+        providerId:   quotations.providerId,
+        price:        quotations.price,
+        currency:     quotations.currency,
+        timeline:     quotations.timeline,
+        warranty:     quotations.warranty,
+        paymentTerms: quotations.paymentTerms,
+        notes:        quotations.notes,
+        attachments:  quotations.attachments,
+        status:       quotations.status,
+        createdAt:    quotations.createdAt,
+        rfqTitle:       rfqs.title,
+        rfqStatus:      rfqs.status,
+        rfqCategory:    rfqs.category,
+        rfqRequesterId: rfqs.requesterId,
+      })
+      .from(quotations)
+      .leftJoin(rfqs, eq(quotations.rfqId, rfqs.id))
+      .where(eq(quotations.id, input.id));
+
+    if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Quotation not found' });
+
+    const isRequester = row.rfqRequesterId === ctx.user.id;
+    const isAuthor = row.providerId === ctx.user.id;
+    if (!isRequester && !isAuthor) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Quotation not found' });
+    }
+
+    // The supplier's identity is shown to the customer evaluating their bid,
+    // and to the supplier themselves - who already knows who they are, but the
+    // page renders one shape for both readers. Contact details are the
+    // requester's alone; a supplier reading their own quotation gets no route
+    // to the customer's inbox out of this procedure.
+    const [provider] = await db
+      .select({ id: users.id, name: users.name, verified: users.verified, location: users.location, email: users.email })
+      .from(users)
+      .where(eq(users.id, row.providerId));
+
+    const { rfqRequesterId: _requesterId, ...quotation } = row;
+
+    return {
+      ...quotation,
+      viewerRole: isRequester ? ('requester' as const) : ('author' as const),
+      provider: provider
+        ? {
+            id: provider.id,
+            name: provider.name,
+            verified: provider.verified,
+            location: provider.location,
+            email: isRequester ? provider.email : null,
+          }
+        : null,
+    };
+  }),
   submitQuotation: approvedProviderProcedure
     // BOUNDS MATCH THE COLUMNS. `price` is decimal(12,2), `warranty` is
     // varchar(100), `timeline` is an int. None of these were bounded, so a

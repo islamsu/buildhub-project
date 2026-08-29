@@ -25,14 +25,20 @@ const rfqList = read('../client/src/pages/RFQPage.tsx');
 const routes = read('../client/src/App.tsx');
 
 describe('a submitted quotation is reachable', () => {
-  it('the workspace tile opens the request it answers', () => {
+  it('the workspace tile opens THE QUOTATION it depicts', () => {
     expect(workspace).toContain('data-testid="my-quotation"');
+    // WAS `/rfq/${quote.rfqId}`, and that was a workaround, not the intent. A
+    // quotation had no page, so the tile opened the nearest thing that existed
+    // - the request it answered. /quotations/:id now exists, so the tile opens
+    // the record it actually depicts. The old expectation is not weakened here,
+    // it is superseded: a control should open what it shows.
+    //
     // The HANDLER, not the file. Asserting the file merely contained the
     // navigate call let a mutation that replaced onClick with a no-op survive:
     // the identical call in onKeyDown kept the assertion true, so a tile that
     // was dead to the mouse and alive to the keyboard would have passed.
-    const onClick = /onClick=\{\(\) => navigate\(`\/rfq\/\$\{quote\.rfqId\}`\)\}/;
-    const onKeyDown = /onKeyDown=\{event => \{ if \(event\.key === 'Enter' \|\| event\.key === ' '\) navigate\(`\/rfq\/\$\{quote\.rfqId\}`\); \}\}/;
+    const onClick = /onClick=\{\(\) => navigate\(`\/quotations\/\$\{quote\.id\}`\)\}/;
+    const onKeyDown = /onKeyDown=\{event => \{ if \(event\.key === 'Enter' \|\| event\.key === ' '\) navigate\(`\/quotations\/\$\{quote\.id\}`\); \}\}/;
     expect(onClick.test(workspace), 'the tile must navigate on click').toBe(true);
     expect(onKeyDown.test(workspace), 'and on Enter or Space').toBe(true);
   });

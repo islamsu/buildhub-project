@@ -32,6 +32,7 @@ const ProductDetail = lazy(() => import("./pages/ProductDetail"));
 const ProjectDetail = lazy(() => import("./pages/ProjectDetail"));
 const RFQPage = lazy(() => import("./pages/RFQPage"));
 const RFQDetail = lazy(() => import("./pages/RFQDetail"));
+const QuotationDetail = lazy(() => import("./pages/QuotationDetail"));
 const MessagesPage = lazy(() => import("./pages/MessagesPage"));
 const AIAssistantPage = lazy(() => import("./pages/AIAssistantPage"));
 const CompliancePage = lazy(() => import("./pages/CompliancePage"));
@@ -107,6 +108,7 @@ function Router() {
       <Route path={"/projects/:id"} component={ProjectDetail} />
       <Route path={"/rfq"} component={RFQPage} />
       <Route path={"/rfq/:id"} component={RFQDetail} />
+      <Route path={"/quotations/:id"} component={QuotationDetail} />
       <Route path={"/messages"} component={MessagesPage} />
       <Route path={"/compliance"} component={CompliancePage} />
       <Route path={"/auth/setup-password"} component={PasswordSetupPage} />

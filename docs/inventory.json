@@ -193,6 +193,14 @@
       "deadParamRoute": false
     },
     {
+      "path": "/quotations/:id",
+      "component": "QuotationDetail",
+      "source": "client/src/pages/QuotationDetail.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
       "path": "/messages",
       "component": "MessagesPage",
       "source": "client/src/pages/MessagesPage.tsx",
@@ -563,6 +571,11 @@
       "indent": 2
     },
     {
+      "name": "quotation",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "submitQuotation",
       "tier": "approvedProviderProcedure",
       "indent": 2
@@ -790,7 +803,7 @@
   ],
   "procedureTiers": {
     "publicProcedure": 26,
-    "protectedProcedure": 52,
+    "protectedProcedure": 53,
     "complianceProcedure": 2,
     "approvedProviderProcedure": 18,
     "adminProcedure": 2,
@@ -1068,32 +1081,32 @@
     },
     {
       "file": "server/routers.ts",
-      "line": 2471,
+      "line": 2559,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2696,
+      "line": 2784,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2836,
+      "line": 2924,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3667,
+      "line": 3755,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3681,
+      "line": 3769,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3706,
+      "line": 3794,
       "via": "notifyUser"
     },
     {

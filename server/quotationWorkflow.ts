@@ -83,10 +83,11 @@ export async function acceptQuotationSecure(rfqId: number, quotationId: number, 
     title: 'Quotation accepted',
     body: `Your quotation for "${result.rfqTitle}" was accepted.`,
     type: 'quotation',
-    // THE REQUEST THEY BID ON, not the workspace. `/provider` is a dashboard;
-    // a supplier who has just won or lost a specific job wants that job. The
-    // detail page is role-aware and shows a provider exactly what they may see.
-    link: `/rfq/${result.rfqId}`,
+    // THE QUOTATION THAT WON, which is exactly what this notification is about
+    // and is unambiguous: there is one accepted quotation per RFQ. Until the
+    // quotation detail page existed this could only point at the RFQ, because a
+    // quotation had no URL to point at.
+    link: `/quotations/${result.awardedQuotationId}`,
     messageKey: 'notif.quotation.accepted',
     messageParams: { rfqTitle: result.rfqTitle },
   });
@@ -95,6 +96,15 @@ export async function acceptQuotationSecure(rfqId: number, quotationId: number, 
     title: 'Quotation not selected',
     body: `Your quotation for "${result.rfqTitle}" was not selected.`,
     type: 'quotation',
+    // THE RFQ, deliberately, and NOT a quotation - unlike the winner above.
+    //
+    // A provider may bid several times on one RFQ (see the OWNER DECISION in
+    // the Phase 1B handoff), and this list is de-duplicated to ONE message per
+    // provider precisely because sending one per losing quotation told a
+    // three-bid provider twice that they lost. Linking to "their" quotation
+    // would have to pick one of several arbitrarily, and picking one is what
+    // reintroduces the duplicate. The RFQ is the unambiguous subject when a
+    // provider holds more than one losing bid on it.
     link: `/rfq/${result.rfqId}`,
     messageKey: 'notif.quotation.notSelected',
     messageParams: { rfqTitle: result.rfqTitle },
@@ -126,7 +136,7 @@ export async function rejectQuotationSecure(rfqId: number, quotationId: number, 
     }
 
     await tx.update(quotations).set({ status: 'rejected' }).where(eq(quotations.id, quotationId));
-    return { success: true as const, providerId: quotation.providerId, rfqTitle: rfq.title, rfqId };
+    return { success: true as const, providerId: quotation.providerId, rfqTitle: rfq.title, rfqId, quotationId };
   });
 
   await notifyUser(db, {
@@ -134,8 +144,10 @@ export async function rejectQuotationSecure(rfqId: number, quotationId: number, 
     title: 'Quotation not selected',
     body: `Your quotation for "${result.rfqTitle}" was not selected.`,
     type: 'quotation',
-    // The request they bid on, not the workspace - see acceptQuotationSecure.
-    link: `/rfq/${result.rfqId}`,
+    // THE QUOTATION, unlike the auto-rejected losers in acceptQuotationSecure.
+    // This path rejects ONE named quotation, so there is nothing ambiguous to
+    // choose between: the provider is told which of their bids was declined.
+    link: `/quotations/${result.quotationId}`,
     messageKey: 'notif.quotation.notSelected',
     messageParams: { rfqTitle: result.rfqTitle },
   });

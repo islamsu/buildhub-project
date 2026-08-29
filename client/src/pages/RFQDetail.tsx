@@ -301,6 +301,15 @@ export default function RFQDetail() {
                   <span>{ar ? 'المدة' : 'Timeline'}: {myQuotation.timeline ?? '—'}</span>
                   <span>{ar ? 'أُرسل' : 'Submitted'}: {new Date(myQuotation.createdAt).toLocaleDateString(ar ? 'ar-EG' : 'en-US')}</span>
                 </div>
+                {/* The summary above is a precis; this opens the record. Before
+                    /quotations/:id existed there was nothing to link to, which
+                    is why the panel ended at three figures. */}
+                <Link href={`/quotations/${myQuotation.id}`}>
+                  <Button variant="outline" size="sm" className="mt-3 gap-2" data-testid="rfq-detail-open-my-quotation">
+                    <FileText className="h-4 w-4" />
+                    {ar ? 'افتح عرضك بالكامل' : 'Open your full quotation'}
+                  </Button>
+                </Link>
               </div>
             )}
 
