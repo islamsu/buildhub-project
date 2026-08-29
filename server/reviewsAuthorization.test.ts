@@ -7,6 +7,7 @@ vi.mock('./db', () => ({
 import { appRouter } from './routers';
 import type { TrpcContext } from './_core/context';
 import { getDb } from './db';
+import { withTransaction } from './testSupport/txDouble';
 
 function makeCtx(userId: number, userRole: string = 'homeowner'): TrpcContext {
   return {
@@ -81,7 +82,7 @@ describe('reviews.submit - baseline authorization (unlinked / legacy projects)',
 
   it('the project owner can review a provider-role reviewee when no RFQ is linked to the project', async () => {
     const db = makeDb({ project: { id: 1, ownerId: 1, status: 'completed' }, awardedProviderIds: [], reviewee: { id: 20, userRole: 'contractor' }, existingReview: null });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.reviews.submit({ projectId: 1, revieweeId: 20, rating: 5 })).resolves.toEqual({ success: true });
     expect(db.reviewValues).toHaveBeenCalledTimes(1);
@@ -90,7 +91,7 @@ describe('reviews.submit - baseline authorization (unlinked / legacy projects)',
 
   it('an unrelated user (knows the project ID but does not own it) is rejected', async () => {
     const db = makeDb({ project: null });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(999));
     await expect(caller.reviews.submit({ projectId: 1, revieweeId: 20, rating: 1, comment: 'sabotage' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
     expect(db.reviewValues).not.toHaveBeenCalled();
@@ -99,7 +100,7 @@ describe('reviews.submit - baseline authorization (unlinked / legacy projects)',
 
   it('rejects reviews on a project that is not completed', async () => {
     const db = makeDb({ project: null }); // and(status='completed') filters this out too
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.reviews.submit({ projectId: 1, revieweeId: 20, rating: 5 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
     expect(db.reviewValues).not.toHaveBeenCalled();
@@ -108,7 +109,7 @@ describe('reviews.submit - baseline authorization (unlinked / legacy projects)',
 
   it('duplicate review for the same project/reviewer/reviewee is rejected', async () => {
     const db = makeDb({ project: { id: 1, ownerId: 1, status: 'completed' }, awardedProviderIds: [], reviewee: { id: 20, userRole: 'contractor' }, existingReview: { id: 55 } });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.reviews.submit({ projectId: 1, revieweeId: 20, rating: 5 })).rejects.toMatchObject({ code: 'CONFLICT' });
     expect(db.reviewValues).not.toHaveBeenCalled();
@@ -117,7 +118,7 @@ describe('reviews.submit - baseline authorization (unlinked / legacy projects)',
 
   it('self-review is rejected', async () => {
     const db = makeDb({ project: { id: 1, ownerId: 1, status: 'completed' }, awardedProviderIds: [] });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.reviews.submit({ projectId: 1, revieweeId: 1, rating: 5 })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     expect(db.reviewValues).not.toHaveBeenCalled();
@@ -126,7 +127,7 @@ describe('reviews.submit - baseline authorization (unlinked / legacy projects)',
 
   it('an invalid reviewee (nonexistent user) is rejected', async () => {
     const db = makeDb({ project: { id: 1, ownerId: 1, status: 'completed' }, awardedProviderIds: [], reviewee: null });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.reviews.submit({ projectId: 1, revieweeId: 9999, rating: 5 })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     expect(db.reviewValues).not.toHaveBeenCalled();
@@ -135,7 +136,7 @@ describe('reviews.submit - baseline authorization (unlinked / legacy projects)',
 
   it('an invalid reviewee (a homeowner, not a service provider) is rejected', async () => {
     const db = makeDb({ project: { id: 1, ownerId: 1, status: 'completed' }, awardedProviderIds: [], reviewee: { id: 21, userRole: 'homeowner' } });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.reviews.submit({ projectId: 1, revieweeId: 21, rating: 5 })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     expect(db.reviewValues).not.toHaveBeenCalled();
@@ -144,7 +145,7 @@ describe('reviews.submit - baseline authorization (unlinked / legacy projects)',
 
   it('notifies the reviewee in-app when a review is successfully submitted', async () => {
     const db = makeDb({ project: { id: 1, ownerId: 1, status: 'completed' }, awardedProviderIds: [], reviewee: { id: 20, userRole: 'contractor' }, existingReview: null });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await caller.reviews.submit({ projectId: 1, revieweeId: 20, rating: 4 });
     expect(db.notificationValues).toHaveBeenCalledWith(expect.objectContaining({ userId: 20, type: 'review' }));
@@ -161,7 +162,7 @@ describe('reviews.submit - verified provider participation (RFQ -> awarded quota
 
   it('succeeds when the reviewee is the provider of an accepted quotation on an RFQ linked to this project', async () => {
     const db = makeDb({ project: { id: 1, ownerId: 1, status: 'completed' }, awardedProviderIds: [20], existingReview: null });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.reviews.submit({ projectId: 1, revieweeId: 20, rating: 5 })).resolves.toEqual({ success: true });
     expect(db.reviewValues).toHaveBeenCalledTimes(1);
@@ -172,7 +173,7 @@ describe('reviews.submit - verified provider participation (RFQ -> awarded quota
     // Project 1 actually awarded its RFQ to provider 20; caller tries to review provider 30,
     // who never won anything on this project (e.g. a completely unrelated contractor).
     const db = makeDb({ project: { id: 1, ownerId: 1, status: 'completed' }, awardedProviderIds: [20], existingReview: null });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.reviews.submit({ projectId: 1, revieweeId: 30, rating: 1 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
     expect(db.reviewValues).not.toHaveBeenCalled();
@@ -181,14 +182,14 @@ describe('reviews.submit - verified provider participation (RFQ -> awarded quota
 
   it('supports multiple legitimately-awarded providers on one project (e.g. separate design + build RFQs)', async () => {
     const db = makeDb({ project: { id: 1, ownerId: 1, status: 'completed' }, awardedProviderIds: [20, 21], existingReview: null });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.reviews.submit({ projectId: 1, revieweeId: 21, rating: 4 })).resolves.toEqual({ success: true });
   });
 
   it('falls back to the provider-role heuristic for a project with no RFQ linked at all (does not block legacy projects)', async () => {
     const db = makeDb({ project: { id: 1, ownerId: 1, status: 'completed' }, awardedProviderIds: [], reviewee: { id: 45, userRole: 'engineer' }, existingReview: null });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.reviews.submit({ projectId: 1, revieweeId: 45, rating: 5 })).resolves.toEqual({ success: true });
   });
@@ -207,7 +208,7 @@ describe('rfq.create - optional project link', () => {
       // The RFQ and its items are written in one transaction now.
       transaction: async (cb: (t: unknown) => Promise<unknown>) => cb({ insert }),
     };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.rfq.create({ category: 'Materials', title: 'Kitchen remodel', projectId: 7 })).resolves.toEqual({ id: 99 });
     expect(values).toHaveBeenCalledWith(expect.objectContaining({ projectId: 7, requesterId: 1 }));
@@ -223,7 +224,7 @@ describe('rfq.create - optional project link', () => {
       // The RFQ and its items are written in one transaction now.
       transaction: async (cb: (t: unknown) => Promise<unknown>) => cb({ insert }),
     };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(999));
     await expect(caller.rfq.create({ category: 'Materials', title: 'Kitchen remodel', projectId: 7 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
     expect(values).not.toHaveBeenCalled();
@@ -237,7 +238,7 @@ describe('rfq.create - optional project link', () => {
       insert,
       transaction: async (cb: (t: unknown) => Promise<unknown>) => cb({ insert }),
     };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.rfq.create({ category: 'Materials', title: 'Standalone RFQ' })).resolves.toEqual({ id: 100 });
     expect(db.select).not.toHaveBeenCalled();

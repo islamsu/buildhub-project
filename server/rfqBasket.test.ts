@@ -11,6 +11,7 @@ vi.mock('./db', () => ({ getDb: vi.fn() }));
 import { appRouter } from './routers';
 import { getDb } from './db';
 import type { TrpcContext } from './_core/context';
+import { withTransaction } from './testSupport/txDouble';
 
 /**
  * THERE WAS NO RFQ BASKET.
@@ -180,11 +181,11 @@ function stubDb(catalogue: { id: number; name: string; unit: string | null; pric
       },
     }),
   };
-  (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+  (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction({
     select: () => ({ from: () => ({ where: () => Promise.resolve(catalogue) }) }),
     transaction: async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
     insert: () => ({ values: () => Promise.resolve([{ insertId: 1 }]) }),
-  });
+  }));
   return inserted;
 }
 const PRODUCT = { id: 1, name: 'Rebar 12mm', unit: 'tonne', price: '1200.00', active: true };

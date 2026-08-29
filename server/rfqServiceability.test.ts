@@ -7,6 +7,7 @@ import { appRouter } from './routers';
 import { getDb } from './db';
 import { RFQ_CATEGORIES } from '@shared/rfqCategories';
 import type { TrpcContext } from './_core/context';
+import { withTransaction } from './testSupport/txDouble';
 
 /**
  * AN RFQ THE PLATFORM CANNOT SERVE MUST NOT BE CREATABLE.
@@ -44,7 +45,7 @@ const ctx = (id = 1): TrpcContext => ({
 
 function stubDb() {
   const inserted: Record<string, unknown>[] = [];
-  (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+  (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction({
     // rfq.create writes the RFQ and its items in one transaction now. The
     // callback must run against the SAME recording insert, or the rows this
     // test inspects are written into a fake nobody reads.
@@ -53,7 +54,7 @@ function stubDb() {
     }),
     insert: () => ({ values: (row: Record<string, unknown>) => { inserted.push(row); return Promise.resolve([{ insertId: 1 }]); } }),
     select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
-  });
+  }));
   return inserted;
 }
 

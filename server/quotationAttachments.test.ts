@@ -7,6 +7,7 @@ import { appRouter } from './routers';
 import { getDb } from './db';
 import { authorizeStorageKey } from './_core/storageProxy';
 import type { TrpcContext } from './_core/context';
+import { withTransaction } from './testSupport/txDouble';
 
 /**
  * A SUPPLIER COULD NOT SEND A SINGLE DOCUMENT WITH A BID.
@@ -39,7 +40,7 @@ const FILE = { key: '', url: '/manus-storage/x', name: 'proposal.pdf', type: 'ap
 
 function stubDb(rfqRow: Record<string, unknown> | null = { requesterId: 99, title: 'T', status: 'open' }) {
   const inserted: Record<string, unknown>[] = [];
-  (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+  (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction({
     select: () => ({ from: () => ({ where: () => Promise.resolve(rfqRow ? [rfqRow] : []) }) }),
     // Only QUOTATION inserts are counted. This procedure also writes a
     // notification, an analytics event and a commercial audit row; counting
@@ -48,7 +49,7 @@ function stubDb(rfqRow: Record<string, unknown> | null = { requesterId: 99, titl
       if (row && 'providerId' in row) inserted.push(row);
       return Promise.resolve([{ insertId: 5 }]);
     } }),
-  });
+  }));
   return inserted;
 }
 
@@ -118,7 +119,7 @@ describe('the storage proxy on a quotation attachment', () => {
   const user = (id: number, role: 'user' | 'admin' = 'user') => ({ id, role } as never);
 
   function proxyDb(opts: { quotationRows?: unknown[]; rfqRequesterId?: number } = {}) {
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction({
       select: (projection: Record<string, unknown>) => ({
         from: () => ({
           where: () => Promise.resolve(
@@ -128,7 +129,7 @@ describe('the storage proxy on a quotation attachment', () => {
           ),
         }),
       }),
-    });
+    }));
   }
 
   it('the uploading supplier may read it', async () => {

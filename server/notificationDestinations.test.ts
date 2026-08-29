@@ -7,6 +7,7 @@ vi.mock('./db', () => ({ getDb: vi.fn() }));
 import { appRouter } from './routers';
 import { getDb } from './db';
 import type { TrpcContext } from './_core/context';
+import { withTransaction } from './testSupport/txDouble';
 
 /**
  * EVERY NOTIFICATION POINTED AT A LIST.
@@ -86,10 +87,10 @@ function stubWorkflowDb(opts: { others?: number[] } = {}) {
     }),
     update: () => ({ set: () => ({ where: async () => [] }) }),
   };
-  (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+  (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction({
     transaction: async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
     insert: () => ({ values: (row: unknown) => { inserts.push(row); return Promise.resolve([{ insertId: 1 }]); } }),
-  });
+  }));
   return inserts;
 }
 
@@ -100,10 +101,10 @@ describe('a new quotation takes the customer to that request', () => {
 
   function stubSubmitDb() {
     const inserts: unknown[] = [];
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction({
       select: () => ({ from: () => ({ where: () => Promise.resolve([{ requesterId: REQUESTER_ID, title: 'Steel package', status: 'open' }]) }) }),
       insert: () => ({ values: (row: unknown) => { inserts.push(row); return Promise.resolve([{ insertId: QUOTATION_ID }]); } }),
-    });
+    }));
     return inserts;
   }
 
