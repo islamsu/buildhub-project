@@ -41,9 +41,9 @@
 
 Dead param routes: **0**
 
-## Server procedures (110)
+## Server procedures (111)
 
-- `protectedProcedure` — 53
+- `protectedProcedure` — 54
 - `publicProcedure` — 26
 - `approvedProviderProcedure` — 18
 - `superAdminProcedure` — 8
@@ -93,11 +93,11 @@ Dead param routes: **0**
 - server/routers.ts:1710 — notifyUser
 - server/routers.ts:1790 — notifyUser
 - server/routers.ts:2559 — notifyUser
-- server/routers.ts:2784 — notifyUser
-- server/routers.ts:2924 — notifyUser
-- server/routers.ts:3755 — notifyUser
-- server/routers.ts:3769 — notifyUser
-- server/routers.ts:3794 — notifyUser
+- server/routers.ts:2791 — notifyUser
+- server/routers.ts:2931 — notifyUser
+- server/routers.ts:3762 — notifyUser
+- server/routers.ts:3776 — notifyUser
+- server/routers.ts:3801 — notifyUser
 - server/notifications.ts:40 — notifyUser
 - server/notifications.ts:43 — helper implementation
 - server/notifications.ts:57 — notifyUser

@@ -24,7 +24,7 @@ import { validateAiAttachment, attachmentInstruction } from './_core/aiAttachmen
 import { MAX_AI_ATTACHMENTS_PER_MESSAGE } from '@shared/aiAttachments';
 import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
-import { acceptQuotationSecure, rejectQuotationSecure } from './quotationWorkflow';
+import { acceptQuotationSecure, closeRfqSecure, rejectQuotationSecure } from './quotationWorkflow';
 import { aiChatLimiters, authLimiters, contentLimiters, getClientIp } from './_core/rateLimit';
 import { recordEventAsync } from './analytics/events';
 import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
@@ -2586,6 +2586,13 @@ const rfqRouter = router({
       });
       return { success: true };
     }),
+  /**
+   * Withdraw a request. See closeRfqSecure for why this exists and what it
+   * deliberately does not do to the outstanding bids.
+   */
+  close: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => closeRfqSecure(input.id, ctx.user.id)),
   acceptQuotation: protectedProcedure
     .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
     .mutation(async ({ ctx, input }) => {

@@ -581,6 +581,11 @@
       "indent": 2
     },
     {
+      "name": "close",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "acceptQuotation",
       "tier": "protectedProcedure",
       "indent": 2
@@ -803,7 +808,7 @@
   ],
   "procedureTiers": {
     "publicProcedure": 26,
-    "protectedProcedure": 53,
+    "protectedProcedure": 54,
     "complianceProcedure": 2,
     "approvedProviderProcedure": 18,
     "adminProcedure": 2,
@@ -1086,27 +1091,27 @@
     },
     {
       "file": "server/routers.ts",
-      "line": 2784,
+      "line": 2791,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2924,
+      "line": 2931,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3755,
+      "line": 3762,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3769,
+      "line": 3776,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3794,
+      "line": 3801,
       "via": "notifyUser"
     },
     {

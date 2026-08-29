@@ -93,6 +93,19 @@ export default function RFQDetail() {
    * `approvedProviderProcedure` behind it, both of which still hold whatever
    * this renders.
    */
+  /**
+   * Withdrawing invalidates the summary (its status changes) and myList (the
+   * customer's own index). Nothing else on this page reads a stale copy.
+   */
+  const utils = trpc.useUtils();
+  const closeMutation = trpc.rfq.close.useMutation({
+    onSuccess: () => {
+      void utils.rfq.summary.invalidate({ id: rfqId });
+      void utils.rfq.myList.invalidate();
+      void utils.notifications.list.invalidate();
+    },
+  });
+
   const awaitingApproval = isProvider
     && isComplianceRole(account?.userRole)
     && account?.onboardingStatus !== 'approved';
@@ -260,6 +273,37 @@ export default function RFQDetail() {
                 />
               )}
             </div>
+
+            {/* WITHDRAWING THE REQUEST.
+                rfqs.status has been open|closed|awarded since the table was
+                written and only 'awarded' was ever reachable, so a customer
+                whose job was cancelled had no way to stop it. It kept
+                collecting bids, and because opening an enquiry costs a
+                supplier a lead credit, it kept charging them for a job that no
+                longer existed. Shown only while the request is still open: an
+                awarded RFQ has already reached its own terminal state. */}
+            {isOwner && isOpen && (
+              <div className="rounded-lg border border-dashed p-4" data-testid="rfq-detail-close-panel">
+                <p className="text-sm font-medium">{ar ? 'سحب هذا الطلب' : 'Withdraw this request'}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {ar
+                    ? 'سيتوقف استقبال العروض الجديدة وسيتم إخطار من قدّموا عروضاً. لن يتم رفض عروضهم - فالطلب هو ما تم سحبه.'
+                    : 'New quotations stop, and anyone who has already bid is told. Their bids are not marked rejected - it is the request that was withdrawn, not their offer.'}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 gap-2"
+                  data-testid="rfq-detail-close"
+                  disabled={closeMutation.isPending}
+                  onClick={() => closeMutation.mutate({ id: rfqId })}
+                >
+                  {closeMutation.isPending
+                    ? (ar ? 'جارٍ السحب…' : 'Withdrawing…')
+                    : (ar ? 'سحب الطلب' : 'Withdraw request')}
+                </Button>
+              </div>
+            )}
 
             {/* Attachments are the OWNER's view only. For a provider they are
                 behind the qualified enquiry, which is what the credit buys. */}
