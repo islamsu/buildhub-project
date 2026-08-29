@@ -47,8 +47,13 @@ export default function MarketplaceHub() {
       out.push({ type: t('marketHub.suggestionProductCategory'), label: ar ? c.ar : c.en, href: `/marketplace/products?cat=${c.id}` }));
     // Suggestions are drawn from the SAME authorized directory rows that the
     // strips below render - never a second, looser source.
+    // /vendor/:id, not /marketplace/vendors/:id. The latter renders the whole
+    // directory and drops the id, so picking one vendor out of the suggestions
+    // delivered a page listing all of them. The designer and finishing
+    // suggestions immediately below already used the canonical route; this one
+    // was the odd branch out.
     directory.filter(v => (v.name ?? '').toLowerCase().includes(q)).slice(0, 3).forEach(v =>
-      out.push({ type: t('marketHub.suggestionVendor'), label: v.name ?? `#${v.id}`, href: `/marketplace/vendors/${v.id}` }));
+      out.push({ type: t('marketHub.suggestionVendor'), label: v.name ?? `#${v.id}`, href: `/vendor/${v.id}` }));
     designers.filter(d => (d.name ?? '').toLowerCase().includes(q)).slice(0, 3).forEach(d =>
       out.push({ type: t('marketHub.suggestionDesigner'), label: d.name ?? `#${d.id}`, href: `/vendor/${d.id}` }));
     finishing.filter(f => (f.name ?? '').toLowerCase().includes(q)).slice(0, 3).forEach(f =>
