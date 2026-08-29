@@ -132,6 +132,24 @@ const TEST_LOGIN_TTL_MINUTES_MAX = 24 * 60;
 
 const hashTestLoginToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
+/**
+ * A PASSWORD RESET LINK IS A CREDENTIAL TOO.
+ *
+ * testLoginTokens and adminInvitations both store only a hash, and the schema
+ * says why: "a dump of this table yields nothing an attacker can redeem. Same
+ * reasoning as storing a password hash rather than a password - a link IS a
+ * credential." The password-reset path was the one place that rule was not
+ * applied: users.passwordResetToken held the raw token and resetPassword
+ * compared it directly, so any read of the users table - a backup, a dump, an
+ * injection - handed over a live, redeemable reset for every account with a
+ * pending request.
+ *
+ * Same construction as the other two, and for the same reason: the token is
+ * CSPRNG output, not a human-chosen secret, so an unsalted sha256 is the right
+ * primitive and a slow KDF would only delay redemption.
+ */
+const hashPasswordResetToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
+
 // Administrator invitation and reset tokens. Same reasoning as the QA links
 // above: 32 bytes of CSPRNG output is not a human-chosen secret, so sha256 with
 // no salt is correct and scrypt would only slow down redemption. Only the hash
@@ -690,9 +708,11 @@ const authRouter = router({
       && target.accountStatus === 'active' && !target.deactivatedAt;
 
     if (eligible) {
+      // The raw token goes in the email and nowhere else; the column gets the
+      // hash, so what is stored is not what is redeemable.
       const token = `${randomUUID()}-${randomUUID().slice(0, 8)}`;
       await db.update(users).set({
-        passwordResetToken: token,
+        passwordResetToken: hashPasswordResetToken(token),
         passwordResetExpiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
       }).where(eq(users.id, target.id));
       try {
@@ -729,7 +749,9 @@ const authRouter = router({
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
-    const [target] = await db.select().from(users).where(eq(users.passwordResetToken, input.token));
+    // Looked up by HASH. The raw token never has to exist server-side beyond
+    // this comparison, and an attacker holding the column value holds nothing.
+    const [target] = await db.select().from(users).where(eq(users.passwordResetToken, hashPasswordResetToken(input.token)));
     if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'This reset link is invalid or has already been used' });
     if (!target.passwordResetExpiresAt || new Date(target.passwordResetExpiresAt).getTime() < Date.now()) {
       await db.update(users).set({ passwordResetToken: null, passwordResetExpiresAt: null }).where(eq(users.id, target.id));

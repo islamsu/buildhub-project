@@ -495,6 +495,13 @@ const translations: Record<Language, Record<string, string>> = {
     'ai.title': 'AI Construction Assistant',
     'ai.subtitle': 'Your intelligent partner for cost estimation, planning, and project advice',
     'ai.placeholder': 'Ask anything about your construction project…',
+    // The composer's send control is icon-only, so its accessible name is the
+    // only thing a screen reader has to go on. 'ai.send' already existed for
+    // the visible label and is reused rather than duplicated.
+    'ai.send.sending': 'Sending your message',
+    // The conversation composer's controls are icon-only too.
+    'messages.send': 'Send message',
+    'messages.attach': 'Attach a file',
     'ai.send': 'Send',
     'ai.thinking': 'Thinking…',
     'ai.clear': 'Clear Chat',
@@ -1491,6 +1498,9 @@ const translations: Record<Language, Record<string, string>> = {
     'ai.title': 'مساعد البناء بالذكاء الاصطناعي',
     'ai.subtitle': 'شريكك الذكي لتقدير التكاليف والتخطيط ونصائح المشاريع',
     'ai.placeholder': 'اسأل أي شيء عن مشروع البناء الخاص بك…',
+    'ai.send.sending': 'جاري إرسال رسالتك',
+    'messages.send': 'إرسال الرسالة',
+    'messages.attach': 'إرفاق ملف',
     'ai.send': 'إرسال',
     'ai.thinking': 'جاري التفكير…',
     'ai.clear': 'مسح المحادثة',

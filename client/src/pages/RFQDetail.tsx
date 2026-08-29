@@ -168,7 +168,12 @@ export default function RFQDetail() {
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <CardTitle className="text-xl" data-testid="rfq-detail-title">{rfq.title}</CardTitle>
+                {/* The request's title IS this page's title, so it is the h1. The page
+                  had no top-level heading at all, which leaves assistive
+                  technology nothing to land on when the record opens.
+                  CardTitle renders a div and takes no asChild, so the heading
+                  is declared here and given CardTitle's own type styles. */}
+<h1 className="text-xl font-semibold leading-none" data-testid="rfq-detail-title">{rfq.title}</h1>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {ar ? 'رقم الطلب' : 'Request'} #{rfq.id}
                   {rfq.createdAt && ` · ${new Date(rfq.createdAt).toLocaleDateString(ar ? 'ar-EG' : 'en-US')}`}

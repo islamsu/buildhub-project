@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { randomBytes, scrypt as scryptCallback } from 'node:crypto';
+import { createHash, randomBytes, scrypt as scryptCallback } from 'node:crypto';
 import { promisify } from 'node:util';
 
 /**
@@ -452,15 +452,30 @@ describe('§4 requestPasswordReset', () => {
     await appRouter.createCaller(anonCtx().ctx).auth.requestPasswordReset({ email: 'vendor@example.com' });
 
     expect(updates).toHaveLength(1);
-    const token = String(updates[0].passwordResetToken);
-    expect(token.length).toBeGreaterThan(20);
+    const stored = String(updates[0].passwordResetToken);
     const expiry = updates[0].passwordResetExpiresAt as Date;
     expect(expiry.getTime()).toBeGreaterThan(Date.now());
     expect(expiry.getTime()).toBeLessThanOrEqual(Date.now() + 60 * 60 * 1000);
 
     expect(sent).toHaveLength(1);
     expect(sent[0].to).toBe('vendor@example.com');
-    expect(sent[0].body).toContain(`https://buildhub.example/auth/reset-password?token=${token}`);
+
+    // WHAT IS EMAILED AND WHAT IS STORED ARE NOT THE SAME STRING.
+    //
+    // This used to assert the emailed link contained the STORED value, which
+    // was true only because the raw token was written to the column. A dump of
+    // the users table then handed over a live reset for every account with a
+    // pending request - while testLoginTokens and adminInvitations, in the same
+    // file, already stored only a hash for exactly that reason.
+    //
+    // The assertion is now the stronger one: the link carries a token, that
+    // token is NOT what the column holds, and the column holds its sha256.
+    const emailed = sent[0].body.match(/reset-password\?token=([^\s]+)/)?.[1];
+    expect(emailed, 'the email must carry a reset token').toBeTruthy();
+    expect(emailed!.length).toBeGreaterThan(20);
+    expect(sent[0].body).toContain(`https://buildhub.example/auth/reset-password?token=${emailed}`);
+    expect(stored, 'the raw token must not be what is stored').not.toBe(emailed);
+    expect(stored).toBe(createHash('sha256').update(emailed!).digest('hex'));
   });
 
   it('never puts the reset link anywhere in the API response', async () => {
@@ -469,6 +484,7 @@ describe('§4 requestPasswordReset', () => {
     (db.getUserByEmail as ReturnType<typeof vi.fn>).mockResolvedValue({ ...ACCOUNT, passwordHash });
     const { updates } = makeDb();
     const result = await appRouter.createCaller(anonCtx().ctx).auth.requestPasswordReset({ email: 'vendor@example.com' });
+    // Neither the stored hash nor the raw token that was emailed.
     expect(JSON.stringify(result)).not.toContain(String(updates[0].passwordResetToken));
     expect(Object.keys(result)).toEqual(['requested']);
   });

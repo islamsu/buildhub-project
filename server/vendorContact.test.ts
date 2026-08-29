@@ -184,3 +184,40 @@ describe('both languages carry the new strings', () => {
     expect(i18n).toMatch(/Direct phone numbers and email addresses are not published/);
   });
 });
+
+describe('a password reset link is a credential, and is stored like one', () => {
+  const routers = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+
+  it('the column holds a hash, not the token that was emailed', () => {
+    // testLoginTokens and adminInvitations already store only a hash, and the
+    // schema says why: a dump of the table must yield nothing redeemable. The
+    // password-reset path was the one place that rule was not applied - the
+    // raw token was written to users.passwordResetToken and compared directly,
+    // so any read of the users table handed over a live reset for every
+    // account with a pending request.
+    expect(routers).toContain('const hashPasswordResetToken =');
+    expect(routers).toContain('passwordResetToken: hashPasswordResetToken(token),');
+  });
+
+  it('and redemption compares the hash, never the raw value', () => {
+    expect(routers).toContain('eq(users.passwordResetToken, hashPasswordResetToken(input.token))');
+    // The exact shape of the defect: a direct comparison against the input.
+    expect(routers).not.toMatch(/eq\(users\.passwordResetToken,\s*input\.token\)/);
+  });
+
+  it('the raw token still reaches the person, in the email', () => {
+    const at = routers.indexOf('subject: \'Reset your BuildHub password\'');
+    expect(at).toBeGreaterThan(-1);
+    expect(routers.slice(at, at + 400)).toContain('reset-password?token=${token}');
+  });
+
+  it('all three credential-bearing links use the same construction', () => {
+    // One rule, applied three times, rather than three habits.
+    for (const helper of ['hashTestLoginToken', 'hashAdminToken', 'hashPasswordResetToken']) {
+      expect(routers, `${helper} must exist`).toContain(`const ${helper} =`);
+      const at = routers.indexOf(`const ${helper} =`);
+      expect(routers.slice(at, at + 120), `${helper} must be sha256 of the raw value`)
+        .toContain("createHash('sha256').update(raw).digest('hex')");
+    }
+  });
+});

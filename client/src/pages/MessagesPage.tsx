@@ -279,7 +279,7 @@ export default function MessagesPage() {
                   {/* Input */}
                   <div className="p-3 border-t border-border">
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" className="w-9 h-9 p-0 flex-shrink-0" onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}>
+                      <Button variant="ghost" size="sm" aria-label={t('messages.attach')} className="w-9 h-9 p-0 flex-shrink-0" onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}>
                         <Paperclip className="w-4 h-4" />
                       </Button>
                       <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={event => handleFile(event.target.files?.[0])} />
@@ -292,7 +292,7 @@ export default function MessagesPage() {
                         onChange={e => setMessageText(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
                       />
-                      <Button size="sm" className="w-9 h-9 p-0 flex-shrink-0" onClick={sendMessage} disabled={!messageText.trim()}>
+                      <Button size="sm" aria-label={t('messages.send')} className="w-9 h-9 p-0 flex-shrink-0" onClick={sendMessage} disabled={!messageText.trim()}>
                         <Send className="w-4 h-4" />
                       </Button>
                     </div>
