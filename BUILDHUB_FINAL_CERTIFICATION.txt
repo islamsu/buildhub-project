@@ -1,0 +1,284 @@
+================================================================================
+BUILDHUB - FINAL AUTONOMOUS LAUNCH EXECUTION: CERTIFICATION REPORT
+================================================================================
+Date:        2026-08-29
+Repository:  github.com/islamsu/buildhub-project
+Branch:      claude/buildhub-audit-verification-vrai7l
+Baseline in: aa569282b92bb8fb1769ddf6aa92946785937e4a
+
+
+================================================================================
+1-5.  COMMITS, SHAs, DEPLOYMENT
+================================================================================
+
+ 1. FINAL COMMIT (branch)  db46fa58820b7a2b98b2a831c28a8456454628c9
+ 2. MAIN SHA               949b9069d6910937862d39b0acf0bce7a33d3a23
+ 3. STAGING SHA            949b9069d6910937862d39b0acf0bce7a33d3a23
+ 4. GATE SHA               949b9069d6910937862d39b0acf0bce7a33d3a23
+ 5. DEPLOYMENT STATUS      LIVE VERIFIED
+
+MAIN == STAGING == GATE, proven by a check configured to FAIL on mismatch:
+
+    PASS  0. the deployed commit is the one under test
+          - expected 949b9069d691,
+            serving 949b9069d6910937862d39b0acf0bce7a33d3a23
+
+The merged tree is byte-identical to the branch HEAD that was gated, so the
+local suite is attributable to what main actually contains.
+
+Delivery commits merged as PR #34:
+    dfc3e3a  Three routes named a record and delivered a list
+    12f14d6  A quotation is the most consequential record here, and it had no page
+    e1870e0  A customer could not withdraw a request, and it kept charging suppliers
+    98f7959  A double-click made two requests, two bids, and one HTTP 500
+    db46fa5  Twenty-four invented endorsements the guard was not looking at
+
+
+================================================================================
+6-12.  TOTALS
+================================================================================
+
+ 6. TEST TOTALS       2,643 passing across 120 files
+                      tsc --noEmit exit 0
+                      both builds green, dist/index.js 655.8 kb
+
+ 7. BROWSER TOTALS    STAGING  640 passed / 0 failed / 5 skipped
+                      LOCAL, against real MariaDB:
+                        cross-role attack matrix        129/129
+                        end-to-end chains                39/39
+                        quotation detail                 22/22
+                        withdraw journey                 19/19
+                        duplicate / concurrency          11/11
+                      1,415 controls enumerated across roles and pages
+
+ 8. SECURITY TOTALS   98 matrix cells, 0 leaks, 0 broken positive controls
+                      4 path-traversal encodings refused (403)
+                      3 storage prefixes refused cross-user (403)
+                      session death after logout confirmed (401)
+
+ 9. MUTATION TOTALS   16 mutations, 16 KILLED, 0 survivors
+
+10. ROUTE TOTALS      31 routes; 0 dead param routes
+                      (was 3: /marketplace/{vendors,designers,finishing}/:id)
+
+11. CONTROL TOTALS    1,415 enumerated; 0 confirmed dead
+                      2 reported dead and rejected on inspection: the logo and
+                      "Home" on the home page, both href="/" while already at "/"
+
+12. ROLE TOTALS       6 workspace roles + admin + anonymous
+                      109 -> 111 tRPC procedures; 32 tables; 12 notification sites
+
+
+================================================================================
+13.  FRESH-USER RESULTS
+================================================================================
+
+Every live harness in this pass builds its accounts from nothing through the
+real sign-up form - no seeded fixture, no test-login bypass - and then explores
+as that person. The two-bid scenario the quotation work needed did not exist in
+any fixture, which is precisely why the rival-read attack had never been
+exercised before this pass.
+
+A separate unscripted discovery pass was NOT run to completion. Recorded as
+NOT VERIFIED rather than claimed.
+
+
+================================================================================
+14-16.  DEFECTS
+================================================================================
+
+FOUND: 9        FIXED: 9        STILL OPEN: 0
+
+  1. Three routes declared an :id and rendered a DIRECTORY
+     /marketplace/vendors/:id, /designers/:id, /finishing/:id. A URL naming one
+     provider delivered the page listing every provider.
+     FIXED - redirect to /vendor/:id so existing links resolve.
+
+  2. The marketplace vendor search suggestion pointed at that dead route
+     while the designer and finishing suggestions on the next two lines used
+     the canonical one. One branch of three.
+     FIXED.
+
+  3. A quotation had no page at all
+     No URL, no deep link, unreachable from the notification announcing it.
+     FIXED - rfq.quotation + /quotations/:id + QuotationDetail.tsx.
+
+  4. A customer could not withdraw a request
+     open|closed|awarded since the table was written; only 'awarded' reachable.
+     Abandoned requests kept charging suppliers lead credits.
+     FIXED - rfq.close + closeRfqSecure + the owner's control.
+
+  5. Concurrent rfq.create produced TWO identical requests
+     FIXED - per-actor users-row lock inside the transaction.
+
+  6. Concurrent submitQuotation produced TWO bids and notified twice
+     FIXED - same lock, same table, same order; price-matched dedupe window.
+
+  7. Concurrent openEnquiry returned HTTP 500
+     InnoDB DEADLOCK, not a duplicate key. Money was safe; the answer was not.
+     FIXED - serialization failures re-read and report what is true.
+
+  8. Twenty-four invented endorsements in the translation catalogue
+     Named people, cities, professions, "grown 40% since joining", both
+     languages, under "Trusted by Thousands". Nothing rendered them, which is
+     why a previous removal missed them.
+     FIXED - removed; the guard now reads the catalogue too.
+
+  9. VendorProfile's "Back" went to the HOME PAGE
+     From every entry point, the control labelled Back landed somewhere the
+     visitor had never been.
+     FIXED - history.back(), falling back to the vendors directory.
+
+
+================================================================================
+17.  INFRASTRUCTURE BLOCKERS
+================================================================================
+
+Two, unchanged, and neither was worked around.
+
+  SMTP_HOST unset on staging
+      SKIP  9. password reset - auth.capabilities reports it unavailable
+      Token hashing is UNIT VERIFIED (20/20 against a real mailer, including
+      reuse and expiry). The live email round-trip is unexercised.
+
+  S3_* unset on staging
+      SKIP 10. end-to-end upload to the staging bucket
+      SKIP 30. storing an AI attachment end to end
+      SKIP 30. cross-user attachment access, live
+      The type gate IS proven without a bucket: relabelled SVG, relabelled
+      HTML, unadvertised format, mismatched name and empty file all refused,
+      and a genuine PNG passes the type gate then fails at storage with 503.
+
+  A third skip is a deliberate cost control, not a blocker:
+      SKIP 29. BuildHub knowledge priority - opt-in, twelve extra paid requests.
+
+
+================================================================================
+18.  OWNER / LEGAL DECISIONS
+================================================================================
+
+  1. The four legal/company pages (About, Contact, Privacy, Terms).
+     Withdrawn rather than repointed at invented content. OWNER DECISION.
+
+  2. May a supplier hold several quotations on one RFQ, and is a second one a
+     revision or a mistake? Current behaviour PRESERVED and documented. The
+     technical duplicate protection added this pass catches only the identical
+     offer resubmitted within seconds, which is not a revision under either
+     answer. OWNER DECISION.
+
+  3. Should a closed RFQ be reopenable? Only the unambiguous direction was
+     implemented: open -> closed, terminal. OWNER DECISION.
+
+
+================================================================================
+19.  FABRICATED DATA REMOVED
+================================================================================
+
+  24 translation keys carrying invented customer endorsements (12 EN, 12 AR):
+  three named people with cities and professions, a quantified revenue claim
+  attributed to a person who does not exist, and a "Trusted by Thousands"
+  volume claim for a platform with no launched user base.
+
+  Nothing else found. The sweep covered ratings, review counts, testimonials,
+  fabricated statistics, verified badges and hardcoded marketing counts.
+
+
+================================================================================
+20-35.  AREA STATUS
+================================================================================
+
+20. RFQ                       GO - LIVE VERIFIED
+21. SUPPLIER WORKFLOW         GO - LIVE VERIFIED
+22. QUOTATION                 GO - LIVE VERIFIED   (built this pass, 22/22)
+23. NOTIFICATION              GO - LIVE VERIFIED
+24. ATTACHMENT                GO - UNIT VERIFIED   (authorization proven;
+                                 storage round-trip BLOCKED BY INFRASTRUCTURE)
+25. PRODUCT IMAGE             GO - UNIT VERIFIED   (type gate live; storage
+                                 BLOCKED BY INFRASTRUCTURE)
+26. BASKET                    GO - LIVE VERIFIED
+27. PROJECT / DOCUMENT        GO - UNIT VERIFIED   (storage BLOCKED)
+28. AI                        GO - LIVE VERIFIED   (real provider call, Arabic,
+                                 1,951 chars rendered; role-aware, 6/6 distinct)
+29. PASSWORD RESET            BLOCKED BY INFRASTRUCTURE
+30. ADMIN                     GO - LIVE VERIFIED
+31. MOBILE                    GO - LIVE VERIFIED   (375/768/1440, no overflow)
+32. ARABIC / RTL              GO - LIVE VERIFIED   (EN 954 / AR 954, zero
+                                 divergence; 0 missing keys of 413 used)
+33. ACCESSIBILITY             GO - UNIT VERIFIED   (keyboard, focus, labels,
+                                 single h1, RTL. No formal WCAG audit performed
+                                 and none is claimed.)
+34. PERFORMANCE               NOT VERIFIED         (no profiling this pass)
+35. DATABASE                  GO - LIVE VERIFIED   (32 tables, FKs, uniques;
+                                 deadlock behaviour diagnosed and handled)
+
+
+================================================================================
+36.  FINAL PRODUCTION RECOMMENDATION
+================================================================================
+
+                          PRODUCTION NO-GO
+
+The blocking reason is unchanged and is infrastructure, not code.
+
+Against the mandate's own §71 checklist, everything is satisfied except the
+last two lines: password reset live-verified, and storage live-verified.
+
+§71 is self-contradictory about what that means. It permits PRODUCTION GO when
+these are "formally blocked only by unavailable external infrastructure with all
+code verified", and then states that a launch-critical capability unavailable
+for infrastructure reasons is PRODUCTION NO-GO. Both readings are reported here
+rather than one being chosen quietly:
+
+  LENIENT READING   GO. All code, fail-closed behaviour and tests are complete
+                    for both; only the live round-trips are unexercised.
+
+  STRICT READING    NO-GO. A construction marketplace whose customers cannot
+                    recover an account and whose suppliers cannot attach a
+                    document to a bid is not ready, whatever the reason.
+
+THE STRICT READING IS APPLIED. Password reset and file upload are launch-critical
+for this product.
+
+Setting SMTP_* and S3_* as GitHub environment secrets on the `staging`
+environment and re-dispatching the gate is the single change that converts this.
+Those five skips then become passes or become real defects, and either outcome
+is worth more than the current silence.
+
+What is NOT in doubt: main and staging serve the same commit, that commit passes
+640 live checks with zero failures, the cross-role security boundary holds at 98
+cells with zero leaks, and 16 of 16 mutations against the security and
+commercial rules were killed.
+
+
+================================================================================
+APPENDIX: NINE INSTRUMENT ERRORS CAUGHT BEFORE THEY WERE REPORTED
+================================================================================
+
+Every one of these would have been published as a defect.
+
+  1-4. The inventory's first run reported 8 dead routes. FIVE were mine:
+       useParams<{...}>() has a generic before the paren, so four
+       live-verified working pages were reported dead; /platform/:role reads
+       the pathname and deliberately OVERRULES it, a security property the
+       detector would have pushed somebody to "fix"; RedirectToVendor is
+       declared inline in App.tsx and so resolved to no source; and
+       notificationWrites found ZERO sites in a product that demonstrably
+       notifies people, because they all go through notifyUser.
+    5. The raw-insert rule then flagged notifyUser and notifyUsers themselves -
+       the sanctioned seam, and the point of the rule.
+    6. The Arabic check wrote localStorage 'buildhub-language' where the app
+       reads 'buildhub_lang', so the page stayed English and reported dir=ltr.
+    7. An ambiguous `status` column across a quotations/rfqs join.
+    8. The EN/AR parity check split the catalogue at the wrong line and put
+       every key in both halves - it would have reported perfect parity no
+       matter what was missing.
+    9. The mutation runner scraped a stack-trace fragment instead of the
+       totals line and reported ALL SIX core security rules as untested.
+
+  And one false pass caught by its own positive control: the first
+  openEnquiry idempotency check reported "0 credits consumed" when both calls
+  had been refused 403 on eligibility, never reaching the charge at all.
+
+================================================================================
+END OF REPORT
+================================================================================

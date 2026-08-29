@@ -344,3 +344,53 @@ describe('a basket left on a shared machine does not become the next person\'s',
     expect(clearBody).toContain('catch');
   });
 });
+
+// ── "View RFQ list (3)" has to show a list ─────────────────────────────────
+//
+// The basket lives INSIDE the post-an-RFQ dialog, which starts closed. A
+// customer who collected three products and followed the product page's
+// "View RFQ list (3)" button landed on /rfq and saw no basket, no count, and
+// no sign their three items existed anywhere. The only way in was guessing
+// that a button labelled "Post an RFQ" was where the list had gone.
+//
+// The storage was never the problem - localStorage held all three the whole
+// time. It was reachable only by accident.
+describe('the basket is reachable from the control that names it', () => {
+  const PRODUCT = readFileSync(new URL('../client/src/pages/ProductDetail.tsx', import.meta.url), 'utf8');
+  const RFQ_PAGE = readFileSync(new URL('../client/src/pages/RFQPage.tsx', import.meta.url), 'utf8');
+
+  it('the product page links to /rfq WITH the basket intent', () => {
+    expect(PRODUCT).toContain('href="/rfq?basket=1"');
+  });
+
+  it('and the button it wraps still names the count it is promising', () => {
+    const at = PRODUCT.indexOf('data-testid="product-view-basket"');
+    expect(at).toBeGreaterThan(-1);
+    expect(PRODUCT.slice(at, at + 300)).toMatch(/basket\.count/);
+  });
+
+  it('the RFQ page opens the composer when it arrives with that intent', () => {
+    expect(RFQ_PAGE).toMatch(/new URLSearchParams\(search\)\.has\('basket'\)/);
+    expect(RFQ_PAGE).toMatch(/setOpen\(true\)/);
+  });
+
+  it('but NOT when the basket is empty - a stale bookmark must not pop a dialog', () => {
+    const at = RFQ_PAGE.indexOf("has('basket')");
+    const body = RFQ_PAGE.slice(at, at + 400);
+    expect(body).toMatch(/basket\.count === 0/);
+  });
+
+  it('and only once, so the dialog cannot reopen after the customer closes it', () => {
+    const at = RFQ_PAGE.indexOf("has('basket')");
+    const body = RFQ_PAGE.slice(Math.max(0, at - 300), at + 400);
+    expect(body).toMatch(/openedFromBasket\.current/);
+  });
+
+  it('the count is visible on the page WITHOUT opening anything', () => {
+    // The only evidence on /rfq that a basket exists at all, for somebody who
+    // arrived by any other route.
+    expect(RFQ_PAGE).toContain('data-testid="rfq-basket-count"');
+    const at = RFQ_PAGE.indexOf('data-testid="rfq-basket-count"');
+    expect(RFQ_PAGE.slice(Math.max(0, at - 300), at)).toMatch(/basket\.count > 0/);
+  });
+});
