@@ -216,11 +216,12 @@ export default function RolePlatform() {
     { label: lang === 'ar' ? 'الطلبات المفتوحة' : 'Open Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-amber-600 bg-amber-50', section: 'role-rfqs' },
   ] : [
     // The contractor's requests card is the pipeline; engineer and architect
-    // carry role-rfqs. Only the contractor has a quotations surface among these
-    // three, so only the contractor's quotation KPIs lead anywhere.
+    // carry role-rfqs. All three now render a quotations surface, so all three
+    // quotation KPIs lead to it - previously only the contractor's did, because
+    // only the contractor had somewhere for them to go.
     { label: lang === 'ar' ? 'الطلبات المؤهلة' : 'Qualified Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-blue-600 bg-blue-50', section: role === 'contractor' ? 'role-pipeline' : 'role-rfqs' },
-    { label: lang === 'ar' ? 'عروض الأسعار' : 'My Quotations', value: myQuotations.length, icon: FileText, tone: 'text-violet-600 bg-violet-50', section: role === 'contractor' ? 'role-quotations' : undefined },
-    { label: lang === 'ar' ? 'العروض المقبولة' : 'Accepted Quotes', value: awardedQuotes.length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50', section: role === 'contractor' ? 'role-quotations' : undefined },
+    { label: lang === 'ar' ? 'عروض الأسعار' : 'My Quotations', value: myQuotations.length, icon: FileText, tone: 'text-violet-600 bg-violet-50', section: 'role-quotations' },
+    { label: lang === 'ar' ? 'العروض المقبولة' : 'Accepted Quotes', value: awardedQuotes.length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50', section: 'role-quotations' },
     { label: lang === 'ar' ? 'مشاريع متاحة' : 'Project Opportunities', value: projectDirectory.length, icon: BriefcaseBusiness, tone: 'text-amber-600 bg-amber-50', section: 'role-projects' },
   ];
 
@@ -379,9 +380,9 @@ export default function RolePlatform() {
         ) : role === 'contractor' ? (
           <ContractorWorkspace rfqs={matchingRfqs} projects={projectDirectory} quotations={myQuotations} t={t} lang={lang} navigate={navigate} onQuote={(rfqId: number) => { setQuoteForm(form => ({ ...form, rfqId })); setQuoteDialogOpen(true); }} />
         ) : role === 'engineer' ? (
-          <EngineerWorkspace rfqs={matchingRfqs} projects={projectDirectory} t={t} lang={lang} navigate={navigate} onQuote={(rfqId: number) => { setQuoteForm(form => ({ ...form, rfqId })); setQuoteDialogOpen(true); }} />
+          <EngineerWorkspace rfqs={matchingRfqs} projects={projectDirectory} quotations={myQuotations} t={t} lang={lang} navigate={navigate} onQuote={(rfqId: number) => { setQuoteForm(form => ({ ...form, rfqId })); setQuoteDialogOpen(true); }} />
         ) : role === 'architect' ? (
-          <ArchitectWorkspace rfqs={matchingRfqs} projects={projectDirectory} t={t} lang={lang} navigate={navigate} ownProfileId={ownProfile?.id} onQuote={(rfqId: number) => { setQuoteForm(form => ({ ...form, rfqId })); setQuoteDialogOpen(true); }} />
+          <ArchitectWorkspace rfqs={matchingRfqs} projects={projectDirectory} quotations={myQuotations} t={t} lang={lang} navigate={navigate} ownProfileId={ownProfile?.id} onQuote={(rfqId: number) => { setQuoteForm(form => ({ ...form, rfqId })); setQuoteDialogOpen(true); }} />
         ) : (
           <ProjectManagerWorkspace projects={projectDirectory} rfqs={matchingRfqs} t={t} lang={lang} navigate={navigate} />
         )}
@@ -596,21 +597,39 @@ function ContractorWorkspace({ rfqs, projects, quotations, t, lang, navigate, on
   );
 }
 
-function EngineerWorkspace({ rfqs, projects, t, lang, navigate, onQuote }: { rfqs: any[]; projects: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void }) {
+function EngineerWorkspace({ rfqs, projects, quotations, t, lang, navigate, onQuote }: { rfqs: any[]; projects: any[]; quotations: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
       <Card id="role-documents"><CardHeader><CardTitle className="flex items-center gap-2"><PenTool className="h-5 w-5" />{lang === 'ar' ? 'المستندات الهندسية وجداول الكميات' : 'Technical Deliverables & BOQ Review'}</CardTitle></CardHeader><CardContent><div className="space-y-3"><div className="rounded-xl border p-4"><p className="font-medium">{lang === 'ar' ? 'مراجعة المخططات الإنشائية' : 'Structural Calculations & Drawing Review'}</p><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'أرفق المخططات أو جدول الكميات وسيقرأها المساعد الفني ويوضّح الكود الذي يحكم كل بند. البناء هنا لا يعتمد المخططات ولا يوقّع عليها.' : 'Attach a drawing or a BOQ and the technical assistant reads it, naming the code that governs each requirement. BuildHub does not approve or sign off drawings.'}</p><Button size="sm" className="mt-3 gap-2" onClick={() => navigate('/ai')}><Sparkles className="h-4 w-4" />{lang === 'ar' ? 'تحليل بالذكاء الاصطناعي' : 'Run AI Analysis'}</Button></div><div className="rounded-xl border p-4"><p className="font-medium">{lang === 'ar' ? 'مراجعة مواصفات المواد' : 'Material Specification Review'}</p><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'قارن المواصفة المعلنة من المورّد بالمعيار الذي ينطبق عليها. البناء هنا لا يفحص المواد ولا يصدر شهادات جودة - المراجعة تتم بأدوات المساعد الفني.' : "Compare a supplier's stated specification against the standard that applies to it. BuildHub does not test materials or issue quality certificates - the review happens with the technical assistant's tools."}</p><Button size="sm" variant="outline" className="mt-3 gap-2" onClick={() => navigate('/ai')}><Sparkles className="h-4 w-4" />{lang === 'ar' ? 'افتح المساعد الفني' : 'Open the technical assistant'}</Button></div></div></CardContent></Card>
       <Card id="role-rfqs"><CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{lang === 'ar' ? 'الطلبات الهندسية' : 'Engineering RFQs'}</CardTitle></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 5).map(rfq => <div key={rfq.id} className="rounded-xl border p-3"><p className="truncate text-sm font-medium">{rfq.title}</p><div className="mt-2 flex items-center justify-between"><span className="text-xs text-muted-foreground">{rfq.category || 'Engineering'}</span><Button size="sm" onClick={() => onQuote(rfq.id)}>{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
+      {/* THE BID YOU SUBMITTED HAD NOWHERE TO BE SEEN.
+          An engineer or architect can quote - the Design/Engineering RFQ cards
+          carry a Create Quotation button, and rfq.submitQuotation accepts them
+          - but only the contractor and supplier workspaces rendered the
+          quotations they had sent. myQuotations was fetched for every
+          professional and then discarded for these two roles, so a submitted
+          bid vanished from the person who submitted it. Found by driving the
+          whole workflow per role, not by reading the source. */}
+      <Card id="role-quotations" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{t('platform.my_quotations')}</CardTitle></CardHeader><CardContent><QuotationTiles quotations={quotations} t={t} lang={lang} navigate={navigate} /></CardContent></Card>
       <Card id="role-projects" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><BriefcaseBusiness className="h-5 w-5" />{lang === 'ar' ? 'المشاريع الهندسية النشطة' : 'Active Engineering Projects'}</CardTitle></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="grid gap-3 md:grid-cols-3">{projects.slice(0, 6).map(project => <div key={project.id} className="rounded-xl border p-3"><p className="font-medium">{project.title}</p><p className="mt-1 text-xs text-muted-foreground">{project.location || '—'}</p><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{t('project.progress')}</span><span>{project.progress ?? 0}%</span></div></div>)}</div>}</CardContent></Card>
     </div>
   );
 }
 
-function ArchitectWorkspace({ rfqs, projects, t, lang, navigate, onQuote, ownProfileId }: { rfqs: any[]; projects: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void; ownProfileId?: number }) {
+function ArchitectWorkspace({ rfqs, projects, quotations, t, lang, navigate, onQuote, ownProfileId }: { rfqs: any[]; projects: any[]; quotations: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void; ownProfileId?: number }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
       <Card id="role-portfolio"><CardHeader><CardTitle className="flex items-center gap-2"><PenTool className="h-5 w-5" />{lang === 'ar' ? 'معرض التصاميم وتقديم الأفكار' : 'Design Portfolio & Concept Presentation'}</CardTitle></CardHeader><CardContent><div className="space-y-3"><div className="rounded-xl border p-4"><p className="font-medium">{lang === 'ar' ? 'تطوير الفكرة التصميمية' : 'Developing the design concept'}</p><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'ناقش الفكرة والمواد والتشطيبات مع مساعد التصميم، أو أرفق مخططاً ليقرأه.' : 'Work through concept, materials and finishes with the design assistant, or attach a drawing for it to read.'}</p><Button size="sm" className="mt-3 gap-2" onClick={() => navigate('/ai')}><Sparkles className="h-4 w-4" />{lang === 'ar' ? 'افتح مساعد التصميم' : 'Open the design assistant'}</Button></div><div className="rounded-xl border border-dashed p-4"><p className="font-medium">{lang === 'ar' ? 'معرض الأعمال - غير متاح بعد' : 'Portfolio hosting - not available yet'}</p><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'لا يستضيف البناء هنا حتى الآن اللوحات التقديمية أو الصور ثلاثية الأبعاد. ما هو متاح فعلاً هو ملفك العام الذي يراه العملاء، وهو معروض أسفل هذه الصفحة.' : 'BuildHub does not yet host renderings or client mood boards. What does exist is your public profile, the page clients actually see, further down this workspace.'}</p><Button size="sm" variant="outline" className="mt-3 gap-2" data-testid="architect-public-profile" onClick={() => { if (ownProfileId) navigate(`/vendor/${ownProfileId}`); else revealSection('role-performance'); }}>{lang === 'ar' ? 'اذهب إلى ملفي العام' : 'Go to my public profile'}</Button></div></div></CardContent></Card>
       <Card id="role-rfqs"><CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{lang === 'ar' ? 'فرص التصميم والتشطيب' : 'Design RFQs'}</CardTitle></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 5).map(rfq => <div key={rfq.id} className="rounded-xl border p-3"><p className="truncate text-sm font-medium">{rfq.title}</p><div className="mt-2 flex items-center justify-between"><span className="text-xs text-muted-foreground">{rfq.category || 'Architecture'}</span><Button size="sm" onClick={() => onQuote(rfq.id)}>{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
+      {/* THE BID YOU SUBMITTED HAD NOWHERE TO BE SEEN.
+          An engineer or architect can quote - the Design/Engineering RFQ cards
+          carry a Create Quotation button, and rfq.submitQuotation accepts them
+          - but only the contractor and supplier workspaces rendered the
+          quotations they had sent. myQuotations was fetched for every
+          professional and then discarded for these two roles, so a submitted
+          bid vanished from the person who submitted it. Found by driving the
+          whole workflow per role, not by reading the source. */}
+      <Card id="role-quotations" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{t('platform.my_quotations')}</CardTitle></CardHeader><CardContent><QuotationTiles quotations={quotations} t={t} lang={lang} navigate={navigate} /></CardContent></Card>
       <Card id="role-projects" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FolderKanban className="h-5 w-5" />{lang === 'ar' ? 'مشاريع التصميم المعماري' : 'Active Architectural Projects'}</CardTitle></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="grid gap-3 md:grid-cols-3">{projects.slice(0, 6).map(project => <div key={project.id} className="rounded-xl border p-3"><p className="font-medium">{project.title}</p><p className="mt-1 text-xs text-muted-foreground">{project.location || '—'}</p><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{t('project.progress')}</span><span>{project.progress ?? 0}%</span></div></div>)}</div>}</CardContent></Card>
     </div>
   );

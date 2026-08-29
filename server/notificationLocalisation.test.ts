@@ -238,20 +238,53 @@ const quotationFixture = {
   messageParams: { rfqTitle: 'Villa slab' },
 };
 
+/**
+ * The text of one call's arguments, from `start` to the parenthesis that closes
+ * the call. Brace/paren balanced so a nested object or a template literal
+ * cannot end the slice early.
+ */
+function argumentsOf(source: string, start: number): string {
+  let depth = 1;
+  for (let i = start; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') {
+      depth--;
+      if (depth === 0) return source.slice(start, i);
+    }
+  }
+  return source.slice(start, start + 4000);
+}
+
 describe('the server writes the key everywhere it writes prose', () => {
   it('every notifyUser/notifyUsers call carries a messageKey, in EVERY server file', () => {
     // The defect this file exists to prevent is a NEW notification added the
     // old way. Counting the two against each other catches that - but only in
     // files it actually reads, which is why this counts per file and names
     // the offender rather than summing across the codebase.
+    // PER CALL SITE, not two totals compared. Counting `messageKey: ` across a
+    // whole file and comparing it to the number of notify calls was a proxy
+    // that could be satisfied the wrong way in both directions: one call with
+    // two keys and another with none summed to a pass, and any unrelated line
+    // mentioning messageKey - a SELECT of notifications.messageKey, for
+    // instance - broke it while every notification was correctly keyed.
+    //
+    // Now each call's own argument object is read and required to carry a key.
     const offenders: string[] = [];
     let total = 0;
     for (const [name, source] of SERVER_SOURCES) {
       if (name === 'notifications.ts') continue; // the transport, not a caller
-      const calls = [...source.matchAll(/notify(?:User|Users)\(db,/g)].length;
-      const keyed = [...source.matchAll(/messageKey: /g)].length;
-      total += calls;
-      if (calls !== keyed) offenders.push(`${name}: ${calls} call(s), ${keyed} key(s)`);
+      for (const match of source.matchAll(/notify(?:User|Users)\(db,/g)) {
+        total += 1;
+        // From the call to the end of its argument list. Brace-balanced rather
+        // than a fixed window, so a long notification body cannot push its own
+        // messageKey outside the slice being searched.
+        const body = argumentsOf(source, match.index! + match[0].length);
+        if (!/messageKey:/.test(body)) {
+          const line = source.slice(0, match.index).split('\n').length;
+          offenders.push(`${name}:${line}`);
+        }
+      }
     }
     expect(total, 'no notification call sites found at all').toBeGreaterThan(5);
     expect(offenders, 'a notification was added without a messageKey').toEqual([]);

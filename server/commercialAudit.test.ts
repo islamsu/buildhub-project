@@ -321,13 +321,48 @@ describe('audit records are permission-scoped, like the records they describe', 
 
   it('there is no unscoped read of the whole trail', () => {
     expect(auditRouter).not.toMatch(/publicProcedure/);
-    // Exactly two reads. A third would need its own authorization rule, which
-    // is the thing most likely to be got wrong later.
+    // WAS "exactly two reads", on the reasoning that a third would need its own
+    // authorization rule. A third arrived - recordHistory, which returns the
+    // OLD and NEW values Parts 42-44 ask for - and it does have its own rule.
+    // Counting was a proxy for the property; assert the property instead, so a
+    // fourth read is judged on whether it is scoped rather than on arriving.
     const procedures = auditRouter.match(/^\s{2}\w+:/gm) ?? [];
-    expect(procedures).toHaveLength(2);
+    expect(procedures.length, 'no procedures found - the slice is wrong').toBeGreaterThanOrEqual(3);
+    for (const procedure of procedures) {
+      const name = procedure.trim().replace(':', '');
+      const at = auditRouter.indexOf(procedure);
+      const body = auditRouter.slice(at, auditRouter.indexOf('\n  }),', at));
+      // Either an admin permission gate, or a predicate naming the caller.
+      const scoped = /adminWith\('[a-z.]+'\)/.test(body)
+        || /ctx\.user\.id/.test(body);
+      expect(scoped, `${name} reads the audit trail without scoping it to the caller`).toBe(true);
+    }
   });
 
-  it('both reads are bounded - an audit table only ever grows', () => {
-    expect(auditRouter.match(/\.limit\(/g) ?? []).toHaveLength(2);
+  it('every read is bounded - an audit table only ever grows', () => {
+    const procedures = auditRouter.match(/^\s{2}\w+:/gm) ?? [];
+    for (const procedure of procedures) {
+      const name = procedure.trim().replace(':', '');
+      const at = auditRouter.indexOf(procedure);
+      const body = auditRouter.slice(at, auditRouter.indexOf('\n  }),', at));
+      // recordHistory bounds itself inside readFieldHistory, which takes a
+      // limit and defaults it. Either shape counts; an unbounded scan does not.
+      const bounded = /\.limit\(/.test(body) || /readFieldHistory\(/.test(body);
+      expect(bounded, `${name} can return an unbounded number of audit rows`).toBe(true);
+    }
+  });
+
+  it('the value history is a NARROWER disclosure than the audit trail', () => {
+    // The whole reason fieldValueHistory is a second table. `all` hands every
+    // audit row to an audit.read admin because those rows carry field NAMES.
+    // Values are different, and recordHistory must never be reachable the same
+    // way: it requires the record's owner or an administrator, resolved from
+    // the LIVE row rather than from the history row's denormalised ownerId.
+    const at = auditRouter.indexOf('  recordHistory:');
+    expect(at, 'recordHistory not found').toBeGreaterThan(-1);
+    const body = auditRouter.slice(at);
+    expect(body).toContain('resolveSubjectOwner');
+    expect(body).toContain("code: 'NOT_FOUND'");
+    expect(body).not.toMatch(/fieldValueHistory\.ownerId/);
   });
 });

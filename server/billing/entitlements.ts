@@ -17,6 +17,8 @@ import {
 } from '@shared/billing';
 import type { BillingState } from './domain';
 import { getBillingState } from './service';
+import { getDb } from '../db';
+import { activeOverridesFor, applyOverrides } from './overrides';
 
 /**
  * Named capabilities, so callers ask `can(resolution, 'advanced_analytics')`
@@ -161,7 +163,34 @@ export async function resolveVendorEntitlements(
   now: Date = new Date(),
 ): Promise<VendorEntitlementResolution> {
   const state = await getBillingState(userId, now);
-  return buildResolution(userId, state, now);
+  // INDIVIDUAL OVERRIDES RESOLVE HERE, INSIDE THE ONE MECHANISM.
+  //
+  // Putting them anywhere else would mean two answers to "what is this vendor
+  // entitled to", and the enquiry enforcement in enquiries.ts - which reads
+  // resolution.qualifiedEnquiryAllowance - would keep honouring the plan while
+  // an administrator believed they had raised the limit. Because the merge
+  // happens before buildResolution, every existing consumer picks it up with
+  // no call site changing.
+  //
+  // FAILS CLOSED: any problem reading or parsing an override leaves the PLAN
+  // value in place. An override is never the reason someone gets more by
+  // accident.
+  const overridden = await withOverrides(userId, state, now);
+  return buildResolution(userId, overridden, now);
+}
+
+/** The plan's entitlements with any in-force override merged over them. */
+async function withOverrides(userId: number, state: BillingState, now: Date): Promise<BillingState> {
+  try {
+    const db = await getDb();
+    if (!db) return state;
+    const overrides = await activeOverridesFor(db as never, userId, now);
+    if (overrides.size === 0) return state;
+    const { entitlements } = applyOverrides(state.entitlements, overrides);
+    return { ...state, entitlements };
+  } catch {
+    return state;
+  }
 }
 
 /** Pure projection of a BillingState into the full resolution. Exported for testing. */

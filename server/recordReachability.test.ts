@@ -51,19 +51,59 @@ describe('a submitted quotation is reachable', () => {
     expect(tile).toContain('onKeyDown');
   });
 
-  it('BOTH roles that bid have somewhere to see their bids', () => {
-    // The supplier dashboard carried a "My Quotations" count with no surface
-    // anywhere behind it - the contractor was the only bidder whose responses
-    // were rendered at all.
-    expect(ROLE_SECTIONS.contractor).toContain('role-quotations');
-    expect(ROLE_SECTIONS.supplier).toContain('role-quotations');
-    expect(workspace.split('id="role-quotations"').length - 1).toBe(2);
+  // ── EVERY role that can bid must be able to see its own bids ─────────────
+  //
+  // This assertion used to name contractor and supplier. That list was the
+  // defect, not the specification: an engineer and an architect are offered a
+  // Create Quotation control on their own Design/Engineering RFQ cards, the
+  // server accepts the bid, myQuotations was fetched for them - and then the
+  // result was discarded, because only two workspaces rendered it. Someone
+  // could submit a priced commercial offer and have nowhere in the product to
+  // see that they had.
+  //
+  // Found by driving the whole per-role workflow in a browser, not by reading
+  // the source, and the fix is worth nothing if the rule can rot back. So the
+  // set of bidding roles is now DERIVED FROM THE WORKSPACE ITSELF: any role
+  // whose workspace offers onQuote() must render role-quotations. A future
+  // role that gains a quote button and no surface fails here.
+  const WORKSPACE_COMPONENTS: Record<string, string> = {
+    ContractorWorkspace: 'contractor',
+    EngineerWorkspace: 'engineer',
+    ArchitectWorkspace: 'architect',
+    SupplierWorkspace: 'supplier',
+    ProjectManagerWorkspace: 'project_manager',
+  };
+  const workspaceBody = (component: string) => {
+    const at = workspace.indexOf(`function ${component}(`);
+    expect(at, `${component} not found`).toBeGreaterThan(-1);
+    const next = Object.keys(WORKSPACE_COMPONENTS)
+      .map(other => other === component ? -1 : workspace.indexOf(`function ${other}(`, at + 1))
+      .filter(i => i > -1);
+    return workspace.slice(at, next.length ? Math.min(...next) : workspace.length);
+  };
+
+  it('every role whose workspace offers to create a quotation renders a quotations surface', () => {
+    const bidders = Object.entries(WORKSPACE_COMPONENTS)
+      .filter(([component]) => workspaceBody(component).includes('onQuote('))
+      .map(([, role]) => role);
+    // POSITIVE CONTROL: if this ever reads zero the derivation broke and the
+    // loop below would pass vacuously.
+    expect(bidders.length, 'no bidding workspace found - the derivation is broken').toBeGreaterThanOrEqual(4);
+    for (const role of bidders) {
+      expect(ROLE_SECTIONS[role as keyof typeof ROLE_SECTIONS], `${role} can bid and must be able to see its bids`)
+        .toContain('role-quotations');
+      expect(workspaceBody(Object.keys(WORKSPACE_COMPONENTS).find(c => WORKSPACE_COMPONENTS[c] === role)!),
+        `${role}'s workspace must render the section its sidebar and KPI point at`)
+        .toContain('id="role-quotations"');
+    }
   });
 
-  it('and both render the same tiles from the same component', () => {
-    // One implementation, so a fix to one is a fix to both.
+  it('and they all render the same tiles from the same component', () => {
+    // One implementation, so a fix to one is a fix to all of them.
     expect(workspace).toContain('function QuotationTiles(');
-    expect(workspace.split('<QuotationTiles').length - 1).toBe(2);
+    const surfaces = workspace.split('id="role-quotations"').length - 1;
+    const uses = workspace.split('<QuotationTiles').length - 1;
+    expect(uses, 'every quotations section must render the shared tiles').toBe(surfaces);
   });
 
   it('the RFQ page shows a provider the response they sent', () => {
@@ -116,13 +156,20 @@ describe('dashboard KPIs lead to the records they count', () => {
     for (const section of named) expect(everySection).toContain(section);
   });
 
-  it('the roles with no quotations surface do not point a KPI at one', () => {
-    // Engineer and architect bid through the same endpoint but have no
-    // quotations card, so their My Quotations tile stays informational rather
-    // than jumping somewhere unrelated.
-    expect(ROLE_SECTIONS.engineer).not.toContain('role-quotations');
-    expect(ROLE_SECTIONS.architect).not.toContain('role-quotations');
-    expect(workspace).toContain("section: role === 'contractor' ? 'role-quotations' : undefined");
+  it('the quotation KPIs point at a surface for every role that reaches them', () => {
+    // This replaces an assertion that engineer and architect must NOT point a
+    // KPI at a quotations section. That was true only because they had no such
+    // section, which was itself the defect - the number was real, the reader
+    // could not act on it, and the bid it counted was invisible.
+    //
+    // The shared metrics branch serves contractor, engineer and architect. Now
+    // that all three render the section, the conditional is gone and every one
+    // of them must actually have it.
+    expect(workspace).toContain("value: myQuotations.length, icon: FileText, tone: 'text-violet-600 bg-violet-50', section: 'role-quotations'");
+    expect(workspace).not.toContain("? 'role-quotations' : undefined");
+    for (const role of ['contractor', 'engineer', 'architect', 'supplier'] as const) {
+      expect(ROLE_SECTIONS[role], `${role}'s quotation KPI must lead somewhere`).toContain('role-quotations');
+    }
   });
 });
 

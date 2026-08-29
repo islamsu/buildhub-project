@@ -41,17 +41,17 @@
 
 Dead param routes: **0**
 
-## Server procedures (111)
+## Server procedures (114)
 
-- `protectedProcedure` — 54
+- `protectedProcedure` — 55
 - `publicProcedure` — 26
 - `approvedProviderProcedure` — 18
-- `superAdminProcedure` — 8
+- `superAdminProcedure` — 10
 - `complianceProcedure` — 2
 - `adminProcedure` — 2
 - `aiChatProcedure` — 1
 
-## Tables (32)
+## Tables (34)
 
 | Table | Columns | FK refs | NOT NULL | UNIQUE |
 |---|---|---|---|---|
@@ -87,17 +87,19 @@ Dead param routes: **0**
 | `qualifiedEnquiries` | 10 | 2 | 4 | 0 |
 | `testLoginTokens` | 11 | 3 | 5 | 1 |
 | `commercialAuditEvents` | 12 | 2 | 4 | 0 |
+| `vendorEntitlementOverrides` | 15 | 3 | 5 | 0 |
+| `fieldValueHistory` | 14 | 2 | 4 | 0 |
 
 ## Notification write sites (12)
 
-- server/routers.ts:1718 — notifyUser
-- server/routers.ts:1798 — notifyUser
-- server/routers.ts:2664 — notifyUser
-- server/routers.ts:2896 — notifyUser
-- server/routers.ts:3036 — notifyUser
-- server/routers.ts:3867 — notifyUser
-- server/routers.ts:3881 — notifyUser
-- server/routers.ts:3906 — notifyUser
+- server/routers.ts:1741 — notifyUser
+- server/routers.ts:1821 — notifyUser
+- server/routers.ts:2687 — notifyUser
+- server/routers.ts:2919 — notifyUser
+- server/routers.ts:3059 — notifyUser
+- server/routers.ts:4118 — notifyUser
+- server/routers.ts:4143 — notifyUser
+- server/routers.ts:4168 — notifyUser
 - server/notifications.ts:40 — notifyUser
 - server/notifications.ts:43 — helper implementation
 - server/notifications.ts:57 — notifyUser

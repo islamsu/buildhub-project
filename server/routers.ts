@@ -42,7 +42,7 @@ import {
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
   commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
-  aiAttachments, rfqItems,
+  aiAttachments, rfqItems, qualifiedEnquiries,
 } from '../drizzle/schema';
 import { and, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -74,6 +74,12 @@ import {
   type LifecycleOutcome,
 } from './billing/lifecycle';
 import { resolveVendorEntitlements, toVendorEntitlementResponse } from './billing/entitlements';
+import {
+  MAX_ENQUIRY_ALLOWANCE, readEnquiryAllowance, setEnquiryAllowance,
+} from './billing/overrides';
+import {
+  HISTORY_FIELDS, readFieldHistory, recordChangedFields, recordFieldChange, recordFieldChanges,
+} from './audit/fieldHistory';
 import { isPaymentProviderConfigured } from './billing/provider';
 import {
   getEnquiryUsage, getVendorCategories, listEligibleRfqs, openQualifiedEnquiry,
@@ -1486,7 +1492,10 @@ const marketplaceRouter = router({
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
       const { id, price, ...rest } = input;
-      const [owned] = await db.select({ id: products.id })
+      // THE WHOLE ROW, not just its id. Part 43 needs the value a price moved
+      // FROM, and after the UPDATE has run it is gone. The ownership predicate
+      // is unchanged - this still refuses a product the caller does not own.
+      const [owned] = await db.select()
         .from(products)
         .where(and(eq(products.id, id), eq(products.supplierId, ctx.user.id)));
       if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
@@ -1508,6 +1517,13 @@ const marketplaceRouter = router({
 
       await db.update(products).set(patch)
         .where(and(eq(products.id, id), eq(products.supplierId, ctx.user.id)));
+      // OLD -> NEW, in its own table with its own read path. The audit row
+      // below still records only the field NAMES, for the wider audience it
+      // has always had; the values go where only the owner and an
+      // audit.read administrator can read them.
+      await recordChangedFields(db, {
+        subjectType: 'product', subjectId: id, ownerId: ctx.user.id, actorId: ctx.user.id,
+      }, owned as unknown as Record<string, unknown>, patch, HISTORY_FIELDS.product);
       await recordCommercialEvent(db, {
         actorId: ctx.user.id, ownerId: ctx.user.id,
         subjectType: 'product', subjectId: id, action: 'product_updated',
@@ -1536,12 +1552,19 @@ const marketplaceRouter = router({
       }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const [owned] = await db.select({ id: products.id })
+      const [owned] = await db.select({ id: products.id, active: products.active })
         .from(products)
         .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
       if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
       await db.update(products).set({ active: input.active })
         .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
+      // Part 44: publishing and delisting is a status change, and a status
+      // change without its previous value cannot answer "was this live when
+      // the customer says they saw it".
+      await recordFieldChange(db, {
+        subjectType: 'product', subjectId: input.id, ownerId: ctx.user.id, actorId: ctx.user.id,
+        field: 'active', oldValue: String(owned.active), newValue: String(input.active),
+      });
       await recordCommercialEvent(db, {
         actorId: ctx.user.id, ownerId: ctx.user.id,
         subjectType: 'product', subjectId: input.id,
@@ -3299,6 +3322,23 @@ const superAdminProcedure = adminWith('admins.manage');
 // dialogs) - see BUILDHUB_PHASE4A67_ADMIN_USER_DATA_SECURITY.md for the
 // field-by-field trace. Adding a new users column later does NOT expose it here
 // automatically; it must be added to this list deliberately.
+// The people named in a dispute investigation. An explicit allowlist for the
+// same reason ADMIN_USER_LIST_COLUMNS is one: `users` holds passwordHash and a
+// live invitationToken, and Part 53 forbids surfacing either even to a Super
+// Admin. Enough to identify a party and understand their standing; nothing that
+// could be redeemed or replayed.
+const INVESTIGATION_PARTY_COLUMNS = {
+  id: users.id,
+  name: users.name,
+  username: users.username,
+  email: users.email,
+  userRole: users.userRole,
+  verified: users.verified,
+  accountStatus: users.accountStatus,
+  onboardingStatus: users.onboardingStatus,
+  createdAt: users.createdAt,
+} as const;
+
 const ADMIN_USER_LIST_COLUMNS = {
   id: users.id,
   name: users.name,
@@ -3668,6 +3708,217 @@ const adminRouter = router({
     .input(z.object({ userId: z.number().int().positive() }))
     .query(async ({ input }) => getLifecycleSnapshot(input.userId)),
 
+  // ── Qualified-enquiry allowance (Part 45) ────────────────────────────────
+  //
+  // Before this, a vendor's monthly lead allowance came from the plan constant
+  // and there was no way to move it for one vendor. An administrator wanting to
+  // grant a struggling supplier ten more leads had exactly one lever: change
+  // their plan - which rewrites what they are recorded as having agreed to pay
+  // and hands them every other capability of that tier.
+  //
+  // READ is billing.read, like every other billing view. WRITE is Super Admin
+  // alone, because it is the one operation here that changes what a vendor may
+  // consume. A vendor cannot reach either: they are on the admin router, and
+  // vendorEntitlementOverrides has no vendor-facing write anywhere in this file.
+  /**
+   * ── ONE RFQ, RECONSTRUCTED (Parts 41 and 52) ────────────────────────────
+   *
+   * "Who did what, when, to which record, from what value to what value."
+   * BuildHub could already answer each fragment of that separately - the
+   * commercial audit here, the notifications there, the quotations somewhere
+   * else - and could not answer the question, which is what an administrator
+   * actually has in front of them when a customer and a supplier disagree.
+   *
+   * SUPER ADMIN ONLY. Part 41 names Super Admin, Part 51 warns against
+   * sub-admins acquiring Super Admin reach, and this read deliberately crosses
+   * every ownership boundary in the product at once: two parties' messages,
+   * every competing bid's price, the whole audit trail. Widening it to a
+   * sub-admin role is a decision for the owner, not a default.
+   *
+   * PART 53 IS ENFORCED BY CONSTRUCTION, not by care: every user this returns
+   * goes through PARTY_COLUMNS, an explicit allowlist. `select().from(users)`
+   * would carry passwordHash and a live invitationToken into an administrator's
+   * browser, which is precisely the leak that allowlist exists to have already
+   * prevented twice in this file.
+   */
+  rfqInvestigation: superAdminProcedure
+    .input(z.object({ rfqId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const [rfq] = await db.select().from(rfqs).where(eq(rfqs.id, input.rfqId)).limit(1);
+      if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'Request not found' });
+
+      const bids = await db.select({
+        id: quotations.id,
+        providerId: quotations.providerId,
+        price: quotations.price,
+        currency: quotations.currency,
+        timeline: quotations.timeline,
+        warranty: quotations.warranty,
+        paymentTerms: quotations.paymentTerms,
+        notes: quotations.notes,
+        status: quotations.status,
+        attachments: quotations.attachments,
+        createdAt: quotations.createdAt,
+      }).from(quotations).where(eq(quotations.rfqId, input.rfqId)).orderBy(quotations.id);
+
+      const enquiries = await db.select({
+        id: qualifiedEnquiries.id,
+        userId: qualifiedEnquiries.userId,
+        yearMonth: qualifiedEnquiries.yearMonth,
+        planAtConsumption: qualifiedEnquiries.planAtConsumption,
+        matchedCategory: qualifiedEnquiries.matchedCategory,
+        createdAt: qualifiedEnquiries.createdAt,
+      }).from(qualifiedEnquiries).where(eq(qualifiedEnquiries.rfqId, input.rfqId)).orderBy(qualifiedEnquiries.id);
+
+      const bidIds = bids.map(bid => bid.id);
+      const [rfqAudit, quotationAudit, rfqHistory, quotationHistory] = await Promise.all([
+        db.select().from(commercialAuditEvents)
+          .where(and(eq(commercialAuditEvents.subjectType, 'rfq'), eq(commercialAuditEvents.subjectId, input.rfqId)))
+          .orderBy(commercialAuditEvents.id),
+        bidIds.length === 0 ? Promise.resolve([]) : db.select().from(commercialAuditEvents)
+          .where(and(eq(commercialAuditEvents.subjectType, 'quotation'), inArray(commercialAuditEvents.subjectId, bidIds)))
+          .orderBy(commercialAuditEvents.id),
+        readFieldHistory(db, 'rfq', [input.rfqId]),
+        bidIds.length === 0 ? Promise.resolve([]) : readFieldHistory(db, 'quotation', bidIds),
+      ]);
+
+      // The people involved, and only them. Not "every user", and not the
+      // whole row for any of them.
+      const partyIds = Array.from(new Set([rfq.requesterId, ...bids.map(b => b.providerId), ...enquiries.map(e => e.userId)]
+        .filter((id): id is number => typeof id === 'number')));
+      const parties = partyIds.length === 0 ? [] : await db.select(INVESTIGATION_PARTY_COLUMNS)
+        .from(users).where(inArray(users.id, partyIds));
+
+      // The conversation between the parties, and the notifications this
+      // request generated - who was told what, and where the link pointed.
+      const [conversation, notified] = await Promise.all([
+        partyIds.length < 2 ? Promise.resolve([]) : db.select({
+          id: messages.id,
+          senderId: messages.senderId,
+          receiverId: messages.receiverId,
+          type: messages.type,
+          content: messages.content,
+          quotationId: messages.quotationId,
+          createdAt: messages.createdAt,
+        }).from(messages)
+          .where(and(inArray(messages.senderId, partyIds), inArray(messages.receiverId, partyIds)))
+          .orderBy(messages.id),
+        partyIds.length === 0 ? Promise.resolve([]) : db.select({
+          id: notifications.id,
+          userId: notifications.userId,
+          type: notifications.type,
+          messageKey: notifications.messageKey,
+          link: notifications.link,
+          read: notifications.read,
+          createdAt: notifications.createdAt,
+        }).from(notifications)
+          .where(and(
+            inArray(notifications.userId, partyIds),
+            sql`(${notifications.link} = ${`/rfq/${input.rfqId}`} OR ${notifications.link} IN (${bidIds.length ? sql.join(bidIds.map(id => sql`${`/quotations/${id}`}`), sql`, `) : sql`''`}))`,
+          ))
+          .orderBy(notifications.id),
+      ]);
+
+      return {
+        rfq,
+        parties,
+        enquiries,
+        quotations: bids,
+        // OLD -> NEW, from the table that keeps values, for the request and
+        // for every bid on it.
+        history: { rfq: rfqHistory, quotations: quotationHistory },
+        audit: [...rfqAudit, ...quotationAudit].sort((a, b) => a.id - b.id),
+        messages: conversation,
+        notifications: notified,
+        // The commercial figures, computed here rather than in a dashboard, so
+        // "what was at stake" travels with the timeline.
+        commercial: {
+          budget: rfq.budget,
+          bidCount: bids.length,
+          lowestBid: bids.length ? bids.reduce((low, bid) => Number(bid.price) < Number(low.price) ? bid : low).price : null,
+          highestBid: bids.length ? bids.reduce((high, bid) => Number(bid.price) > Number(high.price) ? bid : high).price : null,
+          acceptedValue: bids.find(bid => bid.status === 'accepted')?.price ?? null,
+        },
+      };
+    }),
+
+  vendorEnquiryAllowance: adminWith('billing.read')
+    .input(z.object({ userId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const now = new Date();
+      const usage = await getEnquiryUsage(input.userId, now);
+      const resolution = await resolveVendorEntitlements(input.userId, now);
+      return readEnquiryAllowance(db as never, input.userId, resolution.effectivePlan, usage.used, usage.periodKey, now);
+    }),
+
+  setVendorEnquiryLimit: superAdminProcedure
+    .input(z.object({
+      userId: z.number().int().positive(),
+      // null = unlimited. The bounds are asserted again in setEnquiryAllowance
+      // rather than trusted from here: zod guards the transport, the service
+      // guards the rule, and the service is what a future caller might reach
+      // by another route.
+      limit: z.number().int().min(0).max(MAX_ENQUIRY_ALLOWANCE).nullable(),
+      reason: z.string().max(500).optional(),
+      endsAt: z.string().datetime().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const target = await db.select({ id: users.id, userRole: users.userRole })
+        .from(users).where(eq(users.id, input.userId)).limit(1);
+      if (!target[0]) throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor not found' });
+      if (!providerRoles.includes(target[0].userRole as typeof providerRoles[number])) {
+        // A homeowner has no enquiry allowance to raise. Refusing here keeps
+        // the override table free of rows that could never take effect.
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Qualified enquiries apply to provider accounts only' });
+      }
+
+      const result = await setEnquiryAllowance({
+        db: db as never,
+        userId: input.userId,
+        limit: input.limit,
+        reason: input.reason ?? null,
+        actorId: ctx.user.id,
+        endsAt: input.endsAt ? new Date(input.endsAt) : null,
+      });
+
+      if (!result.ok) {
+        if (result.reason === 'below_usage') {
+          // THE OWNER'S DECISION, NAMED IN THE ERROR. Refusing rather than
+          // accepting means an administrator cannot create an over-consumed
+          // state, and the message tells them the number that made it
+          // impossible instead of leaving them to guess.
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: `This vendor has already used ${result.used} qualified ${result.used === 1 ? 'enquiry' : 'enquiries'} in ${result.periodKey}. A limit of ${result.requested} would be below what they have already consumed. Consumed enquiries are never revoked - choose ${result.used} or higher, or wait for the period to reset.`,
+          });
+        }
+        if (result.reason === 'overflow') {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: `The maximum allowance is ${result.max}` });
+        }
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'A qualified-enquiry limit must be zero or a positive whole number' });
+      }
+
+      await db.insert(userAccountAuditEvents).values({
+        userId: input.userId, actorId: ctx.user.id, action: 'enquiry_allowance_changed', source: 'admin',
+        note: `${result.previous ?? 'plan default'} -> ${input.limit ?? 'unlimited'}${input.reason ? ` (${input.reason})` : ''}`,
+      });
+      await recordFieldChange(db, {
+        subjectType: 'user', subjectId: input.userId, ownerId: input.userId, actorId: ctx.user.id,
+        field: 'qualifiedEnquiriesPerMonth',
+        oldValue: result.previous === null ? null : String(result.previous),
+        newValue: input.limit === null ? 'unlimited' : String(input.limit),
+        reason: input.reason ?? null,
+      });
+      return { overrideId: result.overrideId, previous: result.previous, limit: input.limit };
+    }),
+
   startVendorTrial: adminWith('billing.manage')
     .input(z.object({
       userId: z.number().int().positive(),
@@ -3877,6 +4128,17 @@ const adminRouter = router({
     const [applicant] = await db.select().from(users).where(eq(users.id, input.userId));
     if (!applicant || !isComplianceRole(applicant.userRole)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Compliance applicant not found' });
     await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: new Date(), onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(eq(users.id, input.userId));
+    // Part 42 names supplier approval explicitly. registrationReviewEvents
+    // already records the new status; what it cannot answer is what the
+    // status was before, which is the question asked when a vendor says they
+    // were approved and then were not.
+    await recordFieldChanges(db, {
+      subjectType: 'user', subjectId: input.userId, ownerId: input.userId, actorId: ctx.user.id,
+      reason: input.note ?? null,
+    }, [
+      { field: 'onboardingStatus', oldValue: applicant.onboardingStatus, newValue: input.status },
+      { field: 'verified', oldValue: applicant.verified, newValue: input.status === 'approved' },
+    ]);
     await db.insert(registrationReviewEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'applicant_status_updated', status: input.status, note: input.note });
     await notifyUser(db, { userId: input.userId, title: 'Registration status updated', body: input.note || `Your registration is now ${input.status.replace('_', ' ')}`, type: 'compliance', link: '/compliance', messageKey: `notif.compliance.applicant.${input.status}`, messageParams: (input.note ? { note: input.note } : {}) as Record<string, string> });
     // Verification is the gate for appearing in the directory at all, so it is
@@ -4730,6 +4992,40 @@ function lifecycleResult(outcome: LifecycleOutcome) {
  * own authorization rule per subject type - four of them, each able to drift -
  * and the two reads above already answer the questions anyone actually has.
  */
+/**
+ * Who owns the record a history read is asking about, resolved from the live
+ * row. Returns null when the record does not exist, which the caller treats
+ * the same as "not yours".
+ */
+async function resolveSubjectOwner(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  subjectType: 'rfq' | 'quotation' | 'product' | 'user' | 'subscription',
+  subjectId: number,
+): Promise<number | null> {
+  switch (subjectType) {
+    case 'rfq': {
+      const [row] = await db.select({ ownerId: rfqs.requesterId }).from(rfqs).where(eq(rfqs.id, subjectId)).limit(1);
+      return row?.ownerId ?? null;
+    }
+    case 'quotation': {
+      const [row] = await db.select({ ownerId: quotations.providerId }).from(quotations).where(eq(quotations.id, subjectId)).limit(1);
+      return row?.ownerId ?? null;
+    }
+    case 'product': {
+      const [row] = await db.select({ ownerId: products.supplierId }).from(products).where(eq(products.id, subjectId)).limit(1);
+      return row?.ownerId ?? null;
+    }
+    case 'user':
+    case 'subscription': {
+      // A person's own account and subscription history belongs to them.
+      const [row] = await db.select({ ownerId: users.id }).from(users).where(eq(users.id, subjectId)).limit(1);
+      return row?.ownerId ?? null;
+    }
+    default:
+      return null;
+  }
+}
+
 const auditRouter = router({
   mine: protectedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(100).default(50) }).optional())
@@ -4762,6 +5058,57 @@ const auditRouter = router({
         .from(commercialAuditEvents)
         .orderBy(desc(commercialAuditEvents.createdAt))
         .limit(input?.limit ?? 100);
+    }),
+
+  /**
+   * OLD -> NEW for one record (Parts 42, 43, 44).
+   *
+   * SEPARATE FROM `mine` AND `all` ON PURPOSE. Those return the audit trail,
+   * which deliberately carries field NAMES and never values, and is read by a
+   * wider audience. Values are a narrower disclosure - a competitor's
+   * historical pricing is exactly the thing a marketplace must not hand out -
+   * so they get their own procedure with their own authorization.
+   *
+   * WHO MAY READ IT: the record's own owner, and any administrator - Super
+   * Admin and sub-admins alike. That is the owner's decision, asked and
+   * answered explicitly rather than inferred; the narrower reading
+   * (audit.read only, which would exclude Support and Billing) was offered and
+   * not chosen. Everyone else keeps the existing field-names-only audit view.
+   *
+   * OWNERSHIP IS RESOLVED FROM THE SUBJECT ROW, NOT FROM THE HISTORY ROW.
+   * fieldValueHistory.ownerId records who owned the record AT THE TIME, which
+   * is right for the audit but wrong for authorization: a product sold to
+   * another supplier would otherwise keep letting its previous owner read
+   * changes made after they lost it.
+   */
+  recordHistory: protectedProcedure
+    .input(z.object({
+      subjectType: z.enum(['rfq', 'quotation', 'product', 'user', 'subscription']),
+      subjectId: z.number().int().positive(),
+      limit: z.number().int().min(1).max(200).default(100),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      // Any administrator with a real admin role. `adminRole` null means no
+      // permissions at all everywhere else in this file (hasAdminPermission
+      // fails closed), and it must mean the same here - a role='admin' row
+      // with no adminRole is not an administrator.
+      const isAdmin = ctx.user.role === 'admin'
+        && isAdminRole((ctx.user as { adminRole?: string }).adminRole);
+
+      if (!isAdmin) {
+        const ownerId = await resolveSubjectOwner(db, input.subjectType, input.subjectId);
+        // NOT_FOUND rather than FORBIDDEN for a record they do not own: telling
+        // an attacker that quotation 412 exists but is not theirs is itself a
+        // disclosure, and every other read in this file answers the same way.
+        if (ownerId === null || ownerId !== ctx.user.id) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'No history for this record' });
+        }
+      }
+
+      return readFieldHistory(db, input.subjectType, [input.subjectId], input.limit);
     }),
 });
 

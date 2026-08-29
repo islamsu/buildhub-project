@@ -58,8 +58,8 @@ const PROFESSIONAL_TAIL: SectionId[] = ['role-billing', 'role-enquiries', 'role-
 export const ROLE_SECTIONS: Record<WorkspaceRole, SectionId[]> = {
   homeowner: ['role-overview', 'role-projects', 'role-profile'],
   contractor: ['role-overview', 'role-pipeline', 'role-quotations', 'role-projects', ...PROFESSIONAL_TAIL],
-  engineer: ['role-overview', 'role-documents', 'role-rfqs', 'role-projects', ...PROFESSIONAL_TAIL],
-  architect: ['role-overview', 'role-portfolio', 'role-rfqs', 'role-projects', ...PROFESSIONAL_TAIL],
+  engineer: ['role-overview', 'role-documents', 'role-rfqs', 'role-quotations', 'role-projects', ...PROFESSIONAL_TAIL],
+  architect: ['role-overview', 'role-portfolio', 'role-rfqs', 'role-quotations', 'role-projects', ...PROFESSIONAL_TAIL],
   supplier: ['role-overview', 'role-catalogue', 'role-rfqs', 'role-quotations', 'role-projects', ...PROFESSIONAL_TAIL],
   project_manager: ['role-overview', 'role-queue', 'role-rfqs', ...PROFESSIONAL_TAIL],
 };

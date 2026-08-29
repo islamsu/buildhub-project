@@ -4,6 +4,7 @@ import { getDb } from './db';
 import { quotations, rfqs } from '../drizzle/schema';
 import { notifyUser, notifyUsers } from './notifications';
 import { recordCommercialEvent } from './_core/commercialAudit';
+import { recordFieldChange } from './audit/fieldHistory';
 
 // The only authoritative implementation of quotation acceptance. Wired directly into
 // rfqRouter.acceptQuotation — do not duplicate this logic elsewhere.
@@ -38,15 +39,40 @@ export async function acceptQuotationSecure(rfqId: number, quotationId: number, 
     // Read who else is about to be auto-rejected (for notifications below) before the cascade
     // update runs. Safe without an extra lock: the RFQ row lock above already serializes any
     // other transaction that could touch these rows.
-    const others = await tx.select({ providerId: quotations.providerId }).from(quotations).where(
-      and(eq(quotations.rfqId, rfqId), ne(quotations.id, quotationId))
-    );
+    // id and status as well as providerId: the auto-rejection has to be
+    // recorded per quotation with the status it moved FROM, and after the
+    // cascade update below that value no longer exists anywhere.
+    const others = await tx.select({ id: quotations.id, providerId: quotations.providerId, status: quotations.status })
+      .from(quotations).where(
+        and(eq(quotations.rfqId, rfqId), ne(quotations.id, quotationId))
+      );
 
     await tx.update(quotations).set({ status: 'accepted' }).where(eq(quotations.id, quotationId));
     await tx.update(quotations).set({ status: 'rejected' }).where(
       and(eq(quotations.rfqId, rfqId), ne(quotations.id, quotationId))
     );
+    // OLD -> NEW for every quotation this decision moved, not only the winner.
+    // A supplier asking "why was my bid rejected when I was never told" needs
+    // the row that says it went from pending to rejected, by whom, and when -
+    // and the losers are rejected as a side effect of someone else winning,
+    // which is exactly the transition nobody remembers making.
+    await recordFieldChange(tx, {
+      subjectType: 'quotation', subjectId: quotationId, ownerId: quotation.providerId, actorId: userId,
+      field: 'status', oldValue: quotation.status, newValue: 'accepted',
+    });
+    for (const loser of others) {
+      if (loser.id === quotationId) continue;
+      await recordFieldChange(tx, {
+        subjectType: 'quotation', subjectId: loser.id, ownerId: loser.providerId, actorId: userId,
+        field: 'status', oldValue: loser.status, newValue: 'rejected',
+        reason: 'Auto-rejected: another quotation on this request was accepted',
+      });
+    }
     await tx.update(rfqs).set({ status: 'awarded' }).where(eq(rfqs.id, rfqId));
+    await recordFieldChange(tx, {
+      subjectType: 'rfq', subjectId: rfqId, ownerId: rfq.requesterId, actorId: userId,
+      field: 'status', oldValue: rfq.status, newValue: 'awarded',
+    });
 
     // WHO IS TOLD THEY LOST, and who must not be.
     //
@@ -137,6 +163,10 @@ export async function rejectQuotationSecure(rfqId: number, quotationId: number, 
     }
 
     await tx.update(quotations).set({ status: 'rejected' }).where(eq(quotations.id, quotationId));
+    await recordFieldChange(tx, {
+      subjectType: 'quotation', subjectId: quotationId, ownerId: quotation.providerId, actorId: userId,
+      field: 'status', oldValue: quotation.status, newValue: 'rejected',
+    });
     return { success: true as const, providerId: quotation.providerId, rfqTitle: rfq.title, rfqId, quotationId };
   });
 
@@ -207,6 +237,10 @@ export async function closeRfqSecure(rfqId: number, userId: number) {
       .from(quotations).where(eq(quotations.rfqId, rfqId));
 
     await tx.update(rfqs).set({ status: 'closed' }).where(eq(rfqs.id, rfqId));
+    await recordFieldChange(tx, {
+      subjectType: 'rfq', subjectId: rfqId, ownerId: rfq.requesterId, actorId: userId,
+      field: 'status', oldValue: rfq.status, newValue: 'closed',
+    });
 
     // ONE MESSAGE PER PROVIDER, not one per bid. The same de-duplication the
     // losing-competitor path needs, and for the same reason: a provider may

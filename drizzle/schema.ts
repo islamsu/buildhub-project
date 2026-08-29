@@ -910,3 +910,98 @@ export const commercialAuditEvents = mysqlTable('commercialAuditEvents', {
   ownerIdx:    index('commercialAuditEvents_ownerId_idx').on(table.ownerId),
   createdIdx:  index('commercialAuditEvents_createdAt_idx').on(table.createdAt),
 }));
+
+// ── Individual entitlement overrides (Part 46) ─────────────────────────────
+//
+// WHY THIS IS NOT A COLUMN ON vendorSubscriptions, AND NOT A PLAN CHANGE.
+//
+// The mandate is explicit: "Do not change role or subscription to simulate an
+// entitlement override." Both shortcuts are worse than they look. Bumping a
+// vendor from professional to premium to give them ten more leads rewrites
+// what they are recorded as having agreed to pay, corrupts plan-distribution
+// reporting, and silently hands them every other premium capability. Writing
+// the number onto the subscription row destroys the previous value, so
+// "who raised this vendor's limit, from what, and why" becomes unanswerable
+// the moment it is asked.
+//
+// So an override is its own APPEND-ONLY record. A change inserts a new row
+// carrying the value it replaced; nothing is ever updated in place. That makes
+// Part 45's "VIEW HISTORY" and Part 46's OLD/NEW/ACTOR/REASON/START/END fall
+// out of the storage rather than needing a second table to reconstruct them,
+// and it makes historical rows immutable by construction (Part 17 of the
+// addendum) rather than by convention.
+//
+// `entitlementKey` is a key of PlanEntitlements in shared/billing.ts, and is
+// validated against that list at the boundary rather than by an enum here -
+// the same reasoning as analyticsEvents.eventType: the entitlement catalogue
+// changes far more often than the schema should.
+export const vendorEntitlementOverrides = mysqlTable('vendorEntitlementOverrides', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  entitlementKey: varchar('entitlementKey', { length: 64 }).notNull(),
+  /** JSON, because an entitlement value may be a number, null (unlimited), a string tier or a boolean. */
+  value:     text('value').notNull(),
+  /** The effective value this row replaced, for the OLD -> NEW the mandate asks for. */
+  previousValue: text('previousValue'),
+  reason:    text('reason'),
+  // SET NULL and nullable, like every other audit trail here: the record must
+  // outlive its actor, and RESTRICT would make an administrator who ever
+  // granted anything undeletable.
+  actorId:   int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  startsAt:  timestamp('startsAt').defaultNow().notNull(),
+  /** null = no expiry. A past value means the override has lapsed on its own. */
+  endsAt:    timestamp('endsAt'),
+  /** Set when a later row supersedes this one, or an admin withdraws it early. */
+  revokedAt: timestamp('revokedAt'),
+  revokedBy: int('revokedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  // The resolution lookup: this vendor, this entitlement, most recent first.
+  userKeyIdx: index('vendorEntitlementOverrides_userId_key_idx').on(table.userId, table.entitlementKey),
+  actorIdx:   index('vendorEntitlementOverrides_actorId_idx').on(table.actorId),
+  createdIdx: index('vendorEntitlementOverrides_createdAt_idx').on(table.createdAt),
+}));
+
+// ── Field-level value history (Parts 42, 43, 44) ───────────────────────────
+//
+// SEPARATE FROM commercialAuditEvents, and the separation is the point.
+//
+// That table deliberately records WHICH fields changed and never their values:
+// "an audit row is read by more people than the record it describes". That
+// decision was correct for its audience and stays exactly as it is. But the
+// mandate needs OLD -> NEW -> ACTOR -> TIME for price, status and terms, and
+// putting values into commercialAuditEvents.detail would widen who can read a
+// competitor's historical pricing as a side effect of a reporting change.
+//
+// Values therefore live here, with their own read path, scoped to the record's
+// owner and to administrators holding audit.read - the owner's decision, taken
+// explicitly rather than assumed.
+//
+// APPEND-ONLY. A later price change inserts a new row; it never rewrites an
+// earlier one. That is what makes "historical commercial events must not
+// change merely because current price changes" true of the storage rather than
+// of the code that happens to read it today.
+export const fieldValueHistory = mysqlTable('fieldValueHistory', {
+  id:          int('id').autoincrement().primaryKey(),
+  subjectType: mysqlEnum('subjectType', ['rfq', 'quotation', 'product', 'user', 'subscription']).notNull(),
+  // Not a foreign key, for the same reason commercialAuditEvents.subjectId is
+  // not one: the history must survive its subject being deleted.
+  subjectId:   int('subjectId').notNull(),
+  /** The record's owner AT THE TIME, so the read can be scoped without a per-type join. */
+  ownerId:     int('ownerId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  actorId:     int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  field:       varchar('field', { length: 64 }).notNull(),
+  oldValue:    text('oldValue'),
+  newValue:    text('newValue'),
+  /** Free text where the product captures one (an admin's note, a rejection reason). Never credentials. */
+  reason:      text('reason'),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  subjectIdx:  index('fieldValueHistory_subject_idx').on(table.subjectType, table.subjectId),
+  ownerIdx:    index('fieldValueHistory_ownerId_idx').on(table.ownerId),
+  actorIdx:    index('fieldValueHistory_actorId_idx').on(table.actorId),
+  createdIdx:  index('fieldValueHistory_createdAt_idx').on(table.createdAt),
+}));
+
+export type VendorEntitlementOverride = typeof vendorEntitlementOverrides.$inferSelect;
+export type FieldValueHistoryRow = typeof fieldValueHistory.$inferSelect;
