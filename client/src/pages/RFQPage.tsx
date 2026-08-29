@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { trpc } from '@/lib/trpc';
 import { useRfqBasket } from '@/hooks/useRfqBasket';
 import { useAuth } from '@/_core/hooks/useAuth';
-import { Link } from 'wouter';
+import { Link, useSearch } from 'wouter';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -87,6 +87,25 @@ export default function RFQPage() {
   const [uploadEta, setUploadEta] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const basket = useRfqBasket();
+
+  /**
+   * ARRIVING WITH A BASKET OPENS THE COMPOSER.
+   *
+   * "View RFQ list (3)" on a product page is a promise to show the list. It
+   * linked to /rfq, where the list is inside a dialog that starts closed, so
+   * the promise was not kept. The link now carries ?basket=1 and this opens the
+   * composer on arrival - once, and only when there is actually something in
+   * the basket, so a stale bookmark cannot pop a dialog over an empty list.
+   */
+  const search = useSearch();
+  const openedFromBasket = useRef(false);
+  useEffect(() => {
+    if (openedFromBasket.current) return;
+    if (!new URLSearchParams(search).has('basket')) return;
+    if (basket.count === 0) return;
+    openedFromBasket.current = true;
+    setOpen(true);
+  }, [search, basket.count]);
   const uploadAttachment = trpc.rfq.uploadAttachment.useMutation();
 
   useEffect(() => {
@@ -208,8 +227,24 @@ export default function RFQPage() {
           </div>
           {isAuthenticated ? (
             <Dialog open={open} onOpenChange={setOpen}>
+              {/* THE COUNT IS ON THE BUTTON, and that is not decoration.
+                  The basket lives INSIDE this dialog. A customer who collected
+                  three products and followed "View RFQ list (3)" from a product
+                  page landed here and saw no basket and no sign their items
+                  existed - the only way in was guessing that a button labelled
+                  "Post an RFQ" was where the list had gone. */}
               <DialogTrigger asChild>
-                <Button className="gap-2"><Plus className="w-4 h-4" /> {t('rfq.post')}</Button>
+                <Button className="gap-2" data-testid="rfq-post-trigger">
+                  <Plus className="w-4 h-4" /> {t('rfq.post')}
+                  {basket.count > 0 && (
+                    <span
+                      className="ml-1 rounded-full bg-primary-foreground/20 px-2 py-0.5 text-xs"
+                      data-testid="rfq-basket-count"
+                    >
+                      {basket.count}
+                    </span>
+                  )}
+                </Button>
               </DialogTrigger>
               <DialogContent className="max-w-lg">
                 <DialogHeader>

@@ -100,7 +100,10 @@ export default function ProductDetail() {
   }}
 ><ShoppingCart className="h-4 w-4" />{lang === 'ar' ? 'أضف إلى طلب الأسعار' : 'Add to RFQ list'}</Button>
 {basket.count > 0 && (
-  <Link href="/rfq">
+  // ?basket=1 so the destination OPENS the list this button names. It linked
+  // to a bare /rfq, where the basket sits inside a dialog that starts closed -
+  // so a button promising "View RFQ list (3)" delivered a page showing none.
+  <Link href="/rfq?basket=1">
     <Button variant="outline" className="w-full gap-2" data-testid="product-view-basket">
       {lang === 'ar' ? `عرض قائمة الطلبات (${basket.count})` : `View RFQ list (${basket.count})`}
     </Button>
