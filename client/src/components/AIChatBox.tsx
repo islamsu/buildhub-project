@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Loader2, Send, User, Sparkles } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Streamdown } from "streamdown";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 /**
  * Message type matching server-side LLM Message interface
@@ -136,6 +137,7 @@ export function AIChatBox({
   suggestedPrompts,
   composerSlot,
 }: AIChatBoxProps) {
+  const { t } = useLanguage();
   const [input, setInput] = useState("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -336,16 +338,22 @@ export function AIChatBox({
           className="flex-1 max-h-32 resize-none min-h-9"
           rows={1}
         />
+        {/* ICON ONLY, SO IT NEEDS A NAME.
+            The only content is an svg, so this button had no accessible name
+            at all - a screen reader announced "button" and nothing else, and
+            it is the control that sends the message. Found at all three
+            viewports by an accessibility sweep of ten pages. */}
         <Button
           type="submit"
           size="icon"
+          aria-label={isLoading ? t('ai.send.sending') : t('ai.send')}
           disabled={!input.trim() || isLoading || disabled}
           className="shrink-0 h-[38px] w-[38px]"
         >
           {isLoading ? (
-            <Loader2 className="size-4 animate-spin" />
+            <Loader2 className="size-4 animate-spin" aria-hidden />
           ) : (
-            <Send className="size-4" />
+            <Send className="size-4" aria-hidden />
           )}
         </Button>
         </div>

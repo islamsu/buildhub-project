@@ -1,0 +1,622 @@
+================================================================================
+BUILDHUB — MASTER PLATFORM AUDIT
+FULL RESPONSE
+================================================================================
+Date:    2026-08-28
+Branch:  claude/buildhub-audit-verification-vrai7l
+Repo:    github.com/islamsu/buildhub-project
+
+MAIN SHA:     6a9e1e650034f5471f82927447da04ac3f79dac9
+STAGING SHA:  6a9e1e650034f5471f82927447da04ac3f79dac9
+GATE SHA:     6a9e1e650034f5471f82927447da04ac3f79dac9
+
+MAIN == STAGING == GATE, verified with expect_commit rather than assumed. A
+mismatch FAILS the gate, and that the check reaches check() and not skip() is
+itself pinned by a unit test - a provenance check that degrades to a skip
+proves nothing.
+
+Gate run: https://github.com/islamsu/buildhub-project/actions/runs/33138444914
+
+
+================================================================================
+1. HEADLINE
+================================================================================
+
+The most serious finding was NOT a missing feature.
+
+MessagesPage fabricated four conversations for every user with an empty inbox.
+Because messages.send never checked its recipient, replies typed into those
+fabricated threads were DELIVERED TO A REAL STRANGER. One of the invented
+threads told the reader "Your verification is complete!" over BuildHub's name.
+
+That is the shape of the risk in this codebase: not absent functionality,
+which is visible, but PRESENT FUNCTIONALITY THAT IS NOT WHAT IT APPEARS TO BE.
+
+Four of the five findings are of that kind:
+  - a link that leads to a 404
+  - a question box whose answer can never be written
+  - a badge counting to zero forever
+  - an authorization check reasoning about a path it never validated
+
+Each one looked finished.
+
+
+================================================================================
+2. THE FIVE DEFECTS, IN FULL
+================================================================================
+
+--------------------------------------------------------------------------------
+D1 — A FABRICATED INBOX DELIVERING REAL MESSAGES TO REAL STRANGERS      [P1]
+--------------------------------------------------------------------------------
+
+WHAT WAS WRONG
+  client/src/pages/MessagesPage.tsx line 88:
+
+      conversations = persistedConversations.length > 0
+                        ? persistedConversations
+                        : MOCK_CONVERSATIONS;
+
+  Any signed-in user with no real conversations was shown four INVENTED
+  threads: "Ahmed Hassan (Contractor)", "Sara Khalil (Architect)", "Mohamed
+  Supplier", "BuildHub Support" - with invented message bodies, invented unread
+  badges, and a green "Online now" dot fed by a field the server hard-codes to
+  false.
+
+TWO CONSEQUENCES, THE SECOND BEING THE SERIOUS ONE
+
+  (a) IT FABRICATED A PLATFORM STATEMENT.
+      One mock thread contained "Your verification is complete!" attributed to
+      "BuildHub Support". A supplier waiting on verification could reasonably
+      read that as BuildHub telling them they had been approved.
+
+  (b) IT MISDIRECTED REAL MESSAGES.
+      The mock ids were 1-4. selectedConv defaulted to 1. messages.send
+      accepted ANY positive integer as receiverId with no check that the
+      account existed or was active. So typing into the thread labelled "Ahmed
+      Hassan" fired messages.send({ receiverId: 1 }) and delivered the text to
+      whichever REAL account holds user id 1.
+
+      The FK on messages.receiverId meant a NON-existent id failed loudly as an
+      INTERNAL_SERVER_ERROR. An id that HAPPENED TO EXIST succeeded quietly.
+      The quiet path is the worse one.
+
+  (c) AND IT WAS REPORTED AS DELIVERED EITHER WAY.
+      appendLocalMessage ran unconditionally rather than in onSuccess, so a
+      message the server REFUSED still appeared in the thread as sent.
+
+WHAT WAS FIXED
+  - The fabricated conversations and message threads are gone entirely.
+  - An empty inbox now says it is empty and says what starts a conversation,
+    with a route to the vendor directory. Previously it said "Select a
+    conversation to start" when there was nothing to select - an instruction
+    the screen could not carry out.
+  - messages.send requires a REAL, ACTIVE recipient and refuses self-messages.
+    "No such user" and "not active" give the SAME refusal, so the endpoint is
+    not a directory of which account ids exist.
+  - No optimistic append: a refused message is not shown as sent.
+  - `unread` was hard-coded to 0 while the UI rendered a badge from it. A
+    counter that always reads zero hides real messages. Now counted from the
+    rows already loaded.
+  - `online` is REMOVED rather than shipped permanently false, because BuildHub
+    has no presence system at all.
+  - The voice-call and video-call buttons (which toasted "Coming soon") and the
+    overflow button (which had no handler at all) are gone.
+
+NOT DECIDED HERE
+  Whether BuildHub should require a PRIOR RELATIONSHIP - a shared RFQ, a
+  quotation, a directory enquiry - before one user may message another.
+  Existence and active status are integrity and are now enforced. A
+  relationship rule is product policy, and the marketplace deliberately lets a
+  customer contact a vendor they just found. Recorded as owner decision D6.
+
+TEST      server/messagingIntegrity.test.ts (17 tests)
+MUTATIONS 6 killed: removing the guard, allowing inactive recipients, dropping
+          the self-check, splitting the two refusals into an oracle, reverting
+          unread to 0, restoring the mock fallback.
+COMMIT    b2b672a
+
+
+--------------------------------------------------------------------------------
+D2 — THE AI OFFERED CONTRACTORS TWO LINKS TO THE 404 PAGE               [P2]
+--------------------------------------------------------------------------------
+THIS ONE WAS MINE. I shipped it in the previous phase.
+
+WHAT WAS WRONG
+  The opportunity engine built its prepared actions as `/rfq/${id}`. App.tsx
+  registers `/rfq` and nothing matches `/rfq/:id`, and the router ends with a
+  catch-all NotFound. So both actions the AI offered a contractor - "view the
+  RFQ" and "open the enquiry" - fell through to the 404 page.
+
+WHY THE EXISTING TEST DID NOT CATCH IT
+  aiRoles.test.ts checks that every ROUTES entry appears in App.tsx. The
+  opportunity engine does not use ROUTES - it assembles hrefs from a template -
+  so the check never saw them.
+
+  The previous handoff's claim that "every action href is asserted against
+  App.tsx" was TRUE OF THAT CONSTANT AND FALSE OF THE PRODUCT.
+
+WHAT WAS FIXED
+  - Hrefs now point at routes that exist: `/rfq` (the list) and `/provider`
+    (which forwards a signed-in provider to their role platform, where the
+    credit-gated enquiry list and the quotation form actually live).
+  - server/routeIntegrity.test.ts parses the REAL route table out of App.tsx -
+    exact paths plus parameterised patterns - and holds every href-producing
+    source against it: ROUTES, all six roles' actions, and every href literal
+    in the opportunity engine.
+  - It also refuses any href built by interpolating an id into a path, which is
+    the SHAPE of the defect rather than the instance.
+
+TEST      server/routeIntegrity.test.ts (47 tests)
+MUTATIONS 3 killed: restoring the /rfq/${id} template, pointing an href at a
+          plausible-but-unregistered route, removing the provider CTA.
+COMMIT    2d08f3e
+
+
+--------------------------------------------------------------------------------
+D3 — A SUPPLIER HAD NOTHING TO DO ON THE RFQ LIST                       [P2]
+--------------------------------------------------------------------------------
+
+WHAT WAS WRONG
+  Every RFQ card's only action was:
+
+      {isOwner && <Button>Compare</Button>}
+
+  A contractor or supplier browsing /rfq - the people an RFQ is ADDRESSED TO -
+  saw a card with no action and no indication of where to respond. The response
+  workflow was real but reachable only from the role platform, which is not
+  where anyone looks after reading an RFQ.
+
+WHAT WAS FIXED
+  A provider now gets a route to the surface that owns the decision. It
+  deliberately does NOT open the enquiry from the list card: that spends a
+  credit and is gated on approval and declared categories, so the list offers
+  the way there rather than firing a chargeable mutation from a card.
+
+COMMIT    2d08f3e (same commit as D2)
+
+
+--------------------------------------------------------------------------------
+D4 — A SUPPLIER COULD NEVER ANSWER A QUESTION ABOUT THEIR OWN PRODUCT   [P2]
+--------------------------------------------------------------------------------
+
+WHAT WAS WRONG
+  Half a workflow, shipped as though whole:
+    - productQuestions carries `answer` and `answeredAt`
+    - marketplace.questions returns both
+    - ProductDetail renders the answer when present
+    - the ask box says "Question sent to supplier"
+    - and NO PROCEDURE COULD EVER WRITE AN ANSWER.
+
+  Every thread was permanently one-sided while the buyer-facing UI implied a
+  reply was coming.
+
+WHAT WAS BUILT
+  marketplace.answerQuestion and marketplace.myProductQuestions.
+
+  AUTHORIZATION is the half that matters. The owning supplier and nobody else -
+  not the asker, not another supplier, not an approved provider in general. The
+  check is a JOIN rather than two reads, so there is no window between "this
+  question exists" and "this product is mine". Absent, not-mine and delisted
+  all give the SAME refusal, so the endpoint is not an oracle for which
+  question ids exist or which products belong to whom.
+
+  A question on a DELISTED product cannot be answered, matching askQuestion: a
+  withdrawn product and an absent one are the same answer to a buyer, so an
+  answer must not appear on nothing.
+
+NOT DECIDED HERE
+  Whether a supplier may EDIT an answer once given, and whether answers need
+  moderation before they are public. Both are policy. This writes an answer
+  once and refuses to overwrite one - the conservative reading, which is easy
+  to relax later; the opposite is not. Owner decision D7.
+
+STILL MISSING
+  The supplier-facing SCREEN to answer from. The procedure and its
+  authorization exist; the UI does not. That is the part that could have been
+  got wrong silently, so it was done first.
+
+TEST      server/productQuestionAnswers.test.ts (11 tests)
+MUTATIONS 5 killed: dropping the ownership check, allowing a delisted product,
+          allowing an overwrite, dropping answeredAt (a reply with no date),
+          unscoping myProductQuestions to every supplier's threads.
+COMMIT    cfb1d22
+
+
+--------------------------------------------------------------------------------
+D5 — THE AUTHORIZATION DECISION WAS ABOUT A PATH NOBODY HAD VALIDATED   [P3]
+--------------------------------------------------------------------------------
+
+WHAT WAS WRONG
+  Every branch of authorizeStorageKey dispatches on a PREFIX -
+  key.startsWith('avatars/'), key.startsWith('rfq-attachments/') - and the same
+  string is then handed to the storage adapter. Nothing validated the key in
+  between.
+
+  So `avatars/../../something` satisfied the avatars branch, which returns true
+  for ANY authenticated user because profile pictures are public, and the
+  backend was then asked for a different object entirely.
+
+WHY THIS WAS NOT A VULNERABILITY, STATED PLAINLY
+  The only configured backends are S3, where a key is an opaque string and `..`
+  is a literal segment that will simply not exist, and an HTTP API. Nothing
+  traverses a filesystem today. normalizeKey only ever stripped leading slashes.
+
+WHY IT WAS STILL WORTH FIXING
+  The defect is that the authorization layer REASONS ABOUT A PATH IT NEVER
+  VALIDATED. That is invisible to whoever later adds a filesystem-backed
+  adapter - a perfectly reasonable thing to want for local development - and it
+  becomes a real traversal at that moment, in a file they had no reason to
+  open. Reporting it as "safe because of the backend we happen to use" would be
+  reporting the accident rather than the design.
+
+WHAT WAS FIXED
+  isWellFormedStorageKey rejects absolute paths, backslashes, control
+  characters, empty segments, and whole "." or ".." segments, with a length
+  bound. It runs BEFORE the admin short-circuit: an admin may read any
+  legitimate object, which is not the same as reading a path that does not mean
+  what it appears to mean.
+
+TEST      server/storageKeyTraversal.test.ts (16 tests)
+MUTATIONS 4 killed, INCLUDING AN OVER-STRICT ONE: rejecting any key containing
+          the substring ".." breaks a legal filename like `..hidden.png`, so
+          the positive controls fail too. A security fix that quietly breaks
+          real uploads is a different bug, not a stricter version of the same
+          one.
+COMMIT    a370b6c
+
+
+================================================================================
+3. CORRECTION TO MY OWN PREVIOUS HANDOFF
+================================================================================
+
+I previously reported, as production blocker L1/B8:
+
+    "NO AUDIT TRAIL. There is no audit-log table."
+
+THAT WAS WRONG.
+
+userAccountAuditEvents exists. It is FK-protected with SET NULL so the trail
+outlives its subject, and it carries 22 DISTINCT ACTIONS written from 29 call
+sites:
+
+  account_created                 admin_created
+  oauth_identity_linked           admin_role_changed
+  password_account_created        admin_password_changed
+  password_signed_in              admin_password_reset_requested
+  password_reset_requested        admin_sessions_revoked
+  password_reset_completed        admin_signed_in
+  password_set_via_invitation     admin_invitation_redeemed
+  profile_role_completed          admin_invitation_revoked
+  invitation_resent               dummy_user_created
+  test_login_link_issued          dummy_user_deleted
+  test_login_link_redeemed        dummy_user_password_changed
+  test_login_link_revoked         dummy_user_signed_in
+
+  plus compliance (document_submitted, document_reviewed,
+  applicant_status_updated, bulk_applicant_status_updated) and billing
+  (subscription_activated, trial_started, lifecycle_reconciled) writes
+  elsewhere.
+
+THE REAL GAP IS NARROWER, and is what should have been reported:
+COMMERCIAL actions are unaudited - RFQ created/submitted, quotation
+submitted/accepted/rejected, product created/changed, document
+uploaded/deleted, message sent.
+
+
+================================================================================
+4. WHAT I AUDITED AND FOUND CLEAN
+================================================================================
+
+Recorded so this is not a list of only the things that were wrong.
+
+  STORAGE PROXY (categories B-F)
+    Each resolves ownership through a DATABASE ROW, not through the key. Fails
+    closed by default for anything outside the classified prefixes. RFQ
+    attachments are matched by exact string comparison in JS rather than SQL
+    LIKE, because `_` is a LIKE wildcard and a legal character in these keys.
+
+  NOTIFICATIONS
+    list, unreadCount and markAllRead are ALL scoped by ctx.user.id. There is
+    no single-notification read-by-id surface to attack.
+
+  ANALYTICS
+    analytics.myStats is approvedProviderProcedure and self-scoped. No
+    hard-coded KPIs found. No cross-tenant aggregation.
+
+  PROFILE
+    profile.update accepts exactly two fields (bio, location), has NO userId in
+    its schema, and writes WHERE users.id = ctx.user.id. No mass-assignment
+    surface.
+
+  MESSAGES QUOTATION BRANCH
+    The sender must be a PARTY to the quotation - the provider who submitted it
+    or the homeowner who owns the RFQ it answers. Not-a-party and
+    does-not-exist give the same answer.
+
+  CONSOLE MAILER
+    Cannot be selected in production: `ENV.isProduction ? none : console`. Reset
+    links cannot reach a production log.
+
+  PUBLIC PROCEDURES
+    23 reviewed. The id-taking ones are marketplace listings that are public by
+    design.
+
+  LOCALIZATION
+    945 distinct keys. EVERY ONE present in both EN and AR. Zero appearing once
+    (a missing translation), zero appearing more than twice (a duplicate).
+    Measured, not assumed.
+
+  SCHEMA
+    55 foreign keys, 63 indexes, 4 unique constraints across 30 tables.
+
+  DEBT MARKERS
+    All console.log hits are server-side operational logging (boot messages,
+    structured HTTP logging, SMTP readiness). None in client code. None in
+    request paths as debug leakage.
+
+  MOCK DATA
+    A repo-wide scan found exactly ONE `real.length > 0 ? real : MOCK` fallback
+    in the entire client - the MessagesPage one, now removed. No other
+    fabricated data reaches any surface.
+
+
+================================================================================
+5. VERIFICATION
+================================================================================
+
+LOCAL
+  tsc --noEmit ......................... 0 errors
+  vitest run ........................... 95 files, 2131 tests
+  build ................................ green (client + server)
+  CI ................................... 3/3 checks green
+
+  TOTAL 2131 · PASSED 2131 · FAILED 0 · SKIPPED 0
+
+  Suites added this pass:
+    messagingIntegrity ........ 17
+    routeIntegrity ............ 47
+    productQuestionAnswers .... 11
+    storageKeyTraversal ....... 16
+
+  MUTATION TESTING: 18 killed this pass
+    6 messaging · 3 route · 5 Q&A · 4 storage
+
+STAGING GATE
+  TOTAL 640 · PASSED 640 · FAILED 0 · SKIPPED 5
+
+  The five skips, each stating what it needs. A SKIP IS NOT A PASS and they are
+  counted separately:
+
+    9.  password reset ............ SMTP_HOST unset
+    10. upload to the bucket ...... S3_* not configured
+    29. knowledge priority (live) . opt-in; twelve extra paid requests
+    30. storing an attachment ..... S3_* not configured
+    30. cross-user attachment ..... requires a stored attachment
+
+  NO FAILURE WAS CONVERTED INTO A SKIP. An earlier gate run in this session
+  failed 639/640, and that failure was diagnosed and fixed rather than
+  reclassified.
+
+
+================================================================================
+6. LIVE ACCEPTANCE
+================================================================================
+
+All six roles, real browser, English and Arabic, 1440px (gate section 31):
+
+  START    sign in as each role
+  ACTION   open /ai
+  EXPECT   a distinct heading, a distinct tool set, a named workflow, no
+           untranslated key, dir=rtl in Arabic, zero AI requests on page load
+  ACTUAL   passed for all six. Six DISTINCT headings, six DISTINCT tool sets,
+           six DISTINCT workflows. The contractor is shown RFQ tooling and NOT
+           the homeowner designer finder.
+
+Role dashboards at 375 / 768 / 1440 in both languages (section 32): passed.
+Unapproved providers land on /compliance, asserted as the negative case.
+
+NOT LIVE-VERIFIED, and therefore not claimed:
+  - the transaction opportunity engine (unit-proven only)
+  - the new Q&A answer path
+  - the new messaging recipient guard
+  These landed after the last browser section was written.
+
+
+================================================================================
+7. PLATFORM SCORECARD
+================================================================================
+
+  Security ............. GO
+  Authorization ........ GO
+  UX ................... PARTIAL       fixed where found; no full screen pass
+  Accessibility ........ NOT VERIFIED  no keyboard/focus/contrast/SR audit
+  Localization ......... GO            945 keys, exact EN/AR parity
+  Marketplace .......... GO
+  RFQ .................. PARTIAL       no detail page
+  Quotations ........... PARTIAL       duplicate/revision model undefined (D1)
+  Products ............. PARTIAL       no image upload surface
+  Attachments .......... GO
+  Projects ............. GO
+  Messaging ............ GO            fixed this pass
+  Notifications ........ GO
+  AI ................... GO
+  Knowledge ............ PARTIAL       10 docs, 10 domains, ALL TIER 6
+  Transaction engine ... PARTIAL       no execute path; not live-verified
+  Admin ................ GO
+  Analytics ............ GO
+  Performance .......... NOT VERIFIED  no measurement performed
+  Reliability .......... PARTIAL
+
+
+================================================================================
+8. REMAINING ISSUES, CLASSIFIED
+================================================================================
+
+  P0   none outstanding.
+  P1   none outstanding. (D1 above was P1 and is fixed.)
+  P2   No RFQ detail page
+       No product image upload surface
+       Commercial actions unaudited
+  P3   No supplier surface to answer product questions from
+       No edit/delete surface for several record types
+  P4   No export
+       No provider comparison surface
+
+  ENGINEERING BLOCKERS
+    E1  Commercial audit trail (RFQ, quotation, product, document, message)
+    E2  RFQ detail page
+    E3  Product image upload
+
+  INFRASTRUCTURE BLOCKERS
+    I1  SMTP unconfigured - password reset unproven end to end
+    I2  S3 unconfigured - uploads and AI attachment storage unproven
+    I3  No payment provider exercised
+    I4  No production administrator provisioning performed
+
+  NOT VERIFIED (absence of evidence, reported as such)
+    N1  Accessibility: no keyboard, focus, contrast or screen-reader audit
+    N2  Performance: no measurement; no N+1 or payload analysis
+    N3  Batch upload: not exercised
+    N4  Live IDOR sweep against the deployed API for every object type
+    N5  Reliability under retry, timeout, concurrency and stale state
+
+
+================================================================================
+9. OWNER DECISIONS
+================================================================================
+
+  D1  Duplicate quotation / revision model. Undefined in the repository.
+  D2  Renovation finishing preset.
+  D3  Mandatory product fields. The schema mandates only supplierId, name and
+      category; price, images, specs, unit, brand and origin are all nullable.
+  D4  Provider comparison surface - build it, or the action stays absent.
+  D5  Should the free RFQ feed expose `budget`? rfq.list returns it while
+      openQualifiedEnquiry charges a credit for full detail.
+  D6  (NEW) Should messaging require a prior relationship? Existence and active
+      status are integrity and are now enforced. A relationship rule is policy.
+  D7  (NEW) May a supplier EDIT an answer once given, and do answers need
+      moderation? Currently write-once.
+
+
+================================================================================
+10. FINAL VERDICTS
+================================================================================
+
+  SECURITY ..................... GO
+  ROLE ARCHITECTURE ............ GO
+  CUSTOMER EXPERIENCE .......... PARTIAL
+  SUPPLIER EXPERIENCE .......... PARTIAL
+  CONTRACTOR EXPERIENCE ........ PARTIAL
+  ENGINEER EXPERIENCE .......... GO
+  ARCHITECT EXPERIENCE ......... GO
+  PROJECT MANAGER EXPERIENCE ... GO
+  RFQ .......................... PARTIAL
+  QUOTATION .................... PARTIAL
+  PRODUCT CATALOGUE ............ PARTIAL
+  DOCUMENTS .................... GO
+  ATTACHMENTS .................. GO
+  MESSAGING .................... GO
+  NOTIFICATIONS ................ GO
+  PROJECTS ..................... GO
+  MARKETPLACE .................. GO
+  AI ........................... GO
+  TRANSACTION ENGINE ........... PARTIAL
+  ADMIN ........................ GO
+  MOBILE ....................... GO
+  ARABIC ....................... GO
+  ACCESSIBILITY ................ NOT VERIFIED
+  PERFORMANCE .................. NOT VERIFIED
+  STAGING ...................... GO
+
+  OVERALL PLATFORM:  NO-GO for production, GO for continued staging use.
+
+    The security posture is sound, and the fixes in this pass removed the one
+    finding that could have embarrassed the business in front of a real user.
+    What stands between here and production is not a security wall. It is three
+    unbuilt surfaces, four unconfigured pieces of infrastructure, five
+    unmeasured areas, and seven open commercial decisions.
+
+  STAGING:      GO
+  PRODUCTION:   NO-GO
+
+
+================================================================================
+11. HONEST SCOPE STATEMENT
+================================================================================
+
+THIS WAS NOT A 48-HOUR AUDIT.
+
+It was a deep pass over the areas where the evidence pointed. Several sections
+of the brief were verified by READING rather than by live exercise, and every
+such case is marked PARTIAL or NOT VERIFIED above rather than being reported as
+GO.
+
+Claiming otherwise would be the same class of error as the defects this audit
+found: something that looks finished and is not.
+
+
+================================================================================
+12. COMMITS
+================================================================================
+
+  f75201a  docs: BUILDHUB MASTER PLATFORM AUDIT REPORT
+  6a9e1e6  Platform audit (merge of PR #32)
+  a370b6c  fix(storage): the authorization decision was about a path nobody
+           had validated
+  cfb1d22  feat(marketplace): a supplier could never answer a question about
+           their own product
+  2d08f3e  fix(rfq): the AI offered contractors two links to the 404 page,
+           and I shipped them
+  b2b672a  fix(messages): a fabricated inbox was delivering real messages to
+           real strangers
+
+  Pull request: https://github.com/islamsu/buildhub-project/pull/32
+
+
+================================================================================
+13. PRODUCTION IMPACT
+================================================================================
+
+NONE.
+
+No production deployment, credential, database, S3 bucket, SMTP host, payment
+provider, DNS record, pricing change or administrator was created or modified.
+Paymob was not activated. No user or vendor data was destroyed.
+
+
+================================================================================
+14. WORK PAUSED MID-FLIGHT
+================================================================================
+
+You asked for the RFQ detail page and product image upload to be built. That
+work was started and then paused when you asked for this file.
+
+WHAT I HAD ESTABLISHED BEFORE PAUSING:
+
+  RFQ DETAIL PAGE
+    rfq.list  - any authenticated user, 12 columns, EXCLUDES `attachments`,
+                limit 50, no status filter
+    rfq.get   - owner only (WHERE requesterId = ctx.user.id), ALL columns
+    So a detail page needs a THIRD read: a single-row fetch using exactly the
+    rfq.list allowlist. That is no new exposure - the same columns the feed
+    already hands every authenticated user, addressed by id instead of
+    arriving in a page of 50.
+
+  PRODUCT IMAGE UPLOAD
+    A WIDER GAP THAN THE REPORT STATES: there is NO createProduct and NO
+    updateProduct procedure at all. Only myProducts (read-only). So a supplier
+    cannot create or edit a product through the API either - products must be
+    seeded or admin-created. Image upload alone would not give a supplier a
+    way to manage their catalogue.
+
+    products.images is a TEXT column parsed as a JSON array with a
+    comma-separated fallback.
+
+    Needed: an upload procedure, a setProductImages procedure (owner-scoped),
+    a `product-images/` category in authorizeStorageKey, and a UI.
+
+Say the word and I will pick that back up.
+
+================================================================================
+END OF RESPONSE
+================================================================================

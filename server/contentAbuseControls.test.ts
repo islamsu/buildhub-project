@@ -97,23 +97,30 @@ describe('the limiter is actually wired to the endpoints that needed it', () => 
   it('rfq.create enforces the RFQ limit before it writes anything', () => {
     const body = procedureBody('  create: protectedProcedure', 'uploadAttachment: protectedProcedure');
     expect(body, 'rfq.create is unbounded again').toContain('enforceRfqRateLimit(ctx.user.id)');
+    // The write moved inside a transaction when RFQ items were added, so the
+    // insert is `tx.insert(rfqs)` now. The rule under test is unchanged: the
+    // limiter runs BEFORE anything is written.
+    const writeAt = body.indexOf('insert(rfqs)');
+    expect(writeAt, 'the RFQ insert must still be findable in this procedure').toBeGreaterThan(-1);
     expect(
       body.indexOf('enforceRfqRateLimit'),
       'the limit must be checked before the insert, not after',
-    ).toBeLessThan(body.indexOf('db.insert(rfqs)'));
+    ).toBeLessThan(writeAt);
   });
 
-  it('all six upload endpoints enforce the upload limit', () => {
+  it('all eight upload endpoints enforce the upload limit', () => {
     // Counted rather than spot-checked: the gap was identical at every one of
     // them, and a fix applied to four out of five is not a fix.
+    // NINE now: bulk product import accepts a file too, and an unbounded
+    // import endpoint is the cheapest way to fill a database.
     const wired = SOURCE.match(/enforceUploadRateLimit\(ctx\.user\.id\)/g) ?? [];
-    expect(wired).toHaveLength(6);
+    expect(wired).toHaveLength(9);
 
     const uploadEndpoints = SOURCE.match(/^\s+upload[A-Za-z]+:/gm) ?? [];
     expect(
       uploadEndpoints,
       'an upload endpoint was added or removed - it needs a rate limit too',
-    ).toHaveLength(6);
+    ).toHaveLength(8);
   });
 
   it('the limit runs before the file is decoded, not after', () => {

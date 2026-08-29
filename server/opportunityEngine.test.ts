@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 import {
   findRfqOpportunities,
   formatOpportunitiesForModel,
@@ -70,12 +71,11 @@ const rfq = (over: Partial<Rfq> & { id: number }): Rfq => ({
 // ══ 1. IT CANNOT TRANSACT ══════════════════════════════════════════════════
 
 describe('the engine has no execute path', () => {
-  const SOURCE = readFileSync(new URL('./opportunity.ts', import.meta.url), 'utf8')
+  const SOURCE = readSourceForAssertions(readFileSync(new URL('./opportunity.ts', import.meta.url), 'utf8'))
     // Comments stripped first. This file explains at length that it does not
     // transact; an assertion that matched its own prose would pass on a file
     // that described the guarantee while breaking it.
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
+    ;
 
   it('never calls a mutation, an insert, an update or a delete', () => {
     for (const forbidden of ['openQualifiedEnquiry', '.insert(', '.update(', '.delete(', 'submitQuotation']) {
@@ -443,9 +443,8 @@ describe('opportunity intent', () => {
 // ══ 7. THE WIRING ══════════════════════════════════════════════════════════
 
 describe('ai.chat wiring', () => {
-  const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
+  const ROUTERS = readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'))
+    ;
 
   it('the opportunity block reaches the system message', () => {
     expect(ROUTERS).toMatch(/content: systemPrompt \+[^\n]*opportunityBlock/);

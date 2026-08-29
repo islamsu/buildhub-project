@@ -51,6 +51,16 @@ export default function AuthPage() {
   // and "forgot password" only where email delivery exists. Neither is assumed.
   const utils = trpc.useUtils();
   const { data: capabilities } = trpc.auth.capabilities.useQuery();
+
+  // Real counts for the panel beside the form - see server/platformStats.ts.
+  // A zero is omitted rather than padded, and no satisfaction figure appears
+  // here because none was ever measured.
+  const { data: platformStats } = trpc.marketplace.platformStats.useQuery();
+  const authStats = !platformStats ? [] : [
+    { key: 'users', value: platformStats.registeredUsers.toLocaleString(), en: 'Users', ar: 'مستخدم', show: platformStats.registeredUsers > 0 },
+    { key: 'projects', value: platformStats.activeProjects.toLocaleString(), en: 'Projects', ar: 'مشروع', show: platformStats.activeProjects > 0 },
+    { key: 'providers', value: platformStats.verifiedProviders.toLocaleString(), en: 'Providers', ar: 'مزود', show: platformStats.verifiedProviders > 0 },
+  ].filter(stat => stat.show);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -256,11 +266,23 @@ export default function AuthPage() {
               : 'Join thousands of homeowners and professionals who trust BuildHub to manage their construction and finishing projects.'}
           </p>
         </div>
-        <div className="flex gap-8 text-sm text-white/60">
-          <div><p className="text-2xl font-bold text-white">10K+</p><p>{lang === 'ar' ? 'مستخدم' : 'Users'}</p></div>
-          <div><p className="text-2xl font-bold text-white">5K+</p><p>{lang === 'ar' ? 'مشروع' : 'Projects'}</p></div>
-          <div><p className="text-2xl font-bold text-white">2K+</p><p>{lang === 'ar' ? 'مزود' : 'Providers'}</p></div>
-        </div>
+        {/*
+          The same three fabricated counters as the landing page - "10K+
+          Users", "5K+ Projects", "2K+ Providers" - shown at the exact moment
+          somebody decides whether to hand this platform their project. They
+          are the real counts now, and a count that is still zero is not
+          rendered at all rather than being padded.
+        */}
+        {authStats.length > 0 && (
+          <div className="flex gap-8 text-sm text-white/60" data-testid="auth-platform-stats">
+            {authStats.map(stat => (
+              <div key={stat.key}>
+                <p className="text-2xl font-bold text-white">{stat.value}</p>
+                <p>{lang === 'ar' ? stat.ar : stat.en}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Right Panel - Auth Form */}

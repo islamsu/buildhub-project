@@ -11,10 +11,10 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
-import { Link } from 'wouter';
+import { Link, useSearch } from 'wouter';
 import {
   MessageSquare, Bell, Send, Paperclip, Search, CheckCheck,
-  Clock, FileText, Image,
+  Clock, FileText, Image, ChevronRight,
 } from 'lucide-react';
 
 /**
@@ -52,6 +52,8 @@ export default function MessagesPage() {
 
   // Was `useState(1)`. A default of 1 is a real user id, and combined with the
   // fabricated conversation list it aimed the composer at that account.
+  const search = useSearch();
+  const [tab, setTab] = useState<string>('messages');
   const [selectedConv, setSelectedConv] = useState<number | null>(null);
   const [messageText, setMessageText] = useState('');
   const [searchConv, setSearchConv] = useState('');
@@ -66,9 +68,31 @@ export default function MessagesPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [selectedConv, persistedMessages]);
 
+  // OPENING A THREAD WITH SOMEONE WHO HAS NOT WRITTEN TO YOU YET.
+  //
+  // /messages?to=<userId>. The empty state on this very page tells people that
+  // "conversations start when you contact a vendor from the marketplace" -
+  // that route did not exist, because `conversations` returns only accounts
+  // with an existing message and nothing could select anyone else. This is the
+  // route. The id in the query string is a SELECTOR: the server re-resolves
+  // who that is and refuses anything that is not an active account, exactly as
+  // messages.send does.
+  const requestedRecipientId = (() => {
+    const raw = new URLSearchParams(search).get('to');
+    const id = Number(raw);
+    return raw && Number.isInteger(id) && id > 0 ? id : null;
+  })();
+  const { data: requestedRecipient } = trpc.messages.recipient.useQuery(
+    { userId: requestedRecipientId ?? 0 },
+    { enabled: isAuthenticated && requestedRecipientId !== null, retry: false },
+  );
+
   useEffect(() => {
+    // Arriving with a recipient in the URL means "show me this conversation",
+    // whichever tab was last open.
+    if (requestedRecipientId !== null) { setSelectedConv(requestedRecipientId); setTab('messages'); return; }
     if (persistedConversations.length > 0 && !persistedConversations.some(conversation => conversation.id === selectedConv)) setSelectedConv(persistedConversations[0].id);
-  }, [persistedConversations, selectedConv]);
+  }, [persistedConversations, selectedConv, requestedRecipientId]);
 
   if (!isAuthenticated) {
     return (
@@ -83,7 +107,12 @@ export default function MessagesPage() {
     );
   }
 
-  const conversations = persistedConversations;
+  // The requested recipient joins the list until the first message makes it a
+  // real conversation. Placed first so the person you just chose to contact is
+  // the one selected, and never duplicated if you already have a thread.
+  const conversations = requestedRecipient && !persistedConversations.some(c => c.id === requestedRecipient.id)
+    ? [{ ...requestedRecipient, lastMessage: '', time: '', unread: 0 }, ...persistedConversations]
+    : persistedConversations;
   const filteredConvs = conversations.filter(c =>
     !searchConv || c.name.toLowerCase().includes(searchConv.toLowerCase())
   );
@@ -129,7 +158,14 @@ export default function MessagesPage() {
       <Navbar />
       <div className="container pt-24 pb-16">
         <h1 className="text-3xl font-bold mb-6">{t('dash.messages')} & {t('dash.notifications')}</h1>
-        <Tabs defaultValue="messages">
+        {/* CONTROLLED, because a notification decides which tab is right.
+            A message notification links to /messages?to=<sender>. The router
+            stays on the same route, so the component does not remount and an
+            uncontrolled Tabs kept whatever tab the reader was on - which, since
+            they arrived by clicking a notification, was the notifications tab.
+            The conversation opened correctly and was hidden behind the tab they
+            were already looking at. */}
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="mb-6">
             <TabsTrigger value="messages" className="gap-2">
               <MessageSquare className="w-4 h-4" /> {t('dash.messages')}
@@ -243,7 +279,7 @@ export default function MessagesPage() {
                   {/* Input */}
                   <div className="p-3 border-t border-border">
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" className="w-9 h-9 p-0 flex-shrink-0" onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}>
+                      <Button variant="ghost" size="sm" aria-label={t('messages.attach')} className="w-9 h-9 p-0 flex-shrink-0" onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}>
                         <Paperclip className="w-4 h-4" />
                       </Button>
                       <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={event => handleFile(event.target.files?.[0])} />
@@ -256,7 +292,7 @@ export default function MessagesPage() {
                         onChange={e => setMessageText(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
                       />
-                      <Button size="sm" className="w-9 h-9 p-0 flex-shrink-0" onClick={sendMessage} disabled={!messageText.trim()}>
+                      <Button size="sm" aria-label={t('messages.send')} className="w-9 h-9 p-0 flex-shrink-0" onClick={sendMessage} disabled={!messageText.trim()}>
                         <Send className="w-4 h-4" />
                       </Button>
                     </div>
@@ -309,18 +345,35 @@ export default function MessagesPage() {
               )}
               {notifications?.map(n => {
                 const text = notificationText(n, t);
-                return (
-                <Card key={n.id} className={`transition-colors ${!n.read ? 'border-primary/30 bg-primary/5' : ''}`}>
-                  <CardContent className="p-4 flex items-start gap-3">
-                    <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!n.read ? 'bg-primary' : 'bg-muted'}`} />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">{text.title}</p>
-                      {text.body && <p className="text-muted-foreground text-sm mt-0.5">{text.body}</p>}
-                      <p className="text-xs text-muted-foreground mt-1">{new Date(n.createdAt).toLocaleString()}</p>
-                    </div>
-                  </CardContent>
-                </Card>
+                /**
+                 * THE `link` COLUMN WAS WRITTEN ON EVERY NOTIFICATION AND NEVER
+                 * READ. Each one rendered as an inert card: a customer was told
+                 * "New quotation received" and had no way to reach it, and a
+                 * supplier was told their bid was accepted with nowhere to go.
+                 * The destination existed in the database the whole time.
+                 */
+                const card = (
+                  <Card
+                    className={`transition-colors ${!n.read ? 'border-primary/30 bg-primary/5' : ''} ${n.link ? 'cursor-pointer hover:border-primary/50' : ''}`}
+                    data-testid={n.link ? 'notification-linked' : 'notification-plain'}
+                  >
+                    <CardContent className="p-4 flex items-start gap-3">
+                      <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!n.read ? 'bg-primary' : 'bg-muted'}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">{text.title}</p>
+                        {text.body && <p className="text-muted-foreground text-sm mt-0.5">{text.body}</p>}
+                        <p className="text-xs text-muted-foreground mt-1">{new Date(n.createdAt).toLocaleString()}</p>
+                      </div>
+                      {n.link && <ChevronRight className="w-4 h-4 shrink-0 self-center text-muted-foreground" />}
+                    </CardContent>
+                  </Card>
                 );
+                // A notification with no link still renders - some events are
+                // genuinely informational and inventing a destination for them
+                // would be worse than having none.
+                return n.link
+                  ? <Link key={n.id} href={n.link} className="block">{card}</Link>
+                  : <div key={n.id}>{card}</div>;
               })}
             </div>
           </TabsContent>

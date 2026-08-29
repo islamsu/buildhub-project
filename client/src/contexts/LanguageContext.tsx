@@ -204,6 +204,16 @@ const translations: Record<Language, Record<string, string>> = {
     // theirs, in whatever language they wrote it, and is passed through as-is.
     'notif.quotation.received.title': 'New quotation received',
     'notif.quotation.received.body': 'You received a new quotation for "{rfqTitle}".',
+    // The in-platform thread is the only contact channel between a customer and
+    // a vendor, and nothing announced a message on it. The asker's identity is
+    // deliberately absent from the product-question notification: that Q&A is
+    // public on the listing and askerId is withheld from it on purpose.
+    'notif.message.received.title': 'New message',
+    'notif.message.received.body': '{senderName} sent you a message.',
+    'notif.product.question.title': 'New question on your product',
+    'notif.product.question.body': 'Someone asked a question about "{productName}".',
+    'notif.product.answered.title': 'Your question was answered',
+    'notif.product.answered.body': 'The supplier answered your question about "{productName}".',
     'notif.quotation.accepted.title': 'Quotation accepted',
     'notif.quotation.accepted.body': 'Your quotation for "{rfqTitle}" was accepted.',
     'notif.quotation.notSelected.title': 'Quotation not selected',
@@ -485,6 +495,13 @@ const translations: Record<Language, Record<string, string>> = {
     'ai.title': 'AI Construction Assistant',
     'ai.subtitle': 'Your intelligent partner for cost estimation, planning, and project advice',
     'ai.placeholder': 'Ask anything about your construction project…',
+    // The composer's send control is icon-only, so its accessible name is the
+    // only thing a screen reader has to go on. 'ai.send' already existed for
+    // the visible label and is reused rather than duplicated.
+    'ai.send.sending': 'Sending your message',
+    // The conversation composer's controls are icon-only too.
+    'messages.send': 'Send message',
+    'messages.attach': 'Attach a file',
     'ai.send': 'Send',
     'ai.thinking': 'Thinking…',
     'ai.clear': 'Clear Chat',
@@ -551,6 +568,17 @@ const translations: Record<Language, Record<string, string>> = {
     // ── Vendor Profile ───────────────────────────────────────────────────────
     'profile.title': 'Vendor Profile',
     'profile.bio_label': 'Description',
+    // The vendor detail page. "Contact" says exactly what BuildHub operates -
+    // an in-platform thread - and never implies a phone number or an email
+    // address is being withheld, because neither is part of a vendor's public
+    // record in this product.
+    'vendor.services': 'Services offered',
+    'vendor.contact': 'Contact',
+    'vendor.contact.cta': 'Message this vendor',
+    'vendor.contact.note': 'Messages are exchanged on BuildHub. Direct phone numbers and email addresses are not published on vendor profiles.',
+    'vendor.contact.self': 'This is your own public profile. This is the page clients see.',
+    'vendor.contact.unavailable': 'This vendor is not accepting messages at the moment.',
+    'vendor.catalogue': 'Published products',
     'profile.bio_placeholder': 'Tell customers about your business…',
     'profile.location_label': 'Location',
     'profile.location_placeholder': 'e.g. Cairo, Egypt',
@@ -800,6 +828,8 @@ const translations: Record<Language, Record<string, string>> = {
     'enquiries.remaining': 'Remaining',
     'enquiries.resetsOn': 'Resets on',
     'enquiries.empty': 'No qualified enquiries right now. Make sure your service categories are set.',
+    'quotation.supplierDocuments': 'Supplier documents',
+    'enquiries.notInList': 'The request you came from is not in your qualified enquiries. Qualified enquiries cover open requests that fall inside your declared service categories, so it is either closed or outside them.',
     'enquiries.opened': 'Opened',
     'enquiries.viewDetails': 'View details',
     'enquiries.attachments': 'Attachments',
@@ -1183,6 +1213,12 @@ const translations: Record<Language, Record<string, string>> = {
     // ملاحظة: نص المراجع الحر يمرَّر كما هو - هو كلامه بلغته.
     'notif.quotation.received.title': 'عرض سعر جديد',
     'notif.quotation.received.body': 'وصلك عرض سعر جديد على "{rfqTitle}".',
+    'notif.message.received.title': 'رسالة جديدة',
+    'notif.message.received.body': 'أرسل لك {senderName} رسالة.',
+    'notif.product.question.title': 'سؤال جديد على منتجك',
+    'notif.product.question.body': 'طرح أحدهم سؤالاً عن "{productName}".',
+    'notif.product.answered.title': 'تمت الإجابة على سؤالك',
+    'notif.product.answered.body': 'أجاب المورد على سؤالك عن "{productName}".',
     'notif.quotation.accepted.title': 'تم قبول عرض السعر',
     'notif.quotation.accepted.body': 'تم قبول عرض سعرك على "{rfqTitle}".',
     'notif.quotation.notSelected.title': 'لم يتم اختيار عرض السعر',
@@ -1462,6 +1498,9 @@ const translations: Record<Language, Record<string, string>> = {
     'ai.title': 'مساعد البناء بالذكاء الاصطناعي',
     'ai.subtitle': 'شريكك الذكي لتقدير التكاليف والتخطيط ونصائح المشاريع',
     'ai.placeholder': 'اسأل أي شيء عن مشروع البناء الخاص بك…',
+    'ai.send.sending': 'جاري إرسال رسالتك',
+    'messages.send': 'إرسال الرسالة',
+    'messages.attach': 'إرفاق ملف',
     'ai.send': 'إرسال',
     'ai.thinking': 'جاري التفكير…',
     'ai.clear': 'مسح المحادثة',
@@ -1528,6 +1567,13 @@ const translations: Record<Language, Record<string, string>> = {
     // ── Vendor Profile ───────────────────────────────────────────────────────
     'profile.title': 'الملف الشخصي للمزود',
     'profile.bio_label': 'الوصف',
+    'vendor.services': 'الخدمات المقدمة',
+    'vendor.contact': 'التواصل',
+    'vendor.contact.cta': 'راسل هذا المورد',
+    'vendor.contact.note': 'تتم المراسلة داخل BuildHub. أرقام الهاتف والبريد الإلكتروني المباشرة غير منشورة في ملفات المزودين.',
+    'vendor.contact.self': 'هذا ملفك العام. هذه هي الصفحة التي يراها العملاء.',
+    'vendor.contact.unavailable': 'هذا المورد لا يستقبل الرسائل حالياً.',
+    'vendor.catalogue': 'المنتجات المنشورة',
     'profile.bio_placeholder': 'أخبر العملاء عن نشاطك التجاري…',
     'profile.location_label': 'الموقع',
     'profile.location_placeholder': 'مثال: القاهرة، مصر',
@@ -1777,6 +1823,8 @@ const translations: Record<Language, Record<string, string>> = {
     'enquiries.remaining': 'المتبقي',
     'enquiries.resetsOn': 'يتجدد في',
     'enquiries.empty': 'لا توجد طلبات مؤهلة حالياً. تأكد من اختيار فئات الخدمة الخاصة بك.',
+    'quotation.supplierDocuments': 'مستندات المورد',
+    'enquiries.notInList': 'الطلب الذي أتيت منه غير موجود ضمن طلباتك المؤهلة. الطلبات المؤهلة تشمل الطلبات المفتوحة التي تقع ضمن فئات خدماتك المعلنة، لذا فهو إما مغلق أو خارج تلك الفئات.',
     'enquiries.opened': 'مفتوح',
     'enquiries.viewDetails': 'عرض التفاصيل',
     'enquiries.attachments': 'المرفقات',

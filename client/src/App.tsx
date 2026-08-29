@@ -2,35 +2,60 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
+import { lazy, Suspense } from "react";
+
+/**
+ * ROUTE-LEVEL CODE SPLITTING.
+ *
+ * Every page was imported eagerly into the entry chunk, so a visitor landing
+ * on the home page downloaded the admin dashboard, the compliance review
+ * queue, the AI assistant and its markdown/syntax-highlighting stack before
+ * anything rendered - 2469 KB raw, 676 KB gzipped.
+ *
+ * Home and AuthPage stay eager: they are the first and second thing almost
+ * every visitor sees, and deferring them would trade a smaller download for a
+ * visible blank frame on the page that matters most.
+ */
+const MarketplaceHub = lazy(() => import("./pages/MarketplaceHub"));
+const VendorsDirectory = lazy(() => import("./pages/VendorsDirectory"));
+const DesignersDirectory = lazy(() => import("./pages/DesignersDirectory"));
+const FinishingDirectory = lazy(() => import("./pages/FinishingDirectory"));
+const HomeownerDashboard = lazy(() => import("./pages/HomeownerDashboard"));
+const ProviderDashboard = lazy(() => import("./pages/ProviderDashboard"));
+const RolePlatform = lazy(() => import("./pages/RolePlatform"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const AdminLogin = lazy(() => import("./pages/AdminLogin"));
+const AdminAcceptInvitation = lazy(() => import("./pages/AdminAcceptInvitation"));
+const AdminAdmins = lazy(() => import("./pages/AdminAdmins"));
+const Marketplace = lazy(() => import("./pages/Marketplace"));
+const ProductDetail = lazy(() => import("./pages/ProductDetail"));
+const ProjectDetail = lazy(() => import("./pages/ProjectDetail"));
+const RFQPage = lazy(() => import("./pages/RFQPage"));
+const RFQDetail = lazy(() => import("./pages/RFQDetail"));
+const MessagesPage = lazy(() => import("./pages/MessagesPage"));
+const AIAssistantPage = lazy(() => import("./pages/AIAssistantPage"));
+const CompliancePage = lazy(() => import("./pages/CompliancePage"));
+const PasswordSetupPage = lazy(() => import("./pages/PasswordSetupPage"));
+const PasswordResetPage = lazy(() => import("./pages/PasswordResetPage"));
+const VendorProfile = lazy(() => import("./pages/VendorProfile"));
+const Pricing = lazy(() => import("./pages/Pricing"));
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
-import MarketplaceHub from "./pages/MarketplaceHub";
-import VendorsDirectory from "./pages/VendorsDirectory";
-import DesignersDirectory from "./pages/DesignersDirectory";
-import FinishingDirectory from "./pages/FinishingDirectory";
 import AuthPage from "./pages/AuthPage";
-import HomeownerDashboard from "./pages/HomeownerDashboard";
-import ProviderDashboard from "./pages/ProviderDashboard";
-import RolePlatform from "./pages/RolePlatform";
-import AdminDashboard from "./pages/AdminDashboard";
-import AdminLogin from "./pages/AdminLogin";
-import AdminAcceptInvitation from "./pages/AdminAcceptInvitation";
-import AdminAdmins from "./pages/AdminAdmins";
-import Marketplace from "./pages/Marketplace";
-import ProductDetail from "./pages/ProductDetail";
-import ProjectDetail from "./pages/ProjectDetail";
-import RFQPage from "./pages/RFQPage";
-import MessagesPage from "./pages/MessagesPage";
-import AIAssistantPage from "./pages/AIAssistantPage";
-import CompliancePage from "./pages/CompliancePage";
-import PasswordSetupPage from "./pages/PasswordSetupPage";
-import PasswordResetPage from "./pages/PasswordResetPage";
-import VendorProfile from "./pages/VendorProfile";
-import Pricing from "./pages/Pricing";
+
+/**
+ * What a visitor sees while a route's chunk arrives. Deliberately quiet: a
+ * spinner that flashes for 80ms is worse than a brief empty frame, and the
+ * chunks are small enough that this is rarely visible at all.
+ */
+function RouteFallback() {
+  return <div className="min-h-screen bg-background" aria-busy="true" />;
+}
 
 function Router() {
   return (
+    <Suspense fallback={<RouteFallback />}>
     <Switch>
       <Route path={"/"} component={Home} />
       <Route path={"/auth"} component={AuthPage} />
@@ -59,6 +84,7 @@ function Router() {
       <Route path={"/marketplace/finishing"} component={FinishingDirectory} />
       <Route path={"/projects/:id"} component={ProjectDetail} />
       <Route path={"/rfq"} component={RFQPage} />
+      <Route path={"/rfq/:id"} component={RFQDetail} />
       <Route path={"/messages"} component={MessagesPage} />
       <Route path={"/compliance"} component={CompliancePage} />
       <Route path={"/auth/setup-password"} component={PasswordSetupPage} />
@@ -67,6 +93,7 @@ function Router() {
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
+    </Suspense>
   );
 }
 

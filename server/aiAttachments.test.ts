@@ -454,7 +454,12 @@ describe('an unconfigured deployment says so, instead of looking broken', () => 
       .catch((error: { code: string; message: string }) => error);
 
     expect(failure.code).toBe('SERVICE_UNAVAILABLE');
-    expect(failure.message).toBe('File attachments are not available on this deployment.');
+    // WORDING CHANGED DELIBERATELY. This path used to be the ONLY one that
+    // translated unconfigured storage into a readable 503; the other six
+    // returned a generic 500 saying "Please try again" for a condition
+    // retrying cannot fix. The handling moved into one shared wrapper, so
+    // every upload now gives this same answer - which is the point.
+    expect(failure.message).toBe('File uploads are not available on this deployment.');
     // And it must not leak the adapter's own message, which names env vars.
     expect(failure.message).not.toMatch(/S3_BUCKET|S3_ENDPOINT|FORGE/);
     // Nothing was recorded for a file that was never stored.

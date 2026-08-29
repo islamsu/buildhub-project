@@ -11,8 +11,8 @@ import {
   CalendarClock, ArrowRight,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
-import { useState } from 'react';
-import { Link } from 'wouter';
+import { useEffect, useState } from 'react';
+import { Link, useSearch } from 'wouter';
 import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { experienceFor } from '@shared/aiRoles';
@@ -77,7 +77,27 @@ export default function AIAssistantPage() {
   const selectableProjects: { id: number; title: string }[] =
     (isProvider ? directoryProjects : ownProjects).map((project: { id: number; title: string }) =>
       ({ id: project.id, title: project.title }));
+  // ARRIVING WITH A PROJECT ALREADY IN MIND.
+  //
+  // /ai?project=<id>, which is how the project page's "AI Help" hands over the
+  // project the reader was looking at. It is honoured only once the selectable
+  // list has loaded AND contains that id - so a project this account cannot
+  // see cannot be selected by typing it into the address bar, and the server
+  // re-derives permission on every request regardless.
+  const search = useSearch();
+  const requestedProjectId = (() => {
+    const raw = new URLSearchParams(search).get('project');
+    const id = Number(raw);
+    return raw && Number.isInteger(id) && id > 0 ? String(id) : null;
+  })();
   const [projectId, setProjectId] = useState<string>('none');
+  useEffect(() => {
+    if (!requestedProjectId) return;
+    if (projectId !== 'none') return;
+    if (selectableProjects.some(project => String(project.id) === requestedProjectId)) {
+      setProjectId(requestedProjectId);
+    }
+  }, [requestedProjectId, selectableProjects, projectId]);
 
   const chatMutation = trpc.ai.chat.useMutation({
     onSuccess: (response: { content: string }) => {
@@ -192,8 +212,15 @@ export default function AIAssistantPage() {
                   />
                   {/* Shown only when there is something real to pick. An empty
                       selector would be a control that does nothing. */}
+                  {/* An empty value is not one of the choices. Radix emits
+                      onValueChange('') while it settles, and passing that
+                      straight into state wiped a selection that had just been
+                      made for the reader from ?project= - the project arrived,
+                      was applied, and was blanked again before anything
+                      rendered. 'none' is how "no project" is said here; ''
+                      means nothing was chosen. */}
                   {selectableProjects.length > 0 && (
-                    <Select value={projectId} onValueChange={setProjectId}>
+                    <Select value={projectId} onValueChange={value => { if (value) setProjectId(value); }}>
                       <SelectTrigger
                         className="h-9 w-[210px]"
                         aria-label={t('ai.project.label')}

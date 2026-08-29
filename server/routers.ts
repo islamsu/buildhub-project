@@ -40,8 +40,9 @@ import {
   projects, milestones, tasks, documents, products,
   rfqs, quotations, messages, notifications, reviews,
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
+  commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
-  aiAttachments,
+  aiAttachments, rfqItems,
 } from '../drizzle/schema';
 import { and, desc, eq, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -57,6 +58,8 @@ import {
   ADMIN_SUBSCRIPTION_COLUMNS, checkFounderEligibility, getBillingState, getBillingEvents, getSubscription,
 } from './billing/service';
 import { deriveBillingState } from './billing/domain';
+import { MAX_PRODUCT_IMAGE_SIZE, MAX_PRODUCT_IMAGES } from '@shared/productImages';
+import { recordCommercialEvent } from './_core/commercialAudit';
 import {
   changeVendorPlan,
   getLifecycleSnapshot,
@@ -79,6 +82,13 @@ import {
   FEATURED_PLACEMENT_SLOTS, getVendorTargetingDiagnostics, listDirectoryCategories,
   listDirectoryVendors, listFeaturedVendors,
 } from './vendorDirectory';
+import { getPlatformStats } from './platformStats';
+import {
+  MAX_BASKET_ITEMS, MAX_ITEM_NAME, MAX_ITEM_SPECIFICATIONS, MAX_ITEM_UNIT,
+  MAX_ITEM_VARIANT, MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY,
+} from '../shared/rfqBasket';
+import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shared/productImport';
+import { PRODUCT_CATEGORIES } from '../shared/productCategories';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSubscriptions } from '../drizzle/schema';
 import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
@@ -121,6 +131,24 @@ const TEST_LOGIN_TTL_MINUTES_DEFAULT = 60;
 const TEST_LOGIN_TTL_MINUTES_MAX = 24 * 60;
 
 const hashTestLoginToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
+
+/**
+ * A PASSWORD RESET LINK IS A CREDENTIAL TOO.
+ *
+ * testLoginTokens and adminInvitations both store only a hash, and the schema
+ * says why: "a dump of this table yields nothing an attacker can redeem. Same
+ * reasoning as storing a password hash rather than a password - a link IS a
+ * credential." The password-reset path was the one place that rule was not
+ * applied: users.passwordResetToken held the raw token and resetPassword
+ * compared it directly, so any read of the users table - a backup, a dump, an
+ * injection - handed over a live, redeemable reset for every account with a
+ * pending request.
+ *
+ * Same construction as the other two, and for the same reason: the token is
+ * CSPRNG output, not a human-chosen secret, so an unsalted sha256 is the right
+ * primitive and a slow KDF would only delay redemption.
+ */
+const hashPasswordResetToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
 // Administrator invitation and reset tokens. Same reasoning as the QA links
 // above: 32 bytes of CSPRNG output is not a human-chosen secret, so sha256 with
@@ -680,9 +708,11 @@ const authRouter = router({
       && target.accountStatus === 'active' && !target.deactivatedAt;
 
     if (eligible) {
+      // The raw token goes in the email and nowhere else; the column gets the
+      // hash, so what is stored is not what is redeemable.
       const token = `${randomUUID()}-${randomUUID().slice(0, 8)}`;
       await db.update(users).set({
-        passwordResetToken: token,
+        passwordResetToken: hashPasswordResetToken(token),
         passwordResetExpiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
       }).where(eq(users.id, target.id));
       try {
@@ -719,7 +749,9 @@ const authRouter = router({
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
-    const [target] = await db.select().from(users).where(eq(users.passwordResetToken, input.token));
+    // Looked up by HASH. The raw token never has to exist server-side beyond
+    // this comparison, and an attacker holding the column value holds nothing.
+    const [target] = await db.select().from(users).where(eq(users.passwordResetToken, hashPasswordResetToken(input.token)));
     if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'This reset link is invalid or has already been used' });
     if (!target.passwordResetExpiresAt || new Date(target.passwordResetExpiresAt).getTime() < Date.now()) {
       await db.update(users).set({ passwordResetToken: null, passwordResetExpiresAt: null }).where(eq(users.id, target.id));
@@ -801,6 +833,59 @@ const complianceProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+/**
+ * STORING A FILE, WITH THE ONE FAILURE A DEPLOYMENT ACTUALLY CAUSES.
+ *
+ * If no object storage backend is configured, `storagePut` throws
+ * `ObjectStorageNotConfiguredError` - a deliberate, loud refusal. Exactly one
+ * of the seven upload sites caught it and turned it into something a user
+ * could read. The other six let it become a generic 500: the customer was told
+ * "Something went wrong. Please try again." for a condition that retrying can
+ * never fix, and the operator got a log line reading "unclassified - inspect
+ * the deployment logs", which WAS the deployment log.
+ *
+ * Found by running the product against a real database with no storage
+ * configured - which is precisely the state a deployment is in when an S3
+ * environment variable is missing on launch day.
+ *
+ * SERVICE_UNAVAILABLE rather than INTERNAL_SERVER_ERROR, because that is what
+ * it is: the feature is off on this deployment, the request was fine, and
+ * saying so stops a user retrying into the same wall.
+ */
+async function storagePutOrUnavailable(
+  relKey: string,
+  data: Buffer | Uint8Array | string,
+  contentType: string,
+): Promise<{ key: string; url: string }> {
+  try {
+    return await storagePut(relKey, data, contentType);
+  } catch (error) {
+    if (error instanceof ObjectStorageNotConfiguredError) {
+      // LOGGED HERE, DELIBERATELY, and not left to the tRPC error classifier.
+      //
+      // That classifier only reports INTERNAL_SERVER_ERROR, on the sound
+      // reasoning that a server-authored refusal already says what it means to
+      // the caller. It does - to the CALLER. Turning this into a 503 therefore
+      // fixed the customer's half and silently removed the operator's: the
+      // access log would show 503s on every upload and never say why.
+      //
+      // So the diagnosis is emitted where it is known. It names the variables
+      // to set, because this line goes to a deployment log, not to a customer.
+      console.error(JSON.stringify({
+        level: 'error',
+        event: 'upload_rejected_storage_unconfigured',
+        remedy: 'set S3_BUCKET, S3_ENDPOINT, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY '
+          + '(or BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY) on this deployment',
+      }));
+      throw new TRPCError({
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'File uploads are not available on this deployment.',
+      });
+    }
+    throw error;
+  }
+}
+
 const MAX_REGISTRATION_DOCUMENT_SIZE = 10 * 1024 * 1024;
 
 /**
@@ -859,7 +944,7 @@ const registrationRouter = router({
     if (bytes.length === 0 || bytes.length > MAX_REGISTRATION_DOCUMENT_SIZE) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Registration documents must be between 1 byte and 10MB' });
     assertUploadedFileMatches(input.contentType, bytes, DOCUMENT_TYPES);
     const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const { key, url } = await storagePut(`registration/${ctx.user.id}/${Date.now()}-${safeName}`, bytes, input.contentType);
+    const { key, url } = await storagePutOrUnavailable(`registration/${ctx.user.id}/${Date.now()}-${safeName}`, bytes, input.contentType);
     const result = await db.insert(registrationDocuments).values({ userId: ctx.user.id, documentType: input.documentType, displayName: requirement.name, fileName: input.fileName, url, fileKey: key, mimeType: input.contentType, size: bytes.length, status: 'submitted', applicantNote: input.applicantNote });
     const documentId = Number(result[0].insertId);
     await db.insert(registrationDocumentSubmissions).values({ documentId, userId: ctx.user.id, documentType: input.documentType, fileName: input.fileName, url, fileKey: key, mimeType: input.contentType, size: bytes.length, status: 'submitted', applicantNote: input.applicantNote });
@@ -1071,9 +1156,12 @@ const projectsRouter = router({
       if (buffer.length > 8 * 1024 * 1024) throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
       assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
       const safeName = input.name.replace(/[^\w.-]+/g, '_');
-      const { key, url } = await storagePut(`project-documents/user-${ctx.user.id}/project-${input.projectId}/${safeName}`, buffer, input.contentType);
+      const { key, url } = await storagePutOrUnavailable(`project-documents/user-${ctx.user.id}/project-${input.projectId}/${safeName}`, buffer, input.contentType);
       const result = await db.insert(documents).values({ projectId: input.projectId, uploaderId: ctx.user.id, name: input.name, type: input.type, url, fileKey: key, size: buffer.length });
-      return { id: Number(result[0].insertId), key, url, name: input.name, type: input.type, size: buffer.length };
+      // The bytes are stored and the row is written by this point. Throwing here
+      // because a driver returned an unexpected shape would show the user a
+      // failure for an upload that succeeded, and they would try again.
+      return { id: Number(result?.[0]?.insertId ?? 0), key, url, name: input.name, type: input.type, size: buffer.length };
     }),
   progressReports: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
@@ -1109,6 +1197,22 @@ const marketplaceRouter = router({
     }).optional())
     .query(async ({ input }) => listDirectoryVendors(input ?? {})),
   vendorCategories: publicProcedure.query(async () => listDirectoryCategories()),
+
+  /**
+   * The counts on the landing and sign-up pages, from the database.
+   *
+   * They used to be four hardcoded strings. `satisfaction` is null until a
+   * review exists, and the pages render nothing in that case - see
+   * server/platformStats.ts for why that is the rule rather than a fallback
+   * number.
+   */
+  platformStats: publicProcedure.query(async () => {
+    const db = await getDb();
+    // No database is not an excuse to invent figures. Zeroes with a null
+    // satisfaction render as "no figure yet", which is accurate.
+    if (!db) return { registeredUsers: 0, activeProjects: 0, verifiedProviders: 0, satisfaction: null };
+    return getPlatformStats(db);
+  }),
 
   // Featured placement (Slice 8). A SEPARATE endpoint from `vendors` above, on
   // purpose: the organic list and the sponsored strip are two different things
@@ -1164,6 +1268,24 @@ const marketplaceRouter = router({
         .orderBy(desc(products.featured), desc(products.createdAt))
         .limit(input.limit);
     }),
+  /**
+   * ONE VENDOR'S PUBLISHED CATALOGUE.
+   *
+   * The vendor detail page listed no products at all, so a buyer who found a
+   * supplier in the directory could see their rating and nothing they sell.
+   * Same visibility rule as `list`: published rows only, so a delisted product
+   * is no more visible here than it is on the marketplace.
+   */
+  vendorProducts: publicProcedure
+    .input(z.object({ vendorId: z.number().int().positive(), limit: z.number().int().positive().max(60).default(24) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(products)
+        .where(and(eq(products.supplierId, input.vendorId), eq(products.active, true)))
+        .orderBy(desc(products.createdAt))
+        .limit(input.limit);
+    }),
   get: publicProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
@@ -1175,7 +1297,23 @@ const marketplaceRouter = router({
     const [product] = await db.select().from(products)
       .where(and(eq(products.id, input.id), eq(products.active, true)));
     if (!product) throw new TRPCError({ code: 'NOT_FOUND' });
-    return product;
+    // WHO SELLS THIS.
+    //
+    // The page invited buyers to "ask the supplier a question" without ever
+    // saying who the supplier was, and there was no route from a product to
+    // the vendor's record or to the rest of their catalogue.
+    //
+    // Name and verification ONLY - exactly the two fields marketplace.vendors
+    // already publishes to anyone, with no session at all. Nothing here widens
+    // what the directory already shows, and email and phone are no more
+    // present than they are anywhere else on a public surface.
+    let supplier: { id: number; name: string | null; verified: boolean | null } | null = null;
+    if (product.supplierId) {
+      const [row] = await db.select({ id: users.id, name: users.name, verified: users.verified })
+        .from(users).where(eq(users.id, product.supplierId));
+      supplier = row ?? null;
+    }
+    return { ...product, supplier };
   }),
   myProducts: approvedProviderProcedure.query(async ({ ctx }) => {
     if (ctx.user.userRole !== 'supplier') {
@@ -1190,7 +1328,10 @@ const marketplaceRouter = router({
       name: z.string().min(1),
       nameAr: z.string().optional(),
       description: z.string().optional(),
-      category: z.string().min(1),
+      // Was `z.string().min(1)`: any string at all. A category outside the
+      // taxonomy matches no marketplace filter, so the product becomes
+      // unfindable the moment it is listed. Bulk import enforces the same list.
+      category: z.enum(PRODUCT_CATEGORIES),
       brand: z.string().optional(),
       price: z.number().optional(),
       stock: z.number().int().min(0).optional(),
@@ -1210,6 +1351,307 @@ const marketplaceRouter = router({
       });
       return { id: Number(result[0].insertId) };
     }),
+  /**
+   * SUPPLIER CATALOGUE MANAGEMENT.
+   *
+   * `create` existed and nothing else did: once a supplier listed a product
+   * they could never correct a price, fix a typo, add a photo or take it down.
+   * A catalogue you cannot edit is not a catalogue, and "delete the row in the
+   * database" is not a product feature.
+   *
+   * All three procedures below share one ownership rule, applied the same way:
+   * the row is read WITH the supplierId predicate, so a product that is not
+   * yours simply does not come back. Absent and not-mine give the same NOT_FOUND
+   * so the endpoint is not an oracle for which product ids exist.
+   */
+  /**
+   * BULK CATALOGUE IMPORT.
+   *
+   * A supplier could add products only one at a time. A vendor with a real
+   * catalogue had no way in, which made onboarding them a manual data-entry
+   * project - the reason this was raised as a launch requirement.
+   *
+   * WHAT IS ENFORCED HERE AND NOT IN THE BROWSER:
+   *  - the caller is an approved SUPPLIER, and every row is written with THEIR
+   *    supplierId. There is no field in the file that can change the owner;
+   *  - the file is re-parsed server-side. The preview the browser showed is a
+   *    convenience, never the basis for what is written;
+   *  - the category must be a real BuildHub category, so an import cannot
+   *    invent taxonomy the directory does not have;
+   *  - a name already in THIS supplier's catalogue is reported, not silently
+   *    duplicated or silently overwritten - which of those a supplier wants is
+   *    not something to guess;
+   *  - ALL-OR-NOTHING, in one transaction. A partial import leaves a supplier
+   *    unable to tell what landed, and re-uploading then duplicates whatever
+   *    did.
+   */
+  importProducts: approvedProviderProcedure
+    .input(z.object({
+      csv: z.string().min(1).max(MAX_IMPORT_BYTES, 'File too large'),
+      /** Preview asks for the verdict without writing anything. */
+      dryRun: z.boolean().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.userRole !== 'supplier') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
+      }
+      enforceUploadRateLimit(ctx.user.id);
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const parsed = parseProductImport(input.csv, PRODUCT_CATEGORIES);
+
+      // Names this supplier already lists. Scoped to them: another supplier
+      // selling "Rebar 12mm" is not this supplier's problem, and telling them
+      // about it would leak a rival's catalogue.
+      const existing = parsed.rows.length > 0
+        ? await db.select({ name: products.name }).from(products).where(eq(products.supplierId, ctx.user.id))
+        : [];
+      const alreadyListed = new Set(existing.map(row => row.name.trim().toLowerCase()));
+      const conflicts = parsed.rows
+        .filter(row => row.name && alreadyListed.has(row.name.trim().toLowerCase()))
+        .map(row => ({ line: row.line, column: 'name', message: `"${row.name}" is already in your catalogue` }));
+
+      const errors = [...parsed.errors, ...conflicts]
+        .sort((a, b) => a.line - b.line)
+        .slice(0, 100);   // a bounded report; the first hundred are enough to act on
+
+      const summary = {
+        totalRows: parsed.rows.length,
+        errors,
+        errorCount: [...parsed.errors, ...conflicts].length,
+        duplicatesInFile: parsed.duplicatesInFile,
+        imported: 0,
+        dryRun: input.dryRun,
+      };
+
+      if (errors.length > 0 || input.dryRun) return summary;
+
+      await db.transaction(async (tx) => {
+        await tx.insert(products).values(parsed.rows.map(row => ({
+          supplierId: ctx.user.id,          // never from the file
+          name: row.name,
+          nameAr: row.nameAr,
+          category: row.category,
+          brand: row.brand,
+          description: row.description,
+          unit: row.unit,
+          price: row.price != null ? String(row.price) : undefined,
+          stock: row.stock,
+          deliveryDays: row.deliveryDays,
+        })));
+      });
+
+      // No analytics event: the framework has no product-listing event, and
+      // inventing one that nothing aggregates would be a metric that looks
+      // real and measures nothing.
+      return { ...summary, imported: parsed.rows.length };
+    }),
+
+  /** The file a supplier fills in. Static, so it needs no authorization. */
+  importTemplate: publicProcedure.query(() => ({ csv: importTemplateCsv() })),
+
+  updateProduct: approvedProviderProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      // Every field optional: this is a PATCH. `name` and `category` are
+      // notNull in the schema, so they may be changed but not cleared.
+      name: z.string().min(1).max(255).optional(),
+      nameAr: z.string().max(255).optional(),
+      description: z.string().max(5000).optional(),
+      category: z.string().min(1).max(100).optional(),
+      brand: z.string().max(100).optional(),
+      origin: z.string().max(100).optional(),
+      // Bounds match decimal(12,2). A negative price is not a discount.
+      price: z.number().min(0).max(9_999_999_999).optional(),
+      currency: z.string().max(10).optional(),
+      stock: z.number().int().min(0).optional(),
+      unit: z.string().max(50).optional(),
+      warranty: z.string().max(100).optional(),
+      deliveryDays: z.number().int().min(0).max(3650).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.userRole !== 'supplier') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const { id, price, ...rest } = input;
+      const [owned] = await db.select({ id: products.id })
+        .from(products)
+        .where(and(eq(products.id, id), eq(products.supplierId, ctx.user.id)));
+      if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
+
+      // Drop undefined keys so a PATCH cannot blank the columns it omitted.
+      //
+      // Over JSON this is belt-and-braces: `undefined` does not survive
+      // serialisation and zod omits absent optionals entirely, so `{ ...rest }`
+      // would behave identically today - mutation testing confirmed the two are
+      // equivalent rather than one being a fix for the other. It is kept
+      // because the guarantee should hold for any caller, not only for the ones
+      // that happen to arrive as JSON.
+      const patch: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(rest)) {
+        if (value !== undefined) patch[key] = value;
+      }
+      if (price !== undefined) patch.price = String(price);
+      if (Object.keys(patch).length === 0) return { id };
+
+      await db.update(products).set(patch)
+        .where(and(eq(products.id, id), eq(products.supplierId, ctx.user.id)));
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        subjectType: 'product', subjectId: id, action: 'product_updated',
+        // WHICH fields changed, never their old and new values: an audit row
+        // is read by more people than the record it describes.
+        detail: `changed: ${Object.keys(patch).sort().join(', ')}`,
+      });
+      return { id };
+    }),
+
+  /**
+   * Publish or delist. `active` already governs whether a product is visible to
+   * buyers - marketplace.get and askQuestion both check it - but nothing could
+   * ever set it, so a supplier who listed something by mistake had no way to
+   * withdraw it.
+   *
+   * Delisting is reversible and does NOT delete: questions, quotations and
+   * order history reference the row, and destroying it to hide it would take
+   * the history with it.
+   */
+  setProductActive: approvedProviderProcedure
+    .input(z.object({ id: z.number().int().positive(), active: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.userRole !== 'supplier') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [owned] = await db.select({ id: products.id })
+        .from(products)
+        .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
+      if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
+      await db.update(products).set({ active: input.active })
+        .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        subjectType: 'product', subjectId: input.id,
+        action: input.active ? 'product_published' : 'product_delisted',
+      });
+      return { id: input.id, active: input.active };
+    }),
+
+  /**
+   * Upload one product image.
+   *
+   * Bytes are SNIFFED, not trusted: assertUploadedFileMatches reads the real
+   * header and refuses a file whose content disagrees with its declared type,
+   * which is what stops an executable wearing a .png extension. Images only -
+   * a product photo has no reason to be a PDF, and narrowing the allowlist
+   * here costs nothing.
+   *
+   * The key is `product-images/user-<id>/...`, written by this procedure and
+   * nothing else. Ownership is still resolved through the database row on
+   * read (see authorizeStorageKey), because a key is a string an attacker may
+   * come to possess.
+   */
+  uploadProductImage: approvedProviderProcedure
+    .input(z.object({
+      fileName: z.string().min(1).max(255),
+      contentType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+      base64: z.string().max(11_000_000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.userRole !== 'supplier') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
+      }
+      enforceUploadRateLimit(ctx.user.id);
+      const buffer = Buffer.from(input.base64, 'base64');
+      if (buffer.length === 0) throw new TRPCError({ code: 'BAD_REQUEST', message: 'That file is empty' });
+      if (buffer.length > MAX_PRODUCT_IMAGE_SIZE) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Image too large (max 5MB)' });
+      }
+      assertUploadedFileMatches(input.contentType, buffer, IMAGE_TYPES);
+      const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
+      const { key, url } = await storagePutOrUnavailable(
+        `product-images/user-${ctx.user.id}/${safeName}`,
+        buffer,
+        input.contentType,
+      );
+      return { key, url, name: input.fileName, type: input.contentType, size: buffer.length };
+    }),
+
+  /**
+   * Set the ordered image list for one product.
+   *
+   * ORDER IS THE FEATURE: `images[0]` is what ProductDetail and the marketplace
+   * card render as the primary photo, so reordering and choosing a primary are
+   * the same operation and there is no separate `primaryImageId` to drift out
+   * of sync with the array.
+   *
+   * Every URL must be one this supplier uploaded. Without that check a supplier
+   * could point their listing at a competitor's photo, or at any storage path
+   * they could name - the product row would then be a way to launder a key past
+   * the proxy's ownership check.
+   */
+  setProductImages: approvedProviderProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      images: z.array(z.string().max(512)).max(MAX_PRODUCT_IMAGES),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.userRole !== 'supplier') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const prefix = `/manus-storage/product-images/user-${ctx.user.id}/`;
+      for (const image of input.images) {
+        // startsWith ALONE IS NOT ENOUGH. `.../user-5/../../secret.png` begins
+        // with the caller's own prefix and then climbs out of it, so the
+        // remainder is checked for traversal too. The storage proxy would
+        // refuse such a key on READ, but without this the row would still
+        // store a path that means something other than it appears to - and the
+        // next reader of that column has no reason to expect one.
+        if (!image.startsWith(prefix)) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'You may only use images you uploaded.',
+          });
+        }
+        const remainder = image.slice(prefix.length);
+        const traverses = remainder.length === 0
+          || remainder.split('/').some(segment => segment.length === 0 || segment === '.' || segment === '..');
+        if (traverses) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'You may only use images you uploaded.',
+          });
+        }
+      }
+      // Duplicates would render the same photo twice and make "reorder" lie.
+      if (new Set(input.images).size !== input.images.length) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That image is already on this product.' });
+      }
+
+      const [owned] = await db.select({ id: products.id })
+        .from(products)
+        .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
+      if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
+
+      await db.update(products)
+        .set({ images: input.images.length > 0 ? JSON.stringify(input.images) : null })
+        .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        subjectType: 'product', subjectId: input.id, action: 'product_images_changed',
+        detail: `${input.images.length} image(s)`,
+      });
+      return { id: input.id, images: input.images };
+    }),
+
   categories: publicProcedure.query(async () => {
     return [
       'Materials', 'Furniture', 'Lighting', 'Electrical', 'Plumbing',
@@ -1252,10 +1694,29 @@ const marketplaceRouter = router({
     // that a withdrawn product and an absent one are the same answer to a
     // buyer; a question thread attached to a product the supplier has delisted
     // contradicted that, and had nowhere to be displayed.
-    const [product] = await db.select({ id: products.id }).from(products)
+    const [product] = await db.select({ id: products.id, name: products.name, supplierId: products.supplierId })
+      .from(products)
       .where(and(eq(products.id, input.productId), eq(products.active, true)));
     if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
     const result = await db.insert(productQuestions).values({ productId: input.productId, askerId: ctx.user.id, question: input.question });
+    // The supplier is the only person who can answer, and nothing told them a
+    // question existed. Every thread stayed one-sided while the buyer-facing
+    // listing implied a reply was coming.
+    //
+    // The asker's identity is deliberately NOT in the notification: the Q&A is
+    // public on the listing and marketplace.questions omits askerId precisely
+    // so the thread cannot be walked back to the buyers.
+    if (product.supplierId && product.supplierId !== ctx.user.id) {
+      await notifyUser(db, {
+        userId: product.supplierId,
+        title: 'New question on your product',
+        body: `Someone asked a question about "${product.name}"`,
+        type: 'product',
+        link: `/marketplace/products/${input.productId}`,
+        messageKey: 'notif.product.question',
+        messageParams: { productName: product.name },
+      });
+    }
     return { id: Number(result[0].insertId) };
   }),
   /**
@@ -1289,7 +1750,10 @@ const marketplaceRouter = router({
       const [row] = await db
         .select({
           questionId: productQuestions.id,
+          productId: productQuestions.productId,
+          askerId: productQuestions.askerId,
           answer: productQuestions.answer,
+          productName: products.name,
           supplierId: products.supplierId,
           active: products.active,
         })
@@ -1310,6 +1774,29 @@ const marketplaceRouter = router({
       await db.update(productQuestions)
         .set({ answer: input.answer, answeredAt: new Date() })
         .where(eq(productQuestions.id, input.questionId));
+      // subjectType is 'product' so subjectId must be a PRODUCT id. It was the
+      // question id, which meant a supplier reading the trail for product 12
+      // would get rows about whichever questions happened to share that number.
+      // The question itself is context.
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        subjectType: 'product', subjectId: row.productId,
+        action: 'product_question_answered',
+        detail: `question ${input.questionId}`,
+      });
+      // And the person who asked is told there is an answer, on the listing
+      // that now carries it.
+      if (row.askerId && row.askerId !== ctx.user.id) {
+        await notifyUser(db, {
+          userId: row.askerId,
+          title: 'Your question was answered',
+          body: `The supplier answered your question about "${row.productName}"`,
+          type: 'product',
+          link: `/marketplace/products/${row.productId}`,
+          messageKey: 'notif.product.answered',
+          messageParams: { productName: row.productName ?? '' },
+        });
+      }
       return { id: input.questionId };
     }),
   /**
@@ -1375,9 +1862,24 @@ const rfqRouter = router({
   // at all is a pricing question - openQualifiedEnquiry charges a credit for
   // "full detail" - and narrowing it would change what the product gives away.
   // That is a call for you, not something to infer from a table.
-  list: protectedProcedure.query(async () => {
+  list: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
+    /**
+     * WHO THE FEED IS FOR.
+     *
+     * This returned every RFQ's title, full description, exact budget and
+     * location to EVERY authenticated caller - which meant one homeowner could
+     * read another homeowner's brief and the exact figure they were willing to
+     * spend, and so could a supplier who had no intention of bidding.
+     *
+     * The feed exists so PROVIDERS can find work. A customer has no reason to
+     * browse other customers' requests, so a non-provider now sees only their
+     * own. This is the owner's decision, taken explicitly, recorded here:
+     * discovery is for approved providers; a requester always sees their own.
+     */
+    const isProvider = providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])
+      && (ctx.user as { onboardingStatus?: string }).onboardingStatus === 'approved';
     return db.select({
       id: rfqs.id,
       requesterId: rfqs.requesterId,
@@ -1391,13 +1893,87 @@ const rfqRouter = router({
       productReference: rfqs.productReference,
       status: rfqs.status,
       createdAt: rfqs.createdAt,
-    }).from(rfqs).orderBy(desc(rfqs.createdAt)).limit(50);
+    }).from(rfqs)
+      .where(isProvider ? undefined : eq(rfqs.requesterId, ctx.user.id))
+      .orderBy(desc(rfqs.createdAt)).limit(50);
   }),
   myList: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
     return db.select().from(rfqs).where(eq(rfqs.requesterId, ctx.user.id)).orderBy(desc(rfqs.createdAt));
   }),
+  /**
+   * ONE RFQ, at the same visibility the open feed already gives.
+   *
+   * WHY THIS EXISTS. `rfq.get` is scoped `WHERE requesterId = ctx.user.id`, so
+   * a provider cannot read a single RFQ at all - they only ever saw RFQs as
+   * rows inside `rfq.list`. That made a detail PAGE impossible for the very
+   * people an RFQ is addressed to, which is why the product had none.
+   *
+   * WHY IT IS NOT A NEW EXPOSURE. The projection below is EXACTLY the column
+   * allowlist `rfq.list` already returns to any authenticated caller - and
+   * deliberately not `attachments`, which is what `openQualifiedEnquiry`
+   * charges a credit to reveal. The only difference is that a row is addressed
+   * by id instead of arriving inside a page of fifty.
+   *
+   * The one honest asymmetry: `rfq.list` is `limit(50)` ordered by newest, so
+   * an older RFQ is not in the feed while it IS fetchable here. That limit is
+   * pagination, not an authorization boundary - it protects the payload size,
+   * not the record - and treating it as a boundary would mean an RFQ became
+   * private simply by ageing, which is not a rule this product has anywhere
+   * else. Stated rather than glossed, because it is the kind of difference
+   * that deserves an owner's eye.
+   *
+   * VIEWING IS FREE. Opening this page charges nothing. The credit is spent on
+   * `openEnquiry`, which reveals the attachments and the full brief, and that
+   * separation is the whole reason a supplier can review before they buy.
+   */
+  summary: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [rfq] = await db.select({
+        id: rfqs.id,
+        requesterId: rfqs.requesterId,
+        projectId: rfqs.projectId,
+        title: rfqs.title,
+        description: rfqs.description,
+        category: rfqs.category,
+        budget: rfqs.budget,
+        location: rfqs.location,
+        deadline: rfqs.deadline,
+        productReference: rfqs.productReference,
+        status: rfqs.status,
+        createdAt: rfqs.createdAt,
+      }).from(rfqs).where(eq(rfqs.id, input.id));
+      if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
+      /**
+       * THE SAME GATE AS THE FEED. This is the per-record version of
+       * `rfq.list`, so it must not be a way around the narrowing applied
+       * there: the brief and the exact budget are for approved providers
+       * deciding whether to bid, and for the requester reading their own.
+       * NOT_FOUND rather than FORBIDDEN, so it does not confirm to a stranger
+       * that an id exists.
+       */
+      const mayRead = rfq.requesterId === ctx.user.id
+        || (providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])
+            && (ctx.user as { onboardingStatus?: string }).onboardingStatus === 'approved');
+      if (!mayRead) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
+      /**
+       * The lines are part of the BRIEF, and the brief is free to read - the
+       * same rule already applied to `description`, `budget` and `location` by
+       * `rfq.list`. A supplier deciding whether to spend a credit needs to know
+       * what is being asked for; the attachments remain what the credit buys.
+       */
+      const items = await db.select({
+        id: rfqItems.id, productId: rfqItems.productId, name: rfqItems.name,
+        variantLabel: rfqItems.variantLabel, quantity: rfqItems.quantity,
+        unit: rfqItems.unit, specifications: rfqItems.specifications,
+        unitPriceSnapshot: rfqItems.unitPriceSnapshot,
+      }).from(rfqItems).where(eq(rfqItems.rfqId, input.id)).orderBy(rfqItems.position, rfqItems.id);
+      return { ...rfq, items };
+    }),
   // The requester's own RFQ, in full. Scoped by requesterId in the WHERE clause.
   //
   // This had no ownership check at all: any authenticated caller could read any
@@ -1416,18 +1992,56 @@ const rfqRouter = router({
     const [rfq] = await db.select().from(rfqs)
       .where(and(eq(rfqs.id, input.id), eq(rfqs.requesterId, ctx.user.id)));
     if (!rfq) throw new TRPCError({ code: 'NOT_FOUND' });
-    return rfq;
+    // Read only AFTER ownership is established, so the items query cannot
+    // become a second way to learn what an RFQ contains.
+    const items = await db.select().from(rfqItems)
+      .where(eq(rfqItems.rfqId, rfq.id)).orderBy(rfqItems.position, rfqItems.id);
+    return { ...rfq, items };
   }),
   create: protectedProcedure
     .input(z.object({
       title: z.string().min(1),
       description: z.string().optional(),
-      category: z.string().optional(),
+      /**
+       * REQUIRED, AND A CLOSED ENUM. Both halves of that were once wrong, and
+       * together they produced an RFQ the platform could not serve.
+       *
+       * `openQualifiedEnquiry` refuses any RFQ whose category is not one of
+       * RFQ_CATEGORIES - `unclassified_rfq`. A category-less RFQ was still
+       * accepted, still listed in the open feed, and permanently impossible to
+       * open or quote on. The customer waited for responses that could never
+       * arrive; suppliers saw a request they were forbidden to answer; nobody
+       * was told why. A free-text category did the same thing, because
+       * "Marble" is not a member of the taxonomy either.
+       *
+       * Requiring it is not a business decision - the eligibility rule that
+       * needs it already exists. This makes the contract match the requirement
+       * rather than inventing one.
+       */
+      category: z.enum(RFQ_CATEGORIES),
       budget: z.number().optional(),
       location: z.string().optional(),
       deadline: z.date().optional(),
       projectId: z.number().optional(),
       productReference: z.object({ productId: z.number(), variantId: z.string().min(1), variantLabel: z.string().min(1) }).optional(),
+      /**
+       * THE LINES OF THE REQUEST — what the customer is actually asking to be
+       * priced. Before this, an RFQ could carry ONE `productReference` and no
+       * quantity at all, while the UI offered a button labelled "Add to RFQ
+       * list". See shared/rfqBasket.ts.
+       *
+       * `name`, `unit` and the price are NOT taken from this input for a
+       * catalogue line: they are re-read from the products table below, so a
+       * caller cannot post an item claiming to be a product it is not.
+       */
+      items: z.array(z.object({
+        productId: z.number().int().positive().nullable().optional(),
+        name: z.string().min(1).max(MAX_ITEM_NAME),
+        variantLabel: z.string().max(MAX_ITEM_VARIANT).nullable().optional(),
+        quantity: z.number().min(MIN_ITEM_QUANTITY).max(MAX_ITEM_QUANTITY),
+        unit: z.string().max(MAX_ITEM_UNIT).nullable().optional(),
+        specifications: z.string().max(MAX_ITEM_SPECIFICATIONS).nullable().optional(),
+      })).max(MAX_BASKET_ITEMS).optional(),
       attachments: z.array(z.object({
         key: z.string(),
         url: z.string(),
@@ -1444,21 +2058,99 @@ const rfqRouter = router({
         const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
         if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
       }
-      const { attachments, productReference, ...rest } = input;
-      const result = await db.insert(rfqs).values({
-        ...rest,
-        requesterId: ctx.user.id,
-        budget: input.budget != null ? String(input.budget) : undefined,
-        attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : undefined,
-        productReference: productReference ?? undefined,
+      const { attachments, productReference, items, ...rest } = input;
+
+      /**
+       * EVERY CATALOGUE LINE IS RE-READ FROM THE CATALOGUE.
+       *
+       * The client sends a productId and a name. Only the id is trusted: the
+       * name, unit and price are taken from the products row, so a basket
+       * edited in localStorage cannot put "Premium Italian Marble" next to a
+       * cement product's id, and a supplier cannot be sent a request naming
+       * something they never listed.
+       *
+       * An id that does not exist, or points at a WITHDRAWN product, is
+       * refused rather than silently dropped - a customer who thinks they
+       * asked for three things must not receive quotes for two.
+       */
+      const resolvedItems: {
+        productId: number | null; name: string; variantLabel: string | null;
+        quantity: string; unit: string | null; specifications: string | null;
+        unitPriceSnapshot: string | null; position: number;
+      }[] = [];
+      if (items && items.length > 0) {
+        const catalogueIds = Array.from(new Set(
+          items.map(item => item.productId).filter((id): id is number => typeof id === 'number'),
+        ));
+        const catalogue = catalogueIds.length > 0
+          ? await db.select({
+              id: products.id, name: products.name, unit: products.unit,
+              price: products.price, active: products.active,
+            }).from(products).where(inArray(products.id, catalogueIds))
+          : [];
+        const byId = new Map(catalogue.map(row => [row.id, row]));
+        items.forEach((item, index) => {
+          if (item.productId == null) {
+            // A free-text line. The customer's own words, length-capped by zod.
+            resolvedItems.push({
+              productId: null, name: item.name, variantLabel: item.variantLabel ?? null,
+              quantity: String(item.quantity), unit: item.unit ?? null,
+              specifications: item.specifications ?? null, unitPriceSnapshot: null, position: index,
+            });
+            return;
+          }
+          const product = byId.get(item.productId);
+          if (!product) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'One of the requested products is no longer available' });
+          }
+          if (!product.active) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `"${product.name}" has been withdrawn by its supplier and cannot be quoted` });
+          }
+          resolvedItems.push({
+            productId: product.id,
+            name: product.name,
+            variantLabel: item.variantLabel ?? null,
+            quantity: String(item.quantity),
+            unit: item.unit ?? product.unit ?? null,
+            specifications: item.specifications ?? null,
+            unitPriceSnapshot: product.price ?? null,
+            position: index,
+          });
+        });
+      }
+
+      /**
+       * The RFQ and its lines are written together. A request that exists with
+       * no lines, because the second insert failed, is a request a supplier
+       * cannot answer and a customer believes they made.
+       */
+      const rfqId = await db.transaction(async (tx) => {
+        const result = await tx.insert(rfqs).values({
+          ...rest,
+          requesterId: ctx.user.id,
+          budget: input.budget != null ? String(input.budget) : undefined,
+          attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : undefined,
+          productReference: productReference ?? undefined,
+        });
+        const id = Number(result[0].insertId);
+        if (resolvedItems.length > 0) {
+          await tx.insert(rfqItems).values(resolvedItems.map(item => ({ ...item, rfqId: id })));
+        }
+        return id;
       });
-      const rfqId = Number(result[0].insertId);
       recordEventAsync({
         type: ANALYTICS_EVENTS.RFQ_POSTED,
         userId: ctx.user.id,
         subjectType: 'rfq',
         subjectId: rfqId,
         metadata: { category: rest.category ?? undefined },
+      });
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        subjectType: 'rfq', subjectId: rfqId, action: 'rfq_created',
+        detail: `${rest.category ?? 'uncategorised'}`
+          + `${resolvedItems.length ? `, ${resolvedItems.length} item(s)` : ''}`
+          + `${attachments?.length ? `, ${attachments.length} attachment(s)` : ''}`,
       });
       return { id: rfqId };
     }),
@@ -1479,7 +2171,7 @@ const rfqRouter = router({
       }
       assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
       const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
-      const { key, url } = await storagePut(
+      const { key, url } = await storagePutOrUnavailable(
         `rfq-attachments/user-${ctx.user.id}/${safeName}`,
         buffer,
         input.contentType,
@@ -1528,6 +2220,12 @@ const rfqRouter = router({
         warranty:         quotations.warranty,
         paymentTerms:     quotations.paymentTerms,
         notes:            quotations.notes,
+        // Added to the allowlist deliberately. This read is already scoped to
+        // the RFQ's requester and refuses everybody else, so the customer
+        // evaluating the bid is exactly the audience these files are for. The
+        // BYTES stay behind the storage proxy, which re-derives the same rule
+        // rather than trusting that this list was reached legitimately.
+        attachments:      quotations.attachments,
         status:           quotations.status,
         createdAt:        quotations.createdAt,
         providerName:     users.name,
@@ -1610,8 +2308,72 @@ const rfqRouter = router({
             message: `You have used all ${result.usage.allowance} qualified enquiries for this month. Your allowance resets on ${result.usage.resetsAt.toISOString().slice(0, 10)}.`,
           });
         case 'granted':
+          // The paid lead. `alreadyConsumed` distinguishes a re-open (free)
+          // from a fresh charge, and the trail records which - otherwise a
+          // billing dispute has no way to tell them apart.
+          //
+          // subjectId IS THE qualifiedEnquiries ROW, not the RFQ. The rule this
+          // trail keeps is that subjectId always names a row in the table
+          // subjectType names - otherwise `subjectType='enquiry' AND
+          // subjectId=5` would sometimes mean an enquiry and sometimes an RFQ,
+          // and nothing about the result would look wrong. The RFQ is context,
+          // so it goes in `detail`.
+          //
+          // A null enquiryId does not suppress the event: the credit was still
+          // spent, and a row saying so with the id missing is far better than
+          // no record of a charge.
+          await recordCommercialEvent(await getDb(), {
+            actorId: ctx.user.id,
+            ownerId: result.rfq?.requesterId ?? null,
+            subjectType: 'enquiry',
+            subjectId: result.enquiryId ?? 0,
+            action: 'enquiry_opened',
+            detail: `rfq ${input.rfqId}, ${result.alreadyConsumed ? 'reopened, no credit charged' : 'credit charged'}`,
+          });
           return { rfq: result.rfq, alreadyConsumed: result.alreadyConsumed, usage: result.usage };
       }
+    }),
+  /**
+   * A SUPPLIER'S SUPPORTING FILES FOR A QUOTATION.
+   *
+   * Until this existed a supplier could send a price, a timeline, a warranty
+   * string and free-text notes - and nothing else. No proposal, no technical
+   * specification, no certificate, no product photograph. Real construction
+   * bidding is not conducted that way, and a customer comparing two numbers
+   * with no supporting documents is not really comparing anything.
+   *
+   * approvedProviderProcedure, the same gate submitQuotation sits behind: a
+   * vendor who may not quote may not stage files for a quotation either.
+   *
+   * The written key is `quotation-attachments/user-<id>/...`, its own prefix
+   * so the storage proxy can authorise it as its own category. It is NOT
+   * shared with `rfq-attachments/`, whose rule is "the requester, plus a
+   * provider who has PAID for the enquiry" - the opposite direction of travel
+   * and the opposite audience.
+   */
+  uploadQuotationAttachment: approvedProviderProcedure
+    .input(z.object({
+      fileName: z.string().min(1).max(255),
+      contentType: z.string().refine(
+        isAllowedRfqAttachmentType,
+        { message: 'Only images and PDF documents are allowed' },
+      ),
+      base64: z.string().max(11_000_000, 'File too large (max ~8MB)'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      enforceUploadRateLimit(ctx.user.id);
+      const buffer = Buffer.from(input.base64, 'base64');
+      if (buffer.length > MAX_RFQ_ATTACHMENT_SIZE) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
+      }
+      assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
+      const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
+      const { key, url } = await storagePutOrUnavailable(
+        `quotation-attachments/user-${ctx.user.id}/${safeName}`,
+        buffer,
+        input.contentType,
+      );
+      return { key, url, name: input.fileName, type: input.contentType, size: buffer.length };
     }),
   submitQuotation: approvedProviderProcedure
     // BOUNDS MATCH THE COLUMNS. `price` is decimal(12,2), `warranty` is
@@ -1627,6 +2389,18 @@ const rfqRouter = router({
       warranty: z.string().max(100).optional(),
       paymentTerms: z.string().max(2000).optional(),
       notes: z.string().max(4000).optional(),
+      /**
+       * Bounded at 6 like the RFQ side. Each entry must have been produced by
+       * uploadQuotationAttachment - the key prefix is re-checked below rather
+       * than trusted, because this array arrives from the client.
+       */
+      attachments: z.array(z.object({
+        key: z.string().min(1).max(1024),
+        url: z.string().min(1).max(2048),
+        name: z.string().min(1).max(255),
+        type: z.string().max(128),
+        size: z.number().int().nonnegative(),
+      })).max(6).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -1656,12 +2430,45 @@ const rfqRouter = router({
       // refused, or should REPLACE the first as a revision, is a product
       // decision about how bidding works on BuildHub - not something to infer
       // from the schema. Recorded in the Phase 1B handoff for the owner.
-      await db.insert(quotations).values({
-        ...input,
+      // EVERY KEY MUST BE THIS SUPPLIER'S OWN.
+      //
+      // The array is client-supplied. Without this check a supplier could name
+      // `quotation-attachments/user-<someone else>/...` - or an
+      // `rfq-attachments/` key belonging to the customer - and attach another
+      // party's file to their own quotation. The storage proxy would then be
+      // asked to authorise it against THIS quotation and could reasonably say
+      // yes, which is how a file crosses an ownership boundary by being
+      // referenced rather than by being read.
+      //
+      // The traversal check is separate from the prefix check on purpose:
+      // `quotation-attachments/user-1/../user-2/secret.pdf` starts with the
+      // right prefix and is not the right file.
+      const prefix = `quotation-attachments/user-${ctx.user.id}/`;
+      for (const attachment of input.attachments ?? []) {
+        const remainder = attachment.key.startsWith(prefix)
+          ? attachment.key.slice(prefix.length)
+          : null;
+        const traverses = remainder === null || remainder.length === 0
+          || remainder.split('/').some(part => part.length === 0 || part === '.' || part === '..');
+        if (traverses) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'An attachment on this quotation is not one you uploaded.',
+          });
+        }
+      }
+
+      const { attachments, ...quotationFields } = input;
+      const inserted = await db.insert(quotations).values({
+        ...quotationFields,
         providerId: ctx.user.id,
         price: String(input.price),
+        attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : null,
       });
-      await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: '/rfq', messageKey: 'notif.quotation.received', messageParams: { rfqTitle: rfq.title } });
+      // The QUOTATION's own id, because that is what the audit trail records.
+      // See the note beside recordCommercialEvent below.
+      const quotationId = Number(inserted?.[0]?.insertId ?? 0);
+      await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: `/rfq/${input.rfqId}`, messageKey: 'notif.quotation.received', messageParams: { rfqTitle: rfq.title } });
       // Funnel milestone: a vendor responding is the point at which the
       // marketplace has produced value for both sides.
       recordEventAsync({
@@ -1669,6 +2476,25 @@ const rfqRouter = router({
         userId: ctx.user.id,
         subjectType: 'rfq',
         subjectId: input.rfqId,
+      });
+      // Commercial trail. AFTER the insert succeeded - an audit row for a
+      // quotation that was never stored would be worse than no row at all.
+      //
+      // subjectId IS THE QUOTATION, NOT THE RFQ. This recorded the rfqId at
+      // first, which made `subjectType: 'quotation'` mean the quotation id in
+      // `quotation_accepted` and the RFQ id here - two id spaces under one
+      // label, so `WHERE subjectType='quotation' AND subjectId=5` would return
+      // unrelated rows and nothing would look wrong. The RFQ belongs in
+      // `detail`, which is where context goes.
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id,
+        ownerId: rfq.requesterId,
+        subjectType: 'quotation',
+        subjectId: quotationId,
+        action: 'quotation_submitted',
+        detail: `rfq ${input.rfqId}, price ${input.price}`
+          + `${input.timeline ? `, ${input.timeline} days` : ''}`
+          + `${attachments?.length ? `, ${attachments.length} attachment(s)` : ''}`,
       });
       return { success: true };
     }),
@@ -1682,12 +2508,31 @@ const rfqRouter = router({
         subjectType: 'quotation',
         subjectId: input.quotationId,
       });
+      // The award. If any single event in this product deserves a permanent
+      // record, it is the one where a customer commits to a supplier.
+      await recordCommercialEvent(await getDb(), {
+        actorId: ctx.user.id,
+        ownerId: ctx.user.id,
+        subjectType: 'quotation',
+        subjectId: input.quotationId,
+        action: 'quotation_accepted',
+        detail: `rfq ${input.rfqId}`,
+      });
       return accepted;
     }),
   rejectQuotation: protectedProcedure
     .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      return rejectQuotationSecure(input.rfqId, input.quotationId, ctx.user.id);
+      const rejected = await rejectQuotationSecure(input.rfqId, input.quotationId, ctx.user.id);
+      await recordCommercialEvent(await getDb(), {
+        actorId: ctx.user.id,
+        ownerId: ctx.user.id,
+        subjectType: 'quotation',
+        subjectId: input.quotationId,
+        action: 'quotation_rejected',
+        detail: `rfq ${input.rfqId}`,
+      });
+      return rejected;
     }),
 });
 
@@ -1714,6 +2559,40 @@ const messagesRouter = router({
         row.senderId === person.id && row.receiverId === ctx.user.id && !row.read).length;
       return { id: person.id, name, initials: name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase(), lastMessage: latest?.content ?? '', time: latest?.createdAt ? new Date(latest.createdAt).toLocaleDateString() : '', unread, role: person.userRole || 'Member' };
     });
+  }),
+  /**
+   * WHO AM I ABOUT TO WRITE TO.
+   *
+   * `conversations` lists only people you have ALREADY exchanged messages
+   * with, so there was no way to open a thread with a vendor you just found:
+   * the messages page could select nothing, and the empty state's own advice -
+   * "conversations start when you contact a vendor from the marketplace" -
+   * described a route that did not exist.
+   *
+   * This resolves the display identity of one messageable account, for
+   * /messages?to=<id>. It reveals nothing new: messages.send already accepts
+   * any active account id and already answers NOT_FOUND identically for "no
+   * such user" and "not active", so this is the same oracle with the same
+   * answer, not a wider one. Name and role are exactly the two fields
+   * `conversations` would return the moment the first message is sent.
+   */
+  recipient: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    if (input.userId === ctx.user.id) throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot send a message to yourself.' });
+    const [person] = await db
+      .select({ id: users.id, name: users.name, userRole: users.userRole, accountStatus: users.accountStatus })
+      .from(users).where(eq(users.id, input.userId));
+    if (!person || person.accountStatus !== 'active') {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'That recipient is not available.' });
+    }
+    const name = person.name || 'BuildHub user';
+    return {
+      id: person.id,
+      name,
+      initials: name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase(),
+      role: person.userRole || 'Member',
+    };
   }),
   list: protectedProcedure.input(z.object({ otherUserId: z.number().optional() })).query(async ({ ctx, input }) => {
     const db = await getDb();
@@ -1804,6 +2683,25 @@ const messagesRouter = router({
     }
 
     const result = await db.insert(messages).values({ ...input, senderId: ctx.user.id });
+    // THE RECIPIENT IS TOLD.
+    //
+    // Nothing notified anyone about a message, so the in-platform thread - the
+    // ONE contact channel BuildHub operates between a customer and a vendor -
+    // was silent until the other person happened to open /messages. That made
+    // "Contact this vendor" a message into a void.
+    //
+    // The link opens the conversation with the SENDER, which is the thread the
+    // notification is about. Best-effort by design: notifyUser never throws, so
+    // a notification problem cannot fail a message that was already stored.
+    await notifyUser(db, {
+      userId: input.receiverId,
+      title: 'New message',
+      body: `${ctx.user.name || 'A BuildHub user'} sent you a message`,
+      type: 'message',
+      link: `/messages?to=${ctx.user.id}`,
+      messageKey: 'notif.message.received',
+      messageParams: { senderName: ctx.user.name || 'A BuildHub user' },
+    });
     return { id: Number(result[0].insertId), ...input, senderId: ctx.user.id };
   }),
   uploadAttachment: protectedProcedure.input(z.object({ fileName: z.string().min(1).max(255), contentType: z.string().startsWith('image/').or(z.literal('application/pdf')), base64: z.string().max(11_000_000) })).mutation(async ({ ctx, input }) => {
@@ -1817,7 +2715,7 @@ const messagesRouter = router({
     // replaced: "site-plan.pdf" became "_-_._". The other three upload
     // endpoints already had this right.
     const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
-    const { key, url } = await storagePut(`message-attachments/user-${ctx.user.id}/${Date.now()}-${safeName}`, buffer, input.contentType);
+    const { key, url } = await storagePutOrUnavailable(`message-attachments/user-${ctx.user.id}/${Date.now()}-${safeName}`, buffer, input.contentType);
     return { key, url, name: input.fileName, size: buffer.length, type: input.contentType };
   }),
 });
@@ -1931,7 +2829,11 @@ const reviewsRouter = router({
       );
       if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'You have already reviewed this provider for this project' });
       await db.insert(reviews).values({ ...input, reviewerId: ctx.user.id, verified: true });
-      await notifyUser(db, { userId: input.revieweeId, title: 'New review received', body: `You received a new ${input.rating}-star review.`, type: 'review', link: '/provider', messageKey: 'notif.review.received', messageParams: { rating: input.rating } });
+      // `/provider` renders no reviews at all - it was a dead end for the one
+      // notification whose whole point is "come and read this". The page that
+      // actually shows a provider's reviews is their own vendor profile, via
+      // <VendorReputation userId=... />, keyed by user id.
+      await notifyUser(db, { userId: input.revieweeId, title: 'New review received', body: `You received a new ${input.rating}-star review.`, type: 'review', link: `/vendor/${input.revieweeId}`, messageKey: 'notif.review.received', messageParams: { rating: input.rating } });
       return { success: true };
     }),
 });
@@ -1971,11 +2873,44 @@ const profileRouter = router({
   getPublic: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [target] = await db.select(PUBLIC_PROFILE_COLUMNS).from(users).where(eq(users.id, input.userId));
+    // accountStatus is read here and DELIBERATELY not returned: it decides
+    // whether the contact button is offered, and telling a stranger that a
+    // particular account is frozen is not the vendor's public record.
+    const [target] = await db
+      .select({ ...PUBLIC_PROFILE_COLUMNS, accountStatus: users.accountStatus })
+      .from(users).where(eq(users.id, input.userId));
     if (!target || !providerRoles.includes(target.userRole as typeof providerRoles[number])) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor profile not found' });
     }
-    return { ...target, completedProjects: await completedProjectCount(db, target.id) };
+    const { accountStatus, ...publicFields } = target;
+    // THE CONTACT MODEL, DERIVED - NOT INVENTED.
+    //
+    // Three tiers exist in this codebase already and this endpoint does not
+    // add a fourth:
+    //
+    //  PUBLIC     - what marketplace.vendors returns without a session: name,
+    //               location, verification, categories, reputation.
+    //  AUTHORIZED - this response, and the in-platform message channel.
+    //               messages.send already lets any signed-in account write to
+    //               any active account; that was a deliberate marketplace
+    //               decision recorded in an earlier audit, and it is the one
+    //               contact route BuildHub actually operates.
+    //  PRIVATE    - users.phone and users.email. They are not in
+    //               PUBLIC_PROFILE_COLUMNS and they are NOT added here. There
+    //               is no flow in this repository that releases a vendor's
+    //               direct line to a customer, so inventing one would be
+    //               inventing a business rule.
+    //
+    // `contactChannel` states which of those the reader is entitled to, so the
+    // page renders the truth rather than each client guessing.
+    return {
+      ...publicFields,
+      categories: await getVendorCategories(target.id),
+      completedProjects: await completedProjectCount(db, target.id),
+      // A frozen or deactivated vendor cannot receive messages - messages.send
+      // refuses them - so the page must not offer a button that will fail.
+      contactChannel: accountStatus === 'active' ? 'message' as const : 'none' as const,
+    };
   }),
   // A vendor's own profile, for the edit form. Identical field set to getPublic
   // (no additional private data) - self-scoping comes entirely from using
@@ -2055,7 +2990,7 @@ const profileRouter = router({
     const bytes = Buffer.from(input.base64, 'base64');
     if (bytes.length === 0 || bytes.length > MAX_AVATAR_SIZE) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Avatar images must be between 1 byte and 2MB' });
     assertUploadedFileMatches(input.contentType, bytes, IMAGE_TYPES);
-    const { url } = await storagePut(`avatars/${ctx.user.id}/${Date.now()}-avatar`, bytes, input.contentType);
+    const { url } = await storagePutOrUnavailable(`avatars/${ctx.user.id}/${Date.now()}-avatar`, bytes, input.contentType);
     await db.update(users).set({ avatar: url }).where(eq(users.id, ctx.user.id));
     return { url };
   }),
@@ -3490,22 +4425,14 @@ const aiRouter = router({
       // thing to say about an operator who has not configured storage yet: it
       // sends them looking for a bug instead of a setting. This is the same
       // masking that made the original AI outage take a day to diagnose.
-      let key: string;
-      try {
-        ({ key } = await storagePut(
-          `ai-attachments/user-${ctx.user.id}/${validated.name}`,
-          validated.bytes,
-          validated.contentType,
-        ));
-      } catch (error) {
-        if (error instanceof ObjectStorageNotConfiguredError) {
-          throw new TRPCError({
-            code: 'SERVICE_UNAVAILABLE',
-            message: 'File attachments are not available on this deployment.',
-          });
-        }
-        throw error;
-      }
+      // The unconfigured-storage case is handled by storagePutOrUnavailable,
+      // which is where it now lives for all seven upload sites rather than
+      // only this one.
+      const { key } = await storagePutOrUnavailable(
+        `ai-attachments/user-${ctx.user.id}/${validated.name}`,
+        validated.bytes,
+        validated.contentType,
+      );
       const inserted = await db.insert(aiAttachments).values({
         userId: ctx.user.id,
         name: validated.name,
@@ -3583,6 +4510,60 @@ function lifecycleResult(outcome: LifecycleOutcome) {
     entitlements: outcome.state.entitlements,
   };
 }
+
+/**
+ * READING THE COMMERCIAL TRAIL.
+ *
+ * Audit records are themselves permission-scoped, which is the part most audit
+ * features get wrong: a log of who did what to whose money is MORE sensitive
+ * than the records it describes, not less, because it aggregates across
+ * everyone in one place.
+ *
+ * Two reads, and no third:
+ *
+ *   mine   - the caller's own trail, as actor or as owner. A supplier sees
+ *            what they did and what was done to their products; a customer
+ *            sees their RFQs and the quotations against them.
+ *   all    - administrators only, gated on the existing audit permission.
+ *
+ * There is deliberately NO "trail for subject X" endpoint. It would need its
+ * own authorization rule per subject type - four of them, each able to drift -
+ * and the two reads above already answer the questions anyone actually has.
+ */
+const auditRouter = router({
+  mine: protectedProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(100).default(50) }).optional())
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({
+        id: commercialAuditEvents.id,
+        subjectType: commercialAuditEvents.subjectType,
+        subjectId: commercialAuditEvents.subjectId,
+        action: commercialAuditEvents.action,
+        detail: commercialAuditEvents.detail,
+        createdAt: commercialAuditEvents.createdAt,
+        // actorId is returned ONLY when it is the caller. Whose account
+        // performed an action on somebody else's record is not the caller's
+        // business, and returning it here would make this a way to learn which
+        // accounts touched which records.
+      })
+        .from(commercialAuditEvents)
+        .where(sql`${commercialAuditEvents.actorId} = ${ctx.user.id} OR ${commercialAuditEvents.ownerId} = ${ctx.user.id}`)
+        .orderBy(desc(commercialAuditEvents.createdAt))
+        .limit(input?.limit ?? 50);
+    }),
+  all: adminWith('audit.read')
+    .input(z.object({ limit: z.number().int().min(1).max(200).default(100) }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select()
+        .from(commercialAuditEvents)
+        .orderBy(desc(commercialAuditEvents.createdAt))
+        .limit(input?.limit ?? 100);
+    }),
+});
 
 const billingRouter = router({
   // The public commercial catalogue, straight from shared/billing.ts - the one
@@ -3721,6 +4702,7 @@ export const appRouter = router({
   compliance: registrationRouter,
   billing: billingRouter,
   ai: aiRouter,
+  audit: auditRouter,
 });
 
 export type AppRouter = typeof appRouter;

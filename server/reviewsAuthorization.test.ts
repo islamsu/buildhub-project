@@ -68,7 +68,12 @@ function makeDb(opts: {
     insertCallCount += 1;
     return { values: insertCallCount === 1 ? reviewValues : notificationValues };
   });
-  return { select, insert, reviewValues, notificationValues };
+  return {
+    select, insert, reviewValues, notificationValues,
+    // rfq.create writes inside a transaction now; the callback runs against
+    // the same recording insert so the assertions still see the rows.
+    transaction: async (cb: (t: unknown) => Promise<unknown>) => cb({ insert }),
+  };
 }
 
 describe('reviews.submit - baseline authorization (unlinked / legacy projects)', () => {
@@ -195,38 +200,46 @@ describe('rfq.create - optional project link', () => {
   it('the project owner can link a new RFQ to their own project', async () => {
     const projectWhere = vi.fn().mockResolvedValue([{ id: 7 }]);
     const values = vi.fn().mockResolvedValue([{ insertId: 99 }]);
+    const insert = vi.fn().mockReturnValue({ values });
     const db = {
       select: vi.fn().mockReturnValue({ from: () => ({ where: projectWhere }) }),
-      insert: vi.fn().mockReturnValue({ values }),
+      insert,
+      // The RFQ and its items are written in one transaction now.
+      transaction: async (cb: (t: unknown) => Promise<unknown>) => cb({ insert }),
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
     const caller = appRouter.createCaller(makeCtx(1));
-    await expect(caller.rfq.create({ title: 'Kitchen remodel', projectId: 7 })).resolves.toEqual({ id: 99 });
+    await expect(caller.rfq.create({ category: 'Materials', title: 'Kitchen remodel', projectId: 7 })).resolves.toEqual({ id: 99 });
     expect(values).toHaveBeenCalledWith(expect.objectContaining({ projectId: 7, requesterId: 1 }));
   });
 
   it('rejects linking an RFQ to a project the caller does not own', async () => {
     const projectWhere = vi.fn().mockResolvedValue([]); // ownerId filter excludes it
     const values = vi.fn();
+    const insert = vi.fn().mockReturnValue({ values });
     const db = {
       select: vi.fn().mockReturnValue({ from: () => ({ where: projectWhere }) }),
-      insert: vi.fn().mockReturnValue({ values }),
+      insert,
+      // The RFQ and its items are written in one transaction now.
+      transaction: async (cb: (t: unknown) => Promise<unknown>) => cb({ insert }),
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
     const caller = appRouter.createCaller(makeCtx(999));
-    await expect(caller.rfq.create({ title: 'Kitchen remodel', projectId: 7 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller.rfq.create({ category: 'Materials', title: 'Kitchen remodel', projectId: 7 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
     expect(values).not.toHaveBeenCalled();
   });
 
   it('creating an RFQ without a projectId still works (link remains optional)', async () => {
     const values = vi.fn().mockResolvedValue([{ insertId: 100 }]);
+    const insert = vi.fn().mockReturnValue({ values });
     const db = {
       select: vi.fn(),
-      insert: vi.fn().mockReturnValue({ values }),
+      insert,
+      transaction: async (cb: (t: unknown) => Promise<unknown>) => cb({ insert }),
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
     const caller = appRouter.createCaller(makeCtx(1));
-    await expect(caller.rfq.create({ title: 'Standalone RFQ' })).resolves.toEqual({ id: 100 });
+    await expect(caller.rfq.create({ category: 'Materials', title: 'Standalone RFQ' })).resolves.toEqual({ id: 100 });
     expect(db.select).not.toHaveBeenCalled();
   });
 });

@@ -156,13 +156,28 @@ describe('§2 storage.ts keeps its contract', () => {
   });
 
   it('every upload call site in routers.ts still goes through the adapter', () => {
-    const calls = ROUTERS_SOURCE.match(/storagePut\(/g) ?? [];
-    expect(calls.length).toBe(6);
+    // `storagePutOrUnavailable` wraps `storagePut` so an unconfigured
+    // deployment answers 503 rather than 500. It still goes through the
+    // adapter - it IS the adapter call plus one translated error - so this
+    // counts the wrapper and the invariant is untouched.
+    // `await` anchors this to CALL SITES: a bare name match also catches the
+    // wrapper's own declaration and reads 8 where there are 7.
+    const calls = ROUTERS_SOURCE.match(/await storagePutOrUnavailable\(/g) ?? [];
+    // SEVEN since the supplier catalogue gained image management. Asserted
+    // exactly so a new upload path has to be acknowledged here rather than
+    // bypassing the adapter unnoticed.
+    // EIGHT since a supplier gained the ability to attach a proposal, a
+    // specification, a certificate or a photograph to their quotation - the
+    // eighth upload path, and the first that flows provider -> customer.
+    expect(calls.length).toBe(8);
     for (const prefix of [
       'registration/', 'project-documents/', 'message-attachments/', 'avatars/',
       // AI attachments get their own prefix so the proxy can classify them,
       // and so they are never mistaken for a category with a wider audience.
       'ai-attachments/',
+      // Product images likewise: a separate prefix is what lets the proxy
+      // treat them as public-by-design without widening any other category.
+      'product-images/',
     ]) {
       expect(ROUTERS_SOURCE).toContain(prefix);
     }

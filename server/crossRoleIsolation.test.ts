@@ -215,20 +215,42 @@ describe('the authenticated role is the only role', () => {
 
 // ── 4. The marketplace lead pool: deliberate, and bounded ──────────────────
 
-describe('rfq.list is a shared lead pool, and that is a DECISION with limits', () => {
-  it('is readable by every authenticated role - it is the product', async () => {
+describe('rfq.list is a PROVIDER lead pool, and that is a DECISION with limits', () => {
+  /**
+   * THE RULE CHANGED, BY OWNER DECISION.
+   *
+   * This block used to assert that every authenticated role could read the
+   * whole feed - "it is the product". That WAS the behaviour, and it meant one
+   * homeowner could read another homeowner's full brief and the exact budget
+   * they were willing to spend, as could a supplier with no intention of
+   * bidding. The feed exists so providers can find work; a customer has no
+   * reason to browse other customers' requests.
+   *
+   * Both halves are asserted, so neither direction can drift.
+   */
+  it('every role can still CALL it - the narrowing is in what comes back', async () => {
     for (const role of BUILDHUB_ROLES) {
       expect(await attempt(() => appRouter.createCaller(ctxFor(role)).rfq.list()), role).toBe('ok');
     }
   });
 
-  it('but returns a COLUMN ALLOWLIST that omits the requester\'s private files', () => {
-    // The distinction that makes the shared pool safe: everyone sees that a job
+  it('a non-provider is scoped to their OWN requests', () => {
+    const source = readRouters();
+    const rfqList = source.slice(source.indexOf('const rfqRouter = router({'));
+    const start = rfqList.indexOf('list: protectedProcedure');
+    const listQuery = rfqList.slice(start, start + 2200);
+    expect(listQuery, 'the feed must be gated on provider status').toContain('isProvider');
+    expect(listQuery).toContain('eq(rfqs.requesterId, ctx.user.id)');
+  });
+
+  it('and still returns a COLUMN ALLOWLIST that omits the requester\'s private files', () => {
+    // The distinction that makes the pool safe: a provider sees that a job
     // exists; nobody sees the drawings attached to it without paying for the
     // enquiry. A `select()` with no column list would leak them silently.
     const source = readRouters();
     const rfqList = source.slice(source.indexOf('const rfqRouter = router({'));
-    const listQuery = rfqList.slice(rfqList.indexOf('list: protectedProcedure'), rfqList.indexOf('list: protectedProcedure') + 900);
+    const start = rfqList.indexOf('list: protectedProcedure');
+    const listQuery = rfqList.slice(start, start + 2200);
     expect(listQuery).toContain('db.select({');
     expect(listQuery).not.toContain('attachments');
   });

@@ -13,6 +13,7 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useState } from 'react';
 import ProjectDetailEnhancements from '@/components/ProjectDetailEnhancements';
+import ProjectDocuments from '@/components/ProjectDocuments';
 import ReviewSubmissionPanel from '@/components/ReviewSubmissionPanel';
 import { toast } from 'sonner';
 import { Link, useParams } from 'wouter';
@@ -109,7 +110,16 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.open('/ai', '_blank')}>
+                {/* THE PROJECT TRAVELS WITH THE CLICK.
+                    This opened a bare /ai, so someone reading a project, who
+                    clicked "AI Help" on that project's page, arrived at an
+                    assistant whose project selector read "No specific project"
+                    and had to find their way back to the thing they were
+                    already looking at. The id is a SELECTOR only: the server
+                    re-derives what this account may see and picks among that,
+                    so naming a project here cannot reach one the session does
+                    not already permit. */}
+                <Button variant="outline" size="sm" className="gap-1.5" data-testid="project-ai-help" onClick={() => window.open(`/ai?project=${projectId}`, '_blank')}>
                   <Bot className="w-4 h-4" /> {lang === 'ar' ? 'مساعدة AI' : 'AI Help'}
                 </Button>
                 <Select value={project.status ?? 'planning'} onValueChange={v => updateProject.mutate({ id: projectId, status: v as any })}>
@@ -369,16 +379,15 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                 </div>
               </TabsContent>
 
-              {/* Documents */}
+              {/* Documents.
+                  This tab was a hardcoded panel describing document management,
+                  with an Upload button that had no handler - while
+                  `projects.documents` and `projects.uploadDocument` were both
+                  complete on the server. A screen that DESCRIBES a feature is
+                  the most convincing possible evidence the feature is missing,
+                  because it reads exactly like the feature working. */}
               <TabsContent value="documents">
-                <div className="text-center py-16 text-muted-foreground border-2 border-dashed border-border rounded-xl">
-                  <FileText className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                  <p className="font-medium mb-1">{lang === 'ar' ? 'إدارة المستندات' : 'Document Management'}</p>
-                  <p className="text-sm">{lang === 'ar' ? 'ارفع المخططات والكميات والعقود والفواتير' : 'Upload drawings, BOQs, contracts, and invoices'}</p>
-                  <Button className="mt-4 gap-2" variant="outline">
-                    <Plus className="w-4 h-4" /> Upload Document
-                  </Button>
-                </div>
+                <ProjectDocuments projectId={projectId} />
               </TabsContent>
 
               <TabsContent value="operations">

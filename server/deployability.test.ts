@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 
@@ -26,21 +27,33 @@ import { registerSecurity } from './_core/security';
 import { registerRequestLogging } from './_core/httpLogging';
 import { getDb } from './db';
 
+/**
+ * Two readers, because this suite reads two kinds of file.
+ *
+ * `read` is verbatim - for HTML, robots.txt, package.json and anything else
+ * where `/*` is not a comment marker. Running a JavaScript comment stripper
+ * over those removes nothing useful and could remove something meaningful.
+ *
+ * `readCode` strips comments, for the .ts sources where an assertion would
+ * otherwise match the file's own prose. Several checks below depend on that:
+ * vite.config.ts explains the callback form as the thing that once broke, so a
+ * naive search finds `defineConfig((` in the explanation rather than the code.
+ */
 const read = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8');
-const ADMIN_DASHBOARD = read('../client/src/pages/AdminDashboard.tsx');
+const readCode = (relative: string) => readSourceForAssertions(read(relative));
+const ADMIN_DASHBOARD = readCode('../client/src/pages/AdminDashboard.tsx');
 const INDEX_HTML = read('../client/index.html');
 const ROBOTS = read('../client/public/robots.txt');
 const PACKAGE_JSON = JSON.parse(read('../package.json'));
-const LOGGING_SOURCE = read('./_core/httpLogging.ts');
+const LOGGING_SOURCE = readCode('./_core/httpLogging.ts');
 /**
  * Comments stripped. The file's own explanation names `req.originalUrl` as the
  * thing NOT to use, so a naive search finds it and reports the opposite of the
  * truth.
  */
 const LOGGING_CODE = LOGGING_SOURCE
-  .replace(/\/\*[\s\S]*?\*\//g, '')
   .split('\n').filter(line => !line.trim().startsWith('//')).join('\n');
-const SERVER_ENTRY = read('./_core/index.ts');
+const SERVER_ENTRY = readCode('./_core/index.ts');
 
 const servers: { close: () => void }[] = [];
 
@@ -75,7 +88,7 @@ describe('§1 GET /healthz', () => {
   });
 
   it('REGRESSION: system.health is still unusable as a probe, which is why this exists', () => {
-    const source = read('./_core/systemRouter.ts');
+    const source = readCode('./_core/systemRouter.ts');
     expect(source).toContain('timestamp: z.number()');
     expect(source).not.toContain('getDb');
   });
@@ -133,7 +146,7 @@ describe('§2 GET /readyz', () => {
   });
 
   it('is bounded by a timeout, so a hung connection cannot hang the probe', () => {
-    const source = read('./_core/health.ts');
+    const source = readCode('./_core/health.ts');
     expect(source).toContain('DB_PROBE_TIMEOUT_MS');
     expect(source).toContain('Promise.race');
   });
@@ -168,7 +181,7 @@ describe('§3 security headers', () => {
   });
 
   it('blocks inline and eval scripts in production', () => {
-    const source = read('./_core/security.ts');
+    const source = readCode('./_core/security.ts');
     expect(source).toMatch(/scriptSrc: ENV\.isProduction \? \["'self'"\]/);
   });
 
@@ -183,13 +196,13 @@ describe('§3 security headers', () => {
   });
 
   it('enables HSTS only in production, where the session cookie is already pinned Secure', () => {
-    const source = read('./_core/security.ts');
+    const source = readCode('./_core/security.ts');
     expect(source).toMatch(/hsts: ENV\.isProduction/);
     expect(source).toContain('includeSubDomains: true');
   });
 
   it('keeps cross-origin resource policy open, because uploads redirect off-origin', () => {
-    const source = read('./_core/security.ts');
+    const source = readCode('./_core/security.ts');
     expect(source).toContain("crossOriginResourcePolicy: { policy: \"cross-origin\" }");
   });
 });
@@ -324,7 +337,7 @@ describe('§7 robots.txt', () => {
   });
 
   it('is served as a static asset by the existing publicDir', () => {
-    const viteConfig = read('../vite.config.ts');
+    const viteConfig = readCode('../vite.config.ts');
     expect(viteConfig).toContain('publicDir');
     expect(viteConfig).toContain('"client", "public"');
   });
@@ -370,7 +383,7 @@ describe('§9 middleware order in the server entrypoint', () => {
 // ── §10 The Manus previewer runtime must not ship ──────────────────────────
 
 describe('§10 production build excludes the previewer runtime', () => {
-  const VITE_CONFIG = read('../vite.config.ts');
+  const VITE_CONFIG = readCode('../vite.config.ts');
 
   it("uses Vite's own apply:'serve', which is the only mechanism that works here", () => {
     expect(VITE_CONFIG).toContain('{ ...vitePluginManusRuntime(), apply: "serve" }');
@@ -397,7 +410,7 @@ describe('§10 production build excludes the previewer runtime', () => {
     //
     // Verified live after the change: the dev server injects /@react-refresh
     // and /@vite/client, so the React plugin demonstrably ran.
-    const viteTs = read('./_core/vite.ts');
+    const viteTs = readCode('./_core/vite.ts');
     expect(viteTs).toContain('configFile: path.resolve');
     expect(viteTs).not.toContain('configFile: false');
     expect(viteTs).not.toContain('...viteConfig');
@@ -405,7 +418,7 @@ describe('§10 production build excludes the previewer runtime', () => {
     // The plain-object export is still the right shape, and still asserted.
     // Comments stripped: the config's own explanation names the callback form
     // as the thing that broke, so a naive search finds it in prose.
-    const code = VITE_CONFIG.replace(/\/\*[\s\S]*?\*\//g, '');
+    const code = VITE_CONFIG;
     expect(code).toContain('export default defineConfig({');
     expect(code).not.toContain('defineConfig((');
   });

@@ -788,10 +788,24 @@ describe('auditability (Phase 4B.4 §15)', () => {
   it('reuses the existing billingEvents trail - no second audit framework', () => {
     const source = readFileSync(new URL('./billing/lifecycle.ts', import.meta.url), 'utf8');
     expect(source).toContain('recordBillingEvent');
+    // ASSERTED ON THE PRINCIPLE, not on a table count.
+    //
+    // This used to require that exactly ONE audit table existed anywhere in the
+    // schema, as a proxy for "billing did not invent its own trail". The proxy
+    // broke when commercialAuditEvents was added - a table for RFQs,
+    // quotations and products, which has nothing to do with billing and does
+    // not replace billingEvents. The principle held; the instrument did not.
+    //
+    // What matters is that the billing lifecycle writes through
+    // recordBillingEvent and touches no audit table directly.
+    expect(source).not.toMatch(/insert\(\w*[Aa]uditEvents\)/);
+
+    // And each audit table that does exist has a distinct, stated subject, so
+    // "one more trail" cannot quietly become "several overlapping trails".
     const schema = readFileSync(new URL('../drizzle/schema.ts', import.meta.url), 'utf8');
-    const tables = schema.match(/export const \w*[Aa]udit\w* = mysqlTable/g) ?? [];
-    // Only the pre-existing account audit trail; Phase 4B.4 adds none.
-    expect(tables).toHaveLength(1);
+    const tables = (schema.match(/export const (\w*[Aa]udit\w*) = mysqlTable/g) ?? [])
+      .map(match => /export const (\w+)/.exec(match)![1]);
+    expect(tables.sort()).toEqual(['commercialAuditEvents', 'userAccountAuditEvents']);
   });
 
   it('records actor, vendor, previous state, new state, source and timestamp', async () => {

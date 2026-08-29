@@ -8,6 +8,7 @@ vi.mock('./db', () => ({
 }));
 
 import { getDb } from './db';
+import { users as usersTable, vendorCategories as vendorCategoriesTable } from '../drizzle/schema';
 
 function makeVendorCtx(userId = 10, overrides: Record<string, unknown> = {}): TrpcContext {
   return {
@@ -47,24 +48,34 @@ const PUBLIC_ROW = {
   userRole: 'contractor',
   verified: true,
   createdAt: new Date('2025-01-01'),
+  // Read to decide whether the contact button is offered. It must never come
+  // back out in the response - see the forbidden-keys assertion below.
+  accountStatus: 'active' as const,
 };
+
+/**
+ * A db double that dispatches on the TABLE, not on how many times select() has
+ * been called. Counting calls made the test depend on the order the procedure
+ * happens to issue its queries in, which is not a rule anybody promised.
+ */
+function makeDb(overrides: { user?: unknown[]; categories?: unknown[]; count?: number } = {}) {
+  return {
+    select: vi.fn(() => ({
+      from: vi.fn((table: unknown) => {
+        const rows = table === usersTable ? (overrides.user ?? [PUBLIC_ROW])
+          : table === vendorCategoriesTable ? (overrides.categories ?? [{ category: 'Structural works' }])
+          : [{ count: overrides.count ?? 3 }];
+        return { where: vi.fn().mockResolvedValue(rows) };
+      }),
+    })),
+  };
+}
 
 describe('profile.getPublic', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('returns exactly the public field allowlist plus completedProjects, nothing else', async () => {
-    const whereMock = vi.fn().mockResolvedValue([PUBLIC_ROW]);
-    const selectMock = vi.fn((cols?: unknown) => ({ from: vi.fn().mockReturnValue({ where: whereMock }) }));
-    const countWhereMock = vi.fn().mockResolvedValue([{ count: 3 }]);
-    let call = 0;
-    const db = {
-      select: vi.fn(() => {
-        call += 1;
-        if (call === 1) return { from: vi.fn().mockReturnValue({ where: whereMock }) };
-        return { from: vi.fn().mockReturnValue({ where: countWhereMock }) };
-      }),
-    };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(makeDb());
     const caller = appRouter.createCaller(makeVendorCtx(1));
 
     const result = await caller.profile.getPublic({ userId: 10 });
@@ -79,6 +90,12 @@ describe('profile.getPublic', () => {
       verified: true,
       createdAt: PUBLIC_ROW.createdAt,
       completedProjects: 3,
+      // The vendor detail page needs to say what this vendor does and how to
+      // reach them. Categories come from vendorCategories - the same
+      // declaration the RFQ matcher reads - and contactChannel names the ONE
+      // channel BuildHub operates. Neither is a users column.
+      categories: ['Structural works'],
+      contactChannel: 'message',
     });
     // Explicit shape assertion, not just a value check: the private-field keys
     // must never appear on the response object at all.
@@ -96,18 +113,14 @@ describe('profile.getPublic', () => {
   });
 
   it('returns NOT_FOUND for a non-provider (e.g. homeowner) user id, not their data', async () => {
-    const whereMock = vi.fn().mockResolvedValue([{ ...PUBLIC_ROW, userRole: 'homeowner' }]);
-    const db = { select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: whereMock }) }) };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(makeDb({ user: [{ ...PUBLIC_ROW, userRole: 'homeowner' }] }));
     const caller = appRouter.createCaller(makeVendorCtx(1));
 
     await expect(caller.profile.getPublic({ userId: 99 })).rejects.toThrow('Vendor profile not found');
   });
 
   it('returns NOT_FOUND for a nonexistent user id', async () => {
-    const whereMock = vi.fn().mockResolvedValue([]);
-    const db = { select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: whereMock }) }) };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(makeDb({ user: [] }));
     const caller = appRouter.createCaller(makeVendorCtx(1));
 
     await expect(caller.profile.getPublic({ userId: 99999 })).rejects.toThrow('Vendor profile not found');

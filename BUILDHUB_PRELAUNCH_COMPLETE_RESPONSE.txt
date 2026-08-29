@@ -1,0 +1,1511 @@
+================================================================================
+BUILDHUB — PRE-LAUNCH PRODUCTION-READINESS SESSION
+THE COMPLETE RESPONSE, IN FULL
+================================================================================
+
+Date            28 August 2026
+Repository      github.com/islamsu/buildhub-project
+Branch          claude/buildhub-audit-verification-vrai7l
+HEAD            5dea1bb
+Base            origin/main @ 6a9e1e6
+Staging         https://buildhub-staging.onrender.com  (UNREACHABLE — see §9)
+
+Collaboration model unchanged:
+    Claude   engineering, implementation, testing, evidence
+    ChatGPT  independent review
+    Owner    final business decisions
+
+Standing constraints observed throughout:
+    ABSOLUTELY NO PRODUCTION CHANGES — no production deployment, database,
+    credentials, S3, SMTP, payments, DNS or users were touched.
+    No secrets in git, frontend, bundles, logs, error messages, screenshots or
+    documentation. No passwords, API keys, authorization headers or reset
+    tokens were logged.
+    Never fabricate functionality. Never silently invent commercial policy.
+    Never convert "not tested" into "passed", "unit tested" into "live
+    verified", "UI exists" into "workflow complete", or "frontend hidden" into
+    "secure".
+
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+  §0   THE SHORT VERSION
+  §1   THE HEADLINE — WHY THE VERIFICATION LABELS MATTER
+  §2   HOW TO READ THE EVIDENCE LABELS
+  §3   COMMIT-BY-COMMIT, IN FULL
+       3.1  Commercial audit trail
+       3.2  subjectId / subjectType agreement
+       3.3  The RFQ-to-response handoff
+       3.4  Project Documents tab
+       3.5  Consolidating onto one document surface
+       3.6  Whole-client dead-link sweep
+       3.7  Unconfigured object storage
+       3.8  Making the handoff actually work
+       3.9  The unapproved provider
+       3.10 The handoff document
+  §4   EVERY DEFECT FOUND, WITH ROOT CAUSE
+  §5   MISTAKES I MADE AND CORRECTED
+  §6   THE COMPLETE MUTATION LOG (52 mutations)
+  §7   THE COMPLETE LIVE VERIFICATION LOG
+  §8   HOW EXISTING TESTS WERE HELD HONEST
+  §9   WHAT COULD NOT BE VERIFIED, AND EXACTLY WHY
+  §10  OWNER DECISIONS — OPEN
+  §11  VERIFICATION STATUS, SURFACE BY SURFACE
+  §12  WHAT I WOULD DO NEXT, IN ORDER
+  §13  FILE-BY-FILE INVENTORY OF CHANGES
+  §14  REPRODUCING THE LOCAL VERIFICATION HARNESS
+
+
+================================================================================
+§0  THE SHORT VERSION
+================================================================================
+
+Ten commits pushed. CI green on every one of them, including HEAD.
+
+    Test suite     2179 → 2285 tests, 97 → 101 files
+    Typecheck      npx tsc --noEmit clean at every commit
+    Builds         client and server both green at every commit
+    Diff vs main   45 files, +5226 / −156
+    Mutations      52 applied, 52 ultimately killed
+    Live checks    25 browser assertions against a real stack
+
+Four substantive pieces of work shipped:
+
+    1.  A commercial audit trail for the money-carrying paths. BuildHub audited
+        accounts thoroughly and audited commerce not at all.
+    2.  The provider response journey, which existed as parts and did not work
+        as a journey.
+    3.  The project Documents tab, built onto a backend that was already
+        complete and unreachable.
+    4.  Honest answers — to the customer AND to the operator — when a
+        deployment has no object storage configured.
+
+And one thing that matters more than any of them: TWO DEFECTS SHIPPED PAST A
+FULLY GREEN TEST SUITE TODAY, and both were caught only by clicking buttons in
+a real browser.
+
+
+================================================================================
+§1  THE HEADLINE — WHY THE VERIFICATION LABELS MATTER
+================================================================================
+
+This section is first because it changes how everything after it should be
+read.
+
+--------------------------------------------------------------------------------
+DEFECT 1 — THE FEATURE I SHIPPED THIS MORNING DID NOT WORK
+--------------------------------------------------------------------------------
+
+At 08:23 I committed "Carry the RFQ id from the request page to the response
+surface" (33ebc3b). It had 18 tests. 8 mutants applied and killed. The full
+suite was green. CI was green.
+
+It did not work.
+
+    `/rfq/:id` sent a provider to `/provider?rfq=<id>`.
+    `/provider` is a legacy compatibility shim (ProviderDashboard.tsx) that
+    forwards to `/platform/:role`.
+    The forward was written as:
+        navigate(getRolePlatformPath(userRole))
+    which DISCARDS THE QUERY STRING.
+
+So the id was gone before anything could read it. And every one of these was
+individually correct:
+
+    the link                 correct — it resolved to a registered route
+    the parser               correct — parseLinkedRfqId is exhaustively tested
+    the destination          correct — RolePlatform reads ?rfq= properly
+    the highlight            correct — QualifiedEnquiries marks the row
+    the not-eligible notice  correct — renders when the row is absent
+
+The defect lived in the gap BETWEEN two correct things. No source-reading test
+can see a gap like that, because there is no source to read — the fault is that
+one component's output stops being another component's input, silently, in a
+third component nobody was looking at.
+
+Found by: signing in as a supplier in Chromium, clicking "Continue to respond",
+and reading the address bar. It said `/platform/supplier` — no `?rfq=1`.
+
+--------------------------------------------------------------------------------
+DEFECT 2 — A DIALOG THAT BLAMED THE USER FOR THE SERVER'S REFUSAL
+--------------------------------------------------------------------------------
+
+In the Documents tab I wrote (fd8ceae, 08:31), the upload handler was:
+
+    try {
+      const base64 = await readAsBase64(file);
+      await upload.mutateAsync({ ... });
+    } catch {
+      if (!upload.isError) toast.error('That file could not be read.');
+    }
+
+`upload.isError` is React state captured at render time. Inside the catch it is
+still `false`, because the mutation's error has not been committed to state
+yet. So a SERVER refusal produced the message "That file could not be read" —
+about a file that had been read perfectly well.
+
+The screenshot from the live run showed it plainly. No unit test would have
+found it: the lie is in WHICH of two messages appears, and both messages exist,
+and both are correctly worded in isolation.
+
+Fixed by separating the two steps so there is nothing to distinguish: the read
+has its own catch that returns; the mutation's catch is deliberately silent
+because onError has already shown the server's own message.
+
+--------------------------------------------------------------------------------
+WHAT I TAKE FROM THIS
+--------------------------------------------------------------------------------
+
+The unit tests were not weak. They were checking the right things, carefully,
+on both sides of a gap that existed between them. Mutation testing did not help
+either — you cannot mutate code into revealing a defect that lives in the
+absence of code.
+
+That is the entire argument for live verification, and it is why every claim in
+this document carries a label saying how it was established, and why those
+labels are never blurred into the word "passing".
+
+
+================================================================================
+§2  HOW TO READ THE EVIDENCE LABELS
+================================================================================
+
+LIVE VERIFIED
+    Exercised in a real Chromium browser against the built production bundle
+    (`node dist/index.js`, NODE_ENV=production) talking to a real MariaDB with
+    all 24 migrations applied from empty. Accounts created through the real
+    signUp procedure over HTTP — no direct database inserts, so every
+    server-side rule ran as it would for a real person.
+
+UNIT VERIFIED
+    Covered by tests in the vitest suite. Not exercised end to end. This is a
+    genuine and useful level of evidence; it is not the same as the one above,
+    and this document never treats it as such.
+
+BLOCKED BY INFRASTRUCTURE
+    Could not be verified in this environment. Every instance below says
+    exactly what was missing and what would be needed. None of it is reported
+    as passing, and none of it is reported as failing either.
+
+OWNER DECISION
+    A business rule that is not mine to make. Recorded, marked in the code
+    where relevant, and left open.
+
+NOT VERIFIED
+    Not examined this session. Stated plainly rather than omitted.
+
+
+================================================================================
+§3  COMMIT-BY-COMMIT, IN FULL
+================================================================================
+
+    166f082   Add a commercial audit trail for the money-carrying paths
+              8 files, +586 −8
+    3baa3b4   Make the audit trail's subjectId agree with its subjectType
+              5 files, +194 −9
+    33ebc3b   Carry the RFQ id from the request page to the response surface
+              6 files, +291 −9
+    fd8ceae   Build the project Documents tab onto the backend that already had it
+              6 files, +449 −14
+    55ba97b   Consolidate project documents onto one surface
+              2 files, +92 −56
+    bb644b7   Sweep every internal link in the client, not the two files this
+              test knew about
+              1 file, +60 −1
+    fdd7051   Tell people the truth when a deployment has no object storage
+              8 files, +345 −33
+    636f7f6   Make the RFQ-to-response handoff actually work
+              5 files, +108 −8
+    28352d6   Tell an unapproved provider why they cannot respond
+              2 files, +53 −3
+    5dea1bb   Add the pre-launch readiness session handoff
+
+
+--------------------------------------------------------------------------------
+3.1  COMMERCIAL AUDIT TRAIL                                          [166f082]
+--------------------------------------------------------------------------------
+
+THE GAP
+
+BuildHub audited ACCOUNTS thoroughly. `userAccountAuditEvents` carries 22
+distinct actions written from 29 call sites — creation, role changes, the whole
+password-reset lifecycle, every administrative action.
+
+It audited COMMERCE not at all. An RFQ could be created, quoted, awarded and
+closed leaving no record of who did what or when.
+
+For a marketplace that intends to carry real money that is the gap that
+matters. Account history answers "who is this person". Commercial history
+answers "what did they agree to" — and only the second one settles a dispute.
+
+(Note: an earlier handoff of mine claimed no audit trail existed at all. That
+was WRONG — `userAccountAuditEvents` was already there and thorough. Corrected
+in this session's work and recorded here.)
+
+WHAT WAS BUILT
+
+New table `commercialAuditEvents` (drizzle/schema.ts, migration 0023):
+
+    id           int autoincrement primary key
+    actorId      int → users.id  ON DELETE SET NULL, ON UPDATE RESTRICT
+    ownerId      int → users.id  ON DELETE SET NULL, ON UPDATE RESTRICT
+    subjectType  enum('rfq','quotation','product','document','enquiry','message')
+    subjectId    int NOT NULL         — deliberately NOT a foreign key
+    action       varchar(64) NOT NULL
+    detail       text                 — truncated at 500 chars
+    createdAt    timestamp DEFAULT NOW() NOT NULL
+
+    indexes: (subjectType, subjectId), actorId, ownerId, createdAt
+
+`server/_core/commercialAudit.ts` exposes `recordCommercialEvent(db, event)`
+with a closed `CommercialAction` union of 21 actions, of which 9 are currently
+instrumented.
+
+NINE INSTRUMENTED EVENTS
+
+    rfq_created                 rfqRouter.create
+    quotation_submitted         rfqRouter.submitQuotation
+    quotation_accepted          rfqRouter.acceptQuotation
+    quotation_rejected          rfqRouter.rejectQuotation
+    enquiry_opened              rfqRouter.openEnquiry
+    product_updated             marketplaceRouter.updateProduct
+    product_published           marketplaceRouter.setProductActive (true)
+    product_delisted            marketplaceRouter.setProductActive (false)
+    product_images_changed      marketplaceRouter.setProductImages
+    product_question_answered   marketplaceRouter.answerQuestion
+
+READING THE TRAIL IS ITSELF SCOPED
+
+    audit.mine   protectedProcedure. WHERE actorId = ctx.user.id
+                 OR ownerId = ctx.user.id. The projection OMITS actorId —
+                 whose account touched somebody else's record is not the
+                 caller's business, and returning it would make this a way to
+                 learn which accounts touched which records. Bounded by
+                 .limit(input?.limit ?? 50), max 100.
+    audit.all    adminWith('audit.read'). Bounded, max 200.
+
+Exactly two reads. A third would need its own authorization rule, which is the
+thing most likely to be got wrong later, so a test asserts there are two.
+
+FOUR DECISIONS, EACH ONE A TRADE, STATED RATHER THAN ASSUMED
+
+  (1) A FAILED AUDIT WRITE MUST NEVER FAIL THE BUSINESS ACTION.
+
+      If the audit insert throws — a full disk, a lock timeout — the supplier's
+      quotation has ALREADY been submitted and the customer is waiting on it.
+      Rolling that back to protect the log would be losing the thing in order
+      to protect the record of the thing.
+
+      THE HONEST COST: a missing audit row is possible and is silent to the
+      user. That is the right trade for THIS product, where the alternative is
+      refusing commerce when logging hiccups — but it is a trade, not a free
+      win. Which is why the failure is logged loudly for an operator as
+      structured JSON with event `commercial_audit_write_failed`, even though
+      it is invisible to the customer.
+
+  (2) IT IS CALLED AFTER THE WRITE SUCCEEDS, NEVER BEFORE.
+
+      An audit trail that records intentions rather than outcomes is worse than
+      none: it would show quotations that were never submitted and awards that
+      never happened, and nobody reading it later could tell which.
+
+  (3) BOTH USER REFERENCES ARE SET NULL.
+
+      RESTRICT would make a user undeletable by virtue of having done work.
+      CASCADE would delete the evidence along with the person. SET NULL keeps
+      the record and loses only the pointer.
+
+      `subjectId` is deliberately NOT a foreign key at all. An audit row must
+      survive its subject being deleted — and that deletion is often the very
+      thing worth auditing. A FK would either block it or cascade the evidence
+      away.
+
+  (4) DETAIL IS CONTEXT, NOT A PAYLOAD.
+
+      Truncated at 500 characters. The product-patch event records WHICH fields
+      changed (`Object.keys(patch)`) and never their values. An audit trail is
+      read by more people than the record it describes, so it must not become
+      the widest copy of the narrowest data.
+
+EVIDENCE
+
+  LIVE VERIFIED
+      All 24 migrations applied from empty against a real MariaDB. Table
+      created with both foreign keys and all four indexes. Deleting the actor
+      nulls `actorId` and the audit row survives — confirmed by SQL, rows
+      surviving = 1.
+      Real `rfq_created` rows written by real API calls through real HTTP:
+          id  actorId  ownerId  subjectType  subjectId  action       detail
+          1   1        1        rfq          1          rfq_created  finishing
+          2   1        1        rfq          2          rfq_created  structural
+
+  UNIT VERIFIED
+      34 tests in server/commercialAudit.test.ts across five areas: the
+      swallow/log trade-off, the row shape, the schema decisions, the
+      instrumentation census, and the permission-scoped reads.
+
+  MUTATIONS  M1–M16 — all killed. See §6.
+
+
+--------------------------------------------------------------------------------
+3.2  MAKING subjectId AGREE WITH subjectType                        [3baa3b4]
+--------------------------------------------------------------------------------
+
+A DEFECT IN MY OWN FIRST PASS, and the most instructive one in the session
+because of HOW it fails.
+
+Three of the nine call sites recorded an id from the wrong table:
+
+    quotation_submitted        recorded the RFQ id under subjectType 'quotation'
+    enquiry_opened             recorded the RFQ id under subjectType 'enquiry'
+    product_question_answered  recorded the QUESTION id under subjectType 'product'
+
+None of them errored. Nothing looked wrong. The failure mode is worse than a
+crash:
+
+    SELECT * FROM commercialAuditEvents
+    WHERE subjectType = 'quotation' AND subjectId = 5
+
+returns rows confidently, silently mixing quotation 5 with whatever happened on
+RFQ 5. AN AUDIT TRAIL THAT IS PLAUSIBLY WRONG IS MORE DANGEROUS THAN ONE THAT
+IS OBVIOUSLY MISSING, because somebody will eventually settle a billing dispute
+with the result.
+
+THE RULE NOW HELD EVERYWHERE
+
+    subjectId names a row in the table subjectType names.
+    Everything else is `detail`.
+
+Each of the three keeps its context rather than losing it — a quotation audit
+row that could not be traced back to what was quoted on would be the opposite
+mistake:
+
+    quotation_submitted   detail: `rfq 5, price 400000, 30 days`
+    enquiry_opened        detail: `rfq 5, credit charged`
+    product_question_...  detail: `question 12`
+
+`openQualifiedEnquiry` now returns the `qualifiedEnquiries` row it granted, so
+the enquiry event points at the BILLABLE RECORD ITSELF — which is what a
+billing dispute is actually about. In the duplicate-key race path there is no
+insertId to capture, so the row is read back rather than reporting null for a
+record that plainly exists.
+
+A SECOND DEFECT FOUND WHILE FIXING THE FIRST
+
+Capturing an insertId runs INSIDE the transaction that spends a lead credit. A
+driver returning a shape without one would have thrown there and aborted the
+grant — the vendor losing a paid lead because an audit id could not be read.
+That is the exact inversion this whole trail is designed to avoid.
+
+Both captures are now fully optional-chained:
+
+    enquiryId  = Number(written?.[0]?.insertId) || null
+    quotationId = Number(inserted?.[0]?.insertId ?? 0)
+
+and a null id still records the charge. A row saying money changed hands with
+the id missing beats no record that it did.
+
+HOW IT WAS CAUGHT: the existing enquiry suite failed 13 tests immediately,
+because its insert stub resolves with nothing — the harshest form of the case.
+That coverage was ACCIDENTAL, so both paths now assert it deliberately: one
+test that a grant survives an insert yielding no id, one that a quotation does.
+
+THE GUARDIAN
+
+A new test enumerates all nine call sites and the id expression each
+subjectType may carry:
+
+    product    ['id', 'input.id', 'row.productId']
+    rfq        ['rfqId']
+    quotation  ['quotationId', 'input.quotationId']
+    enquiry    ['result.enquiryId ?? 0']
+
+`input.rfqId` is absent from 'quotation' and 'enquiry' deliberately — that was
+the defect. Adding a tenth site means adding a line, which is the point: it
+forces the question "is that id really from that table?" at the moment somebody
+would otherwise not ask it.
+
+  MUTATIONS  M13–M18 — all killed after M18 exposed a genuinely missing test.
+
+
+--------------------------------------------------------------------------------
+3.3  THE RFQ-TO-RESPONSE HANDOFF                                     [33ebc3b]
+--------------------------------------------------------------------------------
+
+THE GAP
+
+Every piece of this journey existed, and the journey did not work.
+
+    `/rfq/:id`    rendered a request (built earlier, commit 4784e8c)
+    `/provider`   had a qualified-enquiry inbox and a working quotation form
+    the link      threw the id away
+
+"Continue to respond" went to a bare `/provider`, so a provider landed on a
+dashboard and had to find, in a list, the request they had been reading a
+second earlier. That is the gap between "every screen exists" and "the workflow
+works", and no test that checks screens can see it.
+
+WHAT THE ID IS USED FOR — AND ONLY THIS
+
+    1. scroll the matching row in the enquiry inbox into view
+    2. mark that row visually
+    3. preselect the quotation form's rfqId
+
+WHAT IT DELIBERATELY DOES NOT DO
+
+    FOLLOWING A LINK NEVER OPENS AN ENQUIRY. Auto-opening would read as helpful
+    right up to the point where a vendor's monthly allowance drained from
+    browsing. The highlight only scrolls and marks; the vendor still presses
+    the button that spends the credit. A test asserts the effect body contains
+    `scrollIntoView` and does NOT contain `open.mutate`.
+
+    IT NEVER RENDERS A ROW THE SERVER DID NOT RETURN. Inventing eligibility
+    client-side would contradict the one authority on it.
+
+THE DEAD END IS NAMED
+
+A provider whose linked request is absent from their eligible list previously
+scanned an inbox for something that was never going to be in it, and concluded
+the product was broken. They are now told, in both languages. The notice states
+BOTH possible reasons — the request is closed, or it falls outside their
+declared service categories — because only the server knows which applies and
+it is not asked here. Naming one as fact would be inventing a reason.
+
+    EN  'The request you came from is not in your qualified enquiries.
+         Qualified enquiries cover open requests that fall inside your declared
+         service categories, so it is either closed or outside them.'
+    AR  'الطلب الذي أتيت منه غير موجود ضمن طلباتك المؤهلة. الطلبات المؤهلة تشمل
+         الطلبات المفتوحة التي تقع ضمن فئات خدماتك المعلنة، لذا فهو إما مغلق أو
+         خارج تلك الفئات.'
+
+A test asserts the message never mentions a credit — it is a client-side
+observation about a list, not a server verdict about money.
+
+TWO SMALLER DEFECTS FOUND ON THE WAY
+
+    The quotation dialog's only field was "Your price", with nothing saying
+    which request the bid was against. A way to bid on the wrong thing with no
+    way to notice. It now names the request and its number.
+
+    The submit button was enabled with rfqId 0, which reached the server and
+    came back as a BAD_REQUEST toast: safe, and useless.
+
+THE PARSER
+
+`shared/linkedRfq.ts` — `parseLinkedRfqId(search)` — is a real module rather
+than an inline coercion, because this is the point where a URL-supplied string
+becomes a mutation argument. It is NOT a security boundary; everything
+downstream is authorized server-side. But one rule in one place beats coercing
+at each use site.
+
+It rejects, with reasons:
+
+    non-digits          `Number()` accepts '1e3', ' 12 ', '0x10', '12.0'
+    0 and '00'          0 is the form's "nothing selected" sentinel; accepting
+                        it from a URL produces a form that LOOKS targeted and
+                        is not — the worst available outcome
+    > 2^53−1            Number('9007199254740993') silently becomes
+                        ...992, which is a different record
+    repeated params     takes the first, asserted rather than assumed
+
+  MUTATIONS  M19–M26 — all killed.
+  STATUS AT THIS COMMIT: shipped, tested, green — AND NOT ACTUALLY WORKING.
+  See §3.8.
+
+
+--------------------------------------------------------------------------------
+3.4  THE PROJECT DOCUMENTS TAB                                       [fd8ceae]
+--------------------------------------------------------------------------------
+
+THE GAP
+
+The Documents tab was a hardcoded panel: an icon, the sentence "Upload
+drawings, BOQs, contracts, and invoices", and an Upload Document button with no
+handler at all.
+
+Meanwhile `projects.documents` and `projects.uploadDocument` were both complete
+on the server — owner-scoped (`WHERE ownerId = ctx.user.id`, FORBIDDEN
+otherwise), rate-limited, size-capped at 8MB, and byte-sniffed against the
+declared content type.
+
+The capability existed. Only the way to reach it did not.
+
+THIS IS THE HARDEST KIND OF GAP TO SEE. A screen that DESCRIBES a feature is
+the most convincing possible evidence that the feature works. Nothing errors,
+nothing is obviously missing, and the capability is simply unreachable. No new
+server surface was needed for any of it.
+
+TWO ALLOWLISTS THAT DISAGREED
+
+    isAllowedProjectDocumentType    accepted any image/*, any text/*, and PDF
+    DOCUMENT_TYPES (the sniffer)    accepts PNG, JPEG, GIF, WebP, PDF
+
+The sniffer runs IMMEDIATELY AFTER the zod refine. So a .txt or an .svg passed
+validation, reached the sniffer, and came back rejected. The product advertised
+uploads it could never accept, and said so only after the user had chosen a
+file.
+
+Narrowed to exactly what is enforceable, which is the honest direction: a
+declared type that nothing can verify is not a capability. The two lists are
+now held against each other by a test that IMPORTS BOTH:
+
+    expect([...PROJECT_DOCUMENT_CONTENT_TYPES].sort())
+      .toEqual([...DOCUMENT_TYPES].sort());
+
+and the file picker's `accept` attribute is generated from the same list, so it
+cannot offer a type the upload will reject.
+
+THE CLIENT IS NEVER THE CONTROL
+
+    It does not decide who may upload. The server re-reads the project and
+    refuses a non-owner. This component renders the same for anybody and every
+    call fails — which is correct. Hiding the button instead would be frontend
+    authorization, and a test asserts the component contains no `ownerId`,
+    `isOwner` or `user.id ===` check.
+
+    Every refusal message shown is the server's own.
+
+    The size and type pre-checks exist so the answer arrives BEFORE a
+    multi-megabyte upload. A test compares both caps by reading each out of its
+    own source rather than asserting the number twice — writing `8` in the test
+    would let the two drift while it passed.
+
+SMALLER THINGS FIXED ALONGSIDE
+
+    A FileReader failure had no path to the user, because `onError` only covers
+    server refusals.
+
+    Empty-with-a-filter and empty-outright now read differently. One empty
+    state would make a filter look like data loss.
+
+    `uploadDocument`'s insertId read is defensive: by that line the bytes are
+    stored and the row is written, so throwing there would show a failure for
+    an upload that succeeded, and the user would try again.
+
+  LIVE VERIFIED     Tab renders; empty state distinguishes "No documents yet"
+                    from "No documents of this type"; dialog opens; file
+                    selects; name and type set. Screenshot captured.
+  BLOCKED BY INFRA  The upload cannot COMPLETE here — no object storage backend
+                    is configured and the code correctly refuses. Never claimed
+                    as passing at any point.
+  MUTATIONS         M27, M27a, M27b, M28–M36 — all killed.
+
+
+--------------------------------------------------------------------------------
+3.5  CONSOLIDATING ONTO ONE DOCUMENT SURFACE                         [55ba97b]
+--------------------------------------------------------------------------------
+
+I BUILT A DUPLICATE AND DID NOT NOTICE UNTIL THE SWEEP CAME BACK ROUND.
+
+BuildHub already had TWO project-document upload implementations:
+
+    ProjectDetailEnhancements (the Operations tab)  working Files + Invoices
+    the top-level Documents tab                     a placeholder with a dead
+                                                    button
+
+I built the second one properly and produced a THIRD — because both existing
+halves worked. Nothing errored, and searching for something broken found
+neither.
+
+WHY THE GUARDIAN DID NOT CATCH IT
+
+`projectWorkspaceStructure.test.ts` asserted where a hidden file input sat
+relative to the tab panels. It passed the entire time, because it was about the
+ARRANGEMENT WITHIN one implementation rather than about HOW MANY existed.
+
+    A structural assertion inside a component cannot see a duplicate of that
+    component.
+
+Replaced with the assertion that would have caught me:
+
+    exactly one component may call `trpc.projects.uploadDocument.useMutation`
+    exactly one component may call `trpc.projects.documents.useQuery`
+
+both proved by scanning every .tsx under client/src rather than by naming
+files, with a guard that the scan found a meaningful number of sources so it
+cannot pass vacuously.
+
+WHICH ONE SURVIVED, AND WHY
+
+`ProjectDocuments` is canonical. It is the better-built of the two: its
+allowlist and its picker's `accept` come from the shared list, so it cannot
+offer a type the server rejects — where the old panel offered
+`image/*,.pdf,.txt` and let the sniffer refuse them afterwards.
+
+Invoices are not lost. They are a document `type` — which is all they ever were
+in the schema — reachable through the type filter, which is built from the
+shared list so every type is selectable without any of them being named in the
+component.
+
+`ProjectDetailEnhancements` keeps what was never duplicated: the timeline and
+progress reports. A test asserts that too, so removing the duplication cannot
+quietly remove the component's actual job.
+
+  MUTATIONS  M37–M40 — all killed, including adding a second uploader and a
+             second reader.
+
+
+--------------------------------------------------------------------------------
+3.6  WHOLE-CLIENT DEAD-LINK SWEEP                                    [bb644b7]
+--------------------------------------------------------------------------------
+
+`routeIntegrity.test.ts` exists because a dead link shipped past a test that
+was supposed to prevent exactly that. It then checked ROUTES and the
+opportunity engine — the two places already under suspicion.
+
+That is the same mistake one level up. Narrowing a link check to where you
+expect trouble is how the next dead link ships too.
+
+It now scans every .tsx under client/src for three patterns:
+
+    navigate('...')
+    <Link href="..."
+    href="/..."
+
+and holds all of them against the route table parsed out of App.tsx, with
+interpolated templates checked by SHAPE — `/rfq/${id}` passes, `/quotation/${id}`
+would not.
+
+    Result: 28 distinct internal destinations, 0 dead.
+
+The value is not today's zero. It is that the sweep now covers pages nobody
+thought to list, including ones that do not exist yet.
+
+ComponentShowcase.tsx is excluded and the reason is recorded in the test: it is
+neither routed in App.tsx nor imported anywhere, so it is dead code that never
+enters a bundle, and its hundreds of demo links are not destinations the
+product offers anybody.
+
+The sweep asserts its own premise first. A regex that stopped matching would
+otherwise make every check below it pass on an empty set — and a link test that
+passes vacuously is worse than none, because it is why this file exists.
+
+  MUTATIONS  M41–M43 — all killed, including breaking one of the three scan
+             patterns.
+
+
+--------------------------------------------------------------------------------
+3.7  UNCONFIGURED OBJECT STORAGE                                     [fdd7051]
+--------------------------------------------------------------------------------
+
+THE MOST LAUNCH-RELEVANT FINDING IN THE SESSION.
+
+It only appeared because the product was RUN FOR REAL with a missing
+environment variable — which is precisely the state a deployment is in on
+launch day when an S3 variable is wrong or absent.
+
+Every upload failed. Both audiences were told something useless:
+
+    THE CUSTOMER   "Something went wrong. Please try again."
+                   for a condition that retrying can never fix.
+
+    THE OPERATOR   "[trpc] mutation projects.uploadDocument failed:
+                    unclassified - no classification matched - inspect the
+                    deployment logs around this line"
+                   It WAS the deployment log.
+
+THE FIX ALREADY EXISTED, IN 2 PLACES OUT OF 8
+
+    ai.uploadAttachment    caught ObjectStorageNotConfiguredError → clear 503
+    the /manus-storage
+    download proxy         returned 503, its comment explicitly citing the
+                           attachment path as precedent
+
+This is the same lesson `assertUploadedFileMatches` recorded when it was
+written — "applied at all five upload endpoints rather than the one that looked
+riskiest, because the gap was identical in each" — not applied here.
+
+WHAT CHANGED
+
+All seven upload sites now go through `storagePutOrUnavailable`, which answers:
+
+    code:    SERVICE_UNAVAILABLE
+    message: 'File uploads are not available on this deployment.'
+
+SERVICE_UNAVAILABLE rather than INTERNAL_SERVER_ERROR because that is what it
+is: the feature is off on this deployment, the request was fine, and saying so
+stops a user retrying into the same wall.
+
+Anything that is NOT a configuration problem still propagates untouched. A
+wrapper that swallowed a broken bucket into "the feature is off" would hide a
+real outage behind a reassuring message — and a test asserts the `throw error;`
+re-raise is still there.
+
+THE CLASSIFIER WAS MATCHING ON PROSE
+
+    the regex looked for   /is not configured/i
+    the error says         "No object storage backend is configured; cannot
+                            store a file. Set S3_BUCKET (with S3_ENDPOINT,
+                            S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY) or ..."
+
+One word apart. Every upload on an unconfigured deployment logged as
+'unclassified'.
+
+Errors this codebase DEFINES are now matched by NAME:
+
+    if (name === 'ObjectStorageNotConfiguredError')
+      return { category: 'config-missing' };
+
+placed IN FRONT of the regex, not instead of it, so the string-matched cases it
+always caught still work. A test proves the name match survives rewording the
+message entirely.
+
+A HOLE IN MY OWN FIX — CAUGHT BY RE-RUNNING THE LIVE CHECK
+
+Turning the 500 into a 503 fixed the customer's half and SILENTLY REMOVED THE
+OPERATOR'S. The tRPC error classifier only reports INTERNAL_SERVER_ERROR — on
+the sound reasoning that a server-authored refusal already says what it means.
+To the CALLER. The access log would have shown 503s on every upload and never
+said why.
+
+The diagnosis is now emitted where it is known:
+
+    {"level":"error",
+     "event":"upload_rejected_storage_unconfigured",
+     "remedy":"set S3_BUCKET, S3_ENDPOINT, S3_ACCESS_KEY_ID and
+               S3_SECRET_ACCESS_KEY (or BUILT_IN_FORGE_API_URL and
+               BUILT_IN_FORGE_API_KEY) on this deployment"}
+
+It names the variables because that line goes to a deployment log, not to a
+customer. Two tests assert the audiences stay separate: the customer-facing
+message must not contain 'S3_', 'FORGE', 'BUCKET' or 'KEY', and the operator
+line must appear before it in the source.
+
+  LIVE VERIFIED   HTTP 503 to the browser with the readable message; the
+                  structured operator line in the server log; the toast
+                  reading "File uploads are not available on this deployment."
+                  Screenshot captured.
+  MUTATIONS       M44–M49 — all killed.
+
+
+--------------------------------------------------------------------------------
+3.8  MAKING THE HANDOFF ACTUALLY WORK                                [636f7f6]
+--------------------------------------------------------------------------------
+
+See §1, Defect 1, for the full account. The fix is in two parts because there
+are two faults.
+
+  (1) THE SHIM NOW PRESERVES THE QUERY STRING.
+
+      Dropping parameters is wrong for a compatibility redirect regardless of
+      who relies on it. A redirect that discards half the address is not
+      forwarding, it is truncating — and any old bookmark carrying a parameter
+      was already losing it.
+
+          const search = useSearch();
+          navigate(`${getRolePlatformPath(userRole)}${search ? `?${search.replace(/^\?/, '')}` : ''}`)
+
+  (2) THE CTA ADDRESSES THE CANONICAL ROUTE DIRECTLY.
+
+      `/platform/:role` via `getRolePlatformPath`, rather than bouncing a
+      brand-new feature off a legacy shim. One less place for the address to be
+      rewritten on the way.
+
+THE ROUTE SWEEP NEEDED A REAL ANSWER, NOT AN EXEMPTION
+
+The CTA's destination is now computed, so substituting a placeholder into
+`${getRolePlatformPath(role)}?rfq=1` produces `123?rfq=1` and reports a FALSE
+dead link.
+
+Rather than skipping computed hrefs — which would open exactly the hole the
+file exists to close — the sweep separates them and requires each to be one a
+helper proves out exhaustively. `getRolePlatformPath` is a closed mapping, so
+every value it can return is enumerable and every one is checked against the
+route table:
+
+    six platform roles + 'admin' + 'nonsense' + undefined + null
+
+That is a STRONGER guarantee than the shape check the literal sweep applies,
+not a weaker one. An unrecognised computed href still fails.
+
+  LIVE VERIFIED   `/platform/supplier?rfq=1` in the address bar after clicking
+                  the CTA. All 14 checks in journey B pass. See §7.
+  MUTATIONS       M52 — killed.
+
+
+--------------------------------------------------------------------------------
+3.9  THE UNAPPROVED PROVIDER                                         [28352d6]
+--------------------------------------------------------------------------------
+
+Found the same way as the query-string defect: by clicking the button as a
+supplier whose verification had not been reviewed.
+
+They landed on `/compliance` — a page about uploading documents — with nothing
+connecting it to the request they had been reading. The platform route
+redirects unapproved providers there, which is correct. Offering them a button
+that triggers it was not.
+
+They are now told plainly that they cannot respond until verification has been
+reviewed, and offered the same destination as something they CHOSE rather than
+something that HAPPENED to them. They can still read the request itself —
+reading was never gated, and hiding it would answer a question nobody asked.
+
+THIS IS PRESENTATION AND THE CODE SAYS SO. The controls are the redirect on the
+platform route and `approvedProviderProcedure` on the server, both of which
+hold regardless of what this page renders. A reader has to be able to tell
+which is which, so a test asserts the distinction is stated in the source.
+
+  LIVE VERIFIED   All 5 checks in journey C, in English and in Arabic, with the
+                  page confirmed RTL. See §7.
+
+
+--------------------------------------------------------------------------------
+3.10  THE HANDOFF DOCUMENT                                           [5dea1bb]
+--------------------------------------------------------------------------------
+
+`BUILDHUB_PRELAUNCH_SESSION_HANDOFF.txt` — 325 lines, organised around the
+verification labels rather than around the features, because that is what
+changes how the rest should be read.
+
+Checked for credential-shaped strings before committing: zero matches for
+S3_SECRET, SMTP_PASSWORD, passwordResetToken=, app_session_id=, or JWT prefixes.
+
+
+================================================================================
+§4  EVERY DEFECT FOUND, WITH ROOT CAUSE
+================================================================================
+
+Fourteen distinct defects. Eight were pre-existing; six were mine, introduced
+during this session and corrected within it. Both categories are listed,
+because a report that only lists the first kind is not an honest one.
+
+--- PRE-EXISTING ---------------------------------------------------------------
+
+D-01  NO COMMERCIAL AUDIT TRAIL AT ALL
+      Severity: high for a platform about to carry money.
+      Root cause: accounts were audited early and thoroughly; commerce was
+      never given the same treatment.
+      Fixed in 166f082.
+
+D-02  UNCONFIGURED STORAGE PRODUCED A GENERIC 500 AT 6 OF 7 UPLOAD SITES
+      Severity: high on launch day specifically.
+      Root cause: the correct handling was written once, for AI attachments,
+      and not generalised — despite the codebase having already learned that
+      lesson explicitly for byte-sniffing.
+      Fixed in fdd7051.
+
+D-03  THE ERROR CLASSIFIER MATCHED ON MESSAGE TEXT
+      Severity: medium — it degrades every diagnosis, silently.
+      Root cause: `/is not configured/i` versus "No object storage backend is
+      configured". One word.
+      Fixed in fdd7051.
+
+D-04  THE DOCUMENTS TAB WAS A PLACEHOLDER OVER A COMPLETE BACKEND
+      Severity: medium — a whole capability unreachable.
+      Root cause: the panel described the feature convincingly enough that
+      nobody checked the button.
+      Fixed in fd8ceae.
+
+D-05  TWO CONTENT-TYPE ALLOWLISTS DISAGREED
+      Severity: medium — the product advertised uploads it always rejected.
+      Root cause: the zod refine was written to be permissive; the sniffer was
+      written to be verifiable; neither knew about the other.
+      Fixed in fd8ceae.
+
+D-06  TWO PROJECT-DOCUMENT UPLOAD IMPLEMENTATIONS
+      Severity: medium — divergent behaviour, doubled maintenance.
+      Root cause: the guardian meant to protect this file checked arrangement
+      within a component, which cannot see a duplicate of it.
+      Fixed in 55ba97b.
+
+D-07  THE /provider SHIM DISCARDED THE QUERY STRING
+      Severity: high — it silently broke a feature, and would break any other
+      that carried a parameter through it.
+      Root cause: a redirect written as a path rewrite rather than an address
+      forward.
+      Fixed in 636f7f6.
+
+D-08  AN UNAPPROVED PROVIDER WAS OFFERED A CTA THAT BOUNCED THEM
+      Severity: low-medium — confusing, not harmful.
+      Root cause: the CTA's condition tested role, not readiness.
+      Fixed in 28352d6.
+
+--- MINE, INTRODUCED AND CORRECTED THIS SESSION ---------------------------------
+
+D-09  THREE AUDIT SITES RECORDED AN ID FROM THE WRONG TABLE
+      Severity: high — produces confident wrong answers, not errors.
+      Introduced in 166f082, fixed in 3baa3b4.
+
+D-10  AN insertId READ INSIDE A CREDIT-SPENDING TRANSACTION COULD THROW
+      Severity: high — a vendor loses a paid lead to a bookkeeping detail.
+      Introduced in 166f082, fixed in 3baa3b4.
+
+D-11  I BUILT A THIRD DOCUMENT UPLOADER
+      Severity: medium.
+      Introduced in fd8ceae, fixed in 55ba97b.
+
+D-12  A DIALOG BLAMED THE USER'S FILE FOR A SERVER REFUSAL
+      Severity: medium — actively misleading.
+      Introduced in fd8ceae, fixed in fdd7051.
+
+D-13  MY OWN 503 FIX REMOVED THE OPERATOR'S DIAGNOSTIC
+      Severity: medium — trades one silent audience for another.
+      Introduced and fixed within fdd7051, caught by re-running the live check.
+
+D-14  THE NEW CTA ROUTED THROUGH A LEGACY SHIM
+      Severity: high in combination with D-07.
+      Introduced in 33ebc3b, fixed in 636f7f6.
+
+
+================================================================================
+§5  MISTAKES I MADE AND CORRECTED
+================================================================================
+
+Beyond the six defects above, four process errors are worth recording because
+each one nearly produced a false claim.
+
+M-01  THREE OF MY OWN TESTS PASSED FOR THE WRONG REASON.
+
+      (a) `subscriptionLifecycle`'s "no second audit framework" check counted
+          audit TABLES as a proxy for the principle. Adding a legitimate table
+          would fail it for the wrong reason. Replaced with an assertion on the
+          actual principle plus an explicit two-table list.
+
+      (b) The client/server upload size-cap check asserted the literal `8` in
+          both places. It would have passed while the two drifted apart —
+          exactly the failure it was written to catch. Rewritten to read each
+          cap out of its own source and compare them, then re-verified in both
+          directions (M27a: client drifts down; M27b: server rises).
+
+      (c) The LIVE Arabic check asserted that an element with the right
+          test-id existed after clicking the language toggle. That element
+          exists in English too. The toggle silently did nothing and the check
+          passed anyway. Rewritten to assert the notice's TEXT contains Arabic
+          characters and the page is RTL. It then genuinely passed:
+          "لا يمكنك الرد على الطلبات حتى تكتمل مراجعة توثيق حسابك."
+
+M-02  A COMMIT MESSAGE CLAIMED 2257 TESTS WHEN THE COUNT WAS 2256.
+
+      Amended on the unmerged branch and force-pushed with --force-with-lease.
+      A test count in a permanent record is a factual claim; being one out is
+      still being wrong.
+
+M-03  A MUTATION ASSERTION WAS IMPRECISE AND THE SUITE CAUGHT IT.
+
+      The "no procedure calls storagePut directly" census counted the wrapper's
+      OWN internal call, making the assertion impossible rather than merely
+      hard. Scoped to exclude the wrapper's body, with the reason recorded.
+
+M-04  I NEARLY REPORTED A BLOCKED CHECK AS A PRODUCT FAILURE.
+
+      Live check A7 (a real PDF upload completing) is red. It is red because no
+      object storage exists in this environment and the code correctly refuses.
+      It is reported as BLOCKED BY INFRASTRUCTURE throughout, never as a defect
+      and never as a pass.
+
+
+================================================================================
+§6  THE COMPLETE MUTATION LOG
+================================================================================
+
+Method: apply a mutation to production code, run the suite that is supposed to
+protect it, require it to FAIL, restore. A mutation that survives means the
+test cannot see the thing it claims to guard.
+
+52 distinct mutations. 51 killed on first application. M18 survived once and
+was killed after writing the test it exposed as missing. M27 was killed but by
+a hardcoded literal rather than a real comparison, so the assertion was
+strengthened and re-verified in both directions as M27a and M27b.
+
+--- COMMERCIAL AUDIT TRAIL -----------------------------------------------------
+  M1   catch rethrows instead of swallowing                        KILLED  2 failed
+  M2   detail is stored untruncated                                KILLED  1 failed
+  M3   failure is silent (no console.error)                        KILLED  1 failed
+  M4   empty detail stored as '' rather than null                  KILLED  1 failed
+  M5   actor FK cascades — evidence deleted with the person        KILLED  1 failed
+  M6   `mine` drops the ownerId half of its scope                  KILLED  1 failed
+  M7   `all` becomes protectedProcedure, not adminWith             KILLED  1 failed
+  M8   `mine` leaks actorId on every row                           KILLED  1 failed
+  M9   the admin read is unbounded                                 KILLED  1 failed
+  M10  the award is no longer recorded                             KILLED  2 failed
+  M11  product patch records the VALUES that changed               KILLED  1 failed
+  M12  the paid lead stops distinguishing charge from re-open      KILLED  1 failed
+
+--- subjectId / subjectType AGREEMENT ------------------------------------------
+  M13  quotation_submitted records the RFQ id again                KILLED  1 failed
+  M14  enquiry_opened records the RFQ id again                     KILLED  2 failed
+  M15  product_question_answered records the question id again     KILLED  1 failed
+  M16  the RFQ context is dropped from the quotation row           KILLED  1 failed
+  M17  enquiry id capture non-defensive (throws in credit txn)     KILLED 14 failed
+  M18  quotation id capture non-defensive              SURVIVED → then KILLED
+       Nothing exercised submitQuotation with an insert returning no id.
+       A dedicated test was written; the mutation then failed 1 test.
+
+--- THE PROVIDER HANDOFF -------------------------------------------------------
+  M19  the CTA drops the id again                                  KILLED  1 failed
+  M20  parser accepts anything Number() likes                      KILLED  1 failed
+  M21  parser accepts 0                                            KILLED  1 failed
+  M22  parser rounds a huge id instead of rejecting it             KILLED  1 failed
+  M23  following a link auto-spends a credit                       KILLED  1 failed
+  M24  quote form loses its target label                           KILLED  1 failed
+  M25  quote submit is unguarded again                             KILLED  1 failed
+  M26  the not-eligible notice disappears                          KILLED  1 failed
+
+--- PROJECT DOCUMENTS ----------------------------------------------------------
+  M27  client size cap drifts from the server (4MB)                KILLED (weak)
+  M27a client cap drifts DOWN, after strengthening                 KILLED  1 failed
+  M27b server cap raised and client not, after strengthening       KILLED  1 failed
+  M28  file picker offers types the server rejects                 KILLED  1 failed
+  M29  the component decides who may upload                        KILLED  1 failed
+  M30  a FileReader failure is swallowed                           KILLED  1 failed
+  M31  submit is unguarded                                         KILLED  1 failed
+  M32  one empty state for both cases                              KILLED  1 failed
+  M33  the placeholder panel returns                               KILLED  2 failed
+  M34  an English-only toast slips in                              KILLED  1 failed
+  M35  the two allowlists diverge again (text/* back)              KILLED  1 failed
+  M36  the shared list gains a type the sniffer rejects            KILLED  2 failed
+
+--- ONE DOCUMENT SURFACE -------------------------------------------------------
+  M37  a second component uploads documents                        KILLED  1 failed
+  M38  a second component reads the document list                  KILLED  1 failed
+  M39  removing duplication also removed the real job              KILLED  1 failed
+  M40  the canonical uploader moves back into Enhancements         KILLED  1 failed
+
+--- DEAD-LINK SWEEP ------------------------------------------------------------
+  M41  a dead navigate() is added to a real page                   KILLED  1 failed
+  M42  a dead Link href is added                                   KILLED  2 failed
+  M43  the sweep silently matches nothing                          KILLED  1 failed
+
+--- UNCONFIGURED STORAGE -------------------------------------------------------
+  M44  classifier goes back to string matching only                KILLED  2 failed
+  M45  one upload site bypasses the wrapper again                  KILLED  4 failed
+  M46  the wrapper swallows real storage failures too              KILLED  1 failed
+  M47  the wrapper returns INTERNAL_SERVER_ERROR                   KILLED  1 failed
+  M48  the refusal leaks env var names to the customer             KILLED  1 failed
+  M49  the operator log is removed again                           KILLED  1 failed
+
+--- THE TWO LIVE-FOUND DEFECTS -------------------------------------------------
+  M50  the stale isError guard comes back                          KILLED  1 failed
+  M51  a second toast contradicts the server                       KILLED  2 failed
+  M52  the shim drops the query string again                       KILLED  2 failed
+
+
+================================================================================
+§7  THE COMPLETE LIVE VERIFICATION LOG
+================================================================================
+
+THE HARNESS
+
+    Database    MariaDB 10.11, fresh database `bh_live`, all 24 migrations
+                applied from empty via drizzle-kit migrate. 32 tables created,
+                including commercialAuditEvents.
+    Server      the BUILT production bundle, `node dist/index.js`,
+                NODE_ENV=production, port 3011.
+    Browser     Chromium via Playwright, executablePath /opt/pw-browsers/chromium,
+                viewport 1440×900.
+    Accounts    created through the REAL auth.signUp procedure over HTTP — no
+                direct database inserts, so every server-side rule ran exactly
+                as it would for a real person.
+                  nadia_owner    homeowner  → onboardingStatus 'approved'
+                  omar_supplier  supplier   → onboardingStatus 'not_started'
+                (The differing default is correct: providers require review.)
+    Data        RFQs created through the real rfq.create procedure over HTTP.
+
+ONE DELIBERATE ENVIRONMENT DEVIATION, STATED PLAINLY
+
+    DATABASE_SSL=disable was set for the local harness, because local MariaDB
+    has no TLS and the app correctly requires it in production (the connection
+    failed with HANDSHAKE_NO_SSL_SUPPORT until it was set). TLS ENFORCEMENT IS
+    THEREFORE EXPLICITLY NOT SOMETHING THIS SESSION VERIFIED. Production
+    defaults to `require`.
+
+--- JOURNEY A — HOMEOWNER ------------------------------------------------------
+
+  A1  homeowner signs in with a real password                     PASS
+      → redirected to /platform/homeowner
+  A2  a project is created and appears                            PASS
+      "Villa finishing - New Cairo", EGP 750,000, via the real dialog
+  A3  the project detail page opens                               PASS
+      /projects/5   (first run reported FAIL — my assertion regex said
+                     /project/ not /projects/. My error, not the product's.)
+  A4  the Documents tab renders the real component                PASS
+  A5  the old placeholder text is gone                            PASS
+  A6  the empty state distinguishes "none yet"                    PASS
+  A7  a real PDF uploads and the document is listed        BLOCKED BY INFRA
+      No object storage backend configured. The code correctly refuses.
+      Reported as blocked at every point; never as a pass, never as a defect.
+
+--- JOURNEY B — PROVIDER AND OWNER ON THE SAME RFQ -----------------------------
+
+  All 14 pass. B9 failed twice before the two fixes in 636f7f6 and is the
+  defect described in §1.
+
+  B1   supplier signs in                                          PASS
+  B2   /rfq/:id is a real route, not the 404 page                 PASS
+  B3   the provider sees a request they do not own                PASS
+  B4   attachments are NOT shown to a provider                    PASS
+       (they sit behind the qualified enquiry — that is what the credit buys)
+  B5   the quotation comparison is NOT shown to a provider        PASS
+  B6   no "your request" badge for a non-owner                    PASS
+  B7   the provider panel names the credit cost                   PASS
+  B8   there is a respond CTA at all                              PASS
+  B9   the RFQ id travels to the provider surface                 PASS
+       → /platform/supplier?rfq=1
+       FAILED on run 1 (unapproved → /compliance)
+       FAILED on run 2 (approved → /platform/supplier, query dropped) ← DEFECT
+       PASSED on run 3, after both fixes
+  B10  owner sign-in                                              PASS
+  B11  the OWNER sees the owner badge                             PASS
+  B12  the OWNER sees the quotation comparison                    PASS
+  B13  the OWNER is not shown the provider credit panel           PASS
+  B14  a nonexistent RFQ gives the same not-found, not a crash    PASS
+       (/rfq/99999 — the same answer as "not yours", so the page is not a way
+        to learn which ids exist)
+
+  Also observed live: with the supplier's declared categories not covering
+  'finishing', the not-eligible notice rendered — enquiry-not-eligible = 1.
+
+--- JOURNEY C — THE UNAPPROVED PROVIDER ----------------------------------------
+
+  C1  an unapproved provider is told verification is pending      PASS
+  C2  they are NOT offered a respond CTA that bounces them        PASS
+  C3  they can still read the request itself                      PASS
+  C4  the notice renders in ARABIC, verified by its characters    PASS
+      "لا يمكنك الرد على الطلبات حتى تكتمل مراجعة توثيق حسابك."
+      (First version of this check passed for the wrong reason — see M-01c.)
+  C5  the page is right-to-left in Arabic                         PASS
+
+--- JOURNEY D — PASSWORD RESET CAPABILITY --------------------------------------
+
+  D1  the reset link is HIDDEN when the server reports it off     PASS
+  D2  password sign-in itself is still offered                    PASS
+
+--- THE UNCONFIGURED-STORAGE PATH ----------------------------------------------
+
+  Before the fix    HTTP 500, toast "Something went wrong. Please try again.",
+                    log "unclassified - no classification matched"
+  After the fix     HTTP 503, toast "File uploads are not available on this
+                    deployment.", log:
+                    {"level":"error",
+                     "event":"upload_rejected_storage_unconfigured",
+                     "remedy":"set S3_BUCKET, S3_ENDPOINT, S3_ACCESS_KEY_ID
+                               and S3_SECRET_ACCESS_KEY (or
+                               BUILT_IN_FORGE_API_URL and
+                               BUILT_IN_FORGE_API_KEY) on this deployment"}
+  Both states captured in screenshots.
+
+--- THE PASSWORD RESET LIFECYCLE -----------------------------------------------
+
+  R1   the account can sign in before the reset                   PASS
+  R6   an unknown address gets the same answer as a known one     PASS (trivially
+       — both returned 412 because the feature was disabled)
+  R3,R4,R8,R11,R12,R14                                     BLOCKED BY INFRA
+  R2,R5,R7,R9,R10,R13   results not meaningful — see below
+
+  WHY. With SMTP unconfigured the procedure refuses with PRECONDITION_FAILED
+  and the message "Password reset by email is not available on this deployment.
+  Please contact support." That is CORRECT behaviour and is itself a valuable
+  live verification (see §11). It means no token is ever issued locally, so the
+  issue → consume → single-use → session-invalidation round trip could not run.
+
+  I ATTEMPTED TO GET PAST IT AND STOPPED WHEN THE SYSTEM WAS RIGHT TO REFUSE:
+    - Running the bundle in development mode (which uses a ConsoleMailer
+      designed for exactly this) fails, because dist/index.js expects the
+      production asset pipeline.
+    - Pointing SMTP_HOST at a minimal local SMTP sink got as far as boot, where
+      `verify()` correctly failed on TLS (wrong version number), the mailer
+      deregistered, and reset stayed disabled.
+    - `allowInsecure` is gated on `!ENV.isProduction`, so a self-signed
+      certificate cannot be accepted in production mode. That is the right
+      design and I did not work around it.
+  The sink and its helper script were deleted; nothing was committed.
+
+
+================================================================================
+§8  HOW EXISTING TESTS WERE HELD HONEST
+================================================================================
+
+NINE EXISTING GUARDIANS FAILED CORRECTLY on deliberate contract changes. Each
+was updated with the reason recorded IN the test — never loosened, never
+deleted to make a build green.
+
+  1  subscriptionLifecycle    counted audit tables as a proxy for "no second
+                              audit framework". Replaced with the principle
+                              itself plus an explicit two-table list.
+  2  rfqTargetingAuthorization  its insert counter proves "exactly ONE credit
+                              was consumed"; commercial audit writes now
+                              excluded, mirroring the existing analytics
+                              exclusion.
+  3  projectWorkspaceStructure  REPLACED ENTIRELY. Its shape could not see the
+                              class of defect it was meant to prevent.
+  4  authorizationSweep       counted `await storagePut(` call sites; now
+                              counts the wrapper. Invariant unchanged.
+  5  storagePortability       same, and then anchored on `await` so the
+                              wrapper's own declaration is not miscounted as an
+                              eighth site.
+  6  aiAttachments            asserted the old single-path wording. The message
+                              is now the shared one, which is the point.
+  7  dashboardIntegration     asserted the exact shape of the redirect the fix
+                              had to change; now also asserts the query string
+                              survives.
+  8  routeIntegrity           its "/rfq/:id is NOT a route" assertion had
+                              already been flipped deliberately when the detail
+                              page was built; this session widened its scope
+                              and added exhaustive computed-href coverage.
+  9  projectFeatures          asserted `text/plain` was allowed. It was — by
+                              that function, and by nothing downstream.
+
+A NOTE ON THE PATTERN. Every one of these failures was a test doing its job.
+The instinct to relax a red assertion is exactly backwards: each was a chance
+to find out whether the change was right, and in two cases (3 and 9) the test's
+failure revealed that the TEST was wrong in a way that mattered more than the
+change.
+
+
+================================================================================
+§9  WHAT COULD NOT BE VERIFIED, AND EXACTLY WHY
+================================================================================
+
+  STAGING IS UNREACHABLE FROM THIS ENVIRONMENT.
+
+      curl https://buildhub-staging.onrender.com/
+      → curl: (56) CONNECT tunnel failed, response 403
+
+      The agent proxy refuses the tunnel. Consequences, all of them stated as
+      NOT DONE rather than glossed:
+        · no verification of the deployed SHA
+        · no staging gate run (scripts/staging-qa.mjs, 32 sections)
+        · no live IDOR sweep against staging
+        · no per-role browser acceptance against the deployed instance
+
+      Everything in §7 was verified against a locally built and locally run
+      instance of the same commit. That is meaningfully stronger than unit
+      tests and meaningfully weaker than staging. It is not presented as
+      staging verification anywhere in this document.
+
+  NO OBJECT STORAGE BACKEND.
+
+      No S3 endpoint and no Forge credentials are available here, so no upload
+      completes. The code refuses correctly, and THAT refusal is live-verified
+      — but the success path of every upload endpoint is not.
+
+  NO USABLE SMTP.
+
+      See §7. The fail-closed behaviour is live-verified; the token round trip
+      is unit-verified only.
+
+  DATABASE TLS.
+
+      Disabled for the local harness. Production defaults to `require`. Not
+      verified this session.
+
+  NOT EXAMINED AT ALL THIS SESSION — stated rather than omitted:
+
+      · accessibility audit (keyboard navigation, screen reader, contrast)
+      · performance measurement (page weight, query timing under load)
+      · reliability testing (concurrency, failure injection beyond the
+        specific transaction cases above)
+      · the 2.5MB client bundle, flagged by the build as over the 500KB
+        warning threshold. Pre-existing, unaddressed, and not a regression from
+        this session.
+
+
+================================================================================
+§10  OWNER DECISIONS — OPEN
+================================================================================
+
+None of these were silently decided. D1 is marked in the code at the point it
+applies.
+
+  D1  DUPLICATE QUOTATIONS.  ← the one that affects money changing hands
+      Nothing stops the same provider submitting several quotations on one RFQ,
+      and each one notifies the requester again. Whether a second submission
+      should be REFUSED, or should REPLACE the first as a revision, is a
+      product decision about how bidding works on BuildHub — not something to
+      infer from the schema. The code carries a KNOWN GAP comment at
+      rfqRouter.submitQuotation saying exactly this.
+
+  D2  Renovation finishing preset.
+  D3  Mandatory product fields — which of name, category, price, stock, unit
+      and delivery days a supplier must supply before a listing may publish.
+  D4  Comparison surface — what a homeowner sees side by side, and whether
+      provider identity is revealed before award.
+  D5  RFQ budget visibility to providers. The open feed currently shows it.
+  D6  Messaging relationship rule — who may message whom, and after what event.
+  D7  Q&A answer editing and moderation. An answer is currently write-once: a
+      supplier cannot correct a mistake, and nobody can remove an abusive one.
+
+
+================================================================================
+§11  VERIFICATION STATUS, SURFACE BY SURFACE
+================================================================================
+
+  SURFACE                                   STATUS
+  ----------------------------------------- ------------------------------------
+  Commercial audit trail — schema           LIVE VERIFIED (real MariaDB, SET
+                                            NULL survival proven by SQL)
+  Commercial audit trail — writes           LIVE VERIFIED for rfq_created;
+                                            UNIT VERIFIED for the other eight
+  Commercial audit trail — scoped reads     UNIT VERIFIED
+  RFQ detail page, provider view            LIVE VERIFIED
+  RFQ detail page, owner view               LIVE VERIFIED
+  RFQ detail page, not-found equivalence    LIVE VERIFIED
+  RFQ → respond handoff (?rfq=)             LIVE VERIFIED
+  Not-eligible notice                       LIVE VERIFIED
+  Unapproved-provider notice, EN and AR     LIVE VERIFIED
+  Quotation submission                      UNIT VERIFIED
+  Qualified enquiry / credit consumption    UNIT VERIFIED
+  Project Documents tab — render, states    LIVE VERIFIED
+  Project Documents tab — upload success    BLOCKED BY INFRASTRUCTURE
+  Unconfigured-storage refusal, customer    LIVE VERIFIED
+  Unconfigured-storage refusal, operator    LIVE VERIFIED
+  Content-type allowlist agreement          UNIT VERIFIED
+  Single document-upload implementation     UNIT VERIFIED (whole-client scan)
+  Dead-link sweep, 28 destinations          UNIT VERIFIED (whole-client scan)
+  Password reset — fail-closed capability   LIVE VERIFIED
+  Password reset — token lifecycle          UNIT VERIFIED (63 tests)
+  Password reset — round trip               BLOCKED BY INFRASTRUCTURE
+  Sign-up and sign-in                       LIVE VERIFIED
+  Project creation                          LIVE VERIFIED
+  RFQ creation                              LIVE VERIFIED
+  Role redirect after sign-in               LIVE VERIFIED
+  Compliance gate for unapproved providers  LIVE VERIFIED
+  Arabic rendering and RTL                  LIVE VERIFIED (RFQ detail only)
+  Deployed staging instance                 NOT VERIFIED — unreachable
+  Accessibility                             NOT VERIFIED
+  Performance                               NOT VERIFIED
+
+
+================================================================================
+§12  WHAT I WOULD DO NEXT, IN ORDER
+================================================================================
+
+  1.  MERGE AND DEPLOY TO STAGING, then re-run everything in §7 against the
+      deployed SHA. Both defects this session found were invisible to
+      source-level tests. Staging is where the remaining ones are, and this
+      environment cannot reach it.
+
+  2.  CONFIGURE S3 ON STAGING and complete one real document upload end to end.
+      The Documents tab is the only major workflow still unverified past the
+      dialog, and the upload path now has a well-defined refusal to compare
+      against.
+
+  3.  CONFIGURE SMTP ON STAGING and run the password reset round trip once, for
+      real. The lifecycle is thoroughly unit-tested; it has never been
+      exercised through an actual email.
+
+  4.  SETTLE D1. It is the one open decision that affects money changing hands,
+      and the code is already marked at the point it applies.
+
+  5.  RUN THE FULL STAGING GATE (scripts/staging-qa.mjs) with expect_commit
+      pinned to the deployed SHA, so the verdict cannot be read from a stale
+      deploy.
+
+  6.  ACCESSIBILITY AND PERFORMANCE. Neither was audited. I would not claim
+      either is fine, and I would not claim either is broken.
+
+  7.  CONSIDER instrumenting the remaining twelve declared CommercialAction
+      values — document_uploaded, attachment_added, rfq_closed and the rest.
+      The vocabulary is a closed union so a typo is a compile error, and the
+      table is already indexed for them.
+
+
+================================================================================
+§13  FILE-BY-FILE INVENTORY OF CHANGES
+================================================================================
+
+Diff versus origin/main @ 6a9e1e6 — 45 files, +5226 / −156.
+(Includes two commits made just before this session: the RFQ detail page and
+the supplier catalogue.)
+
+NEW FILES THIS SESSION
+    client/src/components/ProjectDocuments.tsx        the single document surface
+    server/_core/commercialAudit.ts                   recordCommercialEvent
+    server/commercialAudit.test.ts                    34 tests
+    server/projectDocumentsUi.test.ts                 15 tests
+    server/providerResponseHandoff.test.ts            21 tests
+    server/uploadUnavailable.test.ts                  12 tests
+    shared/linkedRfq.ts                               parseLinkedRfqId
+    drizzle/0023_commercial_audit_events.sql          hand-written migration
+    BUILDHUB_PRELAUNCH_SESSION_HANDOFF.txt            the handoff
+    BUILDHUB_PRELAUNCH_COMPLETE_RESPONSE.txt          this document
+
+MODIFIED — PRODUCTION CODE
+    server/routers.ts                       +493  audit instrumentation,
+                                                  storagePutOrUnavailable,
+                                                  answerQuestion projection
+    server/billing/enquiries.ts              +40  enquiryId returned from
+                                                  openQualifiedEnquiry
+    server/_core/trpcErrorLog.ts             +11  classify by name, not prose
+    drizzle/schema.ts                        +40  commercialAuditEvents
+    drizzle/meta/_journal.json                +9  migration 0023 entry
+    shared/projectFeatures.ts                +21  narrowed content-type list
+    client/src/pages/RFQDetail.tsx          +320  role-aware detail page
+    client/src/pages/RolePlatform.tsx        +41  ?rfq= handling, quote target
+    client/src/pages/ProviderDashboard.tsx   +19  the query-preserving forward
+    client/src/pages/ProjectDetail.tsx       +18  Documents tab wired up
+    client/src/components/QualifiedEnquiries.tsx  +44  highlight, not-eligible
+    client/src/components/ProjectDetailEnhancements.tsx  −  duplicate removed
+    client/src/contexts/LanguageContext.tsx   +2  enquiries.notInList EN and AR
+
+MODIFIED — TESTS
+    server/routeIntegrity.test.ts           +219  whole-client sweep
+    server/projectWorkspaceStructure.test.ts +82  replaced entirely
+    server/rfqTargetingAuthorization.test.ts +41  audit exclusion, no-id grant
+    server/notifications.test.ts             +31  no-id quotation
+    server/projectFeatures.test.ts           +37  allowlist agreement
+    server/authorizationSweep.test.ts        +17  counts the wrapper
+    server/storagePortability.test.ts        +16  counts the wrapper
+    server/dashboardIntegration.test.ts      +14  query string preserved
+    server/aiAttachments.test.ts              +7  shared refusal wording
+    server/subscriptionLifecycle.test.ts     +20  principle, not proxy
+
+
+================================================================================
+§14  REPRODUCING THE LOCAL VERIFICATION HARNESS
+================================================================================
+
+For whoever runs this next. Nothing here touches production.
+
+    # 1. a fresh database
+    mysql -ubh -p<pw> -h127.0.0.1 -e "CREATE DATABASE bh_live;"
+
+    # 2. every migration, from empty
+    DATABASE_URL="mysql://bh:<pw>@127.0.0.1:3306/bh_live" \
+      ./node_modules/.bin/drizzle-kit migrate
+
+    # 3. build and run the real bundle
+    npm run build
+    DATABASE_URL="mysql://bh:<pw>@127.0.0.1:3306/bh_live" \
+    JWT_SECRET="<throwaway>" PORT=3011 NODE_ENV=production \
+    DATABASE_SSL=disable \
+      node dist/index.js
+
+    # 4. accounts THROUGH THE REAL API, never by direct insert
+    POST /api/trpc/auth.signUp   body: {"json":{...}}
+         (the superjson transformer requires the "json" wrapper)
+
+    # 5. browser
+    chromium.launch({ executablePath: '/opt/pw-browsers/chromium' })
+         (the bundled Playwright expects build 1148; 1194 is what is installed)
+
+TEARDOWN PERFORMED: server stopped, SMTP sink stopped, `bh_live` dropped,
+scratch scripts deleted, working tree clean.
+
+
+================================================================================
+CLOSING
+================================================================================
+
+Nothing in production was touched. No production deployment, database,
+credentials, S3 bucket, SMTP relay, payment configuration, DNS record or user
+account was modified or created.
+
+No credential, session token, reset token or authorization header appears in
+any commit, log line, test, screenshot or document produced by this session.
+The handoff files were checked for credential-shaped strings before committing;
+zero matches.
+
+Every green claim in this document is labelled with how it was established.
+Every red one says whether it is a defect or an environment limit. The six
+defects I introduced myself are listed beside the eight I found, because a
+report that only contains the second kind is not an honest account of the work.
+
+The single most useful thing I can leave you with is §1: a fully green suite,
+a passing CI run, and fifty-two killed mutants did not stop a feature from
+being broken in a way a single click revealed. Deploy to staging and click
+things.
+
+================================================================================

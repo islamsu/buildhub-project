@@ -40,6 +40,17 @@ const providerStatus = (message: string): number | undefined => {
 export function classifyError(error: unknown): { category: ErrorCategory; status?: number } {
   const message = error instanceof Error ? error.message : String(error ?? '');
 
+  // MATCHED BY TYPE, NOT BY PROSE. `ObjectStorageNotConfiguredError` says "No
+  // object storage backend is configured" - which does not contain the literal
+  // "is not configured" the regex below looks for, so every upload on a
+  // deployment with no storage configured logged as 'unclassified' and told
+  // the operator to go read the deployment logs. It WAS the deployment log.
+  //
+  // A classifier that recognises errors by their message is one rewording away
+  // from being wrong, so the errors this codebase defines are matched by name.
+  const name = error instanceof Error ? error.name : '';
+  if (name === 'ObjectStorageNotConfiguredError') return { category: 'config-missing' };
+
   if (/is not configured/i.test(message)) return { category: 'config-missing' };
 
   const status = providerStatus(message);
@@ -75,8 +86,52 @@ const REMEDY: Record<ErrorCategory, string> = {
   'provider-network': 'the provider could not be reached',
   'response-parse': 'the provider replied in an unexpected shape',
   'database': 'the database rejected or dropped the query',
-  'unclassified': 'no classification matched - inspect the deployment logs around this line',
+  'unclassified': 'no classification matched - the origin below is where it was thrown',
 };
+
+/**
+ * The one thing an operator can be given about an unrecognised error without
+ * risking user data in a log line: WHERE it came from.
+ *
+ * The message is still withheld - a database error interpolates the offending
+ * value, a provider error echoes the request - but the error's class name and
+ * the first frames of its own stack are written by the runtime, not by a user,
+ * and they are what turns "something failed" into a file and a line number.
+ *
+ * Errors are also unwrapped: drizzle wraps a driver error in a
+ * DrizzleQueryError, so classifying only the outermost cause reported
+ * `unclassified` for a failure the `database` rule would have matched one
+ * level down.
+ */
+function originOf(error: unknown): string {
+  const chain: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
+    chain.push(current.name || current.constructor?.name || 'Error');
+    current = (current as { cause?: unknown }).cause;
+  }
+  const frames = (error instanceof Error && typeof error.stack === 'string')
+    // Frame lines only - never the first line, which is the message.
+    ? error.stack.split('\n').filter(line => /^\s+at /.test(line)).slice(0, 3)
+      .map(line => line.trim().replace(/^at /, ''))
+    : [];
+  const origin = chain.length > 0 ? chain.join(' <- ') : 'non-Error thrown';
+  return frames.length > 0 ? `${origin} at ${frames.join(' | ')}` : origin;
+}
+
+/** Walks the cause chain so a wrapped driver error is still classified. */
+export function classifyErrorChain(error: unknown): { category: ErrorCategory; status?: number } {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5; depth += 1) {
+    const result = classifyError(current);
+    if (result.category !== 'unclassified') return result;
+    if (!(current instanceof Error)) break;
+    const cause = (current as { cause?: unknown }).cause;
+    if (cause === undefined || cause === null) break;
+    current = cause;
+  }
+  return { category: 'unclassified' };
+}
 
 export function onError(opts: { error: TRPCError; path?: string; type: string }): void {
   // Expected, server-authored refusals (NOT_FOUND, FORBIDDEN, SERVICE_UNAVAILABLE,
@@ -85,9 +140,13 @@ export function onError(opts: { error: TRPCError; path?: string; type: string })
   // record here.
   if (opts.error.code !== 'INTERNAL_SERVER_ERROR') return;
 
-  const { category, status } = classifyError(opts.error.cause ?? opts.error);
+  const root = opts.error.cause ?? opts.error;
+  const { category, status } = classifyErrorChain(root);
   console.error(
     `[trpc] ${opts.type} ${opts.path ?? '<no path>'} failed: ${category}` +
-    `${status !== undefined ? ` (provider status ${status})` : ''} - ${REMEDY[category]}`,
+    `${status !== undefined ? ` (provider status ${status})` : ''} - ${REMEDY[category]}` +
+    // Only when nothing matched. A classified line is already actionable, and
+    // this is the case where the remedy would otherwise be circular.
+    `${category === 'unclassified' ? ` [origin: ${originOf(root)}]` : ''}`,
   );
 }

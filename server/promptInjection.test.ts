@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 import {
   neutralizeUntrusted,
   fenceUntrusted,
@@ -260,12 +261,11 @@ describe('the system prompt states that content is not instruction', () => {
 // ══ 4. THE SOURCE ITSELF ═══════════════════════════════════════════════════
 
 describe('the defence is applied at the interpolation site, not hoped for', () => {
-  const RECOMMENDATION = readFileSync(new URL('./recommendation.ts', import.meta.url), 'utf8')
+  const RECOMMENDATION = readSourceForAssertions(readFileSync(new URL('./recommendation.ts', import.meta.url), 'utf8'))
     // Strip comments first. This file explains what it is defending against,
     // and an assertion that matched its own prose would pass on a file that
     // described the defence without applying it.
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
+    ;
 
   it('every vendor-authored field in the candidate row is neutralised', () => {
     for (const field of ['v.name', 'v.location']) {

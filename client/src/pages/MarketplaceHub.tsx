@@ -128,7 +128,12 @@ export default function MarketplaceHub() {
             </p>
             <div className="relative max-w-2xl">
               <Search className="absolute start-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              {/* aria-label, not placeholder. A placeholder is not an
+                  accessible name: it disappears the moment there is text in the
+                  field, so a screen-reader user reviewing what they typed hears
+                  an unnamed edit box. */}
               <Input
+                aria-label={t('marketHub.searchPlaceholder')}
                 className="ps-12 h-14 text-base bg-white text-foreground shadow-xl rounded-xl"
                 placeholder={t('marketHub.searchPlaceholder')}
                 value={search}

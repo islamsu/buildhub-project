@@ -66,9 +66,12 @@ export default function HomeownerDashboard() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold">
+            {/* The page title is the page's h1. This was an h2 with no h1
+                anywhere in the document, so assistive technology had no
+                top-level heading to land on. */}
+            <h1 className="text-2xl font-bold">
               {t('dash.overview')} 👋
-            </h2>
+            </h1>
             <p className="text-muted-foreground mt-0.5">{t('dash.welcome')}, {user?.name?.split(' ')[0] ?? (lang === 'ar' ? 'هناك' : 'there')}!</p>
           </div>
           <div className="flex gap-2">

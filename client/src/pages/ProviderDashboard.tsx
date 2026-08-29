@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useAuth } from '@/_core/hooks/useAuth';
-import { useLocation } from 'wouter';
+import { useLocation, useSearch } from 'wouter';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
 
 // Legacy route (Phase 4A.6.4). The real, reachable vendor/provider dashboard
@@ -15,12 +15,25 @@ import { getRolePlatformPath } from '@/lib/rolePlatform';
 export default function ProviderDashboard() {
   const { user, isAuthenticated, loading } = useAuth();
   const [, navigate] = useLocation();
+  // THE QUERY STRING SURVIVES THE FORWARD.
+  //
+  // It did not, and that silently broke a feature: `/rfq/:id` sends a provider
+  // to the response surface carrying `?rfq=<id>`, the link resolved, the
+  // redirect fired, and the parameter was gone by the time anything could read
+  // it. Every source-level test passed - the link was correct, the parser was
+  // correct, the destination was correct - and the journey still did not work.
+  // Found by clicking it in a browser.
+  //
+  // Dropping parameters is wrong for a compatibility shim regardless of who
+  // relies on it: a redirect that discards half the address is not forwarding,
+  // it is truncating.
+  const search = useSearch();
   const userRole = (user as any)?.userRole ?? 'contractor';
 
   useEffect(() => {
     if (loading) return;
-    if (isAuthenticated) navigate(getRolePlatformPath(userRole));
-  }, [loading, isAuthenticated, userRole, navigate]);
+    if (isAuthenticated) navigate(`${getRolePlatformPath(userRole)}${search ? `?${search.replace(/^\?/, '')}` : ''}`);
+  }, [loading, isAuthenticated, userRole, search, navigate]);
 
   if (loading) return null;
   if (!isAuthenticated) { window.location.href = '/auth?mode=login'; return null; }

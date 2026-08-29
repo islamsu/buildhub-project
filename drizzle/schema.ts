@@ -402,6 +402,48 @@ export const rfqs = mysqlTable('rfqs', {
 }));
 
 // ── Quotations ─────────────────────────────────────────────────────────────
+/**
+ * THE LINES OF AN RFQ.
+ *
+ * An RFQ could not say WHAT was being asked for. It had a title, a free-text
+ * description and `productReference` - ONE optional {productId, variantId,
+ * variantLabel}. No quantities. No units. No per-item specifications. No
+ * second item.
+ *
+ * The UI promised otherwise: a button labelled "Add to RFQ list" / "أضف إلى
+ * طلب الأسعار" on the product page wrote a SINGLE localStorage key, so adding
+ * a second product silently discarded the first; and the same button on the
+ * marketplace grid fired a success toast and did nothing at all. A customer
+ * pricing a bathroom needs tiles AND cement AND rebar in one request, and
+ * could not express it.
+ *
+ * WHY THE SNAPSHOT COLUMNS EXIST. `productId` is SET NULL on delete and the
+ * name, unit and price are copied at submission time. A supplier who later
+ * renames, reprices or withdraws a product must not retroactively change what
+ * a customer asked for or what a supplier quoted against - the request is a
+ * commercial record, not a live join.
+ */
+export const rfqItems = mysqlTable('rfqItems', {
+  id:        int('id').autoincrement().primaryKey(),
+  rfqId:     int('rfqId').notNull().references(() => rfqs.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  /** Null for a free-text line, or once the catalogue product is gone. */
+  productId: int('productId').references(() => products.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  /** What the customer asked for, as it read when they asked. Never re-derived. */
+  name:      varchar('name', { length: 255 }).notNull(),
+  variantLabel: varchar('variantLabel', { length: 120 }),
+  quantity:  decimal('quantity', { precision: 12, scale: 2 }).notNull(),
+  unit:      varchar('unit', { length: 40 }),
+  /** The customer's own words for this line: grade, finish, tolerance. */
+  specifications: text('specifications'),
+  /** The catalogue price when it was added, for reference only - not a quote. */
+  unitPriceSnapshot: decimal('unitPriceSnapshot', { precision: 12, scale: 2 }),
+  position:  int('position').notNull().default(0),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  rfqIdIdx: index('rfqItems_rfqId_idx').on(table.rfqId),
+  productIdIdx: index('rfqItems_productId_idx').on(table.productId),
+}));
+
 export const quotations = mysqlTable('quotations', {
   id:           int('id').autoincrement().primaryKey(),
   rfqId:        int('rfqId').notNull().references(() => rfqs.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
@@ -412,6 +454,20 @@ export const quotations = mysqlTable('quotations', {
   warranty:     varchar('warranty', { length: 100 }),
   paymentTerms: text('paymentTerms'),
   notes:        text('notes'),
+  /**
+   * The supplier's supporting files: a proposal, a technical specification, a
+   * certificate, product photos. JSON array of {key,url,name,type,size}, the
+   * same shape rfqs.attachments uses.
+   *
+   * A quotation without them is a price and a sentence. Real construction
+   * bidding is not conducted that way, and until this column existed a
+   * supplier could not send a single document with their bid.
+   *
+   * Read access is NOT public and not "any authenticated user": it is the
+   * uploading supplier and the requester of the RFQ being quoted on. Enforced
+   * in storageProxy.ts under the `quotation-attachments/` prefix.
+   */
+  attachments:  text('attachments'),
   status:       mysqlEnum('status', ['pending', 'accepted', 'rejected']).default('pending'),
   createdAt:    timestamp('createdAt').defaultNow().notNull(),
 }, table => ({
@@ -814,3 +870,43 @@ export type VendorSubscription = typeof vendorSubscriptions.$inferSelect;
 export type InsertVendorSubscription = typeof vendorSubscriptions.$inferInsert;
 export type BillingEvent = typeof billingEvents.$inferSelect;
 export type TestLoginToken = typeof testLoginTokens.$inferSelect;
+
+// ── Commercial audit trail ─────────────────────────────────────────────────
+//
+// SEPARATE FROM userAccountAuditEvents, deliberately. That table records what
+// happened to an ACCOUNT - created, role changed, password reset, admin action
+// - and its shape says so: userId is the subject. A commercial event has a
+// different subject (an RFQ, a quotation, a product, a document) and a
+// different audience, and forcing both through one table would mean either
+// column names that lie or a subject that has to be inferred from the action
+// string.
+//
+// WHY ownerId IS DENORMALISED HERE. An audit read has to be permission-scoped -
+// a supplier may see the trail for their own products, not everyone's - and
+// resolving that at read time would mean a different join per subject type,
+// four of them, each able to drift. Recording who the record belonged to AT THE
+// TIME is also more truthful for an audit trail than looking it up later, when
+// ownership may have changed.
+export const commercialAuditEvents = mysqlTable('commercialAuditEvents', {
+  id:          int('id').autoincrement().primaryKey(),
+  // SET NULL, like userAccountAuditEvents: the trail must outlive its actor, and
+  // RESTRICT here would make a user undeletable by virtue of having done work.
+  actorId:     int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  // Who the subject record belonged to when the event happened.
+  ownerId:     int('ownerId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  subjectType: mysqlEnum('subjectType', ['rfq', 'quotation', 'product', 'document', 'enquiry', 'message']).notNull(),
+  // Deliberately NOT a foreign key. An audit row must survive its subject being
+  // deleted - that deletion is often the very thing worth auditing - and a FK
+  // would either block it or cascade the evidence away.
+  subjectId:   int('subjectId').notNull(),
+  action:      varchar('action', { length: 64 }).notNull(),
+  // Free-text context: the status transition, the price, the filename. Never
+  // credentials, and never the full body of a private document.
+  detail:      text('detail'),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  subjectIdx:  index('commercialAuditEvents_subject_idx').on(table.subjectType, table.subjectId),
+  actorIdx:    index('commercialAuditEvents_actorId_idx').on(table.actorId),
+  ownerIdx:    index('commercialAuditEvents_ownerId_idx').on(table.ownerId),
+  createdIdx:  index('commercialAuditEvents_createdAt_idx').on(table.createdAt),
+}));

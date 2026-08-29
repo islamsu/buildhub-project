@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { trpc } from '@/lib/trpc';
+import { useRfqBasket } from '@/hooks/useRfqBasket';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { Link } from 'wouter';
 import { useEffect, useRef, useState } from 'react';
@@ -19,7 +20,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import QuotationComparison from '@/components/QuotationComparison';
 import { parseProductReference, parseRfqAttachments } from '@shared/rfqAttachments';
-import { RFQ_CATEGORIES as rfqCategories, rfqCategoryLabel } from '@shared/rfqCategories';
+import { RFQ_CATEGORIES as rfqCategories, rfqCategoryLabel, type RfqCategory } from '@shared/rfqCategories';
 
 // Phase 4B.3: the category list now comes from the shared taxonomy that RFQ
 // targeting also matches against, so the two sides can never drift apart.
@@ -65,7 +66,13 @@ export default function RFQPage() {
     && ['contractor', 'supplier', 'engineer', 'architect', 'project_manager']
       .includes((user as { userRole?: string } | null)?.userRole ?? '');
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
+  // `category` is typed to the taxonomy rather than to string, so an
+  // unclassifiable value cannot reach rfq.create even by accident - the same
+  // rule the server enforces, enforced again at compile time.
+  const [form, setForm] = useState<{
+    title: string; description: string; category: RfqCategory | '';
+    budget: string; location: string; deadline: string;
+  }>({
     title: '', description: '', category: '', budget: '', location: '', deadline: '',
   });
   const [linkedProjectId, setLinkedProjectId] = useState<string>('none');
@@ -79,6 +86,7 @@ export default function RFQPage() {
   const [uploadSpeed, setUploadSpeed] = useState(0);
   const [uploadEta, setUploadEta] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const basket = useRfqBasket();
   const uploadAttachment = trpc.rfq.uploadAttachment.useMutation();
 
   useEffect(() => {
@@ -171,6 +179,8 @@ export default function RFQPage() {
       setAttachments([]);
       setMarketplaceProduct(null);
       localStorage.removeItem('bh-rfq-product');
+      // The lines are rows in the database now; the draft has served its purpose.
+      basket.clear();
       refetch();
     },
     onError: (e) => toast.error(e.message),
@@ -217,8 +227,15 @@ export default function RFQPage() {
                     value={form.description}
                     onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                   />
-                  <Select onValueChange={v => setForm(f => ({ ...f, category: v }))}>
-                    <SelectTrigger><SelectValue placeholder={t('rfq.category')} /></SelectTrigger>
+                  {/* REQUIRED. An RFQ with no category is one the qualified-enquiry
+                      system can never serve: openQualifiedEnquiry refuses it as
+                      `unclassified_rfq`, so it sits in the open feed collecting
+                      no responses forever. Saying so here beats a server
+                      rejection after the form is filled. */}
+                  <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v as RfqCategory }))}>
+                    <SelectTrigger data-testid="rfq-category">
+                      <SelectValue placeholder={`${t('rfq.category')} *`} />
+                    </SelectTrigger>
                     <SelectContent>
                       {CATEGORIES.map(c => <SelectItem key={c} value={c}>{rfqCategoryLabel(c, lang)}</SelectItem>)}
                     </SelectContent>
@@ -256,7 +273,64 @@ export default function RFQPage() {
                       </Select>
                     </div>
                   )}
-                  {marketplaceProduct && <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm"><div><p className="font-medium">{lang === 'ar' ? 'منتج مرتبط بطلب الأسعار' : 'Linked marketplace product'}</p><p className="text-xs text-muted-foreground">#{marketplaceProduct.productId} · {marketplaceProduct.variantLabel}</p></div><button type="button" className="text-xs text-muted-foreground underline" onClick={() => { setMarketplaceProduct(null); localStorage.removeItem('bh-rfq-product'); }}>{lang === 'ar' ? 'إزالة' : 'Remove'}</button></div>}
+                  {/*
+                    THE BASKET, REVIEWED BEFORE IT IS SENT.
+                    Every line the customer collected, with the quantity they
+                    can still change here, the specification they can add, and
+                    the line they can drop. These become rfqItems rows.
+                  */}
+                  {basket.count > 0 && (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3" data-testid="rfq-basket">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-sm font-medium">
+                          {lang === 'ar' ? `الأصناف المطلوبة (${basket.count})` : `Requested items (${basket.count})`}
+                        </p>
+                        <button type="button" className="text-xs text-muted-foreground underline"
+                          data-testid="rfq-basket-clear" onClick={() => basket.clear()}>
+                          {lang === 'ar' ? 'إفراغ القائمة' : 'Clear list'}
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {basket.items.map(item => (
+                          <div key={item.key} className="rounded-md border bg-background p-2" data-testid="rfq-basket-item">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium" data-testid="rfq-basket-item-name">{item.name}</p>
+                                {item.variantLabel && <p className="text-xs text-muted-foreground">{item.variantLabel}</p>}
+                              </div>
+                              <button type="button" className="shrink-0 text-xs text-muted-foreground underline"
+                                data-testid="rfq-basket-remove"
+                                aria-label={lang === 'ar' ? `إزالة ${item.name}` : `Remove ${item.name}`}
+                                onClick={() => basket.remove(item.key)}>
+                                {lang === 'ar' ? 'إزالة' : 'Remove'}
+                              </button>
+                            </div>
+                            <div className="mt-2 flex items-center gap-2">
+                              <Input type="number" min={0.01} step="any" className="h-8 w-24"
+                                data-testid="rfq-basket-quantity"
+                                aria-label={lang === 'ar' ? `الكمية لـ ${item.name}` : `Quantity for ${item.name}`}
+                                value={String(item.quantity)}
+                                onChange={event => basket.update(item.key, Number(event.target.value))} />
+                              <span className="text-xs text-muted-foreground">{item.unit || (lang === 'ar' ? 'وحدة' : 'unit')}</span>
+                            </div>
+                            <Input className="mt-2 h-8 text-xs"
+                              data-testid="rfq-basket-spec"
+                              aria-label={lang === 'ar' ? `المواصفات لـ ${item.name}` : `Specifications for ${item.name}`}
+                              placeholder={lang === 'ar' ? 'مواصفات (اختياري)' : 'Specifications (optional)'}
+                              value={item.specifications ?? ''}
+                              onChange={event => basket.specify(item.key, event.target.value)} />
+                          </div>
+                        ))}
+                      </div>
+                      {basket.subtotal != null && (
+                        <p className="mt-2 text-xs text-muted-foreground" data-testid="rfq-basket-subtotal">
+                          {lang === 'ar'
+                            ? `السعر المعروض في السوق: ${basket.subtotal.toLocaleString()} ج.م — ليس عرض سعر`
+                            : `Catalogue value: EGP ${basket.subtotal.toLocaleString()} — not a quotation`}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {/* Attachments */}
                   <div className="space-y-2">
                     <label className="text-xs text-muted-foreground flex items-center gap-1">
@@ -332,19 +406,44 @@ export default function RFQPage() {
 
                   <Button
                     className="w-full gap-2"
-                    onClick={() => createRfq.mutate({
+                    onClick={() => {
+                      // Narrows `category` off '' for real rather than casting
+                      // it away. The button is disabled in this state, so this
+                      // is the type system agreeing with the UI, not a second
+                      // rule that could drift from it.
+                      if (!form.category) return;
+                      createRfq.mutate({
                       ...form,
+                      category: form.category,
                       budget: form.budget ? parseFloat(form.budget) : undefined,
                       deadline: form.deadline ? new Date(form.deadline) : undefined,
                       projectId: linkedProjectId !== 'none' ? Number(linkedProjectId) : undefined,
                       productReference: marketplaceProduct ?? undefined,
+                      items: basket.items.length > 0
+                        ? basket.items.map(item => ({
+                            productId: item.productId,
+                            name: item.name,
+                            variantLabel: item.variantLabel,
+                            quantity: item.quantity,
+                            unit: item.unit,
+                            specifications: item.specifications,
+                          }))
+                        : undefined,
                       attachments: attachments.length > 0 ? attachments : undefined,
-                    })}
-                    disabled={createRfq.isPending || uploading || !form.title}
+                      });
+                    }}
+                    disabled={createRfq.isPending || uploading || !form.title || !form.category}
                   >
                     <Send className="w-4 h-4" />
                     {createRfq.isPending ? t('rfq.submitting') : t('rfq.submit')}
                   </Button>
+                  {!form.category && (
+                    <p className="text-xs text-muted-foreground" data-testid="rfq-category-required">
+                      {lang === 'ar'
+                        ? 'اختر فئة حتى يتمكن الموردون المطابقون من رؤية طلبك والرد عليه.'
+                        : 'Choose a category so matching suppliers can see your request and respond to it.'}
+                    </p>
+                  )}
                 </div>
               </DialogContent>
             </Dialog>
@@ -370,7 +469,12 @@ export default function RFQPage() {
             const statusStyle = STATUS_STYLES[rfq.status ?? 'open'] ?? STATUS_STYLES.open;
 
             return (
-              <Card key={rfq.id} className="card-hover transition-shadow hover:shadow-md">
+              /* NOT card-hover. The lift on hover said "this card is a link",
+                 and the card body is not one: it holds its own attachment
+                 links and its own CTAs, so making the whole card navigate
+                 would swallow them. The affordance now belongs to the "View
+                 details" button, which is what actually opens the request. */
+              <Card key={rfq.id} className="transition-shadow hover:shadow-md">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div className="flex-1 min-w-0">
@@ -450,6 +554,11 @@ export default function RFQPage() {
                         is gated on approval and declared categories. It routes
                         to the surface that owns the decision. */}
                     <div className="flex flex-col items-end gap-2 shrink-0">
+                      <Link href={`/rfq/${rfq.id}`}>
+                        <Button variant="ghost" size="sm" className="gap-1.5" data-testid="rfq-open-detail">
+                          {lang === 'ar' ? 'عرض التفاصيل' : 'View details'}
+                        </Button>
+                      </Link>
                       {isOwner ? (
                         <Button
                           variant="default"
@@ -460,9 +569,19 @@ export default function RFQPage() {
                           <BarChart3 className="w-4 h-4" /> {t('rfq.compare')}
                         </Button>
                       ) : isProvider && rfq.status === 'open' ? (
-                        <Link href="/provider">
+                        /* TO THE REQUEST, not to a dashboard.
+                           This was `/provider` - a bare link to the legacy shim
+                           that forwards to /platform/:role. A supplier clicking
+                           "Respond" on one specific card was dropped on a generic
+                           workspace with no memory of which request they had
+                           chosen, and had to find it again in a list.
+                           `/rfq/:id` is the review experience: the brief, the
+                           category, the location, and an honest statement of what
+                           is free and what a credit buys. The respond CTA there
+                           carries the id onward. */
+                        <Link href={`/rfq/${rfq.id}`}>
                           <Button variant="outline" size="sm" className="gap-1.5" data-testid="rfq-respond">
-                            {lang === 'ar' ? 'الرد على هذا الطلب' : 'Respond to this request'}
+                            {lang === 'ar' ? 'عرض الطلب والرد عليه' : 'View and respond'}
                           </Button>
                         </Link>
                       ) : null}

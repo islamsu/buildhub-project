@@ -223,19 +223,21 @@ export async function findRfqOpportunities(params: {
     deadline: entry.row.deadline,
     score: entry.score,
     reasons: entry.reasons,
-    // ROUTES THAT EXIST. These were `/rfq/${id}`, which is NOT a route: App.tsx
-    // registers `/rfq` and nothing matches `/rfq/:id`, so both prepared actions
-    // fell through to the 404 page. That is precisely the dead control this
-    // engine is supposed to refuse to emit, shipped by the engine itself - the
-    // route check that covers shared/aiRoles.ts never covered hrefs built here.
+    // ROUTES THAT EXIST, and routeIntegrity.test.ts holds every href here
+    // against the real table in App.tsx.
     //
-    // `/rfq` is the list, where the RFQ is visible. `/provider` forwards a
-    // signed-in provider to their role platform, which is where the
-    // credit-gated enquiry list and the quotation form actually live. A
-    // dedicated RFQ detail page does not exist and is recorded as a gap rather
-    // than linked to as though it did.
+    // These were `/rfq/${id}` when no such route existed, and both actions fell
+    // through to the 404 page - the dead control this engine is meant to refuse
+    // to emit, shipped by the engine itself. They were then pointed at `/rfq`
+    // while the detail page was missing. The detail page now EXISTS, so
+    // view_rfq addresses the record directly again, which is what the action
+    // always claimed to do.
+    //
+    // `/provider` forwards a signed-in provider to their role platform, where
+    // the credit-gated enquiry and the quotation form live. Viewing is free;
+    // opening the enquiry is what costs.
     actions: [
-      { state: 'prepared', action: 'view_rfq', href: '/rfq', requiresConfirmation: false },
+      { state: 'prepared', action: 'view_rfq', href: `/rfq/${entry.row.id}`, requiresConfirmation: false },
       // Opening the enquiry SPENDS A CREDIT. It is offered as an action and
       // marked as needing confirmation; nothing here performs it.
       { state: 'prepared', action: 'open_enquiry', href: '/provider', requiresConfirmation: true },

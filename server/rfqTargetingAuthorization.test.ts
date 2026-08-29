@@ -12,6 +12,7 @@ import { allowancePeriodFor } from './billing/entitlements';
 import { getEnquiryUsage, openQualifiedEnquiry } from './billing/enquiries';
 import {
   analyticsEvents as analyticsEventsTable,
+  commercialAuditEvents as commercialAuditEventsTable,
   qualifiedEnquiries as qualifiedEnquiriesTable,
   reviews as reviewsTable,
   rfqs as rfqsTable,
@@ -177,10 +178,18 @@ function fakeDb(scenario: Scenario = {}) {
     }),
     insert: (table: unknown) => ({
       values: (values: Record<string, unknown> | Record<string, unknown>[]) => {
-        if (table === analyticsEventsTable) {
+        if (table === analyticsEventsTable || table === commercialAuditEventsTable) {
           // Not counted as an insert attempt, and not subject to the
-          // duplicate-key race simulation: it is a different table on a
-          // fire-and-forget path.
+          // duplicate-key race simulation: these are different tables on
+          // fire-and-forget paths.
+          //
+          // commercialAuditEvents joined analyticsEvents here when the
+          // commercial trail was added. The assertions in this file count
+          // inserts to prove "exactly ONE credit was consumed", and an audit
+          // row written beside the credit would inflate that count and make
+          // the test fail for a reason that has nothing to do with billing.
+          // Counting the table that is meant is a better instrument than
+          // counting every write.
           for (const row of Array.isArray(values) ? values : [values]) analyticsInserted.push(row);
           return Promise.resolve();
         }
@@ -422,6 +431,32 @@ describe('openEnquiry - duplicate and refresh prevention (Phase 4B.3 §15)', () 
     expect(third.alreadyConsumed).toBe(true);
     expect(fake.inserted).toHaveLength(1);
     expect(third.usage.used).toBe(1);
+  });
+
+  /**
+   * A CREDIT-SPENDING ACTION MUST NOT FAIL FOR A BOOKKEEPING DETAIL.
+   *
+   * `openQualifiedEnquiry` reads the inserted row's id so the commercial audit
+   * trail can point at the billable record. That read happens INSIDE the
+   * transaction that spends the credit, so if it threw, the vendor would lose
+   * a lead because an audit id could not be captured - exactly backwards.
+   *
+   * This driver's insert stub resolves with no result at all, which is the
+   * harshest version of that case. Every other test in this file passes
+   * through the same stub, so the property was already covered by accident;
+   * asserting it here means it survives somebody making the stub more
+   * realistic later.
+   */
+  it('the grant survives an insert that yields no id at all', async () => {
+    const fake = fakeDb({ rfq: materialsRfq, categories: ['Materials'], subscription: null });
+    vi.mocked(getDb).mockResolvedValue(fake.db as never);
+
+    const result = await appRouter.createCaller(makeCtx(10)).rfq.openEnquiry({ rfqId: 501 });
+
+    // The lead is granted and the credit is spent, which is what the vendor paid for.
+    expect(result.alreadyConsumed).toBe(false);
+    expect(fake.inserted).toHaveLength(1);
+    expect(result.rfq?.id).toBe(501);
   });
 
   it('REFRESH AT THE LIMIT: an already-paid lead stays open even once the allowance is exhausted', async () => {

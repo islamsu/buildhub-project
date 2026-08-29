@@ -47,7 +47,19 @@ describe('dashboard reachability - root cause fix (items 1-2)', () => {
   it('the legacy /provider route still exists and still forwards an authenticated user to the correct platform path (old bookmarks/links keep working) - the redirect itself was correct and was intentionally NOT removed', () => {
     const legacy = read('../client/src/pages/ProviderDashboard.tsx');
     expect(legacy).toContain('getRolePlatformPath');
-    expect(legacy).toMatch(/if \(isAuthenticated\) navigate\(getRolePlatformPath\(userRole\)\)/);
+    expect(legacy).toMatch(/if \(isAuthenticated\) navigate\(`\$\{getRolePlatformPath\(userRole\)\}/);
+  });
+
+  it('and the forward carries the QUERY STRING, which it once discarded', () => {
+    // A redirect that drops half the address is not forwarding, it is
+    // truncating. This silently broke a feature: `/rfq/:id` sent a provider
+    // here carrying `?rfq=<id>`, the link resolved, the redirect fired, and the
+    // parameter was gone before anything could read it. Every source-level test
+    // passed - the link, the parser and the destination were all correct - and
+    // the journey still did not work. Found by clicking it in a browser.
+    const legacy = read('../client/src/pages/ProviderDashboard.tsx');
+    expect(legacy).toContain('useSearch');
+    expect(legacy).toMatch(/navigate\(`\$\{getRolePlatformPath\(userRole\)\}\$\{search \?/);
   });
 });
 
@@ -82,13 +94,24 @@ describe('fake dashboard statistics removed (item 9)', () => {
 });
 
 describe('role boundary regression (items 3-5)', () => {
-  it('3. homeowner navigation is unaffected - RolePlatform only renders the Vendor Performance section for isProfessional, and HomeownerWorkspace is untouched', () => {
+  it('3. a homeowner gets the homeowner workspace and none of the vendor surfaces', () => {
     const rolePlatform = read('../client/src/pages/RolePlatform.tsx');
     expect(rolePlatform).toContain("const isProfessional = role !== 'homeowner';");
-    expect(rolePlatform).toContain('role === \'homeowner\' ? (\n          <HomeownerWorkspace');
-    // The Vendor Performance section is gated behind isProfessional, so a homeowner never sees it.
-    const sectionStart = rolePlatform.indexOf('{isProfessional && (\n          <section id="role-performance">');
-    expect(sectionStart).toBeGreaterThan(-1);
+    expect(rolePlatform).toContain('<HomeownerWorkspace');
+    // The rule is the GATE, not the exact formatting of the branch. A homeowner
+    // later gained a self-scoped profile section of their own - that is their
+    // own account, not a vendor surface - so pinning the literal source text of
+    // the branch was testing the whitespace rather than the boundary.
+    for (const vendorOnly of ['<section id="role-performance">', '<section id="role-billing">', '<section id="role-enquiries">']) {
+      const at = rolePlatform.indexOf(vendorOnly);
+      expect(at, `${vendorOnly} must exist`).toBeGreaterThan(-1);
+      const before = rolePlatform.slice(Math.max(0, at - 60), at);
+      expect(before, `${vendorOnly} must be gated on isProfessional`).toContain('{isProfessional && (');
+    }
+    // And the vendor-only components are never mounted outside that gate.
+    for (const vendorComponent of ['<VendorBilling', '<VendorAnalytics', '<QualifiedEnquiries', '<VendorServiceCategories']) {
+      expect(rolePlatform.split(vendorComponent).length - 1, `${vendorComponent} is mounted more than once`).toBe(1);
+    }
   });
 
   it('4. all 4 other provider roles (engineer, architect, supplier, project_manager) keep their own distinct workspace branches, unmodified by this phase', () => {

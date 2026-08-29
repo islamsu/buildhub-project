@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Progress } from '@/components/ui/progress';
 import { rfqCategoryLabel } from '@shared/rfqCategories';
 import { Calendar, DollarSign, FileText, Inbox, Lock, MapPin, Paperclip, Unlock } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * Phase 4B.3: the vendor's qualified-enquiry inbox.
@@ -24,7 +24,14 @@ import { useState } from 'react';
  * threw it away - so the one thing the credit buys was never shown. The detail
  * the server already sends is now rendered.
  */
-export default function QualifiedEnquiries() {
+/**
+ * `highlightRfqId` is the request the vendor arrived from - the RFQ detail page
+ * links here rather than ending at a generic dashboard, which is where the
+ * journey used to stop. It only ever draws attention to a row that is already
+ * in this list; it never adds one, and it never opens an enquiry, because that
+ * spends a credit and the vendor has to choose to do it.
+ */
+export default function QualifiedEnquiries({ highlightRfqId }: { highlightRfqId?: number } = {}) {
   const { lang, t } = useLanguage();
   const ar = lang === 'ar';
   const utils = trpc.useUtils();
@@ -34,6 +41,14 @@ export default function QualifiedEnquiries() {
   // than refetched: rfq.get is requester-scoped, so a vendor cannot read the
   // detail through it, and this response IS the vendor's authorized copy.
   const [detail, setDetail] = useState<Record<string, any> | null>(null);
+
+  // Bring the row the vendor came for into view once the list has loaded.
+  const highlightRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (highlightRfqId && highlightRef.current) {
+      highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlightRfqId, isLoading]);
 
   const open = trpc.rfq.openEnquiry.useMutation({
     onSuccess: result => {
@@ -91,9 +106,32 @@ export default function QualifiedEnquiries() {
           </div>
         )}
 
+        {/* THE HONEST ANSWER TO "why can't I respond to this?".
+            The vendor followed a link from a specific request and it is not in
+            their eligible list. Only the server knows which of the reasons
+            applies, and it is not asked here - so both are stated rather than
+            one being guessed at and shown as fact. Silence would leave the
+            vendor scanning a list for something that was never going to be in
+            it. */}
+        {highlightRfqId !== undefined && !items.some(item => item.id === highlightRfqId) && (
+          <div
+            className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+            data-testid="enquiry-not-eligible"
+          >
+            {t('enquiries.notInList')}
+          </div>
+        )}
+
         <div className="space-y-2">
           {items.map(item => (
-            <div key={item.id} className="rounded-lg border p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div
+              key={item.id}
+              ref={item.id === highlightRfqId ? highlightRef : undefined}
+              data-testid={item.id === highlightRfqId ? 'enquiry-highlighted' : 'enquiry-row'}
+              className={`rounded-lg border p-3 flex flex-col sm:flex-row sm:items-center gap-3 ${
+                item.id === highlightRfqId ? 'border-primary ring-2 ring-primary/20' : ''
+              }`}
+            >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-sm truncate">{item.title}</span>

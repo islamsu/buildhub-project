@@ -137,9 +137,18 @@ describe('§1 every procedure is pinned to a tier', () => {
       'marketplace.categories',
       'marketplace.featuredVendors',
       'marketplace.get',
+      'marketplace.importTemplate',
       'marketplace.list',
+      // Real platform counts for the landing and sign-up pages, which are
+      // both seen while logged out. It returns four aggregate numbers and no
+      // row, no id and nothing about any individual - see
+      // server/platformStats.ts. It replaced four hardcoded marketing figures.
+      'marketplace.platformStats',
       'marketplace.questions',
       'marketplace.vendorCategories',
+      // One vendor's published catalogue, for the vendor detail page. Public
+      // for the same reason marketplace.list is: it is the shop window.
+      'marketplace.vendorProducts',
       'marketplace.vendors',
       // A vendor's public reputation, shown on their profile.
       'reviews.forUser',
@@ -379,8 +388,11 @@ describe('§2c messages', () => {
     // literal backslash-backslash inside a regex literal.
     expect(ROUTERS_CODE.includes('[^' + String.fromCharCode(92, 92) + 'w.-]')).toBe(false);
     // And the correct single-backslash form is there, once per endpoint that
-    // uses it (project documents, RFQ attachments, message attachments).
-    expect((ROUTERS_CODE.match(/\[\^\\w\.-\]\+/g) ?? []).length).toBe(3);
+    // uses it: project documents, RFQ attachments, message attachments,
+    // product images (the supplier catalogue), and QUOTATION attachments -
+    // the fifth, added when a supplier gained the ability to send a proposal
+    // or certificate with a bid.
+    expect((ROUTERS_CODE.match(/\[\^\\w\.-\]\+/g) ?? []).length).toBe(5);
   });
 });
 
@@ -480,12 +492,23 @@ describe('§3 uploads are checked against their bytes', () => {
     // rather than assertUploadedFileMatches (it returns a typed rejection
     // instead of throwing), and a test that counted only the latter would have
     // read a genuinely-verified sixth endpoint as an unverified one.
-    const puts = (ROUTERS.match(/await storagePut\(/g) ?? []).length;
+    // COUNTS THE WRAPPER NOW. Every upload site moved to
+    // `storagePutOrUnavailable`, so that an unconfigured deployment answers
+    // 503 with a readable reason instead of a generic 500 - the invariant this
+    // test protects is unchanged, only the name of the call it counts.
+    const puts = (ROUTERS.match(/await storagePutOrUnavailable\(/g) ?? []).length;
     // Minus one for the helper's own definition.
     const asserted = (ROUTERS.match(/assertUploadedFileMatches\(/g) ?? []).length - 1;
     const validated = (ROUTERS.match(/validateAiAttachment\(/g) ?? []).length;
 
-    expect(puts).toBe(6);
+    // SEVEN, not six: uploadProductImage joined the set when the supplier
+    // catalogue gained image management. The number is asserted rather than
+    // ranged so that adding an eighth upload path is a deliberate edit here
+    // and not something that slips in unvalidated.
+    // EIGHT since a supplier gained the ability to attach a proposal, a
+    // specification, a certificate or a photograph to their quotation - the
+    // eighth upload path, and the first that flows provider -> customer.
+    expect(puts).toBe(8);
     expect(asserted + validated).toBe(puts);
   });
 

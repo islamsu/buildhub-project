@@ -105,6 +105,37 @@ describe('rfq.submitQuotation notifies the RFQ owner', () => {
     expect(notifyValues).toHaveBeenCalledWith(expect.objectContaining({ userId: 1, type: 'quotation' }));
   });
 
+  /**
+   * THE QUOTATION IS THE PRODUCT; ITS AUDIT ID IS BOOKKEEPING.
+   *
+   * The procedure reads the inserted row's id so the commercial trail can
+   * point at the quotation rather than at the RFQ. If that read threw, a
+   * supplier's bid would be rejected because an audit id could not be
+   * captured - the customer loses a quotation to protect a log entry, which is
+   * the exact inversion this trail is designed to avoid elsewhere.
+   *
+   * A driver that resolves with nothing is the harshest form of that case.
+   */
+  it('a quotation is accepted even when the insert yields no id', async () => {
+    const insertValues = vi.fn().mockResolvedValue(undefined);
+    const notifyValues = vi.fn().mockResolvedValue(undefined);
+    let insertCall = 0;
+    const db = {
+      insert: vi.fn(() => {
+        insertCall += 1;
+        return { values: insertCall === 1 ? insertValues : notifyValues };
+      }),
+      select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([{ requesterId: 1, title: 'Kitchen renovation', status: 'open' }]) }) }),
+    };
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+
+    const caller = appRouter.createCaller(makeCtx(20, 'contractor'));
+    await expect(caller.rfq.submitQuotation({ rfqId: 5, price: 1000 })).resolves.toEqual({ success: true });
+    // The bid was stored and the requester was still told about it.
+    expect(insertValues).toHaveBeenCalledTimes(1);
+    expect(notifyValues).toHaveBeenCalledWith(expect.objectContaining({ userId: 1, type: 'quotation' }));
+  });
+
   // CONTRACT CHANGED DELIBERATELY. This test used to assert that an empty RFQ
   // lookup was harmless, because the lookup existed only to address the
   // notification and ran AFTER the insert. That is no longer what the lookup
