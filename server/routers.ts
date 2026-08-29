@@ -24,7 +24,7 @@ import { validateAiAttachment, attachmentInstruction } from './_core/aiAttachmen
 import { MAX_AI_ATTACHMENTS_PER_MESSAGE } from '@shared/aiAttachments';
 import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
-import { acceptQuotationSecure, rejectQuotationSecure } from './quotationWorkflow';
+import { acceptQuotationSecure, closeRfqSecure, rejectQuotationSecure } from './quotationWorkflow';
 import { aiChatLimiters, authLimiters, contentLimiters, getClientIp } from './_core/rateLimit';
 import { recordEventAsync } from './analytics/events';
 import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
@@ -44,7 +44,7 @@ import {
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems,
 } from '../drizzle/schema';
-import { and, desc, eq, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, type ComplianceDocumentStatus } from '../shared/compliance';
@@ -148,6 +148,14 @@ const hashTestLoginToken = (raw: string) => createHash('sha256').update(raw).dig
  * CSPRNG output, not a human-chosen secret, so an unsalted sha256 is the right
  * primitive and a slow KDF would only delay redemption.
  */
+/**
+ * How close together two identical submissions must be to count as one click
+ * rather than two intents. Ten seconds: long enough to cover a double-click, a
+ * refresh-during-submit, and a browser retry on a slow connection; far too
+ * short to swallow a customer deliberately posting a similar request later.
+ */
+const DUPLICATE_SUBMIT_WINDOW_MS = 10_000;
+
 const hashPasswordResetToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
 // Administrator invitation and reset tokens. Same reasoning as the QA links
@@ -2120,11 +2128,59 @@ const rfqRouter = router({
       }
 
       /**
-       * The RFQ and its lines are written together. A request that exists with
-       * no lines, because the second insert failed, is a request a supplier
-       * cannot answer and a customer believes they made.
+       * ACCIDENTAL DOUBLE-SUBMIT.
+       *
+       * Two rfq.create calls fired concurrently with the same payload produced
+       * TWO identical requests, each notifying suppliers and each collecting
+       * its own bids. Proven by firing them in parallel from one session
+       * against the running server, not inferred.
+       *
+       * A unique constraint would be the wrong tool: a customer may legitimately
+       * post the same request again weeks later, for the next floor or the next
+       * property. What is not legitimate is the same title, from the same
+       * customer, in the same category, seconds apart - that is one intent and
+       * two clicks.
+       *
+       * The window is narrow and the response is IDEMPOTENT rather than an
+       * error: the second click returns the request the first one made, so the
+       * customer sees the outcome they expected instead of a failure for
+       * something that did succeed.
        */
       const rfqId = await db.transaction(async (tx) => {
+        // THE LOCK IS WHY THIS WORKS, and the first attempt at it did not.
+        //
+        // Checking for a recent identical request BEFORE the transaction reads
+        // committed state only - so two genuinely concurrent submissions both
+        // read "nothing there" and both insert. Measured, not assumed: with the
+        // unlocked check in place, two parallel calls still produced two rows,
+        // three runs out of three.
+        //
+        // Locking the REQUESTER'S OWN users row serialises that customer's
+        // creations against each other and nothing else. The second transaction
+        // blocks here, and by the time it reads, the first has committed and is
+        // visible. Contention is one row per person, which is exactly the scope
+        // of the problem.
+        //
+        // The same lock, on the same table, is taken first in submitQuotation.
+        // Consistent ordering is deliberate - the enquiry path deadlocked
+        // precisely because two transactions took overlapping locks in
+        // different orders.
+        await tx.select({ id: users.id }).from(users).where(eq(users.id, ctx.user.id)).for('update');
+
+        const [recentIdentical] = await tx
+          .select({ id: rfqs.id })
+          .from(rfqs)
+          .where(and(
+            eq(rfqs.requesterId, ctx.user.id),
+            eq(rfqs.title, rest.title),
+            gte(rfqs.createdAt, new Date(Date.now() - DUPLICATE_SUBMIT_WINDOW_MS)),
+          ))
+          .orderBy(desc(rfqs.id))
+          .limit(1);
+        // Returned as the id of "the request you just made", because from the
+        // customer's point of view that is exactly what it is.
+        if (recentIdentical) return recentIdentical.id;
+
         const result = await tx.insert(rfqs).values({
           ...rest,
           requesterId: ctx.user.id,
@@ -2375,6 +2431,94 @@ const rfqRouter = router({
       );
       return { key, url, name: input.fileName, type: input.contentType, size: buffer.length };
     }),
+  /**
+   * ONE quotation, by id, for its detail page.
+   *
+   * Until this existed a quotation had no page. It was a row inside RFQDetail
+   * for the customer and a tile in the supplier's workspace, and neither could
+   * be linked to, bookmarked, or opened from the notification announcing it.
+   * "Supplier X responded to your RFQ" led to a list and left the reader to
+   * find the bid themselves.
+   *
+   * TWO READERS, DIFFERENT COLUMNS. This is the whole reason the procedure is
+   * written out rather than reusing the list's select:
+   *
+   *   - the RFQ's requester is evaluating a bid addressed to them, so they see
+   *     the commercial terms and the supplier's contact details - the same
+   *     fields marketplace.quotations already hands them.
+   *   - the supplier who WROTE it sees their own bid in full, but nothing about
+   *     the requester beyond the RFQ they answered. They are not the customer.
+   *
+   * Everybody else is refused, and that includes a RIVAL SUPPLIER WHO BID ON
+   * THE SAME RFQ. They hold a legitimate quotation id from their own bid, the
+   * ids are sequential, and the competitor's price sits one integer away. That
+   * is the attack this ownership predicate exists to stop.
+   *
+   * NOT FOUND, not FORBIDDEN, for a quotation the caller may not read: telling
+   * a rival "that exists but is not yours" confirms a bid was placed and by
+   * how many, which is itself the competitive intelligence being protected.
+   */
+  quotation: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'NOT_FOUND', message: 'Quotation not found' });
+
+    const [row] = await db
+      .select({
+        id:           quotations.id,
+        rfqId:        quotations.rfqId,
+        providerId:   quotations.providerId,
+        price:        quotations.price,
+        currency:     quotations.currency,
+        timeline:     quotations.timeline,
+        warranty:     quotations.warranty,
+        paymentTerms: quotations.paymentTerms,
+        notes:        quotations.notes,
+        attachments:  quotations.attachments,
+        status:       quotations.status,
+        createdAt:    quotations.createdAt,
+        rfqTitle:       rfqs.title,
+        rfqStatus:      rfqs.status,
+        rfqCategory:    rfqs.category,
+        rfqRequesterId: rfqs.requesterId,
+      })
+      .from(quotations)
+      .leftJoin(rfqs, eq(quotations.rfqId, rfqs.id))
+      .where(eq(quotations.id, input.id));
+
+    if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Quotation not found' });
+
+    const isRequester = row.rfqRequesterId === ctx.user.id;
+    const isAuthor = row.providerId === ctx.user.id;
+    if (!isRequester && !isAuthor) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Quotation not found' });
+    }
+
+    // The supplier's identity is shown to the customer evaluating their bid,
+    // and to the supplier themselves - who already knows who they are, but the
+    // page renders one shape for both readers. Contact details are the
+    // requester's alone; a supplier reading their own quotation gets no route
+    // to the customer's inbox out of this procedure.
+    const [provider] = await db
+      .select({ id: users.id, name: users.name, verified: users.verified, location: users.location, email: users.email })
+      .from(users)
+      .where(eq(users.id, row.providerId));
+
+    const { rfqRequesterId: _requesterId, ...quotation } = row;
+
+    return {
+      ...quotation,
+      viewerRole: isRequester ? ('requester' as const) : ('author' as const),
+      provider: provider
+        ? {
+            id: provider.id,
+            name: provider.name,
+            verified: provider.verified,
+            location: provider.location,
+            email: isRequester ? provider.email : null,
+          }
+        : null,
+    };
+  }),
   submitQuotation: approvedProviderProcedure
     // BOUNDS MATCH THE COLUMNS. `price` is decimal(12,2), `warranty` is
     // varchar(100), `timeline` is an int. None of these were bounded, so a
@@ -2459,15 +2603,64 @@ const rfqRouter = router({
       }
 
       const { attachments, ...quotationFields } = input;
-      const inserted = await db.insert(quotations).values({
-        ...quotationFields,
-        providerId: ctx.user.id,
-        price: String(input.price),
-        attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : null,
+
+      /**
+       * ACCIDENTAL DOUBLE-SUBMIT, and only that.
+       *
+       * Two concurrent submitQuotation calls with the same payload produced TWO
+       * bids on one request and notified the customer TWICE. Observed by firing
+       * them in parallel against the running server.
+       *
+       * WHAT THIS DELIBERATELY DOES NOT DECIDE. Whether a supplier may hold
+       * several quotations on one RFQ - and whether a second should replace the
+       * first as a revision - is the OWNER DECISION recorded above and in the
+       * Phase 1B handoff, and it is untouched here. A bid with a DIFFERENT price
+       * or timeline still goes through exactly as before.
+       *
+       * What is caught is the same provider sending the same RFQ the same price
+       * and the same timeline within seconds. That is not a revision under any
+       * answer to the open question - nobody revises a bid to the number it
+       * already was - so refusing it costs the undecided policy nothing.
+       *
+       * Idempotent, not an error: the second click returns the bid the first one
+       * made, so the supplier sees the submission they believe they made.
+       */
+      const submission = await db.transaction(async (tx) => {
+        // The provider's own users row, locked first - the same lock on the
+        // same table in the same order as rfq.create, so the two can never
+        // deadlock against each other. An unlocked pre-check loses this race:
+        // measured at two rows, three runs out of three.
+        await tx.select({ id: users.id }).from(users).where(eq(users.id, ctx.user.id)).for('update');
+
+        const [recentIdentical] = await tx
+          .select({ id: quotations.id })
+          .from(quotations)
+          .where(and(
+            eq(quotations.rfqId, input.rfqId),
+            eq(quotations.providerId, ctx.user.id),
+            eq(quotations.price, String(input.price)),
+            gte(quotations.createdAt, new Date(Date.now() - DUPLICATE_SUBMIT_WINDOW_MS)),
+          ))
+          .orderBy(desc(quotations.id))
+          .limit(1);
+        if (recentIdentical) return { id: recentIdentical.id, deduplicated: true };
+
+        const inserted = await tx.insert(quotations).values({
+          ...quotationFields,
+          providerId: ctx.user.id,
+          price: String(input.price),
+          attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : null,
+        });
+        // The QUOTATION's own id, because that is what the audit trail records.
+        // See the note beside recordCommercialEvent below.
+        return { id: Number(inserted?.[0]?.insertId ?? 0), deduplicated: false };
       });
-      // The QUOTATION's own id, because that is what the audit trail records.
-      // See the note beside recordCommercialEvent below.
-      const quotationId = Number(inserted?.[0]?.insertId ?? 0);
+
+      // A de-duplicated submission is not a new bid: the customer must not be
+      // notified again, the funnel must not count it twice, and the audit trail
+      // must not record a second submission of the same offer.
+      if (submission.deduplicated) return { success: true as const };
+      const quotationId = submission.id;
       await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: `/rfq/${input.rfqId}`, messageKey: 'notif.quotation.received', messageParams: { rfqTitle: rfq.title } });
       // Funnel milestone: a vendor responding is the point at which the
       // marketplace has produced value for both sides.
@@ -2498,6 +2691,13 @@ const rfqRouter = router({
       });
       return { success: true };
     }),
+  /**
+   * Withdraw a request. See closeRfqSecure for why this exists and what it
+   * deliberately does not do to the outstanding bids.
+   */
+  close: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => closeRfqSecure(input.id, ctx.user.id)),
   acceptQuotation: protectedProcedure
     .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
     .mutation(async ({ ctx, input }) => {

@@ -1,4 +1,4 @@
-import { Link, useParams } from 'wouter';
+import { Link, useLocation, useParams } from 'wouter';
 import Navbar from '@/components/Navbar';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/_core/hooks/useAuth';
@@ -17,6 +17,7 @@ function initials(name: string | null | undefined) {
 
 export default function VendorProfile() {
   const { id } = useParams<{ id: string }>();
+  const [, navigate] = useLocation();
   const userId = Number(id);
   const { t, lang } = useLanguage();
   const { isAuthenticated, loading: authLoading, user } = useAuth();
@@ -40,7 +41,24 @@ export default function VendorProfile() {
     <div className="min-h-screen bg-background" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
       <Navbar />
       <main className="container pt-24 pb-16 max-w-2xl">
-        <Link href="/"><Button variant="ghost" className="mb-6 gap-2"><BackIcon className="h-4 w-4" />{lang === 'ar' ? 'رجوع' : 'Back'}</Button></Link>
+        {/* "Back" went to the HOME PAGE. This page is reached from the
+            marketplace hub, the vendors directory, a product's supplier line
+            and an architect's own workspace - and from every one of them the
+            control labelled Back landed somewhere the visitor had not been.
+            history.back() when there is history to go back to, and the vendors
+            directory when there is not (a bookmark, a shared link), because
+            that is where this record lives - not the front page. */}
+        <Button
+          variant="ghost"
+          className="mb-6 gap-2"
+          data-testid="vendor-back"
+          onClick={() => {
+            if (typeof window !== 'undefined' && window.history.length > 1) window.history.back();
+            else navigate('/marketplace/vendors');
+          }}
+        >
+          <BackIcon className="h-4 w-4" />{lang === 'ar' ? 'رجوع' : 'Back'}
+        </Button>
         {children}
       </main>
     </div>

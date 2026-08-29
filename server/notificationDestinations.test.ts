@@ -7,6 +7,7 @@ vi.mock('./db', () => ({ getDb: vi.fn() }));
 import { appRouter } from './routers';
 import { getDb } from './db';
 import type { TrpcContext } from './_core/context';
+import { withTransaction } from './testSupport/txDouble';
 
 /**
  * EVERY NOTIFICATION POINTED AT A LIST.
@@ -86,10 +87,10 @@ function stubWorkflowDb(opts: { others?: number[] } = {}) {
     }),
     update: () => ({ set: () => ({ where: async () => [] }) }),
   };
-  (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+  (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction({
     transaction: async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
     insert: () => ({ values: (row: unknown) => { inserts.push(row); return Promise.resolve([{ insertId: 1 }]); } }),
-  });
+  }));
   return inserts;
 }
 
@@ -100,10 +101,10 @@ describe('a new quotation takes the customer to that request', () => {
 
   function stubSubmitDb() {
     const inserts: unknown[] = [];
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction({
       select: () => ({ from: () => ({ where: () => Promise.resolve([{ requesterId: REQUESTER_ID, title: 'Steel package', status: 'open' }]) }) }),
       insert: () => ({ values: (row: unknown) => { inserts.push(row); return Promise.resolve([{ insertId: QUOTATION_ID }]); } }),
-    });
+    }));
     return inserts;
   }
 
@@ -141,15 +142,23 @@ describe('a new quotation takes the customer to that request', () => {
 describe('winning and losing both land on the request that was bid on', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('the winner is taken to the RFQ', async () => {
+  it('the winner is taken to THE QUOTATION THAT WON', async () => {
+    // WAS `/rfq/${RFQ_ID}`. A quotation had no page, so the notification about
+    // one could only point at the request. There is exactly one accepted
+    // quotation per RFQ, so this destination is unambiguous.
     const inserts = stubWorkflowDb();
     await appRouter.createCaller(ctx(REQUESTER_ID)).rfq.acceptQuotation({ rfqId: RFQ_ID, quotationId: QUOTATION_ID });
     const accepted = collectNotifications(inserts).find(n => n.title === 'Quotation accepted');
     expect(accepted, 'the winner must be told').toBeDefined();
-    expect(accepted!.link).toBe(`/rfq/${RFQ_ID}`);
+    expect(accepted!.link).toBe(`/quotations/${QUOTATION_ID}`);
     expect(accepted!.userId).toBe(WINNER_ID);
   });
 
+  // DELIBERATELY STILL THE RFQ, unlike the winner above. A provider may hold
+  // several losing bids on one request; this list is de-duplicated to one
+  // message per provider precisely because one-per-quotation told a three-bid
+  // provider twice that they lost. Linking to "their" quotation would have to
+  // pick one arbitrarily, and picking one is what reintroduces the duplicate.
   it('an auto-rejected competitor is taken to the same RFQ', async () => {
     const inserts = stubWorkflowDb({ others: [LOSER_ID] });
     await appRouter.createCaller(ctx(REQUESTER_ID)).rfq.acceptQuotation({ rfqId: RFQ_ID, quotationId: QUOTATION_ID });
@@ -158,12 +167,15 @@ describe('winning and losing both land on the request that was bid on', () => {
     expect(lost!.link).toBe(`/rfq/${RFQ_ID}`);
   });
 
-  it('an explicit rejection is taken to the RFQ', async () => {
+  it('an explicit rejection is taken to THE QUOTATION THAT WAS DECLINED', async () => {
+    // Unlike the auto-rejected losers above, this path declines ONE named
+    // quotation, so there is nothing ambiguous to choose between and the
+    // provider is told which of their bids it was.
     const inserts = stubWorkflowDb();
     await appRouter.createCaller(ctx(REQUESTER_ID)).rfq.rejectQuotation({ rfqId: RFQ_ID, quotationId: QUOTATION_ID });
     const lost = collectNotifications(inserts).find(n => n.title === 'Quotation not selected');
     expect(lost, 'the rejected supplier must be told').toBeDefined();
-    expect(lost!.link).toBe(`/rfq/${RFQ_ID}`);
+    expect(lost!.link).toBe(`/quotations/${QUOTATION_ID}`);
   });
 
   it('no quotation-outcome notification is sent to a dashboard', async () => {

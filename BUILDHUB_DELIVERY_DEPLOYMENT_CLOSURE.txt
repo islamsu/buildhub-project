@@ -1,0 +1,306 @@
+================================================================================
+BUILDHUB - DELIVERY + DEPLOYMENT CLOSURE
+================================================================================
+Date:        2026-08-29
+Repository:  github.com/islamsu/buildhub-project
+Branch:      claude/buildhub-audit-verification-vrai7l
+Scope:       Delivery and deployment closure only. No new development or audit
+             phase was started.
+
+
+--------------------------------------------------------------------------------
+THE FOUR STAGES, REPORTED SEPARATELY
+--------------------------------------------------------------------------------
+
+  Pushed          DONE   branch at 1a7250d, origin identical, tree clean
+  Merged          DONE   PR #33 merged 11:57 UTC -> main aa56928
+  Deployed        DONE   Render auto-deployed the merge
+  Live verified   DONE   640/640 against the running system at that exact SHA
+
+
+--------------------------------------------------------------------------------
+THE 13 FIELDS
+--------------------------------------------------------------------------------
+
+Branch                   claude/buildhub-audit-verification-vrai7l
+
+HEAD SHA                 1a7250d8ddf29f7251258749c0810be18a1017af
+
+Main SHA                 aa569282b92bb8fb1769ddf6aa92946785937e4a
+
+Staging SHA              aa569282b92bb8fb1769ddf6aa92946785937e4a
+                         (reported by /version on the running deployment)
+
+Gate SHA                 aa569282b92bb8fb1769ddf6aa92946785937e4a
+                         (harness checkout AND expect_commit input)
+
+Merge status             MERGED - merge commit, 30 commits preserved,
+                         106 files, +14578 / -617
+
+Deployment status        LIVE VERIFIED
+
+Test totals              2,582 / 2,582 passing across 116 files
+                         tsc --noEmit exit 0
+                         both builds green, dist/index.js 647.0 kb
+
+Browser totals           Staging:    640 passed / 0 failed / 5 skipped
+                         Pre-merge local: 1,499 controls driven across six
+                         roles plus anonymous
+
+Security totals          98-cell cross-role attack matrix: zero leaks,
+                         zero broken positive controls
+                         On staging: every secret-exposure and credential-leak
+                         check passed
+
+Remaining blockers       2, both BLOCKED BY INFRASTRUCTURE (see below)
+
+Owner decisions          1 outstanding (see below)
+
+Production recommendation  NOT YET - staging-verified, production-blocked
+                           (see below)
+
+
+MAIN SHA == STAGING SHA - confirmed by the gate's own check, which is
+configured to FAIL on mismatch rather than merely report it:
+
+    PASS  0. the deployed commit is the one under test
+          - expected aa569282b92b,
+            serving aa569282b92bb8fb1769ddf6aa92946785937e4a
+
+The merged tree is byte-identical to 1a7250d ("git diff --stat" between them
+is empty), so the local gate is attributable to what main actually contains,
+not merely to the branch it came from.
+
+
+--------------------------------------------------------------------------------
+CORRECTION TO WHAT WAS REPORTED EARLIER
+--------------------------------------------------------------------------------
+
+I earlier reported staging as unreachable and wrote that into the PR body.
+
+That was true of the ENGINEERING CONTAINER but it was not true of the project.
+*.onrender.com still returns "CONNECT tunnel failed, response 403" from here,
+with api.github.com -> 200 as the positive control. However, staging-qa.yml is
+a workflow_dispatch job that runs on a GitHub runner, which has the egress this
+container lacks.
+
+Steps 6-11 were therefore reachable, and are now done. The PR body's statement
+that "nothing here is verified on staging" is SUPERSEDED by this run.
+
+
+--------------------------------------------------------------------------------
+WHAT THE DEPLOY PIPELINE ACTUALLY DOES
+--------------------------------------------------------------------------------
+
+.github/workflows/deploy-staging.yml has NEVER deployed anything, on any commit.
+
+Its gate step on the merge run executed literally:
+
+    Run if [ -n "" ] && [ -n "" ]; then
+
+Both staging secrets are empty, so the three downstream jobs -
+
+    Gate on the full CI suite     skipped
+    Build and publish the image   skipped
+    Migrate and release           skipped
+
+All 112 "success" conclusions on that workflow are the gate job alone reporting
+configured=false.
+
+Deployment happens through render.yaml instead:
+
+    branch: main
+    autoDeploy: true
+
+Render watches main directly. This matters operationally: the green tick on
+deploy-staging.yml means NOTHING about whether a deploy occurred.
+
+
+--------------------------------------------------------------------------------
+THE THREE ITEMS REQUIRING SEPARATE VERIFICATION
+--------------------------------------------------------------------------------
+
+1. PASSWORD RESET - BLOCKED BY INFRASTRUCTURE
+
+    SKIP  9. password reset - auth.capabilities reports it unavailable
+          - SMTP_HOST unset or credentials failed to verify at boot
+
+   This is NOT a pass. The token-hashing fix is UNIT VERIFIED (20/20 locally
+   against a real mailer, including token reuse and expiry), but the redemption
+   path is unexercised on staging because staging cannot send mail.
+
+
+2. STORAGE - BLOCKED BY INFRASTRUCTURE
+
+   S3_* unset. Three checks skipped:
+
+    SKIP 10. end-to-end upload to the staging bucket
+    SKIP 30. storing an AI attachment end to end
+    SKIP 30. cross-user attachment access, live
+
+   What DID run and pass is the part that needs no bucket:
+
+    PASS 30. an SVG relabelled as a PNG is refused
+    PASS 30. an HTML document relabelled as a PNG is refused
+    PASS 30. a format BuildHub does not advertise is refused,
+             not half-processed
+    PASS 30. a name that disagrees with its own declared type is refused
+    PASS 30. an empty file is refused
+    PASS 30. a genuine PNG passes the TYPE gate - refused later: http 503
+
+   The refusals leak no filesystem path, no bucket name and no S3_ variable.
+
+
+3. AI - LIVE VERIFIED. THIS RESOLVES THE ORIGINAL SCREENSHOT.
+
+   The deployment in the screenshot had aiAssistant:false, which is why the
+   tool cards rendered but opened nothing. Staging at aa56928 does not:
+
+    PASS 28. no unavailable banner is shown on a configured deployment
+    PASS 28. all eight tool cards are enabled  - 0 disabled
+    INFO 28. ai.chat (Arabic, browser) -> http 200 in 11438ms
+    INFO 28. Arabic answer length: 1951 chars
+    PASS 28. the Arabic AI request succeeds against the configured provider
+    PASS 28. BuildHub returns a non-empty Arabic answer
+    PASS 28. the answer itself is written in Arabic
+             - 1372 Arabic characters in the answer
+    PASS 28. the answer is not the question echoed back
+    PASS 28. the Arabic answer appears on screen, beyond the question typed
+             - 1692 chars beyond the 109-char question
+    PASS 28. the rendered Arabic answer is the one the server returned
+    PASS 28. the page is still right-to-left after the answer renders
+
+   A real paid provider call, through the real composer, rendering a
+   1,951-character Arabic answer on screen.
+
+   All six roles render a distinct heading, a distinct tool set and a distinct
+   workflow, and opening any of them costs zero requests:
+
+    PASS 31. every role rendered its own AI page          - 6/6
+    PASS 31. every role has a DISTINCT heading            - 6 distinct
+    PASS 31. every role has a DISTINCT tool set           - 6 distinct
+    PASS 31. every role has a DISTINCT workflow           - 6 distinct
+    PASS 31. the homeowner is NOT shown contractor RFQ tooling
+    PASS 31. the contractor is NOT shown the homeowner designer finder
+
+
+--------------------------------------------------------------------------------
+ROLE COVERAGE ON THE DEPLOYED SYSTEM
+--------------------------------------------------------------------------------
+
+Homeowner, contractor, engineer, architect, supplier and project_manager,
+each at 375 / 768 / 1440 px in both English and Arabic:
+
+  - dashboard reachable
+  - renders real content
+  - correct text direction (dir=ltr / dir=rtl)
+  - NO horizontal overflow at any width in either language
+  - no untranslated translation key rendered
+
+Cross-account behaviour is exercised as the compliance redirect: an unapproved
+provider is sent to /compliance in all 24 role x width x language combinations.
+
+Admin authentication, the sub-admin invitation / acceptance / role / boundary
+lifecycle, and the authenticated admin UI in a real browser all passed.
+
+Secret exposure on the delivered pages: no JWT_SECRET, no DATABASE_URL, no
+SMTP_PASSWORD, no S3_SECRET, no mysql:// URI, no private key block, and errors
+carry no stack trace or filesystem path.
+
+
+--------------------------------------------------------------------------------
+REMAINING BLOCKERS
+--------------------------------------------------------------------------------
+
+1. SMTP unset on staging
+   -> password reset unverifiable live.
+   -> Classification: BLOCKED BY INFRASTRUCTURE. Not a PASS.
+
+2. S3_* unset on staging
+   -> upload, attachment storage and cross-user attachment access
+      unverifiable live.
+   -> Classification: BLOCKED BY INFRASTRUCTURE. Not a PASS.
+
+Neither was worked around. Nothing was weakened, disabled or faked to turn
+either one green.
+
+
+--------------------------------------------------------------------------------
+OWNER DECISION OUTSTANDING
+--------------------------------------------------------------------------------
+
+The four footer links - About Us, Contact, Privacy Policy, Terms of Service -
+all pointed at href="/" on every page. They were WITHDRAWN rather than
+repointed at invented pages.
+
+What those pages should say, and whether they should exist before launch, is a
+business decision and is not something to infer from the repository.
+
+
+--------------------------------------------------------------------------------
+PRODUCTION RECOMMENDATION
+--------------------------------------------------------------------------------
+
+NOT YET - and the gap is infrastructure, not code.
+
+What is now demonstrated:
+
+  - main and staging serve the same commit, proven by a check that fails on
+    mismatch
+  - that commit passes 640 live checks with zero failures
+  - 2,582 tests, clean typecheck and green builds at the identical tree
+  - the AI path works end to end against a real provider, in Arabic, rendered
+    in a real browser
+
+What blocks a production recommendation:
+
+  Two capabilities a construction marketplace needs - a working password reset
+  and working file uploads - have NEVER been exercised against a running
+  system, on staging or anywhere else.
+
+Recommended next step:
+
+  Configure SMTP_* and S3_* on staging, re-dispatch the staging QA gate with
+  expect_commit set, and those five skips convert either to passes or to real
+  defects. Until then the honest label is:
+
+      STAGING-VERIFIED AND PRODUCTION-BLOCKED
+
+  not "production ready".
+
+
+--------------------------------------------------------------------------------
+SCOPE LIMIT ON THE 640/640 FIGURE
+--------------------------------------------------------------------------------
+
+640/640 is the staging gate's coverage. It is NOT proof that every clickable
+object on the platform behaves correctly.
+
+That claim rests on the pre-merge live click map - 1,499 controls across six
+roles plus anonymous, 30 defects found and fixed - which ran LOCALLY against a
+real database and a real browser, not on staging.
+
+The following remain unwritten, because the instruction was not to open another
+audit phase:
+
+  - Sections 77-80 (feature / role / attack matrices)
+  - BUILDHUB_FINAL_ZERO_GAP_PRELAUNCH_AUDIT.txt (section 87)
+  - Section 83 (second full discovery pass as a brand-new user)
+
+
+--------------------------------------------------------------------------------
+EVIDENCE INDEX
+--------------------------------------------------------------------------------
+
+Merge commit          aa569282b92bb8fb1769ddf6aa92946785937e4a
+Pull request          https://github.com/islamsu/buildhub-project/pull/33
+CI on the merged SHA  6 check runs, all success
+Staging QA run #50    https://github.com/islamsu/buildhub-project/actions/runs/33251726922
+Deploy-staging run    https://github.com/islamsu/buildhub-project/actions/runs/33251321476
+                      (gate success; publish / verify / deploy all SKIPPED)
+Gate verdict line     640/640 checks passed, 5 skipped,
+                      against https://buildhub-staging.onrender.com
+
+================================================================================
+END OF REPORT
+================================================================================

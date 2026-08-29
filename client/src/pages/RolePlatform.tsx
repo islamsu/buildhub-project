@@ -565,9 +565,13 @@ function QuotationTiles({ quotations, t, lang, navigate }: { quotations: any[]; 
           role="button"
           tabIndex={0}
           data-testid="my-quotation"
+          /* Opens THE QUOTATION, not the RFQ. This tile is the supplier's own
+             bid, and it used to navigate to the request instead - the nearest
+             page that existed, because a quotation had none. A control should
+             open the record it depicts. */
           className="rounded-xl border p-3 cursor-pointer transition-colors hover:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          onClick={() => navigate(`/rfq/${quote.rfqId}`)}
-          onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') navigate(`/rfq/${quote.rfqId}`); }}
+          onClick={() => navigate(`/quotations/${quote.id}`)}
+          onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') navigate(`/quotations/${quote.id}`); }}
         >
           <div className="flex items-center justify-between gap-2">
             <p className="truncate text-sm font-medium">{quote.rfqTitle || `RFQ #${quote.rfqId}`}</p>

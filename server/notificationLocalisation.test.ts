@@ -264,6 +264,11 @@ describe('the server writes the key everywhere it writes prose', () => {
     expect(names).toContain('quotationWorkflow.ts');
     expect(names).toContain('routers.ts');
     const [, workflow] = SERVER_SOURCES.find(([name]) => name === 'quotationWorkflow.ts')!;
-    expect([...workflow.matchAll(/notify(?:User|Users)\(db,/g)].length).toBe(3);
+    // FOUR since closeRfqSecure landed - accept-winner, accept-losers,
+    // reject, close. Was three. This number is a canary, not a fact worth
+    // knowing: if it moves, somebody added a notification site, and the
+    // messageKey rule in the test above is what actually checks the new one is
+    // localised. It passed for the fourth site before this count was updated.
+    expect([...workflow.matchAll(/notify(?:User|Users)\(db,/g)].length).toBe(4);
   });
 });

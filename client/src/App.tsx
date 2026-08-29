@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Redirect, Route, Switch, useParams } from "wouter";
 import { lazy, Suspense } from "react";
 
 /**
@@ -32,6 +32,7 @@ const ProductDetail = lazy(() => import("./pages/ProductDetail"));
 const ProjectDetail = lazy(() => import("./pages/ProjectDetail"));
 const RFQPage = lazy(() => import("./pages/RFQPage"));
 const RFQDetail = lazy(() => import("./pages/RFQDetail"));
+const QuotationDetail = lazy(() => import("./pages/QuotationDetail"));
 const MessagesPage = lazy(() => import("./pages/MessagesPage"));
 const AIAssistantPage = lazy(() => import("./pages/AIAssistantPage"));
 const CompliancePage = lazy(() => import("./pages/CompliancePage"));
@@ -51,6 +52,21 @@ import AuthPage from "./pages/AuthPage";
  */
 function RouteFallback() {
   return <div className="min-h-screen bg-background" aria-busy="true" />;
+}
+
+/**
+ * Sends the three legacy per-directory detail URLs to the one real provider
+ * detail page. Every provider type - vendor, designer, finishing company - is a
+ * row in the same users table and has always rendered through /vendor/:id, so
+ * there is one destination, not three.
+ *
+ * `replace` so the dead URL does not sit in history: pressing Back from the
+ * vendor page should return to wherever the visitor actually came from, not
+ * bounce them through the redirect again.
+ */
+function RedirectToVendor() {
+  const { id } = useParams<{ id: string }>();
+  return <Redirect to={`/vendor/${id}`} replace />;
 }
 
 function Router() {
@@ -76,15 +92,23 @@ function Router() {
       <Route path={"/marketplace"} component={MarketplaceHub} />
       <Route path={"/marketplace/products"} component={Marketplace} />
       <Route path={"/marketplace/products/:id"} component={ProductDetail} />
-      <Route path={"/marketplace/vendors/:id"} component={VendorsDirectory} />
+      {/* These three declared an :id and threw it away. Each rendered its
+          directory - the full list - so a link to ONE vendor, designer or
+          finishing company delivered a page listing all of them. It looked
+          like navigation and was not. /vendor/:id is the canonical provider
+          detail page and always was; these now redirect to it rather than
+          being deleted, so existing links and bookmarks resolve to the record
+          they name instead of 404ing. */}
+      <Route path={"/marketplace/vendors/:id"} component={RedirectToVendor} />
       <Route path={"/marketplace/vendors"} component={VendorsDirectory} />
-      <Route path={"/marketplace/designers/:id"} component={DesignersDirectory} />
+      <Route path={"/marketplace/designers/:id"} component={RedirectToVendor} />
       <Route path={"/marketplace/designers"} component={DesignersDirectory} />
-      <Route path={"/marketplace/finishing/:id"} component={FinishingDirectory} />
+      <Route path={"/marketplace/finishing/:id"} component={RedirectToVendor} />
       <Route path={"/marketplace/finishing"} component={FinishingDirectory} />
       <Route path={"/projects/:id"} component={ProjectDetail} />
       <Route path={"/rfq"} component={RFQPage} />
       <Route path={"/rfq/:id"} component={RFQDetail} />
+      <Route path={"/quotations/:id"} component={QuotationDetail} />
       <Route path={"/messages"} component={MessagesPage} />
       <Route path={"/compliance"} component={CompliancePage} />
       <Route path={"/auth/setup-password"} component={PasswordSetupPage} />

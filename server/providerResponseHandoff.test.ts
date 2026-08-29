@@ -63,8 +63,28 @@ describe('the request id travels with the provider', () => {
     // hold whatever this renders.
     expect(DETAIL).not.toContain('openEnquiry');
     expect(DETAIL).not.toContain('submitQuotation');
-    // It reads status; it never writes one.
-    expect(DETAIL).not.toMatch(/useMutation/);
+
+    // WAS `not.toMatch(/useMutation/)` - "it reads status; it never writes
+    // one". That was a proxy for the property, and the property is that this
+    // page grants a PROVIDER nothing. The page now carries rfq.close, which is
+    // the REQUESTER withdrawing their own request: gated on isOwner for
+    // rendering and on closeRfqSecure's requesterId check for authority, so a
+    // provider can neither see it nor call it.
+    //
+    // Banning the hook outright would have meant the page could never perform
+    // any action at all, which is not the rule. An allowlist is tighter than
+    // the ban it replaces: it names the one mutation permitted here, so adding
+    // a second - privileged or not - fails this test.
+    const mutations = [...DETAIL.matchAll(/trpc\.([\w.]+)\.useMutation/g)].map(m => m[1]);
+    expect(mutations).toEqual(['rfq.close']);
+  });
+
+  it('and the one mutation it does carry is offered only to the owner', () => {
+    // The authority is server-side either way; this is about not showing a
+    // provider a control that would refuse them.
+    const at = DETAIL.indexOf('data-testid="rfq-detail-close-panel"');
+    expect(at).toBeGreaterThan(-1);
+    expect(DETAIL.slice(Math.max(0, at - 400), at)).toMatch(/isOwner && isOpen/);
   });
 
   it('and it still does not spend anything on the way', () => {

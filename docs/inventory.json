@@ -1,0 +1,1190 @@
+{
+  "routes": [
+    {
+      "path": "/",
+      "component": "Home",
+      "source": "client/src/pages/Home.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/auth",
+      "component": "AuthPage",
+      "source": "client/src/pages/AuthPage.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/dashboard",
+      "component": "HomeownerDashboard",
+      "source": "client/src/pages/HomeownerDashboard.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/provider",
+      "component": "ProviderDashboard",
+      "source": "client/src/pages/ProviderDashboard.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/vendor/:id",
+      "component": "VendorProfile",
+      "source": "client/src/pages/VendorProfile.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/platform/:role",
+      "component": "RolePlatform",
+      "source": "client/src/pages/RolePlatform.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/admin/login",
+      "component": "AdminLogin",
+      "source": "client/src/pages/AdminLogin.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/admin/accept-invitation",
+      "component": "AdminAcceptInvitation",
+      "source": "client/src/pages/AdminAcceptInvitation.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/admin/admins",
+      "component": "AdminAdmins",
+      "source": "client/src/pages/AdminAdmins.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/admin/:section",
+      "component": "AdminDashboard",
+      "source": "client/src/pages/AdminDashboard.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/admin",
+      "component": "AdminDashboard",
+      "source": "client/src/pages/AdminDashboard.tsx",
+      "declaresParam": false,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/pricing",
+      "component": "Pricing",
+      "source": "client/src/pages/Pricing.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/marketplace",
+      "component": "MarketplaceHub",
+      "source": "client/src/pages/MarketplaceHub.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/marketplace/products",
+      "component": "Marketplace",
+      "source": "client/src/pages/Marketplace.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/marketplace/products/:id",
+      "component": "ProductDetail",
+      "source": "client/src/pages/ProductDetail.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/marketplace/vendors/:id",
+      "component": "RedirectToVendor",
+      "source": null,
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/marketplace/vendors",
+      "component": "VendorsDirectory",
+      "source": "client/src/pages/VendorsDirectory.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/marketplace/designers/:id",
+      "component": "RedirectToVendor",
+      "source": null,
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/marketplace/designers",
+      "component": "DesignersDirectory",
+      "source": "client/src/pages/DesignersDirectory.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/marketplace/finishing/:id",
+      "component": "RedirectToVendor",
+      "source": null,
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/marketplace/finishing",
+      "component": "FinishingDirectory",
+      "source": "client/src/pages/FinishingDirectory.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/projects/:id",
+      "component": "ProjectDetail",
+      "source": "client/src/pages/ProjectDetail.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/rfq",
+      "component": "RFQPage",
+      "source": "client/src/pages/RFQPage.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/rfq/:id",
+      "component": "RFQDetail",
+      "source": "client/src/pages/RFQDetail.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/quotations/:id",
+      "component": "QuotationDetail",
+      "source": "client/src/pages/QuotationDetail.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/messages",
+      "component": "MessagesPage",
+      "source": "client/src/pages/MessagesPage.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/compliance",
+      "component": "CompliancePage",
+      "source": "client/src/pages/CompliancePage.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/auth/setup-password",
+      "component": "PasswordSetupPage",
+      "source": "client/src/pages/PasswordSetupPage.tsx",
+      "declaresParam": false,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/auth/reset-password",
+      "component": "PasswordResetPage",
+      "source": "client/src/pages/PasswordResetPage.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/ai",
+      "component": "AIAssistantPage",
+      "source": "client/src/pages/AIAssistantPage.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/404",
+      "component": "NotFound",
+      "source": "client/src/pages/NotFound.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    }
+  ],
+  "procedures": [
+    {
+      "name": "me",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "logout",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "signInDummy",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "redeemTestLoginLink",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "capabilities",
+      "tier": "publicProcedure",
+      "indent": 3
+    },
+    {
+      "name": "signUp",
+      "tier": "publicProcedure",
+      "indent": 3
+    },
+    {
+      "name": "signIn",
+      "tier": "publicProcedure",
+      "indent": 3
+    },
+    {
+      "name": "adminSignIn",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "completeAdminInvitation",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "requestPasswordReset",
+      "tier": "publicProcedure",
+      "indent": 3
+    },
+    {
+      "name": "resetPassword",
+      "tier": "publicProcedure",
+      "indent": 3
+    },
+    {
+      "name": "checkSignupAvailability",
+      "tier": "publicProcedure",
+      "indent": 3
+    },
+    {
+      "name": "updateRole",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "requirements",
+      "tier": "complianceProcedure",
+      "indent": 2
+    },
+    {
+      "name": "uploadDocument",
+      "tier": "complianceProcedure",
+      "indent": 2
+    },
+    {
+      "name": "list",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "directory",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "get",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "create",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "update",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "milestones",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "addMilestone",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "tasks",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "addTask",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "updateTask",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "expenses",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "addExpense",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "dailyLogs",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "addDailyLog",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "documents",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "uploadDocument",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "progressReports",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "addProgressReport",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "vendors",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "vendorCategories",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "platformStats",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "featuredVendors",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "list",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "vendorProducts",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "get",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myProducts",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "create",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "importProducts",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "importTemplate",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "updateProduct",
+      "tier": "approvedProviderProcedure",
+      "indent": 3
+    },
+    {
+      "name": "setProductActive",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "uploadProductImage",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "setProductImages",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "categories",
+      "tier": "publicProcedure",
+      "indent": 3
+    },
+    {
+      "name": "questions",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "askQuestion",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "answerQuestion",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myProductQuestions",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "list",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myList",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "summary",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "get",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "create",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "uploadAttachment",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myQuotations",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "quotations",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "eligible",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "openEnquiry",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "uploadQuotationAttachment",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "quotation",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "submitQuotation",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "close",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "acceptQuotation",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "rejectQuotation",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "conversations",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "recipient",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "list",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "send",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "uploadAttachment",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "list",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "unreadCount",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "markAllRead",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "forUser",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "statsForUser",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "eligibleReviewees",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "submit",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "getPublic",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "getOwn",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "update",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myCategories",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "setMyCategories",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "uploadAvatar",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myStats",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "completeInvitation",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "me",
+      "tier": "adminProcedure",
+      "indent": 2
+    },
+    {
+      "name": "admins",
+      "tier": "superAdminProcedure",
+      "indent": 2
+    },
+    {
+      "name": "createAdmin",
+      "tier": "superAdminProcedure",
+      "indent": 2
+    },
+    {
+      "name": "setAdminRole",
+      "tier": "superAdminProcedure",
+      "indent": 2
+    },
+    {
+      "name": "setAdminActive",
+      "tier": "superAdminProcedure",
+      "indent": 2
+    },
+    {
+      "name": "revokeAdminSessions",
+      "tier": "superAdminProcedure",
+      "indent": 2
+    },
+    {
+      "name": "resetAdminPassword",
+      "tier": "superAdminProcedure",
+      "indent": 2
+    },
+    {
+      "name": "adminInvitations",
+      "tier": "superAdminProcedure",
+      "indent": 2
+    },
+    {
+      "name": "revokeAdminInvitation",
+      "tier": "superAdminProcedure",
+      "indent": 2
+    },
+    {
+      "name": "changeOwnPassword",
+      "tier": "adminProcedure",
+      "indent": 2
+    },
+    {
+      "name": "chat",
+      "tier": "aiChatProcedure",
+      "indent": 2
+    },
+    {
+      "name": "uploadAttachment",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "deleteAttachment",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "mine",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "plans",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "mySubscription",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myEntitlements",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myPlan",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myEnquiryUsage",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myLifecycle",
+      "tier": "protectedProcedure",
+      "indent": 3
+    },
+    {
+      "name": "cancelSubscription",
+      "tier": "approvedProviderProcedure",
+      "indent": 3
+    },
+    {
+      "name": "resumeSubscription",
+      "tier": "approvedProviderProcedure",
+      "indent": 3
+    }
+  ],
+  "procedureTiers": {
+    "publicProcedure": 26,
+    "protectedProcedure": 54,
+    "complianceProcedure": 2,
+    "approvedProviderProcedure": 18,
+    "adminProcedure": 2,
+    "superAdminProcedure": 8,
+    "aiChatProcedure": 1
+  },
+  "tables": [
+    {
+      "ident": "users",
+      "name": "users",
+      "columns": 45,
+      "references": 2,
+      "notNull": 10,
+      "unique": 1
+    },
+    {
+      "ident": "revokedSessions",
+      "name": "revokedSessions",
+      "columns": 5,
+      "references": 1,
+      "notNull": 3,
+      "unique": 0
+    },
+    {
+      "ident": "userAccountAuditEvents",
+      "name": "userAccountAuditEvents",
+      "columns": 9,
+      "references": 2,
+      "notNull": 2,
+      "unique": 0
+    },
+    {
+      "ident": "adminInvitations",
+      "name": "adminInvitations",
+      "columns": 13,
+      "references": 3,
+      "notNull": 6,
+      "unique": 1
+    },
+    {
+      "ident": "projects",
+      "name": "projects",
+      "columns": 15,
+      "references": 1,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "milestones",
+      "name": "milestones",
+      "columns": 8,
+      "references": 1,
+      "notNull": 3,
+      "unique": 0
+    },
+    {
+      "ident": "tasks",
+      "name": "tasks",
+      "columns": 13,
+      "references": 3,
+      "notNull": 3,
+      "unique": 0
+    },
+    {
+      "ident": "aiAttachments",
+      "name": "aiAttachments",
+      "columns": 10,
+      "references": 1,
+      "notNull": 6,
+      "unique": 0
+    },
+    {
+      "ident": "documents",
+      "name": "documents",
+      "columns": 11,
+      "references": 2,
+      "notNull": 5,
+      "unique": 0
+    },
+    {
+      "ident": "registrationDocuments",
+      "name": "registrationDocuments",
+      "columns": 18,
+      "references": 2,
+      "notNull": 10,
+      "unique": 0
+    },
+    {
+      "ident": "registrationDocumentSubmissions",
+      "name": "registrationDocumentSubmissions",
+      "columns": 15,
+      "references": 1,
+      "notNull": 9,
+      "unique": 0
+    },
+    {
+      "ident": "registrationReviewEvents",
+      "name": "registrationReviewEvents",
+      "columns": 11,
+      "references": 3,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "productQuestions",
+      "name": "productQuestions",
+      "columns": 9,
+      "references": 2,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "products",
+      "name": "products",
+      "columns": 25,
+      "references": 1,
+      "notNull": 5,
+      "unique": 0
+    },
+    {
+      "ident": "rfqs",
+      "name": "rfqs",
+      "columns": 16,
+      "references": 2,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "rfqItems",
+      "name": "rfqItems",
+      "columns": 13,
+      "references": 2,
+      "notNull": 5,
+      "unique": 0
+    },
+    {
+      "ident": "quotations",
+      "name": "quotations",
+      "columns": 14,
+      "references": 2,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "messages",
+      "name": "messages",
+      "columns": 14,
+      "references": 4,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "notifications",
+      "name": "notifications",
+      "columns": 11,
+      "references": 1,
+      "notNull": 3,
+      "unique": 0
+    },
+    {
+      "ident": "reviews",
+      "name": "reviews",
+      "columns": 11,
+      "references": 3,
+      "notNull": 5,
+      "unique": 0
+    },
+    {
+      "ident": "progressReports",
+      "name": "progressReports",
+      "columns": 9,
+      "references": 2,
+      "notNull": 6,
+      "unique": 0
+    },
+    {
+      "ident": "disputes",
+      "name": "disputes",
+      "columns": 15,
+      "references": 3,
+      "notNull": 8,
+      "unique": 0
+    },
+    {
+      "ident": "adminSettings",
+      "name": "adminSettings",
+      "columns": 6,
+      "references": 1,
+      "notNull": 4,
+      "unique": 1
+    },
+    {
+      "ident": "dailyLogs",
+      "name": "dailyLogs",
+      "columns": 10,
+      "references": 2,
+      "notNull": 5,
+      "unique": 0
+    },
+    {
+      "ident": "expenses",
+      "name": "expenses",
+      "columns": 10,
+      "references": 1,
+      "notNull": 3,
+      "unique": 0
+    },
+    {
+      "ident": "vendorSubscriptions",
+      "name": "vendorSubscriptions",
+      "columns": 28,
+      "references": 1,
+      "notNull": 8,
+      "unique": 0
+    },
+    {
+      "ident": "analyticsEvents",
+      "name": "analyticsEvents",
+      "columns": 11,
+      "references": 1,
+      "notNull": 2,
+      "unique": 0
+    },
+    {
+      "ident": "billingEvents",
+      "name": "billingEvents",
+      "columns": 13,
+      "references": 3,
+      "notNull": 2,
+      "unique": 0
+    },
+    {
+      "ident": "vendorCategories",
+      "name": "vendorCategories",
+      "columns": 6,
+      "references": 1,
+      "notNull": 3,
+      "unique": 0
+    },
+    {
+      "ident": "qualifiedEnquiries",
+      "name": "qualifiedEnquiries",
+      "columns": 10,
+      "references": 2,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "testLoginTokens",
+      "name": "testLoginTokens",
+      "columns": 11,
+      "references": 3,
+      "notNull": 5,
+      "unique": 1
+    },
+    {
+      "ident": "commercialAuditEvents",
+      "name": "commercialAuditEvents",
+      "columns": 12,
+      "references": 2,
+      "notNull": 4,
+      "unique": 0
+    }
+  ],
+  "notificationWrites": [
+    {
+      "file": "server/routers.ts",
+      "line": 1718,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 1798,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 2664,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 2896,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 3036,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 3867,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 3881,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 3906,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/notifications.ts",
+      "line": 40,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/notifications.ts",
+      "line": 43,
+      "via": "helper implementation"
+    },
+    {
+      "file": "server/notifications.ts",
+      "line": 57,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/notifications.ts",
+      "line": 60,
+      "via": "helper implementation"
+    }
+  ],
+  "storageSurfaces": [
+    {
+      "name": "uploadDocument",
+      "tier": "complianceProcedure"
+    },
+    {
+      "name": "uploadDocument",
+      "tier": "protectedProcedure"
+    },
+    {
+      "name": "uploadProductImage",
+      "tier": "approvedProviderProcedure"
+    },
+    {
+      "name": "uploadAttachment",
+      "tier": "protectedProcedure"
+    },
+    {
+      "name": "uploadQuotationAttachment",
+      "tier": "approvedProviderProcedure"
+    },
+    {
+      "name": "uploadAttachment",
+      "tier": "protectedProcedure"
+    },
+    {
+      "name": "uploadAvatar",
+      "tier": "protectedProcedure"
+    },
+    {
+      "name": "uploadAttachment",
+      "tier": "protectedProcedure"
+    },
+    {
+      "name": "deleteAttachment",
+      "tier": "protectedProcedure"
+    }
+  ],
+  "roles": {
+    "workspace": [
+      "homeowner",
+      "contractor",
+      "engineer",
+      "architect",
+      "supplier",
+      "project_manager"
+    ],
+    "additional": [
+      "admin",
+      "anonymous"
+    ]
+  }
+}

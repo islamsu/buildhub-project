@@ -19,11 +19,36 @@ import { allowancePeriodFor, resolveVendorEntitlements } from './entitlements';
 import { recordEventAsync } from '../analytics/events';
 import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
 
+function mysqlErrorCode(error: unknown): string | undefined {
+  return (error as { cause?: { code?: string }; code?: string })?.cause?.code
+    ?? (error as { code?: string })?.code;
+}
+
 /** MySQL duplicate-key error, surfaced by mysql2 through drizzle's `cause`. */
 function isDuplicateKeyError(error: unknown): boolean {
-  const code = (error as { cause?: { code?: string }; code?: string })?.cause?.code
-    ?? (error as { code?: string })?.code;
-  return code === 'ER_DUP_ENTRY';
+  return mysqlErrorCode(error) === 'ER_DUP_ENTRY';
+}
+
+/**
+ * InnoDB refused to serialize two transactions and rolled one back.
+ *
+ * THIS IS NOT A DUPLICATE KEY, and treating it as an unexpected failure is
+ * what made a double-click return HTTP 500 to a supplier.
+ *
+ * Two concurrent openEnquiry calls for the same vendor both take the range
+ * lock over that vendor's rows for the month, then both insert. Whichever
+ * ordering InnoDB sees, it can deadlock rather than queue - and it did,
+ * reproducibly, under two genuinely parallel requests. The money was never at
+ * risk: one transaction is rolled back whole, and the unique index on
+ * (userId, rfqId) is the backstop. What was wrong is the ANSWER the loser got.
+ *
+ * A deadlock here always means "another transaction was doing this same thing
+ * at the same moment", which is the same situation as the duplicate-key race
+ * and deserves the same handling: look again, and report what is now true.
+ */
+function isSerializationFailure(error: unknown): boolean {
+  const code = mysqlErrorCode(error);
+  return code === 'ER_LOCK_DEADLOCK' || code === 'ER_LOCK_WAIT_TIMEOUT';
 }
 
 export async function getVendorCategories(userId: number): Promise<string[]> {
@@ -209,9 +234,64 @@ export async function openQualifiedEnquiry(
       enquiryId = Number(written?.[0]?.insertId) || null;
     });
   } catch (error) {
-    if (!isDuplicateKeyError(error)) throw error;
-    // Lost a race against ourselves for the same RFQ - already consumed.
-    duplicate = true;
+    if (isDuplicateKeyError(error)) {
+      // Lost a race against ourselves for the same RFQ - already consumed.
+      duplicate = true;
+    } else if (isSerializationFailure(error)) {
+      // InnoDB rolled this transaction back to break a deadlock with the
+      // concurrent one. Nothing here was written. Two outcomes are possible and
+      // they are distinguished by looking, not by guessing:
+      //
+      //   the other transaction committed -> the row exists -> already
+      //     consumed, and this caller is told they have the lead. No second
+      //     charge: the row is the charge.
+      //
+      //   the other transaction ALSO rolled back -> no row -> nobody was
+      //     charged and nobody got the lead, so this is retried once. Retrying
+      //     is safe for the same reason: the unique index and the re-read below
+      //     make a second charge impossible even if both attempts proceed.
+      const [raced] = await db
+        .select({ id: qualifiedEnquiries.id })
+        .from(qualifiedEnquiries)
+        .where(and(eq(qualifiedEnquiries.userId, userId), eq(qualifiedEnquiries.rfqId, rfqId)))
+        .limit(1);
+      if (raced) {
+        duplicate = true;
+        enquiryId = raced.id;
+      } else {
+        try {
+          await db.transaction(async tx => {
+            if (allowance !== null) {
+              const locked = await tx
+                .select({ id: qualifiedEnquiries.id })
+                .from(qualifiedEnquiries)
+                .where(and(eq(qualifiedEnquiries.userId, userId), eq(qualifiedEnquiries.yearMonth, period.key)))
+                .for('update');
+              if (locked.length >= allowance) {
+                limitReached = true;
+                return;
+              }
+            }
+            const written = await tx.insert(qualifiedEnquiries).values({
+              userId,
+              rfqId,
+              yearMonth: period.key,
+              planAtConsumption: resolution.effectivePlan,
+              matchedCategory: rfq.category,
+            });
+            enquiryId = Number(written?.[0]?.insertId) || null;
+          });
+        } catch (retryError) {
+          // One retry, not a loop. If the second attempt also loses, the honest
+          // answer is a failure the caller can retry themselves - not an
+          // unbounded retry holding a request open against a contended row.
+          if (!isDuplicateKeyError(retryError)) throw retryError;
+          duplicate = true;
+        }
+      }
+    } else {
+      throw error;
+    }
   }
 
   if (limitReached) {

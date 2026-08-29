@@ -3,6 +3,7 @@ import { and, eq, ne } from 'drizzle-orm';
 import { getDb } from './db';
 import { quotations, rfqs } from '../drizzle/schema';
 import { notifyUser, notifyUsers } from './notifications';
+import { recordCommercialEvent } from './_core/commercialAudit';
 
 // The only authoritative implementation of quotation acceptance. Wired directly into
 // rfqRouter.acceptQuotation — do not duplicate this logic elsewhere.
@@ -83,10 +84,11 @@ export async function acceptQuotationSecure(rfqId: number, quotationId: number, 
     title: 'Quotation accepted',
     body: `Your quotation for "${result.rfqTitle}" was accepted.`,
     type: 'quotation',
-    // THE REQUEST THEY BID ON, not the workspace. `/provider` is a dashboard;
-    // a supplier who has just won or lost a specific job wants that job. The
-    // detail page is role-aware and shows a provider exactly what they may see.
-    link: `/rfq/${result.rfqId}`,
+    // THE QUOTATION THAT WON, which is exactly what this notification is about
+    // and is unambiguous: there is one accepted quotation per RFQ. Until the
+    // quotation detail page existed this could only point at the RFQ, because a
+    // quotation had no URL to point at.
+    link: `/quotations/${result.awardedQuotationId}`,
     messageKey: 'notif.quotation.accepted',
     messageParams: { rfqTitle: result.rfqTitle },
   });
@@ -95,6 +97,15 @@ export async function acceptQuotationSecure(rfqId: number, quotationId: number, 
     title: 'Quotation not selected',
     body: `Your quotation for "${result.rfqTitle}" was not selected.`,
     type: 'quotation',
+    // THE RFQ, deliberately, and NOT a quotation - unlike the winner above.
+    //
+    // A provider may bid several times on one RFQ (see the OWNER DECISION in
+    // the Phase 1B handoff), and this list is de-duplicated to ONE message per
+    // provider precisely because sending one per losing quotation told a
+    // three-bid provider twice that they lost. Linking to "their" quotation
+    // would have to pick one of several arbitrarily, and picking one is what
+    // reintroduces the duplicate. The RFQ is the unambiguous subject when a
+    // provider holds more than one losing bid on it.
     link: `/rfq/${result.rfqId}`,
     messageKey: 'notif.quotation.notSelected',
     messageParams: { rfqTitle: result.rfqTitle },
@@ -126,7 +137,7 @@ export async function rejectQuotationSecure(rfqId: number, quotationId: number, 
     }
 
     await tx.update(quotations).set({ status: 'rejected' }).where(eq(quotations.id, quotationId));
-    return { success: true as const, providerId: quotation.providerId, rfqTitle: rfq.title, rfqId };
+    return { success: true as const, providerId: quotation.providerId, rfqTitle: rfq.title, rfqId, quotationId };
   });
 
   await notifyUser(db, {
@@ -134,11 +145,100 @@ export async function rejectQuotationSecure(rfqId: number, quotationId: number, 
     title: 'Quotation not selected',
     body: `Your quotation for "${result.rfqTitle}" was not selected.`,
     type: 'quotation',
-    // The request they bid on, not the workspace - see acceptQuotationSecure.
-    link: `/rfq/${result.rfqId}`,
+    // THE QUOTATION, unlike the auto-rejected losers in acceptQuotationSecure.
+    // This path rejects ONE named quotation, so there is nothing ambiguous to
+    // choose between: the provider is told which of their bids was declined.
+    link: `/quotations/${result.quotationId}`,
     messageKey: 'notif.quotation.notSelected',
     messageParams: { rfqTitle: result.rfqTitle },
   });
 
   return { success: result.success };
+}
+
+/**
+ * CLOSING AN RFQ - the transition the enum declared and nothing performed.
+ *
+ * `rfqs.status` has been open | closed | awarded since the table was written,
+ * and `rfq_closed` has been in the commercial audit vocabulary just as long.
+ * Only 'awarded' was ever written. A customer who no longer needed a request -
+ * the job cancelled, the budget pulled, a supplier found elsewhere - had no way
+ * to withdraw it. It stayed open indefinitely.
+ *
+ * That is not only untidy. Providers spend a lead credit to open an enquiry, so
+ * an abandoned request keeps charging suppliers for a job that no longer exists.
+ *
+ * WHAT CLOSING DOES AND DELIBERATELY DOES NOT DO
+ *
+ * It stops the request: submitQuotation and acceptQuotationSecure both already
+ * refuse anything that is not 'open', so this one write closes both doors
+ * without either of them needing to learn a new state.
+ *
+ * It does NOT mark the outstanding quotations rejected. "Not selected" is a
+ * statement about a bid; withdrawing a request is a statement about the
+ * request, and saying the first when the second happened tells suppliers they
+ * lost a competition that was never decided. They are told what actually
+ * occurred and their bids keep the status they had.
+ *
+ * Whether a closed request should be reopenable is a product question, so this
+ * implements the one direction that is unambiguous: open -> closed, terminal.
+ * An awarded RFQ cannot be closed - it already reached its own terminal state,
+ * and overwriting that would erase which supplier won.
+ */
+export async function closeRfqSecure(rfqId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database connection unavailable' });
+
+  const result = await db.transaction(async (tx) => {
+    // FOR UPDATE, and locked before anything is read off it, exactly as accept
+    // does: a close racing an accept must serialize rather than interleave, or
+    // an RFQ could be awarded and closed in the same instant.
+    const [rfq] = await tx.select().from(rfqs).where(eq(rfqs.id, rfqId)).for('update');
+    if (!rfq || rfq.requesterId !== userId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this RFQ' });
+    }
+    if (rfq.status !== 'open') {
+      throw new TRPCError({ code: 'CONFLICT', message: `RFQ cannot be closed in state: ${rfq.status}` });
+    }
+
+    // Read the bidders before the write, inside the lock, so the notification
+    // list cannot miss a quotation that lands mid-transaction.
+    const bids = await tx.select({ providerId: quotations.providerId })
+      .from(quotations).where(eq(quotations.rfqId, rfqId));
+
+    await tx.update(rfqs).set({ status: 'closed' }).where(eq(rfqs.id, rfqId));
+
+    // ONE MESSAGE PER PROVIDER, not one per bid. The same de-duplication the
+    // losing-competitor path needs, and for the same reason: a provider may
+    // hold several quotations on one request, and telling them three times
+    // that it was withdrawn is three times worse than telling them once.
+    // (No Set spread: this TypeScript target has no downlevelIteration.)
+    const providerIds = bids
+      .map(b => b.providerId)
+      .filter((id, index, all) => id != null && all.indexOf(id) === index);
+
+    return { rfqId, rfqTitle: rfq.title, requesterId: rfq.requesterId, providerIds };
+  });
+
+  // After the commit, and never allowed to affect it.
+  await notifyUsers(db, result.providerIds.map(providerId => ({
+    userId: providerId,
+    title: 'Request withdrawn',
+    body: `"${result.rfqTitle}" was withdrawn by the customer.`,
+    type: 'quotation' as const,
+    link: `/rfq/${result.rfqId}`,
+    messageKey: 'notif.rfq.closed',
+    messageParams: { rfqTitle: result.rfqTitle },
+  })));
+
+  await recordCommercialEvent(db, {
+    actorId: userId,
+    ownerId: result.requesterId,
+    subjectType: 'rfq',
+    subjectId: result.rfqId,
+    action: 'rfq_closed',
+    detail: `open -> closed; ${result.providerIds.length} bidder(s) notified`,
+  });
+
+  return { success: true as const, rfqId: result.rfqId, notifiedProviders: result.providerIds.length };
 }

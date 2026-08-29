@@ -57,6 +57,7 @@ vi.mock('./db', () => ({
 import { appRouter } from './routers';
 import type { TrpcContext } from './_core/context';
 import { getDb } from './db';
+import { withTransaction } from './testSupport/txDouble';
 
 function makeCtx(userId: number, userRole: string, onboardingStatus = 'approved'): TrpcContext {
   return {
@@ -97,7 +98,7 @@ describe('rfq.submitQuotation notifies the RFQ owner', () => {
       // find out whom to notify.
       select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([{ requesterId: 1, title: 'Kitchen renovation', status: 'open' }]) }) }),
     };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
 
     const caller = appRouter.createCaller(makeCtx(20, 'contractor'));
     await caller.rfq.submitQuotation({ rfqId: 5, price: 1000 });
@@ -127,7 +128,7 @@ describe('rfq.submitQuotation notifies the RFQ owner', () => {
       }),
       select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([{ requesterId: 1, title: 'Kitchen renovation', status: 'open' }]) }) }),
     };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
 
     const caller = appRouter.createCaller(makeCtx(20, 'contractor'));
     await expect(caller.rfq.submitQuotation({ rfqId: 5, price: 1000 })).resolves.toEqual({ success: true });
@@ -149,7 +150,7 @@ describe('rfq.submitQuotation notifies the RFQ owner', () => {
       insert: vi.fn().mockReturnValue({ values: insertValues }),
       select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([]) }) }),
     };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(20, 'contractor'));
     await expect(caller.rfq.submitQuotation({ rfqId: 5, price: 1000 }))
       .rejects.toMatchObject({ code: 'NOT_FOUND' });
@@ -166,7 +167,7 @@ describe('rfq.submitQuotation notifies the RFQ owner', () => {
         insert: vi.fn().mockReturnValue({ values: insertValues }),
         select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([{ requesterId: 1, title: 'Kitchen renovation', status }]) }) }),
       };
-      (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+      (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
       const caller = appRouter.createCaller(makeCtx(20, 'contractor'));
       await expect(caller.rfq.submitQuotation({ rfqId: 5, price: 1000 }), status)
         .rejects.toMatchObject({ code: 'CONFLICT' });
@@ -186,10 +187,10 @@ describe('rfq.submitQuotation notifies the RFQ owner', () => {
     // asserted rather than just "it threw".
     const workingDb = () => {
       const insertValues = vi.fn().mockResolvedValue([{ insertId: 1 }]);
-      (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+      (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction({
         insert: vi.fn().mockReturnValue({ values: insertValues }),
         select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([{ requesterId: 1, title: 'T', status: 'open' }]) }) }),
-      });
+      }));
       return insertValues;
     };
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'wouter';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
@@ -415,6 +416,21 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                       <XCircle className="w-3.5 h-3.5" /> {t('common.rejected')}
                     </div>
                   )}
+
+                  {/* The comparison grid is a summary by design - it exists to
+                      put bids side by side. Opening one in full was impossible
+                      until /quotations/:id, so a customer comparing four
+                      quotations could not read any of them in their entirety. */}
+                  <Link href={`/quotations/${q.id}`}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="w-full gap-1.5 text-xs"
+                      data-testid="quotation-comparison-open"
+                    >
+                      <FileText className="w-3.5 h-3.5" /> {t('rfq.viewQuotation')}
+                    </Button>
+                  </Link>
 
                   {/* Action buttons */}
                   {isOwner && !rfqAwarded && !isRejected && !isAccepted && (
