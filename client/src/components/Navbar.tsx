@@ -27,12 +27,46 @@ export default function Navbar() {
     enabled: isAuthenticated,
   });
 
+  /**
+   * THE PLAN BESIDE THE NAME, READ FROM THE BILLING SYSTEM.
+   *
+   * Never hard-coded and never derived from the role: this is
+   * `billing.mySubscription`, the same server-resolved state the Plan & Billing
+   * screen renders, so a trial that lapses or a subscription that goes past due
+   * changes this label without anyone editing it here.
+   *
+   * `plan` is the EFFECTIVE plan - what the account may actually use today,
+   * after expiry and grace periods are applied - which is the only version
+   * worth showing next to somebody's name.
+   */
+  const { data: subscription } = trpc.billing.mySubscription.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+  // Absent while loading, and absent if the query fails. A missing plan renders
+  // NOTHING rather than a guess: "Free" shown to a Premium vendor because a
+  // request was in flight is worse than no badge at all.
+  const planLabel = subscription?.plan ? t(`billing.plan.${subscription.plan}`) : null;
+
   const isTransparent = location === '/';
 
   const getDashboardPath = () => getRolePlatformPath((user as any)?.userRole);
 
+  /**
+   * PRIMARY NAVIGATION, NOT ACCOUNT NAVIGATION.
+   *
+   * Dashboard and AI used to exist ONLY inside the avatar dropdown - the two
+   * destinations a signed-in person uses most often, reachable only by opening
+   * a menu that otherwise holds sign-out. The dropdown is for account
+   * functions; where you WORK belongs in the bar.
+   */
   const navLinks = [
     { label: t('nav.home'), href: '/' },
+    ...(isAuthenticated
+      ? [
+          { label: t('nav.dashboard'), href: getDashboardPath() },
+          { label: t('dash.ai'), href: '/ai' },
+        ]
+      : []),
     { label: t('nav.marketplace'), href: '/marketplace' },
     { label: t('nav.rfq'), href: '/rfq' },
     { label: t('nav.pricing'), href: '/pricing' },
@@ -49,7 +83,7 @@ export default function Navbar() {
       <div className="container">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 group">
+          <Link href="/" className="flex items-center gap-2 group" data-testid="brand-home-nav">
             <div className="w-8 h-8 rounded-lg gradient-brand flex items-center justify-center shadow-sm">
               <Building2 className="w-4 h-4 text-white" />
             </div>
@@ -109,16 +143,35 @@ export default function Navbar() {
                           {user.name?.charAt(0)?.toUpperCase() ?? 'U'}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="hidden sm:block text-sm font-medium">{user.name?.split(' ')[0]}</span>
+                      <span className="hidden sm:flex items-center gap-1.5 text-sm font-medium">
+                        {user.name?.split(' ')[0]}
+                        {planLabel && (
+                          <>
+                            <span className="opacity-40" aria-hidden="true">·</span>
+                            <span className="opacity-80" data-testid="account-plan">{planLabel}</span>
+                          </>
+                        )}
+                      </span>
                       <ChevronDown className="w-3 h-3 opacity-60" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align={dir === 'rtl' ? 'start' : 'end'} className="w-48">
-                    <DropdownMenuItem onClick={() => navigate(getDashboardPath())}>
-                      {t('nav.dashboard')}
+                  {/* ACCOUNT functions. Dashboard and AI moved to the bar above:
+                      they are where the work happens, not settings. */}
+                  <DropdownMenuContent align={dir === 'rtl' ? 'start' : 'end'} className="w-56">
+                    <div className="px-2 py-1.5">
+                      <p className="truncate text-sm font-medium">{user.name ?? user.email}</p>
+                      {planLabel && (
+                        <p className="mt-0.5 text-xs text-muted-foreground" data-testid="account-plan-menu">
+                          {t('billing.currentPlan')}: {planLabel}
+                        </p>
+                      )}
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => navigate('/settings')} data-testid="account-settings">
+                      {t('dash.settings')}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate('/ai')}>
-                      {t('dash.ai')}
+                    <DropdownMenuItem onClick={() => navigate('/settings#settings-billing')} data-testid="account-billing">
+                      {t('billing.title')}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={logout} className="text-destructive">

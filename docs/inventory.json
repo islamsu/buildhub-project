@@ -185,6 +185,14 @@
       "deadParamRoute": false
     },
     {
+      "path": "/rfq/:id/respond",
+      "component": "RFQRespondPage",
+      "source": "client/src/pages/RFQRespondPage.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
       "path": "/rfq/:id",
       "component": "RFQDetail",
       "source": "client/src/pages/RFQDetail.tsx",
@@ -228,6 +236,30 @@
       "path": "/auth/reset-password",
       "component": "PasswordResetPage",
       "source": "client/src/pages/PasswordResetPage.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/products/new",
+      "component": "NewProductPage",
+      "source": null,
+      "declaresParam": false,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/products/:id/edit",
+      "component": "EditProductPage",
+      "source": null,
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/settings",
+      "component": "SettingsPage",
+      "source": "client/src/pages/SettingsPage.tsx",
       "declaresParam": false,
       "readsParam": false,
       "deadParamRoute": false
@@ -526,9 +558,14 @@
       "indent": 2
     },
     {
-      "name": "summary",
+      "name": "requesterContact",
       "tier": "protectedProcedure",
       "indent": 2
+    },
+    {
+      "name": "summary",
+      "tier": "protectedProcedure",
+      "indent": 3
     },
     {
       "name": "get",
@@ -828,7 +865,7 @@
   ],
   "procedureTiers": {
     "publicProcedure": 26,
-    "protectedProcedure": 55,
+    "protectedProcedure": 56,
     "complianceProcedure": 2,
     "approvedProviderProcedure": 18,
     "superAdminProcedure": 10,
@@ -1112,42 +1149,42 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 1744,
+      "line": 1813,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 1824,
+      "line": 1893,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2690,
+      "line": 2840,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2922,
+      "line": 3072,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3062,
+      "line": 3212,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4179,
+      "line": 4329,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4204,
+      "line": 4354,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4229,
+      "line": 4379,
       "via": "notifyUser"
     },
     {

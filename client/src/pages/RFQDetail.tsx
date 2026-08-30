@@ -2,7 +2,6 @@ import { useParams, Link } from 'wouter';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/_core/hooks/useAuth';
-import { getRolePlatformPath } from '@/lib/rolePlatform';
 import { isComplianceRole } from '@shared/compliance';
 import Navbar from '@/components/Navbar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -394,7 +393,7 @@ export default function RFQDetail() {
                   // meant one extra place for the address to be rewritten - and
                   // the first version of that shim dropped the query string,
                   // so the id vanished between the click and the destination.
-                  <Link href={`${getRolePlatformPath((user as { userRole?: string } | null)?.userRole)}?rfq=${rfq.id}`}>
+                  <Link href={`/rfq/${rfq.id}/respond`}>
                     <Button className="mt-3 gap-2" data-testid="rfq-detail-respond">
                       <Package className="h-4 w-4" />
                       {ar ? 'المتابعة إلى الردود' : 'Continue to respond'}

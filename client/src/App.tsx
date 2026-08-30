@@ -35,6 +35,28 @@ const RFQDetail = lazy(() => import("./pages/RFQDetail"));
 const QuotationDetail = lazy(() => import("./pages/QuotationDetail"));
 const MessagesPage = lazy(() => import("./pages/MessagesPage"));
 const AIAssistantPage = lazy(() => import("./pages/AIAssistantPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const RFQRespondPage = lazy(() => import("./pages/RFQRespondPage"));
+const ProductFormPage = lazy(() => import("./pages/ProductFormPage"));
+/**
+ * Named wrappers rather than `component={() => <ProductFormPage mode="…" />}`.
+ *
+ * An inline arrow is a NEW component identity on every render, so React
+ * unmounts and remounts the page - losing form state mid-edit. It also hides
+ * the route from scripts/inventory.mjs, whose parser matches
+ * `component={Identifier}`: both product routes were silently absent from the
+ * repository census until this was noticed.
+ */
+function NewProductPage() { return <ProductFormPage mode="create" />; }
+function EditProductPage() {
+  // Reads the param the ROUTE declares, rather than leaving
+  // ProductFormPage to dig it out of the router itself. The repository
+  // census flags a route that declares `:id` and never uses it, and it
+  // was right to: an indirection the reader cannot follow is one a
+  // refactor can quietly sever.
+  const params = useParams<{ id?: string }>();
+  return <ProductFormPage mode="edit" productId={Number(params.id)} />;
+}
 const CompliancePage = lazy(() => import("./pages/CompliancePage"));
 const PasswordSetupPage = lazy(() => import("./pages/PasswordSetupPage"));
 const PasswordResetPage = lazy(() => import("./pages/PasswordResetPage"));
@@ -107,12 +129,16 @@ function Router() {
       <Route path={"/marketplace/finishing"} component={FinishingDirectory} />
       <Route path={"/projects/:id"} component={ProjectDetail} />
       <Route path={"/rfq"} component={RFQPage} />
+      <Route path={"/rfq/:id/respond"} component={RFQRespondPage} />
       <Route path={"/rfq/:id"} component={RFQDetail} />
       <Route path={"/quotations/:id"} component={QuotationDetail} />
       <Route path={"/messages"} component={MessagesPage} />
       <Route path={"/compliance"} component={CompliancePage} />
       <Route path={"/auth/setup-password"} component={PasswordSetupPage} />
       <Route path={"/auth/reset-password"} component={PasswordResetPage} />
+      <Route path={"/products/new"} component={NewProductPage} />
+      <Route path={"/products/:id/edit"} component={EditProductPage} />
+      <Route path={"/settings"} component={SettingsPage} />
       <Route path={"/ai"} component={AIAssistantPage} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />

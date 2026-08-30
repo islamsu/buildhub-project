@@ -13,7 +13,7 @@
 // shows exactly that message rather than interpreting it.
 
 import { useEffect, useState } from 'react';
-import { useLocation } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { ShieldCheck, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -56,10 +56,10 @@ export default function AdminLogin() {
     <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4" dir={dir}>
       <div className="w-full max-w-md">
         <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2" data-testid="brand-home">
             <ShieldCheck className="h-6 w-6 text-primary" />
             <span className="text-lg font-semibold">BuildHub</span>
-          </div>
+          </Link>
           <LanguageToggle />
         </div>
 

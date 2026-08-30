@@ -201,7 +201,7 @@ export default function Pricing() {
                       {t('auth.continue')}
                     </Button>
                   ) : data.checkoutAvailable ? (
-                    <Button className="w-full" onClick={() => navigate('/platform/contractor#role-billing')}>
+                    <Button className="w-full" onClick={() => navigate('/settings#settings-billing')}>
                       {t('billing.upgradeCta')}
                     </Button>
                   ) : (

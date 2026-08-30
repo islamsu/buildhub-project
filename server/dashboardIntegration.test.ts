@@ -102,15 +102,24 @@ describe('role boundary regression (items 3-5)', () => {
     // later gained a self-scoped profile section of their own - that is their
     // own account, not a vendor surface - so pinning the literal source text of
     // the branch was testing the whitespace rather than the boundary.
-    for (const vendorOnly of ['<section id="role-performance">', '<section id="role-billing">', '<section id="role-enquiries">']) {
+    // role-billing left this page for /settings. The BOUNDARY being tested is
+    // unchanged - a homeowner must not be shown a vendor surface - so the list
+    // shrinks to the sections that are still here rather than the assertion
+    // being dropped.
+    for (const vendorOnly of ['<section id="role-performance">', '<section id="role-enquiries">']) {
       const at = rolePlatform.indexOf(vendorOnly);
       expect(at, `${vendorOnly} must exist`).toBeGreaterThan(-1);
       const before = rolePlatform.slice(Math.max(0, at - 60), at);
       expect(before, `${vendorOnly} must be gated on isProfessional`).toContain('{isProfessional && (');
     }
     // And the vendor-only components are never mounted outside that gate.
-    for (const vendorComponent of ['<VendorBilling', '<VendorAnalytics', '<QualifiedEnquiries', '<VendorServiceCategories']) {
+    for (const vendorComponent of ['<VendorAnalytics', '<QualifiedEnquiries']) {
       expect(rolePlatform.split(vendorComponent).length - 1, `${vendorComponent} is mounted more than once`).toBe(1);
+    }
+    // These two moved to Settings and must be gone from here entirely - a
+    // leftover copy would be the duplicate implementation §10 forbids.
+    for (const moved of ['<VendorBilling', '<VendorServiceCategories']) {
+      expect(rolePlatform, `${moved} moved to Settings and must not remain here`).not.toContain(moved);
     }
   });
 
