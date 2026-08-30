@@ -12,6 +12,21 @@ It is not a product defect. With an S3-compatible endpoint configured, the
 whole chain works. This document records the evidence and the two commands
 needed to reproduce it, so the next person does not have to re-derive it.
 
+## Status, in three separate states
+
+Not one status. These are different claims with different evidence:
+
+| Scope | State | Evidence |
+|---|---|---|
+| **Local upload chain** | **VERIFIED** | 16/16, twice, against a real S3-compatible endpoint and a real browser. Detail below. |
+| **Staging upload chain** | **BLOCKED BY INFRASTRUCTURE** | `S3_*` unset on staging; the gate skips those checks and states the reason. |
+| **Production upload chain** | **NOT VERIFIED** | No production storage has been exercised by anyone. |
+
+The upload feature is **not production-ready** and must not be described as
+such until the deployed staging success path is actually exercised. Local
+evidence establishes that the code is correct; it establishes nothing about a
+deployment.
+
 ## What was proven
 
 A local S3-compatible endpoint was configured and the chain the mandate names
