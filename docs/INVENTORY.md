@@ -45,9 +45,9 @@
 
 Dead param routes: **0**
 
-## Server procedures (116)
+## Server procedures (119)
 
-- `protectedProcedure` — 56
+- `protectedProcedure` — 59
 - `publicProcedure` — 26
 - `approvedProviderProcedure` — 18
 - `superAdminProcedure` — 10
@@ -55,7 +55,7 @@ Dead param routes: **0**
 - `complianceProcedure` — 2
 - `aiChatProcedure` — 1
 
-## Tables (34)
+## Tables (36)
 
 | Table | Columns | FK refs | NOT NULL | UNIQUE |
 |---|---|---|---|---|
@@ -63,7 +63,7 @@ Dead param routes: **0**
 | `revokedSessions` | 5 | 1 | 3 | 0 |
 | `userAccountAuditEvents` | 9 | 2 | 2 | 0 |
 | `adminInvitations` | 13 | 3 | 6 | 1 |
-| `projects` | 15 | 1 | 4 | 0 |
+| `projects` | 16 | 2 | 4 | 0 |
 | `milestones` | 8 | 1 | 3 | 0 |
 | `tasks` | 13 | 3 | 3 | 0 |
 | `aiAttachments` | 10 | 1 | 6 | 0 |
@@ -93,17 +93,20 @@ Dead param routes: **0**
 | `commercialAuditEvents` | 12 | 2 | 4 | 0 |
 | `vendorEntitlementOverrides` | 15 | 3 | 5 | 0 |
 | `fieldValueHistory` | 14 | 2 | 4 | 0 |
+| `projectMembers` | 12 | 4 | 5 | 0 |
+| `rfqSuppliers` | 14 | 3 | 5 | 0 |
 
-## Notification write sites (12)
+## Notification write sites (13)
 
-- server/routers.ts:1836 — notifyUser
-- server/routers.ts:1916 — notifyUser
-- server/routers.ts:2863 — notifyUser
-- server/routers.ts:3095 — notifyUser
-- server/routers.ts:3235 — notifyUser
-- server/routers.ts:4352 — notifyUser
-- server/routers.ts:4377 — notifyUser
-- server/routers.ts:4402 — notifyUser
+- server/routers.ts:1228 — notifyUser
+- server/routers.ts:2032 — notifyUser
+- server/routers.ts:2112 — notifyUser
+- server/routers.ts:3061 — notifyUser
+- server/routers.ts:3293 — notifyUser
+- server/routers.ts:3433 — notifyUser
+- server/routers.ts:4550 — notifyUser
+- server/routers.ts:4575 — notifyUser
+- server/routers.ts:4600 — notifyUser
 - server/notifications.ts:40 — notifyUser
 - server/notifications.ts:43 — helper implementation
 - server/notifications.ts:57 — notifyUser

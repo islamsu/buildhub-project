@@ -37,10 +37,19 @@ function queueSelects(resultsByCall: unknown[][]) {
   let call = 0;
   return vi.fn(() => {
     const rows = resultsByCall[call++] ?? [];
-    const chain: PromiseLike<unknown[]> & { orderBy: ReturnType<typeof vi.fn> } = {
+    // `limit` joined this chain when project authorization moved into
+    // requireProjectAccess, which reads the project row with `.limit(1)`. The
+    // mock models the DRIVER; production code must not lose a limit clause to
+    // suit a fake. It returns the same chain so `.limit(1).orderBy(...)` and a
+    // bare `await ....limit(1)` both work.
+    const chain: PromiseLike<unknown[]> & {
+      orderBy: ReturnType<typeof vi.fn>;
+      limit: ReturnType<typeof vi.fn>;
+    } = {
       orderBy: vi.fn().mockResolvedValue(rows),
       then: (resolve: any, reject?: any) => Promise.resolve(rows).then(resolve, reject),
     } as any;
+    chain.limit = vi.fn(() => chain);
     return {
       from: () => ({
         where: () => chain,
@@ -63,7 +72,24 @@ function makeUpdateSpy() {
   return { update, set, where };
 }
 
-const OWNED_PROJECT = [{ id: 1 }];
+/**
+ * THE FIXTURES CHANGED SHAPE WITH THE MODEL, NOT WITH THE ASSERTIONS.
+ *
+ * Access used to be decided by a predicate: the project row came back only if
+ * you owned it, so "not yours" and "does not exist" were the same empty array.
+ * requireProjectAccess reads the row FIRST and then decides, so a fixture has
+ * to say who owns it.
+ *
+ * Every test below still asserts exactly what it asserted before - the owner
+ * is allowed, a non-owner is refused - against a model that can now also
+ * express "on the project, but not as the owner".
+ */
+/** Project 1, owned by user 1. The caller in these tests is user 1. */
+const OWNED_PROJECT = [{ id: 1, ownerId: 1 }];
+/** Project 1 exists and belongs to somebody else. */
+const SOMEONE_ELSES_PROJECT = [{ id: 1, ownerId: 999 }];
+/** The membership lookup finding nothing: the caller is not on the project. */
+const NO_MEMBERSHIP = [] as unknown[];
 const NOT_OWNED = [] as unknown[];
 
 describe('projects.milestones / addMilestone', () => {
@@ -77,10 +103,10 @@ describe('projects.milestones / addMilestone', () => {
   });
 
   it('non-owner cannot read milestones', async () => {
-    const select = queueSelects([NOT_OWNED]);
+    const select = queueSelects([SOMEONE_ELSES_PROJECT, NO_MEMBERSHIP]);
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select });
     const caller = appRouter.createCaller(makeCtx(99));
-    await expect(caller.projects.milestones({ projectId: 1 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller.projects.milestones({ projectId: 1 })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('owner can create a milestone', async () => {
@@ -93,11 +119,11 @@ describe('projects.milestones / addMilestone', () => {
   });
 
   it('non-owner cannot create a milestone', async () => {
-    const select = queueSelects([NOT_OWNED]);
+    const select = queueSelects([SOMEONE_ELSES_PROJECT, NO_MEMBERSHIP]);
     const { insert, values } = makeInsertSpy();
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select, insert });
     const caller = appRouter.createCaller(makeCtx(99));
-    await expect(caller.projects.addMilestone({ projectId: 1, title: 'Roof' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller.projects.addMilestone({ projectId: 1, title: 'Roof' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(values).not.toHaveBeenCalled();
   });
 });
@@ -113,10 +139,10 @@ describe('projects.tasks / addTask / updateTask', () => {
   });
 
   it('non-owner cannot read tasks', async () => {
-    const select = queueSelects([NOT_OWNED]);
+    const select = queueSelects([SOMEONE_ELSES_PROJECT, NO_MEMBERSHIP]);
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select });
     const caller = appRouter.createCaller(makeCtx(99));
-    await expect(caller.projects.tasks({ projectId: 1 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller.projects.tasks({ projectId: 1 })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('owner can create a task', async () => {
@@ -129,11 +155,11 @@ describe('projects.tasks / addTask / updateTask', () => {
   });
 
   it('non-owner cannot create a task', async () => {
-    const select = queueSelects([NOT_OWNED]);
+    const select = queueSelects([SOMEONE_ELSES_PROJECT, NO_MEMBERSHIP]);
     const { insert, values } = makeInsertSpy();
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select, insert });
     const caller = appRouter.createCaller(makeCtx(99));
-    await expect(caller.projects.addTask({ projectId: 1, title: 'Paint walls' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller.projects.addTask({ projectId: 1, title: 'Paint walls' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(values).not.toHaveBeenCalled();
   });
 
@@ -176,10 +202,10 @@ describe('projects.expenses / addExpense', () => {
   });
 
   it('non-owner cannot read expenses (financial data)', async () => {
-    const select = queueSelects([NOT_OWNED]);
+    const select = queueSelects([SOMEONE_ELSES_PROJECT, NO_MEMBERSHIP]);
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select });
     const caller = appRouter.createCaller(makeCtx(99));
-    await expect(caller.projects.expenses({ projectId: 1 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller.projects.expenses({ projectId: 1 })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('owner can add an expense', async () => {
@@ -192,11 +218,11 @@ describe('projects.expenses / addExpense', () => {
   });
 
   it('non-owner cannot add an expense to someone else\'s project', async () => {
-    const select = queueSelects([NOT_OWNED]);
+    const select = queueSelects([SOMEONE_ELSES_PROJECT, NO_MEMBERSHIP]);
     const { insert, values } = makeInsertSpy();
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select, insert });
     const caller = appRouter.createCaller(makeCtx(99));
-    await expect(caller.projects.addExpense({ projectId: 1, amount: 250 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller.projects.addExpense({ projectId: 1, amount: 250 })).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(values).not.toHaveBeenCalled();
   });
 });
@@ -212,10 +238,10 @@ describe('projects.dailyLogs / addDailyLog', () => {
   });
 
   it('non-owner cannot read daily logs', async () => {
-    const select = queueSelects([NOT_OWNED]);
+    const select = queueSelects([SOMEONE_ELSES_PROJECT, NO_MEMBERSHIP]);
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select });
     const caller = appRouter.createCaller(makeCtx(99));
-    await expect(caller.projects.dailyLogs({ projectId: 1 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller.projects.dailyLogs({ projectId: 1 })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('owner can add a daily log', async () => {
@@ -228,11 +254,11 @@ describe('projects.dailyLogs / addDailyLog', () => {
   });
 
   it('non-owner cannot add a daily log', async () => {
-    const select = queueSelects([NOT_OWNED]);
+    const select = queueSelects([SOMEONE_ELSES_PROJECT, NO_MEMBERSHIP]);
     const { insert, values } = makeInsertSpy();
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select, insert });
     const caller = appRouter.createCaller(makeCtx(99));
-    await expect(caller.projects.addDailyLog({ projectId: 1, description: 'Site visit' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller.projects.addDailyLog({ projectId: 1, description: 'Site visit' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(values).not.toHaveBeenCalled();
   });
 });
@@ -246,16 +272,16 @@ describe('no implicit admin/provider bypass on project sub-resources', () => {
   // settings elsewhere (adminRouter) but were never granted a bypass here, so this asserts
   // that stays true rather than silently regressing into an unintended admin superpower.
   it('an admin-role user who does not own the project is still denied', async () => {
-    const select = queueSelects([NOT_OWNED]);
+    const select = queueSelects([SOMEONE_ELSES_PROJECT, NO_MEMBERSHIP]);
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select });
     const caller = appRouter.createCaller(makeCtx(2, 'admin', 'admin'));
-    await expect(caller.projects.milestones({ projectId: 1 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller.projects.milestones({ projectId: 1 })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('a provider-role user who does not own the project is still denied', async () => {
-    const select = queueSelects([NOT_OWNED]);
+    const select = queueSelects([SOMEONE_ELSES_PROJECT, NO_MEMBERSHIP]);
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select });
     const caller = appRouter.createCaller(makeCtx(2, 'contractor'));
-    await expect(caller.projects.expenses({ projectId: 1 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller.projects.expenses({ projectId: 1 })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 });

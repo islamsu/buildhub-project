@@ -211,6 +211,20 @@ describe('every id-taking procedure is owner-scoped, admin-gated, or named', () 
   }
 });
 
+/**
+ * Procedures that legitimately take ANOTHER user's id from the request,
+ * mapped to the caller-authorization each one must perform.
+ *
+ * Acting on somebody else is the whole feature here: a project owner or
+ * manager puts a contractor on a job. The request names WHO to act on; the
+ * session names who is ALLOWED to. Both halves are required, and the regex is
+ * the second half made checkable.
+ */
+const TARGETS_ANOTHER_USER: Record<string, RegExp> = {
+  'projects.addMember':    /requireProjectAccess\(db, input\.projectId, ctx\.user\.id, 'manage'\)/,
+  'projects.removeMember': /requireProjectAccess\(db, input\.projectId, ctx\.user\.id, 'manage'\)/,
+};
+
 describe('an id is never trusted as a substitute for the session', () => {
   it('no non-admin procedure reads an owner id FROM THE REQUEST', () => {
     // The classic shape: `where(eq(projects.ownerId, input.userId))`. The
@@ -225,6 +239,23 @@ describe('an id is never trusted as a substitute for the session', () => {
       const code = codeOnly(procedure.body);
       if (/eq\(\w+\.(ownerId|userId|senderId|authorId|supplierId|askerId|reviewerId|requesterId|providerId),[^)]*input\./.test(code)) {
         if (procedure.qualified in PUBLIC_BY_OWNER) continue;
+        // A procedure whose PURPOSE is acting on somebody else - putting a
+        // person on a project, taking them off it - necessarily names that
+        // person in the request. That is a TARGET, not an identity, and the
+        // difference is whether the CALLER is authorized from the session.
+        //
+        // This is not an exemption: the rule below is strictly stronger than
+        // the one it replaces for these procedures. Remove the authorization
+        // call and this test fails, which a bare allowlist entry would not do.
+        const requiredCallerCheck = TARGETS_ANOTHER_USER[procedure.qualified];
+        if (requiredCallerCheck) {
+          expect(
+            requiredCallerCheck.test(code),
+            `${procedure.qualified} names another user in its input and MUST authorize the CALLER `
+            + 'from the session in the same body. The session check is missing or was changed.',
+          ).toBe(true);
+          continue;
+        }
         offenders.push(procedure.qualified);
       }
     }

@@ -73,6 +73,15 @@ describe('the log line an operator actually gets', () => {
 
 // ══ 2. THE CUSTOMER'S HALF ═════════════════════════════════════════════════
 
+/**
+ * Project 1, owned by user 7 - which is who `ctx()` signs in as. Awaitable
+ * and chainable, like the builder it stands in for.
+ */
+const uploadableProject: any = {
+  limit: () => uploadableProject,
+  then: (res: any, rej?: any) => Promise.resolve([{ id: 1, ownerId: 7 }]).then(res, rej),
+};
+
 describe('what the user is told', () => {
   beforeEach(() => setObjectStorage(new UnconfiguredObjectStorage()));
   afterEach(() => setObjectStorage(null));
@@ -81,7 +90,11 @@ describe('what the user is told', () => {
     // The request was fine. The feature is off on this deployment. Saying so
     // stops somebody retrying into the same wall.
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
-      select: () => ({ from: () => ({ where: () => Promise.resolve([{ id: 1 }]) }) }),
+      // The project row now needs `ownerId` and a `.limit()` on the builder:
+      // uploadDocument authorizes through requireProjectAccess before it ever
+      // reaches storage, so the fixture has to get the caller PAST that check
+      // for the storage refusal to be what the test observes.
+      select: () => ({ from: () => ({ where: () => uploadableProject }) }),
       insert: () => ({ values: () => Promise.resolve([{ insertId: 1 }]) }),
     });
 
@@ -99,7 +112,11 @@ describe('what the user is told', () => {
 
   it('the message names the situation without naming a bucket or a credential', async () => {
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
-      select: () => ({ from: () => ({ where: () => Promise.resolve([{ id: 1 }]) }) }),
+      // The project row now needs `ownerId` and a `.limit()` on the builder:
+      // uploadDocument authorizes through requireProjectAccess before it ever
+      // reaches storage, so the fixture has to get the caller PAST that check
+      // for the storage refusal to be what the test observes.
+      select: () => ({ from: () => ({ where: () => uploadableProject }) }),
       insert: () => ({ values: () => Promise.resolve([{ insertId: 1 }]) }),
     });
     const png = Buffer.concat([

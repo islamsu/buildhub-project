@@ -147,8 +147,20 @@ describe('internal authorization still uses the full ctx.user (unaffected by the
   });
 
   it('homeowner functionality (protectedProcedure) still works - a homeowner reaches their own projects list', async () => {
+    // A real Drizzle builder is BOTH awaitable and chainable. This mock only
+    // offered `.orderBy()`, so the scope helper - which awaits `.where()`
+    // directly to collect the caller's project ids - got a plain object back
+    // and failed on "owned is not iterable". Modelling both shapes is what the
+    // driver actually does; narrowing the production code to suit the fake
+    // would have been the wrong repair.
+    const rows: unknown[] = [];
+    const chain: any = {
+      orderBy: vi.fn().mockResolvedValue(rows),
+      limit: vi.fn(() => chain),
+      then: (resolve: any, reject?: any) => Promise.resolve(rows).then(resolve, reject),
+    };
     (db.getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
-      select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ orderBy: vi.fn().mockResolvedValue([]) }) }) }),
+      select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn(() => chain) }) }),
     });
     const homeowner = appRouter.createCaller(makeCtx({ userRole: 'homeowner' }));
     await expect(homeowner.projects.list()).resolves.toEqual([]);

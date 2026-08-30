@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('./db', () => ({ getDb: vi.fn() }));
@@ -134,10 +135,37 @@ describe('owner-scoped reads are scoped in the QUERY, for every role', () => {
   it('a role cannot widen its own scope by asking - there is no userId input', () => {
     // The strongest form of this guarantee: the procedure takes no argument
     // that could name someone else's data.
+    //
+    // THE MECHANISM CHANGED AND THE PROPERTY DID NOT. Scoping used to be the
+    // literal predicate `eq(projects.ownerId, ctx.user.id)` inline in the
+    // query. It is now `readableProjectIds(db, ctx.user.id)`, which returns
+    // the projects the caller owns OR is a live member of - because a
+    // contractor put on a job must see it, and under the old predicate they
+    // could not.
+    //
+    // What is asserted is what always mattered: the scope is derived from the
+    // SESSION and the procedure accepts nothing that could name anyone else.
     const source = readRouters();
     const listBody = source.slice(source.indexOf('const projectsRouter = router({'));
-    expect(listBody.slice(0, 400)).toContain('eq(projects.ownerId, ctx.user.id)');
-    expect(listBody.slice(0, 400)).not.toMatch(/input\.(ownerId|userId)/);
+    const listSlice = listBody.slice(0, 600);
+    expect(listSlice, 'projects.list must derive its scope from ctx.user.id')
+      .toMatch(/readableProjectIds\(db, ctx\.user\.id\)|eq\(projects\.ownerId, ctx\.user\.id\)/);
+    // Unchanged, and the half that actually stops the attack: nothing in the
+    // request can name whose projects to return.
+    expect(listSlice).not.toMatch(/input\.(ownerId|userId)/);
+  });
+
+  it('the scope helper itself reads the session id and filters removed members', () => {
+    // The assertion above proves projects.list CALLS the helper. This proves
+    // the helper is the right shape - otherwise the pair would pass with a
+    // helper that returned every project id in the database.
+    const helper = readFileSync(new URL('./projectMembership.ts', import.meta.url), 'utf8');
+    const fn = helper.slice(helper.indexOf('export async function readableProjectIds'));
+    expect(fn).toContain('eq(projects.ownerId, userId)');
+    expect(fn).toContain('eq(projectMembers.userId, userId)');
+    // A membership that was ended must not still grant access.
+    expect(fn, 'removed members must not be treated as current')
+      .toContain('isNull(projectMembers.removedAt)');
   });
 });
 

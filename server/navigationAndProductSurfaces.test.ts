@@ -25,6 +25,7 @@ import { readFileSync } from 'node:fs';
 import { readSourceForAssertions } from './_testing/sourceText';
 import { PRODUCT_UNITS, isProductUnit, normaliseUnit } from '@shared/productUnits';
 import { parseProductImport } from '@shared/productImport';
+import { canCreateProject, creatorProjectRole } from '@shared/projectAccess';
 import { PRODUCT_CATEGORIES } from '@shared/productCategories';
 
 const read = (relative: string) => readSourceForAssertions(readFileSync(new URL(relative, import.meta.url), 'utf8'));
@@ -47,18 +48,63 @@ describe('who may start a project', () => {
     expect(block).toContain('db.insert(projects)');
   });
 
-  it('refuses any account that is not a homeowner, in the PROCEDURE', () => {
-    expect(block).toContain("if (ctx.user.userRole !== 'homeowner')");
+  /**
+   * THIS RULE CHANGED, AND THE REASON IT CHANGED IS THE POINT.
+   *
+   * The previous version of this test asserted homeowner-only creation. That
+   * restriction was justified partly by the observation that every existing
+   * project happened to be homeowner-owned - which is not evidence of
+   * anything: historical rows record the rule that WAS enforced, so a
+   * restriction was being used as proof of itself.
+   *
+   * The rule is now the professional roles that deliver a job, with supplier
+   * excluded because a supplier sells INTO a project rather than
+   * commissioning one. The list lives in shared/projectAccess.ts and this
+   * asserts the PROCEDURE consults it, rather than re-listing the roles here
+   * where the two copies could drift apart.
+   */
+  it('refuses accounts outside the creator list, in the PROCEDURE', () => {
+    expect(block).toContain('canCreateProject(ctx.user.userRole)');
     expect(block).toContain("code: 'FORBIDDEN'");
   });
 
-  it('and the refusal names the rule rather than saying "forbidden"', () => {
-    // A provider hitting this is looking for the feature, not attacking it.
-    expect(block).toContain('Projects are created by the customer');
+  it('and the refusal tells a supplier where they actually stand', () => {
+    // Someone hitting this is looking for the feature, not attacking it.
+    expect(block).toContain('Suppliers sell into projects rather than commissioning them');
   });
 
   it('the check runs BEFORE the insert, not after it', () => {
-    expect(block.indexOf("userRole !== 'homeowner'")).toBeLessThan(block.indexOf('db.insert(projects)'));
+    expect(block.indexOf('canCreateProject(')).toBeLessThan(block.indexOf('db.insert(projects)'));
+  });
+
+  it('the creator list is the professional roles, and excludes supplier', () => {
+    // The list itself, checked where it lives. Asserted by BEHAVIOUR rather
+    // than by matching the array's source text, so it fails if the function
+    // stops agreeing with the constant.
+    expect(canCreateProject('homeowner')).toBe(true);
+    expect(canCreateProject('project_manager')).toBe(true);
+    expect(canCreateProject('contractor')).toBe(true);
+    expect(canCreateProject('architect')).toBe(true);
+    expect(canCreateProject('engineer')).toBe(true);
+    // The considered exception.
+    expect(canCreateProject('supplier')).toBe(false);
+    // And nothing unknown slips through.
+    expect(canCreateProject('admin')).toBe(false);
+    expect(canCreateProject(undefined)).toBe(false);
+  });
+
+  it('a creator who is not the customer becomes the manager, not the owner', () => {
+    // Otherwise a contractor creating a job would quietly own the customer's
+    // project, which is exactly what the membership model exists to prevent.
+    expect(creatorProjectRole('homeowner')).toBe('owner');
+    expect(creatorProjectRole('contractor')).toBe('manager');
+    expect(creatorProjectRole('project_manager')).toBe('manager');
+  });
+
+  it('creation records the creator AND seeds the team', () => {
+    // A project with nobody on it would render as having no members at all.
+    expect(block).toContain('createdBy: ctx.user.id');
+    expect(block).toContain('db.insert(projectMembers)');
   });
 
   it('the role comes from the session, never from the request body', () => {

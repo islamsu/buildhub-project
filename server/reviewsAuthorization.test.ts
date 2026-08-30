@@ -199,7 +199,14 @@ describe('rfq.create - optional project link', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('the project owner can link a new RFQ to their own project', async () => {
-    const projectWhere = vi.fn().mockResolvedValue([{ id: 7 }]);
+    // Project 7, owned by user 1 - the caller. The row needs `ownerId` now
+    // because rfq.create asks requireProjectAccess for the `commercial`
+    // capability rather than relying on an ownerId predicate, and `.limit(1)`
+    // exists because a real builder has it.
+    const ownedRows = [{ id: 7, ownerId: 1 }];
+    const projectChain: any = { limit: vi.fn(() => projectChain),
+      then: (res: any, rej?: any) => Promise.resolve(ownedRows).then(res, rej) };
+    const projectWhere = vi.fn(() => projectChain);
     const values = vi.fn().mockResolvedValue([{ insertId: 99 }]);
     const insert = vi.fn().mockReturnValue({ values });
     const db = {
@@ -215,7 +222,16 @@ describe('rfq.create - optional project link', () => {
   });
 
   it('rejects linking an RFQ to a project the caller does not own', async () => {
-    const projectWhere = vi.fn().mockResolvedValue([]); // ownerId filter excludes it
+    // The project exists and belongs to user 1; the caller is user 999 with no
+    // membership. Under the old ownerId predicate this was an empty array and
+    // "does not exist" and "not yours" were indistinguishable - now the code
+    // reads the row and then refuses, so the fixture says who owns it.
+    let call = 0;
+    const projectChain: any = { limit: vi.fn(() => projectChain),
+      then: (res: any, rej?: any) =>
+        // 1st select: the project. 2nd: the membership lookup, which finds none.
+        Promise.resolve(call++ === 0 ? [{ id: 7, ownerId: 1 }] : []).then(res, rej) };
+    const projectWhere = vi.fn(() => projectChain);
     const values = vi.fn();
     const insert = vi.fn().mockReturnValue({ values });
     const db = {
@@ -226,7 +242,7 @@ describe('rfq.create - optional project link', () => {
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(999));
-    await expect(caller.rfq.create({ category: 'Materials', title: 'Kitchen remodel', projectId: 7 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller.rfq.create({ category: 'Materials', title: 'Kitchen remodel', projectId: 7 })).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(values).not.toHaveBeenCalled();
   });
 

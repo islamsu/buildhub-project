@@ -46,6 +46,7 @@ import {
   commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems, qualifiedEnquiries,
+  projectMembers, rfqSuppliers,
 } from '../drizzle/schema';
 import { and, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -99,6 +100,8 @@ import {
 import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shared/productImport';
 import { PRODUCT_CATEGORIES } from '../shared/productCategories';
 import { normaliseUnit, PRODUCT_UNITS } from '../shared/productUnits';
+import { canCreateProject, creatorProjectRole, PROJECT_ROLES, capabilitiesFor } from '../shared/projectAccess';
+import { requireProjectAccess, readableProjectIds, liveMembership } from './projectMembership';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSubscriptions } from '../drizzle/schema';
 import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
@@ -994,7 +997,12 @@ const projectsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(projects).where(eq(projects.ownerId, ctx.user.id)).orderBy(desc(projects.createdAt));
+    // Owned OR joined. Before the project team model this was ownership alone,
+    // which is why a contractor put on a job could not see it: there was no
+    // membership to see it through.
+    const ids = await readableProjectIds(db, ctx.user.id);
+    if (ids.length === 0) return [];
+    return db.select().from(projects).where(inArray(projects.id, ids)).orderBy(desc(projects.createdAt));
   }),
   directory: approvedProviderProcedure.query(async ({ ctx }) => {
     if (!providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])) {
@@ -1019,9 +1027,14 @@ const projectsRouter = router({
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [project] = await db.select().from(projects).where(and(eq(projects.id, input.id), eq(projects.ownerId, ctx.user.id)));
+    // Throws NOT_FOUND for a project that does not exist AND for one the
+    // caller is not on, so guessing ids reveals nothing.
+    const access = await requireProjectAccess(db, input.id, ctx.user.id, 'read');
+    const [project] = await db.select().from(projects).where(eq(projects.id, input.id));
     if (!project) throw new TRPCError({ code: 'NOT_FOUND' });
-    return project;
+    // The caller's own capacity travels with the record so the UI can render
+    // the right controls - it is a convenience, never the enforcement.
+    return { ...project, myProjectRole: access.projectRole };
   }),
   /**
    * WHO MAY START A PROJECT - the owner's decision, enforced HERE.
@@ -1055,24 +1068,213 @@ const projectsRouter = router({
       endDate: z.date().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      // The message names the rule rather than saying "forbidden": a provider
+      // The message names the rule rather than saying "forbidden": a supplier
       // who tries this is not attacking anything, they are looking for the
-      // feature, and "projects are created by the customer" tells them where
-      // they actually stand.
-      if (ctx.user.userRole !== 'homeowner') {
+      // feature, and being told where they actually stand is more use than a
+      // bare refusal.
+      if (!canCreateProject(ctx.user.userRole)) {
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: 'Projects are created by the customer commissioning the work. Provider accounts respond to requests and quote on them instead.',
+          message: 'Suppliers sell into projects rather than commissioning them. Ask the customer or project manager to add you to the project, or respond to one of their requests.',
         });
       }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      /**
+       * CREATOR AND OWNER ARE RECORDED SEPARATELY.
+       *
+       * `ownerId` defaults to the creator because most projects are made by
+       * the customer themselves, and a professional creating one on a client's
+       * behalf has no way to name that client until the client is on BuildHub.
+       * `createdBy` always records who actually typed it in, so the two can
+       * diverge the moment the product supports naming a customer - and the
+       * audit trail already answers "who made this" today.
+       */
+      const projectRole = creatorProjectRole(ctx.user.userRole);
       const result = await db.insert(projects).values({
         ...input,
         ownerId: ctx.user.id,
+        createdBy: ctx.user.id,
         budget: input.budget != null ? String(input.budget) : undefined,
       });
-      return { id: Number(result[0].insertId) };
+      const id = Number(result[0].insertId);
+
+      /**
+       * THE CREATOR'S MEMBERSHIP IS PART OF CREATING THE PROJECT.
+       *
+       * Without this row a project would exist with nobody on it. Ownership is
+       * still read directly from `projects.ownerId`, so the project is not
+       * orphaned if this insert fails - but every team-facing surface reads
+       * memberships, and a project whose own creator is not on its team would
+       * render as having no members at all.
+       */
+      await db.insert(projectMembers).values({
+        projectId: id,
+        userId: ctx.user.id,
+        projectRole,
+        assignedBy: ctx.user.id,
+      });
+      return { id, projectRole };
+    }),
+
+  /**
+   * ── THE PROJECT TEAM ────────────────────────────────────────────────────
+   *
+   * Everything below is new capability, not a repaired one. Before this,
+   * nothing in BuildHub could put a second person on a project.
+   */
+
+  /** Who is on this project. Any member may see the team they are part of. */
+  members: protectedProcedure
+    .input(z.object({ projectId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const access = await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
+
+      // An explicit column allowlist over the joined user. A team list needs a
+      // name and a way to recognise someone; it does not need their email,
+      // their phone or anything else on the users row.
+      const rows = await db.select({
+        id: projectMembers.id,
+        userId: projectMembers.userId,
+        projectRole: projectMembers.projectRole,
+        assignedAt: projectMembers.assignedAt,
+        removedAt: projectMembers.removedAt,
+        name: users.name,
+        userRole: users.userRole,
+        avatar: users.avatar,
+        verified: users.verified,
+      }).from(projectMembers)
+        .innerJoin(users, eq(users.id, projectMembers.userId))
+        .where(eq(projectMembers.projectId, input.projectId))
+        .orderBy(projectMembers.assignedAt);
+
+      return {
+        // Live members first; removed ones are returned too because "who WAS
+        // on this job" is a question a dispute has to answer, and the client
+        // distinguishes them by removedAt rather than by their absence.
+        members: rows,
+        myProjectRole: access.projectRole,
+        myCapabilities: capabilitiesFor(access.projectRole),
+      };
+    }),
+
+  /**
+   * Put someone on a project.
+   *
+   * REACTIVATION RATHER THAN A SECOND ROW. The unique index is on
+   * (projectId, userId) with no removedAt in it, so re-adding somebody who was
+   * removed updates the existing row. Without this the insert would simply
+   * fail with a duplicate-key error and the operator would be told nothing
+   * useful about why.
+   */
+  addMember: protectedProcedure
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      userId: z.number().int().positive(),
+      projectRole: z.enum(PROJECT_ROLES),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      await requireProjectAccess(db, input.projectId, ctx.user.id, 'manage');
+
+      // OWNERSHIP IS NOT GRANTABLE. `owner` is derived from projects.ownerId,
+      // and handing it out here would create a project with two owners, one of
+      // whom the ownership column does not know about.
+      if (input.projectRole === 'owner') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Ownership belongs to the customer the project is for and cannot be assigned. Use "manager" for someone who runs the project.',
+        });
+      }
+
+      const [target] = await db.select({ id: users.id, name: users.name, accountStatus: users.accountStatus })
+        .from(users).where(eq(users.id, input.userId)).limit(1);
+      if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such user' });
+      if (target.accountStatus && target.accountStatus !== 'active') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That account is not active.' });
+      }
+
+      const [existing] = await db.select({ id: projectMembers.id, removedAt: projectMembers.removedAt })
+        .from(projectMembers)
+        .where(and(eq(projectMembers.projectId, input.projectId), eq(projectMembers.userId, input.userId)))
+        .limit(1);
+
+      if (existing) {
+        if (!existing.removedAt) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'That person is already on this project.' });
+        }
+        await db.update(projectMembers).set({
+          projectRole: input.projectRole,
+          assignedBy: ctx.user.id,
+          assignedAt: new Date(),
+          removedAt: null,
+          removedBy: null,
+        }).where(eq(projectMembers.id, existing.id));
+      } else {
+        await db.insert(projectMembers).values({
+          projectId: input.projectId,
+          userId: input.userId,
+          projectRole: input.projectRole,
+          assignedBy: ctx.user.id,
+        });
+      }
+
+      const [project] = await db.select({ title: projects.title })
+        .from(projects).where(eq(projects.id, input.projectId)).limit(1);
+      await notifyUser(db, {
+        userId: input.userId,
+        title: 'You were added to a project',
+        body: `${project?.title ?? 'A project'} - your role: ${input.projectRole}`,
+        type: 'info',
+        // A deep link to the project itself. The recipient is now a member, so
+        // this link resolves for them; before the membership it would not have.
+        link: `/projects/${input.projectId}`,
+        messageKey: 'notif.project.member.added',
+        messageParams: { title: project?.title ?? '', role: input.projectRole },
+      });
+
+      return { success: true, projectRole: input.projectRole };
+    }),
+
+  /** Take someone off a project. A soft end - the history keeps them. */
+  removeMember: protectedProcedure
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      userId: z.number().int().positive(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const access = await requireProjectAccess(db, input.projectId, ctx.user.id, 'manage');
+
+      // THE OWNER CANNOT BE REMOVED FROM THEIR OWN PROJECT. Without this a
+      // project manager could remove the customer from the job the customer
+      // is paying for.
+      if (input.userId === access.ownerId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'The project owner cannot be removed from their own project.',
+        });
+      }
+
+      const result = await db.update(projectMembers).set({
+        removedAt: new Date(),
+        removedBy: ctx.user.id,
+      }).where(and(
+        eq(projectMembers.projectId, input.projectId),
+        eq(projectMembers.userId, input.userId),
+        isNull(projectMembers.removedAt),
+      ));
+
+      // Reported honestly: removing somebody who is not on the project is not
+      // an error, but it is also not a removal, and saying "success" either
+      // way would make the two indistinguishable.
+      const affected = Number((result as { rowsAffected?: number })?.rowsAffected ?? 0);
+      return { success: true, removed: affected > 0 };
     }),
   update: protectedProcedure
     .input(z.object({
@@ -1088,18 +1290,23 @@ const projectsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       const { id, budget, spent, ...rest } = input;
+      // AUTHORIZE FIRST, and throw. The predicate used to be the only guard:
+      // `where(id = ? AND ownerId = ?)` simply matched no rows for anyone else
+      // and the procedure still returned `{ success: true }` - reporting a
+      // write that never happened. A caller cannot tell a refusal from a
+      // no-op, and neither could a test.
+      await requireProjectAccess(db, id, ctx.user.id, 'manage');
       await db.update(projects).set({
         ...rest,
         budget: budget != null ? String(budget) : undefined,
         spent: spent != null ? String(spent) : undefined,
-      }).where(and(eq(projects.id, id), eq(projects.ownerId, ctx.user.id)));
+      }).where(eq(projects.id, id));
       return { success: true };
     }),
   milestones: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
-    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
-    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+    await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     return db.select().from(milestones).where(eq(milestones.projectId, input.projectId)).orderBy(milestones.dueDate);
   }),
   addMilestone: protectedProcedure
@@ -1107,16 +1314,14 @@ const projectsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
-      if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+      await requireProjectAccess(db, input.projectId, ctx.user.id, 'manage');
       await db.insert(milestones).values(input);
       return { success: true };
     }),
   tasks: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
-    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
-    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+    await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     return db.select().from(tasks).where(eq(tasks.projectId, input.projectId)).orderBy(desc(tasks.createdAt));
   }),
   addTask: protectedProcedure
@@ -1124,8 +1329,7 @@ const projectsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
-      if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+      await requireProjectAccess(db, input.projectId, ctx.user.id, 'manage');
       await db.insert(tasks).values(input);
       return { success: true };
     }),
@@ -1148,8 +1352,7 @@ const projectsRouter = router({
   expenses: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
-    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
-    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+    await requireProjectAccess(db, input.projectId, ctx.user.id, 'finance');
     return db.select().from(expenses).where(eq(expenses.projectId, input.projectId)).orderBy(desc(expenses.date));
   }),
   addExpense: protectedProcedure
@@ -1157,16 +1360,14 @@ const projectsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
-      if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+      await requireProjectAccess(db, input.projectId, ctx.user.id, 'finance');
       await db.insert(expenses).values({ ...input, amount: String(input.amount) });
       return { success: true };
     }),
   dailyLogs: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
-    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
-    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+    await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     return db.select().from(dailyLogs).where(eq(dailyLogs.projectId, input.projectId)).orderBy(desc(dailyLogs.date));
   }),
   addDailyLog: protectedProcedure
@@ -1174,16 +1375,14 @@ const projectsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
-      if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+      await requireProjectAccess(db, input.projectId, ctx.user.id, 'report');
       await db.insert(dailyLogs).values({ ...input, authorId: ctx.user.id });
       return { success: true };
     }),
   documents: protectedProcedure.input(z.object({ projectId: z.number(), type: z.enum(['drawing', 'boq', 'photo', 'contract', 'invoice', 'other']).optional() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
-    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
-    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+    await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     const filters = input.type ? and(eq(documents.projectId, input.projectId), eq(documents.type, input.type)) : eq(documents.projectId, input.projectId);
     return db.select().from(documents).where(filters).orderBy(desc(documents.createdAt));
   }),
@@ -1199,8 +1398,7 @@ const projectsRouter = router({
       enforceUploadRateLimit(ctx.user.id);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
-      if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+      await requireProjectAccess(db, input.projectId, ctx.user.id, 'report');
       const buffer = Buffer.from(input.base64, 'base64');
       if (buffer.length > 8 * 1024 * 1024) throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
       assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
@@ -1215,15 +1413,13 @@ const projectsRouter = router({
   progressReports: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
-    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
-    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+    await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     return db.select().from(progressReports).where(eq(progressReports.projectId, input.projectId)).orderBy(desc(progressReports.createdAt));
   }),
   addProgressReport: protectedProcedure.input(z.object({ projectId: z.number(), title: z.string().min(1), summary: z.string().min(1), progress: z.number().int().min(0).max(100) })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
-    if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+    await requireProjectAccess(db, input.projectId, ctx.user.id, 'report');
     const progress = clampProjectProgress(input.progress);
     await db.insert(progressReports).values({ ...input, progress, authorId: ctx.user.id });
     await db.update(projects).set({ progress }).where(eq(projects.id, input.projectId));
@@ -2262,8 +2458,10 @@ const rfqRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       if (input.projectId != null) {
-        const [project] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.ownerId, ctx.user.id)));
-        if (!project) throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this project' });
+        // Raising an RFQ commits the project to spend, so it needs the
+        // `commercial` capability - owner or project manager. A contractor on
+        // the job can see it and report on it but cannot commission from it.
+        await requireProjectAccess(db, input.projectId, ctx.user.id, 'commercial');
       }
       const { attachments, productReference, items, ...rest } = input;
 

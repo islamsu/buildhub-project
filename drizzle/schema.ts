@@ -181,7 +181,23 @@ export const adminInvitations = mysqlTable('adminInvitations', {
 // ── Projects ───────────────────────────────────────────────────────────────
 export const projects = mysqlTable('projects', {
   id:          int('id').autoincrement().primaryKey(),
+  /**
+   * THE CUSTOMER THE WORK IS FOR. Not necessarily the person who typed it in -
+   * see `createdBy`. Every ownership check in the router reads this column.
+   */
   ownerId:     int('ownerId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /**
+   * WHO CREATED THE RECORD, which is a different question from who owns it.
+   * A project manager commissioning work for a client, or an administrator
+   * entering a project on someone's behalf, is the creator and not the owner.
+   *
+   * Nullable because every project that existed before this column was added
+   * has no recorded creator, and inventing one would be a fabrication. The
+   * backfill sets it to ownerId only where that is demonstrably true - which
+   * for the existing rows it is, because homeowner-only creation was the rule
+   * in force when they were made.
+   */
+  createdBy:   int('createdBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   title:       varchar('title', { length: 255 }).notNull(),
   description: text('description'),
   type:        mysqlEnum('type', [
@@ -1005,3 +1021,107 @@ export const fieldValueHistory = mysqlTable('fieldValueHistory', {
 
 export type VendorEntitlementOverride = typeof vendorEntitlementOverrides.$inferSelect;
 export type FieldValueHistoryRow = typeof fieldValueHistory.$inferSelect;
+
+// ── Project membership ─────────────────────────────────────────────────────
+/**
+ * WHO IS ON A PROJECT, AND IN WHAT CAPACITY.
+ *
+ * Before this table, `projects` had exactly one person column - `ownerId` -
+ * and nothing else in the schema connected a user to a project. There was no
+ * way to put a contractor, an architect or a project manager on a job, and
+ * `tasks.assigneeId` was a column no procedure ever wrote to. So creator,
+ * owner, manager and participant were not merely conflated: only one of them
+ * existed.
+ *
+ * That single column is why `projects.directory` hands every approved provider
+ * the fifty most recent projects. With no membership to filter on, a lead board
+ * was the only thing the data could support.
+ *
+ * WHAT EACH COLUMN IS FOR
+ *
+ *   projectRole   the capacity this person holds ON THIS PROJECT, which is NOT
+ *                 their account role. A user whose account is `contractor` can
+ *                 be the `manager` of one project and a `viewer` on another.
+ *                 Authorization reads this, never users.userRole.
+ *
+ *   assignedBy    who put them there. Required for the audit trail: "who
+ *                 assigned this supplier" is a question a dispute has to answer.
+ *
+ *   removedAt     removal is a soft end, not a delete. A person who WAS on a
+ *                 project when a decision was taken must still appear in the
+ *                 reconstruction of that decision. Nothing reads a membership
+ *                 with removedAt set for authorization; everything reads it for
+ *                 history.
+ *
+ * The unique index is on (projectId, userId) WITHOUT removedAt, so a person
+ * cannot hold two live memberships on one project. Re-adding someone who was
+ * removed reactivates the existing row rather than inserting a second.
+ */
+export const projectMembers = mysqlTable('projectMembers', {
+  id:          int('id').autoincrement().primaryKey(),
+  projectId:   int('projectId').notNull().references(() => projects.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  userId:      int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /** The capacity on THIS project. Not the account role. */
+  projectRole: mysqlEnum('projectRole', [
+                 'owner', 'manager', 'contractor', 'architect',
+                 'engineer', 'supplier', 'viewer',
+               ]).notNull(),
+  assignedBy:  int('assignedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  assignedAt:  timestamp('assignedAt').defaultNow().notNull(),
+  /** Soft removal. Set means "no longer on the project", never deleted. */
+  removedAt:   timestamp('removedAt'),
+  removedBy:   int('removedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  projectUserUnique: uniqueIndex('projectMembers_projectId_userId_unique').on(table.projectId, table.userId),
+  // The index every authorization check reads: "is this user on this project".
+  userIdIdx:    index('projectMembers_userId_idx').on(table.userId),
+  projectIdIdx: index('projectMembers_projectId_idx').on(table.projectId),
+}));
+
+// ── RFQ supplier invitations ───────────────────────────────────────────────
+/**
+ * A REQUESTER ASKING A NAMED SUPPLIER TO QUOTE.
+ *
+ * BuildHub's RFQ model was an open board: every approved provider in a matching
+ * category could see every request and spend a qualified-enquiry credit to open
+ * one. That model is kept - it is the paid product and it works. This table
+ * adds the other half the business needs: a requester who already knows which
+ * supplier they want can ask them directly.
+ *
+ * THE CREDIT RULE, stated because it is a money rule and must not be inferred:
+ * an INVITED supplier opens the RFQ WITHOUT consuming a credit. The credit
+ * exists because a supplier chose to spend it prospecting an open lead; a lead
+ * they were handed by the customer is not that. Uninvited suppliers browsing
+ * the board still pay. Recorded here, in server/billing, and in the handoff so
+ * the owner can overturn it in one place.
+ *
+ * `status` is the supplier's progress through the invitation, not the RFQ's
+ * status. They are different state machines and conflating them would let a
+ * closed RFQ appear open to an invited supplier.
+ */
+export const rfqSuppliers = mysqlTable('rfqSuppliers', {
+  id:         int('id').autoincrement().primaryKey(),
+  rfqId:      int('rfqId').notNull().references(() => rfqs.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  supplierId: int('supplierId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /** The requester (or an admin acting for them) who sent this invitation. */
+  invitedBy:  int('invitedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  invitedAt:  timestamp('invitedAt').defaultNow().notNull(),
+  status:     mysqlEnum('status', ['invited', 'viewed', 'responded', 'declined'])
+                .default('invited').notNull(),
+  /** First time this supplier opened the RFQ, for the investigation timeline. */
+  viewedAt:   timestamp('viewedAt'),
+  respondedAt: timestamp('respondedAt'),
+  declinedAt: timestamp('declinedAt'),
+  /** Optional per-invitation deadline, distinct from the RFQ's own deadline. */
+  deadline:   timestamp('deadline'),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  rfqSupplierUnique: uniqueIndex('rfqSuppliers_rfqId_supplierId_unique').on(table.rfqId, table.supplierId),
+  // "Which RFQs am I invited to" - the supplier's own inbox query.
+  supplierIdIdx: index('rfqSuppliers_supplierId_idx').on(table.supplierId),
+  rfqIdIdx:      index('rfqSuppliers_rfqId_idx').on(table.rfqId),
+}));
+
+export type ProjectMember = typeof projectMembers.$inferSelect;
+export type RfqSupplierInvitation = typeof rfqSuppliers.$inferSelect;
