@@ -70,7 +70,14 @@ export const ROLE_SECTIONS: Record<WorkspaceRole, SectionId[]> = {
   contractor: ['role-overview', 'role-pipeline', 'role-quotations', 'role-projects', ...PROFESSIONAL_TAIL],
   engineer: ['role-overview', 'role-documents', 'role-rfqs', 'role-quotations', 'role-projects', ...PROFESSIONAL_TAIL],
   architect: ['role-overview', 'role-portfolio', 'role-rfqs', 'role-quotations', 'role-projects', ...PROFESSIONAL_TAIL],
-  supplier: ['role-overview', 'role-catalogue', 'role-rfqs', 'role-quotations', 'role-projects', ...PROFESSIONAL_TAIL],
+  // SUPPLIER ORDER IS SPECIFIED, not incidental. The brief asks for Quotations
+  // IMMEDIATELY after Quick Actions - which live in `role-overview` - because a
+  // supplier's day starts with what they have bid on, not with their catalogue.
+  // Catalogue follows, then the requests they can bid on next.
+  supplier: ['role-overview', 'role-quotations', 'role-catalogue', 'role-rfqs', 'role-projects', ...PROFESSIONAL_TAIL],
+  // ^ This order is RENDERED, not merely declared: RolePlatform hoists the
+  //   quotations card ahead of the catalogue to match it. A live probe reading
+  //   document order proved the two had drifted apart.
   project_manager: ['role-overview', 'role-queue', 'role-rfqs', ...PROFESSIONAL_TAIL],
 };
 

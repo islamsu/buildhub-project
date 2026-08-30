@@ -52,11 +52,26 @@ const SHARED_SECTIONS = new Set(['role-overview', 'role-enquiries', 'role-perfor
  * Sections rendered in the PAGE body rather than in a workspace component,
  * inside a role branch. Each names the branch it must sit in, so the exemption
  * still proves the section is reachable for that role and only that role.
+ *
+ * KEYED BY `role:section`, NOT BY SECTION ALONE. The map used to assume one id
+ * belonged to one role, which held only while the single exempt section was
+ * `role-catalogue` - a supplier-only id. `role-quotations` is offered by four
+ * roles and is page-level for exactly ONE of them, and the old shape could not
+ * express that: claiming it made the contractor, engineer and architect checks
+ * fail for a section they render perfectly well inside their own workspace.
  */
 const PAGE_LEVEL_SECTIONS: Partial<Record<string, { role: WorkspaceRole; branch: string }>> = {
   // The supplier's real catalogue management, mounted next to the workspace
   // summary card rather than inside it.
-  'role-catalogue': { role: 'supplier', branch: "role === 'supplier' ? (" },
+  'supplier:role-catalogue': { role: 'supplier', branch: "role === 'supplier' ? (" },
+  // Quotations, hoisted OUT of SupplierWorkspace into the supplier branch so
+  // that it renders IMMEDIATELY after the overview - the order the brief
+  // specifies and that ROLE_SECTIONS declares. It stayed inside the workspace
+  // component while the config claimed it came second, and the page rendered
+  // the catalogue there instead; a live probe reading document order caught
+  // the drift. The exemption still pins it to the supplier branch, so it
+  // proves the section is reachable for that role and only that role.
+  'supplier:role-quotations': { role: 'supplier', branch: "role === 'supplier' ? (" },
 };
 
 const COMPONENT_FOR: Record<WorkspaceRole, string> = {
@@ -80,7 +95,7 @@ describe('the workspace section registry', () => {
     const own = new Set([...body.matchAll(/id="(role-[a-z]+)"/g)].map(m => m[1]));
     for (const section of ROLE_SECTIONS[role]) {
       if (SHARED_SECTIONS.has(section)) continue;
-      const pageLevel = PAGE_LEVEL_SECTIONS[section];
+      const pageLevel = PAGE_LEVEL_SECTIONS[`${role}:${section}`];
       if (pageLevel) {
         expect(pageLevel.role, `${section} is claimed as page-level for ${pageLevel.role}, not ${role}`).toBe(role);
         const branchAt = workspace.indexOf(pageLevel.branch);

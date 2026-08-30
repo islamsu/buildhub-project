@@ -1,0 +1,25 @@
+PASS  the supplier workspace loads  [http://127.0.0.1:5401/platform/supplier]
+PASS  SETUP: the sidebar rendered items to measure  [11 items]
+PASS  §8 QUOTATIONS COME IMMEDIATELY AFTER THE OVERVIEW (Quick Actions)  [overview=0 quotations=1 | Overview · My Quotations · Catalogue · Review RFQs · Marketplace · Messages · Enquiries · Service categories · Performance · Settings · Legal compliance]
+PASS  §8 CATALOGUE APPEARS EXACTLY ONCE  [1 occurrences]
+PASS  §8 LEGAL COMPLIANCE COMES IMMEDIATELY AFTER SETTINGS  [settings=9 compliance=10]
+PASS  §8 Enquiries is offered as its own destination  [index=6]
+PASS  §8 Service categories is offered as its own destination  [index=7]
+PASS  SETUP: the workspace rendered its sections  [role-overview · role-quotations · role-catalogue · role-rfqs · role-projects · role-enquiries · role-performance]
+PASS  §8 the QUOTATIONS SECTION follows the overview on the page itself  [role-overview · role-quotations · role-catalogue · role-rfqs · role-projects · role-enquiries · role-performance]
+PASS  the catalogue section is present exactly once
+PASS  the Enquiries page opens as its own page, not a workspace anchor  [http://127.0.0.1:5401/enquiries]
+PASS  and it is not a generic Home redirect  [http://127.0.0.1:5401/enquiries]
+PASS  the ?rfq= deep link still lands on Enquiries - existing notifications keep working  [http://127.0.0.1:5401/enquiries?rfq=123]
+PASS  the Service categories page opens as its own page  [http://127.0.0.1:5401/service-categories]
+PASS  SETUP: the sidebar exposes controls to click  [11 controls]
+PASS  NO DEAD ENDS: every sidebar control does something and none bounces to Home  [clicked=11 | all reachable]
+PASS  RESPONSIVE 375px: the supplier dashboard does not scroll horizontally
+PASS  RESPONSIVE 768px: the supplier dashboard does not scroll horizontally
+PASS  RESPONSIVE 1440px: the supplier dashboard does not scroll horizontally
+PASS  ARABIC: the supplier dashboard renders right-to-left  [dir=rtl]
+PASS  SETUP: the Arabic sidebar rendered something to inspect  [140 chars]
+PASS  ARABIC: no untranslated key leaks into the sidebar  [none]
+PASS  ENGLISH: no untranslated key leaks into the sidebar either  [none]
+
+23/23 passed

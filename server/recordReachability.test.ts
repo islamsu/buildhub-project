@@ -92,9 +92,26 @@ describe('a submitted quotation is reachable', () => {
     for (const role of bidders) {
       expect(ROLE_SECTIONS[role as keyof typeof ROLE_SECTIONS], `${role} can bid and must be able to see its bids`)
         .toContain('role-quotations');
-      expect(workspaceBody(Object.keys(WORKSPACE_COMPONENTS).find(c => WORKSPACE_COMPONENTS[c] === role)!),
-        `${role}'s workspace must render the section its sidebar and KPI point at`)
-        .toContain('id="role-quotations"');
+      // RENDERED FOR THAT ROLE ON THAT PAGE - not necessarily inside the
+      // workspace COMPONENT. The supplier's quotations card was hoisted into
+      // the supplier branch of RolePlatform so it lands immediately after the
+      // overview, which is the order the brief specifies; it is still rendered
+      // for the supplier and for no other role.
+      //
+      // The PLACEMENT - that a page-level section sits inside the right role
+      // branch and only that one - is proven in roleWorkspaceNavigation.test.ts
+      // by PAGE_LEVEL_SECTIONS, which pins it to the branch. This assertion is
+      // about REACHABILITY: a role that can bid must be able to see its bids.
+      const component = Object.keys(WORKSPACE_COMPONENTS).find(c => WORKSPACE_COMPONENTS[c] === role)!;
+      const branch = `role === '${role}' ? (`;
+      const branchAt = workspace.indexOf(branch);
+      const inOwnWorkspace = workspaceBody(component).includes('id="role-quotations"');
+      const inOwnBranch = branchAt > -1
+        && workspace.slice(branchAt, workspace.indexOf("' ? (", branchAt + branch.length))
+             .includes('id="role-quotations"');
+      expect(inOwnWorkspace || inOwnBranch,
+        `${role} can bid but nothing renders the quotations surface its sidebar and KPI point at`)
+        .toBe(true);
     }
   });
 

@@ -34,6 +34,8 @@ const RFQPage = lazy(() => import("./pages/RFQPage"));
 const RFQDetail = lazy(() => import("./pages/RFQDetail"));
 const QuotationDetail = lazy(() => import("./pages/QuotationDetail"));
 const MessagesPage = lazy(() => import("./pages/MessagesPage"));
+const EnquiriesPage = lazy(() => import("./pages/EnquiriesPage"));
+const ServiceCategoriesPage = lazy(() => import("./pages/ServiceCategoriesPage"));
 const AIAssistantPage = lazy(() => import("./pages/AIAssistantPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const RFQRespondPage = lazy(() => import("./pages/RFQRespondPage"));
@@ -139,6 +141,11 @@ function Router() {
       <Route path={"/products/new"} component={NewProductPage} />
       <Route path={"/products/:id/edit"} component={EditProductPage} />
       <Route path={"/settings"} component={SettingsPage} />
+      {/* Enquiries and service categories get their own pages: the brief asks
+          for a summary on the dashboard with a dedicated page behind it, and
+          the enquiries page is where a notification's `?rfq=` deep link lands. */}
+      <Route path={"/enquiries"} component={EnquiriesPage} />
+      <Route path={"/service-categories"} component={ServiceCategoriesPage} />
       <Route path={"/ai"} component={AIAssistantPage} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />

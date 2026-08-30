@@ -265,6 +265,22 @@
       "deadParamRoute": false
     },
     {
+      "path": "/enquiries",
+      "component": "EnquiriesPage",
+      "source": "client/src/pages/EnquiriesPage.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/service-categories",
+      "component": "ServiceCategoriesPage",
+      "source": "client/src/pages/ServiceCategoriesPage.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
       "path": "/ai",
       "component": "AIAssistantPage",
       "source": "client/src/pages/AIAssistantPage.tsx",

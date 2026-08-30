@@ -352,6 +352,14 @@ export default function RolePlatform() {
           </>
         ) : role === 'supplier' ? (
           <>
+          {/* QUOTATIONS FIRST, immediately after the overview that carries
+              Quick Actions. Hoisted out of SupplierWorkspace to get it here:
+              a supplier's day starts with what they have bid on, and the DOM
+              order has to MATCH ROLE_SECTIONS rather than merely declare it.
+              The two had drifted - the config said quotations second while the
+              page rendered catalogue there - and a live probe reading document
+              order is what caught it. */}
+          <Card id="role-quotations" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{lang === 'ar' ? 'عروض الأسعار المقدمة' : 'Submitted Quotations'}</CardTitle></CardHeader><CardContent><QuotationTiles quotations={myQuotations} t={t} lang={lang} navigate={navigate} /></CardContent></Card>
           {/* Full catalogue management: edit, images, publish/delist, and the
               answer side of the product Q&A. The workspace card below is a
               read-only summary; this is where a supplier actually works. */}
@@ -599,7 +607,6 @@ function SupplierWorkspace({ products, rfqs, projects, quotations, t, lang, navi
 <Link href={`/rfq/${rfq.id}`}><a className="font-mono text-xs text-primary underline-offset-2 hover:underline" data-testid="rfq-number">#{rfq.id}</a></Link><div className="mt-2 flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{rfq.category || (lang === 'ar' ? 'عام' : 'General')}</span><Button size="sm" onClick={() => onQuote(rfq.id)} className="gap-1.5"><Send className="h-3 w-3" />{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
       {/* A supplier who bids had a "My Quotations" count and nowhere to see
           what it counted. Same record, same destination as the contractor's. */}
-      <Card id="role-quotations" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{lang === 'ar' ? 'عروض الأسعار المقدمة' : 'Submitted Quotations'}</CardTitle></CardHeader><CardContent><QuotationTiles quotations={quotations} t={t} lang={lang} navigate={navigate} /></CardContent></Card>
       <Card id="role-projects" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><BriefcaseBusiness className="h-5 w-5" />{t('platform.projects')}</CardTitle></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="grid gap-3 md:grid-cols-2">{projects.slice(0, 6).map(project => <div key={project.id} className="rounded-xl border p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-medium">{project.title}</p><Badge variant="outline">{localizedStatus(project.status, t)}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{project.location || (lang === 'ar' ? 'الموقع غير محدد' : 'Location not set')}</p><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{t('project.progress')}</span><span>{project.progress ?? 0}%</span></div></div>)}</div>}</CardContent></Card>
     </div>
   );

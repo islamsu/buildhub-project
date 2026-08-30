@@ -22,7 +22,7 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -120,16 +120,26 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     workspaceItem('architect', BarChart3, 'platform.performance', 'role-performance'),
     SETTINGS_MENU_ITEM,
   ],
+  // THE SUPPLIER MENU ORDER IS SPECIFIED BY THE BRIEF, not chosen here:
+  // Quotations immediately after the overview (which carries Quick Actions),
+  // Catalogue exactly ONCE, and Legal Compliance immediately AFTER Settings -
+  // it used to sit second, above the work, which put a registration formality
+  // ahead of everything the supplier actually opens the dashboard to do.
+  //
+  // Enquiries and Service Categories are now their own pages rather than
+  // workspace anchors, so the menu points at the page a reader can bookmark.
   supplier: [
     workspaceItem('supplier', LayoutDashboard, 'dash.overview', 'role-overview'),
-    COMPLIANCE_MENU_ITEM,
-    workspaceItem('supplier', Package, 'platform.catalogue', 'role-catalogue'),
     workspaceItem('supplier', FileText, 'platform.my_quotations', 'role-quotations'),
+    workspaceItem('supplier', Package, 'platform.catalogue', 'role-catalogue'),
     { icon: ClipboardList, labelKey: 'platform.review_requests', path: '/rfq' },
     { icon: ShoppingBag, labelKey: 'nav.marketplace', path: '/marketplace/products' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
+    { icon: Inbox, labelKey: 'platform.enquiries', path: '/enquiries' },
+    { icon: Tags, labelKey: 'settings.categories', path: '/service-categories' },
     workspaceItem('supplier', BarChart3, 'platform.performance', 'role-performance'),
     SETTINGS_MENU_ITEM,
+    COMPLIANCE_MENU_ITEM,
   ],
   project_manager: [
     workspaceItem('project_manager', LayoutDashboard, 'dash.overview', 'role-overview'),
