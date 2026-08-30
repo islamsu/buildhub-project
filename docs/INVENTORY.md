@@ -41,14 +41,14 @@
 
 Dead param routes: **0**
 
-## Server procedures (114)
+## Server procedures (115)
 
 - `protectedProcedure` — 55
 - `publicProcedure` — 26
 - `approvedProviderProcedure` — 18
 - `superAdminProcedure` — 10
+- `adminProcedure` — 3
 - `complianceProcedure` — 2
-- `adminProcedure` — 2
 - `aiChatProcedure` — 1
 
 ## Tables (34)
@@ -92,14 +92,14 @@ Dead param routes: **0**
 
 ## Notification write sites (12)
 
-- server/routers.ts:1741 — notifyUser
-- server/routers.ts:1821 — notifyUser
-- server/routers.ts:2687 — notifyUser
-- server/routers.ts:2919 — notifyUser
-- server/routers.ts:3059 — notifyUser
-- server/routers.ts:4118 — notifyUser
-- server/routers.ts:4143 — notifyUser
-- server/routers.ts:4168 — notifyUser
+- server/routers.ts:1744 — notifyUser
+- server/routers.ts:1824 — notifyUser
+- server/routers.ts:2690 — notifyUser
+- server/routers.ts:2922 — notifyUser
+- server/routers.ts:3062 — notifyUser
+- server/routers.ts:4179 — notifyUser
+- server/routers.ts:4204 — notifyUser
+- server/routers.ts:4229 — notifyUser
 - server/notifications.ts:40 — notifyUser
 - server/notifications.ts:43 — helper implementation
 - server/notifications.ts:57 — notifyUser

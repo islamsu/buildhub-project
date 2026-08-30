@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -129,6 +129,9 @@ const ADMIN_MENU_KEYS: MenuItem[] = [
   { icon: FileText, labelKey: 'admin.disputes', path: '/admin/disputes' },
   { icon: BarChart3, labelKey: 'admin.analytics', path: '/admin/analytics' },
   { icon: CreditCard, labelKey: 'adminBilling.title', path: '/admin/billing' },
+  // Reachable by ordinary navigation, not only by typing the URL: a tab that
+  // exists but is not in the menu is a surface nobody finds.
+  { icon: Activity, labelKey: 'admin.operations', path: '/admin/operations' },
   { icon: Settings, labelKey: 'dash.settings', path: '/admin/settings' },
 ];
 

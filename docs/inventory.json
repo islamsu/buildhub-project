@@ -706,6 +706,11 @@
       "indent": 3
     },
     {
+      "name": "platformSearch",
+      "tier": "adminProcedure",
+      "indent": 2
+    },
+    {
       "name": "me",
       "tier": "adminProcedure",
       "indent": 2
@@ -827,7 +832,7 @@
     "complianceProcedure": 2,
     "approvedProviderProcedure": 18,
     "superAdminProcedure": 10,
-    "adminProcedure": 2,
+    "adminProcedure": 3,
     "aiChatProcedure": 1
   },
   "tables": [
@@ -1107,42 +1112,42 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 1741,
+      "line": 1744,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 1821,
+      "line": 1824,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2687,
+      "line": 2690,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2919,
+      "line": 2922,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3059,
+      "line": 3062,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4118,
+      "line": 4179,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4143,
+      "line": 4204,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4168,
+      "line": 4229,
       "via": "notifyUser"
     },
     {
