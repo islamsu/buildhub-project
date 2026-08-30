@@ -299,6 +299,8 @@ THE TWO ROWS THAT ARE THE POINT
   [x] No SELECT-everything-then-filter-in-the-browser anywhere added.
   [x] No stack trace, SQL or infrastructure detail in any refusal added.
   [x] No security test deleted, skipped, weakened or turned into a text check.
+      One test WAS a text check and is recorded as such in section 10; it was
+      strengthened with a behavioural companion, not quietly replaced.
       Two existing assertions were CHANGED: the staging-gate context canary was
       re-pinned from 5 to 6 AND given a second assertion that each call site
       installs a real parsed session cookie - a placeholder cookie now fails it.
@@ -418,6 +420,38 @@ suite rather than only testing what changed. Nothing in the unit test suite,
 the type checker, the build, or the eighteen mutations covering the new guards
 would have found it.
 
+A THIRD FINDING, AND THE MOST UNCOMFORTABLE ONE: THE TEST THAT PROVED NOTHING
+
+  The import rule above shipped with a unit test and two mutations, both of
+  which passed. A live probe written afterwards FAILED - the rule was not
+  refusing anything.
+
+  TWO causes, and both are worth stating.
+
+  1. THE SERVER WAS STALE. The local app runs under tsx, which does not reload
+     server modules; the process had been up since 07:52 and the import fix
+     landed at 08:40. Every server-side result measured in between reflected
+     code from before the change. (The earlier surfaces are unaffected - the
+     process started AFTER they were written, which is why nav.mjs saw the
+     unit rule refuse an invented unit with http 400.) The server was
+     restarted and the probe then passed 9/9, including "NOTHING from that
+     file was written - not even the valid row".
+
+  2. THE TEST COULD NOT HAVE CAUGHT IT ANYWAY. It asserted that routers.ts
+     CONTAINS the string `normaliseUnit(row.unit, null)`. Both mutations were
+     killed because the TEXT changed, not because behaviour did. That is the
+     precise failure mode this engagement's rules name: a test that would stay
+     green if the guard stopped working.
+
+  Fixed by adding a test that runs the actual composition - parse the CSV,
+  then put each row's unit through the rule - and proven by mutating the RULE
+  ITSELF while leaving every line of routers.ts untouched. A text check cannot
+  see that mutation; the new test fails on it with `expected [] to deeply
+  equal ['ton']`.
+
+  The text assertion was KEPT alongside it. It still pins the wiring, and
+  wiring and behaviour are different things worth checking separately.
+
 --------------------------------------------------------------------------------
 11. BLOCKED BY INFRASTRUCTURE - NOT PASSES, AND NOT FAILURES OF THIS WORK
 --------------------------------------------------------------------------------
@@ -505,8 +539,15 @@ forward from an earlier run.
   roles          128 passed, 0 failed       153 click-audit rows; one real
                                             defect found and fixed (section 8),
                                             then re-run alone to confirm
-  accept1        fixture corrected          seeded a NEW product per "ton"
-  accept3        fixture corrected          seeded "each"
+  accept1        50 passed, 0 failed        was a crash at 47/50: the fixture
+                                            seeded a NEW product per "ton",
+                                            which the rule refuses by design
+  accept3        14 passed, 8 BLOCKED       fixture corrected ("each" ->
+                                            "piece") and the product now
+                                            creates; the 8 are image upload,
+                                            http 503 - object storage absent.
+                                            The batch-import section is green,
+                                            including the new unit rule.
   chains         assertion updated+widened  the ?rfq= contract became a path
   accept2        7 BLOCKED                  object storage absent
   pwreset        10 BLOCKED                 mailer absent

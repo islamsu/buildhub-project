@@ -24,6 +24,8 @@ import { ROLE_SECTIONS, WORKSPACE_ROLES } from '../shared/roleWorkspaceSections'
 import { readFileSync } from 'node:fs';
 import { readSourceForAssertions } from './_testing/sourceText';
 import { PRODUCT_UNITS, isProductUnit, normaliseUnit } from '@shared/productUnits';
+import { parseProductImport } from '@shared/productImport';
+import { PRODUCT_CATEGORIES } from '@shared/productCategories';
 
 const read = (relative: string) => readSourceForAssertions(readFileSync(new URL(relative, import.meta.url), 'utf8'));
 const ROUTERS = read('./routers.ts');
@@ -128,6 +130,38 @@ describe('country of origin', () => {
     );
     expect(create.length).toBeGreaterThan(300);
     expect(create).toContain('origin: z.string().max(100).optional()');
+  });
+
+  /**
+   * BEHAVIOUR, NOT TEXT.
+   *
+   * The test below this one asserts that routers.ts CONTAINS
+   * `normaliseUnit(row.unit, null)`. That is worth keeping - it pins the
+   * wiring - but on its own it is a text check, and mutating that line kills
+   * the suite because the TEXT changed, not because anything behaved
+   * differently. A live probe caught the difference: the rule looked tested
+   * and was, for a while, running against a server that predated it.
+   *
+   * This runs the actual composition the router runs - parse the CSV, then
+   * put each row's unit through the rule - so it fails if either half stops
+   * working, including if the parser ever stops populating `unit`.
+   */
+  it('a CSV row spelt "ton" is REFUSED by the parse-then-normalise pipeline', () => {
+    const csv = [
+      'name,description,price,unit,category',
+      'Rebar 12mm,steel,22500,ton,Materials',
+      'Washed sand,sand,180,m3,Materials',
+    ].join('\n');
+    const parsed = parseProductImport(csv, PRODUCT_CATEGORIES);
+    expect(parsed.rows, 'the parser produced no rows').toHaveLength(2);
+    // The parser must actually carry the unit through; if it ever stops, the
+    // rule silently passes everything and this catches that too.
+    expect(parsed.rows.map(row => row.unit)).toEqual(['ton', 'm3']);
+
+    const refused = parsed.rows.filter(row => !normaliseUnit(row.unit, null).ok);
+    expect(refused.map(row => row.unit)).toEqual(['ton']);
+    // POSITIVE CONTROL: the valid row is not collateral damage.
+    expect(normaliseUnit('m3', null)).toEqual({ ok: true, value: 'm3' });
   });
 
   it('the BULK IMPORT path applies the same unit rule as the form', () => {
