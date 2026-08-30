@@ -902,9 +902,45 @@ try {
     for (const stat of ['Total Users', 'Active Projects', 'Products Listed', 'Open Disputes']) {
       check(dash.includes(stat), `26. the dashboard renders the "${stat}" statistic`);
     }
-    for (const tab of ['Users', 'Compliance', 'Analytics', 'Vendor billing', 'Disputes', 'Fraud Detection', 'Settings']) {
+    // "Fraud Detection" WAS in this list and is deliberately not any more.
+    //
+    // That tab rendered a permanent empty state: there is no detector and no
+    // signals table behind it, so no data could ever appear there. It was
+    // removed rather than filled with an invented detector, and automated
+    // fraud detection is recorded as NOT IMPLEMENTED.
+    //
+    // So this check is not relaxed - it is INVERTED for that entry and
+    // strengthened with the section that replaced it. A gate that went on
+    // asserting the presence of a dead surface would have been asserting the
+    // presence of a defect, and deleting the line without replacing it would
+    // have quietly shrunk what the gate covers.
+    for (const tab of ['Users', 'Compliance', 'Analytics', 'Vendor billing', 'Disputes', 'Operations', 'Settings']) {
       check(dash.includes(tab), `26. the dashboard navigation offers "${tab}"`);
     }
+    check(!dash.includes('Fraud Detection'),
+      '26. the dead "Fraud Detection" surface is gone, not merely emptied');
+    // And the section that took its place actually answers, rather than being
+    // a renamed empty tab: the operations screens are real reads.
+    await ap.goto(`${BASE}/admin/operations`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+    await ap.waitForTimeout(2_000);
+    const opsText = await ap.locator('body').innerText().catch(() => '');
+    check(await ap.locator('[data-testid="dq-check"]').count() >= 9,
+      '26. the Operations screen renders the data-quality checks',
+      `${await ap.locator('[data-testid="dq-check"]').count()} rows`);
+    check(await ap.locator('[data-testid="oh-result"]').count() > 0,
+      '26. the Operations screen renders operational health');
+    check(/uptime/i.test(opsText),
+      '26. and names the metrics it does NOT measure rather than inventing them');
+    // THE POINT OF THE SCREEN, checked on the deployment where it is true:
+    // object storage is unset on staging and must read NOT CONFIGURED, never a
+    // green tick. This check is what stops a future edit turning an unset
+    // dependency into reassurance.
+    const storageState = await ap.locator('[data-testid="oh-dependency"][data-dependency="objectStorage"]')
+      .getAttribute('data-configured').catch(() => null);
+    check(storageState === 'no', '26. unset object storage reads NOT CONFIGURED on staging, not as configured',
+      `data-configured=${storageState}`);
+    await ap.goto(`${BASE}/admin`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+    await ap.waitForTimeout(1_500);
     check(dash.includes('User Management by Group'), '26. the Users tab renders the user-management surface');
     check(!/scrypt\$|passwordHash|tokenHash/.test(dash),
       '26/21. the rendered dashboard carries no credential material');
