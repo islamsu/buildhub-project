@@ -358,11 +358,23 @@ section of its own workspace - and reverting the fix fails it by name:
 
   A SWEEP THAT SPANNED TWO CODE STATES. The sidebar fix landed while the live
   sweep was between roles, so the supplier's leg ran against a hot-reloaded
-  client and reported one menu item present but textless and inert. That is
-  the signature of a reload artifact, not a defect - and either way a result
-  measured across two versions of the code is not evidence. roles.mjs is being
-  re-run alone, at the committed code, and the honest answer is whatever that
-  run says.
+  client and reported one menu item present but textless and inert - the
+  signature of a reload artifact rather than a defect. That reasoning was NOT
+  accepted as the answer: a result measured across two versions of the code is
+  not evidence either way, so roles.mjs was re-run alone at the committed code.
+
+  MEASURED: the supplier's sidebar is 9/9 in the clean run, and the homeowner's
+  is 8/8 where it had been 6/7. The artifact was an artifact and the defect was
+  a defect - which is only knowable because the run was repeated rather than
+  explained.
+
+  A WAIT-LOOP THAT WAITED ON ITSELF. The script queueing that clean re-run held
+  `while pgrep -f "scratchpad/regsweep.sh"; do sleep 20; done`. Its own command
+  line contained that string, so it matched itself and waited forever. This is
+  the THIRD variant of one mistake in this engagement - the other two were
+  `pkill -f` patterns that killed the shell issuing them. The rule that
+  prevents all three: never match a pattern that appears in the argv of the
+  process doing the matching.
 
 --------------------------------------------------------------------------------
 10. A SECOND DEFECT, FOUND BY THE ACCEPTANCE RE-RUN - IN MY OWN WORK
