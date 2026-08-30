@@ -368,6 +368,20 @@ section of its own workspace - and reverting the fix fails it by name:
   a defect - which is only knowable because the run was repeated rather than
   explained.
 
+  TWO RUNS, ONE DATABASE. Killing that stuck wrapper left the roles.mjs it had
+  eventually started still alive, so a second instance began while the first
+  was mid-flight. The result was 116 passed / 12 FAILED - and the twelve were
+  one triple repeated across four provider roles ("that request belongs to a
+  customer this workspace may list", "the customer is notified of the new
+  quotation", "the customer sees THAT price"), which is what interleaved RFQ
+  and customer seeding looks like.
+
+  Not asserted as contention - shown. Both output files were being written
+  within seven seconds of each other, and the SAME code run alone gives
+  128/128. Concurrency was the only variable that differed. The 116/12 file is
+  discarded; it is recorded here because a discarded run that goes unmentioned
+  is indistinguishable from one that was hidden.
+
   A WAIT-LOOP THAT WAITED ON ITSELF. The script queueing that clean re-run held
   `while pgrep -f "scratchpad/regsweep.sh"; do sleep 20; done`. Its own command
   line contained that string, so it matched itself and waited forever. This is
@@ -488,7 +502,9 @@ forward from an earlier run.
   dupes          11 passed, 0 failed        idempotency on commercial writes
   secondpass     18 passed, 0 failed
   pricenav       34 passed, 0 failed
-  roles          see the delivery log       one real defect, fixed; re-run
+  roles          128 passed, 0 failed       153 click-audit rows; one real
+                                            defect found and fixed (section 8),
+                                            then re-run alone to confirm
   accept1        fixture corrected          seeded a NEW product per "ton"
   accept3        fixture corrected          seeded "each"
   chains         assertion updated+widened  the ?rfq= contract became a path
