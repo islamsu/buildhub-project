@@ -2916,9 +2916,26 @@ const rfqRouter = router({
             subjectType: 'enquiry',
             subjectId: result.enquiryId ?? 0,
             action: 'enquiry_opened',
-            detail: `rfq ${input.rfqId}, ${result.alreadyConsumed ? 'reopened, no credit charged' : 'credit charged'}`,
+            // THREE DISTINCT FACTS, and the trail must not collapse them.
+            // Before invitations there were two - a fresh charge and a re-open
+            // - and an invited open would have been recorded as "credit
+            // charged", which is simply false: no credit was spent and no
+            // qualifiedEnquiries row exists to point at. An audit line that
+            // asserts a charge that did not happen is worse than a terse one.
+            detail: `rfq ${input.rfqId}, ${
+              result.byInvitation ? 'opened by invitation, exempt from the allowance'
+                : result.alreadyConsumed ? 'reopened, no credit charged'
+                  : 'credit charged'}`,
           });
-          return { rfq: result.rfq, alreadyConsumed: result.alreadyConsumed, usage: result.usage };
+          return {
+            rfq: result.rfq,
+            alreadyConsumed: result.alreadyConsumed,
+            usage: result.usage,
+            // Passed through so the supplier's screen can say the open was
+            // free. Without it the UI shows a usage figure beside an action
+            // that did not change it, which reads as a charge they cannot find.
+            byInvitation: result.byInvitation === true,
+          };
       }
     }),
   /**

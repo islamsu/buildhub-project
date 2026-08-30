@@ -275,7 +275,16 @@ describe('the events that matter are recorded', () => {
     // Losing it entirely would be the opposite mistake: a quotation audit row
     // that cannot be traced back to what was quoted on.
     expect(ROUTERS).toMatch(/detail: `rfq \$\{input\.rfqId\}, price/);
-    expect(ROUTERS).toMatch(/detail: `rfq \$\{input\.rfqId\}, \$\{result\.alreadyConsumed/);
+    // The enquiry side is asserted against the RECORDED DETAIL STRING in
+    // server/enquiryInvitationExemption.test.ts - all three outcomes, including
+    // an invited open, which must never claim a credit was charged.
+    //
+    // This used to match /detail: `rfq \$\{input\.rfqId\}, \$\{result\.alreadyConsumed/,
+    // which pinned one ternary. Adding a third outcome broke it even though the
+    // rule it names - the RFQ id is kept as context - still held. Worse, the
+    // old form would have stayed green if the branch had been added with the
+    // WRONG label, which is exactly the defect that was found.
+    expect(ROUTERS).toMatch(/detail: `rfq \$\{input\.rfqId\}, \$\{/);
   });
 
   it('a missing enquiry id still records the charge', () => {

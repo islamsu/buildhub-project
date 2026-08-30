@@ -29,7 +29,17 @@ describe('the server hands the vendor the record they paid for', () => {
     expect(start).toBeGreaterThan(-1);
     const body = ROUTERS.slice(start, ROUTERS.indexOf('  submitQuotation:', start));
     expect(body).toContain("case 'granted':");
-    expect(body).toContain('return { rfq: result.rfq');
+    // The RULE - a granted outcome hands back the RFQ - is asserted against the
+    // VALUE in server/enquiryInvitationExemption.test.ts, not against the
+    // literal that produces it.
+    //
+    // It used to read `expect(body).toContain('return { rfq: result.rfq')`, and
+    // adding the invitation branch broke it while the behaviour was unchanged:
+    // the RFQ is still returned, the return statement is just no longer on one
+    // line. A test that dies on formatting proves nothing about the rule it
+    // names, and would have passed just as happily if the literal had been kept
+    // while the value went wrong.
+    expect(body).toMatch(/rfq:\s*result\.rfq/);
   });
 
   it('and it is the ONLY way a vendor can read that detail', () => {
