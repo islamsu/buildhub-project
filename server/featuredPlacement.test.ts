@@ -246,10 +246,24 @@ describe('§4 paying does not buy organic position', () => {
     expect(featured).not.toContain('orderBy(desc(users.verified)');
   });
 
-  it('both lists compute reputation through the same helper', () => {
+  it('EVERY list computes reputation through the same helper', () => {
     // Two code paths computing reputation differently is how a vendor shows
     // 4.6 stars in the strip and 4.8 in the list below it.
-    expect(DIRECTORY_SOURCE.match(/enrichVendorRows\(db,/g)?.length).toBe(2);
+    //
+    // NAMED, NOT COUNTED. This asserted `enrichVendorRows` appeared exactly
+    // twice, which broke the moment a third list was added - and a count says
+    // nothing about WHICH functions use the helper, so two calls in one
+    // function and none in another would have passed it. Naming them means a
+    // new list that skips the helper fails, and a new list that uses it does
+    // not have to edit a magic number.
+    for (const fn of ['listDirectoryVendors', 'listFeaturedVendors', 'listSponsoredVendors']) {
+      const start = DIRECTORY_SOURCE.indexOf(`export async function ${fn}`);
+      expect(start, `${fn} not found`).toBeGreaterThan(-1);
+      const next = DIRECTORY_SOURCE.indexOf('\nexport ', start + 1);
+      const body = DIRECTORY_SOURCE.slice(start, next === -1 ? undefined : next);
+      expect(body, `${fn} must enrich through the shared helper`).toContain('enrichVendorRows(db,');
+    }
+    // The one place reputation is actually computed, still exactly one place.
     expect(DIRECTORY_SOURCE.match(/eq\(reviews\.verified, true\)/g)?.length).toBe(1);
   });
 

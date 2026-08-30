@@ -80,6 +80,7 @@ import {
 } from './billing/lifecycle';
 import { resolveVendorEntitlements, toVendorEntitlementResponse } from './billing/entitlements';
 import { readOwnVendorProfile, readVendorProfile, saveOwnVendorProfile } from './vendorProfile';
+import { grantSponsorship, listSponsorships, revokeSponsorship } from './vendorSponsorship';
 import {
   declineInvitation, inviteSupplier, listInvitations, markInvitationResponded, requireInviteRights,
 } from './rfqInvitations';
@@ -95,7 +96,7 @@ import {
 } from './billing/enquiries';
 import {
   FEATURED_PLACEMENT_SLOTS, getVendorTargetingDiagnostics, listDirectoryCategories,
-  listDirectoryVendors, listFeaturedVendors,
+  listDirectoryVendors, listFeaturedVendors, listSponsoredVendors,
 } from './vendorDirectory';
 import { getPlatformStats } from './platformStats';
 import {
@@ -108,7 +109,7 @@ import { normaliseUnit, PRODUCT_UNITS } from '../shared/productUnits';
 import { canCreateProject, creatorProjectRole, PROJECT_ROLES, capabilitiesFor } from '../shared/projectAccess';
 import { requireProjectAccess, readableProjectIds, liveMembership } from './projectMembership';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
-import { vendorCategories, vendorSubscriptions } from '../drizzle/schema';
+import { vendorCategories, vendorSponsorships, vendorSubscriptions } from '../drizzle/schema';
 import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
 
 const scryptAsync = promisify(scryptCallback);
@@ -1447,6 +1448,22 @@ const marketplaceRouter = router({
     }).optional())
     .query(async ({ input }) => listDirectoryVendors(input ?? {})),
   vendorCategories: publicProcedure.query(async () => listDirectoryCategories()),
+
+  /**
+   * THE SPONSORED STRIP for one service category.
+   *
+   * Public, like the directory it sits above. Returns both routes to a
+   * sponsored slot - an administrator's grant and a Premium entitlement -
+   * labelled by `sponsorshipSource` so the screen can be honest about which,
+   * and so nothing has to be fabricated when neither exists: a category with
+   * no sponsors returns an empty list and the strip does not render.
+   */
+  sponsoredVendors: publicProcedure
+    .input(z.object({
+      category: z.string().max(MAX_SEARCH_LENGTH).optional(),
+      location: z.string().max(MAX_SEARCH_LENGTH).optional(),
+    }).optional())
+    .query(async ({ input }) => listSponsoredVendors(input ?? {})),
 
   /**
    * The counts on the landing and sign-up pages, from the database.
@@ -4643,6 +4660,92 @@ const adminRouter = router({
    *   userAccountAuditEvents the account trail - what an administrator did
    *   fieldValueHistory      the value trail - old -> new, with the reason
    */
+  /**
+   * ── SPONSORSHIP AS AN ADMINISTRATIVE ACT ────────────────────────────────
+   *
+   * `marketplace.manage`, which SUPER_ADMIN and MARKETPLACE_ADMIN hold. That
+   * is a reading of the existing role model rather than a new rule: a
+   * sponsored slot is a placement decision in the marketplace, and the role
+   * whose purpose is the marketplace already carries the permission to make
+   * one. Billing, user and support admins cannot.
+   *
+   * A REASON IS REQUIRED. A sponsored slot is a commercial arrangement, and
+   * one with no recorded justification is exactly the unauditable favour this
+   * table exists to prevent.
+   */
+  grantSponsorship: adminWith('marketplace.manage')
+    .input(z.object({
+      vendorId: z.number().int().positive(),
+      category: z.string().min(1).max(100),
+      reason: z.string().trim().min(1).max(500),
+      startsAt: z.string().datetime().optional(),
+      endsAt: z.string().datetime().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const result = await grantSponsorship({
+        db,
+        vendorId: input.vendorId,
+        category: input.category,
+        grantedBy: ctx.user.id,
+        reason: input.reason,
+        startsAt: input.startsAt ? new Date(input.startsAt) : undefined,
+        endsAt: input.endsAt ? new Date(input.endsAt) : null,
+      });
+      if (result.outcome === 'rejected') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+      }
+
+      // The account trail, alongside the sponsorship row itself: one records
+      // the arrangement, the other records that an administrator made it.
+      await db.insert(userAccountAuditEvents).values({
+        userId: input.vendorId, actorId: ctx.user.id,
+        action: 'sponsorship_granted', source: 'admin',
+        note: `${input.category}${input.endsAt ? ` until ${input.endsAt}` : ' (open-ended)'} (${input.reason})`,
+      });
+      return result;
+    }),
+
+  revokeSponsorship: adminWith('marketplace.manage')
+    .input(z.object({ sponsorshipId: z.number().int().positive(), reason: z.string().trim().max(500).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      // Read the vendor BEFORE revoking, so the audit event can name them even
+      // though the revocation itself only needs the sponsorship id.
+      const [row] = await db.select({ vendorId: vendorSponsorships.vendorId, category: vendorSponsorships.category })
+        .from(vendorSponsorships).where(eq(vendorSponsorships.id, input.sponsorshipId)).limit(1);
+      if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Sponsorship not found' });
+
+      const revoked = await revokeSponsorship(db, input.sponsorshipId, ctx.user.id);
+      if (!revoked) {
+        // Already revoked. Reported rather than silently re-stamped, so the
+        // moment the decision was taken survives.
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That sponsorship is already revoked.' });
+      }
+
+      await db.insert(userAccountAuditEvents).values({
+        userId: row.vendorId, actorId: ctx.user.id,
+        action: 'sponsorship_revoked', source: 'admin',
+        note: `${row.category}${input.reason ? ` (${input.reason})` : ''}`,
+      });
+      return { success: true as const };
+    }),
+
+  /**
+   * Which vendors are sponsored, in which category, for what period, and by
+   * what action - the whole question, which is why revoked and elapsed grants
+   * are included rather than filtered out. `live` says which is which.
+   */
+  sponsorships: adminWith('marketplace.manage').query(async () => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    return listSponsorships(db);
+  }),
+
   setVendorPlanManually: adminWith('billing.manage')
     .input(z.object({
       userId: z.number().int().positive(),

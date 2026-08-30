@@ -473,6 +473,11 @@
       "indent": 2
     },
     {
+      "name": "sponsoredVendors",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
       "name": "platformStats",
       "tier": "publicProcedure",
       "indent": 2
@@ -883,9 +888,24 @@
       "indent": 3
     },
     {
+      "name": "grantSponsorship",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "revokeSponsorship",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "sponsorships",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
       "name": "setVendorPlanManually",
       "tier": "adminWith:billing.manage",
-      "indent": 2
+      "indent": 3
     },
     {
       "name": "recordVendorPaymentSucceeded",
@@ -1114,7 +1134,7 @@
     }
   ],
   "procedureTiers": {
-    "publicProcedure": 26,
+    "publicProcedure": 27,
     "protectedProcedure": 61,
     "complianceProcedure": 2,
     "approvedProviderProcedure": 21,
@@ -1126,7 +1146,7 @@
     "superAdminProcedure": 10,
     "adminProcedure": 3,
     "adminWith:billing.manage": 8,
-    "adminWith:marketplace.manage": 7,
+    "adminWith:marketplace.manage": 10,
     "adminWith:support.manage": 2,
     "adminWith:settings.manage": 2,
     "aiChatProcedure": 1
@@ -1440,62 +1460,62 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 1233,
+      "line": 1234,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2037,
+      "line": 2054,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2117,
+      "line": 2134,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2796,
+      "line": 2813,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2853,
+      "line": 2870,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3219,
+      "line": 3236,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3451,
+      "line": 3468,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3591,
+      "line": 3608,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4729,
+      "line": 4832,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4930,
+      "line": 5033,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4955,
+      "line": 5058,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4980,
+      "line": 5083,
       "via": "notifyUser"
     },
     {

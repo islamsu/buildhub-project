@@ -18,6 +18,7 @@ import { and, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { containsTerm } from './_core/searchTerms';
 import { qualifiedEnquiries, reviews, users, vendorCategories, vendorSubscriptions } from '../drizzle/schema';
 import { deriveBillingState } from './billing/domain';
+import { sponsoredVendorIds } from './vendorSponsorship';
 import { getEntitlements } from '@shared/billing';
 import { getDb } from './db';
 import { isTestLoginEnabled } from './_core/env';
@@ -292,6 +293,70 @@ export async function listFeaturedVendors(
   const selected = rotateFeatured(eligible, slots, now);
 
   return enrichVendorRows(db, selected.map(({ subscription: _subscription, ...vendor }) => vendor));
+}
+
+/**
+ * ── THE SPONSORED STRIP: BOTH ROUTES, ONE LIST ────────────────────────────
+ *
+ * BuildHub now sells sponsorship two ways, and a reader should not have to
+ * care which:
+ *
+ *   entitlement   the vendor pays for a Premium plan (listFeaturedVendors)
+ *   granted       an administrator granted them a slot in this category
+ *
+ * ADMIN GRANTS COME FIRST. They are category-specific and deliberate - someone
+ * chose this vendor for this category - whereas entitlement placement is a
+ * rotating benefit of a plan. Putting the deliberate choice first is the only
+ * ordering that reflects what was actually agreed.
+ *
+ * A GRANT CANNOT SMUGGLE A VENDOR PAST THE DIRECTORY'S OWN FILTER. The ids
+ * are resolved against exactly the same visibility conditions as the organic
+ * list - active, approved, not deactivated, not a dummy - so a sponsored
+ * vendor who has since been suspended simply does not appear. Sponsorship buys
+ * a slot, never an exemption.
+ *
+ * `sponsorshipSource` is returned so the UI can label the strip honestly and
+ * so an administrator can tell the two apart. It is NOT an endorsement flag:
+ * `verified` remains entirely separate and driven by compliance review.
+ */
+export async function listSponsoredVendors(
+  filters: DirectoryFilters & { now?: Date } = {},
+): Promise<(DirectoryVendor & { sponsorshipSource: 'granted' | 'entitlement' })[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const now = filters.now ?? new Date();
+
+  // A grant is scoped to ONE category, so without a category filter there is
+  // no such thing as an admin-granted slot to show. Entitlement placement is
+  // plan-wide and still applies.
+  const grantedIds = filters.category
+    ? await sponsoredVendorIds(db, filters.category, now)
+    : [];
+
+  let granted: DirectoryVendor[] = [];
+  if (grantedIds.length > 0) {
+    const rows = await db
+      .select(DIRECTORY_VENDOR_COLUMNS)
+      .from(users)
+      // The directory's own visibility filter, applied to sponsored vendors
+      // exactly as to everyone else.
+      .where(and(directoryVisibilityFilter(), inArray(users.id, grantedIds)));
+    granted = await enrichVendorRows(db, rows);
+  }
+
+  const entitled = await listFeaturedVendors(filters);
+
+  const seen = new Set(granted.map(vendor => vendor.id));
+  const combined: (DirectoryVendor & { sponsorshipSource: 'granted' | 'entitlement' })[] = [
+    ...granted.map(vendor => ({ ...vendor, sponsorshipSource: 'granted' as const })),
+    // A vendor holding BOTH a grant and a Premium plan appears once, as
+    // granted - the more specific fact. Two cards for one firm would look like
+    // two firms.
+    ...entitled.filter(vendor => !seen.has(vendor.id))
+      .map(vendor => ({ ...vendor, sponsorshipSource: 'entitlement' as const })),
+  ];
+
+  return combined.slice(0, FEATURED_PLACEMENT_SLOTS);
 }
 
 /**

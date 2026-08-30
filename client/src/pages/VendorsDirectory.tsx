@@ -63,14 +63,19 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
     location: location.trim() || undefined,
   });
   const { data: categories = [] } = trpc.marketplace.vendorCategories.useQuery();
-  // Featured placement is fetched SEPARATELY from the organic list, matching
+  // Sponsored placement is fetched SEPARATELY from the organic list, matching
   // how the server exposes it. One combined query would invite rendering a paid
   // slot as an organic result.
-  const { data: featuredData } = trpc.marketplace.featuredVendors.useQuery({
+  //
+  // `sponsoredVendors` rather than `featuredVendors`: BuildHub now sells a slot
+  // two ways - a Premium entitlement, and an administrator's grant for one
+  // service category - and a reader should not have to care which. The server
+  // merges both and labels each with `sponsorshipSource`; an admin grant is
+  // category-scoped, so it only ever appears when a category is selected.
+  const { data: featured = [] } = trpc.marketplace.sponsoredVendors.useQuery({
     category: category === 'all' ? undefined : category,
     location: location.trim() || undefined,
   });
-  const featured = featuredData?.vendors ?? [];
 
   const Back = ar ? ChevronRight : ChevronLeft;
 

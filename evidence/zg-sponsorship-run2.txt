@@ -1,0 +1,40 @@
+PASS  NO FABRICATION: nobody is sponsored before any grant exists  [ids=[]]
+PASS  a vendor cannot grant themselves a sponsored slot  [http=403]
+PASS  BILLING_ADMIN lacks marketplace.manage and is REFUSED  [http=403 err=You do not have required permission (100]
+PASS  MARKETPLACE_ADMIN holds marketplace.manage and MAY grant  [http=200 err=null]
+PASS  DATABASE: the grant records the category, granter and reason
+PASS  AUDIT: an account audit event names the administrative action
+PASS  an UNAPPROVED provider cannot be sponsored  [Only an approved, active provider can hold a spons]
+PASS  DATABASE: and no row was created for them
+PASS  a SECOND live grant in the same category is refused - one arrangement, not two slots  [This vendor already holds a live sponsorship in that ca]
+PASS  DATABASE: still exactly one row
+PASS  a date beyond the 2038 epoch limit is refused with a SENTENCE, not a 500  [http=400 err=The sponsorship end date must be before 2038. Grant a shorte]
+PASS  DATABASE: and no row was written for it
+PASS  THE GRANTED VENDOR NOW APPEARS in the sponsored strip  [ids=[23]]
+PASS  and is labelled as an ADMIN GRANT, not as a plan entitlement  [source=granted]
+PASS  an unsponsored rival does NOT appear in the strip
+PASS  CATEGORY SCOPED: the grant does not leak into a different category  [ids=[]]
+PASS  SPONSORSHIP IS NOT VERIFICATION: the grant did not change verified  [before=0 after=0]
+PASS  SPONSORSHIP IS NOT A RATING: the grant did not change reviewCount
+PASS  AN EXPIRED GRANT DISAPPEARS with no sweep having run  [ids=[]]
+PASS  A FUTURE-DATED GRANT is not live yet  [ids=[]]
+PASS  POSITIVE CONTROL: restoring the window brings it back - the probe is measuring something
+PASS  the administrator can revoke  [http=200 err=-]
+PASS  DATABASE: SOFT revoke - the row survives for the audit
+PASS  DATABASE: and records who revoked it
+PASS  A REVOKED GRANT DISAPPEARS from the directory  [ids=[]]
+PASS  revoking twice is refused rather than re-stamping the decision  [http=400]
+PASS  the admin record still LISTS the revoked grant - that is what auditable means
+PASS  and marks it not live  [live=false]
+PASS  and names the vendor, category, period and reason  [vendor=spvd15994138 cat=Materials]
+PASS  the admin record carries no credential  [no credential]
+PASS  BILLING_ADMIN cannot read the sponsorship record either  [http=403]
+PASS  SETUP: re-granted for the page test  [http=200]
+PASS  LIVE UI: the sponsored section renders on the vendors directory  [Sponsored providers]
+PASS  RESPONSIVE 375px: the directory does not scroll horizontally
+PASS  RESPONSIVE 768px: the directory does not scroll horizontally
+PASS  RESPONSIVE 1440px: the directory does not scroll horizontally
+PASS  ARABIC: the directory renders right-to-left  [dir=rtl]
+PASS  PRODUCTS DO NOT INHERIT IT: no sponsored vendor strip on the product marketplace  [no vendor strip on products]
+
+38/38 passed

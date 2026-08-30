@@ -155,6 +155,13 @@ describe('§1 every procedure is pinned to a tier', () => {
       // server/platformStats.ts. It replaced four hardcoded marketing figures.
       'marketplace.platformStats',
       'marketplace.questions',
+      // The sponsored strip above the vendors directory. Public because the
+      // directory it sits above is public, and because it exposes strictly
+      // LESS than that directory already does: the same vendor cards, from the
+      // same visibility filter, plus a label saying the placement is sponsored.
+      // It carries no sponsorship reason, no granter, no period and no
+      // subscription state - those live behind marketplace.manage.
+      'marketplace.sponsoredVendors',
       'marketplace.vendorCategories',
       // One vendor's published catalogue, for the vendor detail page. Public
       // for the same reason marketplace.list is: it is the shop window.
