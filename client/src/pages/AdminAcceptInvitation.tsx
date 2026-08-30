@@ -10,7 +10,7 @@
 // just avoids leaving a spent credential lying around.
 
 import { useEffect, useRef, useState } from 'react';
-import { useLocation } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { KeyRound, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -75,10 +75,10 @@ export default function AdminAcceptInvitation() {
     <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4" dir={dir}>
       <div className="w-full max-w-md">
         <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2" data-testid="brand-home">
             <KeyRound className="h-6 w-6 text-primary" />
             <span className="text-lg font-semibold">BuildHub</span>
-          </div>
+          </Link>
           <LanguageToggle />
         </div>
         <Card>

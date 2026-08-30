@@ -370,12 +370,12 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
             {/* Brand */}
             <div className="md:col-span-1">
-              <div className="flex items-center gap-2 mb-4">
+              <Link href="/" className="flex items-center gap-2 mb-4" data-testid="brand-home-footer">
                 <div className="w-8 h-8 rounded-lg gradient-brand flex items-center justify-center">
                   <Building2 className="w-4 h-4 text-white" />
                 </div>
                 <span className="font-bold text-xl text-background">BuildHub</span>
-              </div>
+              </Link>
               <p className="text-background/60 text-sm leading-relaxed">
                 {lang === 'ar'
                   ? 'نظام تشغيل البناء الذكي — يربط الجميع في منظومة واحدة.'

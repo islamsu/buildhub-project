@@ -25,8 +25,27 @@ const strip = (source: string) => source
 describe('the request id travels with the provider', () => {
   const DETAIL = strip(read('../client/src/pages/RFQDetail.tsx'));
 
-  it('the respond CTA carries the RFQ id, not a bare dashboard link', () => {
-    expect(DETAIL).toMatch(/<Link href=\{`\$\{getRolePlatformPath\([^`]*\)\}\?rfq=\$\{rfq\.id\}`\}>/);
+  it('the respond CTA carries the RFQ id, in the PATH', () => {
+    // It used to hand the id over as `?rfq=` on the provider's whole workspace.
+    // The id survived; the CONTEXT did not - the request they had been reading
+    // was now one card among a dozen, with the form in a dialog somewhere
+    // below. There is a response page now, and the id is a path segment.
+    //
+    // A path is a stronger carrier than a query string, which is the point:
+    // it survives a redirect that rebuilds the URL, it is what a person copies
+    // when they paste a link to a colleague, and it cannot be dropped by a
+    // shim that forgets to forward the search params - which is exactly how
+    // this id vanished once before.
+    expect(DETAIL).toContain('<Link href={`/rfq/${rfq.id}/respond`}>');
+    expect(DETAIL).not.toMatch(/\?rfq=\$\{rfq\.id\}/);
+  });
+
+  it('and that route exists, so the CTA is not a link into nothing', () => {
+    const app = read('../client/src/App.tsx');
+    expect(app).toContain('path={"/rfq/:id/respond"}');
+    expect(app).toContain('component={RFQRespondPage}');
+    // Registered BEFORE /rfq/:id, or the detail page would swallow it.
+    expect(app.indexOf('path={"/rfq/:id/respond"}')).toBeLessThan(app.indexOf('path={"/rfq/:id"}'));
   });
 
   it('and it addresses the canonical route, not the legacy /provider shim', () => {

@@ -1948,7 +1948,11 @@ try {
             // rarely fails at 768, and the dashboard above covers 768 anyway -
             // because each load costs real seconds against a live deployment.
             if (width !== 768) {
-              for (const route of ['/rfq', '/messages', '/ai']) {
+              // /settings joined this list when account configuration moved
+              // out of the role workspace into a page of its own. It is now a
+              // surface every role uses, so it gets the same width and
+              // language treatment as the rest.
+              for (const route of ['/rfq', '/messages', '/ai', '/settings']) {
                 await page.goto(`${BASE}${route}`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
                 await page.waitForTimeout(400);
                 const routeBody = await page.locator('body').innerText().catch(() => '');
@@ -1968,6 +1972,164 @@ try {
             await roleCtx.close();
           }
         }
+      }
+    }
+  }
+
+  // ══ 33. THE SURFACES THAT MOVED, AND THE PERMISSION THAT WAS ONLY A UI ══
+  //
+  // Account configuration left the role workspace for /settings, listing a
+  // product left an inline block for /products/new, responding to an RFQ left
+  // a query string for /rfq/:id/respond, and projects.create stopped being a
+  // procedure any signed-in account could call.
+  //
+  // Each check below is written so that BOTH halves of a move have to hold:
+  // the surface is present where it now lives AND absent from where it was.
+  // A check that only asserted the new location would still pass if the old
+  // one had been duplicated rather than moved.
+  section('33. Navigation, Settings, product pages, and who may create a project');
+  {
+    // ── §20. The permission, over the wire, with no browser involved ──────
+    // The UI never offered a supplier a Create Project button, so this could
+    // only ever have been caught by calling the procedure directly.
+    const supplierProject = await post('projects.create',
+      { title: `QA gate probe ${STAMP}`, type: 'residential' }, users.supplier?.cookie);
+    check(supplierProject.s === 403, '33. a supplier calling projects.create directly is refused',
+      `http ${supplierProject.s}`);
+    check(/customer commissioning the work/i.test(errMsg(supplierProject.t) ?? ''),
+      '33. and the refusal names the rule rather than saying "forbidden"',
+      (errMsg(supplierProject.t) ?? '').slice(0, 70));
+
+    for (const role of ['contractor', 'engineer', 'architect', 'project_manager']) {
+      if (!users[role]?.cookie) { skip(`33. ${role} projects.create`, 'no session for this role'); continue; }
+      const r = await post('projects.create', { title: `QA gate probe ${STAMP}`, type: 'residential' }, users[role].cookie);
+      check(r.s === 403, `33. a ${role} is refused too`, `http ${r.s}`);
+    }
+
+    // The positive control. Without it, a rule that refused EVERYONE would
+    // pass every check above.
+    const homeownerProject = await post('projects.create',
+      { title: `QA gate probe ${STAMP}`, type: 'residential' }, users.homeowner?.cookie);
+    check(homeownerProject.s === 200, '33. a homeowner still creates one', `http ${homeownerProject.s}`);
+    const createdProjectId = json(homeownerProject.t)?.id;
+    check(Number.isInteger(createdProjectId) && createdProjectId > 0,
+      '33. and the project really exists - the id came back', `id=${createdProjectId}`);
+
+    // ── §17. Requester contact is bought with a qualified enquiry ─────────
+    // Read as a stranger who holds no relationship to the request at all.
+    const strangerContact = await get('rfq.requesterContact', { rfqId: 999_999_999 }, users.contractor?.cookie);
+    check(strangerContact.s === 404, '33. requesterContact on an unknown RFQ answers NOT FOUND',
+      `http ${strangerContact.s}`);
+    check(!/forbidden|not allowed/i.test(errMsg(strangerContact.t) ?? ''),
+      '33. and does not confirm the id exists by saying "forbidden"');
+    check(!/phone|whatsapp|passwordHash/i.test(strangerContact.t),
+      '33. no contact channel leaks in the refusal body');
+
+    // ── The browser half: §7, §8, §9, §10, §21-§25 ────────────────────────
+    for (const role of ['homeowner', 'contractor']) {
+      const cookie = users[role]?.cookie;
+      if (!cookie) { skip(`33. ${role} navigation surfaces`, 'no session for this role'); continue; }
+      const ctx = await browser.newContext({
+        viewport: { width: 1440, height: 900 },
+        ignoreHTTPSErrors: BASE.includes('127.0.0.1'),
+      });
+      try {
+        const [n, ...rest] = cookie.split('=');
+        await ctx.addCookies([{
+          name: n.trim(), value: rest.join('='), domain: new URL(BASE).hostname,
+          path: '/', httpOnly: true, secure: BASE.startsWith('https'), sameSite: 'None',
+        }]);
+        const page = await ctx.newPage();
+
+        // §7. The brand is a link home from the signed-in shell. Asserted as a
+        // real click that changes the URL, not as the presence of an element -
+        // an <a> with no href renders identically and goes nowhere.
+        await page.goto(`${BASE}/platform/${role}`, { waitUntil: 'networkidle', timeout: 45_000 });
+        await page.waitForTimeout(400);
+        const brand = page.locator('[data-testid="brand-home"], [data-testid="brand-home-nav"]').first();
+        if (await brand.count()) {
+          await brand.click();
+          await page.waitForTimeout(1200);
+          check(new URL(page.url()).pathname === '/', `33. ${role}: clicking the BuildHub brand lands on Home`,
+            new URL(page.url()).pathname);
+        } else {
+          check(false, `33. ${role}: the signed-in shell carries a brand link`);
+        }
+
+        // §8. Reachable without opening the account menu.
+        await page.goto(`${BASE}/`, { waitUntil: 'networkidle', timeout: 45_000 });
+        await page.waitForTimeout(400);
+        const topLevel = await page.locator('header a, nav a').evaluateAll(
+          els => els.map(e => (e.getAttribute('href') ?? '')));
+        check(topLevel.some(h => h.includes('/platform/') || h === '/dashboard'),
+          `33. ${role}: Dashboard is a top-level link, not only a dropdown item`);
+        check(topLevel.includes('/ai'), `33. ${role}: AI is a top-level link too`);
+
+        // §9. The plan beside the name, and it must be a real plan word. A
+        // badge reading "undefined" would satisfy "a badge is present".
+        const planText = await page.locator('[data-testid="account-plan"], [data-testid="shell-plan"]')
+          .first().innerText().catch(() => '');
+        check(/free|professional|premium|مجانية|احترافية|بريميوم/i.test(planText),
+          `33. ${role}: the current plan is shown beside the name`, planText.trim().slice(0, 30) || '(nothing)');
+        check(!/undefined|null|billing\.plan/i.test(planText),
+          `33. ${role}: and it is a plan name, not a placeholder or a raw key`);
+
+        // §10. Settings exists, hosts the real panels, and explains rather
+        // than blanks the sections this role does not have.
+        await page.goto(`${BASE}/settings`, { waitUntil: 'networkidle', timeout: 45_000 });
+        await page.waitForTimeout(600);
+        check(await page.locator('[data-testid="settings-page"]').count() > 0,
+          `33. ${role}: /settings renders`);
+        check(await page.locator('[data-testid="settings-compliance"]').count() > 0,
+          `33. ${role}: registration compliance is reachable from Settings`);
+        const panels = await page.locator('[data-testid^="settings-"]').count();
+        const explained = await page.locator('[data-testid="settings-not-applicable"]').count();
+        check(panels > 1, `33. ${role}: Settings is more than an empty shell`, `${panels} panel(s)`);
+        // Both halves of the same rule: a homeowner has no service categories,
+        // and that section must SAY so rather than render nothing.
+        if (role === 'homeowner') {
+          check(explained > 0, `33. ${role}: sections that do not apply are named, not blank`,
+            `${explained} explanation(s)`);
+        } else {
+          check(await page.locator('[data-testid="settings-billing"]').count() > 0,
+            `33. ${role}: Plan & Billing lives in Settings now`);
+        }
+
+        // The other half of the move: the workspace no longer carries it.
+        await page.goto(`${BASE}/platform/${role}`, { waitUntil: 'networkidle', timeout: 45_000 });
+        await page.waitForTimeout(600);
+        check(await page.locator('#role-billing').count() === 0,
+          `33. ${role}: and the workspace no longer carries a billing section`);
+
+        // §21-§23. Listing a product is a page with its own address, origin is
+        // a field on it, and unit is a controlled list rather than free text.
+        if (role === 'contractor') {
+          await page.goto(`${BASE}/products/new`, { waitUntil: 'networkidle', timeout: 45_000 });
+          await page.waitForTimeout(600);
+          const form = await page.locator('[data-testid="product-form"]').count();
+          if (form) {
+            check(true, '33. the product form has its own address');
+            check(await page.locator('[data-testid="product-origin"]').count() > 0,
+              '33. origin is a field on it');
+            const unitTag = await page.locator('[data-testid="product-unit"]')
+              .evaluate(el => el.tagName).catch(() => '');
+            check(unitTag === 'SELECT', '33. and unit is a controlled list, not free text', unitTag || '(missing)');
+            const unitOptions = await page.locator('[data-testid="product-unit"] option').count();
+            check(unitOptions > 10, '33. the unit list is the shared taxonomy, not a token few',
+              `${unitOptions} option(s)`);
+          } else {
+            // Honest rather than silent: an unapproved provider is SUPPOSED to
+            // be sent to compliance, and that is a pass, not a missing page.
+            check(page.url().includes('/compliance'),
+              '33. an unapproved provider is sent to compliance rather than the product form',
+              new URL(page.url()).pathname);
+          }
+        }
+      } catch (error) {
+        check(false, `33. ${role}: navigation surfaces loaded`,
+          error instanceof Error ? error.message.slice(0, 90) : String(error));
+      } finally {
+        await ctx.close();
       }
     }
   }

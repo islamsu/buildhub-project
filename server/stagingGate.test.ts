@@ -516,13 +516,43 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
   });
 
   it('every browser context that needs a session gets one - ai.chat is a protectedProcedure', () => {
-    // Five CALL SITES now: the English AI surface, the Arabic one, the
-    // attachment composer in section 30, the role loop in section 31, and the
-    // role-dashboard loop in section 32 - the last two being one call site
-    // each, executed once per role (and per width and language, in 32).
+    // SIX CALL SITES now: the English AI surface, the Arabic one, the
+    // attachment composer in section 30, the role loop in section 31, the
+    // role-dashboard loop in section 32, and the navigation/Settings/product
+    // loop in section 33 - each one call site, executed once per role (and
+    // per width and language, in 32).
+    //
     // Pinned so a new context that forgets its cookie fails here rather than
-    // producing a mysterious 401 on staging.
-    expect(EXECUTABLE.match(/addCookies/g) ?? []).toHaveLength(5);
+    // producing a mysterious 401 on staging. The number is not the point; the
+    // point is that changing it forces someone to look at the new call site,
+    // which is exactly what happened when section 33 was added.
+    expect(EXECUTABLE.match(/addCookies/g) ?? []).toHaveLength(6);
+  });
+
+  it('and each one installs a REAL session cookie, not a placeholder', () => {
+    // The count above proves a call site exists. This proves each one parses
+    // an actual `Set-Cookie` value from a signed-in account: the name/value
+    // split is what turns a stored cookie string into something the browser
+    // will send. A context added with `addCookies([{ name: 'x', value: 'y' }])`
+    // would satisfy the count and fail here.
+    //
+    // Matched on the SPLIT, not on a variable called `cookie` - the attachment
+    // composer holds its session in a variable named `ai`, and a check keyed to
+    // the variable name reported a discrepancy that did not exist.
+    const installs = EXECUTABLE.match(/addCookies/g) ?? [];
+    const parses = EXECUTABLE.match(/\.split\('='\)/g) ?? [];
+    expect(parses.length).toBe(installs.length);
+  });
+
+  it('section 33 drives the surfaces that moved, signed in as a real role', () => {
+    expect(EXECUTABLE).toContain('33. a supplier calling projects.create directly is refused');
+    // The positive control. A rule that refused EVERY role would pass the
+    // refusal checks and be catastrophically wrong.
+    expect(EXECUTABLE).toContain('33. a homeowner still creates one');
+    // Both halves of the Settings move: present in its new home, gone from
+    // the workspace it left.
+    expect(EXECUTABLE).toContain('/settings');
+    expect(EXECUTABLE).toContain('the workspace no longer carries a billing section');
   });
 
   it('the batched tRPC envelope is handled - the browser does not send bare objects', () => {

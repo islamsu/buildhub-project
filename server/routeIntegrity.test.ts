@@ -177,12 +177,22 @@ describe('getRolePlatformPath only ever returns a real route', () => {
     },
   );
 
-  it('and the RFQ detail page uses exactly that helper for its respond CTA', () => {
+  it('and no page hand-builds a /platform/ path instead of using the helper', () => {
     // Rather than hand-building `/platform/${role}`, which would be a second
     // copy of the mapping and free to drift from the route table.
-    const page = read('../client/src/pages/RFQDetail.tsx');
-    expect(page).toContain('getRolePlatformPath(');
-    expect(page).not.toMatch(/href=\{`\/platform\//);
+    //
+    // RFQDetail used to be the example here, because its respond CTA pointed
+    // at the provider's workspace. That CTA now targets `/rfq/:id/respond` - a
+    // fixed route with no role in it - so there is nothing left for the helper
+    // to resolve on that page. The rule itself is unchanged and still worth
+    // enforcing, so it is asserted where it still applies.
+    const detail = read('../client/src/pages/RFQDetail.tsx');
+    expect(detail).not.toMatch(/href=\{`\/platform\//);
+    const respond = read('../client/src/pages/RFQRespondPage.tsx');
+    expect(respond).not.toMatch(/href=\{`\/platform\/\$\{/);
+    // And the helper is still the single source for callers that DO need it.
+    const layout = read('../client/src/components/DashboardLayout.tsx');
+    expect(layout + read('../client/src/components/Navbar.tsx')).toContain('getRolePlatformPath');
   });
 });
 

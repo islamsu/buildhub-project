@@ -212,10 +212,28 @@ describe('the billing system is actually reachable now (Slice 2)', () => {
     expect(app).toContain('component={Pricing}');
   });
 
-  it('the vendor workspace mounts the billing panel', () => {
+  it('the billing panel is mounted exactly once, on the Settings page', () => {
+    // It used to live in the vendor workspace as `id="role-billing"`. Plan and
+    // billing are account configuration, so they moved to /settings with the
+    // profile and the service categories.
+    //
+    // This asserts the move did not LOSE the panel, which is the failure worth
+    // catching: the component is mounted, it is on Settings, and it is not
+    // still duplicated in the workspace.
+    const settings = client('pages/SettingsPage.tsx');
+    expect(settings).toContain('<VendorBilling />');
+    expect(settings).toContain('id="settings-billing"');
     const platform = client('pages/RolePlatform.tsx');
-    expect(platform).toContain('<VendorBilling />');
-    expect(platform).toContain('id="role-billing"');
+    expect(platform, 'VendorBilling must not be mounted twice').not.toContain('<VendorBilling');
+  });
+
+  it('and Settings is a real route, reachable by ordinary navigation', () => {
+    // A panel nobody can reach is not a move, it is a deletion.
+    const app = client('App.tsx');
+    expect(app).toContain('path={"/settings"}');
+    expect(app).toContain('component={SettingsPage}');
+    const layout = client('components/DashboardLayout.tsx');
+    expect(layout).toContain("path: '/settings'");
   });
 
   it('the admin dashboard has a billing section that is actually routable', () => {

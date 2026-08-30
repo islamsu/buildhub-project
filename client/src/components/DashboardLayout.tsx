@@ -21,9 +21,10 @@ import {
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity } from "lucide-react";
+import { trpc } from "@/lib/trpc";
+import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import LanguageToggle from "./LanguageToggle";
@@ -55,6 +56,9 @@ type MenuItem = {
 };
 
 const COMPLIANCE_MENU_ITEM = { icon: Shield, labelKey: 'platform.compliance', path: '/compliance' } as const;
+/* Settings is a real page now, not a workspace anchor. Every role gets it:
+   the profile, the plan and the service categories all live there. */
+const SETTINGS_MENU_ITEM = { icon: Settings, labelKey: 'dash.settings', path: '/settings' } as const;
 
 function workspaceItem(role: WorkspaceRole, icon: typeof LayoutDashboard, labelKey: string, section: SectionId): MenuItem {
   return { icon, labelKey, path: workspaceHref(role, section), section };
@@ -62,12 +66,23 @@ function workspaceItem(role: WorkspaceRole, icon: typeof LayoutDashboard, labelK
 
 const HOMEOWNER_MENU_KEYS: MenuItem[] = [
   workspaceItem('homeowner', LayoutDashboard, 'dash.overview', 'role-overview'),
+  // The homeowner workspace declares `role-projects` and renders it, but the
+  // sidebar named none of its own sections - it was the only role whose menu
+  // described somewhere else entirely. Two consequences, both found by a live
+  // click audit rather than by reading: the section was reachable only by
+  // clicking a KPI tile, and "Overview" had nothing to bring you back from,
+  // so from the top of the workspace it did nothing at all.
+  //
+  // Both entries are kept and they are different places: `/dashboard` is the
+  // full projects page (also linked from Home, from "View all", and from a
+  // project's own page); this one is the summary section inside the workspace.
+  workspaceItem('homeowner', FolderKanban, 'dash.recent_projects', 'role-projects'),
   { icon: FolderOpen, labelKey: 'dash.projects', path: '/dashboard' },
   { icon: ShoppingBag, labelKey: 'nav.marketplace', path: '/marketplace' },
   { icon: FileText, labelKey: 'dash.get_quotes', path: '/rfq' },
   { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
   { icon: Bot, labelKey: 'dash.ai', path: '/ai' },
-  workspaceItem('homeowner', Settings, 'profile.title', 'role-profile'),
+  SETTINGS_MENU_ITEM,
 ];
 
 const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
@@ -81,6 +96,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     workspaceItem('contractor', FolderOpen, 'platform.projects', 'role-projects'),
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('contractor', BarChart3, 'platform.performance', 'role-performance'),
+    SETTINGS_MENU_ITEM,
   ],
   engineer: [
     workspaceItem('engineer', LayoutDashboard, 'dash.overview', 'role-overview'),
@@ -91,6 +107,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('engineer', BarChart3, 'platform.performance', 'role-performance'),
+    SETTINGS_MENU_ITEM,
   ],
   architect: [
     workspaceItem('architect', LayoutDashboard, 'dash.overview', 'role-overview'),
@@ -101,6 +118,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('architect', BarChart3, 'platform.performance', 'role-performance'),
+    SETTINGS_MENU_ITEM,
   ],
   supplier: [
     workspaceItem('supplier', LayoutDashboard, 'dash.overview', 'role-overview'),
@@ -111,6 +129,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: ShoppingBag, labelKey: 'nav.marketplace', path: '/marketplace/products' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('supplier', BarChart3, 'platform.performance', 'role-performance'),
+    SETTINGS_MENU_ITEM,
   ],
   project_manager: [
     workspaceItem('project_manager', LayoutDashboard, 'dash.overview', 'role-overview'),
@@ -119,6 +138,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: Users, labelKey: 'platform.team', path: '/messages' },
     workspaceItem('project_manager', BarChart3, 'platform.performance', 'role-performance'),
+    SETTINGS_MENU_ITEM,
   ],
 };
 
@@ -210,6 +230,14 @@ function DashboardLayoutContent({
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
   const { t } = useLanguage();
+  /**
+   * The effective plan, from the billing system - never the role, never a
+   * constant. `billing.mySubscription` is the same server-resolved state the
+   * Plan & Billing panel renders, so a lapsed trial or a past-due subscription
+   * changes this label with no edit here.
+   */
+  const { data: subscription } = trpc.billing.mySubscription.useQuery(undefined, { enabled: !!user });
+  const planLabel = subscription?.plan ? t(`billing.plan.${subscription.plan}`) : null;
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -319,11 +347,21 @@ function DashboardLayoutContent({
               >
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
+              {/* THE BRAND IS THE WAY HOME, on every signed-in page.
+                  This was a bare <div>: the one element a person instinctively
+                  clicks to get out of a workspace did nothing at all, on every
+                  dashboard, RFQ, product, quotation and admin screen in the
+                  product. */}
               {!isCollapsed ? (
-                <div className="flex items-center gap-2 min-w-0">
+                <Link
+                  href="/"
+                  className="flex items-center gap-2 min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  data-testid="brand-home"
+                  aria-label={t('nav.home')}
+                >
                   <Building2 className="h-5 w-5 text-primary flex-shrink-0" />
                   <span className="font-bold tracking-tight truncate text-primary">BuildHub</span>
-                </div>
+                </Link>
               ) : null}
             </div>
           </SidebarHeader>
@@ -367,8 +405,19 @@ function DashboardLayoutContent({
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
-                    <p className="text-sm font-medium truncate leading-none">
+                    <p className="flex items-center gap-1.5 text-sm font-medium truncate leading-none">
                       {user?.name || "-"}
+                      {/* THE PLAN, BESIDE THE NAME - here as well as in the
+                          public navbar, because a signed-in person spends
+                          their time inside this shell and never sees that one.
+                          Same server-resolved source; absent while loading
+                          rather than guessed. */}
+                      {planLabel && (
+                        <>
+                          <span className="opacity-40" aria-hidden="true">·</span>
+                          <span className="text-xs opacity-80" data-testid="shell-plan">{planLabel}</span>
+                        </>
+                      )}
                     </p>
                     <p className="text-xs text-muted-foreground truncate mt-1.5">
                       {user?.email || "-"}

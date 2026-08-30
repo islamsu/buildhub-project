@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { useLocation, useSearch } from 'wouter';
+import { Link, useLocation, useSearch } from 'wouter';
 import { parseLinkedRfqId } from '@shared/linkedRfq';
 import { toast } from 'sonner';
 import VendorProfileCard from '@/components/VendorProfileCard';
@@ -115,8 +115,6 @@ export default function RolePlatform() {
   // VendorProfileCard fetches/renders the same query itself (react-query dedupes the
   // identical call into one request; this is not a second profile implementation).
   const { data: ownProfile } = trpc.profile.getOwn.useQuery(undefined, { enabled: isAuthenticated && isProfessional });
-  const [productDialogOpen, setProductDialogOpen] = useState(false);
-  const [productForm, setProductForm] = useState({ name: '', nameAr: '', category: '', description: '', brand: '', price: '', stock: '', unit: '', deliveryDays: '' });
   const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
   // Preselected from `?rfq=` so a provider who followed a link from the request
   // does not have to find it again in the list.
@@ -169,14 +167,6 @@ export default function RolePlatform() {
   // only "Your price" is a way to bid on the wrong thing.
   const quoteTarget = rfqs.find(rfq => rfq.id === quoteForm.rfqId);
 
-  const createProduct = trpc.marketplace.create.useMutation({
-    onSuccess: () => {
-      toast.success(lang === 'ar' ? 'تمت إضافة المنتج إلى الكتالوج' : 'Product added to your catalogue');
-      setProductDialogOpen(false);
-      setProductForm({ name: '', nameAr: '', category: '', description: '', brand: '', price: '', stock: '', unit: '', deliveryDays: '' });
-    },
-    onError: (error) => toast.error(error.message),
-  });
   const submitQuote = trpc.rfq.submitQuotation.useMutation({
     onSuccess: () => {
       toast.success(lang === 'ar' ? 'تم تقديم عرض السعر' : 'Quotation submitted');
@@ -231,7 +221,7 @@ export default function RolePlatform() {
     { label: t('dash.explore_market'), icon: ShoppingBag, onClick: () => navigate('/marketplace'), tone: 'text-amber-600' },
     { label: t('dash.ask_ai'), icon: Sparkles, onClick: () => navigate('/ai'), tone: 'text-violet-600' },
   ] : role === 'supplier' ? [
-    { label: t('platform.new_listing'), icon: PackagePlus, onClick: () => setProductDialogOpen(true), tone: 'text-orange-600' },
+    { label: t('platform.new_listing'), icon: PackagePlus, onClick: () => navigate('/products/new'), tone: 'text-orange-600' },
     { label: t('platform.review_requests'), icon: ClipboardList, onClick: () => navigate('/rfq'), tone: 'text-blue-600' },
     { label: t('platform.projects'), icon: BriefcaseBusiness, onClick: () => goToSection('role-projects'), tone: 'text-cyan-600' },
     { label: t('dash.messages'), icon: MessageSquare, onClick: () => navigate('/messages'), tone: 'text-violet-600' },
@@ -359,12 +349,6 @@ export default function RolePlatform() {
               professional-only performance block. It is the same self-scoped
               card and the same self-only backend - there was never a reason
               for it to be provider-only. */}
-          <section id="role-profile">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">{t('profile.title')}</h2>
-            </div>
-            <Card><CardContent className="pt-6"><VendorProfileCard /></CardContent></Card>
-          </section>
           </>
         ) : role === 'supplier' ? (
           <>
@@ -394,23 +378,17 @@ export default function RolePlatform() {
             directly above the enquiry inbox, because the allowance shown there
             is a consequence of the plan shown here. */}
         {isProfessional && (
-          <section id="role-billing">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">{lang === 'ar' ? 'الباقة والفوترة' : 'Plan & billing'}</h2>
-            </div>
-            <VendorBilling />
-          </section>
-        )}
-
-        {isProfessional && (
           <section id="role-enquiries">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-lg font-semibold">{lang === 'ar' ? 'الطلبات وفئات الخدمة' : 'Enquiries & service categories'}</h2>
             </div>
-            <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-              <VendorServiceCategories />
-              <QualifiedEnquiries highlightRfqId={linkedRfqId} />
-            </div>
+            {/* The INBOX stays here and the category declaration moved to
+                Settings. Splitting them is deliberate: which categories you
+                serve is configuration, but these are your leads, and this is
+                where the `?rfq=` deep link in a notification lands. Putting a
+                notification's destination behind Settings would break the one
+                journey that notification exists to complete. */}
+            <QualifiedEnquiries highlightRfqId={linkedRfqId} />
           </section>
         )}
 
@@ -437,31 +415,6 @@ export default function RolePlatform() {
             </div>
           </section>
         )}
-
-        <Dialog open={productDialogOpen} onOpenChange={setProductDialogOpen}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader><DialogTitle>{t('platform.new_listing')}</DialogTitle></DialogHeader>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Input placeholder={lang === 'ar' ? 'اسم المنتج' : 'Product name'} value={productForm.name} onChange={e => setProductForm(form => ({ ...form, name: e.target.value }))} />
-              <Input placeholder={lang === 'ar' ? 'الاسم بالعربية' : 'Arabic name'} value={productForm.nameAr} onChange={e => setProductForm(form => ({ ...form, nameAr: e.target.value }))} />
-              <select className="h-10 rounded-md border bg-background px-3 text-sm" value={productForm.category} onChange={e => setProductForm(form => ({ ...form, category: e.target.value }))}><option value="">{lang === 'ar' ? 'اختر الفئة' : 'Choose category'}</option>{PRODUCT_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}</select>
-              <Input placeholder={lang === 'ar' ? 'العلامة التجارية' : 'Brand'} value={productForm.brand} onChange={e => setProductForm(form => ({ ...form, brand: e.target.value }))} />
-              <Input placeholder={lang === 'ar' ? 'السعر بالجنيه' : 'Price in EGP'} type="number" value={productForm.price} onChange={e => setProductForm(form => ({ ...form, price: e.target.value }))} />
-              <Input placeholder={lang === 'ar' ? 'المخزون' : 'Stock'} type="number" value={productForm.stock} onChange={e => setProductForm(form => ({ ...form, stock: e.target.value }))} />
-              <Input placeholder={lang === 'ar' ? 'الوحدة' : 'Unit'} value={productForm.unit} onChange={e => setProductForm(form => ({ ...form, unit: e.target.value }))} />
-              <Input placeholder={lang === 'ar' ? 'أيام التوصيل' : 'Delivery days'} type="number" value={productForm.deliveryDays} onChange={e => setProductForm(form => ({ ...form, deliveryDays: e.target.value }))} />
-              <Textarea className="sm:col-span-2" placeholder={lang === 'ar' ? 'وصف المنتج' : 'Product description'} rows={3} value={productForm.description} onChange={e => setProductForm(form => ({ ...form, description: e.target.value }))} />
-            </div>
-            <Button onClick={() => (() => {
-              // Narrows the form's free-text value onto the shared taxonomy
-              // rather than casting it away. The button is disabled until a
-              // category is chosen, so this is the type system agreeing with
-              // the UI rather than a second rule that could drift from it.
-              if (!isProductCategory(productForm.category)) return;
-              createProduct.mutate({ name: productForm.name, nameAr: productForm.nameAr || undefined, category: productForm.category, description: productForm.description || undefined, brand: productForm.brand || undefined, price: productForm.price ? Number(productForm.price) : undefined, stock: productForm.stock ? Number(productForm.stock) : undefined, unit: productForm.unit || undefined, deliveryDays: productForm.deliveryDays ? Number(productForm.deliveryDays) : undefined });
-            })()} disabled={createProduct.isPending || !productForm.name || !productForm.category} className="w-full gap-2"><PackagePlus className="h-4 w-4" />{createProduct.isPending ? t('common.loading') : t('platform.new_listing')}</Button>
-          </DialogContent>
-        </Dialog>
 
         <Dialog open={quoteDialogOpen} onOpenChange={setQuoteDialogOpen}>
           <DialogContent className="max-w-md">
@@ -590,7 +543,8 @@ function QuotationTiles({ quotations, t, lang, navigate }: { quotations: any[]; 
 function ContractorWorkspace({ rfqs, projects, quotations, t, lang, navigate, onQuote }: { rfqs: any[]; projects: any[]; quotations: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
-      <Card id="role-pipeline"><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{lang === 'ar' ? 'مسار استلام طلبات الأسعار' : 'Contractor RFQ Pipeline'}</CardTitle><Button variant="outline" size="sm" onClick={() => navigate('/rfq')}>{t('platform.view')}</Button></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 6).map(rfq => <div key={rfq.id} className="rounded-xl border p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-semibold">{rfq.title}</p><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{rfq.description}</p><div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">{rfq.category && <span className="flex items-center gap-1"><FileText className="h-3 w-3" />{rfq.category}</span>}{rfq.budget && <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{t('common.egp')} {Number(rfq.budget).toLocaleString()}</span>}{rfq.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{rfq.location}</span>}</div></div><Button size="sm" className="shrink-0 gap-1.5" onClick={() => onQuote(rfq.id)}><Send className="h-3.5 w-3.5" />{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
+      <Card id="role-pipeline"><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{lang === 'ar' ? 'مسار استلام طلبات الأسعار' : 'Contractor RFQ Pipeline'}</CardTitle><Button variant="outline" size="sm" onClick={() => navigate('/rfq')}>{t('platform.view')}</Button></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 6).map(rfq => <div key={rfq.id} className="rounded-xl border p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-semibold">{rfq.title}</p>
+<Link href={`/rfq/${rfq.id}`}><a className="font-mono text-xs text-primary underline-offset-2 hover:underline" data-testid="rfq-number">#{rfq.id}</a></Link><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{rfq.description}</p><div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">{rfq.category && <span className="flex items-center gap-1"><FileText className="h-3 w-3" />{rfq.category}</span>}{rfq.budget && <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{t('common.egp')} {Number(rfq.budget).toLocaleString()}</span>}{rfq.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{rfq.location}</span>}</div></div><Button size="sm" className="shrink-0 gap-1.5" onClick={() => onQuote(rfq.id)}><Send className="h-3.5 w-3.5" />{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
       <Card id="role-projects"><CardHeader><CardTitle className="flex items-center gap-2"><BriefcaseBusiness className="h-5 w-5" />{lang === 'ar' ? 'إدارة المشاريع الميدانية' : 'Active Field Projects'}</CardTitle></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{projects.slice(0, 5).map(project => <div key={project.id} className="rounded-xl border p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-medium">{project.title}</p><Badge variant="outline">{localizedStatus(project.status, t)}</Badge></div><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{project.location || (lang === 'ar' ? 'الموقع غير محدد' : 'Location not set')}</span><span>{project.progress ?? 0}%</span></div></div>)}</div>}</CardContent></Card>
       <Card id="role-quotations" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{lang === 'ar' ? 'عروض أسعار المقاول' : 'Submitted Quotations & Team Execution'}</CardTitle></CardHeader><CardContent><QuotationTiles quotations={quotations} t={t} lang={lang} navigate={navigate} /></CardContent></Card>
     </div>
@@ -601,7 +555,8 @@ function EngineerWorkspace({ rfqs, projects, quotations, t, lang, navigate, onQu
   return (
     <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
       <Card id="role-documents"><CardHeader><CardTitle className="flex items-center gap-2"><PenTool className="h-5 w-5" />{lang === 'ar' ? 'المستندات الهندسية وجداول الكميات' : 'Technical Deliverables & BOQ Review'}</CardTitle></CardHeader><CardContent><div className="space-y-3"><div className="rounded-xl border p-4"><p className="font-medium">{lang === 'ar' ? 'مراجعة المخططات الإنشائية' : 'Structural Calculations & Drawing Review'}</p><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'أرفق المخططات أو جدول الكميات وسيقرأها المساعد الفني ويوضّح الكود الذي يحكم كل بند. البناء هنا لا يعتمد المخططات ولا يوقّع عليها.' : 'Attach a drawing or a BOQ and the technical assistant reads it, naming the code that governs each requirement. BuildHub does not approve or sign off drawings.'}</p><Button size="sm" className="mt-3 gap-2" onClick={() => navigate('/ai')}><Sparkles className="h-4 w-4" />{lang === 'ar' ? 'تحليل بالذكاء الاصطناعي' : 'Run AI Analysis'}</Button></div><div className="rounded-xl border p-4"><p className="font-medium">{lang === 'ar' ? 'مراجعة مواصفات المواد' : 'Material Specification Review'}</p><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'قارن المواصفة المعلنة من المورّد بالمعيار الذي ينطبق عليها. البناء هنا لا يفحص المواد ولا يصدر شهادات جودة - المراجعة تتم بأدوات المساعد الفني.' : "Compare a supplier's stated specification against the standard that applies to it. BuildHub does not test materials or issue quality certificates - the review happens with the technical assistant's tools."}</p><Button size="sm" variant="outline" className="mt-3 gap-2" onClick={() => navigate('/ai')}><Sparkles className="h-4 w-4" />{lang === 'ar' ? 'افتح المساعد الفني' : 'Open the technical assistant'}</Button></div></div></CardContent></Card>
-      <Card id="role-rfqs"><CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{lang === 'ar' ? 'الطلبات الهندسية' : 'Engineering RFQs'}</CardTitle></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 5).map(rfq => <div key={rfq.id} className="rounded-xl border p-3"><p className="truncate text-sm font-medium">{rfq.title}</p><div className="mt-2 flex items-center justify-between"><span className="text-xs text-muted-foreground">{rfq.category || 'Engineering'}</span><Button size="sm" onClick={() => onQuote(rfq.id)}>{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
+      <Card id="role-rfqs"><CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{lang === 'ar' ? 'الطلبات الهندسية' : 'Engineering RFQs'}</CardTitle></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 5).map(rfq => <div key={rfq.id} className="rounded-xl border p-3"><p className="truncate text-sm font-medium">{rfq.title}</p>
+<Link href={`/rfq/${rfq.id}`}><a className="font-mono text-xs text-primary underline-offset-2 hover:underline" data-testid="rfq-number">#{rfq.id}</a></Link><div className="mt-2 flex items-center justify-between"><span className="text-xs text-muted-foreground">{rfq.category || 'Engineering'}</span><Button size="sm" onClick={() => onQuote(rfq.id)}>{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
       {/* THE BID YOU SUBMITTED HAD NOWHERE TO BE SEEN.
           An engineer or architect can quote - the Design/Engineering RFQ cards
           carry a Create Quotation button, and rfq.submitQuotation accepts them
@@ -620,7 +575,8 @@ function ArchitectWorkspace({ rfqs, projects, quotations, t, lang, navigate, onQ
   return (
     <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
       <Card id="role-portfolio"><CardHeader><CardTitle className="flex items-center gap-2"><PenTool className="h-5 w-5" />{lang === 'ar' ? 'معرض التصاميم وتقديم الأفكار' : 'Design Portfolio & Concept Presentation'}</CardTitle></CardHeader><CardContent><div className="space-y-3"><div className="rounded-xl border p-4"><p className="font-medium">{lang === 'ar' ? 'تطوير الفكرة التصميمية' : 'Developing the design concept'}</p><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'ناقش الفكرة والمواد والتشطيبات مع مساعد التصميم، أو أرفق مخططاً ليقرأه.' : 'Work through concept, materials and finishes with the design assistant, or attach a drawing for it to read.'}</p><Button size="sm" className="mt-3 gap-2" onClick={() => navigate('/ai')}><Sparkles className="h-4 w-4" />{lang === 'ar' ? 'افتح مساعد التصميم' : 'Open the design assistant'}</Button></div><div className="rounded-xl border border-dashed p-4"><p className="font-medium">{lang === 'ar' ? 'معرض الأعمال - غير متاح بعد' : 'Portfolio hosting - not available yet'}</p><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'لا يستضيف البناء هنا حتى الآن اللوحات التقديمية أو الصور ثلاثية الأبعاد. ما هو متاح فعلاً هو ملفك العام الذي يراه العملاء، وهو معروض أسفل هذه الصفحة.' : 'BuildHub does not yet host renderings or client mood boards. What does exist is your public profile, the page clients actually see, further down this workspace.'}</p><Button size="sm" variant="outline" className="mt-3 gap-2" data-testid="architect-public-profile" onClick={() => { if (ownProfileId) navigate(`/vendor/${ownProfileId}`); else revealSection('role-performance'); }}>{lang === 'ar' ? 'اذهب إلى ملفي العام' : 'Go to my public profile'}</Button></div></div></CardContent></Card>
-      <Card id="role-rfqs"><CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{lang === 'ar' ? 'فرص التصميم والتشطيب' : 'Design RFQs'}</CardTitle></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 5).map(rfq => <div key={rfq.id} className="rounded-xl border p-3"><p className="truncate text-sm font-medium">{rfq.title}</p><div className="mt-2 flex items-center justify-between"><span className="text-xs text-muted-foreground">{rfq.category || 'Architecture'}</span><Button size="sm" onClick={() => onQuote(rfq.id)}>{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
+      <Card id="role-rfqs"><CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{lang === 'ar' ? 'فرص التصميم والتشطيب' : 'Design RFQs'}</CardTitle></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 5).map(rfq => <div key={rfq.id} className="rounded-xl border p-3"><p className="truncate text-sm font-medium">{rfq.title}</p>
+<Link href={`/rfq/${rfq.id}`}><a className="font-mono text-xs text-primary underline-offset-2 hover:underline" data-testid="rfq-number">#{rfq.id}</a></Link><div className="mt-2 flex items-center justify-between"><span className="text-xs text-muted-foreground">{rfq.category || 'Architecture'}</span><Button size="sm" onClick={() => onQuote(rfq.id)}>{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
       {/* THE BID YOU SUBMITTED HAD NOWHERE TO BE SEEN.
           An engineer or architect can quote - the Design/Engineering RFQ cards
           carry a Create Quotation button, and rfq.submitQuotation accepts them
@@ -639,7 +595,8 @@ function SupplierWorkspace({ products, rfqs, projects, quotations, t, lang, navi
   return (
     <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
       <Card><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" />{t('platform.catalogue')}</CardTitle><Button variant="outline" size="sm" onClick={() => navigate('/marketplace/products')}>{t('platform.view')}</Button></CardHeader><CardContent>{products.length === 0 ? <EmptyState text={lang === 'ar' ? 'أضف أول منتج إلى كتالوجك' : 'Add your first product to the catalogue'} /> : <div className="space-y-3">{products.slice(0, 6).map(product => <div key={product.id} className="flex items-center justify-between gap-3 rounded-xl border p-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{lang === 'ar' && product.nameAr ? product.nameAr : product.name}</p><p className="mt-1 text-xs text-muted-foreground">{product.category} · {product.stock ?? 0} {product.unit || (lang === 'ar' ? 'وحدة' : 'units')}</p></div><span className="text-sm font-semibold">{product.price ? `${t('common.egp')} ${Number(product.price).toLocaleString()}` : '—'}</span></div>)}</div>}</CardContent></Card>
-      <Card id="role-rfqs"><CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{t('platform.review_requests')}</CardTitle></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 5).map(rfq => <div key={rfq.id} className="rounded-xl border p-3"><p className="truncate text-sm font-medium">{rfq.title}</p><div className="mt-2 flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{rfq.category || (lang === 'ar' ? 'عام' : 'General')}</span><Button size="sm" onClick={() => onQuote(rfq.id)} className="gap-1.5"><Send className="h-3 w-3" />{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
+      <Card id="role-rfqs"><CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{t('platform.review_requests')}</CardTitle></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 5).map(rfq => <div key={rfq.id} className="rounded-xl border p-3"><p className="truncate text-sm font-medium">{rfq.title}</p>
+<Link href={`/rfq/${rfq.id}`}><a className="font-mono text-xs text-primary underline-offset-2 hover:underline" data-testid="rfq-number">#{rfq.id}</a></Link><div className="mt-2 flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{rfq.category || (lang === 'ar' ? 'عام' : 'General')}</span><Button size="sm" onClick={() => onQuote(rfq.id)} className="gap-1.5"><Send className="h-3 w-3" />{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
       {/* A supplier who bids had a "My Quotations" count and nowhere to see
           what it counted. Same record, same destination as the contractor's. */}
       <Card id="role-quotations" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{lang === 'ar' ? 'عروض الأسعار المقدمة' : 'Submitted Quotations'}</CardTitle></CardHeader><CardContent><QuotationTiles quotations={quotations} t={t} lang={lang} navigate={navigate} /></CardContent></Card>

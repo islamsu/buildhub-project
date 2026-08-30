@@ -23,6 +23,18 @@ export const WORKSPACE_ROLES = [
 export type WorkspaceRole = typeof WORKSPACE_ROLES[number];
 
 /** Anchor ids. The DOM element carrying one must exist whenever the role's workspace renders. */
+/**
+ * `role-billing` and `role-profile` were here and are deliberately gone: the
+ * plan, the profile and the service-category declaration moved to /settings,
+ * because configuration was permanently occupying the space beside the work.
+ *
+ * `role-enquiries` STAYED. It is the qualified-enquiry inbox - a supplier's
+ * leads, and the destination of the `?rfq=` deep link a notification carries.
+ * Only the category declaration left it.
+ *
+ * Removing an id here without removing the menu entry that points at it is a
+ * test failure, which is what makes a move like this safe to do at all.
+ */
 export const SECTION_IDS = [
   'role-overview',
   'role-pipeline',
@@ -33,10 +45,8 @@ export const SECTION_IDS = [
   'role-quotations',
   'role-rfqs',
   'role-projects',
-  'role-billing',
   'role-enquiries',
   'role-performance',
-  'role-profile',
 ] as const;
 export type SectionId = typeof SECTION_IDS[number];
 
@@ -49,14 +59,14 @@ export function isSectionId(value: string): value is SectionId {
  * from the shared `isProfessional` block in RolePlatform, not from the
  * per-role workspace component.
  */
-const PROFESSIONAL_TAIL: SectionId[] = ['role-billing', 'role-enquiries', 'role-performance'];
+const PROFESSIONAL_TAIL: SectionId[] = ['role-enquiries', 'role-performance'];
 
 /**
  * The sections each role's workspace renders, in the order they appear on the
  * page. `role-overview` is the hero at the top of every workspace.
  */
 export const ROLE_SECTIONS: Record<WorkspaceRole, SectionId[]> = {
-  homeowner: ['role-overview', 'role-projects', 'role-profile'],
+  homeowner: ['role-overview', 'role-projects'],
   contractor: ['role-overview', 'role-pipeline', 'role-quotations', 'role-projects', ...PROFESSIONAL_TAIL],
   engineer: ['role-overview', 'role-documents', 'role-rfqs', 'role-quotations', 'role-projects', ...PROFESSIONAL_TAIL],
   architect: ['role-overview', 'role-portfolio', 'role-rfqs', 'role-quotations', 'role-projects', ...PROFESSIONAL_TAIL],

@@ -98,6 +98,7 @@ import {
 } from '../shared/rfqBasket';
 import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shared/productImport';
 import { PRODUCT_CATEGORIES } from '../shared/productCategories';
+import { normaliseUnit, PRODUCT_UNITS } from '../shared/productUnits';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSubscriptions } from '../drizzle/schema';
 import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
@@ -1022,6 +1023,27 @@ const projectsRouter = router({
     if (!project) throw new TRPCError({ code: 'NOT_FOUND' });
     return project;
   }),
+  /**
+   * WHO MAY START A PROJECT - the owner's decision, enforced HERE.
+   *
+   * This was `protectedProcedure` with no role check at all. Only the homeowner
+   * dashboard offered a "Create Project" button, so it LOOKED restricted, and
+   * that appearance was the whole of the restriction: any authenticated account
+   * - a supplier, a contractor, anyone - could POST to this procedure directly
+   * and own a project. Hiding a control is not a permission, and a reviewer
+   * reading the UI would have had no way to notice.
+   *
+   * A project is the customer's record of work they are commissioning. Every
+   * downstream rule assumes that: `list` and `get` scope by ownerId, rfq.create
+   * refuses a projectId the caller does not own, and the provider-facing view is
+   * `directory`, a lead list, not ownership. A provider-owned project has no
+   * meaning in any of those paths.
+   *
+   * VERIFIED BEFORE RESTRICTING, not assumed: every project in the database is
+   * owned by a homeowner (32 of 32 at the time of the change; group by userRole
+   * returned that single row). So this takes no capability away from anyone who
+   * had it - it closes a door nobody had walked through.
+   */
   create: protectedProcedure
     .input(z.object({
       title: z.string().min(1),
@@ -1033,6 +1055,16 @@ const projectsRouter = router({
       endDate: z.date().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // The message names the rule rather than saying "forbidden": a provider
+      // who tries this is not attacking anything, they are looking for the
+      // feature, and "projects are created by the customer" tells them where
+      // they actually stand.
+      if (ctx.user.userRole !== 'homeowner') {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Projects are created by the customer commissioning the work. Provider accounts respond to requests and quote on them instead.',
+        });
+      }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       const result = await db.insert(projects).values({
@@ -1350,19 +1382,41 @@ const marketplaceRouter = router({
       // unfindable the moment it is listed. Bulk import enforces the same list.
       category: z.enum(PRODUCT_CATEGORIES),
       brand: z.string().optional(),
+      /**
+       * WHERE IT COMES FROM. The column has existed all along and
+       * `updateProduct` already accepted it - but `create` did not, and no
+       * form collected it, so the only way a product could ever carry an
+       * origin was to create it without one and then edit it. In a market
+       * where "Italian marble" and "local marble" are different products at
+       * different prices, that is not a cosmetic omission.
+       */
+      origin: z.string().max(100).optional(),
       price: z.number().optional(),
       stock: z.number().int().min(0).optional(),
-      unit: z.string().optional(),
+      // A NEW product must use a unit from the shared list. See
+      // shared/productUnits.ts: free text produced sixteen products priced per
+      // "tonne" and three per "ton", which no buyer can compare.
+      unit: z.string().max(50).optional(),
       deliveryDays: z.number().int().min(1).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.userRole !== 'supplier') {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
       }
+      // Nothing exists yet, so there is no stored value to preserve: a new
+      // product's unit comes from the list or is not set at all.
+      const unit = normaliseUnit(input.unit, null);
+      if (!unit.ok) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Choose a unit from the list. "${input.unit}" is not one of: ${PRODUCT_UNITS.join(', ')}`,
+        });
+      }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       const result = await db.insert(products).values({
         ...input,
+        unit: unit.value ?? undefined,
         supplierId: ctx.user.id,
         price: input.price != null ? String(input.price) : undefined,
       });
@@ -1429,14 +1483,37 @@ const marketplaceRouter = router({
         .filter(row => row.name && alreadyListed.has(row.name.trim().toLowerCase()))
         .map(row => ({ line: row.line, column: 'name', message: `"${row.name}" is already in your catalogue` }));
 
-      const errors = [...parsed.errors, ...conflicts]
+      /**
+       * THE UNIT RULE APPLIES HERE TOO.
+       *
+       * `create` and `updateProduct` both send `unit` through normaliseUnit;
+       * this path wrote `row.unit` straight from the file. A supplier could
+       * not list ONE product priced per "ton" through the form, and could
+       * list five hundred of them through a spreadsheet - which would have
+       * quietly undone the whole point of having a list.
+       *
+       * Reported per line like every other import error, naming what is
+       * acceptable, so the file can be corrected and re-uploaded. Every row
+       * here is NEW, so there is no stored value to preserve: the legacy
+       * escape hatch in normaliseUnit has nothing to match against and an
+       * unknown unit is simply refused.
+       */
+      const unitErrors = parsed.rows
+        .filter(row => !normaliseUnit(row.unit, null).ok)
+        .map(row => ({
+          line: row.line,
+          column: 'unit',
+          message: `"${row.unit}" is not a unit BuildHub recognises. Use one of: ${PRODUCT_UNITS.join(', ')}`,
+        }));
+
+      const errors = [...parsed.errors, ...conflicts, ...unitErrors]
         .sort((a, b) => a.line - b.line)
         .slice(0, 100);   // a bounded report; the first hundred are enough to act on
 
       const summary = {
         totalRows: parsed.rows.length,
         errors,
-        errorCount: [...parsed.errors, ...conflicts].length,
+        errorCount: [...parsed.errors, ...conflicts, ...unitErrors].length,
         duplicatesInFile: parsed.duplicatesInFile,
         imported: 0,
         dryRun: input.dryRun,
@@ -1502,6 +1579,21 @@ const marketplaceRouter = router({
         .from(products)
         .where(and(eq(products.id, id), eq(products.supplierId, ctx.user.id)));
       if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
+
+      /**
+       * The unit rule, applied AFTER the row is read so the stored value is
+       * known. A supplier editing the PRICE of a product whose unit predates
+       * the list must not be refused because of a field they did not touch -
+       * see normaliseUnit.
+       */
+      const unit = normaliseUnit(rest.unit, owned.unit);
+      if (!unit.ok) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Choose a unit from the list. "${rest.unit}" is not one of: ${PRODUCT_UNITS.join(', ')}`,
+        });
+      }
+      if (unit.value !== undefined) rest.unit = unit.value ?? undefined;
 
       // Drop undefined keys so a PATCH cannot blank the columns it omitted.
       //
@@ -1962,6 +2054,87 @@ const rfqRouter = router({
    * `openEnquiry`, which reveals the attachments and the full brief, and that
    * separation is the whole reason a supplier can review before they buy.
    */
+  /**
+   * ── WHO IS ASKING (§17) ──────────────────────────────────────────────────
+   *
+   * A supplier reviewing a request could see the brief and not one word about
+   * who wrote it. The response page showed "Contact: N/A" while the answer sat
+   * in `users` the whole time.
+   *
+   * TWO TIERS, AND THE LINE BETWEEN THEM IS THE ONE THE PRODUCT ALREADY DRAWS.
+   *
+   *   IDENTITY IS FREE - name, role, location, verification, member since. A
+   *   supplier deciding whether to bid needs to know whether they are quoting
+   *   a verified customer in their own city, and `rfq.summary` already gives
+   *   the brief away on exactly that reasoning.
+   *
+   *   CONTACT CHANNELS ARE NOT - email and phone are released only to the
+   *   requester themselves, to an administrator, or to a provider who has
+   *   CONSUMED a qualified enquiry on this RFQ. That is not a rule invented
+   *   here: openQualifiedEnquiry is what a provider spends a credit on, and
+   *   handing out the customer's phone number for free would let any approved
+   *   supplier route around the charge by calling them directly. Making the
+   *   contact details the thing the credit buys keeps the existing commercial
+   *   model intact rather than quietly repricing it.
+   *
+   * AN EXPLICIT COLUMN ALLOWLIST, like INVESTIGATION_PARTY_COLUMNS: `users`
+   * holds passwordHash and a live invitationToken, and a bare select has
+   * carried both into a browser twice in this file's history.
+   */
+  requesterContact: protectedProcedure
+    .input(z.object({ rfqId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const [rfq] = await db.select({ id: rfqs.id, requesterId: rfqs.requesterId })
+        .from(rfqs).where(eq(rfqs.id, input.rfqId));
+      if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
+
+      const isOwner = rfq.requesterId === ctx.user.id;
+      const isApprovedProvider = providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])
+        && (ctx.user as { onboardingStatus?: string }).onboardingStatus === 'approved';
+      const isAdmin = isAdminRole(ctx.user.adminRole);
+      // Same gate as `summary`, and NOT_FOUND rather than FORBIDDEN so a
+      // stranger cannot use this to learn that an id exists.
+      if (!isOwner && !isApprovedProvider && !isAdmin) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
+      }
+
+      const [requester] = await db.select({
+        id: users.id,
+        name: users.name,
+        userRole: users.userRole,
+        location: users.location,
+        verified: users.verified,
+        accountStatus: users.accountStatus,
+        createdAt: users.createdAt,
+      }).from(users).where(eq(users.id, rfq.requesterId));
+      if (!requester) throw new TRPCError({ code: 'NOT_FOUND', message: 'Requester not found' });
+
+      // Has this provider actually paid for this lead?
+      const consumed = isOwner || isAdmin
+        ? true
+        : (await db.select({ id: qualifiedEnquiries.id }).from(qualifiedEnquiries)
+            .where(and(eq(qualifiedEnquiries.userId, ctx.user.id), eq(qualifiedEnquiries.rfqId, input.rfqId)))
+            .limit(1)).length > 0;
+
+      let contact: { email: string | null; phone: string | null } | null = null;
+      if (consumed) {
+        const [row] = await db.select({ email: users.email, phone: users.phone })
+          .from(users).where(eq(users.id, rfq.requesterId));
+        contact = { email: row?.email ?? null, phone: row?.phone ?? null };
+      }
+
+      return {
+        requester,
+        // Absent, and the client says WHY it is absent rather than rendering
+        // "N/A" as though the customer had left the field blank.
+        contact,
+        contactUnlocked: consumed,
+      };
+    }),
+
   summary: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {

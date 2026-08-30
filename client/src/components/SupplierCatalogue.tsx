@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'wouter';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
@@ -62,7 +63,6 @@ export default function SupplierCatalogue() {
   const { data: products = [], isLoading } = trpc.marketplace.myProducts.useQuery();
   const { data: questions = [] } = trpc.marketplace.myProductQuestions.useQuery();
 
-  const [editing, setEditing] = useState<Product | null>(null);
   const [imaging, setImaging] = useState<Product | null>(null);
   const [answering, setAnswering] = useState<{ id: number; question: string; productName: string } | null>(null);
   const [answer, setAnswer] = useState('');
@@ -70,10 +70,6 @@ export default function SupplierCatalogue() {
 
   const refresh = () => utils.marketplace.myProducts.invalidate();
 
-  const update = trpc.marketplace.updateProduct.useMutation({
-    onSuccess: () => { toast.success(ar ? 'تم حفظ المنتج' : 'Product saved'); setEditing(null); refresh(); },
-    onError: error => toast.error(error.message),
-  });
   const setActive = trpc.marketplace.setProductActive.useMutation({
     onSuccess: result => {
       toast.success(result.active
@@ -242,9 +238,17 @@ export default function SupplierCatalogue() {
                     </div>
 
                     <div className="flex shrink-0 flex-wrap gap-1">
-                      <Button size="sm" variant="ghost" data-testid="catalogue-edit" onClick={() => setEditing(product)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
+                      {/* A PAGE, not a dialog. Editing a product now has an
+                          address that survives a refresh and can be linked to
+                          - and it is the same form that lists a new one, so a
+                          field cannot exist on one and be missing from the
+                          other. Ownership is still the server's: updateProduct
+                          carries supplierId in its UPDATE predicate. */}
+                      <Link href={`/products/${product.id}/edit`}>
+                        <Button size="sm" variant="ghost" data-testid="catalogue-edit" asChild={false}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      </Link>
                       <Button size="sm" variant="ghost" data-testid="catalogue-images" onClick={() => setImaging(product)}>
                         <ImagePlus className="h-3.5 w-3.5" />
                       </Button>
@@ -264,45 +268,6 @@ export default function SupplierCatalogue() {
           )}
         </CardContent>
       </Card>
-
-      {/* ── Edit ───────────────────────────────────────────────────────── */}
-      <Dialog open={!!editing} onOpenChange={open => { if (!open) setEditing(null); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>{ar ? 'تعديل المنتج' : 'Edit product'}</DialogTitle></DialogHeader>
-          {editing && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder={ar ? 'اسم المنتج' : 'Product name'} />
-              <Input value={editing.nameAr ?? ''} onChange={e => setEditing({ ...editing, nameAr: e.target.value })} placeholder={ar ? 'الاسم بالعربية' : 'Arabic name'} />
-              <Input value={editing.brand ?? ''} onChange={e => setEditing({ ...editing, brand: e.target.value })} placeholder={ar ? 'العلامة التجارية' : 'Brand'} />
-              <Input type="number" min={0} value={editing.price ?? ''} onChange={e => setEditing({ ...editing, price: e.target.value })} placeholder={ar ? 'السعر' : 'Price'} />
-              <Input type="number" min={0} value={editing.stock ?? ''} onChange={e => setEditing({ ...editing, stock: Number(e.target.value) })} placeholder={ar ? 'المخزون' : 'Stock'} />
-              <Input value={editing.unit ?? ''} onChange={e => setEditing({ ...editing, unit: e.target.value })} placeholder={ar ? 'الوحدة' : 'Unit'} />
-              <Textarea
-                className="sm:col-span-2" rows={3}
-                value={editing.description ?? ''}
-                onChange={e => setEditing({ ...editing, description: e.target.value })}
-                placeholder={ar ? 'وصف المنتج' : 'Product description'}
-              />
-              <Button
-                className="sm:col-span-2" data-testid="catalogue-save"
-                disabled={update.isPending || !editing.name.trim()}
-                onClick={() => update.mutate({
-                  id: editing.id,
-                  name: editing.name.trim(),
-                  nameAr: editing.nameAr?.trim() || undefined,
-                  brand: editing.brand?.trim() || undefined,
-                  description: editing.description?.trim() || undefined,
-                  unit: editing.unit?.trim() || undefined,
-                  price: editing.price != null && editing.price !== '' ? Number(editing.price) : undefined,
-                  stock: editing.stock != null ? Number(editing.stock) : undefined,
-                })}
-              >
-                {update.isPending ? (ar ? 'جاري الحفظ…' : 'Saving…') : (ar ? 'حفظ' : 'Save')}
-              </Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* ── Images ─────────────────────────────────────────────────────── */}
       <Dialog open={!!imaging} onOpenChange={open => { if (!open) setImaging(null); }}>

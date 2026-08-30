@@ -46,7 +46,7 @@ function workspaceBody(name: string): string {
 }
 
 /** Sections the shared professional block renders, outside any one workspace. */
-const SHARED_SECTIONS = new Set(['role-overview', 'role-billing', 'role-enquiries', 'role-performance', 'role-profile']);
+const SHARED_SECTIONS = new Set(['role-overview', 'role-enquiries', 'role-performance']);
 
 /**
  * Sections rendered in the PAGE body rather than in a workspace component,
@@ -100,7 +100,7 @@ describe('the workspace section registry', () => {
     // Otherwise the exemption above would hide a missing anchor.
     for (const role of WORKSPACE_ROLES) {
       const body = workspaceBody(COMPONENT_FOR[role]);
-      for (const shared of ['role-billing', 'role-enquiries', 'role-performance', 'role-overview']) {
+      for (const shared of ['role-enquiries', 'role-performance', 'role-overview']) {
         expect(body, `${shared} must not be inside ${COMPONENT_FOR[role]}Workspace`).not.toContain(`id="${shared}"`);
       }
     }
@@ -205,11 +205,24 @@ describe('the workspace page', () => {
     expect(workspace).toContain('navigate(`/vendor/${ownProfileId}`)');
   });
 
-  it('a homeowner can edit their own profile somewhere', () => {
-    // The editor was rendered only inside the professional-only block, so a
-    // homeowner had no way to change their own bio, location or avatar.
-    expect(ROLE_SECTIONS.homeowner).toContain('role-profile');
-    expect(workspace).toContain('id="role-profile"');
+  it('a homeowner can still edit their own profile somewhere', () => {
+    // The editor was once rendered only inside the professional-only block, so
+    // a homeowner had no way to change their own bio, location or avatar. It
+    // then lived in the workspace as `role-profile`, and has now moved to
+    // /settings along with the rest of the account configuration.
+    //
+    // The property under test never changed: a homeowner must be able to reach
+    // their own profile editor. Only its address did.
+    const settings = readFileSync(new URL('../client/src/pages/SettingsPage.tsx', import.meta.url), 'utf8');
+    expect(settings).toContain('<VendorProfileCard />');
+    expect(settings).toContain('id="settings-profile"');
+    // And it is reachable from the homeowner's own menu, not just by URL.
+    expect(layout).toContain('SETTINGS_MENU_ITEM');
+    expect(layout).toContain("path: '/settings'");
+    // The old anchor must be gone from both the map and the page, or the menu
+    // would point at a section that no longer renders.
+    expect(ROLE_SECTIONS.homeowner).not.toContain('role-profile' as never);
+    expect(workspace).not.toContain('id="role-profile"');
   });
 
   it('every section id in the source is a registered one', () => {
