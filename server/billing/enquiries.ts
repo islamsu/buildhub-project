@@ -11,12 +11,13 @@
 // Visibility, paid placement, verification and reviews are none of these and
 // appear nowhere in this file.
 
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { isClassifiableRfqCategory } from '@shared/rfqCategories';
 import { qualifiedEnquiries, rfqs, vendorCategories, type Rfq } from '../../drizzle/schema';
 import { getDb } from '../db';
 import { allowancePeriodFor, resolveVendorEntitlements } from './entitlements';
 import { recordEventAsync } from '../analytics/events';
+import { hasOpenInvitation, invitedRfqIds, markInvitationViewed } from '../rfqInvitations';
 import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
 
 function mysqlErrorCode(error: unknown): string | undefined {
@@ -129,6 +130,13 @@ export type OpenEnquiryResult =
        * grant: the vendor has paid and must get their lead.
        */
       enquiryId: number | null;
+      /**
+       * True when this grant came from an INVITATION and therefore spent no
+       * allowance. The caller must be able to tell the two apart: a screen
+       * that says "1 of 20 enquiries used" after an exempt open would be
+       * describing a charge that did not happen.
+       */
+      byInvitation?: boolean;
     }
   | { outcome: 'not_found' }
   | { outcome: 'not_eligible'; reason: 'unclassified_rfq' | 'category_mismatch' }
@@ -173,6 +181,34 @@ export async function openQualifiedEnquiry(
 
   const [rfq] = await db.select().from(rfqs).where(eq(rfqs.id, rfqId)).limit(1);
   if (!rfq) return { outcome: 'not_found' };
+
+  // ── INVITED SUPPLIERS TAKE A DIFFERENT ROUTE, AND IT IS SHORT ───────────
+  //
+  // Checked FIRST, before the category gate and before the allowance, because
+  // both would otherwise refuse a supplier the customer explicitly asked for:
+  //
+  //   the category gate, because an invitation is the requester naming this
+  //     firm - it is incoherent to let them invite someone the platform then
+  //     refuses on a taxonomy the customer never saw;
+  //   the allowance, because the owner's decision is that an invitation is
+  //     exempt (see server/rfqInvitations.ts).
+  //
+  // NO `qualifiedEnquiries` ROW IS WRITTEN. Writing one "for consistency"
+  // would make the vendor's usage say they consumed something they did not,
+  // and a usage figure that is wrong is worse than one that is absent. The
+  // invitation row carries the record instead - status and viewedAt - so the
+  // event stays fully reconstructable without corrupting the meter.
+  if (await hasOpenInvitation(db, rfqId, userId)) {
+    await markInvitationViewed(db, rfqId, userId);
+    return {
+      outcome: 'granted',
+      rfq,
+      alreadyConsumed: false,
+      byInvitation: true,
+      usage: await getEnquiryUsage(userId, now),
+      enquiryId: null,
+    };
+  }
 
   // Eligibility, decided server-side from stored state only.
   if (!isClassifiableRfqCategory(rfq.category)) {
@@ -345,8 +381,32 @@ export async function openQualifiedEnquiry(
 export async function listEligibleRfqs(userId: number, limit = 50) {
   const db = await getDb();
   if (!db) return [];
+
+  // TWO ROUTES ONTO ONE BOARD, and the union is the whole point.
+  //
+  //   category match  the open board, unchanged - what a supplier declared
+  //                   they do
+  //   invitation      a customer named this supplier specifically
+  //
+  // An invited RFQ appears EVEN WHEN THE CATEGORY DOES NOT MATCH. That is not
+  // a leak: someone with the authority to commit the request to spend chose
+  // this supplier by hand, which is a stronger signal than a taxonomy the
+  // customer never sees. The reverse - showing a customer an invite button and
+  // then hiding the RFQ from the firm they picked - would be the defect.
+  //
+  // Note the early return this REPLACES: a supplier with no declared
+  // categories used to get an empty board full stop, so an invitation to a
+  // brand-new supplier who had not yet filled in their categories would have
+  // been invisible to them.
   const declared = await getVendorCategories(userId);
-  if (declared.length === 0) return [];
+  const invited = await invitedRfqIds(db, userId);
+  if (declared.length === 0 && invited.length === 0) return [];
+
+  const reachable = declared.length > 0 && invited.length > 0
+    ? or(inArray(rfqs.category, declared), inArray(rfqs.id, invited))
+    : declared.length > 0
+      ? inArray(rfqs.category, declared)
+      : inArray(rfqs.id, invited);
 
   const rows = await db
     .select({
@@ -360,16 +420,23 @@ export async function listEligibleRfqs(userId: number, limit = 50) {
       createdAt: rfqs.createdAt,
     })
     .from(rfqs)
-    .where(and(eq(rfqs.status, 'open'), inArray(rfqs.category, declared)))
+    .where(and(eq(rfqs.status, 'open'), reachable))
     .orderBy(sql`${rfqs.createdAt} desc`)
     .limit(limit);
 
   if (rows.length === 0) return [];
+  const invitedSet = new Set(invited);
   const opened = await db
     .select({ rfqId: qualifiedEnquiries.rfqId })
     .from(qualifiedEnquiries)
     .where(and(eq(qualifiedEnquiries.userId, userId), inArray(qualifiedEnquiries.rfqId, rows.map(r => r.id))));
   const openedSet = new Set(opened.map(o => o.rfqId));
 
-  return rows.map(row => ({ ...row, alreadyOpened: openedSet.has(row.id) }));
+  // `invited` is surfaced so the board can say WHY an RFQ is there, and so a
+  // supplier can see that opening it will not cost them a lead.
+  return rows.map(row => ({
+    ...row,
+    alreadyOpened: openedSet.has(row.id),
+    invited: invitedSet.has(row.id),
+  }));
 }

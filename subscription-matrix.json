@@ -1,0 +1,92 @@
+[
+ {
+  "role": "supplier",
+  "plan": "professional (trial)",
+  "account": "active",
+  "approval": "not approved",
+  "ownership": "n/a",
+  "expected": "DENIED",
+  "actual": "http 403",
+  "status": "PASS"
+ },
+ {
+  "role": "supplier",
+  "plan": "professional",
+  "account": "trialing",
+  "approval": "approved",
+  "ownership": "own",
+  "expected": "30 enquiries",
+  "actual": "30",
+  "status": "PASS"
+ },
+ {
+  "role": "supplier",
+  "plan": "professional",
+  "account": "active",
+  "approval": "approved",
+  "ownership": "own",
+  "expected": "30 enquiries",
+  "actual": "30",
+  "status": "PASS"
+ },
+ {
+  "role": "supplier",
+  "plan": "professional",
+  "account": "past_due (grace)",
+  "approval": "approved",
+  "ownership": "own",
+  "expected": "paid allowance retained",
+  "actual": "30",
+  "status": "PASS"
+ },
+ {
+  "role": "supplier",
+  "plan": "premium",
+  "account": "active",
+  "approval": "approved",
+  "ownership": "own",
+  "expected": "unlimited",
+  "actual": "null",
+  "status": "PASS"
+ },
+ {
+  "role": "supplier",
+  "plan": "expired → free",
+  "account": "expired",
+  "approval": "approved",
+  "ownership": "own",
+  "expected": "5 enquiries",
+  "actual": "5",
+  "status": "PASS"
+ },
+ {
+  "role": "supplier",
+  "plan": "free + override 2",
+  "account": "expired",
+  "approval": "approved",
+  "ownership": "own",
+  "expected": "2 then refuse",
+  "actual": "granted 2, third 403",
+  "status": "PASS"
+ },
+ {
+  "role": "supplier (rival)",
+  "plan": "premium",
+  "account": "active",
+  "approval": "approved",
+  "ownership": "NOT owner",
+  "expected": "DENIED",
+  "actual": "quotation 404, history 404",
+  "status": "PASS"
+ },
+ {
+  "role": "supplier (rival)",
+  "plan": "premium",
+  "account": "FROZEN",
+  "approval": "approved",
+  "ownership": "own",
+  "expected": "DENIED",
+  "actual": "http 403",
+  "status": "PASS"
+ }
+]

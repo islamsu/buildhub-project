@@ -100,6 +100,8 @@ const DELIBERATELY_SHARED: Record<string, string> = {
     'One row from the OPEN FEED, addressed by id. Returns exactly the column allowlist rfq.list already gives every authenticated caller - and deliberately not `attachments`, which openQualifiedEnquiry charges a credit to reveal. An RFQ is addressed to providers; owner-scoping it would make a detail page impossible for the very people meant to respond.',
   'reviews.eligibleReviewees':
     'Answers "who on this project may I review", which is by definition about other people. Scoped by the project the caller is party to.',
+  'rfq.invitations':
+    'Who a customer approached, for the customer. Scoped by requireInviteRights - requester, a project `commercial` holder, or Super Admin - which is a function call rather than an eq() this scanner can see. The gate is proven behaviourally in server/rfqInvitations.test.ts, where widening it from `commercial` to `read`, or admitting any admin, both fail.',
 };
 
 /**
@@ -223,6 +225,12 @@ describe('every id-taking procedure is owner-scoped, admin-gated, or named', () 
 const TARGETS_ANOTHER_USER: Record<string, RegExp> = {
   'projects.addMember':    /requireProjectAccess\(db, input\.projectId, ctx\.user\.id, 'manage'\)/,
   'projects.removeMember': /requireProjectAccess\(db, input\.projectId, ctx\.user\.id, 'manage'\)/,
+  // Inviting a supplier names that supplier - a TARGET of the invitation, not
+  // a claim about who the caller is. `invitedBy`, the column that records
+  // WHOSE act this was, comes from ctx.user.id and never from the request.
+  // The caller's own right to invite is decided by requireInviteRights;
+  // delete that call and this test fails, which a bare allowlist would not do.
+  'rfq.inviteSupplier':    /requireInviteRights\(db, input\.rfqId, ctx\.user\)/,
 };
 
 describe('an id is never trusted as a substitute for the session', () => {
@@ -271,6 +279,19 @@ describe('an id is never trusted as a substitute for the session', () => {
       if (/^(adminWith\(|superAdminProcedure|adminProcedure)/.test(procedure.tier)) continue;
       const code = codeOnly(procedure.body);
       if (/(ownerId|authorId|supplierId|askerId|reviewerId|senderId|requesterId|providerId):\s*input\./.test(code)) {
+        // The same TARGET-versus-IDENTITY distinction the read side makes, and
+        // held to the same stronger standard rather than waved through: a
+        // procedure here must authorize the CALLER from the session in its own
+        // body, and removing that call fails this test.
+        const requiredCallerCheck = TARGETS_ANOTHER_USER[procedure.qualified];
+        if (requiredCallerCheck) {
+          expect(
+            requiredCallerCheck.test(code),
+            `${procedure.qualified} writes another user's id and MUST authorize the CALLER `
+            + 'from the session in the same body. The session check is missing or was changed.',
+          ).toBe(true);
+          continue;
+        }
         offenders.push(procedure.qualified);
       }
     }

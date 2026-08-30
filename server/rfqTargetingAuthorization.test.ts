@@ -797,8 +797,12 @@ describe('sensitive-field leakage (Phase 4B.3 §15)', () => {
 
     const { items } = await appRouter.createCaller(makeCtx(10)).rfq.eligible();
 
+    // `invited` joins the list: a BOOLEAN saying why this RFQ is on the board
+    // and whether opening it will cost a lead. It names nobody - not the
+    // requester, not who else was invited - which is what keeps it on the safe
+    // side of the line this test draws.
     expect(Object.keys(items[0]).sort()).toEqual(
-      ['alreadyOpened', 'budget', 'category', 'createdAt', 'deadline', 'id', 'location', 'status', 'title'].sort(),
+      ['alreadyOpened', 'budget', 'category', 'createdAt', 'deadline', 'id', 'invited', 'location', 'status', 'title'].sort(),
     );
     for (const forbidden of ['requesterId', 'email', 'phone', 'contactName', 'description']) {
       expect(items[0], forbidden).not.toHaveProperty(forbidden);

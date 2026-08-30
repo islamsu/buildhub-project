@@ -80,6 +80,9 @@ import {
 } from './billing/lifecycle';
 import { resolveVendorEntitlements, toVendorEntitlementResponse } from './billing/entitlements';
 import {
+  declineInvitation, inviteSupplier, listInvitations, markInvitationResponded, requireInviteRights,
+} from './rfqInvitations';
+import {
   MAX_ENQUIRY_ALLOWANCE, readEnquiryAllowance, setEnquiryAllowance,
 } from './billing/overrides';
 import {
@@ -2728,6 +2731,137 @@ const rfqRouter = router({
   // ── RFQ targeting (Phase 4B.3) ──────────────────────────────────────────
   // Which open RFQs this vendor is eligible for, by declared-category match.
   // Listing is free: no credit is consumed here, only by openEnquiry below.
+  /**
+   * ── INVITE A SUPPLIER TO THIS RFQ ───────────────────────────────────────
+   *
+   * `protectedProcedure`, not an admin one: the customer who raised the RFQ is
+   * the ordinary caller. Authorization is `requireInviteRights`, which is the
+   * single place the rule lives - requester, anyone holding `commercial` on
+   * the linked project, or Super Admin.
+   *
+   * THE TARGET IS RE-READ, NEVER TRUSTED. A supplierId from the client is a
+   * number, not a permission: the account must exist and must be an approved
+   * provider, or an invitation would be created for someone who could never
+   * act on it - and the requester would sit waiting for a reply that cannot
+   * come.
+   */
+  inviteSupplier: protectedProcedure
+    .input(z.object({
+      rfqId: z.number().int().positive(),
+      supplierId: z.number().int().positive(),
+      deadline: z.string().datetime().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const rfq = await requireInviteRights(db, input.rfqId, ctx.user);
+      if (rfq.status !== 'open') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This request is no longer open, so suppliers cannot be invited to it.',
+        });
+      }
+      if (input.supplierId === ctx.user.id) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot invite yourself to your own request.' });
+      }
+
+      const [supplier] = await db
+        .select({ id: users.id, name: users.name, userRole: users.userRole, onboardingStatus: users.onboardingStatus })
+        .from(users).where(eq(users.id, input.supplierId)).limit(1);
+      if (!supplier) throw new TRPCError({ code: 'NOT_FOUND', message: 'Supplier not found' });
+      if (!providerRoles.includes(supplier.userRole as typeof providerRoles[number])) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only provider accounts can be invited to a request.' });
+      }
+      if (supplier.onboardingStatus !== 'approved') {
+        // An unapproved provider cannot quote. Inviting them would create an
+        // invitation that can never be answered.
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That provider is not yet approved to receive requests.' });
+      }
+
+      const result = await inviteSupplier({
+        db,
+        rfqId: input.rfqId,
+        supplierId: input.supplierId,
+        invitedBy: ctx.user.id,
+        deadline: input.deadline ? new Date(input.deadline) : null,
+      });
+
+      // AN ALREADY-INVITED SUPPLIER IS NOT NOTIFIED AGAIN. A second click on
+      // the same name must not put a second "you were invited" in their list
+      // about one invitation.
+      if (result.outcome === 'invited') {
+        const [rfqRow] = await db.select({ title: rfqs.title }).from(rfqs).where(eq(rfqs.id, input.rfqId)).limit(1);
+        await notifyUser(db, {
+          userId: input.supplierId,
+          title: 'You were invited to quote',
+          body: `You were invited to submit a quotation for "${rfqRow?.title ?? 'a request'}".`,
+          type: 'rfq',
+          // The RFQ itself, which is where they act - not a list to hunt through.
+          link: `/rfq/${input.rfqId}`,
+          messageKey: 'notif.rfq.invited',
+          messageParams: { rfqTitle: rfqRow?.title ?? '' },
+        });
+      }
+      return result;
+    }),
+
+  /**
+   * Who has been invited, and where each of them has got to.
+   *
+   * Only for someone who may invite in the first place: the list of firms a
+   * customer approached is commercially sensitive - a rival supplier learning
+   * who else was asked, and who declined, is exactly the disclosure the
+   * allowlist below and this gate exist to prevent.
+   */
+  invitations: protectedProcedure
+    .input(z.object({ rfqId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      await requireInviteRights(db, input.rfqId, ctx.user);
+      return listInvitations(db, input.rfqId);
+    }),
+
+  /**
+   * The supplier declines an invitation.
+   *
+   * Their own decision about their own invitation, so no separate ownership
+   * read: `declineInvitation` filters on (rfqId, supplierId) and returns false
+   * when there is nothing of theirs to decline, which is answered as NOT_FOUND
+   * so a stranger cannot probe which invitations exist.
+   */
+  declineInvitation: approvedProviderProcedure
+    .input(z.object({ rfqId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const declined = await declineInvitation(db, input.rfqId, ctx.user.id);
+      if (!declined) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No open invitation to decline.',
+        });
+      }
+      // The requester is told, because a decline is the answer to a question
+      // they asked - silence would leave them waiting on a supplier who has
+      // already said no.
+      const [rfq] = await db.select({ requesterId: rfqs.requesterId, title: rfqs.title })
+        .from(rfqs).where(eq(rfqs.id, input.rfqId)).limit(1);
+      if (rfq) {
+        await notifyUser(db, {
+          userId: rfq.requesterId,
+          title: 'A supplier declined your invitation',
+          body: `${ctx.user.name} declined to quote for "${rfq.title}".`,
+          type: 'rfq',
+          link: `/rfq/${input.rfqId}`,
+          messageKey: 'notif.rfq.invitationDeclined',
+          messageParams: { supplier: ctx.user.name ?? '', rfqTitle: rfq.title },
+        });
+      }
+      return { success: true as const };
+    }),
+
   eligible: approvedProviderProcedure.query(async ({ ctx }) => {
     const [items, usage] = await Promise.all([
       listEligibleRfqs(ctx.user.id),
@@ -3059,6 +3193,11 @@ const rfqRouter = router({
       // must not record a second submission of the same offer.
       if (submission.deduplicated) return { success: true as const };
       const quotationId = submission.id;
+      // If this supplier was INVITED, the invitation has now been answered.
+      // Best-effort and after the bid is stored: a bookkeeping write must never
+      // be able to fail the commercial act it describes. A no-op when there was
+      // no invitation, which is the ordinary open-board case.
+      await markInvitationResponded(db, input.rfqId, ctx.user.id).catch(() => {});
       await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: `/rfq/${input.rfqId}`, messageKey: 'notif.quotation.received', messageParams: { rfqTitle: rfq.title } });
       // Funnel milestone: a vendor responding is the point at which the
       // marketplace has produced value for both sides.

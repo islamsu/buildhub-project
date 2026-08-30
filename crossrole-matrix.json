@@ -1,0 +1,182 @@
+[
+ {
+  "relationship": "Administrator → contractor",
+  "object": "user.onboardingStatus",
+  "outcome": "not_started → approved",
+  "notification": "notif.compliance.applicant.approved → /compliance",
+  "next": "applicant may now transact",
+  "audit": "registrationReviewEvents + fieldValueHistory",
+  "security": "only marketplace.manage may approve",
+  "status": "PASS"
+ },
+ {
+  "relationship": "Administrator → engineer",
+  "object": "user.onboardingStatus",
+  "outcome": "not_started → approved",
+  "notification": "notif.compliance.applicant.approved → /compliance",
+  "next": "applicant may now transact",
+  "audit": "registrationReviewEvents + fieldValueHistory",
+  "security": "only marketplace.manage may approve",
+  "status": "PASS"
+ },
+ {
+  "relationship": "Administrator → architect",
+  "object": "user.onboardingStatus",
+  "outcome": "not_started → approved",
+  "notification": "notif.compliance.applicant.approved → /compliance",
+  "next": "applicant may now transact",
+  "audit": "registrationReviewEvents + fieldValueHistory",
+  "security": "only marketplace.manage may approve",
+  "status": "PASS"
+ },
+ {
+  "relationship": "Administrator → supplier",
+  "object": "user.onboardingStatus",
+  "outcome": "not_started → approved",
+  "notification": "notif.compliance.applicant.approved → /compliance",
+  "next": "applicant may now transact",
+  "audit": "registrationReviewEvents + fieldValueHistory",
+  "security": "only marketplace.manage may approve",
+  "status": "PASS"
+ },
+ {
+  "relationship": "Administrator → project_manager",
+  "object": "user.onboardingStatus",
+  "outcome": "not_started → approved",
+  "notification": "notif.compliance.applicant.approved → /compliance",
+  "next": "applicant may now transact",
+  "audit": "registrationReviewEvents + fieldValueHistory",
+  "security": "only marketplace.manage may approve",
+  "status": "PASS"
+ },
+ {
+  "relationship": "Homeowner → contractor",
+  "object": "rfq #251",
+  "outcome": "quotation #176 @ 501111, pending",
+  "notification": "notif.quotation.received → /rfq/251",
+  "next": "homeowner opens the request and sees the price",
+  "audit": "commercialAuditEvents on the quotation",
+  "security": "outsider 404/404",
+  "status": "PASS"
+ },
+ {
+  "relationship": "Homeowner → engineer",
+  "object": "rfq #252",
+  "outcome": "quotation #177 @ 502222, pending",
+  "notification": "notif.quotation.received → /rfq/252",
+  "next": "homeowner opens the request and sees the price",
+  "audit": "commercialAuditEvents on the quotation",
+  "security": "outsider 404/404",
+  "status": "PASS"
+ },
+ {
+  "relationship": "Homeowner → architect",
+  "object": "rfq #253",
+  "outcome": "quotation #178 @ 503333, pending",
+  "notification": "notif.quotation.received → /rfq/253",
+  "next": "homeowner opens the request and sees the price",
+  "audit": "commercialAuditEvents on the quotation",
+  "security": "outsider 404/404",
+  "status": "PASS"
+ },
+ {
+  "relationship": "Homeowner → supplier",
+  "object": "rfq #254",
+  "outcome": "quotation #179 @ 504444, pending",
+  "notification": "notif.quotation.received → /rfq/254",
+  "next": "homeowner opens the request and sees the price",
+  "audit": "commercialAuditEvents on the quotation",
+  "security": "outsider 404/404",
+  "status": "PASS"
+ },
+ {
+  "relationship": "Homeowner → Project Manager",
+  "object": "conversation",
+  "outcome": "message + reply stored",
+  "notification": "notif.message.received → /messages?to=",
+  "next": "homeowner reads the reply",
+  "audit": "messages rows",
+  "security": "outsider leak: no",
+  "status": "PASS"
+ },
+ {
+  "relationship": "project_manager → contractor",
+  "object": "conversation",
+  "outcome": "messages 122 and 123",
+  "notification": "notif.message.received both directions",
+  "next": "each reads the other's reply",
+  "audit": "messages rows",
+  "security": "outsider leak: no",
+  "status": "PASS"
+ },
+ {
+  "relationship": "project_manager → engineer",
+  "object": "conversation",
+  "outcome": "messages 124 and 125",
+  "notification": "notif.message.received both directions",
+  "next": "each reads the other's reply",
+  "audit": "messages rows",
+  "security": "outsider leak: no",
+  "status": "PASS"
+ },
+ {
+  "relationship": "project_manager → architect",
+  "object": "conversation",
+  "outcome": "messages 126 and 127",
+  "notification": "notif.message.received both directions",
+  "next": "each reads the other's reply",
+  "audit": "messages rows",
+  "security": "outsider leak: no",
+  "status": "PASS"
+ },
+ {
+  "relationship": "project_manager → supplier",
+  "object": "conversation",
+  "outcome": "messages 128 and 129",
+  "notification": "notif.message.received both directions",
+  "next": "each reads the other's reply",
+  "audit": "messages rows",
+  "security": "outsider leak: no",
+  "status": "PASS"
+ },
+ {
+  "relationship": "engineer → supplier",
+  "object": "conversation",
+  "outcome": "messages 130 and 131",
+  "notification": "notif.message.received both directions",
+  "next": "each reads the other's reply",
+  "audit": "messages rows",
+  "security": "outsider leak: no",
+  "status": "PASS"
+ },
+ {
+  "relationship": "architect → supplier",
+  "object": "conversation",
+  "outcome": "messages 132 and 133",
+  "notification": "notif.message.received both directions",
+  "next": "each reads the other's reply",
+  "audit": "messages rows",
+  "security": "outsider leak: no",
+  "status": "PASS"
+ },
+ {
+  "relationship": "contractor → supplier",
+  "object": "conversation",
+  "outcome": "messages 134 and 135",
+  "notification": "notif.message.received both directions",
+  "next": "each reads the other's reply",
+  "audit": "messages rows",
+  "security": "outsider leak: no",
+  "status": "PASS"
+ },
+ {
+  "relationship": "Supplier → Customer",
+  "object": "quotation #179",
+  "outcome": "accepted; rfq awarded",
+  "notification": "notif.quotation.accepted → /quotations/179",
+  "next": "supplier opens their own quotation",
+  "audit": "fieldValueHistory pending→accepted",
+  "security": "rival 404",
+  "status": "PASS"
+ }
+]

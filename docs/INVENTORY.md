@@ -45,11 +45,11 @@
 
 Dead param routes: **0**
 
-## Server procedures (161)
+## Server procedures (164)
 
-- `protectedProcedure` — 59
+- `protectedProcedure` — 61
 - `publicProcedure` — 26
-- `approvedProviderProcedure` — 18
+- `approvedProviderProcedure` — 19
 - `superAdminProcedure` — 10
 - `adminWith:billing.manage` — 8
 - `adminWith:qa.manage` — 7
@@ -105,18 +105,20 @@ Dead param routes: **0**
 | `projectMembers` | 12 | 4 | 5 | 0 |
 | `rfqSuppliers` | 14 | 3 | 5 | 0 |
 
-## Notification write sites (14)
+## Notification write sites (16)
 
-- server/routers.ts:1229 — notifyUser
-- server/routers.ts:2033 — notifyUser
-- server/routers.ts:2113 — notifyUser
-- server/routers.ts:3062 — notifyUser
-- server/routers.ts:3294 — notifyUser
-- server/routers.ts:3434 — notifyUser
-- server/routers.ts:4482 — notifyUser
-- server/routers.ts:4683 — notifyUser
-- server/routers.ts:4708 — notifyUser
-- server/routers.ts:4733 — notifyUser
+- server/routers.ts:1232 — notifyUser
+- server/routers.ts:2036 — notifyUser
+- server/routers.ts:2116 — notifyUser
+- server/routers.ts:2795 — notifyUser
+- server/routers.ts:2852 — notifyUser
+- server/routers.ts:3201 — notifyUser
+- server/routers.ts:3433 — notifyUser
+- server/routers.ts:3573 — notifyUser
+- server/routers.ts:4621 — notifyUser
+- server/routers.ts:4822 — notifyUser
+- server/routers.ts:4847 — notifyUser
+- server/routers.ts:4872 — notifyUser
 - server/notifications.ts:40 — notifyUser
 - server/notifications.ts:43 — helper implementation
 - server/notifications.ts:57 — notifyUser
