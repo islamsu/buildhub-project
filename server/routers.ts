@@ -79,6 +79,7 @@ import {
   type LifecycleOutcome,
 } from './billing/lifecycle';
 import { resolveVendorEntitlements, toVendorEntitlementResponse } from './billing/entitlements';
+import { readOwnVendorProfile, readVendorProfile, saveOwnVendorProfile } from './vendorProfile';
 import {
   declineInvitation, inviteSupplier, listInvitations, markInvitationResponded, requireInviteRights,
 } from './rfqInvitations';
@@ -3624,7 +3625,7 @@ const profileRouter = router({
   // BUILDHUB_PHASE4A61_VENDOR_PROFILE_IMPLEMENTATION.md). Scoped to provider-role
   // accounts only - this endpoint answers "what does this vendor look like,"
   // not "what does any BuildHub user look like."
-  getPublic: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+  getPublic: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     // accountStatus is read here and DELIBERATELY not returned: it decides
@@ -3657,6 +3658,23 @@ const profileRouter = router({
     //
     // `contactChannel` states which of those the reader is entitled to, so the
     // page renders the truth rather than each client guessing.
+    // ── THE COMPANY PROFILE, AT THE TIER THIS READER HAS EARNED ──────────
+    //
+    // The note above records that no flow existed to release a vendor's direct
+    // line, and that inventing one would be inventing a business rule. That
+    // rule has since been DECIDED by the owner: the contact block is released
+    // once the vendor has ENGAGED - they quoted on this customer's RFQ, or
+    // they are a live member of this customer's project. An invitation is
+    // deliberately not enough, or anyone could harvest any vendor's details by
+    // inviting them to a throwaway RFQ.
+    //
+    // Note what is released and what is not. `users.email` / `users.phone` -
+    // the vendor's personal login details - remain private exactly as before.
+    // What unlocks is the PRIMARY CONTACT the vendor themselves nominated as
+    // their business contact, which is a different field and a different
+    // consent.
+    const company = await readVendorProfile(db, target.id, ctx.user);
+
     return {
       ...publicFields,
       categories: await getVendorCategories(target.id),
@@ -3664,6 +3682,16 @@ const profileRouter = router({
       // A frozen or deactivated vendor cannot receive messages - messages.send
       // refuses them - so the page must not offer a button that will fail.
       contactChannel: accountStatus === 'active' ? 'message' as const : 'none' as const,
+      // Null when the vendor has filled in nothing. The page says so rather
+      // than inventing a company name out of their personal name.
+      company: company.profile,
+      // Null when LOCKED, which is a different thing from "the vendor left it
+      // blank" - and `contactAccess` is what lets the page say which.
+      primaryContact: company.contact,
+      contactAccess: company.contactAccess,
+      ...(company.registrationNumber !== undefined
+        ? { registrationNumber: company.registrationNumber }
+        : {}),
     };
   }),
   // A vendor's own profile, for the edit form. Identical field set to getPublic
@@ -3688,6 +3716,69 @@ const profileRouter = router({
     await db.update(users).set({ bio: input.bio, location: input.location }).where(eq(users.id, ctx.user.id));
     return { success: true };
   }),
+  /**
+   * The vendor's own company profile, for their edit form.
+   *
+   * A DIFFERENT procedure from getPublic on purpose. That one answers "what
+   * may this viewer see"; reusing it here would make the edit form's contents
+   * depend on an access check that should never apply to the owner of the
+   * record. Two questions, two procedures.
+   *
+   * Self-scoped by construction: no userId in the input, so there is no field
+   * a client could populate to read another company's profile.
+   */
+  myCompanyProfile: approvedProviderProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    return readOwnVendorProfile(db, ctx.user.id);
+  }),
+
+  /**
+   * Save the caller's own company profile.
+   *
+   * Self-only by construction, the same discipline as `update` above: there is
+   * no userId anywhere in this schema, and `saveOwnVendorProfile` takes the id
+   * from the authenticated session. No payload can move a profile onto another
+   * account.
+   *
+   * EMPTY STRING MEANS "CLEARED", NOT "UNCHANGED". A vendor deleting their
+   * website must be able to actually delete it, so blanks are normalised to
+   * NULL rather than stored as '' - otherwise the page would render an empty
+   * link and the database would disagree with the screen.
+   */
+  saveMyCompanyProfile: approvedProviderProcedure
+    .input(z.object({
+      companyName: z.string().max(191).optional(),
+      companyDescription: z.string().max(5000).optional(),
+      primaryContactName: z.string().max(191).optional(),
+      primaryContactPosition: z.string().max(120).optional(),
+      // Validated as an email when present, because a contact address that is
+      // not an address is a field that looks filled in and is not.
+      primaryContactEmail: z.string().max(255).email().or(z.literal('')).optional(),
+      primaryContactPhone: z.string().max(40).optional(),
+      primaryContactMobile: z.string().max(40).optional(),
+      addressLine: z.string().max(255).optional(),
+      city: z.string().max(120).optional(),
+      country: z.string().max(120).optional(),
+      website: z.string().max(255).optional(),
+      registrationNumber: z.string().max(120).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const patch: Record<string, string | null> = {};
+      for (const [key, value] of Object.entries(input)) {
+        if (value === undefined) continue;
+        const trimmed = String(value).trim();
+        patch[key] = trimmed === '' ? null : trimmed;
+      }
+      if (Object.keys(patch).length === 0) return { success: true as const, changed: false };
+
+      await saveOwnVendorProfile(db, ctx.user.id, patch);
+      return { success: true as const, changed: true };
+    }),
+
   // ── Vendor service categories (Phase 4B.3) ──────────────────────────────
   // A vendor declares which of the nine shared RFQ categories describe their
   // work. This is what makes RFQ targeting possible without BuildHub guessing

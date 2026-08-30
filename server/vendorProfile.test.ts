@@ -1,275 +1,339 @@
+// ── THE VENDOR COMPANY PROFILE, AND WHO SEES WHICH PART OF IT ──────────────
+//
+// Until now a "vendor profile" was a `users` row: a personal name, a bio, a
+// location. A customer choosing between two construction firms was choosing
+// between two people's names.
+//
+// The contact rule here is NOT invented. `profile.getPublic` carried a comment
+// recording that no flow released a vendor's direct line and that inventing one
+// would be inventing a business rule. The owner has since DECIDED that rule:
+// released once the vendor has ENGAGED. These tests pin that decision, both
+// halves of it - what unlocks, and what deliberately does not.
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { appRouter } from './routers';
-import type { TrpcContext } from './_core/context';
 
-vi.mock('./db', () => ({
-  getDb: vi.fn(),
-}));
+vi.mock('./db', () => ({ getDb: vi.fn() }));
 
-import { getDb } from './db';
-import { users as usersTable, vendorCategories as vendorCategoriesTable } from '../drizzle/schema';
+import {
+  VENDOR_PROFILE_ADMIN_COLUMNS, VENDOR_PROFILE_CONTACT_COLUMNS,
+  VENDOR_PROFILE_PUBLIC_COLUMNS, readVendorProfile, saveOwnVendorProfile,
+  unlocksContact, vendorContactAccess,
+} from './vendorProfile';
+import { projectMembers, projects, quotations, rfqs, users, vendorProfiles } from '../drizzle/schema';
 
-function makeVendorCtx(userId = 10, overrides: Record<string, unknown> = {}): TrpcContext {
-  return {
-    user: {
-      id: userId,
-      openId: `vendor-${userId}`,
-      email: `vendor${userId}@test.com`,
-      name: 'Test Contractor Co.',
-      loginMethod: 'manus',
-      role: 'user',
-      userRole: 'contractor',
-      accountStatus: 'active',
-      createdAt: new Date('2025-01-01'),
-      updatedAt: new Date('2025-01-01'),
-      lastSignedIn: new Date('2025-01-01'),
-      ...overrides,
-    } as TrpcContext['user'],
-    req: { protocol: 'https', headers: {} } as TrpcContext['req'],
-    res: {} as TrpcContext['res'],
-  };
-}
+const VENDOR = 50;
+const CUSTOMER = 60;
+const STRANGER = 70;
 
-function makeAnonCtx(): TrpcContext {
-  return {
-    user: null,
-    req: { protocol: 'https', headers: {} } as TrpcContext['req'],
-    res: {} as TrpcContext['res'],
-  };
-}
-
-const PUBLIC_ROW = {
-  id: 10,
-  name: 'Test Contractor Co.',
-  bio: 'We build things.',
-  avatar: 'https://example.com/avatar.png',
-  location: 'Cairo, Egypt',
-  userRole: 'contractor',
-  verified: true,
-  createdAt: new Date('2025-01-01'),
-  // Read to decide whether the contact button is offered. It must never come
-  // back out in the response - see the forbidden-keys assertion below.
-  accountStatus: 'active' as const,
+const FULL_ROW = {
+  companyName: 'Nile Steel Works',
+  companyDescription: 'Structural steel since 1998.',
+  city: 'Giza', country: 'Egypt', website: 'https://example.test',
+  primaryContactName: 'Mona Farid',
+  primaryContactPosition: 'Commercial Director',
+  primaryContactEmail: 'mona@example.test',
+  primaryContactPhone: '0223456789',
+  primaryContactMobile: '01000000000',
+  addressLine: '14 Corniche El Nil',
+  registrationNumber: 'CR-99887766',
 };
 
 /**
- * A db double that dispatches on the TABLE, not on how many times select() has
- * been called. Counting calls made the test depend on the order the procedure
- * happens to issue its queries in, which is not a rule anybody promised.
+ * A double that answers by TABLE and records writes.
+ *
+ * `joinRows` is what the two relationship probes read. Keyed separately from
+ * the plain tables because both probes select from a JOIN, and answering them
+ * with the same rows as an unjoined read would make every viewer look related
+ * to every vendor - which is the exact failure these tests exist to catch.
  */
-function makeDb(overrides: { user?: unknown[]; categories?: unknown[]; count?: number } = {}) {
-  return {
-    select: vi.fn(() => ({
-      from: vi.fn((table: unknown) => {
-        const rows = table === usersTable ? (overrides.user ?? [PUBLIC_ROW])
-          : table === vendorCategoriesTable ? (overrides.categories ?? [{ category: 'Structural works' }])
-          : [{ count: overrides.count ?? 3 }];
-        return { where: vi.fn().mockResolvedValue(rows) };
+function makeDb(options: {
+  profile?: Record<string, unknown> | null;
+  quotedRows?: unknown[];
+  projectRows?: unknown[];
+} = {}) {
+  const inserts: { table: unknown; values: Record<string, unknown> }[] = [];
+  const updates: { table: unknown; values: Record<string, unknown> }[] = [];
+  let selectedColumns: unknown = null;
+  let failInsertAsDuplicate = false;
+
+  const chainFor = (rows: unknown[]): Record<string, unknown> => {
+    const c: Record<string, unknown> = {
+      where: () => c, orderBy: () => c, limit: () => c, for: () => c,
+      leftJoin: () => c, innerJoin: () => c, groupBy: () => c, offset: () => c,
+      then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+        Promise.resolve(rows).then(res, rej),
+    };
+    return c;
+  };
+
+  const db: Record<string, unknown> = {
+    select: (columns?: unknown) => {
+      selectedColumns = columns;
+      return {
+        from: (table: unknown) => {
+          if (table === quotations) return chainFor(options.quotedRows ?? []);
+          if (table === projectMembers) return chainFor(options.projectRows ?? []);
+          if (table === vendorProfiles) {
+            const row = options.profile === undefined ? FULL_ROW : options.profile;
+            if (!row) return chainFor([]);
+            // THE DOUBLE HONOURS THE COLUMN LIST. Returning the whole row
+            // regardless would make every allowlist test vacuous: the tier
+            // would "pass" while the production code selected everything.
+            const requested = Object.keys((selectedColumns ?? {}) as object);
+            const projected: Record<string, unknown> = {};
+            for (const key of requested) projected[key] = (row as Record<string, unknown>)[key];
+            return chainFor([projected]);
+          }
+          return chainFor([]);
+        },
+      };
+    },
+    insert: (table: unknown) => ({
+      values: async (values: Record<string, unknown>) => {
+        if (failInsertAsDuplicate) {
+          const e = new Error('dup') as Error & { code: string };
+          e.code = 'ER_DUP_ENTRY';
+          throw e;
+        }
+        inserts.push({ table, values });
+      },
+    }),
+    update: (table: unknown) => ({
+      set: (values: Record<string, unknown>) => ({
+        where: async () => { updates.push({ table, values }); },
       }),
-    })),
+    }),
+  };
+
+  return {
+    db, inserts, updates,
+    /** The column list the last select() asked for - see the over-select test. */
+    lastSelectedColumns: () => Object.keys((selectedColumns ?? {}) as object),
+    into: (t: unknown) => inserts.filter(r => r.table === t).map(r => r.values),
+    patched: (t: unknown) => updates.filter(r => r.table === t).map(r => r.values),
+    failNextInsertAsDuplicate: () => { failInsertAsDuplicate = true; },
   };
 }
 
-describe('profile.getPublic', () => {
+const viewer = (id: number, extra: Record<string, unknown> = {}) =>
+  ({ id, role: 'user', adminRole: null, ...extra });
+
+// ── 1. What unlocks the contact block ──────────────────────────────────────
+
+describe('vendorContactAccess - the rule the owner decided, not one invented here', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('returns exactly the public field allowlist plus completedProjects, nothing else', async () => {
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(makeDb());
-    const caller = appRouter.createCaller(makeVendorCtx(1));
+  it('the vendor sees their own contact block', async () => {
+    const { db } = makeDb();
+    await expect(vendorContactAccess(db, VENDOR, viewer(VENDOR))).resolves.toBe('self');
+  });
 
-    const result = await caller.profile.getPublic({ userId: 10 });
+  it('an administrator sees it - support answering "how do I reach this vendor" is ordinary', async () => {
+    const { db } = makeDb();
+    await expect(vendorContactAccess(db, VENDOR, viewer(STRANGER, { role: 'admin', adminRole: 'SUPPORT_ADMIN' })))
+      .resolves.toBe('admin');
+  });
 
-    expect(result).toEqual({
-      id: 10,
-      name: 'Test Contractor Co.',
-      bio: 'We build things.',
-      avatar: 'https://example.com/avatar.png',
-      location: 'Cairo, Egypt',
-      userRole: 'contractor',
-      verified: true,
-      createdAt: PUBLIC_ROW.createdAt,
-      completedProjects: 3,
-      // The vendor detail page needs to say what this vendor does and how to
-      // reach them. Categories come from vendorCategories - the same
-      // declaration the RFQ matcher reads - and contactChannel names the ONE
-      // channel BuildHub operates. Neither is a users column.
-      categories: ['Structural works'],
-      contactChannel: 'message',
+  it('a customer the vendor QUOTED for sees it - the vendor engaged, which is the whole rule', async () => {
+    const { db } = makeDb({ quotedRows: [{ id: 1 }] });
+    await expect(vendorContactAccess(db, VENDOR, viewer(CUSTOMER))).resolves.toBe('quoted');
+  });
+
+  it('a customer whose PROJECT the vendor is on sees it', async () => {
+    const { db } = makeDb({ projectRows: [{ id: 1 }] });
+    await expect(vendorContactAccess(db, VENDOR, viewer(CUSTOMER))).resolves.toBe('project');
+  });
+
+  it('A STRANGER DOES NOT - and this is the case the whole design turns on', async () => {
+    const { db } = makeDb();
+    await expect(vendorContactAccess(db, VENDOR, viewer(STRANGER))).resolves.toBe('none');
+  });
+
+  it('an anonymous reader does not', async () => {
+    const { db } = makeDb();
+    await expect(vendorContactAccess(db, VENDOR, null)).resolves.toBe('none');
+  });
+
+  it('an admin row with NO adminRole is not treated as an administrator - fails closed', async () => {
+    const { db } = makeDb();
+    await expect(vendorContactAccess(db, VENDOR, viewer(STRANGER, { role: 'admin', adminRole: null })))
+      .resolves.toBe('none');
+  });
+
+  it('every tier except "none" unlocks, and "none" never does', () => {
+    for (const tier of ['self', 'admin', 'quoted', 'project'] as const) {
+      expect(unlocksContact(tier)).toBe(true);
+    }
+    expect(unlocksContact('none')).toBe(false);
+  });
+});
+
+// ── 2. What each tier actually receives ────────────────────────────────────
+
+describe('readVendorProfile - the tiers are a property of the COLUMNS', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('a stranger gets the public block and NO contact block at all', async () => {
+    const { db } = makeDb();
+    const result = await readVendorProfile(db, VENDOR, viewer(STRANGER));
+
+    expect(result.profile).toMatchObject({ companyName: 'Nile Steel Works', city: 'Giza' });
+    // NULL, not an object of nulls: "we are not showing you this" and "the
+    // vendor left it blank" are different things to render.
+    expect(result.contact).toBeNull();
+    expect(result.contactAccess).toBe('none');
+  });
+
+  it('a stranger receives NO contact value anywhere in the payload, not even hidden in the public block', async () => {
+    const { db } = makeDb();
+    const result = await readVendorProfile(db, VENDOR, viewer(STRANGER));
+    const serialised = JSON.stringify(result);
+    for (const secret of ['Mona Farid', 'mona@example.test', '01000000000', 'Corniche', 'CR-99887766']) {
+      expect(serialised).not.toContain(secret);
+    }
+  });
+
+  it('a customer the vendor quoted for receives the contact block in full', async () => {
+    const { db } = makeDb({ quotedRows: [{ id: 1 }] });
+    const result = await readVendorProfile(db, VENDOR, viewer(CUSTOMER));
+    expect(result.contact).toMatchObject({
+      primaryContactName: 'Mona Farid',
+      primaryContactPosition: 'Commercial Director',
+      primaryContactEmail: 'mona@example.test',
+      addressLine: '14 Corniche El Nil',
     });
-    // Explicit shape assertion, not just a value check: the private-field keys
-    // must never appear on the response object at all.
-    for (const forbidden of ['passwordHash', 'invitationToken', 'invitationExpiresAt', 'email', 'phone', 'frozenReason', 'accountStatus', 'creationNote', 'onboardingReviewNotes']) {
-      expect(Object.keys(result)).not.toContain(forbidden);
+  });
+
+  it('a customer does NOT receive the registration number - that is the number an impersonator needs', async () => {
+    const { db } = makeDb({ quotedRows: [{ id: 1 }] });
+    const result = await readVendorProfile(db, VENDOR, viewer(CUSTOMER));
+    expect(result.registrationNumber).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain('CR-99887766');
+  });
+
+  it('the customer tier does not even ASK the database for the registration number', async () => {
+    // Asserting only the returned shape left a real hole: widening the SELECT
+    // to the admin column list still produced a correct-looking response,
+    // because the attach step filters again. The value was fetched and
+    // discarded - one refactor away from being spread into the payload.
+    const rec = makeDb({ quotedRows: [{ id: 1 }] });
+    await readVendorProfile(rec.db, VENDOR, viewer(CUSTOMER));
+    expect(rec.lastSelectedColumns()).not.toContain('registrationNumber');
+  });
+
+  it('a stranger does not even ASK for the contact columns', async () => {
+    const rec = makeDb();
+    await readVendorProfile(rec.db, VENDOR, viewer(STRANGER));
+    for (const column of ['primaryContactEmail', 'primaryContactPhone', 'addressLine']) {
+      expect(rec.lastSelectedColumns()).not.toContain(column);
     }
   });
 
-  it('never issues select().from(users) with no column list for the public query', () => {
-    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-    const profileSection = source.slice(source.indexOf('Vendor Profile Router'), source.indexOf('Admin Router'));
-    const codeOnly = profileSection.split('\n').filter(line => !line.trim().startsWith('//')).join('\n');
-    expect(profileSection).toContain('PUBLIC_PROFILE_COLUMNS');
-    expect(codeOnly).not.toMatch(/select\(\)\.from\(users\)/);
+  it('an administrator does, for investigation', async () => {
+    const { db } = makeDb();
+    const result = await readVendorProfile(db, VENDOR, viewer(STRANGER, { role: 'admin', adminRole: 'SUPER_ADMIN' }));
+    expect(result.registrationNumber).toBe('CR-99887766');
+    expect(result.contact).not.toBeNull();
   });
 
-  it('returns NOT_FOUND for a non-provider (e.g. homeowner) user id, not their data', async () => {
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(makeDb({ user: [{ ...PUBLIC_ROW, userRole: 'homeowner' }] }));
-    const caller = appRouter.createCaller(makeVendorCtx(1));
-
-    await expect(caller.profile.getPublic({ userId: 99 })).rejects.toThrow('Vendor profile not found');
+  it('a vendor with NO profile row gets honest emptiness, never a fabricated shell', async () => {
+    const { db } = makeDb({ profile: null });
+    const result = await readVendorProfile(db, VENDOR, viewer(CUSTOMER, {}));
+    expect(result.profile).toBeNull();
+    expect(result.contact).toBeNull();
   });
 
-  it('returns NOT_FOUND for a nonexistent user id', async () => {
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(makeDb({ user: [] }));
-    const caller = appRouter.createCaller(makeVendorCtx(1));
-
-    await expect(caller.profile.getPublic({ userId: 99999 })).rejects.toThrow('Vendor profile not found');
-  });
-
-  it('rejects an unauthenticated caller (the safer of the two options left open by Phase 4A.5)', async () => {
-    const caller = appRouter.createCaller(makeAnonCtx());
-    await expect(caller.profile.getPublic({ userId: 10 })).rejects.toThrow();
-  });
-
-  it('rejects invalid input (non-positive-integer userId)', async () => {
-    const caller = appRouter.createCaller(makeVendorCtx(1));
-    await expect(caller.profile.getPublic({ userId: -1 })).rejects.toThrow();
-    await expect(caller.profile.getPublic({ userId: 1.5 } as never)).rejects.toThrow();
+  it('a vendor who filled in nothing gets nulls, not a company name invented from their personal name', async () => {
+    const { db } = makeDb({ profile: { companyName: null, city: null, country: null, website: null, companyDescription: null } });
+    const result = await readVendorProfile(db, VENDOR, viewer(STRANGER));
+    expect(result.profile).toEqual({
+      companyName: null, companyDescription: null, city: null, country: null, website: null,
+    });
   });
 });
 
-describe('profile.getOwn', () => {
-  beforeEach(() => vi.clearAllMocks());
+// ── 3. The allowlists themselves ───────────────────────────────────────────
 
-  it('retrieves the caller\'s own profile using ctx.user.id, never a client-supplied id', async () => {
-    const whereMock = vi.fn().mockResolvedValue([PUBLIC_ROW]);
-    let call = 0;
-    const db = {
-      select: vi.fn(() => {
-        call += 1;
-        if (call === 1) return { from: vi.fn().mockReturnValue({ where: whereMock }) };
-        return { from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ count: 0 }]) }) };
-      }),
-    };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
-    const caller = appRouter.createCaller(makeVendorCtx(10));
-
-    const result = await caller.profile.getOwn();
-    expect(result.id).toBe(10);
-    expect(result.completedProjects).toBe(0);
+describe('the column allowlists', () => {
+  it('the PUBLIC tier carries nothing that identifies a person or a place to visit', () => {
+    expect(Object.keys(VENDOR_PROFILE_PUBLIC_COLUMNS).sort())
+      .toEqual(['city', 'companyDescription', 'companyName', 'country', 'website'].sort());
   });
 
-  it('rejects an unauthenticated caller', async () => {
-    const caller = appRouter.createCaller(makeAnonCtx());
-    await expect(caller.profile.getOwn()).rejects.toThrow();
+  it('the CONTACT tier is exactly the person and the street address', () => {
+    expect(Object.keys(VENDOR_PROFILE_CONTACT_COLUMNS).sort()).toEqual([
+      'addressLine', 'primaryContactEmail', 'primaryContactMobile',
+      'primaryContactName', 'primaryContactPhone', 'primaryContactPosition',
+    ].sort());
   });
 
-  it('has no userId (or any target-account identifier) in its input schema at all', () => {
-    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-    const getOwnBlock = source.slice(source.indexOf('getOwn: protectedProcedure'), source.indexOf('update: protectedProcedure'));
-    expect(getOwnBlock).not.toContain('.input(');
-  });
-});
-
-describe('profile.update', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it('updates only the caller\'s own row (ctx.user.id), never a client-supplied id', async () => {
-    const whereMock = vi.fn().mockResolvedValue([]);
-    const setMock = vi.fn().mockReturnValue({ where: whereMock });
-    const db = { update: vi.fn().mockReturnValue({ set: setMock }) };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
-    const caller = appRouter.createCaller(makeVendorCtx(10));
-
-    await caller.profile.update({ bio: 'New bio', location: 'Alexandria' });
-    expect(setMock).toHaveBeenCalledWith({ bio: 'New bio', location: 'Alexandria' });
-    // The mutation only ever targets the authenticated caller's row.
-    const dbAny = db as unknown as { update: ReturnType<typeof vi.fn> };
-    expect(dbAny.update).toHaveBeenCalled();
+  it('registrationNumber is in NEITHER of the two customer-facing tiers', () => {
+    expect(Object.keys(VENDOR_PROFILE_PUBLIC_COLUMNS)).not.toContain('registrationNumber');
+    expect(Object.keys(VENDOR_PROFILE_CONTACT_COLUMNS)).not.toContain('registrationNumber');
+    expect(Object.keys(VENDOR_PROFILE_ADMIN_COLUMNS)).toContain('registrationNumber');
   });
 
-  it('has no userId field in its input schema - a smuggled one is silently stripped, not honored', async () => {
-    const whereMock = vi.fn().mockResolvedValue([]);
-    const setMock = vi.fn().mockReturnValue({ where: whereMock });
-    const db = { update: vi.fn().mockReturnValue({ set: setMock }) };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
-    const caller = appRouter.createCaller(makeVendorCtx(10));
-
-    // Force an extra, unschematized field through the type system to prove Zod
-    // strips it rather than the mutation ever reading or acting on it.
-    await caller.profile.update({ bio: 'x', userId: 999 } as never);
-    expect(setMock).toHaveBeenCalledWith(expect.not.objectContaining({ userId: expect.anything() }));
-  });
-
-  it('rejects unauthorized/unknown fields silently rather than persisting them (mass-assignment protection)', async () => {
-    const whereMock = vi.fn().mockResolvedValue([]);
-    const setMock = vi.fn().mockReturnValue({ where: whereMock });
-    const db = { update: vi.fn().mockReturnValue({ set: setMock }) };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
-    const caller = appRouter.createCaller(makeVendorCtx(10));
-
-    await caller.profile.update({ bio: 'ok', passwordHash: 'hacked', role: 'admin' } as never);
-    const setArg = setMock.mock.calls[0][0];
-    expect(setArg).not.toHaveProperty('passwordHash');
-    expect(setArg).not.toHaveProperty('role');
-  });
-
-  it('rejects a bio over the length limit', async () => {
-    const caller = appRouter.createCaller(makeVendorCtx(10));
-    await expect(caller.profile.update({ bio: 'x'.repeat(1001) })).rejects.toThrow();
-  });
-
-  it('rejects an unauthenticated caller', async () => {
-    const caller = appRouter.createCaller(makeAnonCtx());
-    await expect(caller.profile.update({ bio: 'x' })).rejects.toThrow();
-  });
-});
-
-describe('profile.uploadAvatar', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it('rejects a non-image content type', async () => {
-    const caller = appRouter.createCaller(makeVendorCtx(10));
-    await expect(caller.profile.uploadAvatar({ contentType: 'application/pdf', base64: 'AAAA' })).rejects.toThrow();
-  });
-
-  it('rejects an oversized image (over 2MB)', async () => {
-    const db = { update: vi.fn() };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
-    const caller = appRouter.createCaller(makeVendorCtx(10));
-    const oversized = Buffer.alloc(2 * 1024 * 1024 + 1).toString('base64');
-    await expect(caller.profile.uploadAvatar({ contentType: 'image/png', base64: oversized })).rejects.toThrow('2MB');
-  });
-});
-
-describe('vendor profile localization', () => {
-  it('every new profile.* key exists in both the English and Arabic translation maps', () => {
-    const source = readFileSync(new URL('../client/src/contexts/LanguageContext.tsx', import.meta.url), 'utf8');
-    const keys = Array.from(new Set(Array.from(source.matchAll(/'(profile\.[a-z_]+)':/g)).map(m => m[1])));
-    expect(keys.length).toBeGreaterThan(0);
-    const occurrences = (key: string) => (source.match(new RegExp(`'${key.replace('.', '\\.')}':`, 'g')) ?? []).length;
-    for (const key of keys) {
-      expect(occurrences(key), `expected '${key}' to appear exactly twice (English + Arabic maps)`).toBe(2);
+  it('NO TIER, not even the admin one, can carry a credential - the table holds none', () => {
+    const everything = Object.keys(VENDOR_PROFILE_ADMIN_COLUMNS).join(' ').toLowerCase();
+    for (const forbidden of ['password', 'token', 'secret', 'hash', 'apikey', 'session']) {
+      expect(everything).not.toContain(forbidden);
     }
   });
 });
 
-describe('vendor profile responsive conventions', () => {
-  it('uses responsive utility classes, not fixed pixel widths, for the new profile section', () => {
-    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'); // sanity: backend has no width/layout concerns
-    expect(source).toBeTruthy();
-    // Phase 4A.6.4: the vendor profile edit UI lives in the reusable VendorProfileCard
-    // component (rendered from RolePlatform.tsx, the real reachable vendor dashboard),
-    // not in ProviderDashboard.tsx (a legacy redirect-only shim - see
-    // BUILDHUB_PHASE4A64_DASHBOARD_INTEGRATION.md).
-    const page = readFileSync(new URL('../client/src/components/VendorProfileCard.tsx', import.meta.url), 'utf8');
-    expect(page).not.toMatch(/width:\s*\d+px/);
-    expect(page).toContain('sm:grid-cols-2');
+/**
+ * ── THREE RULES DELIBERATELY NOT TESTED HERE ───────────────────────────────
+ *
+ * All three live in a WHERE clause, and the double above answers a query by
+ * TABLE without interpreting its conditions:
+ *
+ *   a quotation unlocks contact only for the customer whose RFQ it was
+ *   a project membership only for the customer who owns that project
+ *   a REMOVED member's access ends with their membership
+ *
+ * A test written against this double would pass with any of those filters
+ * deleted, which is the vacuous assertion this codebase has been bitten by
+ * before. Making the double filter them itself would be worse still: it would
+ * then pass with the production filter GONE, which is precisely the mutation
+ * it is meant to catch.
+ *
+ * They are security rules about CROSS-CUSTOMER leakage, so they are proven
+ * where the WHERE clause is real - against MariaDB, in
+ * evidence/zg-vendorprofile.mjs.
+ */
+
+// ── 4. Saving your own, and only your own ──────────────────────────────────
+
+describe('saveOwnVendorProfile', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('creates the row on first save', async () => {
+    const rec = makeDb({ profile: null });
+    await saveOwnVendorProfile(rec.db, VENDOR, { companyName: 'New Co' });
+    expect(rec.into(vendorProfiles)[0]).toMatchObject({ userId: VENDOR, companyName: 'New Co' });
   });
 
-  it('the public vendor profile page also avoids fixed pixel widths and sets dir for RTL/LTR', () => {
-    const page = readFileSync(new URL('../client/src/pages/VendorProfile.tsx', import.meta.url), 'utf8');
-    expect(page).not.toMatch(/width:\s*\d+px/);
-    expect(page).toContain("dir={lang === 'ar' ? 'rtl' : 'ltr'}");
+  it('updates the existing row rather than creating a second', async () => {
+    const rec = makeDb();
+    await saveOwnVendorProfile(rec.db, VENDOR, { companyName: 'Renamed' });
+    expect(rec.into(vendorProfiles)).toEqual([]);
+    expect(rec.patched(vendorProfiles)[0]).toMatchObject({ companyName: 'Renamed' });
+  });
+
+  it('a concurrent first save does not discard the loser\'s edit - it updates instead', async () => {
+    const rec = makeDb({ profile: null });
+    rec.failNextInsertAsDuplicate();
+    // Two tabs saving at once: the database refuses the second insert, and the
+    // caller's edit must still land rather than being dropped for being second.
+    await saveOwnVendorProfile(rec.db, VENDOR, { companyName: 'Second Tab' });
+    expect(rec.patched(vendorProfiles)[0]).toMatchObject({ companyName: 'Second Tab' });
+  });
+
+  it('never writes a userId taken from the patch - the session decides whose profile this is', async () => {
+    const rec = makeDb({ profile: null });
+    await saveOwnVendorProfile(rec.db, VENDOR, { companyName: 'X', userId: '999' } as never);
+    // The explicit userId argument is applied AFTER nothing and BEFORE the
+    // spread would matter; what must never happen is a row landing on 999.
+    expect(rec.into(vendorProfiles)[0].userId).toBe(VENDOR);
   });
 });

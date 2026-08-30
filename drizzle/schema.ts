@@ -1123,5 +1123,104 @@ export const rfqSuppliers = mysqlTable('rfqSuppliers', {
   rfqIdIdx:      index('rfqSuppliers_rfqId_idx').on(table.rfqId),
 }));
 
+// ── Vendor company profile (migration 0028) ────────────────────────────────
+//
+// SEPARATE FROM `users` DELIBERATELY. That table already carries passwordHash,
+// passwordResetToken and invitationToken, and a bare `select().from(users)`
+// has leaked all three in this file's history. Company data is read by three
+// different audiences at three different authorization tiers, so it lives in
+// its own table with its own explicit allowlists - a mistake here cannot
+// expose a credential.
+//
+// THE TIERS ARE A PROPERTY OF THE COLUMNS, not of the reader, and the comments
+// below are the specification the allowlists in server/vendorProfile.ts
+// implement:
+//
+//   PUBLIC     what a customer needs to CHOOSE a vendor
+//   RELATIONSHIP  what they need to CONTACT one, released only on a real
+//                 commercial relationship - the same rule
+//                 rfq.requesterContact already applies in the other direction
+//   ADMIN      the registration number, which is what an impersonator needs
+export const vendorProfiles = mysqlTable('vendorProfiles', {
+  id:     int('id').autoincrement().primaryKey(),
+  userId: int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+
+  /** PUBLIC. The organisation a customer is actually choosing between. */
+  companyName:        varchar('companyName', { length: 191 }),
+  /** PUBLIC. */
+  companyDescription: text('companyDescription'),
+
+  /** RELATIONSHIP. The person, released only once the vendor has engaged. */
+  primaryContactName:     varchar('primaryContactName', { length: 191 }),
+  primaryContactPosition: varchar('primaryContactPosition', { length: 120 }),
+  primaryContactEmail:    varchar('primaryContactEmail', { length: 255 }),
+  primaryContactPhone:    varchar('primaryContactPhone', { length: 40 }),
+  primaryContactMobile:   varchar('primaryContactMobile', { length: 40 }),
+
+  /** RELATIONSHIP. The door to knock on. */
+  addressLine: varchar('addressLine', { length: 255 }),
+  /** PUBLIC - a customer must be able to filter by where a vendor works. */
+  city:        varchar('city', { length: 120 }),
+  /** PUBLIC. */
+  country:     varchar('country', { length: 120 }),
+  /** PUBLIC. */
+  website:     varchar('website', { length: 255 }),
+
+  /** ADMIN ONLY. The number an impersonator needs; not a directory field. */
+  registrationNumber: varchar('registrationNumber', { length: 120 }),
+
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  // One profile per vendor, enforced by the database rather than by the
+  // application remembering to check.
+  userIdUnique: uniqueIndex('vendorProfiles_userId_unique').on(table.userId),
+}));
+
+// ── Sponsored placement in the vendors directory (migration 0028) ───────────
+//
+// A REAL RECORD, because the alternative is fabricating one. The brief asks
+// for sponsored vendor spaces per service category; a hard-coded list in the
+// UI would invent commercial relationships that do not exist. So a sponsorship
+// is a row an administrator creates, scoped to one category, bounded by dates,
+// and revocable - which also makes "which vendors are sponsored, for which
+// category, for what period, by what administrative action" answerable.
+//
+// NO PRICE, NO INVOICE, NO PAYMENT. This records THAT a sponsorship was
+// granted and by whom, not what was charged. BuildHub has no payment provider,
+// and inventing a billing relationship here would be the same fabrication in a
+// different column.
+export const vendorSponsorships = mysqlTable('vendorSponsorships', {
+  id:       int('id').autoincrement().primaryKey(),
+  vendorId: int('vendorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /**
+   * ONE CATEGORY PER ROW. A vendor sponsored in two categories has two rows,
+   * which makes "who is sponsored in THIS category" a single indexed lookup
+   * rather than a scan-and-filter.
+   */
+  category: varchar('category', { length: 100 }).notNull(),
+  startsAt: timestamp('startsAt').defaultNow().notNull(),
+  /**
+   * NULL = open-ended until revoked. An elapsed sponsorship stops appearing
+   * the moment it passes, whether or not anything runs to tidy it up - the
+   * same fail-closed discipline the billing engine uses for entitlements.
+   */
+  endsAt:   timestamp('endsAt'),
+  grantedBy:     int('grantedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  grantedReason: varchar('grantedReason', { length: 500 }),
+  /** Soft revocation: the row stays so an audit can show it existed. */
+  revokedAt: timestamp('revokedAt'),
+  revokedBy: int('revokedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  categoryIdx: index('vendorSponsorships_category_idx').on(table.category),
+  vendorIdIdx: index('vendorSponsorships_vendorId_idx').on(table.vendorId),
+  /** The directory's own query: live sponsorships in one category. */
+  activeIdx:   index('vendorSponsorships_active_idx').on(table.category, table.revokedAt, table.startsAt),
+}));
+
+export type VendorProfile = typeof vendorProfiles.$inferSelect;
+export type VendorSponsorship = typeof vendorSponsorships.$inferSelect;
+
 export type ProjectMember = typeof projectMembers.$inferSelect;
 export type RfqSupplierInvitation = typeof rfqSuppliers.$inferSelect;

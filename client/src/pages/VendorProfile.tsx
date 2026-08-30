@@ -21,7 +21,8 @@ export default function VendorProfile() {
   const userId = Number(id);
   const { t, lang } = useLanguage();
   const { isAuthenticated, loading: authLoading, user } = useAuth();
-  const BackIcon = lang === 'ar' ? ArrowRight : ArrowLeft;
+  const ar = lang === 'ar';
+  const BackIcon = ar ? ArrowRight : ArrowLeft;
 
   // Public vendor profile access currently requires sign-in (protectedProcedure) -
   // the safer of the two options Phase 4A.5 left as an open owner decision.
@@ -118,6 +119,104 @@ export default function VendorProfile() {
             <div className="flex items-center gap-2 text-muted-foreground"><Calendar className="w-4 h-4 flex-shrink-0" /><span>{t('profile.member_since')} {new Date(profile.createdAt).getFullYear()}</span></div>
             <div className="flex items-center gap-2 text-muted-foreground"><Briefcase className="w-4 h-4 flex-shrink-0" /><span>{profile.completedProjects} {t('profile.completed_projects')}</span></div>
           </div>
+
+          {/* ── THE COMPANY ──────────────────────────────────────────────
+              Public tier: what a customer needs to CHOOSE. Rendered only when
+              the vendor has actually filled something in - an empty card that
+              says "Company: —" four times looks like a broken page, and
+              inventing a company name from their personal name would be
+              fabricating business data. */}
+          {profile.company && Object.values(profile.company).some(Boolean) && (
+            <div data-testid="vendor-company">
+              <h2 className="text-sm font-semibold mb-2">{ar ? 'الشركة' : 'Company'}</h2>
+              <div className="grid gap-3 sm:grid-cols-2 text-sm">
+                {profile.company.companyName && (
+                  <div data-testid="vendor-company-name">
+                    <p className="text-xs text-muted-foreground">{ar ? 'الاسم التجاري' : 'Company name'}</p>
+                    <p className="font-medium">{profile.company.companyName}</p>
+                  </div>
+                )}
+                {(profile.company.city || profile.company.country) && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">{ar ? 'الموقع' : 'Location'}</p>
+                    <p className="font-medium">
+                      {[profile.company.city, profile.company.country].filter(Boolean).join(', ')}
+                    </p>
+                  </div>
+                )}
+                {profile.company.website && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">{ar ? 'الموقع الإلكتروني' : 'Website'}</p>
+                    {/* rel=noopener because this URL is vendor-supplied. */}
+                    <a
+                      className="font-medium text-primary underline break-all"
+                      href={profile.company.website}
+                      target="_blank" rel="noopener noreferrer nofollow"
+                      data-testid="vendor-company-website"
+                    >{profile.company.website}</a>
+                  </div>
+                )}
+              </div>
+              {profile.company.companyDescription && (
+                <p className="mt-3 text-sm text-muted-foreground leading-6 whitespace-pre-wrap">
+                  {profile.company.companyDescription}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── THE PRIMARY CONTACT ──────────────────────────────────────
+              Released only once the vendor has ENGAGED - they quoted for this
+              customer, or they are on this customer's project.
+              THE LOCKED STATE SAYS WHY. An unexplained blank reads as a vendor
+              who left the field empty, which is a different fact and makes the
+              product look broken rather than deliberate. */}
+          {profile.primaryContact ? (
+            <div data-testid="vendor-primary-contact">
+              <h2 className="text-sm font-semibold mb-2">{ar ? 'جهة الاتصال الرئيسية' : 'Primary contact'}</h2>
+              <div className="grid gap-3 sm:grid-cols-2 text-sm">
+                {profile.primaryContact.primaryContactName && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">{ar ? 'الاسم' : 'Name'}</p>
+                    <p className="font-medium" data-testid="vendor-contact-name">
+                      {profile.primaryContact.primaryContactName}
+                      {profile.primaryContact.primaryContactPosition
+                        ? ` · ${profile.primaryContact.primaryContactPosition}` : ''}
+                    </p>
+                  </div>
+                )}
+                {profile.primaryContact.primaryContactEmail && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">{ar ? 'البريد الإلكتروني' : 'Email'}</p>
+                    <p className="font-medium break-all">{profile.primaryContact.primaryContactEmail}</p>
+                  </div>
+                )}
+                {(profile.primaryContact.primaryContactPhone || profile.primaryContact.primaryContactMobile) && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">{ar ? 'الهاتف' : 'Phone'}</p>
+                    <p className="font-medium">
+                      {[profile.primaryContact.primaryContactPhone, profile.primaryContact.primaryContactMobile]
+                        .filter(Boolean).join(' · ')}
+                    </p>
+                  </div>
+                )}
+                {profile.primaryContact.addressLine && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">{ar ? 'العنوان' : 'Address'}</p>
+                    <p className="font-medium">{profile.primaryContact.addressLine}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : profile.company && (
+            <div className="rounded-lg border border-dashed p-3" data-testid="vendor-contact-locked">
+              <p className="text-sm text-muted-foreground">
+                {ar
+                  ? 'تظهر بيانات جهة الاتصال المباشرة بعد أن يتقدّم هذا المورّد بعرض سعر على أحد طلباتك أو ينضم إلى أحد مشاريعك.'
+                  : 'Direct contact details appear once this vendor has quoted on one of your requests or joined one of your projects.'}
+              </p>
+            </div>
+          )}
 
           {/* THE SERVICES THIS VENDOR DECLARED.
               From vendorCategories - the same list that decides which RFQs

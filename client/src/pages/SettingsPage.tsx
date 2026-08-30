@@ -39,6 +39,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import DashboardLayout from '@/components/DashboardLayout';
 import VendorProfileCard from '@/components/VendorProfileCard';
 import VendorBilling from '@/components/VendorBilling';
+import VendorCompanyProfile from '@/components/VendorCompanyProfile';
 import VendorServiceCategories from '@/components/VendorServiceCategories';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -101,6 +102,27 @@ export default function SettingsPage() {
           title={ar ? 'الملف الشخصي' : 'Profile'}
         >
           <Card><CardContent className="pt-6"><VendorProfileCard /></CardContent></Card>
+        </Section>
+
+        {/* ── The company record: providers only ─────────────────────────── */}
+        {/*
+          Separate from Profile above, because they answer different questions.
+          That card is the PERSON's account - name, bio, avatar. This is the
+          COMPANY a customer contracts with, and its fields sit at three
+          different visibility tiers which the form states on itself.
+        */}
+        <Section
+          id="settings-company"
+          icon={<UserRound className="h-5 w-5" />}
+          title={ar ? 'بيانات الشركة' : 'Company details'}
+        >
+          {isProvider
+            ? <Card><CardContent className="pt-6"><VendorCompanyProfile /></CardContent></Card>
+            : <NotForThisAccount
+                ar={ar}
+                en="Company details apply to provider accounts — suppliers, contractors, engineers, architects and project managers."
+                arabic="بيانات الشركة تخص حسابات مقدّمي الخدمة: الموردين والمقاولين والمهندسين والمعماريين ومديري المشاريع."
+              />}
         </Section>
 
         {/* ── Plan & billing: providers only, and said so otherwise ──────── */}

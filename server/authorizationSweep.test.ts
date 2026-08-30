@@ -60,8 +60,18 @@ function procedureBody(qualified: string): string {
   const start = block.indexOf(`\n  ${procedure}: `);
   expect(start, `${qualified} not found in ${routerName}Router`).toBeGreaterThan(-1);
   // Ends at the next top-level procedure declaration, or the router's close.
+  //
+  // THE MATCH DELIBERATELY STARTS AT THAT PROCEDURE'S OWN COMMENT, not at its
+  // name, so a doc comment belonging to the NEXT procedure is not counted as
+  // part of THIS one's body. That mattered the moment a JSDoc block appeared
+  // between two procedures: `profile.update` was reported as containing
+  // "userId" because the following procedure's comment - which says it takes
+  // no userId - had been swept into update's body. The rule was right and the
+  // extractor was wrong.
+  //
+  // Both comment forms, because the file uses both.
   const rest = block.slice(start + 3);
-  const nextMatch = /\n {2}(?:\/\/[^\n]*\n {2})*\w+:\s*(?:(?:public|protected|admin|superAdmin|approvedProvider|compliance)Procedure|adminWith\()/.exec(rest);
+  const nextMatch = /\n {2}(?:\/\*\*[\s\S]*?\*\/\n {2}|\/\/[^\n]*\n {2})*\w+:\s*(?:(?:public|protected|admin|superAdmin|approvedProvider|compliance)Procedure|adminWith\()/.exec(rest);
   return block.slice(start, nextMatch ? start + 3 + nextMatch.index : routerEnd - routerStart);
 }
 

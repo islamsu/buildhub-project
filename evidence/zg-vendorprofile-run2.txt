@@ -1,0 +1,44 @@
+PASS  the vendor can save their company profile  [http=200 err=null]
+PASS  DATABASE: exactly one profile row, on the vendor's own account
+PASS  DATABASE: the company name persisted
+PASS  saving again UPDATES rather than creating a second row
+PASS  DATABASE: the update landed
+PASS  an emptied field is CLEARED to NULL, not stored as an empty string  [website=NULL http=200]
+PASS  a stranger can see the company block  [company=Nile Steel Works LLC]
+PASS  a stranger gets NO contact block  [primaryContact=null]
+PASS  and the response says WHY, so the page can explain rather than show a blank  [access=none]
+PASS  NO CONTACT VALUE anywhere in the stranger's payload  [no leak]
+PASS  a stranger does not receive the registration number
+PASS  SETUP: the buyer cannot see contact BEFORE the vendor quotes  [access=none]
+PASS  the vendor quotes on the BUYER's RFQ  [http=200 err=null]
+PASS  THE BUYER NOW SEES THE CONTACT BLOCK - the vendor engaged  [access=quoted]
+PASS  and it is the real contact the vendor nominated  [name=Mona Farid]
+PASS  the buyer still does NOT get the registration number
+PASS  CROSS-CUSTOMER: the OTHER customer still sees nothing, though the vendor quoted for somebody  [access=none]
+PASS  CROSS-CUSTOMER: and no contact value reaches them  [no leak]
+PASS  SETUP: the vendor is on the other customer's project
+PASS  PROJECT MEMBERSHIP unlocks the contact block for the project OWNER  [access=project]
+PASS  CROSS-CUSTOMER: another customer's project does not unlock the vendor for the buyer  [access=quoted]
+PASS  SETUP: the vendor was removed from the project
+PASS  REMOVED MEMBER: contact access ENDS with the membership  [access=none]
+PASS  REMOVED MEMBER: and no contact value survives in the payload  [no leak]
+PASS  SUPER ADMIN sees the contact block  [access=admin]
+PASS  SUPER ADMIN sees the registration number, for investigation  [reg=CR-99887766]
+PASS  but NO credential of any kind reaches even Super Admin  [no credential]
+PASS  a customer calling saveMyCompanyProfile cannot touch the vendor's row  [still=Nile Steel Works LLC http=403]
+PASS  LIVE UI: the buyer's page shows the company
+PASS  LIVE UI: and the primary contact, because they earned it
+PASS  LIVE UI: the contact name renders
+PASS  LIVE UI: the stranger sees the company
+PASS  LIVE UI: but the contact block is absent
+PASS  LIVE UI: and the page EXPLAINS why rather than showing a blank
+PASS  LIVE UI: no contact value is in the stranger's rendered page  [no leak on screen]
+PASS  LIVE AR: the locked explanation renders in Arabic  [تظهر بيانات جهة الاتصال المباشرة بعد أن يتقدّم هذا المورّد ب]
+PASS  LIVE UI: the company form is on the vendor's settings page
+PASS  LIVE UI: the form is pre-filled from the database, not blank  [value=Nile Steel Works LLC]
+PASS  LIVE UI -> DATABASE: typing and saving actually changed the row  [Nile Steel Works International]
+PASS  LIVE UI: the screen confirms the save
+PASS  LIVE UI: the form TELLS the vendor the contact block is not public  [visibility stated on the form]
+PASS  LIVE UI: and that the registration number is admin-only  [registration visibility stated]
+
+42/42 passed

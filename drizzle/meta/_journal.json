@@ -197,6 +197,13 @@
       "when": 1788060000000,
       "tag": "0027_project_members_and_rfq_invitations",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "5",
+      "when": 1788150000000,
+      "tag": "0028_vendor_profiles_and_sponsorships",
+      "breakpoints": true
     }
   ]
 }
