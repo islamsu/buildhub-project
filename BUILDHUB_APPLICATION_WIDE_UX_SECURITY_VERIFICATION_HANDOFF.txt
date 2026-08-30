@@ -486,13 +486,31 @@ These are not synonyms and this report does not treat them as such.
   COMMITTED        yes - six commits, a1cb7be through the behavioural test
   PUSHED           yes - claude/buildhub-audit-verification-vrai7l
   MERGED           yes - PR #40, merge commit 07ef79a, all six CI checks green
-  DEPLOYED         Render autoDeploys `main`. DEPLOYED means /version reports
-                   the merge commit - not that a merge happened.
-  LIVE VERIFIED    means staging-qa.yml ran with STAGING_EXPECT_COMMIT set to
-                   that same SHA and the gate passed. Nothing short of that.
+  DEPLOYED         yes - /version on staging reports 96ba9fe
+  LIVE VERIFIED    yes - gate run #58, STAGING_EXPECT_COMMIT=96ba9fe,
+                   704/704 checks passed, 5 skipped, 0 failed
 
-MAIN == DEPLOYED == GATE is the only claim worth making, and it is only made
-once /version, the merge SHA and the gate run agree on one commit.
+MAIN == DEPLOYED == GATE holds on 96ba9feca56553c7f5f67dcdee8b5f9ebb050aba.
+
+AND THE FIRST ATTEMPT DID NOT, WHICH IS THE POINT OF PINNING IT.
+
+Run #57 was dispatched with expect_commit set to the MERGE commit, 07ef79a.
+It came back 703/704 with exactly one failure:
+
+  FAIL  0. the deployed commit is the one under test
+        - expected 07ef79a9bc00, serving 96ba9feca56553c7f5f67dcdee8b5f9ebb050aba
+
+Render autoDeploys the TIP of main, and the report commit had landed on top of
+the merge. So staging was serving 96ba9fe - which contains 07ef79a and differs
+from it by thirteen lines of this document and no code at all. The deployment
+was right; the expectation was wrong.
+
+Recorded rather than quietly re-run, because it is the clearest evidence in
+this report that the pin does real work. Without it the run would have passed
+703 checks against an unnamed build and been reported as success. `git
+merge-base --is-ancestor 07ef79a origin/main` and a `git diff --stat` between
+the two were used to confirm the relationship before re-dispatching - not
+assumed from the fact that both numbers looked familiar.
 
 --------------------------------------------------------------------------------
 13. §74 DEFINITION OF DONE - WHAT IS AND IS NOT CLAIMED
@@ -500,10 +518,22 @@ once /version, the merge SHA and the gate run agree on one commit.
 
 CODE COMPLETE       yes, for the eleven items in scope.
 LOCALLY VERIFIED    yes, with the exception in section 11.
-STAGING VERIFIED    only for what the gate covers, and only at the SHA the
-                    gate names. Object storage and SMTP are absent on staging
-                    as well; those paths remain BLOCKED BY INFRASTRUCTURE
-                    there too, and no gate check pretends otherwise.
+STAGING VERIFIED    yes, for what the gate covers, at the SHA the gate names:
+                    704/704 against https://buildhub-staging.onrender.com.
+                    That is up from 645 checks at the previous gate; the new
+                    section 33 and the widened section 32 added 59.
+
+                    FIVE checks are SKIPPED and the harness says why in its
+                    own words rather than passing them:
+                      9.  password reset - SMTP_HOST unset
+                      10. upload to the staging bucket - S3_* not configured
+                      30. storing an AI attachment end to end - same cause
+                      30. cross-user attachment access - needs a stored file
+                      29. the knowledge suite - opt-in, twelve paid requests
+
+                    The same two pieces of infrastructure are missing locally,
+                    which is why accept2, accept3 and pwreset are blocked in
+                    section 11. It is one gap, visible from two directions.
 PRODUCTION READY    NOT claimed by this document. The verdict carried forward
                     from the previous handoff is CONDITIONAL GO, and nothing
                     found in this pass changes it in either direction:
