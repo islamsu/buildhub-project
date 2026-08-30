@@ -130,6 +130,26 @@ describe('country of origin', () => {
     expect(create).toContain('origin: z.string().max(100).optional()');
   });
 
+  it('the BULK IMPORT path applies the same unit rule as the form', () => {
+    // The gap this closes: `create` and `updateProduct` both went through
+    // normaliseUnit; `importProducts` wrote `row.unit` straight from the CSV.
+    // A supplier could not list ONE product per "ton" through the form and
+    // could list five hundred through a spreadsheet.
+    const importBlock = ROUTERS.slice(
+      ROUTERS.indexOf('  importProducts:'),
+      ROUTERS.indexOf('  uploadProductImage:'),
+    );
+    expect(importBlock.length, 'importProducts block not found').toBeGreaterThan(400);
+    expect(importBlock).toContain('normaliseUnit(row.unit, null)');
+    // Refused as a per-line error the supplier can act on, not thrown away
+    // silently and not accepted.
+    expect(importBlock).toContain("column: 'unit'");
+    expect(importBlock).toContain('...unitErrors');
+    // And it must reach BOTH the reported list and the count, or the import
+    // would report zero errors and then refuse to run.
+    expect(importBlock.match(/\.\.\.unitErrors/g)?.length).toBe(2);
+  });
+
   it('and a form actually collects it', () => {
     const form = read('../client/src/pages/ProductFormPage.tsx');
     expect(form).toContain('data-testid="product-origin"');

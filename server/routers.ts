@@ -1483,14 +1483,37 @@ const marketplaceRouter = router({
         .filter(row => row.name && alreadyListed.has(row.name.trim().toLowerCase()))
         .map(row => ({ line: row.line, column: 'name', message: `"${row.name}" is already in your catalogue` }));
 
-      const errors = [...parsed.errors, ...conflicts]
+      /**
+       * THE UNIT RULE APPLIES HERE TOO.
+       *
+       * `create` and `updateProduct` both send `unit` through normaliseUnit;
+       * this path wrote `row.unit` straight from the file. A supplier could
+       * not list ONE product priced per "ton" through the form, and could
+       * list five hundred of them through a spreadsheet - which would have
+       * quietly undone the whole point of having a list.
+       *
+       * Reported per line like every other import error, naming what is
+       * acceptable, so the file can be corrected and re-uploaded. Every row
+       * here is NEW, so there is no stored value to preserve: the legacy
+       * escape hatch in normaliseUnit has nothing to match against and an
+       * unknown unit is simply refused.
+       */
+      const unitErrors = parsed.rows
+        .filter(row => !normaliseUnit(row.unit, null).ok)
+        .map(row => ({
+          line: row.line,
+          column: 'unit',
+          message: `"${row.unit}" is not a unit BuildHub recognises. Use one of: ${PRODUCT_UNITS.join(', ')}`,
+        }));
+
+      const errors = [...parsed.errors, ...conflicts, ...unitErrors]
         .sort((a, b) => a.line - b.line)
         .slice(0, 100);   // a bounded report; the first hundred are enough to act on
 
       const summary = {
         totalRows: parsed.rows.length,
         errors,
-        errorCount: [...parsed.errors, ...conflicts].length,
+        errorCount: [...parsed.errors, ...conflicts, ...unitErrors].length,
         duplicatesInFile: parsed.duplicatesInFile,
         imported: 0,
         dryRun: input.dryRun,
