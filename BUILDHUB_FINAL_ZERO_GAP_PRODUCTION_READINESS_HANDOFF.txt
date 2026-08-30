@@ -1,0 +1,976 @@
+================================================================================
+BUILDHUB — FINAL ZERO-GAP PRODUCTION READINESS HANDOFF
+================================================================================
+
+DATE:        2026-08-30
+PROJECT:     BuildHub
+REPOSITORY:  github.com/islamsu/buildhub-project
+MANDATE:     Ultimate Master Platform Audit (91 parts) + Mandatory Execution
+             Addendum (23 items)
+
+--------------------------------------------------------------------------------
+1. EXECUTIVE SUMMARY
+--------------------------------------------------------------------------------
+
+Four capabilities the mandate names as REQUIRED did not exist. They were built,
+tested, mutation-tested and driven in a real browser. Two defects were found -
+both by using the product, neither by reading it, and neither visible to a green
+test suite.
+
+WHAT DID NOT EXIST BEFORE THIS PASS
+
+  Part 45  A vendor's qualified-enquiry allowance could not be moved. It came
+           from the plan constant, and the only lever an administrator had was
+           to change the vendor's PLAN - which rewrites what that vendor is
+           recorded as having agreed to pay and hands them every other
+           capability of the tier.
+
+  Part 46  No individual entitlement override existed, so there was no way to
+           grant capacity without the shortcut above.
+
+  Parts    No old -> new values were recorded anywhere. The commercial audit
+  42-44    trail deliberately keeps field NAMES and not their values, so
+           "what was the price before it changed" had no answer.
+
+  Parts    A dispute could not be reconstructed. Every fragment existed
+  41,52    separately; nothing joined them.
+
+  Part 48  There was no way to turn a name or an email address into a record
+           id - and the dispute investigation above demands one. It was
+           reachable only by an administrator who already knew the answer.
+
+  Part 49  Nothing answered "what is wrong with the data right now". The
+           underlying facts were all queryable; no screen asked the questions.
+
+  Part 50  Nothing told an operator whether this deployment was working.
+           /healthz, /readyz and /version exist for machines; the console had
+           no operational view at all.
+
+WHAT WAS BROKEN
+
+  An engineer or architect could submit a priced commercial bid and had nowhere
+  in their own workspace to see it. They are offered "Create Quotation", the
+  server accepts it, myQuotations was fetched for them - and the result was
+  discarded, because only two of the five provider workspaces rendered it.
+
+  A price change that never happened. Saving a product twice recorded
+  "price 1720.00 -> 1720". A DECIMAL column reads back with scale while the
+  patch supplies a bare number, and the comparison was === on the strings. The
+  history an administrator reads in a dispute was manufacturing changes.
+
+  A console tab that could never answer. "Fraud Detection" rendered a permanent
+  empty state - there is no detector and no signals table behind it, so no data
+  could ever appear there. It has been REMOVED rather than furnished with an
+  invented detector, and automated fraud detection is recorded as NOT
+  IMPLEMENTED. A tab that can never answer teaches an administrator to stop
+  reading the console.
+
+WHAT WAS DELIBERATELY NOT BUILT
+
+  The owner's instruction was to build the capabilities with real data behind
+  them. Three had it and were built. Orders, order value and revenue do not
+  exist in this build - there is no order entity - and a fraud detector has no
+  signal to detect. Those are stated as absent rather than mocked up, here and
+  on the screens themselves.
+
+VERDICT:  CONDITIONAL GO  (see §47 and §90 for the conditions)
+
+--------------------------------------------------------------------------------
+2. EXACT SHA
+--------------------------------------------------------------------------------
+
+AUDITED / MERGED / DEPLOYED / GATED SHA:
+  39bc86badc6d864df5e2e49d14f2868f00be4fb9
+
+  EARLIER SHAs IN THIS ENGAGEMENT:
+  c6e5564c2dba89e120453120adcac3b40e13c3ff  PR #37, gate run #55: 639/640
+  e13be78a801d7e2bfef8ada2eb144a7dfd9e489f  PR #36, gate run #54: SUCCESS
+
+--------------------------------------------------------------------------------
+3-6. GIT, MAIN, STAGING AND GATE STATE  (addendum §22 - SIX SEPARATE STATES)
+--------------------------------------------------------------------------------
+
+These are reported separately and are NOT the same statement.
+
+  IMPLEMENTED     YES   7 commits of application code, schema, migration,
+                        tests and gate harness
+  COMMITTED       YES   8869af8, eb32af2, a5bc055, 3315e9e, 27f413e, 6ba7e5a,
+                        a5d8bf1
+  PUSHED          YES   origin/claude/buildhub-audit-verification-vrai7l
+  MERGED          YES   PR #38 -> main, merge commit 39bc86b
+                        (PR #37 -> c6e5564 and PR #36 -> e13be78 earlier in
+                        this same engagement)
+  DEPLOYED        YES   Render autoDeploy on main; /version at the gate run
+                        reported 39bc86badc6d864df5e2e49d14f2868f00be4fb9
+  LIVE VERIFIED   YES in both scopes, and they are DIFFERENT statements:
+                  locally in full (§7-§43), and on staging by gate run #56 at
+                  this exact commit - 645/645, 5 skipped. See the gate table
+                  below. The five skips are not passes.
+
+  BRANCH          claude/buildhub-audit-verification-vrai7l
+  PREVIOUS SHA    c6e5564c2dba89e120453120adcac3b40e13c3ff
+  AUDITED SHA     39bc86badc6d864df5e2e49d14f2868f00be4fb9
+
+  ONE HONEST WRINKLE, STATED RATHER THAN GLOSSED. This document is itself a
+  commit, and it lands AFTER the commit it describes. So the tip of main
+  carries one more commit than the audited SHA, and that commit changes no
+  application code, no test, no schema and no workflow - only this file.
+
+  The audited, deployed and gated SHA is 39bc86b. A later documentation-only
+  commit does not make that claim stale, and re-gating after every edit to a
+  report would be a loop with no fixed point. What would invalidate it is a
+  change to code, tests, schema or the harness; there is none in that commit,
+  and `git show --stat` is the check.
+  CI ON PR #38    6/6 green
+  CI ON PR #37    6/6 green, including "Migrations apply from empty"
+  CI ON PR #36    6/6 green
+
+  DEPLOYMENT MECHANISM. render.yaml sets branch: main, autoDeploy: true. The
+  deploy-staging.yml workflow has NEVER deployed anything - its gate evaluates
+  to false because the staging secrets are unset. Render is the mechanism.
+
+  LIVE VERIFICATION HAS TWO SCOPES AND THEY ARE NOT INTERCHANGEABLE:
+
+    LOCAL LIVE   real browser (Chromium), real MariaDB 10.11.14, real
+                 S3-compatible endpoint, real mailer. Everything in §7-§43.
+    STAGING      the deployed application, exercised from a GitHub runner by
+                 staging-qa.yml with expect_commit pinned. Gate run #56 at
+                 39bc86b: 645/645, 5 skipped.
+
+  Nothing verified locally is reported as staging-verified anywhere in this
+  document.
+
+  THE GATE HISTORY, INCLUDING THE FAILURE. Recorded because the failure is
+  more instructive than the pass:
+
+    RUN  SHA       RESULT   NOTE
+    #52  785e9e2   SUCCESS  the previous audited SHA
+    #53  e13be78   FAILURE  638/640. Two failures, ONE root cause: the gate ran
+                            while Render's deploy of that commit was still in
+                            flight. Check 0 read the old commit from /version
+                            and expect_commit correctly refused it; check 24
+                            (upload flooding) failed because the restart had
+                            just cleared the in-memory burst counter (see O3).
+                            638/640 was NOT reported as evidence for e13be78.
+    #54  e13be78   SUCCESS  re-dispatched after the deploy settled.
+    #55  c6e5564   FAILURE  639/640, and the one failure was the gate itself:
+                            check 26 asserted that the admin navigation offers
+                            "Fraud Detection" - the dead tab this pass removed.
+                            The gate was demanding the presence of a defect.
+                            Check 0 PASSED at this run: expected c6e5564c2dba,
+                            serving c6e5564c2dba89e120453120adcac3b40e13c3ff,
+                            so MAIN == DEPLOYED == GATE was proven there. The
+                            check was INVERTED and WIDENED rather than deleted
+                            (a5d8bf1): "Fraud Detection" must now be ABSENT,
+                            "Operations" must be present, the Operations screen
+                            must render at least nine data-quality checks and
+                            the health panel, it must name what it does not
+                            measure, and unset object storage must read NOT
+                            CONFIGURED on the deployment where it is genuinely
+                            unset. Deleting the line would have shrunk the gate.
+    #56  39bc86b   SUCCESS  645/645 checks passed, 5 skipped.
+                            PASS 0. the deployed commit is the one under test
+                            - expected 39bc86badc6d, serving
+                            39bc86badc6d864df5e2e49d14f2868f00be4fb9.
+                            645, not 640, because the gate GAINED five checks
+                            in this pass: Operations present, Fraud Detection
+                            absent, nine data-quality rows rendered, the health
+                            panel rendered, the unmeasured metrics named, and
+                            unset object storage reading NOT CONFIGURED.
+
+  THE FIVE SKIPS, unchanged and NOT passes:
+    9.  password reset          SMTP_HOST unset on staging
+    10. upload to the bucket    S3_* unset on staging
+    29. AI knowledge suite      opt-in; twelve extra PAID provider requests
+    30. storing an attachment   S3_* unset on staging
+    30. cross-user attachment   requires stored attachment, requires storage
+
+--------------------------------------------------------------------------------
+7. ROLE MATRIX  (§2, §4 - 128/128 live, 0 failed, re-run at c6e5564)
+--------------------------------------------------------------------------------
+
+Every role driven end to end as a real user: login -> dashboard -> every KPI ->
+every quick action -> every sidebar item -> list -> detail -> main action ->
+save -> notification -> next action.
+
+  ROLE              LOGIN  DASH  KPIs   QUICK  SIDEBAR  MAIN ACTION            RESULT
+  Homeowner          yes   /platform/homeowner  2/2  4/4  7/7  post an RFQ      PASS
+  Contractor         yes   /platform/contractor 4/4  4/4  8/8  submit quotation PASS
+  Engineer           yes   /platform/engineer   4/4  4/4  8/8  submit quotation PASS
+  Architect          yes   /platform/architect  4/4  4/4  8/8  submit quotation PASS
+  Supplier           yes   /platform/supplier   4/4  4/4  8/8  submit quotation PASS
+  Project Manager    yes   /platform/project_manager 4/4 4/4 6/6 coordinate     PASS
+  Administrator      yes   /admin               n/a  n/a  8/8  review applicant PASS
+
+  Every KPI is traced to an owner-filtered query. No global query is disguised
+  as a personal one.
+
+  APPROVAL GATE, verified per provider role: an unapproved provider is sent to
+  /compliance rather than shown an empty workspace, and the API refuses their
+  quotation with a message naming the registration step.
+
+--------------------------------------------------------------------------------
+8. SUBSCRIPTION MATRIX  (§3, Part 6/7 - 36/36 live, 0 failed)
+--------------------------------------------------------------------------------
+
+Every state reached through the REAL lifecycle procedures - trial, payment
+success, payment failure, recovery, plan change, reconciliation - never by
+writing a status into the table.
+
+  ROLE      PLAN          ACCOUNT    APPROVAL   OWNERSHIP  EXPECTED      ACTUAL
+  supplier  professional  trial      NOT appr.  own        DENIED        403 naming /compliance
+  supplier  professional  trialing   approved   own        30 enquiries  30
+  supplier  professional  active     approved   own        30 enquiries  30
+  supplier  professional  past_due   approved   own        keep paid     30 (grace honoured)
+  supplier  premium       active     approved   own        unlimited     null
+  supplier  free (expired) expired   approved   own        5             5
+  supplier  free+override  expired   approved   own        2 then refuse granted 2, third 403
+  rival     premium       active     approved   NOT owner  DENIED        404 / 404 / 403
+  rival     premium       FROZEN     approved   own        DENIED        403, 0 rows
+
+  BOUNDARY, exercised for real: 0 remaining, 1 remaining, exactly at the limit,
+  limit+1 refused with nothing charged, and a re-open of an already-paid lead
+  free of charge.
+
+  CONCURRENCY: two simultaneous opens of the same lead charge exactly once
+  (200/403, 1 row), with no 5xx.
+
+  FRONTEND AND BACKEND AGREE: with an administered allowance of 17 the vendor's
+  own workspace renders exactly "3 / 17" and the remaining figure the server
+  computed - asserted as an exact string, with a negative control that the
+  plan's own 5 is NOT what is shown.
+
+  NOTHING THE CLIENT SUBMITS GRANTS ANYTHING: a plan id in the payload, a role
+  field, another user's id, and a self-service limit raise are all refused, with
+  a positive control that the allowance is unchanged afterwards.
+
+--------------------------------------------------------------------------------
+9-10. DASHBOARD MATRIX AND CLICK MAP  (§4 - 146 rows)
+--------------------------------------------------------------------------------
+
+Every dashboard card, KPI, quick action and sidebar entry was CLICKED, for every
+role, and recorded as SOURCE / ACTION / EXPECTED / ACTUAL / DESTINATION / STATUS
+in roles-clickaudit.json. 146 rows, no dead control, no card that opens an
+unrelated page.
+
+A control counts as working only on an OBSERVABLE CONSEQUENCE - a navigation, a
+dialog, a hash change, or a section scrolled into view. Three rules were
+corrected during the pass because they measured the wrong thing:
+
+  * a sidebar entry that reveals a section changes the HASH, not the path
+  * "Overview" resolves to the bare workspace by design, so from the bare
+    workspace it correctly does nothing; it is judged on clearing a section
+  * a dialog is not measured by the URL
+
+--------------------------------------------------------------------------------
+11-12. VENDOR AND PRIMARY CONTACT MATRIX  (§6 - 50/50 live)
+--------------------------------------------------------------------------------
+
+  Vendor card -> exact vendor detail (company, location, specialization,
+  verification, products) -> Contact -> conversation addressed to THAT vendor
+  -> message -> notification -> reply.
+
+  PRIMARY CONTACT MODEL, verified explicitly rather than assumed: the public
+  vendor record declares contactChannel: 'message' and carries NO email address.
+  An anonymous reader gets 401; an unrelated signed-in account gets no email; a
+  customer is refused admin.users (403) and the account audit (404). Contact is
+  a relationship established through the platform, enforced server-side.
+
+--------------------------------------------------------------------------------
+13-15. PRODUCT, PRODUCT IMAGE AND BATCH IMPORT MATRIX  (§7, §11 - 29/29 live)
+--------------------------------------------------------------------------------
+
+  PRODUCT LIFECYCLE: create -> save -> upload image -> customer sees it
+  RENDERED (1x1 complete=true, not merely a URL in the DOM) -> second image ->
+  remove -> delist -> removed from the public catalogue.
+
+  OWNERSHIP: a rival supplier cannot set images (404), rename (404), or attach
+  another supplier's storage key (403).
+
+  BATCH PRODUCT IMPORT — CLASSIFICATION (§11), stated as exactly one label:
+
+      IMPLEMENTED + LIVE VERIFIED
+
+  Evidence: a CSV template is offered; a dry run previews and writes nothing; a
+  commit creates both rows and they belong to the importing supplier; a
+  malformed row is refused with nothing written; a non-supplier is refused
+  (403); and the import surface is reachable in the supplier workspace with a
+  file chooser and a template download.
+
+--------------------------------------------------------------------------------
+16-17. RFQ AND RFQ BASKET MATRIX  (§10 - 50/50 live)
+--------------------------------------------------------------------------------
+
+  Three products added -> basket opened -> quantity changed to 25 -> one removed
+  -> SURVIVES A REFRESH -> submitted. The resulting RFQ contains EXACTLY the
+  final basket contents: two lines at 25.00 and 45.00. Another homeowner is
+  refused the RFQ (404) and has an empty basket of their own.
+
+--------------------------------------------------------------------------------
+18-20. SUPPLIER RESPONSE, QUOTATION AND ATTACHMENT MATRIX  (§8, §9 - 56/56 live)
+--------------------------------------------------------------------------------
+
+  Supplier opens the EXACT RFQ -> responds -> attaches a real PDF and a real PNG
+  (stored under quotation-attachments/user-<id>/) -> submits -> customer is
+  notified -> quotation detail shows id, RFQ link, supplier, price, currency,
+  timeline, warranty, payment terms, notes, status and both attachments ->
+  customer retrieves the attachment.
+
+  ISOLATION: Supplier B is refused Supplier A's quotation four ways - the API
+  (404), the detail page (not-found), the attachment (403) and the quotations
+  list (403).
+
+--------------------------------------------------------------------------------
+21-22. PROJECT AND DOCUMENT MATRIX
+--------------------------------------------------------------------------------
+
+  Project create -> detail -> documents -> RFQs -> quotations -> messages, with
+  owner / member / unrelated-user separation verified in the attack matrix
+  (§33). Covered by chains 39/39.
+
+--------------------------------------------------------------------------------
+23-24. MESSAGING AND NOTIFICATION MATRIX  (§19 - deep links)
+--------------------------------------------------------------------------------
+
+  EVENT                      RECIPIENT      LINK                    OPENS
+  quotation received         requester      /rfq/<id>               that request
+  quotation accepted         winning bidder /quotations/<id>        their quotation
+  quotation rejected         that bidder    /rfq/<id>               that request
+  message received           recipient      /messages?to=<sender>   that conversation
+  compliance decision        applicant      /compliance             their status
+  registration reviewed      applicant      /compliance             their status
+
+  Every link was FOLLOWED and the target asserted to be the exact record. In the
+  cross-role run every notification link was additionally asserted to name THIS
+  request or a bid on it - four links, all correct.
+
+  ISOLATION: an unrelated homeowner receives nothing; an unrelated account sees
+  none of a conversation it is not party to.
+
+--------------------------------------------------------------------------------
+25. PASSWORD RESET MATRIX — CLASSIFICATION PER FACET  (§12)
+--------------------------------------------------------------------------------
+
+  FACET                     STATUS
+  logic                     LIVE VERIFIED (local)
+  UI                        LIVE VERIFIED (local) - the reset page renders
+  email delivery            LIVE VERIFIED (local, real mailer, message received)
+  token                     LIVE VERIFIED - 45 chars, and the DATABASE STORES A
+                            HASH, not the token that was emailed
+  single use                LIVE VERIFIED - second attempt 404, password unchanged
+  expiration                LIVE VERIFIED - expired token 400, password unchanged
+  old-password rejection    LIVE VERIFIED - old password 401 after reset
+  session behaviour         LIVE VERIFIED - new password signs in
+  account enumeration       LIVE VERIFIED - unknown address gets the same answer
+
+  STAGING EMAIL ROUND TRIP:  BLOCKED BY INFRASTRUCTURE
+
+  SMTP_HOST is unset on staging. The lifecycle is NOT reported as fully verified
+  in the deployed environment, and nothing was faked to close it.
+
+--------------------------------------------------------------------------------
+26-27. AI AND AI TRANSACTION MATRIX  (§13)
+--------------------------------------------------------------------------------
+
+  REQUIREMENT                                            STATUS
+  1  website language -> AI language                     LIVE VERIFIED (staging, prior SHA)
+  2  role -> role-specific AI experience                 LIVE VERIFIED (staging, prior SHA)
+  3  subscription -> AI entitlement                      UNIT VERIFIED
+  4  project/RFQ access -> context authorization         LIVE VERIFIED (local, chains)
+  5  BuildHub knowledge prioritised                      LIVE VERIFIED (staging, prior SHA)
+  6  marketplace data prioritised for recommendations    LIVE VERIFIED (staging, prior SHA)
+  7  trusted external information where appropriate      LIVE VERIFIED (staging, prior SHA)
+  8  BuildHub-listed vendors preferred                   LIVE VERIFIED (staging, prior SHA)
+  9  location/specialisation/reviews/verification rank   LIVE VERIFIED (staging, prior SHA)
+  10 attachments securely handled                        LIVE VERIFIED (local + staging)
+  11 prepare -> confirm -> authorized backend execution  LIVE VERIFIED (staging, prior SHA)
+  12 prompt injection cannot override authorization      LIVE VERIFIED (local + staging)
+
+  IMPORTANT AND STATED PLAINLY: the local environment has NO AI provider
+  configured (aiAssistant=false). The AI tool cards correctly render as
+  non-clickable with a notice explaining why - verified locally, 39/39 chains.
+  Every "staging" row above was verified by the staging gate's AI section at an
+  EARLIER SHA. Their status at e13be78 depends on the gate result in §6; no AI
+  code changed in this pass.
+
+--------------------------------------------------------------------------------
+28. SUPER ADMIN CAPABILITY MATRIX  (§14, Part 82)
+--------------------------------------------------------------------------------
+
+  CAPABILITY               AVAILABLE  BACKEND   BROWSER   AUDITABLE  SECURE
+  user management          yes        yes       yes       yes        allowlisted columns
+  supplier management      yes        yes       yes       yes        marketplace.manage
+  customer management      yes        yes       yes       yes        users.manage
+  RFQ investigation        yes (NEW)  yes       yes       yes        SUPER_ADMIN only
+  quotation history        yes (NEW)  yes       yes       yes        owner or admin
+  price changes            yes (NEW)  yes       yes       yes        owner or admin
+  product management       yes        yes       yes       yes        marketplace.manage
+  document management      yes        yes       partial   yes        owner-scoped
+  messages / cases         yes        yes       yes       yes        in investigation
+  notifications            yes        yes       yes       yes        in investigation
+  subscriptions            yes        yes       yes       yes        billing.read/manage
+  credits                  yes        yes       yes       yes        billing.read
+  qualified-enquiry limits yes (NEW)  yes       yes       yes        SUPER_ADMIN write
+  sales KPIs               yes        yes       yes       n/a        billing.read
+  supplier performance     yes        yes       yes       n/a        marketplace.manage
+  customer activity        yes        yes       yes       yes        users.read
+  commercial audit trail   yes        yes       yes       yes        audit.read
+  status history           yes (NEW)  yes       yes       yes        owner or admin
+  data quality             yes (NEW)  yes       yes       n/a        audit.read
+  operational health       yes (NEW)  yes       yes       n/a        audit.read, booleans only
+  cross-entity search      yes (NEW)  yes       yes       n/a        per-segment permission
+  exports                  partial    yes       yes       n/a        registration CSV
+  disputes                 yes        yes       yes       yes        support.manage
+  fraud detection          NO         no        no        n/a        NOT IMPLEMENTED
+
+  NOT PRESENT, stated rather than implied: there is no order/transaction entity
+  in this build, so order counts and order value are NOT IMPLEMENTED. There is
+  no fraud detector and no signals table, so automated fraud detection is NOT
+  IMPLEMENTED - the console tab that promised it has been removed rather than
+  left promising an answer it could never give.
+
+--------------------------------------------------------------------------------
+28b. THE OPERATIONS DESK  (Parts 48, 49, 50 - 106/106 live, 0 failed)
+--------------------------------------------------------------------------------
+
+  Three capabilities the mandate names as required and that did not exist. All
+  three are backed entirely by real rows; nothing here is scored, averaged or
+  graded, because there is no honest way to add "two duplicate accounts" to
+  "nine stale bids" and the resulting number would be the biggest thing on the
+  page.
+
+  PART 49 - DATA QUALITY.  admin.dataQuality, adminWith('audit.read').
+
+  Nine checks. Each was proved live by SEEDING ONE REAL DEFECT and asserting
+  the count moved by exactly one and the new record id appeared in the sample,
+  with a negative control that the checks nobody seeded did not move:
+
+    CHECK                                        SEEDED  MOVED BY  SAMPLE
+    approved_provider_missing_required_document  yes     1         id present
+    rfq_open_past_deadline                       yes     1         id present
+    quotation_pending_on_settled_rfq             yes     1         id present
+    notification_link_target_missing             yes     1         id present
+    history_subject_missing                      yes     1         id present
+    duplicate_account_email                      yes     2         both ids
+    duplicate_account_phone                      yes     2         both ids
+    active_product_without_price                 yes     1         id present
+    active_product_of_frozen_supplier            yes     1         id present
+
+  A duplicate is a PAIR, so seeding one new account makes TWO rows offending.
+  Expecting +1 there was the harness being wrong about the domain; the check
+  was right. Recorded because it is the kind of "failure" that gets a correct
+  implementation changed.
+
+  IDS, NEVER VALUES. The read is audit.read, which USER_ADMIN holds. A
+  duplicate-email check that returned the addresses would be a way to enumerate
+  account emails through a screen that is not the user directory. Asserted
+  against the response bytes: the customer's email, their phone number and the
+  seeded product and request titles are all absent from a 1,146-byte payload
+  that names them by id.
+
+  ZERO IS ZERO, NOT "HEALTHY", AND A FAILED CHECK IS NOT ZERO. A check whose
+  query throws reports null and renders "could not be checked" in the
+  destructive colour. A broken query and a clean platform must never be the
+  same pixel.
+
+  SEEDED QA DATA IS EXCLUDED BY DEFAULT, proven both ways: a defect on an
+  isDummy account did not move the count with the toggle off, moved it by
+  exactly one with the toggle on, and its id appeared only in the inclusive
+  sample.
+
+  ON duplicate_account_email BEING REACHABLE AT ALL: users.email carries a
+  UNIQUE index. That was checked rather than assumed - MariaDB compares the
+  stored bytes, so ' a@b.test' and 'a@b.test' both insert cleanly and are the
+  same address to a person. The check normalises with trim() and lower() and
+  finds exactly the pairs the index lets through. It is also the guard that
+  survives if the constraint is ever dropped.
+
+  PART 50 - OPERATIONAL HEALTH.  admin.operationalHealth, adminWith('audit.read').
+
+    FIELD          SOURCE                                    LIVE RESULT
+    commit         buildCommit(), the same function /version  matches /version
+                   serves - one source, so the console and     exactly
+                   the staging gate cannot disagree
+    database       a real timed `select 1` behind the same    reachable, ms
+                   2s cap as the readiness probe              reported
+    migrations     rows in __drizzle_migrations against       honest null where
+                   drizzle's journal                          not recorded
+    dependencies   BOOLEANS ONLY                              see below
+    volumes        COUNT(*) per table                         matched the DB
+    backlogs       COUNT(*) per queue                         matched the DB
+    notMeasured    the five metrics BuildHub does not store   named on screen
+
+  EVERY DEPENDENCY IS A BOOLEAN AND NOTHING ELSE. No host, bucket, region, key,
+  URL, username or driver error string crosses the boundary. Proven against the
+  RESPONSE BYTES with real-looking secrets in the environment: not one of
+  SMTP_HOST, SMTP_PASSWORD, S3_BUCKET, S3_ENDPOINT, S3_SECRET_ACCESS_KEY,
+  OPENAI_API_KEY, DATABASE_URL or JWT_SECRET appears, nor the fragments
+  "mysql://", "sk-", "AKIA", "Bearer " or "://".
+
+  UNCONFIGURED RENDERS "NOT CONFIGURED" IN AMBER, with a sentence naming what
+  stops working - never a tick. This is the point of the screen: object storage
+  is genuinely unset, and a green tick would be exactly the false assurance
+  this audit exists to prevent. Verified in the browser in both languages.
+
+  WHAT IT DELIBERATELY DOES NOT MEASURE, printed on the page rather than
+  omitted: uptime, request error rate, request latency, throughput, background
+  queue depth. BuildHub persists none of them. A missing number sends someone
+  to look; a plausible invented one stops them looking.
+
+  A NOTE ON SMTP IN THE LOCAL EVIDENCE. On the local verification server the
+  SMTP dependency reads CONFIGURED, and that is true: in development with no
+  SMTP_HOST the app installs a terminal-printing mailer, and isMailerConfigured()
+  is the same predicate auth.capabilities uses to decide whether to offer
+  password reset at all. On staging, in production mode with SMTP_HOST unset,
+  it is the NullMailer and reads NOT CONFIGURED. The local run therefore proves
+  the amber path on object storage and the AI key, and the green path on SMTP -
+  and this document does not present the local SMTP result as a staging one.
+
+  PART 48 - CROSS-ENTITY SEARCH.  admin.platformSearch.
+
+  Built because the dispute investigation delivered in the previous pass asks
+  for a request id and an administrator taking a support call has a name or an
+  email. It was reachable only by someone who already knew the answer.
+
+  PER-SEGMENT PERMISSIONS, each the one that already governs that record type
+  elsewhere. A segment the administrator may not read produces NO QUERY AT ALL
+  and is reported as omitted - which is a different answer from "no results",
+  and collapsing the two is how a console teaches an administrator that a
+  record does not exist when they simply cannot look. Live, against real
+  sessions:
+
+    ROLE                SEGMENTS QUERIED                     TOLD IT IS CLOSED
+    SUPER_ADMIN         users rfqs quotations products projects   -
+    USER_ADMIN          users rfqs quotations projects            products
+    MARKETPLACE_ADMIN   users products                            rfqs quotations projects
+    BILLING_ADMIN       users                                     rfqs quotations products projects
+    SUPPORT_ADMIN       users                                     rfqs quotations products projects
+    approved supplier   403                                       -
+    signed-out visitor  401                                       -
+
+  WILDCARDS ARE ESCAPED, checked live: a search for "%" returns zero rows
+  rather than every row in five tables, and "_" is not a single-character
+  wildcard. An id search is an equality, so typing 42 finds record 42 and not
+  every record whose text mentions 42.
+
+  END TO END IN THE BROWSER: search a request by title, read its id off the
+  result, paste it into the investigation panel, and the right record opens.
+
+  THE FRAUD DETECTION TAB IS GONE. It rendered a permanent empty state with no
+  detector and no signals table behind it. The old /admin/fraud URL falls back
+  to the Users screen rather than erroring. Operations took the tab and is in
+  the admin sidebar, so it is reachable by ordinary navigation and not only by
+  typing a URL.
+
+  INSTRUMENT ERRORS CAUGHT BEFORE THEY BECAME CLAIMS (four this pass, all in
+  the harness, none reported as results):
+    - LAST_INSERT_ID() is per connection and every sql() call opened a new one,
+      so every seeded id came back as 0. The foreign keys rejected it loudly,
+      which is the only reason it was caught rather than silently seeding
+      nothing.
+    - backticks inside a double-quoted shell argument: the column `read` was
+      executed as the shell builtin and substituted away.
+    - a `?` inside a regex in a SQL template was consumed by mysql2 as a bind
+      placeholder, shifting every real parameter by one.
+    - one assertion would have passed on an empty result set; it now fails, and
+      the run aborts rather than reporting counts it did not receive.
+
+--------------------------------------------------------------------------------
+29-30. SALES KPI AND INVENTORY MATRIX  (§37)
+--------------------------------------------------------------------------------
+
+  admin.commercialKpis and admin.analyticsSummary compute from real rows: RFQ
+  counts and values, quotation counts and values, acceptance, conversion, churn
+  over a configurable window, and product analytics.
+
+  TERMINOLOGY IS HONEST: an RFQ budget is a REQUESTED BUDGET and is never
+  labelled revenue. There is no order entity, so no order value is reported.
+
+--------------------------------------------------------------------------------
+31. QUALIFIED ENQUIRY LIMIT MATRIX  (§16, Part 45 - 38/38 API + 25/25 browser)
+--------------------------------------------------------------------------------
+
+  The mandate's own scenario, live, at its own numbers:
+
+    plan allowance 5, in force 5, used 0                      shown on screen
+    Super Admin sets 10                                       accepted
+    seven enquiries consumed through the real API             used 7, remaining 3
+    Super Admin attempts 5                        REFUSED - "already used 7"
+    nothing corrupted by the refusal              10 / 7 / 3 unchanged, no row
+    Super Admin sets 20                           LIMIT 20  USED 7  REMAINING 13
+    vendor consumes one more                      LIMIT 20  USED 8  REMAINING 12
+    Super Admin sets 8 (exactly at usage)         accepted, remaining 0
+    vendor attempts another                       403, 0 rows, quoting "all 8"
+
+  WHO MAY CHANGE IT: BILLING_ADMIN 403, SUPPORT_ADMIN 403, the vendor 403, a
+  customer 403 - with a positive control that the limit is still 20 afterwards.
+  BILLING_ADMIN may READ it (200). The vendor cannot read the admin view (403).
+
+  BOUNDS: negative 400, above the maximum 400, a non-provider account 400.
+
+  HISTORY: append-only. Two changes, two rows, the superseded one revoked rather
+  than rewritten, each naming its actor and reason. Rendered in the admin panel
+  as "Plan default -> 20" with the reason, the actor and the state.
+
+  OWNER DECISION APPLIED: a limit below current usage is REFUSED. Asked and
+  answered explicitly; the alternative was offered and not chosen.
+
+--------------------------------------------------------------------------------
+32. AUDIT MATRIX  (§54, §55)
+--------------------------------------------------------------------------------
+
+  ACTION                    AUDIT ROW                  VALUE HISTORY
+  RFQ created               commercialAuditEvents      -
+  RFQ awarded / closed      commercialAuditEvents      status old -> new
+  quotation submitted       commercialAuditEvents      -
+  quotation accepted        commercialAuditEvents      status old -> new
+  quotation auto-rejected   commercialAuditEvents      status old -> new, per bid
+  enquiry opened (charged)  commercialAuditEvents      -
+  product updated           commercialAuditEvents      price/stock/etc old -> new
+  product published/delisted commercialAuditEvents     active old -> new
+  supplier approval         registrationReviewEvents   onboardingStatus + verified
+  allowance changed         userAccountAuditEvents     qualifiedEnquiriesPerMonth
+  subscription transitions  billingEvents              fromStatus -> toStatus
+
+  CORRELATION: for every major event the same record identity travels through
+  database -> audit -> notification -> recipient -> deep link. Verified in the
+  cross-role run for 18 relationships.
+
+--------------------------------------------------------------------------------
+33-34. SECURITY AND IDOR MATRIX  (§20, Part 83 - 129/129, 98 cells, 0 leaks)
+--------------------------------------------------------------------------------
+
+  AXIS                    TESTED  PASSED  FAILED  NOT VERIFIED
+  cross-user              yes     yes     no      -
+  cross-role              yes     yes     no      -
+  IDOR (all id-taking)    yes     yes     no      -
+  direct URL              yes     yes     no      -
+  API object authz        yes     yes     no      -
+  attachment              yes     yes     no      -
+  storage key             yes     yes     no      -
+  notification            yes     yes     no      -
+  search / discovery      yes     yes     no      -
+  dashboard               yes     yes     no      -
+  cache after logout      yes     yes     no      -
+  subscription            yes     yes     no      -
+  admin / sub-admin       yes     yes     no      -
+  AI                      yes     yes     no      -
+  cross-organization      n/a     -       -       no organization entity exists
+
+  Homeowner A/B and Supplier A/B were driven against RFQ, quotation, project,
+  product, document, attachment, message and notification. Positive controls are
+  mandatory in every cell - a procedure-name typo once made 12 attacker cells
+  falsely pass, and that is why.
+
+  PART 53 BOUNDARY, asserted against the real investigation payload rather than
+  trusted: no passwordHash, password, invitationToken, openId, tokenHash,
+  resetToken and no provider key, with a positive control that the payload is a
+  real 5,027-byte one.
+
+--------------------------------------------------------------------------------
+35-39. SEARCH, ARABIC, MOBILE, ACCESSIBILITY, PERFORMANCE
+--------------------------------------------------------------------------------
+
+  SEARCH          normal / Arabic / empty / % / _ / quotes / HTML / script /
+                  SQL-like / Unicode / very long - all bounded, no restricted
+                  record discoverable. LIVE VERIFIED.
+  ARABIC          dir=rtl, translated content and notifications, no raw keys.
+                  Verified on the new admin panel and across workflows.
+  MOBILE          375 / 768 / 1440. The new allowance panel completes its
+                  workflow at 375px with no horizontal overflow.
+  ACCESSIBILITY   keyboard operation, focus, dialogs, labels, semantic controls;
+                  the quotation tiles are reachable by Enter and Space.
+  PERFORMANCE     bundle 683.5kb; no N+1 introduced; every new read is bounded
+                  (the history read is capped and the investigation is scoped
+                  to one RFQ).
+
+--------------------------------------------------------------------------------
+40. DATABASE MATRIX  (§65)
+--------------------------------------------------------------------------------
+
+  34 tables. Two added this pass: vendorEntitlementOverrides and
+  fieldValueHistory, both with SET NULL actor references so the record outlives
+  its actor, both with subjectId deliberately NOT a foreign key so history
+  survives the deletion of its subject, and both indexed for the reads they
+  receive.
+
+  MIGRATION 0026 IS HAND-WRITTEN AND THAT IS DELIBERATE. drizzle-kit generate
+  re-emitted commercialAuditEvents, rfqItems and quotations.attachments
+  alongside the two new tables, because no meta snapshot exists for the three
+  hand-written migrations before it and the diff therefore ran from 0022.
+  Applying that output would have failed on any database that has already run
+  them. CI's "Migrations apply from empty" job proves the corrected file applies
+  cleanly from nothing.
+
+--------------------------------------------------------------------------------
+41. CONCURRENCY MATRIX  (§66)
+--------------------------------------------------------------------------------
+
+  RFQ creation            per-actor users-row lock, then a duplicate probe
+  quotation submission    same lock, same ordering - measured at two rows,
+                          three runs of three, before the lock existed
+  enquiry spend           UNIQUE(userId, rfqId) plus the lock; two simultaneous
+                          opens of one lead charge exactly once
+  allowance change        the vendor's row locked FOR UPDATE before usage is
+                          read, so two administrators serialise
+  acceptance / close      the RFQ row locked, because the contention is
+                          per-request rather than per-person
+
+--------------------------------------------------------------------------------
+42-43. STORAGE AND SMTP MATRIX
+--------------------------------------------------------------------------------
+
+  STORAGE   upload, preview, download, delete, replace, wrong owner, wrong key,
+            oversized and corrupt - LIVE VERIFIED locally against a real
+            S3-compatible endpoint. The proxy issues a 307 to a presigned URL;
+            presigned URLs carry no CORS headers, so the product navigates
+            rather than fetches, which is what a browser actually does.
+            STAGING S3:   BLOCKED BY INFRASTRUCTURE (S3_* unset)
+
+  SMTP      real message delivered and read locally.
+            STAGING SMTP: BLOCKED BY INFRASTRUCTURE (SMTP_HOST unset)
+
+--------------------------------------------------------------------------------
+44. INFRASTRUCTURE STATUS  (Part 86)
+--------------------------------------------------------------------------------
+
+  DOMAIN        NOT VERIFIED     no production domain in scope this pass
+  DNS           NOT VERIFIED     same
+  TLS           READY            staging serves HTTPS; never disabled anywhere
+  DATABASE      READY            MariaDB 10.11.14 local; MySQL 8 dry run passed
+  S3            BLOCKED          S3_* unset on staging
+  SMTP          BLOCKED          SMTP_HOST unset on staging
+  PAYMENTS      OWNER DECISION   no provider wired; the lifecycle is
+                                 provider-agnostic and an administrator is the
+                                 trusted observer until one is chosen
+  AI            READY (staging)  OPENAI_API_KEY present on staging; absent locally
+  BACKUPS       NOT VERIFIED     runbook exists; no restore drill this pass
+  RESTORE       NOT VERIFIED     same
+  MONITORING    NOT VERIFIED     structured error logging exists; no alerting
+  ALERTING      NOT VERIFIED     same
+  STAGING       READY            Render autoDeploy on main, verified by gate
+
+--------------------------------------------------------------------------------
+45. OWNER DECISIONS  (Part 85)
+--------------------------------------------------------------------------------
+
+  RESOLVED THIS PASS - asked, answered, implemented:
+
+  D1  Who may see old -> new values?
+      ANSWER: Super Admin, sub-admins, and the record's owner. Implemented.
+
+  D2  A qualified-enquiry limit set below current usage?
+      ANSWER: REFUSE the change, naming the usage. Implemented. Consumed
+      enquiries are never revoked or renumbered.
+
+  STILL OPEN - not decided here, and not silently defaulted:
+
+  D3  DUPLICATE QUOTATIONS. A supplier cannot revise a bid in place; there is
+      no update procedure, so a second offer is a second row. Accidental
+      double-submits are prevented technically (identical price within a ten
+      second window is de-duplicated), but the commercial policy - reject,
+      replace-as-revision, or allow several - is a pricing decision.
+      LAUNCH IMPACT: medium. The product functions either way; reporting and
+      supplier expectations differ.
+
+  D4  ENTITLEMENT OVERRIDE EXPIRY. The schema supports a start and an end. No
+      product surface sets an end date yet; every override created through the
+      admin panel is open-ended until changed.
+      LAUNCH IMPACT: low.
+
+  D5  WHO ELSE MAY OPEN A DISPUTE INVESTIGATION. It is SUPER_ADMIN only,
+      because it crosses every ownership boundary at once. A SUPPORT_ADMIN
+      handling disputes would plausibly need it.
+      LAUNCH IMPACT: low to medium, operational.
+
+  D6  PAYMENTS PROVIDER. Not selected.
+      LAUNCH IMPACT: high if paid plans are to be sold at launch.
+
+  D7  PROJECT MANAGER QUOTING. project_manager is in providerRoles server-side,
+      so the API accepts a quotation from one, but no workspace control offers
+      it. Recorded rather than resolved either way.
+      LAUNCH IMPACT: low.
+
+--------------------------------------------------------------------------------
+46. REMAINING DEFECTS  (Part 87)
+--------------------------------------------------------------------------------
+
+  ID   SEV  ROLE       WORKFLOW          ROOT CAUSE                    STATUS
+  F1   P2   engineer,  see own bid       myQuotations fetched then     FIXED
+            architect                    discarded for two roles       8869af8
+  F2   P2   any        price history     DECIMAL scale vs bare number  FIXED
+                                         compared with ===             27f413e
+
+  OPEN OBSERVATIONS - no P0 or P1 remains:
+
+  O1   P3   catalogue product cards navigate by onClick and are not anchors.
+            They open the correct record, so they are not dead controls, but
+            there is no href: no middle-click into a new tab, no "copy link
+            address", and nothing for a crawler on what is a PUBLIC marketplace.
+            RECOMMENDATION: wrap the card in a Link. Low risk, clear benefit.
+
+  O2   P3   the homeowner workspace renders two KPI tiles carrying the same
+            data-testid (kpi-role-projects). Both work; the duplicate id makes
+            automated targeting ambiguous.
+
+  O3   P3   RATE LIMITS ARE PER PROCESS AND RESET ON EVERY DEPLOY.
+            server/_core/rateLimit.ts:6 holds its counters in a plain
+            `new Map()` in module scope. Two consequences worth stating rather
+            than discovering:
+              - a deploy clears every window, so an attacker who is being
+                throttled is un-throttled by an unrelated release;
+              - on more than one instance the limits are per instance, so N
+                instances mean N times the allowance.
+            This is what made staging gate run #53 fail check 24 - the gate ran
+            during an in-flight Render deploy and the upload-burst counter had
+            just been reset. The limiter is not wrong for a single-instance
+            deployment; it is a property to know before scaling out or before
+            reading a limiter result as evidence.
+            RECOMMENDATION: move to a shared store before running more than one
+            instance. Not a launch blocker at one instance.
+
+  O4   P3   the "Fraud Detection" console tab was a dead surface - a permanent
+            empty state with no detector behind it. REMOVED this pass rather
+            than filled with an invented detector. Recorded here because the
+            resolution was deletion, and a reader comparing screenshots across
+            versions should know why.
+
+--------------------------------------------------------------------------------
+47. PRODUCTION READINESS RECOMMENDATION
+--------------------------------------------------------------------------------
+
+  VERDICT:  CONDITIONAL GO
+
+  These three are DIFFERENT STATEMENTS and are reported separately (§23):
+
+    CODE COMPLETE      YES for everything in scope this pass. 2,793 tests
+                       across 126 files, tsc clean, both builds green, thirty
+                       mutations applied and thirty killed across the two
+                       passes (fifteen on the entitlement and history guards,
+                       fifteen on the operations desk).
+
+    STAGING VERIFIED   At the exact merged SHA 39bc86b, by staging-qa.yml with
+                       expect_commit pinned - see the gate table in §3-6, which
+                       includes the two FAILED runs as well as the passes. A
+                       gate result at any other SHA is not evidence for this
+                       one: run #53 is in that table precisely because it was
+                       refused for being at the wrong commit, and run #55
+                       because the gate itself was wrong and was fixed rather
+                       than loosened.
+
+    PRODUCTION READY   NO, and for reasons that are external rather than in the
+                       code:
+
+      C1  SMTP is unset on staging, so password reset has never completed a
+          real email round trip in a deployed environment. Password reset is
+          launch-critical for any product with accounts.
+      C2  S3 is unset on staging, so object storage has never completed a real
+          round trip in a deployed environment. Attachments are central to how
+          a supplier answers a request.
+      C3  No backup restore has been rehearsed.
+      C4  No monitoring or alerting is configured.
+      C5  A payments provider has not been selected (D6), which decides whether
+          paid plans can be sold on day one.
+
+  Adding staging SMTP and S3 credentials as environment secrets and re-running
+  the gate converts C1 and C2. C3 and C4 are operational readiness. C5 is a
+  business decision.
+
+  WHY NOT PRODUCTION NO-GO: there is no P0 or P1 defect, no cross-user or
+  cross-role leakage in 98 attack cells, no broken RFQ, quotation or supplier
+  response chain, no entitlement bypass, no commercial race corruption, and
+  every critical workflow has been driven end to end in a real browser.
+
+  WHY NOT PRODUCTION GO: two launch-critical capabilities have never been
+  exercised end to end in a deployed environment, and this document will not
+  call something verified that was not.
+
+================================================================================
+REQUIRED FINAL HUMAN SUMMARY  (Part 89)
+================================================================================
+
+WHAT WAS MISSING
+  A per-vendor qualified-enquiry allowance an administrator could move at all.
+  Any individual entitlement override. Any record of old -> new values for a
+  price, a status or a term. Any way to reconstruct a dispute from one place.
+  A quotations surface for engineers and architects. Any way to turn a name or
+  an email into the record id every admin screen demands. Any answer to "what
+  is wrong with the data" or "is this deployment working".
+
+WHAT WAS BROKEN
+  A priced bid an engineer or architect submitted was invisible to them.
+  The value history manufactured price changes that never happened, because a
+  DECIMAL read back with scale was compared as a string to a bare number.
+  A "Fraud Detection" console tab rendered a permanent empty state with no
+  detector and no signals table behind it - it could never show anything.
+
+WHAT WAS FIXED
+  Both defects, each with tests that fail when the fix is removed. The
+  quotations surface now derives the set of bidding roles from the workspace
+  itself, so a future role that gains a quote button and no surface fails in CI
+  rather than in production. Two existing tests were rewritten rather than
+  deleted, and both were made harder to satisfy.
+  The dead fraud tab was REMOVED, not filled with an invented detector.
+
+WHAT WAS IMPLEMENTED BUT NOT LIVE VERIFIED
+  Nothing. Every capability built this pass was exercised in a real browser
+  against real MariaDB before being reported.
+
+WHAT WAS LIVE VERIFIED
+  Locally, against real MariaDB, real S3 and a real mailer: 128/128 all-roles
+  journeys with 146 click-audit rows; 53/53 cross-role connections across 18
+  relationships; 36/36 subscription x ownership x account status; 38/38
+  allowance API; 25/25 allowance panel including Arabic and 375px; 37/37 dispute
+  investigation including the Part 53 boundary; 34/34 price history and detail
+  navigation; 129/129 attack matrix; 50/50, 56/56 and 29/29 acceptance; 39/39
+  chains; 11/11 duplicates; 20/20 password reset; 18/18 second pass;
+  106/106 the operations desk - every data-quality check proved by seeding a
+  real defect, the health payload scanned for secrets against the response
+  bytes, and all five admin roles against all five search segments - run twice
+  in a row with identical results.
+  On staging: see §6.
+
+WHAT IS NOT IMPLEMENTED
+  Orders and order value - there is no order entity in this build. Automated
+  fraud detection - there is no detector and no signals table, and the tab that
+  promised one has been removed. A payments provider. Quotation revision in
+  place. Uptime, error rate, latency, throughput and queue depth are not
+  persisted, and the operational health screen says so on its face rather than
+  showing a number nobody measured.
+
+WHAT IS BLOCKED BY INFRASTRUCTURE
+  The staging SMTP round trip and the staging S3 round trip. Both are complete
+  in code and verified locally. Neither is reported as passing.
+
+WHAT REQUIRES OWNER DECISION
+  D3 duplicate quotations, D4 override expiry, D5 who else may investigate a
+  dispute, D6 payments provider, D7 project-manager quoting.
+
+WHAT STILL MUST HAPPEN BEFORE PRODUCTION
+  Supply staging SMTP and S3 credentials and re-run the gate. Rehearse a backup
+  restore. Configure monitoring and alerting. Decide D6, and D3 if supplier
+  expectations matter at launch.
+
+GIT / COMMIT / PUSH STATUS  (six separate states, addendum §22)
+  IMPLEMENTED   yes
+  COMMITTED     yes - 7 commits
+  PUSHED        yes - origin/claude/buildhub-audit-verification-vrai7l
+  MERGED        yes - PR #38, merge commit 39bc86b
+                (PR #37 -> c6e5564 and PR #36 -> e13be78 earlier)
+  DEPLOYED      yes - Render autoDeploy on main; /version reported
+                39bc86badc6d864df5e2e49d14f2868f00be4fb9 at the gate run
+  LIVE VERIFIED yes locally in full, and yes on staging at this exact commit -
+                two DIFFERENT statements, both true, neither substituting for
+                the other. The five skips are not passes.
+
+MAIN / STAGING / GATE STATUS
+  MAIN     39bc86badc6d864df5e2e49d14f2868f00be4fb9
+  DEPLOYED Render autoDeploy on main
+  GATE     run #56, expect_commit = 39bc86badc6d864df5e2e49d14f2868f00be4fb9
+           SUCCESS - 645/645 checks passed, 5 skipped
+           MAIN == DEPLOYED == GATE, proven by /version at the gated commit
+
+FINAL PRODUCTION VERDICT
+  CONDITIONAL GO
+
+================================================================================
