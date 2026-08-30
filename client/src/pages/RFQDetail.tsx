@@ -2,6 +2,7 @@ import { useParams, Link } from 'wouter';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/_core/hooks/useAuth';
+import RfqInvitations from '@/components/RfqInvitations';
 import { isComplianceRole } from '@shared/compliance';
 import Navbar from '@/components/Navbar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -410,6 +411,16 @@ export default function RFQDetail() {
             )}
           </CardContent>
         </Card>
+
+        {/* ── Who was invited ────────────────────────────────────────── */}
+        {/*
+          NOT gated on `isOwner`. A project manager holding `commercial` on the
+          linked project may invite too, and the component asks the SERVER
+          whether this caller may - rendering nothing when the answer is no.
+          Gating it here on isOwner would hide the panel from someone the
+          server would have allowed.
+        */}
+        <RfqInvitations rfqId={rfq.id} isOpen={isOpen} />
 
         {/* ── The owner's responses ──────────────────────────────────── */}
         {isOwner && (

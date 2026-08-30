@@ -286,7 +286,50 @@ try {
   check('a supplier who has already quoted cannot un-quote by declining',
     (await call(invitee.p, 'rfq.declineInvitation', { rfqId })).status !== 200);
 
-  // ── 10. The supplier reads the invitation in their own language ─────────
+  // ── 10. THE PANEL ON THE REAL PAGE ──────────────────────────────────────
+  //
+  // A second RFQ, because the first has been quoted on and declined against -
+  // this one starts clean so the panel's states are unambiguous.
+  const uiRfq = await call(customer.p, 'rfq.create', {
+    title: `Panel probe ${stamp}`, description: 'Live invitation panel probe',
+    category: 'Materials', quantity: 5, unit: 'tonne', location: 'Cairo',
+  });
+  const uiRfqId = uiRfq.data?.id ?? Number(sql(`select id from rfqs where requesterId=${customer.id} order by id desc limit 1`));
+  madeRfqs.push(uiRfqId);
+
+  await go(customer.p, `/rfq/${uiRfqId}`);
+  check('LIVE UI: the invitation panel is on the requester\'s RFQ page',
+    await customer.p.locator('[data-testid="rfq-invitations"]').count() > 0);
+  check('LIVE UI: it says nobody has been invited yet, rather than showing an empty list',
+    await customer.p.locator('[data-testid="rfq-invitations-empty"]').count() > 0);
+
+  await customer.p.locator('[data-testid="rfq-invite-search"]').fill('risa');
+  await customer.p.locator('[data-testid="rfq-invite-search-go"]').click();
+  await customer.p.waitForTimeout(2000);
+  const inviteBtn = customer.p.locator(`[data-testid="rfq-invite-${invitee.id}"]`);
+  check('LIVE UI: searching the directory finds the supplier', await inviteBtn.count() > 0,
+    `found=${await inviteBtn.count()}`);
+
+  if (await inviteBtn.count() > 0) {
+    await inviteBtn.click();
+    await customer.p.waitForTimeout(2000);
+    check('LIVE UI -> DATABASE: the click actually created the invitation',
+      sql(`select count(*) from rfqSuppliers where rfqId=${uiRfqId} and supplierId=${invitee.id}`) === '1',
+      `rows=${sql(`select count(*) from rfqSuppliers where rfqId=${uiRfqId} and supplierId=${invitee.id}`)}`);
+    const listed = await customer.p.locator('[data-testid="rfq-invitations-list"]').innerText().catch(() => '');
+    check('LIVE UI: the supplier now appears with an honest "awaiting response" status',
+      /Awaiting response/i.test(listed), listed.replace(/\n/g, ' ').slice(0, 60));
+  }
+
+  // A RIVAL supplier opening the same page must not see the panel at all -
+  // and, more importantly, the server refuses them regardless.
+  await go(rival.p, `/rfq/${uiRfqId}`);
+  check('LIVE UI: a rival supplier is not shown the invitation panel',
+    await rival.p.locator('[data-testid="rfq-invitations"]').count() === 0);
+  check('and the server refuses them the data behind it',
+    (await query(rival.p, 'rfq.invitations', { rfqId: uiRfqId })).status !== 200);
+
+  // ── 11. The supplier reads the invitation in their own language ─────────
   await invitee.p.evaluate(() => localStorage.setItem('buildhub_lang', 'ar'));
   await go(invitee.p, '/messages');
   const arTab = invitee.p.locator('[role="tab"]').filter({ hasText: /notification|الإشعارات/i }).first();

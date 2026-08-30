@@ -1,21 +1,21 @@
 PASS  SETUP: the category declaration was accepted  [http=200 err=null]
 PASS  the board supplier declared a category  [rows=1]
 PASS  the INVITED supplier declared NONE - so only an invitation can reach them  [rows=0]
-PASS  the customer created a project  [projectId=40]
+PASS  the customer created a project  [projectId=42]
 PASS  the project manager is on the project team  [role=manager]
-PASS  the customer raised an RFQ against the project  [rfqId=264 err=-]
+PASS  the customer raised an RFQ against the project  [rfqId=266 err=-]
 PASS  OPEN BOARD: a category-matching supplier sees the RFQ without any invitation  [items=50]
 PASS  OPEN BOARD: a supplier with no declared category does NOT see it yet  [items=0]
 PASS  a rival supplier cannot invite anyone to somebody else's RFQ  [http=404 err=RFQ not found]
 PASS  and the refusal is NOT_FOUND-shaped, so it does not confirm the RFQ exists  [RFQ not found]
 PASS  the PROJECT MANAGER may invite - the same capability that lets them raise the RFQ  [http=200 outcome=invited err=-]
 PASS  the REQUESTER may invite  [outcome=invited err=-]
-PASS  DATABASE: the invitation is recorded with who sent it  [invitedBy=722]
+PASS  DATABASE: the invitation is recorded with who sent it  [invitedBy=732]
 PASS  inviting the same supplier twice is a no-op, not a second invitation  [outcome=already_invited]
 PASS  DATABASE: still exactly ONE invitation row for that pair
 PASS  and exactly ONE notification - not two about one invitation  [count=1]
 PASS  a customer cannot invite themselves  [http=400]
-PASS  the project manager was removed from the team  [removedAt=2026-08-30 14:28:32]
+PASS  the project manager was removed from the team  [removedAt=2026-08-30 14:37:03]
 PASS  REMOVED MEMBER: they can no longer invite - the rule the unit double could not model  [http=404 err=RFQ not found]
 PASS  DATABASE: no invitation was created by the removed member
 PASS  INVITED: the RFQ now appears on their board despite no matching category  [items=1]
@@ -24,7 +24,7 @@ PASS  an invited supplier can open the RFQ  [http=200 err=-]
 PASS  the response says the access came from the invitation  [byInvitation=true]
 PASS  EXEMPTION IS REAL: no qualifiedEnquiries row was written  [before=0 after=0]
 PASS  DATABASE: the invitation moved to viewed instead  [viewed]
-PASS  opening it AGAIN does not re-stamp when they first saw it  [first=2026-08-30 14:28:32]
+PASS  opening it AGAIN does not re-stamp when they first saw it  [first=2026-08-30 14:37:03]
 PASS  and still spends no lead on the second open
 PASS  OPEN BOARD UNCHANGED: an uninvited category match can still open it  [http=200 err=-]
 PASS  and it is NOT flagged as an invitation  [byInvitation=false]
@@ -43,6 +43,13 @@ PASS  declining twice is refused rather than silently re-stamped  [http=404]
 PASS  the invited supplier can quote  [http=200 err=null]
 PASS  DATABASE: the invitation is marked responded  [responded]
 PASS  a supplier who has already quoted cannot un-quote by declining
+PASS  LIVE UI: the invitation panel is on the requester's RFQ page
+PASS  LIVE UI: it says nobody has been invited yet, rather than showing an empty list
+PASS  LIVE UI: searching the directory finds the supplier  [found=1]
+PASS  LIVE UI -> DATABASE: the click actually created the invitation  [rows=1]
+PASS  LIVE UI: the supplier now appears with an honest "awaiting response" status  [risa585766  Awaiting response]
+PASS  LIVE UI: a rival supplier is not shown the invitation panel
+PASS  and the server refuses them the data behind it
 PASS  LIVE AR: the invitation reads in Arabic, and says it costs no enquiry  [دعوة لتقديم عرض سعر]
 
-46/46 passed
+53/53 passed

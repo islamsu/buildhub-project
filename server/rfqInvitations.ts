@@ -248,8 +248,33 @@ export const INVITED_SUPPLIER_COLUMNS = {
   verified: users.verified,
 } as const;
 
-/** Who has been invited to this RFQ, for the requester's own screen. */
-export async function listInvitations(db: Db, rfqId: number) {
+/** One invited supplier, as the requester's screen sees them. */
+export type InvitationRow = {
+  id: number;
+  supplierId: number;
+  status: string;
+  invitedAt: Date | null;
+  viewedAt: Date | null;
+  respondedAt: Date | null;
+  declinedAt: Date | null;
+  deadline: Date | null;
+  /** Null when the account has since been removed - the invitation still happened. */
+  supplier: {
+    id: number; name: string | null; userRole: string | null; location: string | null;
+    rating: string | null; reviewCount: number | null; verified: boolean | null;
+  } | null;
+};
+
+/**
+ * Who has been invited to this RFQ, for the requester's own screen.
+ *
+ * The return type is DECLARED rather than inferred. Spreading
+ * `Record<string, unknown>` rows collapsed the inference to `{ supplier }`
+ * alone, so the client could not see `status` or `supplierId` at all - a
+ * typing accident that would have been worked around with casts in the
+ * component instead of fixed at the source.
+ */
+export async function listInvitations(db: Db, rfqId: number): Promise<InvitationRow[]> {
   const rows = await db.select({
     id: rfqSuppliers.id,
     supplierId: rfqSuppliers.supplierId,
@@ -268,8 +293,8 @@ export async function listInvitations(db: Db, rfqId: number) {
     .from(users).where(inArray(users.id, ids));
   const byId = new Map((suppliers as { id: number }[]).map(s => [s.id, s]));
 
-  return (rows as Record<string, unknown>[]).map(row => ({
+  return (rows as InvitationRow[]).map(row => ({
     ...row,
-    supplier: byId.get(row.supplierId as number) ?? null,
+    supplier: (byId.get(row.supplierId) as InvitationRow['supplier']) ?? null,
   }));
 }
