@@ -13,7 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { trpc } from '@/lib/trpc';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
-import { Users, FolderOpen, Package, FileText, ShieldCheck, AlertTriangle, TrendingUp, Settings, Search, Eye, Ban, CheckCircle2, MessageSquare, BarChart3, Shield, Flag, Activity, Globe, UserRound, UserCheck, UserX, Save, RefreshCw, ClipboardCheck, FileSearch, RotateCcw, XCircle, SendHorizontal, Download, CalendarDays, Loader2, UserPlus, Trash2, History, Power, KeyRound, CreditCard, Link as LinkIcon } from 'lucide-react';
+import { Users, FolderOpen, Package, FileText, ShieldCheck, AlertTriangle, TrendingUp, Settings, Search, Eye, Ban, CheckCircle2, MessageSquare, BarChart3, Flag, Activity, Globe, UserRound, UserCheck, UserX, Save, RefreshCw, ClipboardCheck, FileSearch, RotateCcw, XCircle, SendHorizontal, Download, CalendarDays, Loader2, UserPlus, Trash2, History, Power, KeyRound, CreditCard, Link as LinkIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -23,6 +23,9 @@ import AdminVendorBilling from '@/components/AdminVendorBilling';
 import AdminEnquiryAllowance from '@/components/AdminEnquiryAllowance';
 import AdminRfqInvestigation from '@/components/AdminRfqInvestigation';
 import AdminCommercialAnalytics from '@/components/AdminCommercialAnalytics';
+import AdminPlatformSearch from '@/components/AdminPlatformSearch';
+import AdminDataQuality from '@/components/AdminDataQuality';
+import AdminOperationalHealth from '@/components/AdminOperationalHealth';
 
 /*
  * Slice 4 removed a hardcoded MONTHLY_USERS array from this file - six months
@@ -100,7 +103,7 @@ export default function AdminDashboard() {
   const [location, navigate] = useLocation();
   const adminSection = useMemo(() => {
     const section = location.split('/')[2];
-    return ['users', 'compliance', 'analytics', 'billing', 'disputes', 'fraud', 'settings'].includes(section ?? '') ? section! : 'users';
+    return ['users', 'compliance', 'analytics', 'billing', 'disputes', 'operations', 'settings'].includes(section ?? '') ? section! : 'users';
   }, [location]);
   const handleAdminSectionChange = (section: string) => {
     navigate(section === 'users' ? '/admin/users' : `/admin/${section}`);
@@ -558,7 +561,7 @@ export default function AdminDashboard() {
             <TabsTrigger value="analytics" className="gap-1.5"><BarChart3 className="w-4 h-4" /> {lang === 'ar' ? 'التحليلات' : 'Analytics'}</TabsTrigger>
             <TabsTrigger value="billing" className="gap-1.5"><CreditCard className="w-4 h-4" /> {t('adminBilling.title')}</TabsTrigger>
             <TabsTrigger value="disputes" className="gap-1.5"><MessageSquare className="w-4 h-4" /> {lang === 'ar' ? 'النزاعات' : 'Disputes'} ({openDisputes})</TabsTrigger>
-            <TabsTrigger value="fraud" className="gap-1.5"><Shield className="w-4 h-4" /> {lang === 'ar' ? 'كشف الاحتيال' : 'Fraud Detection'}</TabsTrigger>
+            <TabsTrigger value="operations" className="gap-1.5"><Activity className="w-4 h-4" /> {lang === 'ar' ? 'التشغيل' : 'Operations'}</TabsTrigger>
             <TabsTrigger value="settings" className="gap-1.5"><Settings className="w-4 h-4" /> {lang === 'ar' ? 'الإعدادات' : 'Settings'}</TabsTrigger>
           </TabsList>
 
@@ -581,9 +584,15 @@ export default function AdminDashboard() {
 
           <TabsContent value="billing"><div className="space-y-6"><AdminVendorBilling /><AdminEnquiryAllowance /></div></TabsContent>
 
-          <TabsContent value="disputes"><div className="space-y-6"><AdminRfqInvestigation /><Card><CardHeader><CardTitle className="flex items-center gap-2"><MessageSquare className="w-5 h-5" />{lang === 'ar' ? 'إدارة النزاعات' : 'Dispute Management'}</CardTitle></CardHeader><CardContent>{disputesLoading ? <div className="py-10 text-center text-muted-foreground"><RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" />{t('common.loading')}</div> : disputes.length === 0 ? <EmptyState text={lang === 'ar' ? 'لا توجد نزاعات مسجلة' : 'No disputes have been filed'} /> : <div className="space-y-3">{disputes.map(dispute => <div key={dispute.id} className="rounded-xl border p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><h3 className="font-semibold text-sm">{dispute.title}</h3><Badge variant={dispute.priority === 'high' ? 'destructive' : 'outline'}>{dispute.priority}</Badge><Badge variant="secondary">{formatStatus(dispute.status, lang)}</Badge></div><p className="text-sm text-muted-foreground line-clamp-2">{dispute.description}</p><p className="mt-2 text-xs text-muted-foreground">{dispute.reporterName || `#${dispute.reporterId}`} {dispute.respondentName ? ` · ${dispute.respondentName}` : ''} · {dispute.type} · {new Date(dispute.createdAt).toLocaleDateString()}</p></div><Button size="sm" variant="outline" className="h-8 shrink-0 gap-1" onClick={() => { setActiveDispute(dispute); setDisputeStatus(dispute.status); setResolutionNotes(dispute.resolutionNotes ?? ''); }}><Eye className="w-3 h-3" />{lang === 'ar' ? 'مراجعة' : 'Review'}</Button></div></div>)}</div>}</CardContent></Card></div></TabsContent>
+          <TabsContent value="disputes"><div className="space-y-6"><AdminPlatformSearch /><AdminRfqInvestigation /><Card><CardHeader><CardTitle className="flex items-center gap-2"><MessageSquare className="w-5 h-5" />{lang === 'ar' ? 'إدارة النزاعات' : 'Dispute Management'}</CardTitle></CardHeader><CardContent>{disputesLoading ? <div className="py-10 text-center text-muted-foreground"><RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" />{t('common.loading')}</div> : disputes.length === 0 ? <EmptyState text={lang === 'ar' ? 'لا توجد نزاعات مسجلة' : 'No disputes have been filed'} /> : <div className="space-y-3">{disputes.map(dispute => <div key={dispute.id} className="rounded-xl border p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><h3 className="font-semibold text-sm">{dispute.title}</h3><Badge variant={dispute.priority === 'high' ? 'destructive' : 'outline'}>{dispute.priority}</Badge><Badge variant="secondary">{formatStatus(dispute.status, lang)}</Badge></div><p className="text-sm text-muted-foreground line-clamp-2">{dispute.description}</p><p className="mt-2 text-xs text-muted-foreground">{dispute.reporterName || `#${dispute.reporterId}`} {dispute.respondentName ? ` · ${dispute.respondentName}` : ''} · {dispute.type} · {new Date(dispute.createdAt).toLocaleDateString()}</p></div><Button size="sm" variant="outline" className="h-8 shrink-0 gap-1" onClick={() => { setActiveDispute(dispute); setDisputeStatus(dispute.status); setResolutionNotes(dispute.resolutionNotes ?? ''); }}><Eye className="w-3 h-3" />{lang === 'ar' ? 'مراجعة' : 'Review'}</Button></div></div>)}</div>}</CardContent></Card></div></TabsContent>
 
-          <TabsContent value="fraud"><Card><CardHeader><CardTitle className="flex items-center gap-2"><Shield className="w-5 h-5 text-destructive" />{lang === 'ar' ? 'تنبيهات الاحتيال' : 'Fraud Detection Alerts'}</CardTitle></CardHeader><CardContent><EmptyState text={lang === 'ar' ? 'سيتم عرض التنبيهات الآلية هنا عند توفرها' : 'Automated fraud alerts will appear here when available'} /></CardContent></Card></TabsContent>
+          {/* Operations. The tab this replaces was "Fraud Detection", which
+              rendered a permanent empty state - there is no detector and no
+              signals table behind it, so it could never show anything. A
+              console tab that can never answer teaches an administrator to
+              stop reading the console. Automated fraud detection is recorded
+              as NOT IMPLEMENTED rather than mocked up here. */}
+          <TabsContent value="operations"><div className="space-y-6"><AdminDataQuality /><AdminOperationalHealth /></div></TabsContent>
 
           <TabsContent value="settings"><Card><CardHeader><CardTitle className="flex items-center gap-2"><Settings className="w-5 h-5" />{lang === 'ar' ? 'إعدادات المنصة' : 'Platform Settings'}</CardTitle></CardHeader><CardContent><div className="grid gap-4 md:grid-cols-2">{SETTING_DEFINITIONS.map(definition => { const value = settingDrafts[definition.key] ?? ''; const isBoolean = definition.type === 'boolean'; return <div key={definition.key} className="rounded-xl border p-4"><div className="flex items-center justify-between gap-4"><div><p className="text-sm font-medium">{lang === 'ar' ? definition.ar : definition.en}</p><p className="mt-1 text-xs text-muted-foreground">{definition.key}</p></div>{isBoolean ? <Switch checked={value === 'true'} onCheckedChange={checked => { const next = checked ? 'true' : 'false'; setSettingDrafts(draft => ({ ...draft, [definition.key]: next })); updateSetting.mutate({ key: definition.key, value: next }); }} disabled={updateSetting.isPending} /> : <div className="flex items-center gap-2"><Input className="h-8 w-28" type={definition.type === 'number' ? 'number' : 'text'} value={value} onChange={event => setSettingDrafts(draft => ({ ...draft, [definition.key]: event.target.value }))} /><Button size="sm" className="h-8 gap-1" onClick={() => updateSetting.mutate({ key: definition.key, value })} disabled={updateSetting.isPending}><Save className="h-3 w-3" />{lang === 'ar' ? 'حفظ' : 'Save'}</Button></div>}</div></div>; })}</div></CardContent></Card></TabsContent>
         </Tabs>

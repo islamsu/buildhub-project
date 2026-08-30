@@ -34,6 +34,9 @@ import { ENV, isTestLoginEnabled } from './_core/env';
 import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
 import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
+import { runDataQualityChecks } from './admin/dataQuality';
+import { readOperationalHealth } from './admin/operationalHealth';
+import { runPlatformSearch } from './admin/platformSearch';
 import { formatProjectContext, resolveProjectContext } from './_core/projectContext';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
@@ -3918,6 +3921,64 @@ const adminRouter = router({
       });
       return { overrideId: result.overrideId, previous: result.previous, limit: input.limit };
     }),
+
+  // ── The operations desk (Parts 48, 49, 50) ───────────────────────────────
+  //
+  // Three reads that answer the questions an operator has BEFORE anything has
+  // gone wrong, and the first question they have after: where is this record,
+  // what is inconsistent in the data, and is this deployment actually working.
+  //
+  // Each was absent. The console had a Fraud Detection tab that could never
+  // show anything and no way at all to turn a customer's name into the record
+  // id every other admin screen demands.
+
+  /**
+   * FIND THE RECORD (Part 48).
+   *
+   * Per-segment permissions, decided inside runPlatformSearch from the role on
+   * the row - not here, and not by the client. `audit.read` is the floor to
+   * reach the endpoint at all, because an administrator holding none of the
+   * five segment permissions has no business issuing the query; one holding
+   * some gets exactly those segments and is TOLD which ones were withheld.
+   */
+  platformSearch: adminProcedure
+    .input(z.object({ query: z.string().min(1).max(MAX_SEARCH_LENGTH) }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return runPlatformSearch(db, ctx.user.adminRole, input.query);
+    }),
+
+  /**
+   * WHAT IS WRONG WITH THE DATA (Part 49).
+   *
+   * `audit.read`, the permission that already governs the platform-wide
+   * analytics and the commercial audit feed. The response carries record IDS
+   * and counts and no field values at all - see server/admin/dataQuality.ts for
+   * why that boundary is where it is.
+   */
+  dataQuality: adminWith('audit.read')
+    .input(z.object({ includeDummy: z.boolean().default(false) }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const checks = await runDataQualityChecks(db, input?.includeDummy ?? false);
+      return { includeDummy: input?.includeDummy ?? false, checks };
+    }),
+
+  /**
+   * IS THIS DEPLOYMENT WORKING (Part 50).
+   *
+   * Every dependency is a BOOLEAN. No host, bucket, region, key, URL or driver
+   * error string crosses this boundary, and the screen says NOT CONFIGURED
+   * rather than showing a green tick for the SMTP and object storage that are
+   * genuinely unset on staging.
+   */
+  operationalHealth: adminWith('audit.read').query(async () => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    return readOperationalHealth(db);
+  }),
 
   startVendorTrial: adminWith('billing.manage')
     .input(z.object({
