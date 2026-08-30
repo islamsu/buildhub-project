@@ -483,9 +483,9 @@ email round trip was not executed.
 These are not synonyms and this report does not treat them as such.
 
   IMPLEMENTED      yes - all surfaces built, tsc clean, build 711.1kb
-  COMMITTED        yes - a1cb7be (the pass) and 97a9ff1 (the import gap)
+  COMMITTED        yes - six commits, a1cb7be through the behavioural test
   PUSHED           yes - claude/buildhub-audit-verification-vrai7l
-  MERGED           see the delivery log appended below
+  MERGED           yes - PR #40, merge commit 07ef79a, all six CI checks green
   DEPLOYED         Render autoDeploys `main`. DEPLOYED means /version reports
                    the merge commit - not that a merge happened.
   LIVE VERIFIED    means staging-qa.yml ran with STAGING_EXPECT_COMMIT set to
@@ -527,7 +527,14 @@ forward from an earlier run.
 
   SUITE          RESULT                     NOTE
   -----------    ------------------------   -----------------------------------
-  nav            79 passed, 0 failed        the new surfaces; run TWICE
+  nav            79 passed, 0 failed        the new surfaces; run THREE times,
+                                            the last against a server restarted
+                                            at the final code (see section 10)
+  importunit     9 passed, 0 failed         the import unit rule, executed
+                                            rather than asserted
+  chains         40 passed, 0 failed        C3 now proves the destination IS
+                                            the response surface, not just
+                                            that the id travelled
   crossrole      53 passed, 0 failed        18 relationships
   subscription   36 passed, 0 failed        9 matrix rows
   attack         129 passed, 0 failed       98 matrix cells, 0 leaks,
