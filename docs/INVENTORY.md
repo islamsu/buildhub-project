@@ -45,14 +45,23 @@
 
 Dead param routes: **0**
 
-## Server procedures (119)
+## Server procedures (161)
 
 - `protectedProcedure` — 59
 - `publicProcedure` — 26
 - `approvedProviderProcedure` — 18
 - `superAdminProcedure` — 10
+- `adminWith:billing.manage` — 8
+- `adminWith:qa.manage` — 7
+- `adminWith:marketplace.manage` — 7
+- `adminWith:audit.read` — 5
+- `adminWith:users.manage` — 4
+- `adminWith:billing.read` — 4
+- `adminWith:users.read` — 3
 - `adminProcedure` — 3
 - `complianceProcedure` — 2
+- `adminWith:support.manage` — 2
+- `adminWith:settings.manage` — 2
 - `aiChatProcedure` — 1
 
 ## Tables (36)
@@ -96,23 +105,24 @@ Dead param routes: **0**
 | `projectMembers` | 12 | 4 | 5 | 0 |
 | `rfqSuppliers` | 14 | 3 | 5 | 0 |
 
-## Notification write sites (13)
+## Notification write sites (14)
 
-- server/routers.ts:1228 — notifyUser
-- server/routers.ts:2032 — notifyUser
-- server/routers.ts:2112 — notifyUser
-- server/routers.ts:3061 — notifyUser
-- server/routers.ts:3293 — notifyUser
-- server/routers.ts:3433 — notifyUser
-- server/routers.ts:4550 — notifyUser
-- server/routers.ts:4575 — notifyUser
-- server/routers.ts:4600 — notifyUser
+- server/routers.ts:1229 — notifyUser
+- server/routers.ts:2033 — notifyUser
+- server/routers.ts:2113 — notifyUser
+- server/routers.ts:3062 — notifyUser
+- server/routers.ts:3294 — notifyUser
+- server/routers.ts:3434 — notifyUser
+- server/routers.ts:4482 — notifyUser
+- server/routers.ts:4683 — notifyUser
+- server/routers.ts:4708 — notifyUser
+- server/routers.ts:4733 — notifyUser
 - server/notifications.ts:40 — notifyUser
 - server/notifications.ts:43 — helper implementation
 - server/notifications.ts:57 — notifyUser
 - server/notifications.ts:60 — helper implementation
 
-## Storage-dependent surfaces (9)
+## Storage-dependent surfaces (10)
 
 - `uploadDocument` (complianceProcedure)
 - `uploadDocument` (protectedProcedure)
@@ -121,6 +131,7 @@ Dead param routes: **0**
 - `uploadQuotationAttachment` (approvedProviderProcedure)
 - `uploadAttachment` (protectedProcedure)
 - `uploadAvatar` (protectedProcedure)
+- `reviewComplianceDocument` (adminWith:marketplace.manage)
 - `uploadAttachment` (protectedProcedure)
 - `deleteAttachment` (protectedProcedure)
 

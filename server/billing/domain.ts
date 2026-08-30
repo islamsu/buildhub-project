@@ -527,3 +527,57 @@ export function expireFounderPrice(subscription: VendorSubscription): Subscripti
     priceAmount: standard.toFixed(2),
   };
 }
+
+/**
+ * ADMINISTRATIVE GRANT OF PAID ACCESS (Super Admin manual plan change).
+ *
+ * Every other route to a paid plan in this file starts from a payment:
+ * `startTrial` needs an unused trial, `changePlan` needs live paid access to
+ * change FROM, and `activate` needs a plan already chosen. A vendor sitting on
+ * FREE could therefore not be given a plan by anybody - which is precisely the
+ * capability an administrator needs when a deal is agreed off-platform, a
+ * goodwill month is owed, or a vendor's payment is settled by bank transfer
+ * that BuildHub's (absent) payment provider will never see.
+ *
+ * Three things this deliberately does NOT do, because each would be inventing
+ * a commercial fact:
+ *
+ *  - `priceAmount` is '0.00', not the catalogue price. The vendor agreed to
+ *    pay nothing for this grant. Stamping 899.00 on the row would assert an
+ *    agreement that does not exist, and that column's entire purpose is to
+ *    record what a vendor actually agreed to pay.
+ *  - Founder fields are untouched. A grant neither awards the one-time founder
+ *    offer nor burns it - the vendor keeps whatever entitlement to it they had.
+ *  - `trialStartedAt` is untouched. A grant is not a trial, and consuming the
+ *    vendor's single lifetime trial as a side effect of an administrator's
+ *    goodwill would silently cost them something they never spent.
+ *
+ * The plan/interval combination must still be one BuildHub actually sells: an
+ * administrator may waive the price, not conjure a product.
+ */
+export function grantPaidAccess(params: {
+  targetPlan: PlanId;
+  interval: BillingInterval;
+  now?: Date;
+}): SubscriptionPatch {
+  const { targetPlan, interval } = params;
+  const now = params.now ?? new Date();
+
+  if (targetPlan === 'free') {
+    throw new BillingDomainError('FREE is not a grant of paid access. Use the downgrade path.');
+  }
+  if (resolvePrice(targetPlan, interval, false) === null) {
+    throw new BillingDomainError(`Plan "${targetPlan}" is not sold on the "${interval}" interval.`);
+  }
+
+  return {
+    ...activate({ interval, periodStart: now, now }),
+    plan: targetPlan,
+    billingInterval: interval,
+    priceAmount: '0.00',
+    // A grant is not a cancellation, and must clear one that was pending -
+    // otherwise the vendor is handed a plan that is already scheduled to end.
+    cancelAtPeriodEnd: false,
+    canceledAt: null,
+  };
+}

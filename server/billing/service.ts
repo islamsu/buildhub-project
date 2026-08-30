@@ -201,6 +201,16 @@ export function analyticsEventFor(event: BillingEventInput): AnalyticsEventType 
     case 'cancellation_reversed':
       return ANALYTICS_EVENTS.SUBSCRIPTION_RESUMED;
     case 'plan_changed':
+    // A SUPER ADMIN MANUAL CHANGE IS A PLAN CHANGE, and must be named as one.
+    //
+    // Without this case it fell to `default`, which reads a transition out of
+    // FREE into a paid status as a RENEWAL - so every comped plan an
+    // administrator granted would have been counted in the renewal KPI as
+    // revenue that nobody paid. The metadata still carries
+    // `action: 'plan_changed_manually'` and `source: 'admin'`, so an analyst
+    // can separate a manual grant from a purchased change; what they must not
+    // be given is a renewal that did not happen.
+    case 'plan_changed_manually':
       return ANALYTICS_EVENTS.SUBSCRIPTION_PLAN_CHANGED;
     case 'payment_failed':
       return ANALYTICS_EVENTS.SUBSCRIPTION_PAYMENT_FAILED;

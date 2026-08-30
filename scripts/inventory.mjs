@@ -132,9 +132,23 @@ function routes() {
 function procedures() {
   const src = read('server/routers.ts');
   const out = [];
-  const re = /^(\s+)(\w+):\s*(\w*[Pp]rocedure)\b/gm;
+  // TWO SHAPES, because the first version knew only one and the census was
+  // wrong for it.
+  //
+  //   name: adminProcedure          a named base procedure
+  //   name: adminWith('billing.manage')   a permission-scoped admin procedure
+  //
+  // Matching only the first hid EVERY adminWith procedure - the whole vendor
+  // billing surface, marketplace moderation, support and audit reads - from an
+  // inventory whose entire purpose is to show what exists and at what
+  // authorization tier. An authorization census with a silent hole in it is
+  // worse than no census, because it is trusted.
+  //
+  // For the second shape the permission IS the tier, and naming it is strictly
+  // more informative than a bare `adminProcedure` would have been.
+  const re = /^(\s+)(\w+):\s*(?:(\w*[Pp]rocedure)\b|adminWith\(\s*'([^']+)'\s*\))/gm;
   for (const m of src.matchAll(re)) {
-    out.push({ name: m[2], tier: m[3], indent: m[1].length });
+    out.push({ name: m[2], tier: m[3] ?? `adminWith:${m[4]}`, indent: m[1].length });
   }
   return out;
 }

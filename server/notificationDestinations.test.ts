@@ -205,6 +205,12 @@ const DESTINATIONS_THAT_ARE_A_RECORD: Record<string, string> = {
   // `/compliance` renders exactly that one application - there is no
   // per-document route to be more specific than.
   '/compliance': 'the applicant\'s own registration, which this page renders in full',
+  // A vendor has exactly ONE subscription, and this anchor is where it is
+  // rendered. There is no /subscriptions/:id to build from - the record is a
+  // singleton keyed by the reader, so the reader's own billing section IS the
+  // record page. The anchor matters: without it the notification lands at the
+  // top of a settings page and leaves the vendor hunting for what changed.
+  '/settings#settings-billing': 'the reader\'s own subscription, a singleton with no id-addressed route',
 };
 
 describe('no notification is sent to a list when a record exists', () => {

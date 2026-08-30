@@ -64,13 +64,21 @@ describe('every key the server can write has both languages', () => {
   // Derived from the source, not from a list kept by hand: a new notification
   // added without translations must fail here rather than reach a reader.
   const COMPLIANCE_STATUSES = ['under_review', 'approved', 'rejected', 'update_required'];
+  // The Super Admin manual plan change picks one of three sentences from what
+  // the ENGINE says the change was, so its key is templated the same way the
+  // compliance keys are. Listed here rather than left to a regex, because an
+  // unexpanded template silently covers nothing - which is how this test
+  // reported a clean pass over three untranslated keys the first time.
+  const PLAN_CHANGE_DIRECTIONS = ['upgraded', 'downgraded', 'scheduled'];
 
   function expandedKeys(): string[] {
     const keys: string[] = [];
     for (const match of ALL_SERVER_CODE.matchAll(/messageKey: ['`]([^'`]+)['`]/g)) {
       const raw = match[1];
-      const template = raw.match(/^(.*)\$\{input\.status\}$/);
-      if (template) keys.push(...COMPLIANCE_STATUSES.map(s => template[1] + s));
+      const status = raw.match(/^(.*)\$\{input\.status\}$/);
+      const direction = raw.match(/^(.*)\$\{direction\}$/);
+      if (status) keys.push(...COMPLIANCE_STATUSES.map(s => status[1] + s));
+      else if (direction) keys.push(...PLAN_CHANGE_DIRECTIONS.map(d => direction[1] + d));
       else keys.push(raw);
     }
     return [...new Set(keys)];
@@ -82,6 +90,8 @@ describe('every key the server can write has both languages', () => {
     expect(keys).toContain('notif.review.received');
     expect(keys).toContain('notif.compliance.document.update_required');
     expect(keys).toContain('notif.compliance.applicant.approved');
+    expect(keys).toContain('notif.billing.plan.upgraded');
+    expect(keys).toContain('notif.billing.plan.scheduled');
     expect(keys.length).toBeGreaterThanOrEqual(10);
   });
 

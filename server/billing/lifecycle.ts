@@ -34,7 +34,7 @@
 // they never retry one. Provider integration is Phase 4B.5.
 
 import { and, eq, isNotNull, lte, or } from 'drizzle-orm';
-import { isFounderPriceAvailable, isPlanId, type BillingInterval, type PlanId } from '@shared/billing';
+import { PLAN_IDS, isFounderPriceAvailable, isPlanId, type BillingInterval, type PlanId } from '@shared/billing';
 import { vendorSubscriptions, type VendorSubscription } from '../../drizzle/schema';
 import { getDb } from '../db';
 import {
@@ -45,6 +45,7 @@ import {
   deriveBillingState,
   downgradeToFree,
   expireFounderPrice,
+  grantPaidAccess,
   isFounderEligible,
   lifecycleStateOf,
   markPaymentFailed,
@@ -59,13 +60,43 @@ import { getFounderOfferEndsAt, getSubscription, recordBillingEvent } from './se
 /** Who asked for the transition. Mirrors billingEvents.source. */
 export type LifecycleSource = 'vendor' | 'admin' | 'system' | 'provider';
 
-export type LifecycleOutcome =
+/**
+ * Facts about the row as it was BEFORE the operation, carried out so a caller
+ * can word a message from what actually changed rather than re-reading the row
+ * afterwards and describing the wrong thing. Optional because the three early
+ * refusal paths below never got as far as reading a row.
+ */
+type LifecycleBefore = {
+  /** The stored plan before this operation. */
+  previousPlan?: PlanId;
+  /** The plan whose entitlements actually applied before this operation. */
+  previousEffectivePlan?: PlanId;
+  /**
+   * WHAT THE CHANGE WAS, in the vendor's terms. Set by the manual plan change
+   * so a caller can word a message without comparing plan strings itself.
+   *
+   * The router used to derive this - `rank(to) > rank(from)`, plus a check for
+   * `input.plan === 'free'` - and that is a plan comparison living outside the
+   * engine, which is precisely what billingAuthorization.test.ts forbids and
+   * was right to. The engine already knows which branch it took; asking it is
+   * both simpler and the only place the answer is authoritative.
+   *
+   *   upgraded      moved to a higher plan, live now
+   *   downgraded    moved to a lower plan, live now
+   *   scheduled_end paid access will not renew, and continues until the period
+   *                 the vendor already paid for runs out
+   */
+  planChange?: 'upgraded' | 'downgraded' | 'scheduled_end';
+};
+
+export type LifecycleOutcome = LifecycleBefore & (
   /** State changed and was persisted. */
   | { outcome: 'applied'; action: string; state: BillingState; lifecycleState: LifecycleState }
   /** Already in the requested state. Safe repeat - nothing written. */
   | { outcome: 'noop'; action: string; reason: string; state: BillingState; lifecycleState: LifecycleState }
   /** The transition is not legal from the current state. Nothing written. */
-  | { outcome: 'rejected'; action: string; reason: string; state: BillingState; lifecycleState: LifecycleState };
+  | { outcome: 'rejected'; action: string; reason: string; state: BillingState; lifecycleState: LifecycleState }
+);
 
 function isDuplicateKeyError(error: unknown): boolean {
   const code = (error as { cause?: { code?: string }; code?: string })?.cause?.code
@@ -111,6 +142,12 @@ async function withSubscriptionLock(
   actorId: number | null,
   decide: (subscription: VendorSubscription, now: Date) => Promise<SubscriptionPatch | null | { reject: string }>,
   now: Date,
+  /**
+   * Free text an administrator wrote to justify the operation. Prefixed to the
+   * composed note so history reads "why" before "what". Never a credential:
+   * the only caller passing this bounds and trims it first.
+   */
+  reason?: string | null,
 ): Promise<LifecycleOutcome> {
   const db = await getDb();
   if (!db) {
@@ -154,13 +191,21 @@ async function withSubscriptionLock(
   const settled = result as { patch: SubscriptionPatch | null; reject?: string; before: VendorSubscription };
   const before = settled.before;
 
+  // The plan as it stood before anything was written. Read from the LOCKED row
+  // rather than from a fresh query, so a concurrent operation that lands in
+  // between cannot make this describe a change that did not happen.
+  const was = {
+    previousPlan: before.plan as PlanId,
+    previousEffectivePlan: deriveBillingState(before, now).effectivePlan,
+  };
+
   if (settled.reject) {
     const { state, lifecycleState } = describe(before, now);
-    return { outcome: 'rejected', action, reason: settled.reject, state, lifecycleState };
+    return { ...was, outcome: 'rejected', action, reason: settled.reject, state, lifecycleState };
   }
   if (!settled.patch) {
     const { state, lifecycleState } = describe(before, now);
-    return { outcome: 'noop', action, reason: 'Already in the requested state.', state, lifecycleState };
+    return { ...was, outcome: 'noop', action, reason: 'Already in the requested state.', state, lifecycleState };
   }
 
   const after = await getSubscription(userId);
@@ -176,10 +221,10 @@ async function withSubscriptionLock(
     toStatus: after?.status ?? null,
     source,
     actorId,
-    note: `${before.plan} → ${after?.plan ?? '?'} · ${lifecycleStateOf(deriveBillingState(before, now))} → ${lifecycleState}`,
+    note: `${reason ? `${reason} · ` : ''}${before.plan} → ${after?.plan ?? '?'} · ${lifecycleStateOf(deriveBillingState(before, now))} → ${lifecycleState}`,
   });
 
-  return { outcome: 'applied', action, state, lifecycleState };
+  return { ...was, outcome: 'applied', action, state, lifecycleState };
 }
 
 // ── Vendor-initiated transitions ───────────────────────────────────────────
@@ -318,6 +363,142 @@ export async function changeVendorPlan(params: {
       throw error;
     }
   }, now);
+}
+
+/**
+ * ── SUPER ADMIN MANUAL PLAN / MEMBERSHIP CHANGE ────────────────────────────
+ *
+ * The one operation in this file that exists because a HUMAN decided, rather
+ * than because a payment, a clock, or a vendor's own click decided.
+ *
+ * WHY IT IS NOT `changeVendorPlan` WITH A WIDER PERMISSION. That function
+ * requires live paid access to change FROM, so the case an administrator
+ * actually faces - a vendor on FREE who has agreed a deal off-platform, or
+ * whose bank transfer no payment provider will ever report - was refused by
+ * every route into the engine. This adds the missing edge; it does not add a
+ * second engine.
+ *
+ * IT ROUTES THROUGH THE ENGINE, NOT AROUND IT. Every branch below returns a
+ * domain patch and is applied under the same `SELECT ... FOR UPDATE` lock as
+ * every other transition, so a manual change cannot interleave with a
+ * cancellation, a renewal, or another administrator. Nothing here writes a
+ * subscription column directly, and nothing here touches users.userRole - a
+ * membership is a subscription, and changing what someone IS in order to
+ * change what they may DO is the confusion this engine exists to prevent.
+ *
+ * MOVING TO FREE IS STILL A CANCELLATION. The domain refuses `changePlan` to
+ * FREE on purpose: paid access must run to the end of the period the vendor
+ * already paid for. An administrator selecting FREE therefore SCHEDULES the
+ * end rather than revoking access mid-period - the outcome says so, and the
+ * caller must render that rather than claiming the plan changed today. The
+ * only immediate downgrade is for a row whose paid access has already lapsed,
+ * where there is nothing left to revoke.
+ *
+ * A REASON IS REQUIRED, not optional. The whole difference between this and an
+ * unaudited manual grant is that somebody has to say why, and the reason is
+ * carried into billing history where a dispute can find it.
+ */
+/**
+ * Rank a plan for the sole purpose of saying whether a move was up or down.
+ * Lives here, in the billing layer, because comparing plans is the engine's
+ * job - see the note on `planChange`.
+ */
+function planRank(plan: PlanId): number {
+  return PLAN_IDS.indexOf(plan);
+}
+
+export async function setVendorPlanManually(params: {
+  userId: number;
+  targetPlan: PlanId;
+  /** Only consulted when granting fresh paid access. Defaults to the vendor's existing interval, else monthly. */
+  interval?: BillingInterval;
+  reason: string;
+  actorId: number;
+  now?: Date;
+}): Promise<LifecycleOutcome> {
+  const now = params.now ?? new Date();
+  const { targetPlan } = params;
+  const reason = params.reason.trim();
+
+  if (!isPlanId(targetPlan)) {
+    const { state, lifecycleState } = describe(await getSubscription(params.userId), now);
+    return { outcome: 'rejected', action: 'plan_changed_manually', reason: 'Unknown plan.', state, lifecycleState };
+  }
+  if (reason.length === 0) {
+    const { state, lifecycleState } = describe(await getSubscription(params.userId), now);
+    return {
+      outcome: 'rejected',
+      action: 'plan_changed_manually',
+      reason: 'A manual plan change requires a reason. It is recorded in billing history.',
+      state,
+      lifecycleState,
+    };
+  }
+
+  const outcome = await withSubscriptionLock(
+    params.userId,
+    'plan_changed_manually',
+    'admin',
+    params.actorId,
+    async (locked, at) => {
+      const current = deriveBillingState(locked, at);
+
+      if (targetPlan === 'free') {
+        // Already there, and nothing paid is still running: nothing to do.
+        if (locked.plan === 'free' && !current.isPaid) return null;
+        if (current.isPaid) {
+          // Already scheduled to end - a second request must not re-stamp
+          // `canceledAt` and lose the moment the decision was actually taken.
+          if (locked.cancelAtPeriodEnd) return null;
+          return cancelAtPeriodEnd(at);
+        }
+        // A paid plan on the row whose access has already lapsed. Persisting
+        // FREE here revokes nothing that was still live.
+        return downgradeToFree('canceled');
+      }
+
+      // Already on this paid plan AND actually receiving it: a no-op, which
+      // matters because it is what stops a repeated click sending the vendor a
+      // second "your plan changed" notification about a change that did not
+      // happen.
+      if (locked.plan === targetPlan && current.isPaid) return null;
+
+      try {
+        // Live paid access already: this is a genuine plan change, and the
+        // domain's own rules about period, price and founder pricing apply
+        // unchanged. A manual change is not a licence to rewrite them.
+        if (current.isPaid) {
+          return changePlan({ subscription: locked, targetPlan, now: at });
+        }
+        // No live paid access: the case nothing else in this file could serve.
+        const interval = params.interval
+          ?? (locked.billingInterval as BillingInterval | null)
+          ?? 'month';
+        return grantPaidAccess({ targetPlan, interval, now: at });
+      } catch (error) {
+        if (error instanceof BillingDomainError) return { reject: error.message };
+        throw error;
+      }
+    },
+    now,
+    reason,
+  );
+
+  if (outcome.outcome !== 'applied') return outcome;
+
+  const from = outcome.previousPlan ?? 'free';
+  const to = outcome.state.storedPlan;
+  // Selecting FREE while paid access was live does not move the plan at all -
+  // it sets the row not to renew. Saying "downgraded to free" there would be
+  // false: the vendor still has the plan, and still has it tomorrow.
+  const scheduledEnd = targetPlan === 'free' && to !== 'free' && outcome.state.cancelAtPeriodEnd;
+
+  return {
+    ...outcome,
+    planChange: scheduledEnd
+      ? 'scheduled_end'
+      : planRank(to) > planRank(from) ? 'upgraded' : 'downgraded',
+  };
 }
 
 // ── Payment-outcome transitions (driven by the provider in Phase 4B.5) ─────

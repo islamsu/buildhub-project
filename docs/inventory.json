@@ -743,14 +743,89 @@
       "indent": 2
     },
     {
+      "name": "stats",
+      "tier": "adminWith:users.read",
+      "indent": 2
+    },
+    {
+      "name": "users",
+      "tier": "adminWith:users.read",
+      "indent": 2
+    },
+    {
+      "name": "createUser",
+      "tier": "adminWith:users.manage",
+      "indent": 2
+    },
+    {
+      "name": "resendInvitation",
+      "tier": "adminWith:users.manage",
+      "indent": 2
+    },
+    {
       "name": "completeInvitation",
       "tier": "publicProcedure",
       "indent": 2
     },
     {
+      "name": "fullAuditReport",
+      "tier": "adminWith:audit.read",
+      "indent": 2
+    },
+    {
+      "name": "createDummyUser",
+      "tier": "adminWith:qa.manage",
+      "indent": 2
+    },
+    {
+      "name": "issueTestLoginLink",
+      "tier": "adminWith:qa.manage",
+      "indent": 2
+    },
+    {
+      "name": "testLoginLinks",
+      "tier": "adminWith:qa.manage",
+      "indent": 3
+    },
+    {
+      "name": "revokeTestLoginLink",
+      "tier": "adminWith:qa.manage",
+      "indent": 3
+    },
+    {
+      "name": "setDummyUserPassword",
+      "tier": "adminWith:qa.manage",
+      "indent": 3
+    },
+    {
+      "name": "setDummyUserActive",
+      "tier": "adminWith:qa.manage",
+      "indent": 2
+    },
+    {
+      "name": "deleteDummyUser",
+      "tier": "adminWith:qa.manage",
+      "indent": 2
+    },
+    {
+      "name": "vendorBilling",
+      "tier": "adminWith:billing.read",
+      "indent": 2
+    },
+    {
+      "name": "vendorLifecycle",
+      "tier": "adminWith:billing.read",
+      "indent": 3
+    },
+    {
       "name": "rfqInvestigation",
       "tier": "superAdminProcedure",
       "indent": 2
+    },
+    {
+      "name": "vendorEnquiryAllowance",
+      "tier": "adminWith:billing.read",
+      "indent": 3
     },
     {
       "name": "setVendorEnquiryLimit",
@@ -760,6 +835,136 @@
     {
       "name": "platformSearch",
       "tier": "adminProcedure",
+      "indent": 2
+    },
+    {
+      "name": "dataQuality",
+      "tier": "adminWith:audit.read",
+      "indent": 2
+    },
+    {
+      "name": "operationalHealth",
+      "tier": "adminWith:audit.read",
+      "indent": 2
+    },
+    {
+      "name": "startVendorTrial",
+      "tier": "adminWith:billing.manage",
+      "indent": 3
+    },
+    {
+      "name": "changeVendorPlan",
+      "tier": "adminWith:billing.manage",
+      "indent": 3
+    },
+    {
+      "name": "setVendorPlanManually",
+      "tier": "adminWith:billing.manage",
+      "indent": 2
+    },
+    {
+      "name": "recordVendorPaymentSucceeded",
+      "tier": "adminWith:billing.manage",
+      "indent": 3
+    },
+    {
+      "name": "recordVendorPaymentFailed",
+      "tier": "adminWith:billing.manage",
+      "indent": 3
+    },
+    {
+      "name": "recordVendorPaymentRecovered",
+      "tier": "adminWith:billing.manage",
+      "indent": 3
+    },
+    {
+      "name": "reconcileVendorBilling",
+      "tier": "adminWith:billing.manage",
+      "indent": 3
+    },
+    {
+      "name": "reconcileDueBilling",
+      "tier": "adminWith:billing.manage",
+      "indent": 2
+    },
+    {
+      "name": "vendorTargeting",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "accountAudit",
+      "tier": "adminWith:users.read",
+      "indent": 2
+    },
+    {
+      "name": "analyticsSummary",
+      "tier": "adminWith:audit.read",
+      "indent": 2
+    },
+    {
+      "name": "productAnalytics",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "commercialKpis",
+      "tier": "adminWith:billing.read",
+      "indent": 2
+    },
+    {
+      "name": "complianceQueue",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "complianceApplicant",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "reviewComplianceDocument",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "updateApplicantStatus",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "bulkUpdateApplicantStatus",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "verifyUser",
+      "tier": "adminWith:users.manage",
+      "indent": 2
+    },
+    {
+      "name": "setUserFrozen",
+      "tier": "adminWith:users.manage",
+      "indent": 2
+    },
+    {
+      "name": "disputes",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "updateDispute",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "settings",
+      "tier": "adminWith:settings.manage",
+      "indent": 2
+    },
+    {
+      "name": "updateSetting",
+      "tier": "adminWith:settings.manage",
       "indent": 2
     },
     {
@@ -833,6 +1038,11 @@
       "indent": 2
     },
     {
+      "name": "all",
+      "tier": "adminWith:audit.read",
+      "indent": 2
+    },
+    {
       "name": "recordHistory",
       "tier": "protectedProcedure",
       "indent": 2
@@ -883,8 +1093,17 @@
     "protectedProcedure": 59,
     "complianceProcedure": 2,
     "approvedProviderProcedure": 18,
+    "adminWith:users.read": 3,
+    "adminWith:users.manage": 4,
+    "adminWith:audit.read": 5,
+    "adminWith:qa.manage": 7,
+    "adminWith:billing.read": 4,
     "superAdminProcedure": 10,
     "adminProcedure": 3,
+    "adminWith:billing.manage": 8,
+    "adminWith:marketplace.manage": 7,
+    "adminWith:support.manage": 2,
+    "adminWith:settings.manage": 2,
     "aiChatProcedure": 1
   },
   "tables": [
@@ -1180,47 +1399,52 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 1228,
+      "line": 1229,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2032,
+      "line": 2033,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2112,
+      "line": 2113,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3061,
+      "line": 3062,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3293,
+      "line": 3294,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3433,
+      "line": 3434,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4550,
+      "line": 4482,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4575,
+      "line": 4683,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4600,
+      "line": 4708,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 4733,
       "via": "notifyUser"
     },
     {
@@ -1272,6 +1496,10 @@
     {
       "name": "uploadAvatar",
       "tier": "protectedProcedure"
+    },
+    {
+      "name": "reviewComplianceDocument",
+      "tier": "adminWith:marketplace.manage"
     },
     {
       "name": "uploadAttachment",

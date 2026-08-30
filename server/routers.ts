@@ -74,6 +74,7 @@ import {
   reconcileSubscription,
   requestCancellation,
   resumeSubscription,
+  setVendorPlanManually,
   startPaidTrial,
   type LifecycleOutcome,
 } from './billing/lifecycle';
@@ -4367,6 +4368,138 @@ const adminRouter = router({
     .mutation(async ({ ctx, input }) => lifecycleResult(await changeVendorPlan({
       userId: input.userId, targetPlan: input.plan, source: 'admin', actorId: ctx.user.id,
     }))),
+
+  /**
+   * ── SUPER ADMIN MANUAL PLAN / MEMBERSHIP CHANGE ─────────────────────────
+   *
+   * PERMISSION IS `billing.manage`, which SUPER_ADMIN and BILLING_ADMIN hold
+   * and USER_ADMIN, MARKETPLACE_ADMIN and SUPPORT_ADMIN do not. That is a
+   * deliberate reading of the existing model rather than a new rule: granting
+   * a paid plan IS a billing operation, and the role whose whole purpose is
+   * billing already carries the permission to perform one. A support admin who
+   * can read a vendor's billing state still cannot change it.
+   *
+   * IT DOES NOT TOUCH `users.userRole`. A membership is a subscription. The
+   * temptation - make the vendor a "premium role" - would conflate what
+   * someone IS with what they have paid for, and every entitlement check in
+   * this codebase reads the subscription, so the role edit would grant nothing
+   * while corrupting the account.
+   *
+   * IT DOES NOT TOUCH USAGE. Qualified enquiries already consumed this period
+   * stay consumed: `qualifiedEnquiries` rows are never written here, so a
+   * vendor who used 7 of 20 and is moved to a 50-lead plan has 43 remaining,
+   * not 50. Revoking or resetting consumption would rewrite history the vendor
+   * already acted on.
+   *
+   * THREE RECORDS, EACH ANSWERING A DIFFERENT QUESTION:
+   *   billingEvents          the commercial trail - what the engine did
+   *   userAccountAuditEvents the account trail - what an administrator did
+   *   fieldValueHistory      the value trail - old -> new, with the reason
+   */
+  setVendorPlanManually: adminWith('billing.manage')
+    .input(z.object({
+      userId: z.number().int().positive(),
+      // FREE is accepted here, unlike `changeVendorPlan`. The engine turns it
+      // into the cancellation it actually is; see setVendorPlanManually.
+      plan: z.enum(['free', 'professional', 'premium']),
+      interval: z.enum(['month', 'year']).optional(),
+      // REQUIRED, and non-empty after trimming. An unexplained manual grant is
+      // the thing this whole capability was built to avoid being.
+      reason: z.string().trim().min(1).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const [target] = await db.select({ id: users.id, userRole: users.userRole })
+        .from(users).where(eq(users.id, input.userId)).limit(1);
+      if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor not found' });
+      if (!providerRoles.includes(target.userRole as typeof providerRoles[number])) {
+        // A homeowner has no vendor subscription and no entitlement that a plan
+        // would change. Refusing keeps subscription rows off accounts that can
+        // never use one, rather than creating a plan nobody can consume.
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Plans apply to provider accounts only' });
+      }
+
+      const outcome = await setVendorPlanManually({
+        userId: input.userId,
+        targetPlan: input.plan,
+        interval: input.interval,
+        reason: input.reason,
+        actorId: ctx.user.id,
+      });
+
+      if (outcome.outcome === 'rejected') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: outcome.reason });
+      }
+
+      // NOTHING CHANGED, SO NOTHING IS RECORDED AND NOBODY IS TOLD. Selecting
+      // the plan a vendor already has must not write an audit event describing
+      // a change that did not happen, and must not send them a notification
+      // about it. This is the single branch that guarantees both.
+      if (outcome.outcome === 'noop') {
+        return { ...lifecycleResult(outcome), notified: false };
+      }
+
+      const from = outcome.previousPlan ?? 'free';
+      const to = outcome.state.storedPlan;
+
+      await db.insert(userAccountAuditEvents).values({
+        userId: input.userId,
+        actorId: ctx.user.id,
+        action: 'plan_changed_manually',
+        source: 'admin',
+        note: `${from} -> ${to} (${input.reason})`,
+      });
+      await recordFieldChange(db, {
+        subjectType: 'subscription',
+        subjectId: input.userId,
+        ownerId: input.userId,
+        actorId: ctx.user.id,
+        field: 'plan',
+        oldValue: from,
+        newValue: to,
+        reason: input.reason,
+      });
+
+      // ── THE MESSAGE, BUILT FROM WHAT ACTUALLY HAPPENED ──────────────────
+      //
+      // Three outcomes, three sentences, and the plan is never hard-coded into
+      // any of them: `planKey` names the plan and the reader's own client
+      // resolves it, so an Arabic-speaking vendor reads an Arabic plan name.
+      //
+      // WHICH of the three is the ENGINE's answer, not one derived here. An
+      // earlier version compared plan strings in this file - and comparing
+      // plans outside the engine is exactly what billingAuthorization's
+      // "no scattered plan checks" rule forbids. The engine knows which branch
+      // it took; there is nothing for the router to work out.
+      //
+      // `scheduled_end` is not a cosmetic variant. Selecting FREE while paid
+      // access is live does NOT end it today - the vendor keeps the period they
+      // paid for - and telling them their plan is now Free would be false.
+      const direction = outcome.planChange === 'scheduled_end' ? 'scheduled' : outcome.planChange ?? 'downgraded';
+
+      await notifyUser(db, {
+        userId: input.userId,
+        // English prose for a client too old to know the key. The plan name is
+        // resolved from the same value the key-form uses, never from a literal.
+        title: direction === 'scheduled' ? 'Your plan will end' : `Your plan is now ${to}`,
+        body: direction === 'scheduled'
+          ? 'Your paid plan will not renew. You keep it until the end of the period you have paid for.'
+          : `An administrator changed your plan from ${from} to ${to}.`,
+        type: 'billing',
+        // Deep link to the Plan & Billing section itself, not to the top of a
+        // settings page the vendor then has to hunt through.
+        link: '/settings#settings-billing',
+        messageKey: `notif.billing.plan.${direction}`,
+        messageParams: {
+          planKey: `billing.plan.${to}`,
+          fromPlanKey: `billing.plan.${from}`,
+        },
+      });
+
+      return { ...lifecycleResult(outcome), notified: true };
+    }),
 
   recordVendorPaymentSucceeded: adminWith('billing.manage')
     .input(z.object({ userId: z.number().int().positive() }))
