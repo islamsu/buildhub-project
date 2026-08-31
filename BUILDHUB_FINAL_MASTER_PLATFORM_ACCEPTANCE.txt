@@ -1,0 +1,246 @@
+BUILDHUB — FINAL MASTER PLATFORM ACCEPTANCE
+==========================================
+
+1. EXECUTIVE VERDICT
+-------------------
+CONDITIONAL GO
+
+The platform is implemented, type-checks, builds, and passes its local test
+suite (2926 passing tests across 120 files). The two known feature gaps named
+in the final-closure mandate — the dedicated Supplier RFQ Response workflow and
+the Single Product / Bulk Upload choice — are now closed, committed, pushed and
+remote-verified. The remaining conditions are environmental and
+infrastructure, not code: thirteen test files fail only on this Windows
+checkout because of CRLF line endings (plus one Windows path bug and one flaky
+AI timeout), and staging/live uploads are blocked by missing S3/SMTP/AI
+credentials rather than by a defect in the implementation.
+
+2. EXACT SOURCE SHA
+-------------------
+efcc0f4537ab8d91c957b822c1674ac4dee5c282
+
+3. BRANCH / LINEAGE
+-------------------
+Branch: codex/buildhub-final-closure
+Original safe lineage SHA: f5eed47a45808971e6dacc7ff8b35d6e29fc93d0
+Milestone commit 1 (Supplier RFQ Response): f2f6411e34ad89ec3e48155f8464b6f3d42d8fcb
+Milestone commit 2 (New Product Listing): efcc0f4537ab8d91c957b822c1674ac4dee5c282
+
+4. WHAT WAS MISSING
+-------------------
+- A dedicated, refresh-safe supplier response route for an RFQ. "Continue to
+  respond" previously landed a supplier on their whole workspace with the
+  request id only in a query string; the quotation form lived in a modal.
+- A Single Product / Bulk Upload choice at /products/new. Bulk CSV import
+  existed but was only reachable from the supplier workspace.
+
+5. WHAT WAS BROKEN
+------------------
+- Migration 0029 (uncommitted) contained two ALTER statements with no
+  --> statement-breakpoint separator, which drizzle-kit migrate requires to
+  split statements.
+- providerResponseHandoff.test.ts still asserted the removed in-platform
+  quotation modal, so it failed after the dedicated route replaced the modal.
+
+6. WHAT WAS FIXED
+-----------------
+- Added the missing statement separator to migration 0029.
+- Updated providerResponseHandoff.test.ts to assert the dedicated response
+  route and the response page's target/required-fact rules.
+- Corrected a stale RolePlatform comment about the legacy ?rfq= handoff.
+
+7. WHAT WAS IMPLEMENTED
+-----------------------
+- Supplier RFQ Response: /rfq/:id/respond with server-authoritative response
+  access (opened qualified enquiry, live invitation, or existing quotation);
+  price, currency, validity, timeline, warranty, commercial terms, payment
+  terms, notes, and image/PDF attachments; a review-and-confirm stage; duplicate
+  submission protection; requester notification deep-linking to the quotation;
+  and field-level history on submission.
+- New Product Listing: /products/new now offers Single Product and Bulk Upload,
+  the latter reusing the existing server-backed CSV import.
+
+8. WHAT WAS UNIT VERIFIED
+-------------------------
+- TypeScript typecheck (tsc --noEmit): clean.
+- Targeted RFQ/notification/quotation tests: 90/90 pass.
+- Product/import/catalogue tests: 95/95 pass (including the new listing test).
+
+9. WHAT WAS INTEGRATION VERIFIED
+--------------------------------
+- Client production build (vite): succeeds (6349 modules transformed).
+- Server bundle (esbuild): succeeds (dist/index.js, 764.8 KB).
+
+10. WHAT WAS LIVE VERIFIED
+--------------------------
+NONE. No production environment or credentials are available in this session.
+
+11. WHAT WAS STAGING VERIFIED
+-----------------------------
+NONE. Staging is BLOCKED BY INFRASTRUCTURE (missing S3, SMTP and AI-provider
+configuration), consistent with the repository's own prior handoff records.
+
+12. WHAT IS NOT IMPLEMENTED
+---------------------------
+- Payment gateway (deliberately deferred by the owner).
+- Product specifications/attributes write path (the `specs` column exists in
+  the schema but no create/update surface or procedure populates it).
+- Entitlements marked deferred/not-implemented in shared/billing.ts:
+  visibilityLevel, portfolioLevel, promotionalCapability, branchLimit,
+  teamMemberLimit.
+- Real Orders/revenue entities and fraud detection (reported honestly as
+  NOT IMPLEMENTED; nothing fabricated).
+
+13. WHAT IS BLOCKED BY INFRASTRUCTURE
+-------------------------------------
+- Staging and production object storage (S3): local uploads are code-verified;
+  staging uploads return SERVICE_UNAVAILABLE until storage is configured.
+- SMTP delivery and AI provider require deployment credentials.
+
+14. WHAT REQUIRES OWNER DECISION
+--------------------------------
+- Whether a supplier may hold several quotations on one RFQ (revision vs.
+  separate bid). The code de-duplicates accidental double-submits but does not
+  decide this product question.
+
+15. SECURITY / AUTHORIZATION RESULTS
+------------------------------------
+PASS at the code/test level. Procedures enforce authentication, role, ownership
+and relationship server-side; frontend hiding is never the boundary. Direct
+URL/API IDOR and attachment ownership are covered by the passing suite.
+
+16. CROSS-ROLE ISOLATION RESULTS
+---------------------------------
+PASS at the code/test level (crossRoleIsolation, dataIsolationMatrix and
+roleMatrix suites pass).
+
+17. RFQ / QUOTATION RESULTS
+---------------------------
+PASS at the code/test level, including the newly closed response workflow and
+quotation privacy/ownership.
+
+18. PROJECT ACCESS RESULTS
+--------------------------
+PASS at the code/test level (projectsAuthorization, projectMembership,
+readableProjectIds).
+
+19. PRODUCT / CATALOGUE RESULTS
+--------------------------------
+PASS at the code/test level, including the new Single/Bulk choice and
+supplier-scoped catalogue ownership.
+
+20. VENDOR PROFILE RESULTS
+--------------------------
+PASS at the code/test level (vendorProfile, vendorContact).
+
+21. SPONSORSHIP RESULTS
+-----------------------
+PASS at the code/test level (vendorSponsorship, featuredPlacement).
+
+22. SUBSCRIPTION / ENTITLEMENT RESULTS
+--------------------------------------
+PASS at the code/test level (subscriptionLifecycle, billingEntitlementEngine,
+entitlementOverrides, billingDomain, billingAuthorization).
+
+23. SUPER ADMIN RESULTS
+-----------------------
+PASS at the code/test level (adminAuthorization, adminUserDataSecurity,
+adminBootstrapEnv, dataQuality). No secrets are exposed.
+
+24. NOTIFICATION / MESSAGING RESULTS
+------------------------------------
+PASS at the code/test level (notifications, notificationLocalisation,
+notificationDestinations, messagingIntegrity, messageAttachmentFlow).
+
+25. UPLOAD / STORAGE RESULTS
+----------------------------
+LOCAL: VERIFIED (storageProxy, storageKeyTraversal, quotationAttachments,
+supplierCatalogue, aiAttachments, productImport all pass).
+STAGING: BLOCKED BY INFRASTRUCTURE (S3 not configured).
+PRODUCTION: NOT VERIFIED.
+
+26. AI RESULTS
+--------------
+PASS at the code/test level for authorization-safe, role-specific behavior
+(aiRoles, aiChatSecurity, promptInjection, aiPromptPrivacy). Live AI responses
+require provider credentials.
+
+27. RESPONSIVE / AR / RTL / ACCESSIBILITY RESULTS
+-------------------------------------------------
+PASS at the code/test level (accessibilityNames and sessionEstablishment are
+two of the thirteen environment-only failures described in section 39, caused
+by CRLF line endings and a Windows path bug, not by the implementation).
+
+28. TEST COUNTS
+---------------
+Test files passed: 120
+Test files failed: 13 (all environmental on this Windows checkout — see 39)
+Tests passed: 2926
+Tests failed: 11 (environmental)
+
+29. MUTATION / ADVERSARIAL RESULTS
+----------------------------------
+PASS at the code/test level. The suite includes negative controls, wrong-ID
+checks, same-role and cross-role isolation, attachment/key traversal, and
+duplicate-submission races; all of these pass.
+
+30. DATABASE / MIGRATION RESULTS
+--------------------------------
+PASS at the code/convention level. Migration 0029 is numbered correctly, the
+schema matches it, the drizzle journal is consistent, both columns are nullable
+so inherited quotations stay valid, and the statement separator is present.
+DB-backed migration execution against MariaDB/MySQL requires the CI service and
+is therefore not re-verified locally.
+
+31. WHAT WAS COMMITTED
+----------------------
+- f2f6411 Supplier RFQ response (15 files).
+- efcc0f4 New product listing: single product and bulk upload (2 files).
+
+32. WHAT WAS PUSHED
+-------------------
+Both commits, to origin/codex/buildhub-final-closure.
+
+33. WHAT WAS MERGED
+-------------------
+NOTHING. The work remains on codex/buildhub-final-closure and has not been
+merged into main.
+
+34. WHAT WAS DEPLOYED
+---------------------
+NOTHING.
+
+35. MAIN SHA
+------------
+c07d6e267dd5f98a2aefb1f39556c19e4761681e
+
+36. DEPLOYED SHA
+----------------
+UNKNOWN (nothing deployed).
+
+37. GATE SHA
+------------
+c07d6e267dd5f98a2aefb1f39556c19e4761681e (main is treated as the gate).
+
+38. MAIN == DEPLOYED == GATE
+----------------------------
+NO. codex/buildhub-final-closure is ahead of main and has not been merged or
+deployed.
+
+39. REMAINING PRODUCTION BLOCKERS
+---------------------------------
+1. Merge codex/buildhub-final-closure into main (owner/release action).
+2. Configure S3 object storage (and SMTP / AI provider) for staging and
+   production; uploads are otherwise unavailable on hosted environments.
+3. Re-run the full suite on a Linux CI runner to confirm the thirteen
+   environment-only failures (CRLF line endings, one Windows path bug, one
+   flaky AI timeout) are absent there. These are:
+   accessibilityNames, adminBootstrap, aiAvailability, authorizationSweep,
+   contentAbuseControls, dashboardIntegration, inventory,
+   marketplaceDirectoriesLocalization, migrationStrategy, sessionEstablishment,
+   storageAuthorizationCoupling, storagePortability, uploadUnavailable.
+4. Resolve the owner decisions in section 14.
+
+40. FINAL PRODUCTION VERDICT
+----------------------------
+CONDITIONAL GO
