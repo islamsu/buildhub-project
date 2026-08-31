@@ -27,6 +27,7 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import DashboardLayout from '@/components/DashboardLayout';
+import ProductImport from '@/components/ProductImport';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,7 +35,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { PRODUCT_CATEGORIES, isProductCategory } from '@shared/productCategories';
 import { PRODUCT_UNITS, isProductUnit } from '@shared/productUnits';
 import { toast } from 'sonner';
-import { ArrowLeft, PackagePlus, Save, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, PackagePlus, Save, AlertTriangle, FileSpreadsheet } from 'lucide-react';
 
 type FormState = {
   name: string; nameAr: string; category: string; brand: string; origin: string;
@@ -73,6 +74,10 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
 
   const [form, setForm] = useState<FormState>(EMPTY);
   const [loaded, setLoaded] = useState(false);
+  // `/products/new` offers two ways in: one product at a time, or a CSV of many.
+  // The choice lives here because both surfaces already exist and share the same
+  // supplier workspace handoff; a separate page would only add a hop.
+  const [listingMode, setListingMode] = useState<'single' | 'bulk'>('single');
 
   useEffect(() => {
     if (!editing || !product || loaded) return;
@@ -167,6 +172,34 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
         </Link>
       </div>
 
+      {!editing && (
+        <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg border p-1" data-testid="product-listing-mode">
+          <Button
+            type="button"
+            variant={listingMode === 'single' ? 'default' : 'ghost'}
+            className="gap-2"
+            data-testid="listing-mode-single"
+            onClick={() => setListingMode('single')}
+          >
+            <PackagePlus className="h-4 w-4" />
+            {ar ? 'منتج واحد' : 'Single product'}
+          </Button>
+          <Button
+            type="button"
+            variant={listingMode === 'bulk' ? 'default' : 'ghost'}
+            className="gap-2"
+            data-testid="listing-mode-bulk"
+            onClick={() => setListingMode('bulk')}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            {ar ? 'رفع جماعي' : 'Bulk upload'}
+          </Button>
+        </div>
+      )}
+
+      {!editing && listingMode === 'bulk' ? (
+        <ProductImport onImported={() => void utils.marketplace.myProducts.invalidate()} />
+      ) : (
       <Card data-testid="product-form">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -255,6 +288,7 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
           </div>
         </CardContent>
       </Card>
+      )}
     </Shell>
   );
 }
