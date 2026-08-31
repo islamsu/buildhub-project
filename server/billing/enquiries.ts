@@ -13,7 +13,7 @@
 
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { isClassifiableRfqCategory } from '@shared/rfqCategories';
-import { qualifiedEnquiries, rfqs, vendorCategories, type Rfq } from '../../drizzle/schema';
+import { qualifiedEnquiries, quotations, rfqs, vendorCategories, type Rfq } from '../../drizzle/schema';
 import { getDb } from '../db';
 import { allowancePeriodFor, resolveVendorEntitlements } from './entitlements';
 import { recordEventAsync } from '../analytics/events';
@@ -90,6 +90,41 @@ export type EnquiryUsage = {
   periodKey: string;
   resetsAt: Date;
 };
+
+/**
+ * Existing authority to prepare or submit a response to one RFQ.
+ *
+ * Reading the free marketplace summary is not this authority. A supplier must
+ * either have opened the qualified enquiry, hold a live invitation, or already
+ * own a quotation on the request (the last arm preserves idempotent retries
+ * after an invitation advances to `responded`). This is deliberately read-only:
+ * only openQualifiedEnquiry may consume an allowance.
+ */
+export async function getRfqResponseAccess(db: any, userId: number, rfqId: number): Promise<{
+  canRespond: boolean;
+  byInvitation: boolean;
+  alreadyOpened: boolean;
+  hasExistingQuotation: boolean;
+}> {
+  const byInvitation = await hasOpenInvitation(db, rfqId, userId);
+  const [opened] = await db
+    .select({ id: qualifiedEnquiries.id })
+    .from(qualifiedEnquiries)
+    .where(and(eq(qualifiedEnquiries.userId, userId), eq(qualifiedEnquiries.rfqId, rfqId)))
+    .limit(1);
+  const [existingQuotation] = await db
+    .select({ id: quotations.id })
+    .from(quotations)
+    .where(and(eq(quotations.providerId, userId), eq(quotations.rfqId, rfqId)))
+    .limit(1);
+  const hasExistingQuotation = !!existingQuotation;
+  return {
+    canRespond: byInvitation || !!opened || hasExistingQuotation,
+    byInvitation,
+    alreadyOpened: byInvitation || !!opened,
+    hasExistingQuotation,
+  };
+}
 
 async function countUsage(userId: number, yearMonth: string): Promise<number> {
   const db = await getDb();

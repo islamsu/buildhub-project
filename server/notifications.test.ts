@@ -57,7 +57,19 @@ vi.mock('./db', () => ({
 import { appRouter } from './routers';
 import type { TrpcContext } from './_core/context';
 import { getDb } from './db';
-import { withTransaction } from './testSupport/txDouble';
+import { qualifiedEnquiries, quotations, rfqSuppliers, rfqs } from '../drizzle/schema';
+import { selectByTable, withTransaction } from './testSupport/txDouble';
+
+const VALID_UNTIL = new Date('2099-12-31T23:59:59.000Z');
+
+function submitSelect(rfqRows: unknown[]) {
+  return selectByTable(new Map([
+    [rfqs, rfqRows],
+    [rfqSuppliers, []],
+    [qualifiedEnquiries, [{ id: 81 }]],
+    [quotations, []],
+  ]));
+}
 
 function makeCtx(userId: number, userRole: string, onboardingStatus = 'approved'): TrpcContext {
   return {
@@ -96,12 +108,12 @@ describe('rfq.submitQuotation notifies the RFQ owner', () => {
       // `status` is now part of what the procedure reads: the RFQ lookup moved
       // in front of the insert and became the state check, not just a way to
       // find out whom to notify.
-      select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([{ requesterId: 1, title: 'Kitchen renovation', status: 'open' }]) }) }),
+      select: submitSelect([{ requesterId: 1, title: 'Kitchen renovation', status: 'open' }]),
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
 
     const caller = appRouter.createCaller(makeCtx(20, 'contractor'));
-    await caller.rfq.submitQuotation({ rfqId: 5, price: 1000 });
+    await caller.rfq.submitQuotation({ rfqId: 5, price: 1000, validUntil: VALID_UNTIL });
 
     expect(notifyValues).toHaveBeenCalledWith(expect.objectContaining({ userId: 1, type: 'quotation' }));
   });
@@ -126,12 +138,12 @@ describe('rfq.submitQuotation notifies the RFQ owner', () => {
         insertCall += 1;
         return { values: insertCall === 1 ? insertValues : notifyValues };
       }),
-      select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([{ requesterId: 1, title: 'Kitchen renovation', status: 'open' }]) }) }),
+      select: submitSelect([{ requesterId: 1, title: 'Kitchen renovation', status: 'open' }]),
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
 
     const caller = appRouter.createCaller(makeCtx(20, 'contractor'));
-    await expect(caller.rfq.submitQuotation({ rfqId: 5, price: 1000 })).resolves.toEqual({ success: true });
+    await expect(caller.rfq.submitQuotation({ rfqId: 5, price: 1000, validUntil: VALID_UNTIL })).resolves.toEqual({ success: true, quotationId: 0 });
     // The bid was stored and the requester was still told about it.
     expect(insertValues).toHaveBeenCalledTimes(1);
     expect(notifyValues).toHaveBeenCalledWith(expect.objectContaining({ userId: 1, type: 'quotation' }));
@@ -148,11 +160,11 @@ describe('rfq.submitQuotation notifies the RFQ owner', () => {
     const insertValues = vi.fn().mockResolvedValue([{ insertId: 1 }]);
     const db = {
       insert: vi.fn().mockReturnValue({ values: insertValues }),
-      select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([]) }) }),
+      select: submitSelect([]),
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(20, 'contractor'));
-    await expect(caller.rfq.submitQuotation({ rfqId: 5, price: 1000 }))
+    await expect(caller.rfq.submitQuotation({ rfqId: 5, price: 1000, validUntil: VALID_UNTIL }))
       .rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(insertValues, 'nothing may be written before the RFQ is verified').not.toHaveBeenCalled();
   });
@@ -165,11 +177,11 @@ describe('rfq.submitQuotation notifies the RFQ owner', () => {
       const insertValues = vi.fn().mockResolvedValue([{ insertId: 1 }]);
       const db = {
         insert: vi.fn().mockReturnValue({ values: insertValues }),
-        select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([{ requesterId: 1, title: 'Kitchen renovation', status }]) }) }),
+        select: submitSelect([{ requesterId: 1, title: 'Kitchen renovation', status }]),
       };
       (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
       const caller = appRouter.createCaller(makeCtx(20, 'contractor'));
-      await expect(caller.rfq.submitQuotation({ rfqId: 5, price: 1000 }), status)
+      await expect(caller.rfq.submitQuotation({ rfqId: 5, price: 1000, validUntil: VALID_UNTIL }), status)
         .rejects.toMatchObject({ code: 'CONFLICT' });
       expect(insertValues, `a ${status} RFQ must not receive a quotation`).not.toHaveBeenCalled();
     }
@@ -189,7 +201,7 @@ describe('rfq.submitQuotation notifies the RFQ owner', () => {
       const insertValues = vi.fn().mockResolvedValue([{ insertId: 1 }]);
       (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction({
         insert: vi.fn().mockReturnValue({ values: insertValues }),
-        select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([{ requesterId: 1, title: 'T', status: 'open' }]) }) }),
+        select: submitSelect([{ requesterId: 1, title: 'T', status: 'open' }]),
       }));
       return insertValues;
     };
@@ -213,8 +225,8 @@ describe('rfq.submitQuotation notifies the RFQ owner', () => {
     // rejection test that would also reject valid input proves nothing.
     const insertValues = workingDb();
     const caller = appRouter.createCaller(makeCtx(20, 'contractor'));
-    await expect(caller.rfq.submitQuotation({ rfqId: 5, price: 100, warranty: 'x'.repeat(100) }))
-      .resolves.toEqual({ success: true });
+    await expect(caller.rfq.submitQuotation({ rfqId: 5, price: 100, warranty: 'x'.repeat(100), validUntil: VALID_UNTIL }))
+      .resolves.toEqual({ success: true, quotationId: 1 });
     expect(insertValues).toHaveBeenCalled();
   });
 });

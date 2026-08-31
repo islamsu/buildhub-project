@@ -7,7 +7,8 @@ import { appRouter } from './routers';
 import { getDb } from './db';
 import { authorizeStorageKey } from './_core/storageProxy';
 import type { TrpcContext } from './_core/context';
-import { withTransaction } from './testSupport/txDouble';
+import { qualifiedEnquiries, quotations, rfqSuppliers, rfqs } from '../drizzle/schema';
+import { selectByTable, withTransaction } from './testSupport/txDouble';
 
 /**
  * A SUPPLIER COULD NOT SEND A SINGLE DOCUMENT WITH A BID.
@@ -37,11 +38,17 @@ const ctx = (id: number, userRole = 'supplier', onboardingStatus = 'approved'): 
 });
 
 const FILE = { key: '', url: '/manus-storage/x', name: 'proposal.pdf', type: 'application/pdf', size: 10 };
+const VALID_UNTIL = new Date('2099-12-31T23:59:59.000Z');
 
 function stubDb(rfqRow: Record<string, unknown> | null = { requesterId: 99, title: 'T', status: 'open' }) {
   const inserted: Record<string, unknown>[] = [];
   (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction({
-    select: () => ({ from: () => ({ where: () => Promise.resolve(rfqRow ? [rfqRow] : []) }) }),
+    select: selectByTable(new Map([
+      [rfqs, rfqRow ? [rfqRow] : []],
+      [rfqSuppliers, []],
+      [qualifiedEnquiries, [{ id: 77 }]],
+      [quotations, []],
+    ])),
     // Only QUOTATION inserts are counted. This procedure also writes a
     // notification, an analytics event and a commercial audit row; counting
     // every write would make the assertions below about the wrong thing.
@@ -64,7 +71,7 @@ describe('submitQuotation refuses a file the supplier did not upload', () => {
     const inserted = stubDb();
     await expect(
       appRouter.createCaller(ctx(3)).rfq.submitQuotation({
-        rfqId: 1, price: 100,
+        rfqId: 1, price: 100, validUntil: VALID_UNTIL,
         attachments: [{ ...FILE, key: 'quotation-attachments/user-4/proposal_a1b2c3d4.pdf' }],
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -85,7 +92,7 @@ describe('submitQuotation refuses a file the supplier did not upload', () => {
     ]) {
       await expect(
         appRouter.createCaller(ctx(3)).rfq.submitQuotation({
-          rfqId: 1, price: 100, attachments: [{ ...FILE, key }],
+          rfqId: 1, price: 100, validUntil: VALID_UNTIL, attachments: [{ ...FILE, key }],
         }),
         `key ${key} must be refused`,
       ).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -97,17 +104,17 @@ describe('submitQuotation refuses a file the supplier did not upload', () => {
     const inserted = stubDb();
     await expect(
       appRouter.createCaller(ctx(3)).rfq.submitQuotation({
-        rfqId: 1, price: 100,
+        rfqId: 1, price: 100, validUntil: VALID_UNTIL,
         attachments: [{ ...FILE, key: 'quotation-attachments/user-3/proposal_a1b2c3d4.pdf' }],
       }),
-    ).resolves.toEqual({ success: true });
+    ).resolves.toEqual({ success: true, quotationId: 5 });
     expect(inserted).toHaveLength(1);
     expect(String(inserted[0].attachments)).toContain('proposal.pdf');
   });
 
   it('a quotation with no attachments stores null, not an empty array', async () => {
     const inserted = stubDb();
-    await appRouter.createCaller(ctx(3)).rfq.submitQuotation({ rfqId: 1, price: 100 });
+    await appRouter.createCaller(ctx(3)).rfq.submitQuotation({ rfqId: 1, price: 100, validUntil: VALID_UNTIL });
     expect(inserted[0].attachments).toBeNull();
   });
 });
@@ -204,7 +211,7 @@ describe('the storage proxy on a quotation attachment', () => {
 
 describe('both sides of the exchange are wired', () => {
   const ROUTERS = readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'));
-  const FORM = readSourceForAssertions(readFileSync(new URL('../client/src/pages/RolePlatform.tsx', import.meta.url), 'utf8'));
+  const FORM = readSourceForAssertions(readFileSync(new URL('../client/src/pages/RFQRespondPage.tsx', import.meta.url), 'utf8'));
   const REVIEW = readSourceForAssertions(readFileSync(new URL('../client/src/components/QuotationComparison.tsx', import.meta.url), 'utf8'));
 
   it('the upload sits behind the same gate as submitting a quotation', () => {
@@ -241,14 +248,14 @@ describe('both sides of the exchange are wired', () => {
   });
 
   it('the supplier form can attach, list and remove files', () => {
-    expect(FORM).toContain('data-testid="quote-attach"');
-    expect(FORM).toContain('data-testid="quote-attachments"');
-    expect(FORM).toContain('data-testid="quote-remove-attachment"');
-    expect(FORM).toMatch(/attachments: quoteFiles\.length > 0 \? quoteFiles : undefined/);
+    expect(FORM).toContain('data-testid="respond-attach"');
+    expect(FORM).toContain('data-testid="respond-attachments"');
+    expect(FORM).toContain('data-testid="respond-remove-attachment"');
+    expect(FORM).toMatch(/attachments: files\.length \? files : undefined/);
   });
 
   it('and it tells the supplier who will be able to see them', () => {
-    expect(FORM).toMatch(/Only the customer who posted the request can see them/i);
+    expect(FORM).toMatch(/Only the requester can see them/i);
     expect(FORM).toMatch(/[؀-ۿ]/);
   });
 

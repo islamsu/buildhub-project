@@ -204,6 +204,13 @@
       "when": 1788150000000,
       "tag": "0028_vendor_profiles_and_sponsorships",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "5",
+      "when": 1788170000000,
+      "tag": "0029_quotation_response_workflow",
+      "breakpoints": true
     }
   ]
 }

@@ -1,13 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { readSourceForAssertions } from './_testing/sourceText';
-import { rfqs, quotations } from '../drizzle/schema';
+import { qualifiedEnquiries, rfqSuppliers, rfqs, quotations } from '../drizzle/schema';
 
 vi.mock('./db', () => ({ getDb: vi.fn() }));
 import { appRouter } from './routers';
 import { getDb } from './db';
 import type { TrpcContext } from './_core/context';
-import { withTransaction } from './testSupport/txDouble';
+import { selectByTable, withTransaction } from './testSupport/txDouble';
 
 /**
  * EVERY NOTIFICATION POINTED AT A LIST.
@@ -35,6 +35,7 @@ const QUOTATION_ID = 55;
 const REQUESTER_ID = 91;
 const WINNER_ID = 42;
 const LOSER_ID = 43;
+const VALID_UNTIL = new Date('2099-12-31T23:59:59.000Z');
 
 const ctx = (id: number, userRole = 'homeowner'): TrpcContext => ({
   user: {
@@ -102,19 +103,24 @@ describe('a new quotation takes the customer to that request', () => {
   function stubSubmitDb() {
     const inserts: unknown[] = [];
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction({
-      select: () => ({ from: () => ({ where: () => Promise.resolve([{ requesterId: REQUESTER_ID, title: 'Steel package', status: 'open' }]) }) }),
+      select: selectByTable(new Map([
+        [rfqs, [{ requesterId: REQUESTER_ID, title: 'Steel package', status: 'open' }]],
+        [rfqSuppliers, []],
+        [qualifiedEnquiries, [{ id: 88 }]],
+        [quotations, []],
+      ])),
       insert: () => ({ values: (row: unknown) => { inserts.push(row); return Promise.resolve([{ insertId: QUOTATION_ID }]); } }),
     }));
     return inserts;
   }
 
-  it('links to the specific RFQ, not the list of every RFQ', async () => {
+  it('links to the specific quotation, not an RFQ or list page', async () => {
     const inserts = stubSubmitDb();
-    await appRouter.createCaller(ctx(WINNER_ID, 'supplier')).rfq.submitQuotation({ rfqId: RFQ_ID, price: 100 });
+    await appRouter.createCaller(ctx(WINNER_ID, 'supplier')).rfq.submitQuotation({ rfqId: RFQ_ID, price: 100, validUntil: VALID_UNTIL });
     const notes = collectNotifications(inserts);
     const received = notes.find(n => n.title === 'New quotation received');
     expect(received, 'the customer must be notified at all').toBeDefined();
-    expect(received!.link).toBe(`/rfq/${RFQ_ID}`);
+    expect(received!.link).toBe(`/quotations/${QUOTATION_ID}`);
   });
 
   it('the destination is built from the RFQ, not from any other id in scope', async () => {
@@ -122,16 +128,16 @@ describe('a new quotation takes the customer to that request', () => {
     // REQUESTER_ID is the recipient. A link built from any of them resolves to
     // a real route and shows the wrong record - the failure this rules out.
     const inserts = stubSubmitDb();
-    await appRouter.createCaller(ctx(WINNER_ID, 'supplier')).rfq.submitQuotation({ rfqId: RFQ_ID, price: 100 });
+    await appRouter.createCaller(ctx(WINNER_ID, 'supplier')).rfq.submitQuotation({ rfqId: RFQ_ID, price: 100, validUntil: VALID_UNTIL });
     const link = collectNotifications(inserts).find(n => n.title === 'New quotation received')!.link;
     for (const wrong of [QUOTATION_ID, WINNER_ID, REQUESTER_ID]) {
-      expect(link, `must not be built from ${wrong}`).not.toBe(`/rfq/${wrong}`);
+      if (wrong !== QUOTATION_ID) expect(link, `must not be built from ${wrong}`).not.toBe(`/quotations/${wrong}`);
     }
   });
 
   it('it is the recipient - the customer - who is given the link', async () => {
     const inserts = stubSubmitDb();
-    await appRouter.createCaller(ctx(WINNER_ID, 'supplier')).rfq.submitQuotation({ rfqId: RFQ_ID, price: 100 });
+    await appRouter.createCaller(ctx(WINNER_ID, 'supplier')).rfq.submitQuotation({ rfqId: RFQ_ID, price: 100, validUntil: VALID_UNTIL });
     const received = collectNotifications(inserts).find(n => n.title === 'New quotation received')!;
     expect(received.userId).toBe(REQUESTER_ID);
   });

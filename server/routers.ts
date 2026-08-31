@@ -92,7 +92,7 @@ import {
 } from './audit/fieldHistory';
 import { isPaymentProviderConfigured } from './billing/provider';
 import {
-  getEnquiryUsage, getVendorCategories, listEligibleRfqs, openQualifiedEnquiry,
+  getEnquiryUsage, getRfqResponseAccess, getVendorCategories, listEligibleRfqs, openQualifiedEnquiry,
 } from './billing/enquiries';
 import {
   FEATURED_PLACEMENT_SLOTS, getVendorTargetingDiagnostics, listDirectoryCategories,
@@ -2399,6 +2399,42 @@ const rfqRouter = router({
       }).from(rfqItems).where(eq(rfqItems.rfqId, input.id)).orderBy(rfqItems.position, rfqItems.id);
       return { ...rfq, items };
     }),
+  /**
+   * The server-side gate for the dedicated response page.
+   *
+   * The free RFQ summary is intentionally wider than the paid/invited response
+   * workflow. This read never consumes an enquiry; it only reports authority
+   * already established by openQualifiedEnquiry, an invitation, or the
+   * supplier's existing quotation. Requester attachments are returned only
+   * after that authority exists.
+   */
+  responseAccess: approvedProviderProcedure
+    .input(z.object({ rfqId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [rfq] = await db.select({
+        id: rfqs.id,
+        projectId: rfqs.projectId,
+        status: rfqs.status,
+        attachments: rfqs.attachments,
+      }).from(rfqs).where(eq(rfqs.id, input.rfqId)).limit(1);
+      if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
+
+      const access = await getRfqResponseAccess(db, ctx.user.id, input.rfqId);
+      let projectTitle: string | null = null;
+      if (access.canRespond && rfq.projectId !== null) {
+        const [project] = await db.select({ title: projects.title })
+          .from(projects).where(eq(projects.id, rfq.projectId)).limit(1);
+        projectTitle = project?.title ?? null;
+      }
+      return {
+        ...access,
+        status: rfq.status,
+        projectTitle,
+        attachments: access.canRespond ? rfq.attachments : null,
+      };
+    }),
   // The requester's own RFQ, in full. Scoped by requesterId in the WHERE clause.
   //
   // This had no ownership check at all: any authenticated caller could read any
@@ -2663,7 +2699,14 @@ const rfqRouter = router({
       id: quotations.id,
       rfqId: quotations.rfqId,
       price: quotations.price,
+      currency: quotations.currency,
       timeline: quotations.timeline,
+      warranty: quotations.warranty,
+      validUntil: quotations.validUntil,
+      commercialTerms: quotations.commercialTerms,
+      paymentTerms: quotations.paymentTerms,
+      notes: quotations.notes,
+      attachments: quotations.attachments,
       status: quotations.status,
       createdAt: quotations.createdAt,
       rfqTitle: rfqs.title,
@@ -2693,6 +2736,8 @@ const rfqRouter = router({
         currency:         quotations.currency,
         timeline:         quotations.timeline,
         warranty:         quotations.warranty,
+        validUntil:       quotations.validUntil,
+        commercialTerms:  quotations.commercialTerms,
         paymentTerms:     quotations.paymentTerms,
         notes:            quotations.notes,
         // Added to the allowlist deliberately. This read is already scoped to
@@ -3038,6 +3083,8 @@ const rfqRouter = router({
         currency:     quotations.currency,
         timeline:     quotations.timeline,
         warranty:     quotations.warranty,
+        validUntil:   quotations.validUntil,
+        commercialTerms: quotations.commercialTerms,
         paymentTerms: quotations.paymentTerms,
         notes:        quotations.notes,
         attachments:  quotations.attachments,
@@ -3096,8 +3143,14 @@ const rfqRouter = router({
     .input(z.object({
       rfqId: z.number().int().positive(),
       price: z.number().positive().max(9_999_999_999.99),
+      currency: z.literal(BILLING_CURRENCY).default(BILLING_CURRENCY),
       timeline: z.number().int().positive().max(3650).optional(),
       warranty: z.string().max(100).optional(),
+      validUntil: z.date().refine(
+        value => value.getTime() >= new Date().setHours(0, 0, 0, 0),
+        { message: 'Quotation validity cannot be in the past' },
+      ),
+      commercialTerms: z.string().max(4000).optional(),
       paymentTerms: z.string().max(2000).optional(),
       notes: z.string().max(4000).optional(),
       /**
@@ -3134,6 +3187,16 @@ const rfqRouter = router({
       if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
       if (rfq.status !== 'open') {
         throw new TRPCError({ code: 'CONFLICT', message: 'This request is no longer accepting quotations' });
+      }
+      if (rfq.requesterId === ctx.user.id) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'You cannot submit a quotation to your own request' });
+      }
+      const responseAccess = await getRfqResponseAccess(db, ctx.user.id, input.rfqId);
+      if (!responseAccess.canRespond) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Open this qualified enquiry, or accept its invitation, before submitting a quotation.',
+        });
       }
       // KNOWN GAP, deliberately not decided here: nothing stops the same
       // provider submitting several quotations on one RFQ, and each one
@@ -3226,14 +3289,14 @@ const rfqRouter = router({
       // A de-duplicated submission is not a new bid: the customer must not be
       // notified again, the funnel must not count it twice, and the audit trail
       // must not record a second submission of the same offer.
-      if (submission.deduplicated) return { success: true as const };
+      if (submission.deduplicated) return { success: true as const, quotationId: submission.id };
       const quotationId = submission.id;
       // If this supplier was INVITED, the invitation has now been answered.
       // Best-effort and after the bid is stored: a bookkeeping write must never
       // be able to fail the commercial act it describes. A no-op when there was
       // no invitation, which is the ordinary open-board case.
       await markInvitationResponded(db, input.rfqId, ctx.user.id).catch(() => {});
-      await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: `/rfq/${input.rfqId}`, messageKey: 'notif.quotation.received', messageParams: { rfqTitle: rfq.title } });
+      await notifyUser(db, { userId: rfq.requesterId, title: 'New quotation received', body: `You received a new quotation for "${rfq.title}"`, type: 'quotation', link: `/quotations/${quotationId}`, messageKey: 'notif.quotation.received', messageParams: { rfqTitle: rfq.title } });
       // Funnel milestone: a vendor responding is the point at which the
       // marketplace has produced value for both sides.
       recordEventAsync({
@@ -3261,7 +3324,22 @@ const rfqRouter = router({
           + `${input.timeline ? `, ${input.timeline} days` : ''}`
           + `${attachments?.length ? `, ${attachments.length} attachment(s)` : ''}`,
       });
-      return { success: true };
+      await recordFieldChanges(db, {
+        subjectType: 'quotation', subjectId: quotationId,
+        ownerId: ctx.user.id, actorId: ctx.user.id,
+        reason: 'quotation submitted',
+      }, [
+        { field: 'price', oldValue: null, newValue: input.price },
+        { field: 'currency', oldValue: null, newValue: input.currency },
+        { field: 'timeline', oldValue: null, newValue: input.timeline },
+        { field: 'warranty', oldValue: null, newValue: input.warranty },
+        { field: 'validUntil', oldValue: null, newValue: input.validUntil },
+        { field: 'commercialTerms', oldValue: null, newValue: input.commercialTerms },
+        { field: 'paymentTerms', oldValue: null, newValue: input.paymentTerms },
+        { field: 'attachments', oldValue: null, newValue: attachments?.length ? `${attachments.length} file(s)` : null },
+        { field: 'status', oldValue: null, newValue: 'pending' },
+      ]);
+      return { success: true, quotationId };
     }),
   /**
    * Withdraw a request. See closeRfqSecure for why this exists and what it
@@ -4396,6 +4474,8 @@ const adminRouter = router({
         currency: quotations.currency,
         timeline: quotations.timeline,
         warranty: quotations.warranty,
+        validUntil: quotations.validUntil,
+        commercialTerms: quotations.commercialTerms,
         paymentTerms: quotations.paymentTerms,
         notes: quotations.notes,
         status: quotations.status,

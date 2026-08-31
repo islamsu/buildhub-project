@@ -469,6 +469,8 @@ export const quotations = mysqlTable('quotations', {
   timeline:     int('timeline'),
   warranty:     varchar('warranty', { length: 100 }),
   paymentTerms: text('paymentTerms'),
+  commercialTerms: text('commercialTerms'),
+  validUntil:    timestamp('validUntil'),
   notes:        text('notes'),
   /**
    * The supplier's supporting files: a proposal, a technical specification, a

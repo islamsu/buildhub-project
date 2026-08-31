@@ -184,7 +184,7 @@ export async function recordChangedFields(
 /** The business fields worth a history entry, per subject. Parts 42 and 44 name these. */
 export const HISTORY_FIELDS = {
   rfq: ['title', 'description', 'category', 'budget', 'deadline', 'status', 'location'],
-  quotation: ['price', 'timeline', 'warranty', 'paymentTerms', 'status'],
+  quotation: ['price', 'currency', 'timeline', 'warranty', 'validUntil', 'commercialTerms', 'paymentTerms', 'attachments', 'status'],
   product: ['price', 'stock', 'description', 'active', 'name', 'unit', 'category'],
   user: ['onboardingStatus', 'verified', 'accountStatus', 'userRole', 'qualifiedEnquiriesPerMonth'],
   subscription: ['plan', 'status'],

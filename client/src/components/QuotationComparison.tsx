@@ -32,6 +32,8 @@ type QuotationRow = {
   currency: string | null;
   timeline: number | null;
   warranty: string | null;
+  validUntil: Date | null;
+  commercialTerms: string | null;
   paymentTerms: string | null;
   notes: string | null;
   /** JSON array of {key,url,name,type,size}, or null. */
@@ -375,7 +377,22 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                       </span>
                       <span className="font-medium text-right text-xs leading-relaxed">{q.paymentTerms ?? '—'}</span>
                     </div>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-muted-foreground flex items-center gap-1.5 shrink-0">
+                        <Clock className="w-3.5 h-3.5" /> {t('quotation.validUntil')}
+                      </span>
+                      <span className="font-medium text-right text-xs leading-relaxed">
+                        {q.validUntil ? new Date(q.validUntil).toLocaleDateString() : '—'}
+                      </span>
+                    </div>
                   </div>
+
+                  {q.commercialTerms && (
+                    <div className="rounded-md border p-3 text-xs leading-relaxed" data-testid="quotation-commercial-terms">
+                      <p className="mb-1 font-medium">{t('quotation.commercialTerms')}</p>
+                      <p className="whitespace-pre-wrap text-muted-foreground">{q.commercialTerms}</p>
+                    </div>
+                  )}
 
                   {/* Notes */}
                   {q.notes && (
@@ -558,6 +575,17 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                   </td>
                   {sorted.map(q => (
                     <td key={q.id} className="text-center py-2.5 px-3 text-xs">{q.paymentTerms ?? '—'}</td>
+                  ))}
+                </tr>
+                {/* Validity */}
+                <tr>
+                  <td className="py-2.5 pr-4 text-muted-foreground flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5" /> {t('quotation.validUntil')}
+                  </td>
+                  {sorted.map(q => (
+                    <td key={q.id} className="text-center py-2.5 px-3 text-xs">
+                      {q.validUntil ? new Date(q.validUntil).toLocaleDateString() : '—'}
+                    </td>
                   ))}
                 </tr>
                 {/* Status */}

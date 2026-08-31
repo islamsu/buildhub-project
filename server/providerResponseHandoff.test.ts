@@ -175,8 +175,12 @@ describe('the provider surface uses the linked id', () => {
     expect(PLATFORM).toMatch(/<QualifiedEnquiries highlightRfqId=\{linkedRfqId\} \/>/);
   });
 
-  it('preselects the quotation form with it', () => {
-    expect(PLATFORM).toMatch(/rfqId: linkedRfqId \?\? 0/);
+  it('forwards the linked id into the dedicated response route', () => {
+    // The modal it used to preselect is gone. The id now travels straight into
+    // the refresh-safe response workflow, so a provider who followed a link is
+    // looking at the request they came from, not a dashboard list to hunt
+    // through.
+    expect(PLATFORM).toMatch(/if \(isProfessional && linkedRfqId\) navigate\(`\/rfq\/\$\{linkedRfqId\}\/respond`\)/);
   });
 
   it('HIGHLIGHTING NEVER SPENDS A CREDIT', () => {
@@ -202,25 +206,35 @@ describe('the provider surface uses the linked id', () => {
   });
 });
 
-// ══ 4. THE FORM SAYS WHAT IT IS ABOUT ══════════════════════════════════════
+// ══ 4. THE RESPONSE PAGE SAYS WHAT IT IS ABOUT ═════════════════════════════
 
-describe('the quotation form names its target', () => {
-  const PLATFORM = strip(read('../client/src/pages/RolePlatform.tsx'));
+describe('the response page names its target and its required facts', () => {
+  const RESPOND = strip(read('../client/src/pages/RFQRespondPage.tsx'));
 
   it('shows which request the bid is against', () => {
-    // A dialog whose only field is "Your price" is a way to bid on the wrong
-    // thing, and the provider has no way to notice.
-    expect(PLATFORM).toContain('data-testid="quote-target"');
-    expect(PLATFORM).toMatch(/const quoteTarget = rfqs\.find\(/);
+    // A form whose only field is "Your price" is a way to bid on the wrong
+    // thing, and the provider has no way to notice. The response page shows
+    // the request number and the full brief - title, line items and quantities
+    // - so the bid is addressed to the request the provider was reading.
+    expect(RESPOND).toContain('data-testid="respond-rfq-number"');
+    expect(RESPOND).toContain('data-testid="respond-brief"');
+    expect(RESPOND).toMatch(/item\.name/);
   });
 
-  it('cannot be submitted with no target at all', () => {
-    // rfqId 0 reached the server and came back a BAD_REQUEST toast, which is
-    // safe and useless.
-    // `quoteUploading` joined the guard when quotation attachments arrived:
-    // submitting mid-upload would send a quotation whose files had not
-    // finished being staged, so the bid would arrive without them.
-    expect(PLATFORM).toMatch(/disabled=\{submitQuote\.isPending \|\| quoteUploading \|\| !quoteForm\.price \|\| !quoteForm\.rfqId\}/);
+  it('refuses an RFQ id that is not a real request number', () => {
+    // rfqId 0 reached the server and came back a refusal. The id now lives in
+    // the PATH, so a malformed one is refused locally before any request fires,
+    // instead of a form that looks targeted and is not.
+    expect(RESPOND).toContain('if (!valid)');
+  });
+
+  it('cannot be reviewed or submitted without the required commercial facts', () => {
+    // `uploading` joined the guard when quotation attachments arrived, and
+    // `validation` now requires a price and a future validity date. Submitting
+    // mid-upload, with no price, or with a past validity date cannot reach the
+    // server - the review step stays disabled until the form is coherent.
+    expect(RESPOND).toMatch(/disabled=\{uploading \|\| validation\.length > 0\}/);
+    expect(RESPOND).toContain('data-testid="respond-valid-until"');
   });
 });
 

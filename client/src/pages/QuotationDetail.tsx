@@ -215,6 +215,13 @@ export default function QuotationDetail() {
                   value={q.warranty}
                 />
               )}
+              {q.validUntil && (
+                <Detail
+                  icon={<CalendarClock className="h-4 w-4" />}
+                  label={ar ? 'صالح حتى' : 'Valid until'}
+                  value={new Date(q.validUntil).toLocaleDateString(ar ? 'ar-EG' : 'en-US')}
+                />
+              )}
               {q.paymentTerms && (
                 <Detail
                   icon={<Wallet className="h-4 w-4" />}
@@ -230,6 +237,15 @@ export default function QuotationDetail() {
                 />
               )}
             </div>
+
+            {q.commercialTerms && (
+              <div>
+                <p className="mb-1 text-xs text-muted-foreground">{ar ? 'الشروط التجارية' : 'Commercial terms'}</p>
+                <p className="whitespace-pre-wrap text-sm text-muted-foreground" data-testid="quotation-detail-commercial-terms">
+                  {q.commercialTerms}
+                </p>
+              </div>
+            )}
 
             {q.notes && (
               <div>
