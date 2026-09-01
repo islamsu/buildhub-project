@@ -319,3 +319,20 @@
 - [x] Expand Vitest test suites across routers, state machines, and security invariants
 - [x] Run complete test suite, TypeScript check, production build, and responsive visual verification
 - [x] Save checkpoint and deliver production readiness audit report
+
+## Continuous Development — Final Closure
+- [x] Supplier RFQ Response dedicated route with attachments, review/confirm, and audit
+- [x] New Product Listing Single / Bulk Upload choice
+- [x] Supplier dashboard: catalogue exactly once; full RFQ reference clickable
+- [x] Test portability: LF normalization, Windows-safe paths, AI-availability timeout
+- [x] Featured Products: admin-controlled write path + curation UI + audit
+- [x] Featured Providers: admin-curated editorial state distinct from Sponsored
+- [x] Vendor Profile: legal/trading name, alternative email, coverage, specialties, hours, links
+- [x] Product Specifications: complete form -> write -> render chain
+- [x] Product warranty + Arabic description fields
+- [x] Provider Portfolio: owner-scoped portfolio (Architect dashboard + public profile display)
+- [ ] Owner decision: one-current-quotation-per-supplier-per-RFQ revision model
+- [ ] Owner decision: Get Quotes vs open discovery (documented, no change required)
+- [ ] Broader role self-service second pass (Contractor/Engineer/PM dashboards)
+- [ ] Team / organization management (future architectural milestone, not yet modeled)
+- [ ] Linux CI observation + staging/infrastructure verification
