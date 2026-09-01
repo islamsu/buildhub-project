@@ -209,11 +209,18 @@ export default function SupplierCatalogue() {
         </CardHeader>
         <CardContent>
           {products.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {ar
-                ? 'لم تدرج أي منتج بعد. أضف منتجك الأول ليظهر في السوق.'
-                : "You haven't listed any products yet. Add your first product and it will appear in the marketplace."}
-            </p>
+            <div className="rounded-xl border border-dashed py-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                {ar
+                  ? 'لم تدرج أي منتج بعد. أضف منتجك الأول ليظهر في السوق ويصبح قابلاً للاكتشاف من قبل المشترين.'
+                  : "You haven't listed any products yet. Add your first product and it will appear in the marketplace and become discoverable to buyers."}
+              </p>
+              <Link href="/products/new">
+                <Button className="mt-3 gap-1.5" data-testid="catalogue-empty-add">
+                  <Package className="h-4 w-4" />{ar ? 'أضف منتجاً' : 'Add product'}
+                </Button>
+              </Link>
+            </div>
           ) : (
             <div className="space-y-3">
               {products.map((product: Product) => {
