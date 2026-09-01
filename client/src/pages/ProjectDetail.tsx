@@ -3,6 +3,7 @@ import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -69,6 +70,10 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
   const addExpense = trpc.projects.addExpense.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تم تسجيل المصروف!' : 'Expense recorded!'); setExpOpen(false); refetchExp(); setExpForm({ category: '', description: '', amount: '' }); }, onError: (e: { message: string }) => toast.error(e.message) });
   const addLog = trpc.projects.addDailyLog.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تم إضافة السجل!' : 'Log added!'); setLogOpen(false); refetchLogs(); setLogForm({ description: '', weather: '', workers: '' }); }, onError: (e: { message: string }) => toast.error(e.message) });
   const updateProject = trpc.projects.update.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تم تحديث المشروع!' : 'Project updated!'); refetchProject(); }, onError: (e: { message: string }) => toast.error(e.message) });
+  const { data: team, refetch: refetchMembers } = trpc.projects.members.useQuery({ projectId }, { enabled: isAuthenticated && projectId > 0 });
+  const [memberForm, setMemberForm] = useState({ userId: '', projectRole: 'viewer' });
+  const addMember = trpc.projects.addMember.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تمت إضافة العضو!' : 'Member added!'); setMemberForm({ userId: '', projectRole: 'viewer' }); refetchMembers(); }, onError: (e: { message: string }) => toast.error(e.message) });
+  const removeMember = trpc.projects.removeMember.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تمت إزالة العضو!' : 'Member removed!'); refetchMembers(); }, onError: (e: { message: string }) => toast.error(e.message) });
 
   if (loading) return null;
   if (!isAuthenticated) { window.location.href = '/auth?mode=login'; return null; }
@@ -166,6 +171,7 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                 <TabsTrigger value="documents" className="gap-1.5"><FileText className="w-4 h-4" /> {t('project.documents')}</TabsTrigger>
                 <TabsTrigger value="operations" className="gap-1.5"><BarChart3 className="w-4 h-4" /> {lang === 'ar' ? 'عمليات المشروع' : 'Project Operations'}</TabsTrigger>
                 <TabsTrigger value="reviews" className="gap-1.5"><Star className="w-4 h-4" /> {t('review.tab_label')}</TabsTrigger>
+                <TabsTrigger value="team" className="gap-1.5"><Users className="w-4 h-4" /> {t('project.team')}</TabsTrigger>
               </TabsList>
 
               {/* Tasks */}
@@ -396,6 +402,52 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
 
               <TabsContent value="reviews">
                 <ReviewSubmissionPanel projectId={projectId} isCompleted={project?.status === 'completed'} />
+              </TabsContent>
+
+              <TabsContent value="team">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <h3 className="font-semibold">{t('project.team')}</h3>
+                  {team?.myCapabilities?.includes('manage') && (
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div>
+                        <label className="text-xs text-muted-foreground" htmlFor="member-id">{lang === 'ar' ? 'رقم المستخدم' : 'User id'}</label>
+                        <Input id="member-id" inputMode="numeric" className="mt-1 h-9 w-28" value={memberForm.userId} onChange={e => setMemberForm(f => ({ ...f, userId: e.target.value.replace(/\D/g, '') }))} />
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground" htmlFor="member-role">{lang === 'ar' ? 'الدور' : 'Role'}</label>
+                        <select id="member-role" className="mt-1 h-9 rounded-md border bg-background px-2 text-sm" value={memberForm.projectRole} onChange={e => setMemberForm(f => ({ ...f, projectRole: e.target.value }))}>
+                          {['manager', 'contractor', 'architect', 'engineer', 'supplier', 'viewer'].map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                      </div>
+                      <Button size="sm" disabled={!memberForm.userId || addMember.isPending} onClick={() => addMember.mutate({ projectId, userId: Number(memberForm.userId), projectRole: memberForm.projectRole as never })}>
+                        {lang === 'ar' ? 'إضافة عضو' : 'Add member'}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {(!team || team.members.length === 0) && (
+                  <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">{t('project.no_team')}</p>
+                )}
+
+                <div className="space-y-2">
+                  {(team?.members ?? []).map(member => (
+                    <div key={member.id} className="flex items-center justify-between gap-3 rounded-xl border p-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Avatar className="h-9 w-9"><AvatarFallback>{(member.name ?? '#').charAt(0).toUpperCase()}</AvatarFallback></Avatar>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{member.name ?? `#${member.userId}`}</p>
+                          <p className="text-xs text-muted-foreground">{member.projectRole}{member.removedAt ? ` · ${lang === 'ar' ? 'أُزيل' : 'removed'}` : ''}</p>
+                        </div>
+                      </div>
+                      {team?.myCapabilities?.includes('manage') && !member.removedAt && (
+                        <Button size="sm" variant="ghost" disabled={removeMember.isPending} onClick={() => removeMember.mutate({ projectId, userId: member.userId })}>
+                          {lang === 'ar' ? 'إزالة' : 'Remove'}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </TabsContent>
             </Tabs>
           </>
