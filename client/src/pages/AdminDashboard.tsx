@@ -398,13 +398,15 @@ export default function AdminDashboard() {
   }, {}), [allUsers]);
 
   const recentUsers = useMemo(() => allUsers.slice(0, 7), [allUsers]);
+  const realUserCount = useMemo(() => allUsers.filter(userRow => !(userRow as any).isDummy).length, [allUsers]);
+  const dummyUserCount = allUsers.length - realUserCount;
   const userSummaryCounts = useMemo(() => ({
-    total: allUsers.length,
+    total: realUserCount,
     homeowners: groupCounts.homeowner ?? 0,
     suppliers: groupCounts.supplier ?? 0,
     professionals: (groupCounts.contractor ?? 0) + (groupCounts.engineer ?? 0) + (groupCounts.architect ?? 0) + (groupCounts.project_manager ?? 0),
     administrators: groupCounts.admin ?? 0,
-  }), [allUsers, groupCounts]);
+  }), [realUserCount, groupCounts]);
 
   const filteredComplianceQueue = useMemo(() => complianceQueue.filter(applicant => {
     const roleMatches = complianceRoleFilter === 'all' || applicant.userRole === complianceRoleFilter;
@@ -646,6 +648,12 @@ export default function AdminDashboard() {
                     </div>
                   ))}
                 </div>
+
+                <p className="text-xs text-muted-foreground">
+                  {lang === 'ar'
+                    ? `يستثني إجمالي المستخدمين حسابات الاختبار. توجد ${dummyUserCount} من حسابات الاختبار في جدول الإدارة.`
+                    : `Total Users excludes test accounts. There are ${dummyUserCount} test accounts in the management table.`}
+                </p>
 
                 <div>
                   <div className="mb-2 flex items-center justify-between">
