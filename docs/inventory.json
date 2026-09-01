@@ -604,6 +604,11 @@
       "indent": 3
     },
     {
+      "name": "responseAccess",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
       "name": "get",
       "tier": "protectedProcedure",
       "indent": 2
@@ -1153,7 +1158,7 @@
     "publicProcedure": 27,
     "protectedProcedure": 61,
     "complianceProcedure": 2,
-    "approvedProviderProcedure": 21,
+    "approvedProviderProcedure": 22,
     "adminWith:users.read": 3,
     "adminWith:users.manage": 4,
     "adminWith:audit.read": 5,
@@ -1299,7 +1304,7 @@
     {
       "ident": "quotations",
       "name": "quotations",
-      "columns": 14,
+      "columns": 16,
       "references": 2,
       "notNull": 4,
       "unique": 0
@@ -1491,47 +1496,47 @@
     },
     {
       "file": "server/routers.ts",
-      "line": 2813,
+      "line": 2858,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2870,
+      "line": 2915,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3236,
+      "line": 3299,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3468,
+      "line": 3546,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3608,
+      "line": 3686,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4832,
+      "line": 4912,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5033,
+      "line": 5113,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5058,
+      "line": 5138,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5083,
+      "line": 5163,
       "via": "notifyUser"
     },
     {

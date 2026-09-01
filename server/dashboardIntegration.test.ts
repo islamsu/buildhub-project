@@ -38,10 +38,14 @@ describe('dashboard reachability - root cause fix (items 1-2)', () => {
     expect(effectBlock).toContain("rawRole === 'admin' || accountRole === 'admin'");
     expect(effectBlock).toContain('isComplianceRole(rawRole) && onboardingStatus !== \'approved\'');
     expect(effectBlock).toContain('requestedRole !== rawRole');
-    // The new Vendor Performance section is rendered unconditionally alongside the rest of
-    // the page content (gated only on role, never on a redirect flag), so it can never be
-    // the thing causing an unwanted bounce.
-    expect(rolePlatform.indexOf('isProfessional &&')).toBeGreaterThan(rolePlatform.indexOf('return ('));
+    // The Vendor Performance section is gated only on role (isProfessional) and
+    // lives in the render body, after `return (`. A SEPARATE, narrow effect
+    // also uses `isProfessional` to forward a legacy `/platform/:role?rfq=<id>`
+    // bookmark to `/rfq/:id/respond`, so pin the render path rather than the
+    // first occurrence in the file. That forward is covered by
+    // providerResponseHandoff.test.ts and never fires for a provider without a
+    // linked RFQ id.
+    expect(rolePlatform.slice(rolePlatform.indexOf('return ('))).toContain('isProfessional &&');
   });
 
   it('the legacy /provider route still exists and still forwards an authenticated user to the correct platform path (old bookmarks/links keep working) - the redirect itself was correct and was intentionally NOT removed', () => {
