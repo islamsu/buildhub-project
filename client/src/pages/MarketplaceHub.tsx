@@ -163,6 +163,59 @@ export default function MarketplaceHub() {
           </div>
         </div>
 
+        {/* Prime Featured content: directly beneath discovery, before the
+            category cards. Hidden when there is no real curated record. */}
+        {featured.length > 0 && (
+          <div className="container pt-10 pb-2">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <BadgeCheck className="w-5 h-5 text-emerald-600" /> {t('marketHub.featuredVendors')}
+              </h3>
+              <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/vendors')}>
+                {t('marketHub.viewAll')}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {featuredVendors.map(vendor => (
+                <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
+              ))}
+            </div>
+
+            <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div>
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-lg font-bold flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-violet-600" /> {t('marketHub.featuredDesigners')}
+                  </h3>
+                  <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/designers')}>
+                    {t('marketHub.viewAll')}
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {featuredDesigners.map(vendor => (
+                    <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-lg font-bold flex items-center gap-2">
+                    <HardHat className="w-5 h-5 text-orange-600" /> {t('marketHub.featuredCompanies')}
+                  </h3>
+                  <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/finishing')}>
+                    {t('marketHub.viewAll')}
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {featuredCompanies.map(vendor => (
+                    <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Four premium section cards */}
         <div className="container py-12">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -199,65 +252,6 @@ export default function MarketplaceHub() {
             ))}
           </div>
 
-          {/* Featured vendors strip */}
-          <div className="mt-14">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-bold flex items-center gap-2">
-                <BadgeCheck className="w-5 h-5 text-emerald-600" /> {t('marketHub.featuredVendors')}
-              </h3>
-              <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/vendors')}>
-                {t('marketHub.viewAll')}
-              </button>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {featuredVendors.map(vendor => (
-                <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
-              ))}
-              {featuredVendors.length === 0 && (
-                <p className="col-span-full text-sm text-muted-foreground">{t('marketHub.noneYet')}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Designers and finishing companies, from the same directory rows. */}
-          <div className="mt-12 grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div>
-              <div className="flex items-center justify-between mb-5">
-                <h3 className="text-lg font-bold flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-violet-600" /> {t('marketHub.featuredDesigners')}
-                </h3>
-                <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/designers')}>
-                  {t('marketHub.viewAll')}
-                </button>
-              </div>
-              <div className="space-y-3">
-                {featuredDesigners.map(vendor => (
-                  <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
-                ))}
-                {featuredDesigners.length === 0 && (
-                  <p className="text-sm text-muted-foreground">{t('marketHub.noneYet')}</p>
-                )}
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-5">
-                <h3 className="text-lg font-bold flex items-center gap-2">
-                  <HardHat className="w-5 h-5 text-orange-600" /> {t('marketHub.featuredCompanies')}
-                </h3>
-                <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/finishing')}>
-                  {t('marketHub.viewAll')}
-                </button>
-              </div>
-              <div className="space-y-3">
-                {featuredCompanies.map(vendor => (
-                  <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
-                ))}
-                {featuredCompanies.length === 0 && (
-                  <p className="text-sm text-muted-foreground">{t('marketHub.noneYet')}</p>
-                )}
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
