@@ -15,7 +15,7 @@ infrastructure, not code.
 
 2. EXACT SOURCE SHA
 -------------------
-61ad73e8d78fd136697414ada1379fadee2d364b
+17ceb84c59a269bfb7996a9fca4da777f99ad63d
 
 3. BRANCH / LINEAGE
 -------------------
@@ -30,6 +30,9 @@ Supplier dashboard (catalogue once, RFQ clickable): b8f26ae50f8ab2181db7e3cff3c0
 Get Quotes RFQ clickable: 6f614a53ec5fe36f7e7ffa3a25f134c94ecd0b86
 Featured products write path + audit: 703b1d8ef98f2ecb4fdacd9c7d7f0f7461e81367
 Featured products admin list + UI: 61ad73e8d78fd136697414ada1379fadee2d364b
+Featured providers (editorial, admin-curated): 13d8b3e0608f2f96095d639ef25e209d12b2801d
+Vendor profile business/discovery fields: bfb29663b3224070f0210b1b23d17053282b6de8
+Product specifications persistence: 17ceb84c59a269bfb7996a9fca4da777f99ad63d
 
 4. WHAT WAS MISSING
 -------------------
@@ -72,6 +75,15 @@ Featured products admin list + UI: 61ad73e8d78fd136697414ada1379fadee2d364b
 - Featured Products: admin.write path (admin.setProductFeatured), a curated
   admin list + toggle UI, and a product_featured/unfeatured commercial audit
   action, so the marketplace's featured-first ordering is actually operable.
+- Featured Providers: an explicit admin-curated editorial state (kind column
+  on the placement table) distinct from paid sponsorship; feature/unfeature per
+  service category, a public featuredProviders endpoint, admin UI, and the hub
+  rendering Featured Vendors/Designers/Finishing from real records.
+- Vendor Profile: legal/trading name, alternative business email, service
+  coverage, specialties, business hours, and business/social links, with the
+  same public/relationship privacy tiers and full form->DB->display chain.
+- Product Specifications: create/update now accept `specs` and the single-
+  product form collects it, so the already-rendered Specifications card persists.
 
 8. WHAT WAS UNIT VERIFIED
 -------------------------
@@ -102,15 +114,9 @@ NONE. Staging remains BLOCKED BY INFRASTRUCTURE (missing S3/SMTP/AI credentials)
 12. WHAT IS NOT IMPLEMENTED
 ---------------------------
 - Payment gateway (owner-deferred).
-- Product specifications/attributes write path (specs column exists, no surface).
 - Entitlements marked deferred/not-implemented in shared/billing.ts.
-- Vendor-profile optional fields: trading/legal name, alternative email, service
-  coverage, specialties, business hours, social links (core company/contact/
-  address/logo/registration fields ARE implemented).
-- Admin-controlled "editorial featured" for vendors/designers/finishing is not
-  yet a separate curated model; the marketplace hub labels the top of the
-  organic directory (verified-first, newest) as Featured, which is real data
-  but not an admin-curated pick. (Featured PRODUCTS are now admin-controlled.)
+- One-current-quotation-per-supplier-per-RFQ with revision history (owner
+  decision #1 - the schema currently permits multiple distinct quotations).
 - Orders/revenue and fraud detection (reported NOT IMPLEMENTED, nothing faked).
 
 13. WHAT IS BLOCKED BY INFRASTRUCTURE / ENVIRONMENT
@@ -124,11 +130,17 @@ NONE. Staging remains BLOCKED BY INFRASTRUCTURE (missing S3/SMTP/AI credentials)
 
 14. WHAT REQUIRES OWNER DECISION
 --------------------------------
-- Whether a supplier may hold several quotations on one RFQ (revision vs bid).
-- Whether the public /rfq feed should show all RFQs to providers (current open
-  discovery design) or only category-relevant/invited RFQs (Get Quotes relevance
-  rule, Section 33). The QualifiedEnquiries inbox already implements the
-  category+invitation rule; the open feed is a separate discovery surface.
+- OWNER DECISION #1 - quotation model. Recommended direction: one current
+  quotation per supplier per RFQ with controlled revision history. This would
+  require a forward migration (unique (rfqId, providerId) or equivalent) and
+  changing submitQuotation to revise rather than add; it is a material schema
+  and workflow change, so it is documented rather than applied destructively.
+- OWNER DECISION #2 - Get Quotes vs open discovery. Current architecture
+  already matches the recommended policy: rfq.eligible (QualifiedEnquiries) is
+  relevance-filtered (category + invitation), and rfq.list is the separate open
+  discovery surface that exposes only summary fields (no attachments or
+  requester contact). No change is required unless the owner wants to remove
+  the open feed entirely.
 
 15. SECURITY / AUTHORIZATION RESULTS
 ------------------------------------
@@ -155,18 +167,21 @@ PASS at code/test level, including Single/Bulk choice and supplier ownership.
 
 20. VENDOR PROFILE RESULTS
 --------------------------
-CORE PASS: company, primary contact (name/position/email/phone/mobile), address,
-city, country, website, registration, logo/avatar, categories, reputation.
-Optional fields listed in section 12 remain NOT IMPLEMENTED.
+PASS: company and legal/trading name, primary contact (name/position/email/
+phone/mobile), alternative business email, address, city, country, website,
+service coverage, specialties, business hours, business/social links,
+registration, logo/avatar, categories, reputation. Privacy tiers are enforced
+by column allowlists (alternative email is relationship-tier; the rest of the
+new fields are public discovery).
 
 21. SPONSORSHIP / FEATURED RESULTS
 ----------------------------------
 - Sponsored placement: PASS (real records, admin grant/revoke, period and
   category enforced, Premium entitlement rotation).
 - Featured products: PASS (admin.write path, curated list + toggle UI, audit).
-- Featured vendors/designers/finishing: currently the top of the organic
-  directory (verified-first, newest), real and honestly labelled; admin-curated
-  editorial vendor featured is a remaining enhancement (see section 12).
+- Featured providers: PASS (admin-curated editorial state, kind column
+  distinct from sponsored, feature/unfeature per category, real records in the
+  hub's Featured Vendors/Designers/Finishing sections).
 
 22. SUBSCRIPTION / ENTITLEMENT RESULTS
 --------------------------------------
@@ -195,11 +210,14 @@ actual accessibility assertions are correct.
 
 28. TEST COUNTS
 ---------------
-Test files: 133 (120 previously passing + 13 previously failing).
-Previously failing files now green: 11 (verified individually).
+Test files: 137 (four new source/unit test files added this continuation:
+featuredProvider, productFeatured, productSpecs, newProductListing).
+Previously failing files now green: 11 (verified individually after LF
+normalization).
 Environment-blocked in this session: 2 (adminBootstrap, aiAvailability) plus the
-full parallel run, all due to system memory exhaustion.
-Passing tests previously measured: 2926.
+full parallel run, all due to system memory exhaustion. Typecheck is clean and
+targeted suites run green; the full run and those two router-graph-heavy files
+need a Linux CI runner.
 
 29. MUTATION / ADVERSARIAL RESULTS
 ----------------------------------
@@ -247,13 +265,12 @@ NO. codex/buildhub-final-closure is ahead of main and not merged/deployed.
 ---------------------------------
 1. Owner authorization to merge codex/buildhub-final-closure into main.
 2. Configure S3/SMTP/AI credentials for staging and production.
-3. Re-run the full suite on a Linux CI runner with adequate memory to confirm
-   adminBootstrap/aiAvailability and the remaining checks are green there.
-4. Resolve the owner decisions in section 14.
-5. Complete the optional vendor-profile fields.
-6. Implement admin-curated editorial featured for vendors/designers/finishing
-   (currently the top of the organic directory), and finish the Featured/
-   Sponsored second-pass recheck across all provider categories.
+3. Linux CI: the workflow (typecheck/test/build + MariaDB migration re-run)
+   exists and triggers on push, but its result must be observed on GitHub.
+4. Resolve owner decisions #1 (quotation model) and #2 (open discovery), in
+   section 14, before merge.
+5. Full browser/RTL/mobile second pass against a running app (requires a
+   dev/staging runtime, unavailable in this session).
 
 40. FINAL PRODUCTION VERDICT
 ----------------------------
