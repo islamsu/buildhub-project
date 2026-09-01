@@ -4862,6 +4862,30 @@ const adminRouter = router({
       return { productId: input.productId, featured: input.featured };
     }),
 
+  /**
+   * The catalogue rows a marketplace admin may curate, with enough identity to
+   * act (supplier name, active, featured) but no credentials or private buyer
+   * data. Featured first, so the list is ordered the same way the public
+   * marketplace shows them.
+   */
+  marketplaceProducts: adminWith('marketplace.manage').query(async () => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    return db.select({
+      id: products.id,
+      name: products.name,
+      nameAr: products.nameAr,
+      category: products.category,
+      active: products.active,
+      featured: products.featured,
+      supplierId: products.supplierId,
+      supplierName: users.name,
+    }).from(products)
+      .leftJoin(users, eq(products.supplierId, users.id))
+      .orderBy(desc(products.featured), desc(products.createdAt))
+      .limit(200);
+  }),
+
   setVendorPlanManually: adminWith('billing.manage')
     .input(z.object({
       userId: z.number().int().positive(),
