@@ -352,6 +352,8 @@
 - [x] Add `admin.projects` and `admin.products` allowlisted listing endpoints with search/filter UI
 - [x] Raw invitation enums render as professional human-readable labels in Admin user management and user detail
 - [x] Full User Management view supports search, group filter, sort, and client-side pagination
+- [x] Raw-ID-first vendor billing, sponsorship, and featured-provider lookups replaced with a reusable identity search selector
+- [x] Vendor names link to Vendor Management from sponsored, featured-provider, and product tables
 - [ ] System-wide entity-link/dead-control/raw-ID/raw-enum audit beyond the screenshot examples
 - [ ] Resolve count semantics and make Platform Healthy / Live labels reflect verified runtime state
 - [ ] Vendor/business name clickable to Vendor Management across remaining admin tables

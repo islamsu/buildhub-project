@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Star } from 'lucide-react';
+import VendorIdentitySelect from '@/components/VendorIdentitySelect';
+import { Link } from 'wouter';
 
 /**
  * EDITORIAL FEATURED PROVIDERS, AS AN ADMIN ACT.
@@ -22,7 +24,7 @@ export default function AdminFeaturedProviders() {
   const { data: rows = [], isLoading } = trpc.admin.featuredProviders.useQuery(undefined, { retry: false });
   const { data: categories = [] } = trpc.marketplace.vendorCategories.useQuery();
 
-  const [vendorId, setVendorId] = useState('');
+  const [vendorId, setVendorId] = useState<number | null>(null);
   const [category, setCategory] = useState('');
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
@@ -38,7 +40,7 @@ export default function AdminFeaturedProviders() {
 
   const feature = trpc.admin.featureVendor.useMutation({
     onSuccess: () => {
-      setError(''); setVendorId('');
+      setError(''); setVendorId(null);
       setNotice(ar ? 'تم تمييز المزوّد.' : 'Provider featured.');
       refresh();
     },
@@ -81,12 +83,11 @@ export default function AdminFeaturedProviders() {
       <CardContent className="space-y-5">
         <div className="grid gap-2 sm:grid-cols-4 items-end">
           <div>
-            <label className="text-xs text-muted-foreground" htmlFor="feature-vendor">
-              {ar ? 'رقم المزوّد' : 'Provider id'}
-            </label>
-            <Input
-              id="feature-vendor" data-testid="feature-vendor" inputMode="numeric" className="mt-1 h-9"
-              value={vendorId} onChange={e => setVendorId(e.target.value.replace(/\D/g, ''))}
+            <VendorIdentitySelect
+              value={vendorId}
+              onChange={setVendorId}
+              label={ar ? 'المزوّد' : 'Provider'}
+              testId="feature-vendor"
             />
           </div>
           <div>
@@ -143,7 +144,7 @@ export default function AdminFeaturedProviders() {
                 return;
               }
               feature.mutate({
-                vendorId: Number(vendorId),
+                vendorId: vendorId!,
                 category,
                 priority: priority ? Number(priority) : undefined,
                 startsAt: startsAt ? new Date(`${startsAt}T00:00:00Z`).toISOString() : undefined,
@@ -180,7 +181,9 @@ export default function AdminFeaturedProviders() {
                 {rows.map(row => (
                   <tr key={row.id} className="border-b last:border-0">
                     <td className="px-3 py-2">
-                      {String(row.vendorName ?? '—')}
+                      <Link href={`/vendor/${row.vendorId}`} className="underline-offset-2 hover:underline">
+                        {String(row.vendorName ?? '—')}
+                      </Link>
                       <span className="text-muted-foreground"> #{row.vendorId}</span>
                     </td>
                     <td className="px-3 py-2">{row.category}</td>

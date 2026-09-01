@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Megaphone } from 'lucide-react';
+import VendorIdentitySelect from '@/components/VendorIdentitySelect';
+import { Link } from 'wouter';
 
 /**
  * SPONSORED PLACEMENT, AS AN ADMINISTRATIVE ACT.
@@ -31,7 +33,7 @@ export default function AdminSponsorships() {
   const { data: rows = [], isLoading } = trpc.admin.sponsorships.useQuery(undefined, { retry: false });
   const { data: categories = [] } = trpc.marketplace.vendorCategories.useQuery();
 
-  const [vendorId, setVendorId] = useState('');
+  const [vendorId, setVendorId] = useState<number | null>(null);
   const [category, setCategory] = useState('');
   const [reason, setReason] = useState('');
   const [startsAt, setStartsAt] = useState('');
@@ -48,7 +50,7 @@ export default function AdminSponsorships() {
 
   const grant = trpc.admin.grantSponsorship.useMutation({
     onSuccess: () => {
-      setError(''); setReason(''); setVendorId('');
+      setError(''); setReason(''); setVendorId(null);
       setNotice(ar ? 'تم منح الرعاية.' : 'Sponsorship granted.');
       refresh();
     },
@@ -92,12 +94,11 @@ export default function AdminSponsorships() {
         {/* ── Granting ─────────────────────────────────────────────────── */}
         <div className="grid gap-2 sm:grid-cols-5 items-end">
           <div>
-            <label className="text-xs text-muted-foreground" htmlFor="sponsor-vendor">
-              {ar ? 'رقم المورّد' : 'Vendor id'}
-            </label>
-            <Input
-              id="sponsor-vendor" data-testid="sponsor-vendor" inputMode="numeric" className="mt-1 h-9"
-              value={vendorId} onChange={e => setVendorId(e.target.value.replace(/\D/g, ''))}
+            <VendorIdentitySelect
+              value={vendorId}
+              onChange={setVendorId}
+              label={ar ? 'المورّد' : 'Vendor'}
+              testId="sponsor-vendor"
             />
           </div>
           <div>
@@ -165,7 +166,7 @@ export default function AdminSponsorships() {
               return;
             }
             grant.mutate({
-              vendorId: Number(vendorId),
+              vendorId: vendorId!,
               category,
               reason: reason.trim(),
               priority: priority ? Number(priority) : undefined,
@@ -207,7 +208,9 @@ export default function AdminSponsorships() {
                 {rows.map(row => (
                   <tr key={row.id} className="border-b last:border-0">
                     <td className="py-2 px-3">
-                      {String(row.vendorName ?? '—')}
+                      <Link href={`/vendor/${row.vendorId}`} className="underline-offset-2 hover:underline">
+                        {String(row.vendorName ?? '—')}
+                      </Link>
                       <span className="text-muted-foreground"> #{row.vendorId}</span>
                     </td>
                     <td className="py-2 px-3">{row.category}</td>

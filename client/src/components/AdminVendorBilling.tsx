@@ -4,9 +4,9 @@ import { trpc } from '@/lib/trpc';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { AlertTriangle, CreditCard, Search } from 'lucide-react';
+import { AlertTriangle, CreditCard } from 'lucide-react';
+import VendorIdentitySelect from '@/components/VendorIdentitySelect';
 
 /**
  * Admin read-only view of one vendor's billing state.
@@ -38,7 +38,6 @@ import { AlertTriangle, CreditCard, Search } from 'lucide-react';
 export default function AdminVendorBilling() {
   const { lang, t } = useLanguage();
   const ar = lang === 'ar';
-  const [draft, setDraft] = useState('');
   const [userId, setUserId] = useState<number | null>(null);
 
   // Hiding the control from an administrator who lacks `billing.manage` is a
@@ -58,11 +57,6 @@ export default function AdminVendorBilling() {
   const date = (value: string | Date | null | undefined) =>
     value ? new Date(value).toLocaleString(ar ? 'ar-EG' : 'en-US') : '—';
 
-  const submit = () => {
-    const parsed = Number(draft.trim());
-    setUserId(Number.isInteger(parsed) && parsed > 0 ? parsed : null);
-  };
-
   return (
     <Card>
       <CardHeader>
@@ -70,23 +64,13 @@ export default function AdminVendorBilling() {
           <CreditCard className="w-5 h-5" />
           {t('adminBilling.title')}
         </CardTitle>
-        <div className="flex flex-wrap items-end gap-2 pt-3">
-          <div className="w-full sm:w-56">
-            <label className="text-xs text-muted-foreground" htmlFor="admin-billing-user">
-              {t('adminBilling.lookup')}
-            </label>
-            <Input
-              id="admin-billing-user"
-              inputMode="numeric"
-              className="h-9 mt-1"
-              value={draft}
-              onChange={event => setDraft(event.target.value.replace(/\D/g, ''))}
-              onKeyDown={event => { if (event.key === 'Enter') submit(); }}
-            />
-          </div>
-          <Button size="sm" className="h-9 gap-1.5" onClick={submit} disabled={!draft.trim()}>
-            <Search className="w-3.5 h-3.5" />{t('adminBilling.lookupCta')}
-          </Button>
+        <div className="w-full pt-3 sm:max-w-md">
+          <VendorIdentitySelect
+            value={userId}
+            onChange={setUserId}
+            label={t('adminBilling.lookup')}
+            testId="admin-billing-user"
+          />
         </div>
       </CardHeader>
 
