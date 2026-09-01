@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +42,11 @@ export default function AdminSponsorships() {
   const [priority, setPriority] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [promotionQuery, setPromotionQuery] = useState('');
+  const [promotionStatus, setPromotionStatus] = useState<'all' | 'scheduled' | 'active' | 'expired' | 'revoked'>('all');
+  const [promotionPage, setPromotionPage] = useState(0);
+  const [promotionSort, setPromotionSort] = useState<'vendor' | 'startsAt'>('startsAt');
+  const PROMOTION_PAGE_SIZE = 8;
 
   const refresh = () => {
     void utils.admin.sponsorships.invalidate();
@@ -75,6 +80,34 @@ export default function AdminSponsorships() {
     if (row.endsAt && new Date(row.endsAt).getTime() <= Date.now()) return ar ? 'منتهية' : 'Expired';
     return ar ? 'فعّالة' : 'Active';
   };
+
+  const statusKey = (row: { startsAt: Date | string; endsAt: Date | string | null; revokedAt: Date | string | null; live: boolean }) => {
+    if (row.revokedAt) return 'revoked';
+    if (new Date(row.startsAt).getTime() > Date.now()) return 'scheduled';
+    if (row.endsAt && new Date(row.endsAt).getTime() <= Date.now()) return 'expired';
+    return 'active';
+  };
+
+  const pageRows = useMemo(() => {
+    const term = promotionQuery.trim().toLowerCase();
+    const filtered = rows.filter(row => {
+      const statusMatches = promotionStatus === 'all' || statusKey(row) === promotionStatus;
+      const searchMatches = !term || `${row.vendorName ?? ''} ${row.category ?? ''} ${row.grantedReason ?? ''}`.toLowerCase().includes(term);
+      return statusMatches && searchMatches;
+    }).sort((left, right) => {
+      if (promotionSort === 'vendor') return String(left.vendorName ?? '').localeCompare(String(right.vendorName ?? ''));
+      return new Date(right.startsAt).getTime() - new Date(left.startsAt).getTime();
+    });
+    const start = promotionPage * PROMOTION_PAGE_SIZE;
+    return filtered.slice(start, start + PROMOTION_PAGE_SIZE);
+  }, [rows, promotionQuery, promotionStatus, promotionSort, promotionPage]);
+
+  const promotionPageCount = Math.max(1, Math.ceil(rows.filter(row => {
+    const term = promotionQuery.trim().toLowerCase();
+    const statusMatches = promotionStatus === 'all' || statusKey(row) === promotionStatus;
+    const searchMatches = !term || `${row.vendorName ?? ''} ${row.category ?? ''} ${row.grantedReason ?? ''}`.toLowerCase().includes(term);
+    return statusMatches && searchMatches;
+  }).length / PROMOTION_PAGE_SIZE));
 
   return (
     <Card data-testid="admin-sponsorships">
@@ -192,7 +225,26 @@ export default function AdminSponsorships() {
             {ar ? 'لا توجد رعايات مسجّلة.' : 'No sponsorships recorded.'}
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border">
+          <div className="space-y-3">
+            <div className="grid gap-2 sm:grid-cols-[1fr_170px_170px]">
+              <Input
+                value={promotionQuery}
+                onChange={event => { setPromotionQuery(event.target.value); setPromotionPage(0); }}
+                placeholder={ar ? 'ابحث بالمورّد أو الفئة أو السبب…' : 'Search vendor, category or reason…'}
+              />
+              <select className="h-9 rounded-md border bg-background px-2 text-sm" value={promotionStatus} onChange={event => { setPromotionStatus(event.target.value as typeof promotionStatus); setPromotionPage(0); }}>
+                <option value="all">{ar ? 'كل الحالات' : 'All statuses'}</option>
+                <option value="scheduled">{ar ? 'مجدولة' : 'Scheduled'}</option>
+                <option value="active">{ar ? 'فعّالة' : 'Active'}</option>
+                <option value="expired">{ar ? 'منتهية' : 'Expired'}</option>
+                <option value="revoked">{ar ? 'ملغاة' : 'Revoked'}</option>
+              </select>
+              <select className="h-9 rounded-md border bg-background px-2 text-sm" value={promotionSort} onChange={event => { setPromotionSort(event.target.value as typeof promotionSort); setPromotionPage(0); }}>
+                <option value="startsAt">{ar ? 'الأحدث أولاً' : 'Newest first'}</option>
+                <option value="vendor">{ar ? 'حسب المورّد' : 'By vendor'}</option>
+              </select>
+            </div>
+            <div className="overflow-x-auto rounded-lg border">
             <table className="w-full text-sm" data-testid="sponsor-table">
               <thead>
                 <tr className="border-b bg-muted/40">
@@ -205,7 +257,7 @@ export default function AdminSponsorships() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(row => (
+                {pageRows.map(row => (
                   <tr key={row.id} className="border-b last:border-0">
                     <td className="py-2 px-3">
                       <Link href={`/vendor/${row.vendorId}`} className="underline-offset-2 hover:underline">
@@ -240,6 +292,12 @@ export default function AdminSponsorships() {
                 ))}
               </tbody>
             </table>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <Button type="button" size="sm" variant="outline" disabled={promotionPage === 0} onClick={() => setPromotionPage(page => page - 1)}>{ar ? 'السابق' : 'Previous'}</Button>
+              <span className="text-xs text-muted-foreground">{ar ? `صفحة ${promotionPage + 1} من ${promotionPageCount}` : `Page ${promotionPage + 1} of ${promotionPageCount}`}</span>
+              <Button type="button" size="sm" variant="outline" disabled={promotionPage + 1 >= promotionPageCount} onClick={() => setPromotionPage(page => page + 1)}>{ar ? 'التالي' : 'Next'}</Button>
+            </div>
           </div>
         )}
       </CardContent>
