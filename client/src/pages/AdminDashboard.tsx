@@ -22,6 +22,7 @@ import { buildRegistrationMetricsCsv, filterRegistrationApplicants, dateKey } fr
 import AdminVendorBilling from '@/components/AdminVendorBilling';
 import AdminSponsorships from '@/components/AdminSponsorships';
 import AdminFeaturedProducts from '@/components/AdminFeaturedProducts';
+import AdminFeaturedProviders from '@/components/AdminFeaturedProviders';
 import AdminEnquiryAllowance from '@/components/AdminEnquiryAllowance';
 import AdminRfqInvestigation from '@/components/AdminRfqInvestigation';
 import AdminCommercialAnalytics from '@/components/AdminCommercialAnalytics';
@@ -594,7 +595,7 @@ export default function AdminDashboard() {
               console tab that can never answer teaches an administrator to
               stop reading the console. Automated fraud detection is recorded
               as NOT IMPLEMENTED rather than mocked up here. */}
-          <TabsContent value="operations"><div className="space-y-6"><AdminDataQuality /><AdminOperationalHealth />{can('marketplace.manage') && <AdminSponsorships />}{can('marketplace.manage') && <AdminFeaturedProducts />}</div></TabsContent>
+          <TabsContent value="operations"><div className="space-y-6"><AdminDataQuality /><AdminOperationalHealth />{can('marketplace.manage') && <AdminSponsorships />}{can('marketplace.manage') && <AdminFeaturedProviders />}{can('marketplace.manage') && <AdminFeaturedProducts />}</div></TabsContent>
 
           <TabsContent value="settings"><Card><CardHeader><CardTitle className="flex items-center gap-2"><Settings className="w-5 h-5" />{lang === 'ar' ? 'إعدادات المنصة' : 'Platform Settings'}</CardTitle></CardHeader><CardContent><div className="grid gap-4 md:grid-cols-2">{SETTING_DEFINITIONS.map(definition => { const value = settingDrafts[definition.key] ?? ''; const isBoolean = definition.type === 'boolean'; return <div key={definition.key} className="rounded-xl border p-4"><div className="flex items-center justify-between gap-4"><div><p className="text-sm font-medium">{lang === 'ar' ? definition.ar : definition.en}</p><p className="mt-1 text-xs text-muted-foreground">{definition.key}</p></div>{isBoolean ? <Switch checked={value === 'true'} onCheckedChange={checked => { const next = checked ? 'true' : 'false'; setSettingDrafts(draft => ({ ...draft, [definition.key]: next })); updateSetting.mutate({ key: definition.key, value: next }); }} disabled={updateSetting.isPending} /> : <div className="flex items-center gap-2"><Input className="h-8 w-28" type={definition.type === 'number' ? 'number' : 'text'} value={value} onChange={event => setSettingDrafts(draft => ({ ...draft, [definition.key]: event.target.value }))} /><Button size="sm" className="h-8 gap-1" onClick={() => updateSetting.mutate({ key: definition.key, value })} disabled={updateSetting.isPending}><Save className="h-3 w-3" />{lang === 'ar' ? 'حفظ' : 'Save'}</Button></div>}</div></div>; })}</div></CardContent></Card></TabsContent>
         </Tabs>

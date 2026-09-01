@@ -1201,6 +1201,11 @@ export const vendorSponsorships = mysqlTable('vendorSponsorships', {
    * rather than a scan-and-filter.
    */
   category: varchar('category', { length: 100 }).notNull(),
+  /**
+   * 'sponsored' (paid placement) or 'featured' (admin-curated editorial
+   * placement). Shared grant/revoke/period machinery, distinct business meaning.
+   */
+  kind:     varchar('kind', { length: 20 }).notNull().default('sponsored'),
   startsAt: timestamp('startsAt').defaultNow().notNull(),
   /**
    * NULL = open-ended until revoked. An elapsed sponsorship stops appearing

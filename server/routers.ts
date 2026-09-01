@@ -80,7 +80,7 @@ import {
 } from './billing/lifecycle';
 import { resolveVendorEntitlements, toVendorEntitlementResponse } from './billing/entitlements';
 import { readOwnVendorProfile, readVendorProfile, saveOwnVendorProfile } from './vendorProfile';
-import { grantSponsorship, listSponsorships, revokeSponsorship } from './vendorSponsorship';
+import { featureVendor, grantSponsorship, listFeaturedPlacements, listSponsorships, revokeSponsorship } from './vendorSponsorship';
 import {
   declineInvitation, inviteSupplier, listInvitations, markInvitationResponded, requireInviteRights,
 } from './rfqInvitations';
@@ -96,7 +96,7 @@ import {
 } from './billing/enquiries';
 import {
   FEATURED_PLACEMENT_SLOTS, getVendorTargetingDiagnostics, listDirectoryCategories,
-  listDirectoryVendors, listFeaturedVendors, listSponsoredVendors,
+  listDirectoryVendors, listFeaturedProviders, listFeaturedVendors, listSponsoredVendors,
 } from './vendorDirectory';
 import { getPlatformStats } from './platformStats';
 import {
@@ -1498,6 +1498,16 @@ const marketplaceRouter = router({
         slots: FEATURED_PLACEMENT_SLOTS,
       };
     }),
+  /**
+   * EDITORIAL FEATURED PROVIDERS. A separate endpoint from `featuredVendors`
+   * (the Premium entitlement rotation) and `sponsoredVendors` (paid placement):
+   * this is the admin-curated selection, and it must not be confused with
+   * either. Each row carries its `featuredCategory` so a directory can render
+   * Featured Designers, Featured Finishing and the rest from one source.
+   */
+  featuredProviders: publicProcedure
+    .input(z.object({ category: z.string().max(MAX_SEARCH_LENGTH).optional() }).optional())
+    .query(async ({ input }) => listFeaturedProviders(input ?? {})),
   list: publicProcedure
     // BOUNDED, matching marketplace.vendors below, which already was. This
     // endpoint is PUBLIC and unauthenticated: `limit` had no int, no minimum
@@ -4824,6 +4834,71 @@ const adminRouter = router({
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     return listSponsorships(db);
+  }),
+
+  /**
+   * ── EDITORIAL FEATURED PROVIDERS, AS AN ADMIN ACT ───────────────────────
+   *
+   * Featured is distinct from sponsorship: no commercial reason is required
+   * because nothing is being sold - an administrator is choosing what the
+   * marketplace showcases. The same `marketplace.manage` permission applies.
+   */
+  featureVendor: adminWith('marketplace.manage')
+    .input(z.object({
+      vendorId: z.number().int().positive(),
+      category: z.string().min(1).max(100),
+      startsAt: z.string().datetime().optional(),
+      endsAt: z.string().datetime().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const result = await featureVendor({
+        db,
+        vendorId: input.vendorId,
+        category: input.category,
+        featuredBy: ctx.user.id,
+        startsAt: input.startsAt ? new Date(input.startsAt) : undefined,
+        endsAt: input.endsAt ? new Date(input.endsAt) : null,
+      });
+      if (result.outcome === 'rejected') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+      }
+      await db.insert(userAccountAuditEvents).values({
+        userId: input.vendorId, actorId: ctx.user.id,
+        action: 'featured_granted', source: 'admin',
+        note: input.category,
+      });
+      return result;
+    }),
+
+  unfeatureVendor: adminWith('marketplace.manage')
+    .input(z.object({ placementId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [row] = await db
+        .select({ vendorId: vendorSponsorships.vendorId, category: vendorSponsorships.category, kind: vendorSponsorships.kind })
+        .from(vendorSponsorships).where(eq(vendorSponsorships.id, input.placementId)).limit(1);
+      if (!row || row.kind !== 'featured') {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Featured placement not found' });
+      }
+      const removed = await revokeSponsorship(db, input.placementId, ctx.user.id);
+      if (!removed) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That featured placement is already removed.' });
+      }
+      await db.insert(userAccountAuditEvents).values({
+        userId: row.vendorId, actorId: ctx.user.id,
+        action: 'featured_removed', source: 'admin',
+        note: row.category,
+      });
+      return { success: true as const };
+    }),
+
+  featuredProviders: adminWith('marketplace.manage').query(async () => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    return listFeaturedPlacements(db);
   }),
 
   /**

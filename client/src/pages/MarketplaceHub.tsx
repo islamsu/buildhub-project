@@ -108,13 +108,14 @@ export default function MarketplaceHub() {
     },
   ];
 
-  // "Featured" here means the top of the organic directory order, which is
-  // verified-first then newest. It is NOT paid placement: that is a separate,
-  // labelled concept served by marketplace.featuredVendors, and mixing the two
-  // is precisely how a paid slot ends up rendered as an editorial pick.
-  const featuredVendors = directory.slice(0, 4);
-  const featuredDesigners = designers.slice(0, 3);
-  const featuredCompanies = finishing.slice(0, 3);
+  // EDITORIAL FEATURED is now a real admin-curated state, not the top of the
+  // organic ranking. Each row carries its `featuredCategory`, so the hub maps
+  // one source onto Featured Vendors, Featured Designers and Featured Finishing.
+  const { data: featured = [] } = trpc.marketplace.featuredProviders.useQuery();
+  const featuredVendors = featured
+    .filter(v => !['Design', 'Renovation'].includes(v.featuredCategory)).slice(0, 4);
+  const featuredDesigners = featured.filter(v => v.featuredCategory === 'Design').slice(0, 3);
+  const featuredCompanies = featured.filter(v => v.featuredCategory === 'Renovation').slice(0, 3);
 
   return (
     <div className="min-h-screen bg-background">

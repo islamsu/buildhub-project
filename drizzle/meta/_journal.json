@@ -211,6 +211,13 @@
       "when": 1788170000000,
       "tag": "0029_quotation_response_workflow",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1788190000000,
+      "tag": "0030_featured_provider_placement",
+      "breakpoints": true
     }
   ]
 }

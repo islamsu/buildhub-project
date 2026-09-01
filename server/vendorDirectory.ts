@@ -16,9 +16,9 @@
 
 import { and, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { containsTerm } from './_core/searchTerms';
-import { qualifiedEnquiries, reviews, users, vendorCategories, vendorSubscriptions } from '../drizzle/schema';
+import { qualifiedEnquiries, reviews, users, vendorCategories, vendorSponsorships, vendorSubscriptions } from '../drizzle/schema';
 import { deriveBillingState } from './billing/domain';
-import { sponsoredVendorIds } from './vendorSponsorship';
+import { liveSponsorshipFilter, sponsoredVendorIds } from './vendorSponsorship';
 import { getEntitlements } from '@shared/billing';
 import { getDb } from './db';
 import { isTestLoginEnabled } from './_core/env';
@@ -357,6 +357,42 @@ export async function listSponsoredVendors(
   ];
 
   return combined.slice(0, FEATURED_PLACEMENT_SLOTS);
+}
+
+/**
+ * ── ADMIN-CURATED FEATURED PROVIDERS ──────────────────────────────────────
+ *
+ * Editorial featured placement, distinct from sponsorship. Live, active,
+ * approved providers only - a featured account that is later deactivated does
+ * not appear, because the directory's own visibility filter still applies.
+ * Ordered earliest-featured-first so the oldest deliberate pick stays first.
+ */
+export async function listFeaturedProviders(filters: { category?: string } = {}): Promise<(DirectoryVendor & { featuredCategory: string })[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const now = new Date();
+  const conditions = [eq(vendorSponsorships.kind, 'featured'), liveSponsorshipFilter(now)];
+  if (filters.category) conditions.push(eq(vendorSponsorships.category, filters.category));
+
+  const placements = await db
+    .select({ vendorId: vendorSponsorships.vendorId, category: vendorSponsorships.category })
+    .from(vendorSponsorships)
+    .where(and(...conditions))
+    .orderBy(vendorSponsorships.createdAt);
+
+  const byId = new Map<number, string>();
+  for (const placement of placements as { vendorId: number; category: string }[]) {
+    if (!byId.has(placement.vendorId)) byId.set(placement.vendorId, placement.category);
+  }
+  const ids = Array.from(byId.keys());
+  if (ids.length === 0) return [];
+
+  const rows = await db
+    .select(DIRECTORY_VENDOR_COLUMNS)
+    .from(users)
+    .where(and(directoryVisibilityFilter(), inArray(users.id, ids)));
+  const enriched = await enrichVendorRows(db, rows);
+  return enriched.map(vendor => ({ ...vendor, featuredCategory: byId.get(vendor.id) ?? '' }));
 }
 
 /**

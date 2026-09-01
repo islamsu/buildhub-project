@@ -70,7 +70,11 @@ export async function sponsoredVendorIds(
   const rows = await db
     .select({ vendorId: vendorSponsorships.vendorId })
     .from(vendorSponsorships)
-    .where(and(eq(vendorSponsorships.category, category), liveSponsorshipFilter(now)));
+    .where(and(
+      eq(vendorSponsorships.category, category),
+      eq(vendorSponsorships.kind, 'sponsored'),
+      liveSponsorshipFilter(now),
+    ));
   // De-duplicated: two overlapping grants for the same vendor and category is
   // an administrative untidiness, not two slots.
   return Array.from(new Set((rows as { vendorId: number }[]).map(r => r.vendorId)));
@@ -152,9 +156,87 @@ export async function grantSponsorship(params: {
   }
 
   const written = await db.insert(vendorSponsorships).values({
-    vendorId, category, grantedBy, grantedReason: params.reason, startsAt, endsAt,
+    vendorId, category, kind: 'sponsored', grantedBy, grantedReason: params.reason, startsAt, endsAt,
   });
   return { outcome: 'granted', sponsorshipId: Number(written?.[0]?.insertId) || 0 };
+}
+
+/**
+ * ── ADMIN-CURATED FEATURED PLACEMENT ──────────────────────────────────────
+ *
+ * Featured is EDITORIAL, not paid: an administrator chooses which providers
+ * the marketplace showcases, in which service category. It shares the
+ * live/period/soft-removal machinery with sponsorship but carries no
+ * commercial reason - and the `kind` column keeps the two states auditable as
+ * separate things instead of one meaning silently sliding into the other.
+ */
+export async function featureVendor(params: {
+  db: Db;
+  vendorId: number;
+  category: string;
+  featuredBy: number;
+  startsAt?: Date;
+  endsAt?: Date | null;
+  now?: Date;
+}): Promise<GrantOutcome> {
+  const { db, vendorId, category, featuredBy } = params;
+  const now = params.now ?? new Date();
+  const startsAt = params.startsAt ?? now;
+  const endsAt = params.endsAt ?? null;
+
+  if (endsAt !== null && endsAt.getTime() <= startsAt.getTime()) {
+    return { outcome: 'rejected', reason: 'The featured end date must be after its start date.' };
+  }
+  const EPOCH_LIMIT = new Date('2038-01-01T00:00:00Z');
+  for (const [label, value] of [['start', startsAt], ['end', endsAt]] as const) {
+    if (value !== null && value.getTime() >= EPOCH_LIMIT.getTime()) {
+      return { outcome: 'rejected', reason: `The featured ${label} date must be before 2038.` };
+    }
+  }
+
+  const [vendor] = await db
+    .select({ id: users.id, userRole: users.userRole, onboardingStatus: users.onboardingStatus, accountStatus: users.accountStatus })
+    .from(users).where(eq(users.id, vendorId)).limit(1);
+  if (!vendor) return { outcome: 'rejected', reason: 'Vendor not found.' };
+  if (vendor.onboardingStatus !== 'approved' || vendor.accountStatus !== 'active') {
+    return { outcome: 'rejected', reason: 'Only an approved, active provider can be featured.' };
+  }
+
+  const existing = await db
+    .select({ id: vendorSponsorships.id })
+    .from(vendorSponsorships)
+    .where(and(
+      eq(vendorSponsorships.vendorId, vendorId),
+      eq(vendorSponsorships.category, category),
+      eq(vendorSponsorships.kind, 'featured'),
+      liveSponsorshipFilter(now),
+    ))
+    .limit(1);
+  if ((existing as unknown[]).length > 0) {
+    return { outcome: 'rejected', reason: 'This vendor is already featured in that category.' };
+  }
+
+  const written = await db.insert(vendorSponsorships).values({
+    vendorId, category, kind: 'featured', grantedBy: featuredBy, startsAt, endsAt,
+  });
+  return { outcome: 'granted', sponsorshipId: Number(written?.[0]?.insertId) || 0 };
+}
+
+/** Vendor ids with a live admin-curated featured placement in one category. */
+export async function featuredVendorIds(
+  db: Db,
+  category: string,
+  now: Date = new Date(),
+): Promise<number[]> {
+  const rows = await db
+    .select({ vendorId: vendorSponsorships.vendorId })
+    .from(vendorSponsorships)
+    .where(and(
+      eq(vendorSponsorships.category, category),
+      eq(vendorSponsorships.kind, 'featured'),
+      liveSponsorshipFilter(now),
+    ));
+  return Array.from(new Set((rows as { vendorId: number }[]).map(r => r.vendorId)));
 }
 
 /**
@@ -190,6 +272,7 @@ export async function revokeSponsorship(
 export type SponsorshipRow = {
   id: number;
   vendorId: number;
+  kind: 'sponsored' | 'featured';
   /** Null only if the account was removed; the grant still happened. */
   vendorName: string | null;
   category: string;
@@ -209,6 +292,7 @@ export async function listSponsorships(db: Db, now: Date = new Date()): Promise<
     .select({
       id: vendorSponsorships.id,
       vendorId: vendorSponsorships.vendorId,
+      kind: vendorSponsorships.kind,
       vendorName: users.name,
       category: vendorSponsorships.category,
       startsAt: vendorSponsorships.startsAt,
@@ -229,4 +313,10 @@ export async function listSponsorships(db: Db, now: Date = new Date()): Promise<
       && new Date(row.startsAt).getTime() <= now.getTime()
       && (row.endsAt === null || new Date(row.endsAt).getTime() > now.getTime()),
   }));
+}
+
+/** Only admin-curated featured rows, for the featured admin surface. */
+export async function listFeaturedPlacements(db: Db, now: Date = new Date()): Promise<SponsorshipRow[]> {
+  const rows = await listSponsorships(db, now);
+  return rows.filter(row => row.kind === 'featured');
 }
