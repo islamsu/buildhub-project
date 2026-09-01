@@ -4962,6 +4962,51 @@ const adminRouter = router({
       }));
     }),
 
+  projects: adminWith('users.read').query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.select({
+      id: projects.id,
+      title: projects.title,
+      type: projects.type,
+      status: projects.status,
+      location: projects.location,
+      progress: projects.progress,
+      ownerId: projects.ownerId,
+      createdAt: projects.createdAt,
+      updatedAt: projects.updatedAt,
+    }).from(projects).orderBy(desc(projects.updatedAt)).limit(250);
+    const ownerIds = Array.from(new Set(rows.map(row => row.ownerId).filter((id): id is number => Number.isInteger(id) && id > 0)));
+    const ownerRows = ownerIds.length
+      ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ownerIds))
+      : [];
+    const ownerNames = new Map(ownerRows.map(row => [row.id, row.name]));
+    return rows.map(row => ({ ...row, ownerName: ownerNames.get(row.ownerId) ?? null }));
+  }),
+
+  products: adminWith('marketplace.manage').query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.select({
+      id: products.id,
+      name: products.name,
+      brand: products.brand,
+      category: products.category,
+      active: products.active,
+      featured: products.featured,
+      price: products.price,
+      stock: products.stock,
+      supplierId: products.supplierId,
+      createdAt: products.createdAt,
+    }).from(products).orderBy(desc(products.createdAt)).limit(250);
+    const supplierIds = Array.from(new Set(rows.map(row => row.supplierId).filter((id): id is number => Number.isInteger(id) && id > 0)));
+    const supplierRows = supplierIds.length
+      ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, supplierIds))
+      : [];
+    const supplierNames = new Map(supplierRows.map(row => [row.id, row.name]));
+    return rows.map(row => ({ ...row, supplierName: supplierNames.get(row.supplierId) ?? null }));
+  }),
+
   /**
    * WHAT IS WRONG WITH THE DATA (Part 49).
    *

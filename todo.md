@@ -348,7 +348,8 @@
 - [x] User names are clickable and open `/admin/users/:id`
 - [x] Add `admin.userDetail` with explicit allowlist columns and direct-access authorization
 - [x] Add targeted `adminUserDetail` authorization/allowlist test coverage
-- [ ] Give Active Projects and Products Listed their own filtered management destinations instead of routing both to Operations
+- [x] Give Active Projects and Products Listed their own filtered management destinations instead of routing both to Operations
+- [x] Add `admin.projects` and `admin.products` allowlisted listing endpoints with search/filter UI
 - [ ] System-wide entity-link/dead-control/raw-ID/raw-enum audit beyond the screenshot examples
 - [ ] Resolve count semantics and make Platform Healthy / Live labels reflect verified runtime state
 - [ ] Vendor/business name clickable to Vendor Management across remaining admin tables
