@@ -231,6 +231,7 @@ export default function AdminUserDetail() {
                   <Info icon={<MapPin className="h-4 w-4" />} label={lang === 'ar' ? 'الموقع' : 'Location'} value={detail.location || '—'} />
                   <Info icon={<ShieldCheck className="h-4 w-4" />} label={lang === 'ar' ? 'التحقق' : 'Verification'} value={detail.verified ? (lang === 'ar' ? 'موثّق' : 'Verified') : (lang === 'ar' ? 'غير موثّق' : 'Unverified')} />
                   <Info icon={<UserRound className="h-4 w-4" />} label={lang === 'ar' ? 'حالة الحساب' : 'Account status'} value={statusLabel(detail.accountStatus, lang)} />
+                  <Info icon={<SendHorizontal className="h-4 w-4" />} label={lang === 'ar' ? 'الدعوة' : 'Invitation'} value={invitationLabel(detail.invitationStatus, lang)} />
                   <Info icon={<CalendarDays className="h-4 w-4" />} label={lang === 'ar' ? 'تاريخ الانضمام' : 'Joined'} value={new Date(detail.createdAt).toLocaleDateString()} />
                 </div>
 
