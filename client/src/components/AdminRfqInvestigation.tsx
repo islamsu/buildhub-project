@@ -19,25 +19,39 @@
  * token, and a bare select has leaked them twice in this codebase's history.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Search, AlertTriangle } from 'lucide-react';
+import { Search, AlertTriangle, X } from 'lucide-react';
 
 export default function AdminRfqInvestigation() {
   const { lang } = useLanguage();
   const ar = lang === 'ar';
-  const [draft, setDraft] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [open, setOpen] = useState(false);
   const [rfqId, setRfqId] = useState<number | null>(null);
+  const [selectedRfq, setSelectedRfq] = useState<{ id: number; label: string } | null>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
 
   const enabled = rfqId !== null;
   const { data, isLoading, error } = trpc.admin.rfqInvestigation.useQuery(
     { rfqId: rfqId ?? 0 }, { enabled, retry: false },
   );
+  const { data: searchData, isFetching: searchFetching } = trpc.admin.platformSearch.useQuery(
+    { query: debounced || 'x' },
+    { enabled: debounced.length >= 2 && rfqId === null, retry: false },
+  );
+  const rfqHits = searchData?.segments.find(segment => segment.key === 'rfqs')?.hits ?? [];
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(searchText.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [searchText]);
 
   const when = (value: string | Date | null | undefined) =>
     value ? new Date(value).toLocaleString(ar ? 'ar-EG' : 'en-US') : '—';
@@ -47,9 +61,11 @@ export default function AdminRfqInvestigation() {
     return party ? `${party.name ?? party.username ?? '—'} (#${id})` : `#${id}`;
   };
 
-  const lookUp = () => {
-    const parsed = Number(draft.trim());
-    setRfqId(Number.isInteger(parsed) && parsed > 0 ? parsed : null);
+  const chooseRfq = (hit: { id: number; label: string }) => {
+    setRfqId(hit.id);
+    setSelectedRfq({ id: hit.id, label: hit.label });
+    setSearchText('');
+    setOpen(false);
   };
 
   return (
@@ -59,30 +75,66 @@ export default function AdminRfqInvestigation() {
           <Search className="w-5 h-5" />
           {ar ? 'تحقيق في طلب' : 'Request investigation'}
         </CardTitle>
-        <div className="flex flex-wrap items-end gap-2 pt-3">
-          <div className="w-full sm:w-56">
-            <Input
-              data-testid="investigation-rfq-input"
-              inputMode="numeric"
-              placeholder={ar ? 'رقم الطلب' : 'Request id'}
-              value={draft}
-              onChange={event => setDraft(event.target.value.replace(/\D/g, ''))}
-              onKeyDown={event => { if (event.key === 'Enter') lookUp(); }}
-              aria-label={ar ? 'رقم الطلب' : 'Request id'}
-            />
-          </div>
-          <Button data-testid="investigation-lookup" onClick={lookUp} disabled={!draft.trim()}>
-            {ar ? 'افتح' : 'Open'}
-          </Button>
+        <div className="relative w-full sm:max-w-md" ref={boxRef}>
+          {selectedRfq ? (
+            <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2">
+              <span className="min-w-0 truncate text-sm">{selectedRfq.label} <span className="text-muted-foreground">#{selectedRfq.id}</span></span>
+              <button type="button" onClick={() => { setRfqId(null); setSelectedRfq(null); setSearchText(''); }} aria-label={ar ? 'مسح الطلب' : 'Clear request'}>
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
+          ) : (
+            <div className="relative">
+              <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                data-testid="investigation-rfq-input"
+                className="ps-9"
+                placeholder={ar ? 'ابحث عن طلب بالاسم أو المرجع…' : 'Search a request by name or reference…'}
+                value={searchText}
+                onChange={event => { setSearchText(event.target.value); setOpen(true); }}
+                onFocus={() => setOpen(true)}
+                onKeyDown={event => { if (event.key === 'Escape') setOpen(false); }}
+                aria-label={ar ? 'ابحث عن طلب' : 'Search for a request'}
+              />
+            </div>
+          )}
+          {open && debounced.length >= 2 && rfqId === null && (
+            <div className="absolute z-30 mt-1 w-full rounded-lg border bg-popover text-popover-foreground shadow-lg">
+              {searchFetching ? (
+                <p className="px-3 py-3 text-sm text-muted-foreground">{ar ? 'جارٍ البحث…' : 'Searching…'}</p>
+              ) : rfqHits.length === 0 ? (
+                <p className="px-3 py-3 text-sm text-muted-foreground">{ar ? 'لا توجد طلبات مطابقة.' : 'No matching requests.'}</p>
+              ) : (
+                <ul className="max-h-72 overflow-y-auto">
+                  {rfqHits.map(hit => (
+                    <li key={hit.id}>
+                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-start hover:bg-muted" onClick={() => chooseRfq({ id: hit.id, label: hit.label })}>
+                        <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{hit.label}</span>
+                          <span className="block truncate text-xs text-muted-foreground">#{hit.id}{hit.detail ? ` · ${hit.detail}` : ''}</span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
+        {rfqId === null && (
+          <Button data-testid="investigation-lookup" onClick={() => setOpen(true)} disabled={!searchText.trim()}>
+            {ar ? 'ابحث' : 'Search'}
+          </Button>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-6">
         {rfqId === null && (
           <p className="text-sm text-muted-foreground" data-testid="investigation-empty">
             {ar
-              ? 'أدخل رقم طلب لإعادة بناء ما حدث فيه: الأطراف، العروض، المرفقات، الرسائل، الإشعارات وسجل التغييرات.'
-              : 'Enter a request id to reconstruct what happened to it: the parties, the bids, the attachments, the messages, the notifications and the change history.'}
+              ? 'ابحث عن طلب لإعادة بناء ما حدث فيه: الأطراف، العروض، المرفقات، الرسائل، الإشعارات وسجل التغييرات.'
+              : 'Search for a request to reconstruct what happened to it: the parties, the bids, the attachments, the messages, the notifications and the change history.'}
           </p>
         )}
 

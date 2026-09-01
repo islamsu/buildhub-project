@@ -362,6 +362,7 @@
 - [x] Add Admin Project Detail route, server endpoint, owner/member links, and related counts
 - [x] Project names in Admin Projects Management link to Admin Project Detail
 - [x] Admin user summary group counts and total use the same real-user population
+- [x] RFQ investigation replaces raw numeric request id with visible request search and selectable results
 - [ ] System-wide entity-link/dead-control/raw-ID/raw-enum audit beyond the screenshot examples
 - [ ] Resolve count semantics and make Platform Healthy / Live labels reflect verified runtime state
 - [ ] Vendor/business name clickable to Vendor Management across remaining admin tables
