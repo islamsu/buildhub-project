@@ -588,7 +588,7 @@ export default function AdminDashboard() {
       <div className="space-y-6" dir={dir}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div><h2 className="text-2xl font-bold mb-1">{t('admin.title')}</h2><p className="text-muted-foreground">{lang === 'ar' ? 'مراقبة وإدارة منصة BuildHub' : 'Monitor and manage the BuildHub platform'}</p></div>
-          <div className="flex items-center gap-2"><Badge className="badge-success text-xs px-3 py-1">{lang === 'ar' ? 'المنصة تعمل بشكل جيد' : 'Platform Healthy'}</Badge><Badge className="badge-info text-xs px-3 py-1 flex items-center gap-1"><Activity className="w-3 h-3" /> {lang === 'ar' ? 'مباشر' : 'Live'}</Badge></div>
+          <div className="flex items-center gap-2"><Badge className="badge-info text-xs px-3 py-1 flex items-center gap-1"><Activity className="w-3 h-3" /> {lang === 'ar' ? 'لوحة التشغيل' : 'Operational Console'}</Badge></div>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
