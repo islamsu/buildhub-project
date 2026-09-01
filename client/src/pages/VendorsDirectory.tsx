@@ -76,6 +76,12 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
     category: category === 'all' ? undefined : category,
     location: location.trim() || undefined,
   });
+  // EDITORIAL FEATURED is separate from paid sponsorship. When this directory
+  // is category-preset (Designers/Finishing), fetch only that category's picks;
+  // the general vendors directory shows all editorial picks.
+  const { data: editorialFeatured = [] } = trpc.marketplace.featuredProviders.useQuery({
+    category: presetCategory,
+  });
 
   const Back = ar ? ChevronRight : ChevronLeft;
 
@@ -141,6 +147,24 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
             <p className="font-medium">{t('vendorsDir.emptyTitle')}</p>
             <p className="text-sm text-muted-foreground mt-1">{t('vendorsDir.emptyHint')}</p>
           </div>
+        )}
+
+        {/* Editorial Featured: platform-curated recognition, distinct from paid
+            sponsorship. Shown before sponsored and organic so the strongest
+            providers are immediately visible. */}
+        {editorialFeatured.length > 0 && (
+          <section className="mb-8" aria-label={t('market.featured')}>
+            <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+              <h2 className="text-sm font-semibold">{t('market.featured')}</h2>
+              <p className="text-xs text-muted-foreground">{ar ? 'اختيار تحريري من المنصة.' : 'Editorial picks from the platform.'}</p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {editorialFeatured.map(vendor => (
+                <VendorCard key={`editorial-${vendor.id}`} vendor={vendor} lang={lang} t={t} onOpen={id => navigate(`/vendor/${id}`)} />
+              ))}
+            </div>
+            <div className="mt-4 h-px bg-border" />
+          </section>
         )}
 
         {/* Sponsored strip (Slice 8). A SEPARATE, labelled section - never a
