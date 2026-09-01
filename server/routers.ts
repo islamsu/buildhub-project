@@ -4826,6 +4826,42 @@ const adminRouter = router({
     return listSponsorships(db);
   }),
 
+  /**
+   * EDITORIAL / ADMIN-CURATED FEATURED PRODUCT.
+   *
+   * `products.featured` existed and the marketplace sorted by it, but nothing
+   * could ever set it, so no product was ever actually featured. Featured is a
+   * marketplace curation decision (distinct from sponsorship, which is paid
+   * placement), so it sits behind `marketplace.manage` - the same permission
+   * grantSponsorship already uses - and never changes product ownership.
+   */
+  setProductFeatured: adminWith('marketplace.manage')
+    .input(z.object({ productId: z.number().int().positive(), featured: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [product] = await db
+        .select({ id: products.id, supplierId: products.supplierId, featured: products.featured })
+        .from(products).where(eq(products.id, input.productId)).limit(1);
+      if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
+      if (product.featured === input.featured) {
+        return { productId: input.productId, featured: input.featured };
+      }
+
+      await db.update(products).set({ featured: input.featured }).where(eq(products.id, input.productId));
+      await recordFieldChange(db, {
+        subjectType: 'product', subjectId: input.productId,
+        ownerId: product.supplierId, actorId: ctx.user.id,
+        field: 'featured', oldValue: String(product.featured), newValue: String(input.featured),
+      });
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: product.supplierId,
+        subjectType: 'product', subjectId: input.productId,
+        action: input.featured ? 'product_featured' : 'product_unfeatured',
+      });
+      return { productId: input.productId, featured: input.featured };
+    }),
+
   setVendorPlanManually: adminWith('billing.manage')
     .input(z.object({
       userId: z.number().int().positive(),

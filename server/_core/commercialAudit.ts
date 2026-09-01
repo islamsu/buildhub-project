@@ -49,6 +49,7 @@ export type CommercialAction =
   | 'enquiry_opened'
   // Catalogue
   | 'product_created' | 'product_updated' | 'product_published' | 'product_delisted'
+  | 'product_featured' | 'product_unfeatured'
   | 'product_images_changed' | 'product_question_answered'
   // Files
   | 'document_uploaded' | 'document_deleted' | 'attachment_added' | 'attachment_removed';

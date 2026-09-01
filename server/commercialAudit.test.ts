@@ -192,6 +192,8 @@ describe('the events that matter are recorded', () => {
     'product_updated',
     'product_published',
     'product_delisted',
+    'product_featured',
+    'product_unfeatured',
     'product_images_changed',
     'product_question_answered',
   ])('%s is written from a real call site', action => {
@@ -248,13 +250,13 @@ describe('the events that matter are recorded', () => {
       };
     }).filter(site => site.subjectType);
 
-    // Nine instrumented events. If this number moves, the list below must too.
-    expect(sites).toHaveLength(9);
+    // Instrumented events. If this number moves, the list below must too.
+    expect(sites).toHaveLength(10);
 
     // The id expression each subjectType is allowed to carry. `input.rfqId` is
     // absent from 'quotation' and 'enquiry' deliberately - that was the defect.
     const ALLOWED: Record<string, string[]> = {
-      product:   ['id', 'input.id', 'row.productId'],
+      product:   ['id', 'input.id', 'input.productId', 'row.productId'],
       rfq:       ['rfqId'],
       quotation: ['quotationId', 'input.quotationId'],
       enquiry:   ['result.enquiryId ?? 0'],
