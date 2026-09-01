@@ -46,7 +46,7 @@ import {
   commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems, qualifiedEnquiries,
-  projectMembers, rfqSuppliers, portfolioItems,
+  projectMembers, rfqSuppliers, portfolioItems, vendorProfiles,
 } from '../drizzle/schema';
 import { and, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -4879,6 +4879,60 @@ const adminRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       return runPlatformSearch(db, ctx.user.adminRole, input.query);
+    }),
+
+  /**
+   * VENDOR LOOKUP BY BUSINESS IDENTITY, not by remembered database id.
+   *
+   * An administrator taking a billing or support action has a name, a company
+   * or an email - not a row id. This returns provider accounts matching any of
+   * those, with enough identity to disambiguate and no credential column.
+   */
+  vendorSearch: adminProcedure
+    .input(z.object({ query: z.string().min(1).max(MAX_SEARCH_LENGTH) }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const canRead = hasAdminPermission(ctx.user.adminRole, 'users.read')
+        || hasAdminPermission(ctx.user.adminRole, 'billing.read');
+      if (!canRead) return [];
+      const term = containsTerm(input.query.trim());
+      const rows = await db
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          userRole: users.userRole,
+          location: users.location,
+          verified: users.verified,
+          accountStatus: users.accountStatus,
+          companyName: vendorProfiles.companyName,
+          tradingName: vendorProfiles.tradingName,
+        })
+        .from(users)
+        .leftJoin(vendorProfiles, eq(vendorProfiles.userId, users.id))
+        .where(and(
+          inArray(users.userRole, providerRoles),
+          or(
+            like(users.name, term),
+            like(users.email, term),
+            like(vendorProfiles.companyName, term),
+            like(vendorProfiles.tradingName, term),
+          ),
+        ))
+        .orderBy(desc(users.id))
+        .limit(10);
+      return rows.map(row => ({
+        id: row.id,
+        name: row.name ?? `#${row.id}`,
+        email: row.email ?? null,
+        userRole: row.userRole ?? null,
+        location: row.location ?? null,
+        verified: row.verified ?? null,
+        accountStatus: row.accountStatus ?? null,
+        companyName: row.companyName ?? null,
+        tradingName: row.tradingName ?? null,
+      }));
     }),
 
   /**

@@ -122,12 +122,12 @@ describe('the N/A claims that can be falsified are checked', () => {
     // If someone adds marketplace.update or rfq.update, the matrix's edit
     // cells become lies and this fails first.
     const updates = [...TIERS.keys()].filter(name => /\.update$/.test(name)).sort();
-    expect(updates).toEqual(['profile.update', 'projects.update']);
+    expect(updates).toEqual(['portfolio.update', 'profile.update', 'projects.update']);
   });
 
   it('"no delete exists" is true - nothing user-facing deletes but AI attachments', () => {
     const deletes = [...TIERS.keys()].filter(name => /\.delete/i.test(name)).sort();
-    expect(deletes).toEqual(['admin.deleteDummyUser', 'ai.deleteAttachment']);
+    expect(deletes).toEqual(['admin.deleteDummyUser', 'ai.deleteAttachment', 'portfolio.delete']);
   });
 
   it('there is genuinely no order surface', () => {
