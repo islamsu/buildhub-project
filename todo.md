@@ -331,8 +331,10 @@
 - [x] Product Specifications: complete form -> write -> render chain
 - [x] Product warranty + Arabic description fields
 - [x] Provider Portfolio: owner-scoped portfolio (Architect dashboard + public profile display)
-- [ ] Owner decision: one-current-quotation-per-supplier-per-RFQ revision model
-- [ ] Owner decision: Get Quotes vs open discovery (documented, no change required)
+- [x] Portfolio exposed to all project-based professionals via Settings
+- [x] Project member management UI (Team tab, capability-gated add/remove)
+- [x] Quotation revision model: one current quotation per supplier per RFQ
+- [x] Owner decision #2 (Get Quotes vs open discovery) resolved: architecture already follows the recommended relevance-filtered enquiries + summary-only open discovery
 - [ ] Broader role self-service second pass (Contractor/Engineer/PM dashboards)
 - [ ] Team / organization management (future architectural milestone, not yet modeled)
 - [ ] Linux CI observation + staging/infrastructure verification
