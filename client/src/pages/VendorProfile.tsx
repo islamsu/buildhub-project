@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import VendorReputation from '@/components/VendorReputation';
+import { parseProductImages } from '@shared/productImages';
 import { ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Calendar, MapPin, MessageSquare, Package, Star, Store } from 'lucide-react';
 
 function initials(name: string | null | undefined) {
@@ -34,6 +35,10 @@ export default function VendorProfile() {
   );
   const { data: catalogue = [] } = trpc.marketplace.vendorProducts.useQuery(
     { vendorId: userId },
+    { enabled: Number.isFinite(userId) && userId > 0 },
+  );
+  const { data: portfolio = [] } = trpc.portfolio.list.useQuery(
+    { userId },
     { enabled: Number.isFinite(userId) && userId > 0 },
   );
   const isSelf = Boolean(user && (user as { id?: number }).id === userId);
@@ -265,6 +270,30 @@ export default function VendorProfile() {
                 {profile.categories.map(category => (
                   <Badge key={category} variant="secondary" className="font-normal">{category}</Badge>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* PROVIDER PORTFOLIO. Real completed work the provider added; never
+              fabricated, and absent when the provider has added none. */}
+          {portfolio.length > 0 && (
+            <div data-testid="vendor-portfolio">
+              <h2 className="text-sm font-semibold mb-2">{t('provider.portfolio')}</h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {portfolio.map(item => {
+                  const images = parseProductImages(item.images);
+                  return (
+                    <div key={item.id} className="rounded-xl border p-3">
+                      {images[0] && <img src={images[0]} alt="" className="mb-2 h-28 w-full rounded-md border object-cover" />}
+                      <p className="text-sm font-medium">{item.title}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {[item.category, item.location, item.completionYear != null ? String(item.completionYear) : null]
+                          .filter(Boolean).join(' · ') || '—'}
+                      </p>
+                      {item.description && <p className="mt-1 line-clamp-3 text-xs text-muted-foreground whitespace-pre-wrap">{item.description}</p>}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
