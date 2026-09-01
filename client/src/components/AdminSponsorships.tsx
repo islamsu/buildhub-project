@@ -67,6 +67,12 @@ export default function AdminSponsorships() {
   });
 
   const date = (v: unknown) => v ? new Date(v as string).toLocaleDateString(ar ? 'ar-EG' : 'en-US') : '—';
+  const statusLabel = (row: { startsAt: Date | string; endsAt: Date | string | null; revokedAt: Date | string | null; live: boolean }) => {
+    if (row.revokedAt) return ar ? 'ملغاة' : 'Revoked';
+    if (new Date(row.startsAt).getTime() > Date.now()) return ar ? 'مجدولة' : 'Scheduled';
+    if (row.endsAt && new Date(row.endsAt).getTime() <= Date.now()) return ar ? 'منتهية' : 'Expired';
+    return ar ? 'فعّالة' : 'Active';
+  };
 
   return (
     <Card data-testid="admin-sponsorships">
@@ -210,13 +216,7 @@ export default function AdminSponsorships() {
                     </td>
                     <td className="py-2 px-3 text-muted-foreground">{String(row.grantedReason ?? '—')}</td>
                     <td className="py-2 px-3">
-                      <Badge variant={row.live ? 'default' : 'outline'} className="text-[10px]">
-                        {row.revokedAt
-                          ? (ar ? 'ملغاة' : 'Revoked')
-                          : row.live
-                            ? (ar ? 'فعّالة' : 'Live')
-                            : (ar ? 'منتهية' : 'Not live')}
-                      </Badge>
+                      <Badge variant={row.live ? 'default' : 'outline'} className="text-[10px]">{statusLabel(row)}</Badge>
                     </td>
                     <td className="py-2 px-3">
                       {/* Offered only where it would do something. A revoked
