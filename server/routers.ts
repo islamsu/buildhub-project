@@ -1626,6 +1626,8 @@ const marketplaceRouter = router({
       // "tonne" and three per "ton", which no buyer can compare.
       unit: z.string().max(50).optional(),
       deliveryDays: z.number().int().min(1).optional(),
+      warranty: z.string().max(100).optional(),
+      descriptionAr: z.string().max(5000).optional(),
       specs: z.string().max(5000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -1782,6 +1784,7 @@ const marketplaceRouter = router({
       name: z.string().min(1).max(255).optional(),
       nameAr: z.string().max(255).optional(),
       description: z.string().max(5000).optional(),
+      descriptionAr: z.string().max(5000).optional(),
       category: z.string().min(1).max(100).optional(),
       brand: z.string().max(100).optional(),
       origin: z.string().max(100).optional(),

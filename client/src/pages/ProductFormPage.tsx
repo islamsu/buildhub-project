@@ -39,12 +39,14 @@ import { ArrowLeft, PackagePlus, Save, AlertTriangle, FileSpreadsheet } from 'lu
 
 type FormState = {
   name: string; nameAr: string; category: string; brand: string; origin: string;
-  price: string; stock: string; unit: string; deliveryDays: string; description: string; specs: string;
+  price: string; stock: string; unit: string; deliveryDays: string; description: string; descriptionAr: string;
+  warranty: string; specs: string;
 };
 
 const EMPTY: FormState = {
   name: '', nameAr: '', category: '', brand: '', origin: '',
-  price: '', stock: '', unit: '', deliveryDays: '', description: '', specs: '',
+  price: '', stock: '', unit: '', deliveryDays: '', description: '', descriptionAr: '',
+  warranty: '', specs: '',
 };
 
 export default function ProductFormPage({ mode, productId: productIdProp }: {
@@ -92,6 +94,8 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
       unit: product.unit ?? '',
       deliveryDays: product.deliveryDays != null ? String(product.deliveryDays) : '',
       description: product.description ?? '',
+      descriptionAr: product.descriptionAr ?? '',
+      warranty: product.warranty ?? '',
       specs: product.specs ?? '',
     });
     setLoaded(true);
@@ -138,6 +142,8 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
       stock: form.stock ? Number(form.stock) : undefined,
       unit: form.unit || undefined,
       deliveryDays: form.deliveryDays ? Number(form.deliveryDays) : undefined,
+      warranty: form.warranty.trim() || undefined,
+      descriptionAr: form.descriptionAr.trim() || undefined,
       specs: form.specs.trim() || undefined,
     };
     if (editing && productId) update.mutate({ id: productId, name: form.name, category: form.category, ...common });
@@ -270,10 +276,19 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
           <Field label={ar ? 'أيام التوصيل' : 'Delivery days'}>
             <Input data-testid="product-delivery" type="number" min={1} value={form.deliveryDays} onChange={e => set('deliveryDays')(e.target.value)} />
           </Field>
+          <Field label={ar ? 'الضمان' : 'Warranty'}>
+            <Input data-testid="product-warranty" maxLength={100} value={form.warranty} onChange={e => set('warranty')(e.target.value)} />
+          </Field>
 
           <div className="sm:col-span-2">
             <Field label={ar ? 'وصف المنتج' : 'Description'}>
               <Textarea data-testid="product-description" rows={4} value={form.description} onChange={e => set('description')(e.target.value)} />
+            </Field>
+          </div>
+
+          <div className="sm:col-span-2">
+            <Field label={ar ? 'الوصف بالعربية' : 'Arabic description'}>
+              <Textarea data-testid="product-description-ar" rows={3} maxLength={5000} value={form.descriptionAr} onChange={e => set('descriptionAr')(e.target.value)} />
             </Field>
           </div>
 
