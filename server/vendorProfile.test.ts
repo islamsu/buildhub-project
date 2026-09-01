@@ -247,7 +247,8 @@ describe('readVendorProfile - the tiers are a property of the COLUMNS', () => {
     const { db } = makeDb({ profile: { companyName: null, city: null, country: null, website: null, companyDescription: null } });
     const result = await readVendorProfile(db, VENDOR, viewer(STRANGER));
     expect(result.profile).toEqual({
-      companyName: null, companyDescription: null, city: null, country: null, website: null,
+      companyName: null, companyDescription: null, tradingName: null, city: null, country: null,
+      website: null, serviceCoverage: null, specialties: null, businessHours: null, socialLinks: null,
     });
   });
 });
@@ -257,12 +258,13 @@ describe('readVendorProfile - the tiers are a property of the COLUMNS', () => {
 describe('the column allowlists', () => {
   it('the PUBLIC tier carries nothing that identifies a person or a place to visit', () => {
     expect(Object.keys(VENDOR_PROFILE_PUBLIC_COLUMNS).sort())
-      .toEqual(['city', 'companyDescription', 'companyName', 'country', 'website'].sort());
+      .toEqual(['city', 'companyDescription', 'companyName', 'country', 'website',
+        'tradingName', 'serviceCoverage', 'specialties', 'businessHours', 'socialLinks'].sort());
   });
 
   it('the CONTACT tier is exactly the person and the street address', () => {
     expect(Object.keys(VENDOR_PROFILE_CONTACT_COLUMNS).sort()).toEqual([
-      'addressLine', 'primaryContactEmail', 'primaryContactMobile',
+      'addressLine', 'alternativeEmail', 'primaryContactEmail', 'primaryContactMobile',
       'primaryContactName', 'primaryContactPhone', 'primaryContactPosition',
     ].sort());
   });

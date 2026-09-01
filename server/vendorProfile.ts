@@ -46,9 +46,14 @@ type Db = any;
 export const VENDOR_PROFILE_PUBLIC_COLUMNS = {
   companyName: vendorProfiles.companyName,
   companyDescription: vendorProfiles.companyDescription,
+  tradingName: vendorProfiles.tradingName,
   city: vendorProfiles.city,
   country: vendorProfiles.country,
   website: vendorProfiles.website,
+  serviceCoverage: vendorProfiles.serviceCoverage,
+  specialties: vendorProfiles.specialties,
+  businessHours: vendorProfiles.businessHours,
+  socialLinks: vendorProfiles.socialLinks,
 } as const;
 
 /** Released only on a relationship the vendor entered into. */
@@ -56,6 +61,7 @@ export const VENDOR_PROFILE_CONTACT_COLUMNS = {
   primaryContactName: vendorProfiles.primaryContactName,
   primaryContactPosition: vendorProfiles.primaryContactPosition,
   primaryContactEmail: vendorProfiles.primaryContactEmail,
+  alternativeEmail: vendorProfiles.alternativeEmail,
   primaryContactPhone: vendorProfiles.primaryContactPhone,
   primaryContactMobile: vendorProfiles.primaryContactMobile,
   addressLine: vendorProfiles.addressLine,
@@ -151,15 +157,21 @@ export function unlocksContact(access: VendorContactAccess): boolean {
 export type VendorPublicProfile = {
   companyName: string | null;
   companyDescription: string | null;
+  tradingName: string | null;
   city: string | null;
   country: string | null;
   website: string | null;
+  serviceCoverage: string | null;
+  specialties: string | null;
+  businessHours: string | null;
+  socialLinks: string | null;
 };
 
 export type VendorPrimaryContact = {
   primaryContactName: string | null;
   primaryContactPosition: string | null;
   primaryContactEmail: string | null;
+  alternativeEmail: string | null;
   primaryContactPhone: string | null;
   primaryContactMobile: string | null;
   addressLine: string | null;

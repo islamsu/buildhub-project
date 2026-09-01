@@ -77,6 +77,13 @@ export default function VendorCompanyProfile() {
     </div>
   );
 
+  const TextareaField = ({ name, label, rows = 3, maxLength = 5000 }: { name: string; label: string; rows?: number; maxLength?: number }) => (
+    <div>
+      <label className="text-xs text-muted-foreground" htmlFor={`company-${name}`}>{label}</label>
+      <Textarea id={`company-${name}`} data-testid={`company-${name}`} className="mt-1" rows={rows} maxLength={maxLength} {...field(name)} />
+    </div>
+  );
+
   return (
     <div className="space-y-6" data-testid="vendor-company-form">
       <Group
@@ -86,6 +93,7 @@ export default function VendorCompanyProfile() {
           : 'Visible to anyone browsing the directory — this is what a customer chooses you on.'}
       >
         <Field name="companyName" label={ar ? 'الاسم التجاري' : 'Company name'} />
+        <Field name="tradingName" label={ar ? 'الاسم القانوني / التجاري' : 'Legal / trading name'} />
         <Field name="website" label={ar ? 'الموقع الإلكتروني' : 'Website'} />
         <Field name="city" label={ar ? 'المدينة' : 'City'} />
         <Field name="country" label={ar ? 'الدولة' : 'Country'} />
@@ -110,9 +118,30 @@ export default function VendorCompanyProfile() {
         <Field name="primaryContactName" label={ar ? 'الاسم' : 'Name'} />
         <Field name="primaryContactPosition" label={ar ? 'المسمى الوظيفي' : 'Position'} />
         <Field name="primaryContactEmail" label={ar ? 'البريد الإلكتروني' : 'Email'} />
+        <Field name="alternativeEmail" label={ar ? 'بريد بديل' : 'Alternative email'} />
         <Field name="primaryContactPhone" label={ar ? 'الهاتف' : 'Phone'} />
         <Field name="primaryContactMobile" label={ar ? 'الموبايل' : 'Mobile'} />
         <Field name="addressLine" label={ar ? 'العنوان' : 'Street address'} />
+      </Group>
+
+      <Group
+        title={ar ? 'نطاق الخدمة والتخصصات' : 'Coverage & specialties'}
+        note={ar
+          ? 'يظهر هذا للجميع ويساعد العملاء على اكتشافك حسب المنطقة والتخصص.'
+          : 'Visible to everyone; it helps customers discover you by area and specialism.'}
+      >
+        <TextareaField name="serviceCoverage" label={ar ? 'مناطق الخدمة' : 'Service coverage'} rows={2} />
+        <TextareaField name="specialties" label={ar ? 'التخصصات' : 'Specialties'} rows={2} />
+      </Group>
+
+      <Group
+        title={ar ? 'ساعات العمل والروابط' : 'Hours & links'}
+        note={ar
+          ? 'يظهر هذا للجميع. لا تضع أي روابط تحتوي على بيانات اعتماد أو كلمات سر.'
+          : 'Visible to everyone. Do not put any credential or password in a link.'}
+      >
+        <TextareaField name="businessHours" label={ar ? 'ساعات العمل' : 'Business hours'} rows={2} maxLength={2000} />
+        <TextareaField name="socialLinks" label={ar ? 'روابط العمل / التواصل' : 'Business / social links'} rows={3} />
       </Group>
 
       <Group

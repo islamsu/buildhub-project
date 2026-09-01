@@ -1171,6 +1171,19 @@ export const vendorProfiles = mysqlTable('vendorProfiles', {
   /** ADMIN ONLY. The number an impersonator needs; not a directory field. */
   registrationNumber: varchar('registrationNumber', { length: 120 }),
 
+  /** PUBLIC. Legal/trading name, distinct from the display company name. */
+  tradingName: varchar('tradingName', { length: 191 }),
+  /** RELATIONSHIP. An alternative business address, not the login address. */
+  alternativeEmail: varchar('alternativeEmail', { length: 255 }),
+  /** PUBLIC. Where the vendor works - free text, e.g. "Cairo, Giza". */
+  serviceCoverage: text('serviceCoverage'),
+  /** PUBLIC. What the vendor specialises in, free text or a short list. */
+  specialties: text('specialties'),
+  /** PUBLIC. Opening hours, free text. */
+  businessHours: text('businessHours'),
+  /** PUBLIC. Free-text list of business/social links; no credentials. */
+  socialLinks: text('socialLinks'),
+
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
 }, table => ({

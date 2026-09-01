@@ -3863,9 +3863,15 @@ const profileRouter = router({
       primaryContactPhone: z.string().max(40).optional(),
       primaryContactMobile: z.string().max(40).optional(),
       addressLine: z.string().max(255).optional(),
+      alternativeEmail: z.string().max(255).email().or(z.literal('')).optional(),
       city: z.string().max(120).optional(),
       country: z.string().max(120).optional(),
       website: z.string().max(255).optional(),
+      tradingName: z.string().max(191).optional(),
+      serviceCoverage: z.string().max(5000).optional(),
+      specialties: z.string().max(5000).optional(),
+      businessHours: z.string().max(2000).optional(),
+      socialLinks: z.string().max(5000).optional(),
       registrationNumber: z.string().max(120).optional(),
     }))
     .mutation(async ({ ctx, input }) => {

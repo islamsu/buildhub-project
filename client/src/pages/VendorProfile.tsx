@@ -136,6 +136,12 @@ export default function VendorProfile() {
                     <p className="font-medium">{profile.company.companyName}</p>
                   </div>
                 )}
+                {profile.company.tradingName && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">{ar ? 'الاسم القانوني / التجاري' : 'Legal / trading name'}</p>
+                    <p className="font-medium">{profile.company.tradingName}</p>
+                  </div>
+                )}
                 {(profile.company.city || profile.company.country) && (
                   <div>
                     <p className="text-xs text-muted-foreground">{ar ? 'الموقع' : 'Location'}</p>
@@ -161,6 +167,30 @@ export default function VendorProfile() {
                 <p className="mt-3 text-sm text-muted-foreground leading-6 whitespace-pre-wrap">
                   {profile.company.companyDescription}
                 </p>
+              )}
+              {profile.company.serviceCoverage && (
+                <div className="mt-3">
+                  <p className="text-xs text-muted-foreground">{ar ? 'مناطق الخدمة' : 'Service coverage'}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{profile.company.serviceCoverage}</p>
+                </div>
+              )}
+              {profile.company.specialties && (
+                <div className="mt-3">
+                  <p className="text-xs text-muted-foreground">{ar ? 'التخصصات' : 'Specialties'}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{profile.company.specialties}</p>
+                </div>
+              )}
+              {profile.company.businessHours && (
+                <div className="mt-3">
+                  <p className="text-xs text-muted-foreground">{ar ? 'ساعات العمل' : 'Business hours'}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{profile.company.businessHours}</p>
+                </div>
+              )}
+              {profile.company.socialLinks && (
+                <div className="mt-3">
+                  <p className="text-xs text-muted-foreground">{ar ? 'روابط العمل' : 'Business links'}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{profile.company.socialLinks}</p>
+                </div>
               )}
             </div>
           )}
@@ -189,6 +219,12 @@ export default function VendorProfile() {
                   <div>
                     <p className="text-xs text-muted-foreground">{ar ? 'البريد الإلكتروني' : 'Email'}</p>
                     <p className="font-medium break-all">{profile.primaryContact.primaryContactEmail}</p>
+                  </div>
+                )}
+                {profile.primaryContact.alternativeEmail && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">{ar ? 'البريد البديل' : 'Alternative email'}</p>
+                    <p className="font-medium break-all">{profile.primaryContact.alternativeEmail}</p>
                   </div>
                 )}
                 {(profile.primaryContact.primaryContactPhone || profile.primaryContact.primaryContactMobile) && (

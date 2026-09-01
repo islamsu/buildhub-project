@@ -218,6 +218,13 @@
       "when": 1788190000000,
       "tag": "0030_featured_provider_placement",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "5",
+      "when": 1788210000000,
+      "tag": "0031_vendor_profile_business_fields",
+      "breakpoints": true
     }
   ]
 }
