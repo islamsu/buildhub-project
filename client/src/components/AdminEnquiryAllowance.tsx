@@ -156,6 +156,13 @@ export default function AdminEnquiryAllowance() {
           <div className="flex flex-wrap items-center gap-2 pt-2">
             <Badge variant="secondary">{selected.companyName || selected.name}</Badge>
             <Badge variant="outline">{selected.userRole}</Badge>
+            {selected.email && <Badge variant="outline">{selected.email}</Badge>}
+            {selected.location && <Badge variant="outline">{selected.location}</Badge>}
+            {selected.accountStatus && (
+              <Badge variant={selected.accountStatus === 'frozen' ? 'destructive' : 'outline'}>
+                {selected.accountStatus === 'frozen' ? (ar ? 'معلّق' : 'Suspended') : (ar ? 'نشط' : 'Active')}
+              </Badge>
+            )}
             {selected.verified && <Badge variant="outline" className="text-emerald-700">{ar ? 'موثّق' : 'Verified'}</Badge>}
             <Link href={`/vendor/${selected.id}`}>
               <Button size="sm" variant="link" className="h-8 p-0" data-testid="allowance-view-vendor">
@@ -260,7 +267,10 @@ export default function AdminEnquiryAllowance() {
                           <td className="p-2">{entry.previousValue === null ? (ar ? 'حد الباقة' : 'Plan default') : entry.previousValue}</td>
                           <td className="p-2 font-medium">{entry.value === null ? (ar ? 'غير محدود' : 'Unlimited') : entry.value}</td>
                           <td className="p-2 text-muted-foreground">{entry.reason || '—'}</td>
-                          <td className="p-2 text-muted-foreground">{entry.actorId ?? '—'}</td>
+                          <td className="p-2 text-muted-foreground">
+                            {entry.actorName || entry.actorEmail || (entry.actorId ? `Admin #${entry.actorId}` : 'System')}
+                            {entry.actorRole && <span className="ms-1 text-xs opacity-70">{entry.actorRole}</span>}
+                          </td>
                           <td className="p-2 text-muted-foreground">{new Date(entry.createdAt).toLocaleString(ar ? 'ar-EG' : 'en-US')}</td>
                           <td className="p-2">
                             <Badge variant={entry.revokedAt ? 'secondary' : 'default'}>

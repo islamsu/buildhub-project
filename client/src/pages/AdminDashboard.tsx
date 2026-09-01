@@ -397,16 +397,21 @@ export default function AdminDashboard() {
     return result;
   }, {}), [allUsers]);
 
+  const realGroupCounts = useMemo(() => ROLE_GROUPS.reduce<Record<string, number>>((result, group) => {
+    result[group.key] = allUsers.filter(userRow => !(userRow as any).isDummy && ((userRow as any).userRole ?? userRow.role) === group.key).length;
+    return result;
+  }, {}), [allUsers]);
+
   const recentUsers = useMemo(() => allUsers.slice(0, 7), [allUsers]);
   const realUserCount = useMemo(() => allUsers.filter(userRow => !(userRow as any).isDummy).length, [allUsers]);
   const dummyUserCount = allUsers.length - realUserCount;
   const userSummaryCounts = useMemo(() => ({
     total: realUserCount,
-    homeowners: groupCounts.homeowner ?? 0,
-    suppliers: groupCounts.supplier ?? 0,
-    professionals: (groupCounts.contractor ?? 0) + (groupCounts.engineer ?? 0) + (groupCounts.architect ?? 0) + (groupCounts.project_manager ?? 0),
-    administrators: groupCounts.admin ?? 0,
-  }), [realUserCount, groupCounts]);
+    homeowners: realGroupCounts.homeowner ?? 0,
+    suppliers: realGroupCounts.supplier ?? 0,
+    professionals: (realGroupCounts.contractor ?? 0) + (realGroupCounts.engineer ?? 0) + (realGroupCounts.architect ?? 0) + (realGroupCounts.project_manager ?? 0),
+    administrators: realGroupCounts.admin ?? 0,
+  }), [realUserCount, realGroupCounts]);
 
   const filteredComplianceQueue = useMemo(() => complianceQueue.filter(applicant => {
     const roleMatches = complianceRoleFilter === 'all' || applicant.userRole === complianceRoleFilter;
@@ -455,7 +460,7 @@ export default function AdminDashboard() {
 
   const statCards = [
     { label: lang === 'ar' ? 'إجمالي المستخدمين' : 'Total Users', value: stats?.users ?? 0, icon: Users, color: 'text-blue-500', bg: 'bg-blue-50', section: 'users' },
-    { label: lang === 'ar' ? 'المشاريع النشطة' : 'Active Projects', value: stats?.projects ?? 0, icon: FolderOpen, color: 'text-green-500', bg: 'bg-green-50', section: 'projects' },
+    { label: lang === 'ar' ? 'المشاريع النشطة' : 'Active Projects', value: stats?.projects ?? 0, icon: FolderOpen, color: 'text-green-500', bg: 'bg-green-50', section: 'projects', href: '/admin/projects?status=active' },
     { label: lang === 'ar' ? 'المنتجات المدرجة' : 'Products Listed', value: stats?.products ?? 0, icon: Package, color: 'text-amber-500', bg: 'bg-amber-50', section: 'products' },
     { label: lang === 'ar' ? 'النزاعات المفتوحة' : 'Open Disputes', value: openDisputes, icon: MessageSquare, color: 'text-purple-500', bg: 'bg-purple-50', section: 'disputes' },
   ];
@@ -594,7 +599,7 @@ export default function AdminDashboard() {
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {statCards.map(stat => <Card key={stat.label} role="button" tabIndex={0} className="cursor-pointer transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary" data-testid={`admin-kpi-${stat.section}`} onClick={() => handleAdminSectionChange(stat.section)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleAdminSectionChange(stat.section); } }}><CardContent className="p-5"><div className={`w-10 h-10 rounded-xl ${stat.bg} flex items-center justify-center mb-3`}><stat.icon className={`w-5 h-5 ${stat.color}`} /></div><p className="text-2xl font-bold">{stat.value.toLocaleString()}</p><p className="text-sm text-muted-foreground">{stat.label}</p></CardContent></Card>)}
+          {statCards.map(stat => <Card key={stat.label} role="button" tabIndex={0} className="cursor-pointer transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary" data-testid={`admin-kpi-${stat.section}`} onClick={() => navigate((stat as any).href ?? (stat.section === 'users' ? '/admin/users' : `/admin/${stat.section}`))} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate((stat as any).href ?? (stat.section === 'users' ? '/admin/users' : `/admin/${stat.section}`)); } }}><CardContent className="p-5"><div className={`w-10 h-10 rounded-xl ${stat.bg} flex items-center justify-center mb-3`}><stat.icon className={`w-5 h-5 ${stat.color}`} /></div><p className="text-2xl font-bold">{stat.value.toLocaleString()}</p><p className="text-sm text-muted-foreground">{stat.label}</p></CardContent></Card>)}
         </div>
 
         <Card>

@@ -3,15 +3,17 @@ import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Link } from 'wouter';
+import { Link, useSearch } from 'wouter';
 import { FolderOpen, Search, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 export default function AdminProjects() {
   const { lang } = useLanguage();
   const ar = lang === 'ar';
+  const search = useSearch();
+  const initialStatus = new URLSearchParams(search).get('status') === 'active' ? 'active' : 'all';
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState('all');
+  const [status, setStatus] = useState(initialStatus);
   const { data: projects = [], isLoading } = trpc.admin.projects.useQuery();
 
   const filtered = useMemo(() => {
@@ -79,7 +81,9 @@ export default function AdminProjects() {
                 {filtered.map(project => (
                   <tr key={project.id} className="border-b border-border/50">
                     <td className="p-2">
-                      <p className="font-medium">{project.title || `#${project.id}`}</p>
+                      <Link href={`/admin/projects/${project.id}`} className="font-medium underline-offset-2 hover:underline">
+                        {project.title || `#${project.id}`}
+                      </Link>
                       <p className="text-xs text-muted-foreground">{project.location || '—'}</p>
                     </td>
                     <td className="p-2">

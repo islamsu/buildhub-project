@@ -356,6 +356,12 @@
 - [x] Vendor names link to Vendor Management from sponsored, featured-provider, and product tables
 - [x] Remove misleading hardcoded Platform Healthy / Live labels; the dashboard header now says Operational Console
 - [x] Total Users KPI and dashboard summary exclude test accounts and state that exclusion explicitly
+- [x] Selected vendor identity shows name/company, email, role, location, account status, and verification
+- [x] Allowance history resolves actor IDs to human-readable administrator names/emails/roles
+- [x] Active Projects KPI opens Projects Management with `status=active` applied
+- [x] Add Admin Project Detail route, server endpoint, owner/member links, and related counts
+- [x] Project names in Admin Projects Management link to Admin Project Detail
+- [x] Admin user summary group counts and total use the same real-user population
 - [ ] System-wide entity-link/dead-control/raw-ID/raw-enum audit beyond the screenshot examples
 - [ ] Resolve count semantics and make Platform Healthy / Live labels reflect verified runtime state
 - [ ] Vendor/business name clickable to Vendor Management across remaining admin tables

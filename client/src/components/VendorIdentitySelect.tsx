@@ -12,6 +12,7 @@ type VendorHit = {
   userRole: string | null;
   location: string | null;
   verified: boolean | null;
+  accountStatus: string | null;
   companyName: string | null;
   tradingName: string | null;
 };
@@ -70,10 +71,18 @@ export default function VendorIdentitySelect({
     <div className="relative" ref={boxRef}>
       <label className="text-xs text-muted-foreground" htmlFor={testId}>{label}</label>
       {selected ? (
-        <div className="mt-1 flex min-h-9 items-center justify-between gap-2 rounded-md border bg-muted/20 px-2">
-          <span className="min-w-0 truncate text-sm">
-            {selected.companyName || selected.name}
-            {selected.verified && <BadgeCheck className="ms-1 inline h-3.5 w-3.5 text-emerald-600" />}
+        <div className="mt-1 flex min-h-9 items-start justify-between gap-2 rounded-md border bg-muted/20 px-2 py-1.5">
+          <span className="min-w-0">
+            <span className="block truncate text-sm">
+              {selected.companyName || selected.name}
+              {selected.verified && <BadgeCheck className="ms-1 inline h-3.5 w-3.5 text-emerald-600" />}
+            </span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {selected.userRole ?? ''}
+              {selected.email ? ` · ${selected.email}` : ''}
+              {selected.location ? ` · ${selected.location}` : ''}
+              {selected.accountStatus ? ` · ${selected.accountStatus === 'frozen' ? (ar ? 'معلّق' : 'Suspended') : (ar ? 'نشط' : 'Active')}` : ''}
+            </span>
           </span>
           <button type="button" onClick={clear} aria-label={ar ? 'مسح المورّد' : 'Clear vendor'}>
             <X className="h-4 w-4 text-muted-foreground" />

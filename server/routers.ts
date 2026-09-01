@@ -4815,7 +4815,25 @@ const adminRouter = router({
       const now = new Date();
       const usage = await getEnquiryUsage(input.userId, now);
       const resolution = await resolveVendorEntitlements(input.userId, now);
-      return readEnquiryAllowance(db as never, input.userId, resolution.effectivePlan, usage.used, usage.periodKey, now);
+      const view = await readEnquiryAllowance(db as never, input.userId, resolution.effectivePlan, usage.used, usage.periodKey, now);
+      const actorIds = Array.from(new Set(view.history.map(entry => entry.actorId).filter((id): id is number => Number.isInteger(id) && id! > 0)));
+      const actorRows = actorIds.length
+        ? await db.select({ id: users.id, name: users.name, email: users.email, adminRole: users.adminRole })
+            .from(users).where(inArray(users.id, actorIds))
+        : [];
+      const actorMap = new Map(actorRows.map(row => [row.id, row]));
+      return {
+        ...view,
+        history: view.history.map(entry => {
+          const actor = entry.actorId ? actorMap.get(entry.actorId) : undefined;
+          return {
+            ...entry,
+            actorName: actor?.name ?? null,
+            actorEmail: actor?.email ?? null,
+            actorRole: actor?.adminRole ?? null,
+          };
+        }),
+      };
     }),
 
   setVendorEnquiryLimit: superAdminProcedure
@@ -5005,6 +5023,60 @@ const adminRouter = router({
       : [];
     const supplierNames = new Map(supplierRows.map(row => [row.id, row.name]));
     return rows.map(row => ({ ...row, supplierName: supplierNames.get(row.supplierId) ?? null }));
+  }),
+
+  projectDetail: adminWith('users.read').input(z.object({ projectId: z.number().int().positive() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [project] = await db.select({
+      id: projects.id,
+      title: projects.title,
+      description: projects.description,
+      type: projects.type,
+      status: projects.status,
+      location: projects.location,
+      budget: projects.budget,
+      progress: projects.progress,
+      ownerId: projects.ownerId,
+      createdAt: projects.createdAt,
+      updatedAt: projects.updatedAt,
+    }).from(projects).where(eq(projects.id, input.projectId)).limit(1);
+    if (!project) throw new TRPCError({ code: 'NOT_FOUND', message: 'Project not found' });
+
+    const [ownerRows] = await Promise.all([
+      project.ownerId
+        ? db.select({ id: users.id, name: users.name, email: users.email, userRole: users.userRole })
+            .from(users).where(eq(users.id, project.ownerId)).limit(1)
+        : Promise.resolve([]),
+    ]);
+    const members = await db.select({
+      id: projectMembers.id,
+      userId: projectMembers.userId,
+      projectRole: projectMembers.projectRole,
+      assignedAt: projectMembers.assignedAt,
+      name: users.name,
+      userRole: users.userRole,
+      verified: users.verified,
+    }).from(projectMembers)
+      .innerJoin(users, eq(users.id, projectMembers.userId))
+      .where(and(eq(projectMembers.projectId, input.projectId), isNull(projectMembers.removedAt)));
+
+    const [rfqRows, documentRows, disputeRows] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(rfqs).where(eq(rfqs.projectId, input.projectId)),
+      db.select({ count: sql<number>`count(*)` }).from(documents).where(eq(documents.projectId, input.projectId)),
+      db.select({ count: sql<number>`count(*)` }).from(disputes).where(eq(disputes.projectId, input.projectId)),
+    ]);
+
+    return {
+      ...project,
+      owner: ownerRows[0] ?? null,
+      members,
+      counts: {
+        rfqs: Number(rfqRows[0]?.count ?? 0),
+        documents: Number(documentRows[0]?.count ?? 0),
+        disputes: Number(disputeRows[0]?.count ?? 0),
+      },
+    };
   }),
 
   /**
