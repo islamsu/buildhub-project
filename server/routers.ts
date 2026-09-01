@@ -4482,6 +4482,33 @@ const adminRouter = router({
     await db.insert(userAccountAuditEvents).values({ userId, actorId: ctx.user.id, action: 'dummy_user_created', source: 'dummy', note: input.note || 'Created for testing' });
     return { success: true, userId, username, email };
   }),
+  userDetail: adminWith('users.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [row] = await db.select({
+      id: users.id,
+      name: users.name,
+      username: users.username,
+      email: users.email,
+      phone: users.phone,
+      role: users.role,
+      userRole: users.userRole,
+      accountStatus: users.accountStatus,
+      frozenReason: users.frozenReason,
+      verified: users.verified,
+      isDummy: users.isDummy,
+      accountSource: users.accountSource,
+      invitationStatus: users.invitationStatus,
+      onboardingStatus: users.onboardingStatus,
+      location: users.location,
+      createdAt: users.createdAt,
+      updatedAt: users.updatedAt,
+      companyName: vendorProfiles.companyName,
+      tradingName: vendorProfiles.tradingName,
+    }).from(users).leftJoin(vendorProfiles, eq(vendorProfiles.userId, users.id)).where(eq(users.id, input.userId)).limit(1);
+    if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+    return row;
+  }),
   // ── QA sign-in links ────────────────────────────────────────────────────
   issueTestLoginLink: adminWith('qa.manage').input(z.object({
     userId: z.number().int().positive(),

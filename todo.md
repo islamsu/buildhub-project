@@ -338,3 +338,17 @@
 - [ ] Broader role self-service second pass (Contractor/Engineer/PM dashboards)
 - [ ] Team / organization management (future architectural milestone, not yet modeled)
 - [ ] Linux CI observation + staging/infrastructure verification
+
+## Admin Operating Console Remediation
+- [x] Vendor allowance lookup by business identity with visible, selectable, debounced results and loading/no-results states
+- [x] Admin KPI cards are keyboard/click operable and navigate away from the dashboard
+- [x] Remove duplicate top admin navigation; keep the sidebar as the single primary admin navigation system
+- [x] Admin dashboard shows a compact user summary and recent registrations instead of the full user table
+- [x] View All Users opens the dedicated `/admin/users` full management view
+- [x] User names are clickable and open `/admin/users/:id`
+- [x] Add `admin.userDetail` with explicit allowlist columns and direct-access authorization
+- [x] Add targeted `adminUserDetail` authorization/allowlist test coverage
+- [ ] Give Active Projects and Products Listed their own filtered management destinations instead of routing both to Operations
+- [ ] System-wide entity-link/dead-control/raw-ID/raw-enum audit beyond the screenshot examples
+- [ ] Resolve count semantics and make Platform Healthy / Live labels reflect verified runtime state
+- [ ] Vendor/business name clickable to Vendor Management across remaining admin tables

@@ -46,11 +46,11 @@ export default function AdminEnquiryAllowance() {
   }, [searchText]);
 
   const enabled = selected !== null;
-  const { data: results = [] } = trpc.admin.vendorSearch.useQuery(
+  const { data: results = [], isFetching: searchFetching } = trpc.admin.vendorSearch.useQuery(
     { query: debounced },
     { enabled: debounced.length >= 2 },
   );
-  const { data, refetch, isLoading } = trpc.admin.vendorEnquiryAllowance.useQuery(
+  const { data, refetch, isLoading, isFetching } = trpc.admin.vendorEnquiryAllowance.useQuery(
     { userId: selected?.id ?? 0 },
     { enabled },
   );
@@ -115,7 +115,11 @@ export default function AdminEnquiryAllowance() {
 
           {open && debounced.length >= 2 && (
             <div className="absolute z-20 mt-1 w-full rounded-lg border bg-popover text-popover-foreground shadow-lg sm:max-w-md">
-              {results.length === 0 ? (
+              {searchFetching ? (
+                <p className="px-3 py-3 text-sm text-muted-foreground" data-testid="allowance-search-loading">
+                  {ar ? 'جارٍ البحث…' : 'Searching…'}
+                </p>
+              ) : results.length === 0 ? (
                 <p className="px-3 py-3 text-sm text-muted-foreground" data-testid="allowance-search-empty">
                   {ar ? 'لا يوجد مورّدون مطابقون.' : 'No matching vendors.'}
                 </p>
@@ -171,7 +175,7 @@ export default function AdminEnquiryAllowance() {
           </p>
         )}
 
-        {enabled && isLoading && <p className="text-sm text-muted-foreground">…</p>}
+        {enabled && (isLoading || isFetching) && <p className="text-sm text-muted-foreground">…</p>}
 
         {enabled && data && (
           <>

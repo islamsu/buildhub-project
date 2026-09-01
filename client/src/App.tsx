@@ -27,6 +27,7 @@ const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const AdminLogin = lazy(() => import("./pages/AdminLogin"));
 const AdminAcceptInvitation = lazy(() => import("./pages/AdminAcceptInvitation"));
 const AdminAdmins = lazy(() => import("./pages/AdminAdmins"));
+const AdminUserDetail = lazy(() => import("./pages/AdminUserDetail"));
 const Marketplace = lazy(() => import("./pages/Marketplace"));
 const ProductDetail = lazy(() => import("./pages/ProductDetail"));
 const ProjectDetail = lazy(() => import("./pages/ProjectDetail"));
@@ -111,6 +112,7 @@ function Router() {
       <Route path={"/admin/login"} component={AdminLogin} />
       <Route path={"/admin/accept-invitation"} component={AdminAcceptInvitation} />
       <Route path={"/admin/admins"} component={AdminAdmins} />
+      <Route path={"/admin/users/:id"} component={AdminUserDetail} />
       <Route path={"/admin/:section"} component={AdminDashboard} />
       <Route path={"/admin"} component={AdminDashboard} />
       <Route path={"/pricing"} component={Pricing} />
