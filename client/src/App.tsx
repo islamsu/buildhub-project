@@ -36,6 +36,7 @@ const QuotationDetail = lazy(() => import("./pages/QuotationDetail"));
 const MessagesPage = lazy(() => import("./pages/MessagesPage"));
 const EnquiriesPage = lazy(() => import("./pages/EnquiriesPage"));
 const ServiceCategoriesPage = lazy(() => import("./pages/ServiceCategoriesPage"));
+const CataloguePage = lazy(() => import("./pages/CataloguePage"));
 const AIAssistantPage = lazy(() => import("./pages/AIAssistantPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const RFQRespondPage = lazy(() => import("./pages/RFQRespondPage"));
@@ -146,6 +147,7 @@ function Router() {
           the enquiries page is where a notification's `?rfq=` deep link lands. */}
       <Route path={"/enquiries"} component={EnquiriesPage} />
       <Route path={"/service-categories"} component={ServiceCategoriesPage} />
+      <Route path={"/catalogue"} component={CataloguePage} />
       <Route path={"/ai"} component={AIAssistantPage} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />

@@ -4,7 +4,6 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { getRolePlatformPath, isPlatformRole, ROLE_PLATFORM_COPY, type PlatformRole } from '@/lib/rolePlatform';
 import { trpc } from '@/lib/trpc';
 import { PRODUCT_CATEGORIES, isProductCategory } from '@shared/productCategories';
-import ProductImport from '@/components/ProductImport';
 import PortfolioManager from '@/components/PortfolioManager';
 import { isComplianceRole } from '@shared/compliance';
 import { Button } from '@/components/ui/button';
@@ -19,13 +18,12 @@ import VendorAnalytics from '@/components/VendorAnalytics';
 import VendorServiceCategories from '@/components/VendorServiceCategories';
 import QualifiedEnquiries from '@/components/QualifiedEnquiries';
 import VendorBilling from '@/components/VendorBilling';
-import SupplierCatalogue from '@/components/SupplierCatalogue';
 import { useHashSection, revealSection } from '@/hooks/useSectionAnchor';
 import type { SectionId } from '@shared/roleWorkspaceSections';
 import {
   ArrowUpRight, BarChart3, BriefcaseBusiness, Camera, CheckCircle2, ClipboardList,
   Clock3, DollarSign, FileText, FolderKanban, KanbanSquare, Layers3, MapPin, MessageSquare,
-  Package, PackagePlus, PenTool, Plus, Send, ShoppingBag, Sparkles, Star, Users
+  Package, PackagePlus, PenTool, Pencil, FileSpreadsheet, Plus, Send, ShoppingBag, Sparkles, Star, Users
 } from 'lucide-react';
 
 
@@ -303,13 +301,43 @@ export default function RolePlatform() {
               page rendered catalogue there - and a live probe reading document
               order is what caught it. */}
           <Card id="role-quotations" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{lang === 'ar' ? 'عروض الأسعار المقدمة' : 'Submitted Quotations'}</CardTitle></CardHeader><CardContent><QuotationTiles quotations={myQuotations} t={t} lang={lang} navigate={navigate} /></CardContent></Card>
-          {/* Full catalogue management: edit, images, publish/delist, and the
-              answer side of the product Q&A. The workspace card below is a
-              read-only summary; this is where a supplier actually works. */}
-          <div id="role-catalogue"><SupplierCatalogue /></div>
-          {/* Bulk import: a vendor with a real catalogue cannot add products
-              one dialog at a time. Preview first, then commit. */}
-          <ProductImport onImported={() => { void utils.marketplace.myProducts.invalidate(); }} />
+          {/* Catalogue preview: a few products and clear actions, with full
+              management on the dedicated /catalogue page. The dashboard is a
+              command centre, not a full list. */}
+          <Card id="role-catalogue">
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Package className="h-5 w-5" />{lang === 'ar' ? 'الكتالوج' : 'Catalogue'}
+                  {products.length > 0 && <Badge variant="secondary" className="text-xs">{products.length}</Badge>}
+                </CardTitle>
+                <div className="flex flex-wrap gap-2">
+                  <Link href="/products/new"><Button size="sm" className="gap-1.5" data-testid="catalogue-add"><PackagePlus className="h-4 w-4" />{lang === 'ar' ? 'إضافة' : 'Add'}</Button></Link>
+                  <Link href="/products/new?mode=bulk"><Button size="sm" variant="outline" className="gap-1.5" data-testid="catalogue-bulk"><FileSpreadsheet className="h-4 w-4" />{lang === 'ar' ? 'رفع جماعي' : 'Bulk upload'}</Button></Link>
+                  <Link href="/catalogue"><Button size="sm" variant="ghost" data-testid="catalogue-view-all">{lang === 'ar' ? 'عرض الكل' : 'View all'}</Button></Link>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {products.length === 0 ? (
+                <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
+                  {lang === 'ar' ? 'لا توجد منتجات بعد. أضف منتجك الأول أو ارفعه دفعة واحدة.' : 'No products yet. Add your first product or upload in bulk.'}
+                </p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {products.slice(0, 6).map(product => (
+                    <div key={product.id} className="flex items-center gap-2 rounded-lg border p-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{lang === 'ar' && product.nameAr ? product.nameAr : product.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{product.category}{product.price ? ` · ${Number(product.price).toLocaleString()}` : ''}</p>
+                      </div>
+                      <Link href={`/products/${product.id}/edit`}><Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label={lang === 'ar' ? 'تعديل' : 'Edit'} data-testid="catalogue-preview-edit"><Pencil className="h-3.5 w-3.5" /></Button></Link>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
           <SupplierWorkspace rfqs={matchingRfqs} projects={projectDirectory} t={t} lang={lang} onQuote={(rfqId) => navigate(`/rfq/${rfqId}/respond`)} />
           </>
         ) : role === 'contractor' ? (
