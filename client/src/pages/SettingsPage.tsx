@@ -41,6 +41,7 @@ import VendorProfileCard from '@/components/VendorProfileCard';
 import VendorBilling from '@/components/VendorBilling';
 import VendorCompanyProfile from '@/components/VendorCompanyProfile';
 import VendorServiceCategories from '@/components/VendorServiceCategories';
+import PortfolioManager from '@/components/PortfolioManager';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { UserRound, CreditCard, Tags, ClipboardCheck, ArrowRight } from 'lucide-react';
@@ -54,6 +55,7 @@ export default function SettingsPage() {
   const { user, isAuthenticated, loading } = useAuth();
   const role = (user as { userRole?: string } | null)?.userRole ?? '';
   const isProvider = PROVIDER_ROLES.includes(role);
+  const isProjectProvider = ['contractor', 'engineer', 'architect', 'project_manager'].includes(role);
 
   /**
    * The hash lands on the section. The account menu links straight to
@@ -152,6 +154,21 @@ export default function SettingsPage() {
                 ar={ar}
                 en="Service categories are declared by provider accounts, so BuildHub knows which requests to route to them."
                 arabic="فئات الخدمة يعلنها مقدّمو الخدمة حتى تعرف BuildHub أي الطلبات تُوجَّه إليهم."
+              />}
+        </Section>
+
+        {/* ── Portfolio: project-based professional providers ───────────── */}
+        <Section
+          id="settings-portfolio"
+          icon={<Tags className="h-5 w-5" />}
+          title={ar ? 'معرض الأعمال' : 'Portfolio'}
+        >
+          {isProjectProvider
+            ? <Card><CardContent className="pt-6"><PortfolioManager /></CardContent></Card>
+            : <NotForThisAccount
+                ar={ar}
+                en="A portfolio is for project-based professional accounts — architects, designers, contractors and project managers."
+                arabic="معرض الأعمال مخصص للحسابات المهنية القائمة على المشاريع: المعماريون والمصممون والمقاولون ومديرو المشاريع."
               />}
         </Section>
 
