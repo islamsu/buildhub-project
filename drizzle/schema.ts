@@ -507,6 +507,10 @@ export const quotations = mysqlTable('quotations', {
    */
   attachments:  text('attachments'),
   status:       mysqlEnum('status', ['pending', 'accepted', 'rejected']).default('pending'),
+  /** One current quotation per supplier per RFQ; this counts its versions. */
+  revisionNumber: int('revisionNumber').notNull().default(1),
+  /** Set on the previous version when a revision supersedes it. */
+  supersededAt: timestamp('supersededAt'),
   createdAt:    timestamp('createdAt').defaultNow().notNull(),
 }, table => ({
   rfqIdIdx: index('quotations_rfqId_idx').on(table.rfqId),

@@ -2723,10 +2723,13 @@ const rfqRouter = router({
       notes: quotations.notes,
       attachments: quotations.attachments,
       status: quotations.status,
+      revisionNumber: quotations.revisionNumber,
       createdAt: quotations.createdAt,
       rfqTitle: rfqs.title,
       rfqStatus: rfqs.status,
-    }).from(quotations).leftJoin(rfqs, eq(quotations.rfqId, rfqs.id)).where(eq(quotations.providerId, ctx.user.id)).orderBy(desc(quotations.createdAt));
+    }).from(quotations).leftJoin(rfqs, eq(quotations.rfqId, rfqs.id))
+      .where(and(eq(quotations.providerId, ctx.user.id), isNull(quotations.supersededAt)))
+      .orderBy(desc(quotations.createdAt));
   }),
   // SECURITY (Phase 4A final gate): quotations on an RFQ include each bidding
   // vendor's email, exact price, timeline, and notes - competitive-intelligence
@@ -2762,6 +2765,7 @@ const rfqRouter = router({
         // rather than trusting that this list was reached legitimately.
         attachments:      quotations.attachments,
         status:           quotations.status,
+        revisionNumber:   quotations.revisionNumber,
         createdAt:        quotations.createdAt,
         providerName:     users.name,
         providerEmail:    users.email,
@@ -2771,7 +2775,7 @@ const rfqRouter = router({
       })
       .from(quotations)
       .leftJoin(users, eq(quotations.providerId, users.id))
-      .where(eq(quotations.rfqId, input.rfqId))
+      .where(and(eq(quotations.rfqId, input.rfqId), isNull(quotations.supersededAt)))
       .orderBy(quotations.price);
 
     // Phase 4A.6.9: reputation must come from the same dynamic AVG/COUNT
@@ -3104,6 +3108,8 @@ const rfqRouter = router({
         notes:        quotations.notes,
         attachments:  quotations.attachments,
         status:       quotations.status,
+        revisionNumber: quotations.revisionNumber,
+        supersededAt: quotations.supersededAt,
         createdAt:    quotations.createdAt,
         rfqTitle:       rfqs.title,
         rfqStatus:      rfqs.status,
@@ -3290,10 +3296,31 @@ const rfqRouter = router({
           .limit(1);
         if (recentIdentical) return { id: recentIdentical.id, deduplicated: true };
 
+        // ONE CURRENT QUOTATION PER SUPPLIER PER RFQ, WITH REVISION HISTORY.
+        // A later bid supersedes the previous version rather than accumulating
+        // unrelated quotations from the same supplier; the older version stays
+        // as immutable history.
+        const [current] = await tx
+          .select({ id: quotations.id, revisionNumber: quotations.revisionNumber })
+          .from(quotations)
+          .where(and(
+            eq(quotations.rfqId, input.rfqId),
+            eq(quotations.providerId, ctx.user.id),
+            isNull(quotations.supersededAt),
+          ))
+          .orderBy(desc(quotations.revisionNumber))
+          .limit(1);
+
+        if (current) {
+          await tx.update(quotations).set({ supersededAt: new Date() })
+            .where(eq(quotations.id, current.id));
+        }
+
         const inserted = await tx.insert(quotations).values({
           ...quotationFields,
           providerId: ctx.user.id,
           price: String(input.price),
+          revisionNumber: current ? current.revisionNumber + 1 : 1,
           attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : null,
         });
         // The QUOTATION's own id, because that is what the audit trail records.

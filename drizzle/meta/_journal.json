@@ -232,6 +232,13 @@
       "when": 1788230000000,
       "tag": "0032_provider_portfolio",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1788250000000,
+      "tag": "0033_quotation_revisions",
+      "breakpoints": true
     }
   ]
 }

@@ -182,6 +182,11 @@ export default function QuotationDetail() {
                 >
                   {statusLabel(status, ar)}
                 </span>
+                {q.revisionNumber > 1 && (
+                  <Badge variant="outline" className="text-xs" data-testid="quotation-detail-revision">
+                    {ar ? `مراجعة ${q.revisionNumber}` : `Revision ${q.revisionNumber}`}
+                  </Badge>
+                )}
                 {!isRequester && (
                   <Badge variant="outline" className="text-xs" data-testid="quotation-detail-mine">
                     {ar ? 'عرضك' : 'Your quotation'}
