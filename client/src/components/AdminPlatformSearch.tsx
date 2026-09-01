@@ -37,7 +37,8 @@ function hrefFor(segment: string, id: number, hit: { detail: string | null }): s
   switch (segment) {
     case 'rfqs': return `/rfq/${id}`;
     case 'products': return `/marketplace/products/${id}`;
-    case 'projects': return `/projects/${id}`;
+    case 'projects': return `/admin/projects/${id}`;
+    case 'users': return `/admin/users/${id}`;
     case 'quotations': {
       const match = hit.detail?.match(/#(\d+)\)?$/);
       return match ? `/rfq/${match[1]}` : null;

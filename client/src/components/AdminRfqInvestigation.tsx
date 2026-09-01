@@ -60,6 +60,25 @@ export default function AdminRfqInvestigation() {
     const party = data?.parties.find(p => p.id === id);
     return party ? `${party.name ?? party.username ?? '—'} (#${id})` : `#${id}`;
   };
+  const onboardingText = (value: string | null | undefined) => {
+    const map: Record<string, string> = ar
+      ? { not_started: 'لم يبدأ', submitted: 'تم الإرسال', under_review: 'قيد المراجعة', update_required: 'يتطلب تحديثاً', approved: 'معتمد', rejected: 'مرفوض' }
+      : { not_started: 'Not started', submitted: 'Submitted', under_review: 'Under review', update_required: 'Update required', approved: 'Approved', rejected: 'Rejected' };
+    return value ? (map[value] ?? value) : '—';
+  };
+  const accountText = (value: string | null | undefined) => value === 'frozen' ? (ar ? 'معلّق' : 'Suspended') : value === 'active' ? (ar ? 'نشط' : 'Active') : value || '—';
+  const bidStatusText = (value: string | null | undefined) => {
+    const map: Record<string, string> = ar
+      ? { pending: 'قيد الانتظار', accepted: 'مقبول', rejected: 'مرفوض', withdrawn: 'منسحب' }
+      : { pending: 'Pending', accepted: 'Accepted', rejected: 'Rejected', withdrawn: 'Withdrawn' };
+    return value ? (map[value] ?? value) : '—';
+  };
+  const rfqStatusText = (value: string | null | undefined) => {
+    const map: Record<string, string> = ar
+      ? { open: 'مفتوح', closed: 'مغلق', awarded: 'مُرسى', cancelled: 'ملغي' }
+      : { open: 'Open', closed: 'Closed', awarded: 'Awarded', cancelled: 'Cancelled' };
+    return value ? (map[value] ?? value) : '—';
+  };
 
   const chooseRfq = (hit: { id: number; label: string }) => {
     setRfqId(hit.id);
@@ -159,7 +178,7 @@ export default function AdminRfqInvestigation() {
                     {ar ? 'مقدَّم من' : 'Raised by'} {partyName(data.rfq.requesterId)} · {when(data.rfq.createdAt)}
                   </p>
                 </div>
-                <Badge data-testid="investigation-status">{data.rfq.status}</Badge>
+                <Badge data-testid="investigation-status">{rfqStatusText(data.rfq.status)}</Badge>
               </div>
               <div className="mt-3 grid gap-3 sm:grid-cols-4 text-sm">
                 <Figure testid="investigation-budget" label={ar ? 'الميزانية' : 'Budget'} value={data.commercial.budget ?? '—'} />
@@ -175,8 +194,8 @@ export default function AdminRfqInvestigation() {
                   <span>{party.name ?? party.username ?? '—'} <span className="text-muted-foreground">#{party.id}</span></span>
                   <span className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Badge variant="outline">{party.userRole}</Badge>
-                    <span>{party.onboardingStatus}</span>
-                    <span>{party.accountStatus}</span>
+                    <span>{onboardingText(party.onboardingStatus)}</span>
+                    <span>{accountText(party.accountStatus)}</span>
                   </span>
                 </div>
               ))}
@@ -201,7 +220,7 @@ export default function AdminRfqInvestigation() {
                       <span>
                         <span className="text-muted-foreground">#{bid.id}</span> {partyName(bid.providerId)} — <span className="font-medium" data-testid="investigation-quotation-price">{bid.price}</span> {bid.currency ?? ''}
                       </span>
-                      <Badge variant={bid.status === 'accepted' ? 'default' : 'secondary'}>{bid.status}</Badge>
+                      <Badge variant={bid.status === 'accepted' ? 'default' : 'secondary'}>{bidStatusText(bid.status)}</Badge>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {when(bid.createdAt)}
