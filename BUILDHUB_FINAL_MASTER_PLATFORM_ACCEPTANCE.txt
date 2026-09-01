@@ -15,7 +15,7 @@ infrastructure, not code.
 
 2. EXACT SOURCE SHA
 -------------------
-6f614a53ec5fe36f7e7ffa3a25f134c94ecd0b86
+61ad73e8d78fd136697414ada1379fadee2d364b
 
 3. BRANCH / LINEAGE
 -------------------
@@ -28,6 +28,8 @@ Test portability (LF + Windows paths): c917432912fb3bef17c4e902bed9a2cccedf185b
 Inventory + dashboard redirect test: 791a688edcf75f766b1777371750c00ce2e5865e
 Supplier dashboard (catalogue once, RFQ clickable): b8f26ae50f8ab2181db7e3cff3c0c8247586b53f
 Get Quotes RFQ clickable: 6f614a53ec5fe36f7e7ffa3a25f134c94ecd0b86
+Featured products write path + audit: 703b1d8ef98f2ecb4fdacd9c7d7f0f7461e81367
+Featured products admin list + UI: 61ad73e8d78fd136697414ada1379fadee2d364b
 
 4. WHAT WAS MISSING
 -------------------
@@ -67,6 +69,9 @@ Get Quotes RFQ clickable: 6f614a53ec5fe36f7e7ffa3a25f134c94ecd0b86
 - New Product Listing: Single Product / Bulk Upload choice reusing real import.
 - Supplier dashboard: catalogue exactly once; quotations after Quick Actions;
   full RFQ reference clickable.
+- Featured Products: admin.write path (admin.setProductFeatured), a curated
+  admin list + toggle UI, and a product_featured/unfeatured commercial audit
+  action, so the marketplace's featured-first ordering is actually operable.
 
 8. WHAT WAS UNIT VERIFIED
 -------------------------
@@ -102,6 +107,10 @@ NONE. Staging remains BLOCKED BY INFRASTRUCTURE (missing S3/SMTP/AI credentials)
 - Vendor-profile optional fields: trading/legal name, alternative email, service
   coverage, specialties, business hours, social links (core company/contact/
   address/logo/registration fields ARE implemented).
+- Admin-controlled "editorial featured" for vendors/designers/finishing is not
+  yet a separate curated model; the marketplace hub labels the top of the
+  organic directory (verified-first, newest) as Featured, which is real data
+  but not an admin-curated pick. (Featured PRODUCTS are now admin-controlled.)
 - Orders/revenue and fraud detection (reported NOT IMPLEMENTED, nothing faked).
 
 13. WHAT IS BLOCKED BY INFRASTRUCTURE / ENVIRONMENT
@@ -150,9 +159,14 @@ CORE PASS: company, primary contact (name/position/email/phone/mobile), address,
 city, country, website, registration, logo/avatar, categories, reputation.
 Optional fields listed in section 12 remain NOT IMPLEMENTED.
 
-21. SPONSORSHIP RESULTS
------------------------
-PASS at code/test level (vendorSponsorship, featuredPlacement).
+21. SPONSORSHIP / FEATURED RESULTS
+----------------------------------
+- Sponsored placement: PASS (real records, admin grant/revoke, period and
+  category enforced, Premium entitlement rotation).
+- Featured products: PASS (admin.write path, curated list + toggle UI, audit).
+- Featured vendors/designers/finishing: currently the top of the organic
+  directory (verified-first, newest), real and honestly labelled; admin-curated
+  editorial vendor featured is a remaining enhancement (see section 12).
 
 22. SUBSCRIPTION / ENTITLEMENT RESULTS
 --------------------------------------
@@ -199,7 +213,7 @@ DB-backed execution needs the CI MariaDB service (not re-verified locally).
 
 31. WHAT WAS COMMITTED
 ----------------------
-All work above, across the seven commits in section 3.
+All work above, across the nine commits in section 3.
 
 32. WHAT WAS PUSHED
 -------------------
@@ -236,8 +250,10 @@ NO. codex/buildhub-final-closure is ahead of main and not merged/deployed.
 3. Re-run the full suite on a Linux CI runner with adequate memory to confirm
    adminBootstrap/aiAvailability and the remaining checks are green there.
 4. Resolve the owner decisions in section 14.
-5. Complete the optional vendor-profile fields and the Featured/Sponsored
-   second-pass recheck across all provider categories (not yet done this pass).
+5. Complete the optional vendor-profile fields.
+6. Implement admin-curated editorial featured for vendors/designers/finishing
+   (currently the top of the organic directory), and finish the Featured/
+   Sponsored second-pass recheck across all provider categories.
 
 40. FINAL PRODUCTION VERDICT
 ----------------------------
