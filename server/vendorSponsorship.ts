@@ -98,6 +98,7 @@ export async function grantSponsorship(params: {
   category: string;
   grantedBy: number;
   reason: string;
+  priority?: number;
   startsAt?: Date;
   endsAt?: Date | null;
   now?: Date;
@@ -156,7 +157,7 @@ export async function grantSponsorship(params: {
   }
 
   const written = await db.insert(vendorSponsorships).values({
-    vendorId, category, kind: 'sponsored', grantedBy, grantedReason: params.reason, startsAt, endsAt,
+    vendorId, category, kind: 'sponsored', priority: params.priority ?? 0, grantedBy, grantedReason: params.reason, startsAt, endsAt,
   });
   return { outcome: 'granted', sponsorshipId: Number(written?.[0]?.insertId) || 0 };
 }
@@ -175,6 +176,7 @@ export async function featureVendor(params: {
   vendorId: number;
   category: string;
   featuredBy: number;
+  priority?: number;
   startsAt?: Date;
   endsAt?: Date | null;
   now?: Date;
@@ -217,7 +219,7 @@ export async function featureVendor(params: {
   }
 
   const written = await db.insert(vendorSponsorships).values({
-    vendorId, category, kind: 'featured', grantedBy: featuredBy, startsAt, endsAt,
+    vendorId, category, kind: 'featured', priority: params.priority ?? 0, grantedBy: featuredBy, startsAt, endsAt,
   });
   return { outcome: 'granted', sponsorshipId: Number(written?.[0]?.insertId) || 0 };
 }

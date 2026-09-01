@@ -1243,6 +1243,8 @@ export const vendorSponsorships = mysqlTable('vendorSponsorships', {
    * placement). Shared grant/revoke/period machinery, distinct business meaning.
    */
   kind:     varchar('kind', { length: 20 }).notNull().default('sponsored'),
+  /** Explicit commercial ordering; lower value = higher priority. */
+  priority: int('priority').notNull().default(0),
   startsAt: timestamp('startsAt').defaultNow().notNull(),
   /**
    * NULL = open-ended until revoked. An elapsed sponsorship stops appearing

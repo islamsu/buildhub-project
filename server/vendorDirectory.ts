@@ -378,7 +378,7 @@ export async function listFeaturedProviders(filters: { category?: string } = {})
     .select({ vendorId: vendorSponsorships.vendorId, category: vendorSponsorships.category })
     .from(vendorSponsorships)
     .where(and(...conditions))
-    .orderBy(vendorSponsorships.createdAt);
+    .orderBy(vendorSponsorships.priority, vendorSponsorships.createdAt);
 
   const byId = new Map<number, string>();
   for (const placement of placements as { vendorId: number; category: string }[]) {

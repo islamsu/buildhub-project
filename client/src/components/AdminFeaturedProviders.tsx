@@ -25,6 +25,7 @@ export default function AdminFeaturedProviders() {
   const [vendorId, setVendorId] = useState('');
   const [category, setCategory] = useState('');
   const [endsAt, setEndsAt] = useState('');
+  const [priority, setPriority] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
@@ -92,6 +93,15 @@ export default function AdminFeaturedProviders() {
             </select>
           </div>
           <div>
+            <label className="text-xs text-muted-foreground" htmlFor="feature-priority">
+              {ar ? 'الأولوية' : 'Priority'}
+            </label>
+            <Input
+              id="feature-priority" data-testid="feature-priority" inputMode="numeric" className="mt-1 h-9"
+              value={priority} onChange={e => setPriority(e.target.value.replace(/\D/g, ''))}
+            />
+          </div>
+          <div>
             <label className="text-xs text-muted-foreground" htmlFor="feature-ends">
               {ar ? 'تنتهي في (اختياري)' : 'Ends (optional)'}
             </label>
@@ -108,6 +118,7 @@ export default function AdminFeaturedProviders() {
               feature.mutate({
                 vendorId: Number(vendorId),
                 category,
+                priority: priority ? Number(priority) : undefined,
                 ...(endsAt ? { endsAt: new Date(`${endsAt}T23:59:59Z`).toISOString() } : {}),
               });
             }}

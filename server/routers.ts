@@ -4974,6 +4974,7 @@ const adminRouter = router({
       vendorId: z.number().int().positive(),
       category: z.string().min(1).max(100),
       reason: z.string().trim().min(1).max(500),
+      priority: z.number().int().min(0).max(100).optional(),
       startsAt: z.string().datetime().optional(),
       endsAt: z.string().datetime().optional(),
     }))
@@ -4987,6 +4988,7 @@ const adminRouter = router({
         category: input.category,
         grantedBy: ctx.user.id,
         reason: input.reason,
+        priority: input.priority,
         startsAt: input.startsAt ? new Date(input.startsAt) : undefined,
         endsAt: input.endsAt ? new Date(input.endsAt) : null,
       });
@@ -5053,6 +5055,7 @@ const adminRouter = router({
     .input(z.object({
       vendorId: z.number().int().positive(),
       category: z.string().min(1).max(100),
+      priority: z.number().int().min(0).max(100).optional(),
       startsAt: z.string().datetime().optional(),
       endsAt: z.string().datetime().optional(),
     }))
@@ -5064,6 +5067,7 @@ const adminRouter = router({
         vendorId: input.vendorId,
         category: input.category,
         featuredBy: ctx.user.id,
+        priority: input.priority,
         startsAt: input.startsAt ? new Date(input.startsAt) : undefined,
         endsAt: input.endsAt ? new Date(input.endsAt) : null,
       });
