@@ -3755,6 +3755,66 @@ async function completedProjectCount(db: NonNullable<Awaited<ReturnType<typeof g
   return Number(row?.count ?? 0);
 }
 
+// ── Disputes (user-facing) ─────────────────────────────────────────────────
+// A customer or provider can open a dispute against a real project relationship.
+// The admin side (list/update) already exists; this is the missing user half.
+const disputesRouter = router({
+  myDisputes: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(disputes)
+      .where(or(eq(disputes.reporterId, ctx.user.id), eq(disputes.respondentId, ctx.user.id)))
+      .orderBy(desc(disputes.createdAt));
+  }),
+
+  create: protectedProcedure
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      respondentId: z.number().int().positive().optional(),
+      title: z.string().trim().min(1).max(255),
+      description: z.string().trim().min(1).max(5000),
+      type: z.string().max(80).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      // The reporter must be a participant of the project they dispute about.
+      const access = await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
+
+      let respondentId: number | null = input.respondentId ?? null;
+      if (respondentId != null) {
+        if (respondentId === ctx.user.id) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot open a dispute against yourself.' });
+        }
+        const isOwner = access.ownerId === respondentId;
+        const [member] = await db
+          .select({ userId: projectMembers.userId })
+          .from(projectMembers)
+          .where(and(
+            eq(projectMembers.projectId, input.projectId),
+            eq(projectMembers.userId, respondentId),
+            isNull(projectMembers.removedAt),
+          ))
+          .limit(1);
+        if (!member && !isOwner) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'The respondent must be a participant on this project.' });
+        }
+      }
+
+      const result = await db.insert(disputes).values({
+        reporterId: ctx.user.id,
+        respondentId,
+        projectId: input.projectId,
+        title: input.title,
+        description: input.description,
+        type: input.type ?? 'general',
+        status: 'open',
+        priority: 'medium',
+      });
+      return { id: Number(result[0].insertId) };
+    }),
+});
+
 // ── Provider Portfolio ─────────────────────────────────────────────────────
 // A professional showcases their own completed work. Ownership is the server's:
 // every write is scoped to ctx.user.id, and reads of someone else's portfolio
@@ -6521,6 +6581,7 @@ export const appRouter = router({
   reviews: reviewsRouter,
   profile: profileRouter,
   portfolio: portfolioRouter,
+  disputes: disputesRouter,
   analytics: analyticsRouter,
   admin: adminRouter,
   compliance: registrationRouter,
