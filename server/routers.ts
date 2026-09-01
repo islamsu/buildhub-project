@@ -1626,6 +1626,7 @@ const marketplaceRouter = router({
       // "tonne" and three per "ton", which no buyer can compare.
       unit: z.string().max(50).optional(),
       deliveryDays: z.number().int().min(1).optional(),
+      specs: z.string().max(5000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.userRole !== 'supplier') {
@@ -1791,6 +1792,7 @@ const marketplaceRouter = router({
       unit: z.string().max(50).optional(),
       warranty: z.string().max(100).optional(),
       deliveryDays: z.number().int().min(0).max(3650).optional(),
+      specs: z.string().max(5000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.userRole !== 'supplier') {

@@ -39,12 +39,12 @@ import { ArrowLeft, PackagePlus, Save, AlertTriangle, FileSpreadsheet } from 'lu
 
 type FormState = {
   name: string; nameAr: string; category: string; brand: string; origin: string;
-  price: string; stock: string; unit: string; deliveryDays: string; description: string;
+  price: string; stock: string; unit: string; deliveryDays: string; description: string; specs: string;
 };
 
 const EMPTY: FormState = {
   name: '', nameAr: '', category: '', brand: '', origin: '',
-  price: '', stock: '', unit: '', deliveryDays: '', description: '',
+  price: '', stock: '', unit: '', deliveryDays: '', description: '', specs: '',
 };
 
 export default function ProductFormPage({ mode, productId: productIdProp }: {
@@ -92,6 +92,7 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
       unit: product.unit ?? '',
       deliveryDays: product.deliveryDays != null ? String(product.deliveryDays) : '',
       description: product.description ?? '',
+      specs: product.specs ?? '',
     });
     setLoaded(true);
   }, [editing, product, loaded]);
@@ -137,6 +138,7 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
       stock: form.stock ? Number(form.stock) : undefined,
       unit: form.unit || undefined,
       deliveryDays: form.deliveryDays ? Number(form.deliveryDays) : undefined,
+      specs: form.specs.trim() || undefined,
     };
     if (editing && productId) update.mutate({ id: productId, name: form.name, category: form.category, ...common });
     else create.mutate({ name: form.name, category: form.category, ...common });
@@ -272,6 +274,19 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
           <div className="sm:col-span-2">
             <Field label={ar ? 'وصف المنتج' : 'Description'}>
               <Textarea data-testid="product-description" rows={4} value={form.description} onChange={e => set('description')(e.target.value)} />
+            </Field>
+          </div>
+
+          <div className="sm:col-span-2">
+            <Field label={ar ? 'المواصفات / الخصائص' : 'Specifications / attributes'}>
+              <Textarea
+                data-testid="product-specs"
+                rows={3}
+                maxLength={5000}
+                placeholder={ar ? 'مثال: درجة 60، قطر 12مم، حديد مشرشر' : 'e.g. Grade 60, 12mm diameter, deformed bar'}
+                value={form.specs}
+                onChange={e => set('specs')(e.target.value)}
+              />
             </Field>
           </div>
 
