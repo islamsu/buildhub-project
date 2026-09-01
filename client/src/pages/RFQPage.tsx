@@ -515,6 +515,7 @@ export default function RFQPage() {
                     <div className="flex-1 min-w-0">
                       {/* Title + status */}
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <Link href={`/rfq/${rfq.id}`} className="font-mono text-sm font-semibold text-primary underline-offset-2 hover:underline" data-testid="rfq-number">RFQ #{rfq.id}</Link>
                         <h3 className="font-semibold text-lg">{rfq.title}</h3>
                         {rfq.productReference && <Badge variant="outline" className="text-xs">{lang === 'ar' ? `منتج #${rfq.productReference.productId} · ${rfq.productReference.variantLabel}` : `Product #${rfq.productReference.productId} · ${rfq.productReference.variantLabel}`}</Badge>}
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${statusStyle}`}>
