@@ -49,6 +49,13 @@ async function freshRouter(openAiKey: string | undefined) {
   return appRouter;
 }
 
+// The first `import('./routers')` after `vi.resetModules()` pays the full cold
+// cost of transpiling the ~6,000-line router graph (about 6s here); later
+// fresh imports reuse the warm transform cache and finish in ~2s. The timeout
+// is raised for the cases that re-import rather than for any assertion, so a
+// genuinely slow provider is still caught.
+const FRESH_ROUTER_TIMEOUT_MS = 20_000;
+
 const ORIGINAL_KEY = process.env.OPENAI_API_KEY;
 
 describe('AI availability is honest about itself', () => {
@@ -72,26 +79,26 @@ describe('AI availability is honest about itself', () => {
     const router = await freshRouter(undefined);
     const caps = await router.createCaller(makeCtx(null)).auth.capabilities();
     expect(caps.aiAssistant).toBe(false);
-  });
+  }, FRESH_ROUTER_TIMEOUT_MS);
 
   it('a configured deployment reports the AI assistant as available', async () => {
     const router = await freshRouter('a-key-shaped-value');
     const caps = await router.createCaller(makeCtx(null)).auth.capabilities();
     expect(caps.aiAssistant).toBe(true);
-  });
+  }, FRESH_ROUTER_TIMEOUT_MS);
 
   it('whitespace is not a credential', async () => {
     const router = await freshRouter('   ');
     const caps = await router.createCaller(makeCtx(null)).auth.capabilities();
     expect(caps.aiAssistant).toBe(false);
-  });
+  }, FRESH_ROUTER_TIMEOUT_MS);
 
   it('ai.chat refuses deliberately rather than throwing an internal error', async () => {
     const router = await freshRouter(undefined);
     const caller = router.createCaller(makeCtx(7));
     await expect(caller.ai.chat({ messages: [{ role: 'user', content: 'hi' }] }))
       .rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
-  });
+  }, FRESH_ROUTER_TIMEOUT_MS);
 
   it('the refusal names no variable, provider or endpoint', async () => {
     const router = await freshRouter(undefined);
@@ -102,7 +109,7 @@ describe('AI availability is honest about itself', () => {
     for (const leak of ['BUILT_IN_FORGE', 'OPENAI_API_KEY', 'forge.manus.im', 'api.openai.com', 'Bearer']) {
       expect(error!.message).not.toContain(leak);
     }
-  });
+  }, FRESH_ROUTER_TIMEOUT_MS);
 
   it('an unconfigured deployment never reaches the provider at all', () => {
     // Cost, not just correctness: the refusal must short-circuit before any

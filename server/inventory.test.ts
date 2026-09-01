@@ -27,7 +27,10 @@ import { join } from 'node:path';
 // @ts-expect-error - plain .mjs tool script, no types, deliberately not compiled
 import { buildInventory } from '../scripts/inventory.mjs';
 
-const ROOT = join(__dirname, '..');
+// `import.meta.dirname`, not `__dirname`: this module runs as ESM (the
+// package declares "type": "module"), where `__dirname` is undefined and the
+// join throws before the inventory can be read.
+const ROOT = join(import.meta.dirname, '..');
 const committed = JSON.parse(readFileSync(join(ROOT, 'docs/inventory.json'), 'utf8'));
 const fresh = buildInventory() as typeof committed;
 

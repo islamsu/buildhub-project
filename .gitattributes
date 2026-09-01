@@ -1,0 +1,5 @@
+# Keep line endings deterministic across Windows and Linux. The committed
+# blobs are already LF; this forces LF on checkout too, so source-inspection
+# tests that read the working tree behave identically on every machine and on
+# Linux CI. Binary files are auto-detected and left untouched.
+* text=auto eol=lf

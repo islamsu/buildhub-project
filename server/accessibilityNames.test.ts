@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * AN ICON-ONLY CONTROL NEEDS A NAME.
@@ -15,7 +16,10 @@ import { join } from 'node:path';
  * aria-labelledby.
  */
 
-const CLIENT = new URL('../client/src/', import.meta.url).pathname;
+// `fileURLToPath`, not `.pathname`: on Windows `.pathname` returns `/C:/...`,
+// which the filesystem APIs then read as `C:\C:\...` and the scan dies with
+// ENOENT before it ever looks at a single button.
+const CLIENT = fileURLToPath(new URL('../client/src/', import.meta.url));
 
 function tsxFiles(dir: string): string[] {
   const out: string[] = [];
