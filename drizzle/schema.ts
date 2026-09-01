@@ -396,6 +396,26 @@ export const products = mysqlTable('products', {
   supplierIdIdx: index('products_supplierId_idx').on(table.supplierId),
 }));
 
+// ── Provider Portfolio ─────────────────────────────────────────────────────
+// A professional (architect, designer, contractor, finishing company, etc.)
+// showcases their own completed work. Owner-scoped and entirely self-managed;
+// nothing here is admin-fabricated.
+export const portfolioItems = mysqlTable('portfolioItems', {
+  id:             int('id').autoincrement().primaryKey(),
+  userId:         int('userId').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  title:          varchar('title', { length: 191 }).notNull(),
+  description:    text('description'),
+  category:       varchar('category', { length: 100 }),
+  location:       varchar('location', { length: 191 }),
+  completionYear: int('completionYear'),
+  services:       varchar('services', { length: 500 }),
+  images:         text('images'),
+  createdAt:      timestamp('createdAt').defaultNow().notNull(),
+  updatedAt:      timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  userIdIdx: index('portfolioItems_userId_idx').on(table.userId),
+}));
+
 // ── RFQs ───────────────────────────────────────────────────────────────────
 export const rfqs = mysqlTable('rfqs', {
   id:          int('id').autoincrement().primaryKey(),

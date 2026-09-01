@@ -46,7 +46,7 @@ import {
   commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems, qualifiedEnquiries,
-  projectMembers, rfqSuppliers,
+  projectMembers, rfqSuppliers, portfolioItems,
 } from '../drizzle/schema';
 import { and, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -3725,6 +3725,114 @@ async function completedProjectCount(db: NonNullable<Awaited<ReturnType<typeof g
   return Number(row?.count ?? 0);
 }
 
+// ── Provider Portfolio ─────────────────────────────────────────────────────
+// A professional showcases their own completed work. Ownership is the server's:
+// every write is scoped to ctx.user.id, and reads of someone else's portfolio
+// are public showcase data only.
+const portfolioRouter = router({
+  list: protectedProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(portfolioItems)
+        .where(eq(portfolioItems.userId, input.userId))
+        .orderBy(desc(portfolioItems.createdAt));
+    }),
+
+  myItems: approvedProviderProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(portfolioItems)
+      .where(eq(portfolioItems.userId, ctx.user.id))
+      .orderBy(desc(portfolioItems.createdAt));
+  }),
+
+  create: approvedProviderProcedure
+    .input(z.object({
+      title: z.string().min(1).max(191),
+      description: z.string().max(5000).optional(),
+      category: z.string().max(100).optional(),
+      location: z.string().max(191).optional(),
+      completionYear: z.number().int().min(1900).max(2100).optional(),
+      services: z.string().max(500).optional(),
+      images: z.array(z.string().max(2048)).max(10).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const result = await db.insert(portfolioItems).values({
+        ...input,
+        userId: ctx.user.id,
+        images: input.images && input.images.length > 0 ? JSON.stringify(input.images) : null,
+      });
+      return { id: Number(result[0].insertId) };
+    }),
+
+  update: approvedProviderProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      title: z.string().min(1).max(191).optional(),
+      description: z.string().max(5000).optional(),
+      category: z.string().max(100).optional(),
+      location: z.string().max(191).optional(),
+      completionYear: z.number().int().min(1900).max(2100).nullable().optional(),
+      services: z.string().max(500).optional(),
+      images: z.array(z.string().max(2048)).max(10).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const { id, images, ...fields } = input;
+      const [owned] = await db.select({ id: portfolioItems.id })
+        .from(portfolioItems).where(and(eq(portfolioItems.id, id), eq(portfolioItems.userId, ctx.user.id))).limit(1);
+      if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Portfolio item not found' });
+      const patch: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(fields)) if (value !== undefined) patch[key] = value;
+      if (images !== undefined) patch.images = images.length > 0 ? JSON.stringify(images) : null;
+      if (Object.keys(patch).length > 0) {
+        await db.update(portfolioItems).set(patch)
+          .where(and(eq(portfolioItems.id, id), eq(portfolioItems.userId, ctx.user.id)));
+      }
+      return { id };
+    }),
+
+  delete: approvedProviderProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [owned] = await db.select({ id: portfolioItems.id })
+        .from(portfolioItems).where(and(eq(portfolioItems.id, input.id), eq(portfolioItems.userId, ctx.user.id))).limit(1);
+      if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Portfolio item not found' });
+      await db.delete(portfolioItems)
+        .where(and(eq(portfolioItems.id, input.id), eq(portfolioItems.userId, ctx.user.id)));
+      return { success: true as const };
+    }),
+
+  uploadImage: approvedProviderProcedure
+    .input(z.object({
+      fileName: z.string().min(1).max(255),
+      contentType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+      base64: z.string().max(11_000_000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      enforceUploadRateLimit(ctx.user.id);
+      const buffer = Buffer.from(input.base64, 'base64');
+      if (buffer.length > MAX_PRODUCT_IMAGE_SIZE) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Image too large (max 5MB)' });
+      }
+      assertUploadedFileMatches(input.contentType, buffer, IMAGE_TYPES);
+      const safeName = input.fileName.replace(/[^\w.-]+/g, '_');
+      const { key, url } = await storagePutOrUnavailable(
+        `portfolio-images/user-${ctx.user.id}/${Date.now()}-${safeName}`,
+        buffer,
+        input.contentType,
+      );
+      return { key, url, name: input.fileName, type: input.contentType, size: buffer.length };
+    }),
+});
+
 const profileRouter = router({
   // Public vendor profile. Requires authentication (the safer of the two options
   // left open by Phase 4A.5 - fully logged-out access was explicitly flagged as
@@ -6382,6 +6490,7 @@ export const appRouter = router({
   notifications: notificationsRouter,
   reviews: reviewsRouter,
   profile: profileRouter,
+  portfolio: portfolioRouter,
   analytics: analyticsRouter,
   admin: adminRouter,
   compliance: registrationRouter,

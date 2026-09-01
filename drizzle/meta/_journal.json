@@ -225,6 +225,13 @@
       "when": 1788210000000,
       "tag": "0031_vendor_profile_business_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1788230000000,
+      "tag": "0032_provider_portfolio",
+      "breakpoints": true
     }
   ]
 }
