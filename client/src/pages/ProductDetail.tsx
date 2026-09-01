@@ -2,13 +2,14 @@ import { useMemo, useState } from 'react';
 import { Link, useParams } from 'wouter';
 import Navbar from '@/components/Navbar';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useAuth } from '@/_core/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, ArrowRight, CheckCircle2, Package, Send, ShoppingCart, Star, Truck, ShieldCheck, Store, BadgeCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Package, Pencil, Send, ShoppingCart, Star, Truck, ShieldCheck, Store, BadgeCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRfqBasket } from '@/hooks/useRfqBasket';
 import { getProductVariants } from '@/lib/marketplaceCatalog';
@@ -22,6 +23,7 @@ export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const productId = Number(id);
   const { lang } = useLanguage();
+  const { user } = useAuth();
   const [question, setQuestion] = useState('');
   const [selectedVariantId, setSelectedVariantId] = useState('standard');
   const [quantity, setQuantity] = useState('1');
@@ -37,6 +39,7 @@ export default function ProductDetail() {
     { enabled: Number.isFinite(productId) && productId > 0, retry: false },
   );
   const product = storedProduct;
+  const isOwner = Boolean(user && product?.supplier && (user as { id?: number }).id === product.supplier.id);
   const { data: questions = [], refetch: refetchQuestions } = trpc.marketplace.questions.useQuery({ productId }, { enabled: Number.isFinite(productId) && productId > 0 });
   const askQuestion = trpc.marketplace.askQuestion.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تم إرسال السؤال للمورد' : 'Question sent to supplier'); setQuestion(''); refetchQuestions(); }, onError: error => toast.error(error.message) });
   const images = useMemo(() => parseList(product?.images), [product?.images]);
@@ -59,7 +62,7 @@ export default function ProductDetail() {
         <Link href="/marketplace/products"><Button variant="ghost" className="mb-6 gap-2"><BackIcon className="h-4 w-4" />{lang === 'ar' ? 'العودة للمنتجات' : 'Back to products'}</Button></Link>
         <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr]">
           <Card className="overflow-hidden"><div className="aspect-[4/3] bg-muted">{images[0] ? <img src={images[0]} alt={name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center"><Package className="h-24 w-24 text-muted-foreground/30" /></div>}</div>{images.length > 1 && <div className="grid grid-cols-4 gap-2 p-3">{images.slice(0, 4).map(image => <img key={image} src={image} alt="" className="aspect-square rounded-lg object-cover" />)}</div>}</Card>
-          <div className="space-y-5"><div><div className="mb-3 flex flex-wrap items-center gap-2"><Badge>{product.category}</Badge>{product.featured && <Badge variant="secondary">{lang === 'ar' ? 'مميز' : 'Featured'}</Badge>}</div><h1 className="text-3xl font-bold">{name}</h1><p className="mt-2 text-muted-foreground">{product.brand || (lang === 'ar' ? 'علامة غير محددة' : 'Brand not specified')} · {product.origin || '—'}</p></div><div className="flex items-center gap-2"><Star className="h-5 w-5 fill-amber-400 text-amber-400" /><span className="font-semibold">{product.rating ?? '—'}</span><span className="text-sm text-muted-foreground">{product.reviewCount ?? 0} {lang === 'ar' ? 'تقييم موثق' : 'verified ratings'}</span></div><div className="flex items-end gap-2"><span className="text-3xl font-bold text-primary">{Number(product.price ?? 0).toLocaleString()} {product.currency}</span><span className="pb-1 text-sm text-muted-foreground">/{product.unit || (lang === 'ar' ? 'وحدة' : 'unit')}</span></div>{description && <p className="leading-7 text-muted-foreground">{description}</p>}<div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border p-3"><Truck className="mb-2 h-5 w-5 text-primary" /><p className="text-xs text-muted-foreground">{lang === 'ar' ? 'التوصيل' : 'Delivery'}</p><p className="font-medium">{product.deliveryDays ? `${product.deliveryDays} ${lang === 'ar' ? 'يوم' : 'days'}` : '—'}</p></div><div className="rounded-xl border p-3"><ShieldCheck className="mb-2 h-5 w-5 text-primary" /><p className="text-xs text-muted-foreground">{lang === 'ar' ? 'الضمان' : 'Warranty'}</p><p className="font-medium">{product.warranty || '—'}</p></div><div className="rounded-xl border p-3"><CheckCircle2 className="mb-2 h-5 w-5 text-primary" /><p className="text-xs text-muted-foreground">{lang === 'ar' ? 'المخزون' : 'Stock'}</p><p className="font-medium">{product.stock ?? 0} {product.unit || ''}</p></div></div><label className="block text-sm font-medium">{lang === 'ar' ? 'متغير المنتج' : 'Product variant'}<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={selectedVariant.id} onChange={event => setSelectedVariantId(event.target.value)}>{variants.map(variant => <option key={variant.id} value={variant.id}>{lang === 'ar' ? variant.labelAr : variant.label}</option>)}</select></label>{/*
+          <div className="space-y-5"><div><div className="mb-3 flex flex-wrap items-center gap-2"><Badge>{product.category}</Badge>{product.featured && <Badge variant="secondary">{lang === 'ar' ? 'مميز' : 'Featured'}</Badge>}{isOwner && <Link href={`/products/${productId}/edit`}><Button size="sm" variant="outline" className="gap-1.5" data-testid="product-edit"><Pencil className="h-3.5 w-3.5" />{lang === 'ar' ? 'تعديل المنتج' : 'Edit product'}</Button></Link>}</div><h1 className="text-3xl font-bold">{name}</h1><p className="mt-2 text-muted-foreground">{product.brand || (lang === 'ar' ? 'علامة غير محددة' : 'Brand not specified')} · {product.origin || '—'}</p></div><div className="flex items-center gap-2"><Star className="h-5 w-5 fill-amber-400 text-amber-400" /><span className="font-semibold">{product.rating ?? '—'}</span><span className="text-sm text-muted-foreground">{product.reviewCount ?? 0} {lang === 'ar' ? 'تقييم موثق' : 'verified ratings'}</span></div><div className="flex items-end gap-2"><span className="text-3xl font-bold text-primary">{Number(product.price ?? 0).toLocaleString()} {product.currency}</span><span className="pb-1 text-sm text-muted-foreground">/{product.unit || (lang === 'ar' ? 'وحدة' : 'unit')}</span></div>{description && <p className="leading-7 text-muted-foreground">{description}</p>}<div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border p-3"><Truck className="mb-2 h-5 w-5 text-primary" /><p className="text-xs text-muted-foreground">{lang === 'ar' ? 'التوصيل' : 'Delivery'}</p><p className="font-medium">{product.deliveryDays ? `${product.deliveryDays} ${lang === 'ar' ? 'يوم' : 'days'}` : '—'}</p></div><div className="rounded-xl border p-3"><ShieldCheck className="mb-2 h-5 w-5 text-primary" /><p className="text-xs text-muted-foreground">{lang === 'ar' ? 'الضمان' : 'Warranty'}</p><p className="font-medium">{product.warranty || '—'}</p></div><div className="rounded-xl border p-3"><CheckCircle2 className="mb-2 h-5 w-5 text-primary" /><p className="text-xs text-muted-foreground">{lang === 'ar' ? 'المخزون' : 'Stock'}</p><p className="font-medium">{product.stock ?? 0} {product.unit || ''}</p></div></div><label className="block text-sm font-medium">{lang === 'ar' ? 'متغير المنتج' : 'Product variant'}<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={selectedVariant.id} onChange={event => setSelectedVariantId(event.target.value)}>{variants.map(variant => <option key={variant.id} value={variant.id}>{lang === 'ar' ? variant.labelAr : variant.label}</option>)}</select></label>{/*
   This wrote ONE localStorage key with setItem, so adding a second product
   silently discarded the first - under a button that says "list". It now
   appends a real basket line; adding the same product and variant twice

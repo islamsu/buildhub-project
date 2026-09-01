@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Package, Pencil, ImagePlus, Star, Trash2, Eye, EyeOff, MessageCircleQuestion } from 'lucide-react';
+import { Package, PackagePlus, FileSpreadsheet, Pencil, ImagePlus, Star, Trash2, Eye, EyeOff, MessageCircleQuestion } from 'lucide-react';
 import {
   MAX_PRODUCT_IMAGES,
   MAX_PRODUCT_IMAGE_SIZE,
@@ -203,9 +203,23 @@ export default function SupplierCatalogue() {
       {/* ── The catalogue ──────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Package className="h-4 w-4" />{ar ? 'الكتالوج' : 'Catalogue'}
-          </CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Package className="h-4 w-4" />{ar ? 'الكتالوج' : 'Catalogue'}
+            </CardTitle>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/products/new">
+                <Button size="sm" className="gap-1.5" data-testid="catalogue-add-product">
+                  <PackagePlus className="h-4 w-4" />{ar ? 'إضافة منتج' : 'Add product'}
+                </Button>
+              </Link>
+              <Link href="/products/new?mode=bulk">
+                <Button size="sm" variant="outline" className="gap-1.5" data-testid="catalogue-bulk-upload">
+                  <FileSpreadsheet className="h-4 w-4" />{ar ? 'رفع جماعي' : 'Bulk upload'}
+                </Button>
+              </Link>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {products.length === 0 ? (

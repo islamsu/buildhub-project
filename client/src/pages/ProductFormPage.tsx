@@ -22,7 +22,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation } from 'wouter';
+import { Link, useLocation, useSearch } from 'wouter';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -55,6 +55,7 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
   productId?: number;
 }) {
   const [, navigate] = useLocation();
+  const search = useSearch();
   const { lang, dir } = useLanguage();
   const ar = lang === 'ar';
   const { isAuthenticated } = useAuth();
@@ -79,7 +80,9 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
   // `/products/new` offers two ways in: one product at a time, or a CSV of many.
   // The choice lives here because both surfaces already exist and share the same
   // supplier workspace handoff; a separate page would only add a hop.
-  const [listingMode, setListingMode] = useState<'single' | 'bulk'>('single');
+  const [listingMode, setListingMode] = useState<'single' | 'bulk'>(
+    new URLSearchParams(search).get('mode') === 'bulk' ? 'bulk' : 'single',
+  );
 
   useEffect(() => {
     if (!editing || !product || loaded) return;
