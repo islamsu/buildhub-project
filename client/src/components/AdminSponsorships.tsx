@@ -34,7 +34,10 @@ export default function AdminSponsorships() {
   const [vendorId, setVendorId] = useState('');
   const [category, setCategory] = useState('');
   const [reason, setReason] = useState('');
+  const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
+  const [indefinite, setIndefinite] = useState(true);
+  const [priority, setPriority] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
@@ -105,14 +108,36 @@ export default function AdminSponsorships() {
             </select>
           </div>
           <div>
+            <label className="text-xs text-muted-foreground" htmlFor="sponsor-starts">
+              {ar ? 'يبدأ من' : 'From'}
+            </label>
+            <Input
+              id="sponsor-starts" data-testid="sponsor-starts" type="date" className="mt-1 h-9"
+              value={startsAt} onChange={e => setStartsAt(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground" htmlFor="sponsor-priority">
+              {ar ? 'الأولوية' : 'Priority'}
+            </label>
+            <Input
+              id="sponsor-priority" data-testid="sponsor-priority" inputMode="numeric" className="mt-1 h-9"
+              value={priority} onChange={e => setPriority(e.target.value.replace(/\D/g, ''))}
+            />
+          </div>
+          <div>
             <label className="text-xs text-muted-foreground" htmlFor="sponsor-ends">
-              {ar ? 'تنتهي في (اختياري)' : 'Ends (optional)'}
+              {ar ? 'حتى' : 'Until'}
             </label>
             <Input
               id="sponsor-ends" data-testid="sponsor-ends" type="date" className="mt-1 h-9"
-              value={endsAt} onChange={e => setEndsAt(e.target.value)}
+              value={endsAt} disabled={indefinite} onChange={e => setEndsAt(e.target.value)}
             />
           </div>
+          <label className="flex h-9 items-center gap-2 text-xs text-muted-foreground">
+            <input type="checkbox" checked={indefinite} onChange={e => setIndefinite(e.target.checked)} />
+            {ar ? 'بدون نهاية' : 'Indefinite'}
+          </label>
           <div className="sm:col-span-2">
             <label className="text-xs text-muted-foreground" htmlFor="sponsor-reason">
               {ar ? 'السبب (مطلوب)' : 'Reason (required)'}
@@ -129,13 +154,19 @@ export default function AdminSponsorships() {
           disabled={!vendorId || !category || reason.trim() === '' || grant.isPending}
           onClick={() => {
             setNotice(''); setError('');
+            if (startsAt && !indefinite && endsAt && endsAt <= startsAt) {
+              setError(ar ? 'يجب أن يكون تاريخ النهاية بعد تاريخ البداية.' : 'The end date must be after the start date.');
+              return;
+            }
             grant.mutate({
               vendorId: Number(vendorId),
               category,
               reason: reason.trim(),
+              priority: priority ? Number(priority) : undefined,
+              startsAt: startsAt ? new Date(`${startsAt}T00:00:00Z`).toISOString() : undefined,
               // A date input gives a day; the grant runs to the END of it, so
               // a sponsorship "until the 30th" includes the 30th.
-              ...(endsAt ? { endsAt: new Date(`${endsAt}T23:59:59Z`).toISOString() } : {}),
+              endsAt: !indefinite && endsAt ? new Date(`${endsAt}T23:59:59Z`).toISOString() : undefined,
             });
           }}
         >

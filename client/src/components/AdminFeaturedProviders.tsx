@@ -24,7 +24,9 @@ export default function AdminFeaturedProviders() {
 
   const [vendorId, setVendorId] = useState('');
   const [category, setCategory] = useState('');
+  const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
+  const [indefinite, setIndefinite] = useState(true);
   const [priority, setPriority] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -53,6 +55,14 @@ export default function AdminFeaturedProviders() {
   });
 
   const date = (v: unknown) => v ? new Date(v as string).toLocaleDateString(ar ? 'ar-EG' : 'en-US') : '—';
+  const statusLabel = (row: { startsAt: Date | string; endsAt: Date | string | null; revokedAt: Date | string | null; live: boolean }) => {
+    if (row.revokedAt) return ar ? 'ملغى' : 'Removed';
+    const start = new Date(row.startsAt).getTime();
+    const now = Date.now();
+    if (start > now) return ar ? 'مجدول' : 'Scheduled';
+    if (row.endsAt && new Date(row.endsAt).getTime() <= now) return ar ? 'منتهي' : 'Expired';
+    return ar ? 'فعّال' : 'Active';
+  };
 
   return (
     <Card data-testid="admin-featured-providers">
@@ -93,6 +103,15 @@ export default function AdminFeaturedProviders() {
             </select>
           </div>
           <div>
+            <label className="text-xs text-muted-foreground" htmlFor="feature-starts">
+              {ar ? 'يبدأ من' : 'From'}
+            </label>
+            <Input
+              id="feature-starts" data-testid="feature-starts" type="date" className="mt-1 h-9"
+              value={startsAt} onChange={e => setStartsAt(e.target.value)}
+            />
+          </div>
+          <div>
             <label className="text-xs text-muted-foreground" htmlFor="feature-priority">
               {ar ? 'الأولوية' : 'Priority'}
             </label>
@@ -103,23 +122,32 @@ export default function AdminFeaturedProviders() {
           </div>
           <div>
             <label className="text-xs text-muted-foreground" htmlFor="feature-ends">
-              {ar ? 'تنتهي في (اختياري)' : 'Ends (optional)'}
+              {ar ? 'حتى' : 'Until'}
             </label>
             <Input
               id="feature-ends" data-testid="feature-ends" type="date" className="mt-1 h-9"
-              value={endsAt} onChange={e => setEndsAt(e.target.value)}
+              value={endsAt} disabled={indefinite} onChange={e => setEndsAt(e.target.value)}
             />
           </div>
+          <label className="flex h-9 items-center gap-2 text-xs text-muted-foreground">
+            <input type="checkbox" checked={indefinite} onChange={e => setIndefinite(e.target.checked)} />
+            {ar ? 'بدون نهاية' : 'Indefinite'}
+          </label>
           <Button
             size="sm" data-testid="feature-grant"
             disabled={!vendorId || !category || feature.isPending}
             onClick={() => {
               setNotice(''); setError('');
+              if (startsAt && !indefinite && endsAt && endsAt <= startsAt) {
+                setError(ar ? 'يجب أن يكون تاريخ النهاية بعد تاريخ البداية.' : 'The end date must be after the start date.');
+                return;
+              }
               feature.mutate({
                 vendorId: Number(vendorId),
                 category,
                 priority: priority ? Number(priority) : undefined,
-                ...(endsAt ? { endsAt: new Date(`${endsAt}T23:59:59Z`).toISOString() } : {}),
+                startsAt: startsAt ? new Date(`${startsAt}T00:00:00Z`).toISOString() : undefined,
+                endsAt: !indefinite && endsAt ? new Date(`${endsAt}T23:59:59Z`).toISOString() : undefined,
               });
             }}
           >
@@ -160,13 +188,7 @@ export default function AdminFeaturedProviders() {
                       {date(row.startsAt)} → {row.endsAt ? date(row.endsAt) : (ar ? 'مفتوحة' : 'open-ended')}
                     </td>
                     <td className="px-3 py-2">
-                      <Badge variant={row.live ? 'default' : 'outline'} className="text-[10px]">
-                        {row.revokedAt
-                          ? (ar ? 'ملغى' : 'Removed')
-                          : row.live
-                            ? (ar ? 'فعّال' : 'Live')
-                            : (ar ? 'منتهي' : 'Not live')}
-                      </Badge>
+                      <Badge variant={row.live ? 'default' : 'outline'} className="text-[10px]">{statusLabel(row)}</Badge>
                     </td>
                     <td className="px-3 py-2 text-end">
                       {!row.revokedAt && (

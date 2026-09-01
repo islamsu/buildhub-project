@@ -81,6 +81,11 @@ describe('the admin and marketplace surfaces', () => {
     const schema = readSourceForAssertions(readFileSync(new URL('../drizzle/schema.ts', import.meta.url), 'utf8'));
     expect(schema).toContain("kind:     varchar('kind', { length: 20 }).notNull().default('sponsored')");
   });
+
+  it('featured ordering is explicit priority, not insertion order', () => {
+    const dir = readSourceForAssertions(readFileSync(new URL('./vendorDirectory.ts', import.meta.url), 'utf8'));
+    expect(dir).toContain('.orderBy(vendorSponsorships.priority, vendorSponsorships.createdAt)');
+  });
 });
 
 describe('featuredVendorIds - ids only, filtered by kind', () => {
