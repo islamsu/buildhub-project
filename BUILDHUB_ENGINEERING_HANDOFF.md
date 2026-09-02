@@ -6,7 +6,7 @@ REPOSITORY: islamsu/buildhub-project
 
 ACTIVE DEVELOPMENT BRANCH: codex/buildhub-final-closure
 
-LATEST VERIFIED DEVELOPMENT SHA: 5c8f807a9324c378dbd5922c6c8fc2258c2b765a
+LATEST VERIFIED DEVELOPMENT SHA: f294dcb33e93d0974eca7cadc11ed6eda0848532
 
 WORKING TREE: CLEAN
 
@@ -75,6 +75,7 @@ Do not blur these states. A pushed commit exists in GitHub but is not necessaril
 ## RECENT COMMIT SUMMARY
 
 ```text
+f294dcb Commercial placement schema extension
 5c8f807 Referral effective qualification engine
 ac4e3d8 Referral campaign and reward backend
 2febc07 Referral foundation and invite attribution
@@ -97,7 +98,7 @@ a065aca Admin: vendor lookup by business identity, not database id
 
 ## LATEST RELEVANT MIGRATION
 
-The latest numbered migration file is `drizzle/0038_referral_campaigns_and_rewards.sql`.
+The latest numbered migration file is `drizzle/0039_commercial_placement_fields.sql`.
 
 Migration lineage must be preserved with forward migrations only. Do not rewrite historical migrations.
 
@@ -128,6 +129,7 @@ Recent completed or regression-protected work includes:
 - Referral foundation: secure per-user code, signup attribution, referrals ledger, Invite & Earn Settings surface, Admin endpoint
 - Referral campaign and reward ledger backend with RBAC-gated campaign CRUD, qualification, and reversal endpoints
 - Centralized referral qualification engine connected to real account-verification event with effective extra-enquiry reward grant
+- Commercial placement schema extension adding source, package, surface, and entityType to canonical vendorSponsorships
 - Initial user-facing dispute workflow
 
 ## PARTIAL / INCOMPLETE WORK
