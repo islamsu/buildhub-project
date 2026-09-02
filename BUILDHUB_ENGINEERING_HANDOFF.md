@@ -6,7 +6,7 @@ REPOSITORY: islamsu/buildhub-project
 
 ACTIVE DEVELOPMENT BRANCH: codex/buildhub-final-closure
 
-LATEST VERIFIED DEVELOPMENT SHA: f294dcb33e93d0974eca7cadc11ed6eda0848532
+LATEST VERIFIED DEVELOPMENT SHA: 95d3280c900e7212e4b6d97f84cdd0fb834a1fb1
 
 WORKING TREE: CLEAN
 
@@ -75,6 +75,7 @@ Do not blur these states. A pushed commit exists in GitHub but is not necessaril
 ## RECENT COMMIT SUMMARY
 
 ```text
+95d3280 Commercial placement booking and referral featured integration
 f294dcb Commercial placement schema extension
 5c8f807 Referral effective qualification engine
 ac4e3d8 Referral campaign and reward backend
@@ -130,6 +131,7 @@ Recent completed or regression-protected work includes:
 - Referral campaign and reward ledger backend with RBAC-gated campaign CRUD, qualification, and reversal endpoints
 - Centralized referral qualification engine connected to real account-verification event with effective extra-enquiry reward grant
 - Commercial placement schema extension adding source, package, surface, and entityType to canonical vendorSponsorships
+- Canonical placement booking service with Master exclusivity, Spotlight capacity, and Referral TEMPORARY_FEATURED integration
 - Initial user-facing dispute workflow
 
 ## PARTIAL / INCOMPLETE WORK
