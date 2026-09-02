@@ -1,0 +1,25 @@
+PASS  anonymous caller is refused the detail
+PASS  a pasted reference resolves to the enquiry  [HTTP 200]
+PASS  the pair resolves to the same enquiry
+PASS  the state is RESPONDED, derived from the quotation  [RESPONDED]
+PASS  the RFQ is named in words
+PASS  the requester is named
+PASS  the vendor is named
+PASS  the timeline carries every event that really happened  [INVITED,VIEWED,ALLOWANCE_CONSUMED,RESPONDED]
+PASS  the timeline invents nothing - no DECLINED on an enquiry that was answered
+PASS  the timeline is ordered oldest first
+PASS  the consumption event says allowance, not payment
+PASS  the vendor entitlement is reported  [{"used":1,"allowance":5,"remaining":4,"periodKey":"2026-09","resetsAt":"2026-10-01T00:00:00.000Z"}]
+PASS  used matches the real consumption rows for the month  [engine 1, database 1]
+PASS  the entitlement period is named, so the figure is not floating  [2026-09]
+PASS  the fixture really holds a bid price in the database  [654321.99]
+PASS  THE ENQUIRY DETAIL CARRIES NO BID PRICE
+PASS  nor any other quotation content
+PASS  the RFQ budget is not carried either
+PASS  no password hash or session identifier reaches the response
+PASS  the Super Admin investigation surface DOES return the bid, as designed  [HTTP 200]
+PASS  a pair with no history is NOT FOUND, not an empty shell  [HTTP 404]
+PASS  a malformed reference is refused rather than guessed at  [HTTP 400]
+PASS  the fixture removed itself completely
+
+23 passed, 0 failed

@@ -47,8 +47,8 @@ import {
   spotlightProducts, spotlightProviders,
 } from './publicPlacement';
 import { placementPerformance, recordPlacementEvent } from './placementAnalytics';
-import { ENQUIRY_STATES } from './vendorEnquiry';
-import { enquiryOverview } from './vendorEnquiryQuery';
+import { ENQUIRY_STATES, RFQ_STATUSES, parseEnquiryReference } from './vendorEnquiry';
+import { ENQUIRY_LIST_MAX_LIMIT, enquiryDetail, enquiryList, enquiryOverview } from './vendorEnquiryQuery';
 import { PLACEMENT_CLIENT_EVENTS, PLACEMENT_METRIC_FORMULAS } from '@shared/placementAnalytics';
 import { formatProjectContext, resolveProjectContext } from './_core/projectContext';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
@@ -5054,6 +5054,88 @@ const adminRouter = router({
         // screen is told so rather than left to wonder why it is always zero.
         excludedFromCounts: ['AVAILABLE'] as const,
       };
+    }),
+
+  /**
+   * THE VENDOR ENQUIRIES LIST.
+   *
+   * Same permission as the overview, decided server-side. The filters, the
+   * sort and the page are all applied in the DATABASE - filtering a derived
+   * state in Node would mean loading every enquiry on the platform to show
+   * twenty of them.
+   *
+   * `sort` is an ENUM, not a string, because it reaches an ORDER BY and an
+   * ORDER BY built from user input is an injection point like any other. Every
+   * other filter value is bound as a parameter.
+   *
+   * NO QUOTATION FIGURE IS RETURNED. Whether a vendor answered is the state;
+   * what they bid is theirs and the requester's. An administrator's list has no
+   * business carrying the market's prices, and this endpoint is exactly where
+   * they would all be in one response.
+   */
+  enquiryList: adminWith('marketplace.manage')
+    .input(z.object({
+      state: z.enum(ENQUIRY_STATES).optional(),
+      rfqStatus: z.enum(RFQ_STATUSES).optional(),
+      vendorId: z.number().int().positive().optional(),
+      rfqId: z.number().int().positive().optional(),
+      search: z.string().trim().max(200).optional(),
+      sort: z.enum(['activity', 'rfq', 'vendor', 'state']).optional(),
+      direction: z.enum(['asc', 'desc']).optional(),
+      limit: z.number().int().min(1).max(ENQUIRY_LIST_MAX_LIMIT).optional(),
+      offset: z.number().int().min(0).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return enquiryList(db, input ?? {});
+    }),
+
+  /**
+   * ONE ENQUIRY, IN FULL - for the value of "full" this permission earns.
+   *
+   * Accepts either the pair or the human reference, because an administrator
+   * working from a support ticket has the reference and nothing else.
+   *
+   * The vendor's allowance comes from getEnquiryUsage - the SAME engine the
+   * vendor's own usage screen reads. A second implementation of "how many are
+   * left" is how the two screens end up disagreeing about the same month, and
+   * the vendor is the one who notices.
+   *
+   * No quotation contents. See the note on enquiryDetail: bid prices are
+   * superAdminProcedure territory in admin.rfqInvestigation, deliberately, and
+   * this endpoint must not become a second door to them.
+   */
+  enquiryDetail: adminWith('marketplace.manage')
+    .input(z.union([
+      z.object({ rfqId: z.number().int().positive(), vendorId: z.number().int().positive() }),
+      z.object({ reference: z.string().trim().min(5).max(64) }),
+    ]))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const pair = 'reference' in input ? parseEnquiryReference(input.reference) : input;
+      if (!pair) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That is not a valid enquiry reference.' });
+      }
+
+      const detail = await enquiryDetail(db, pair, async vendorId => {
+        // Shaped down deliberately: the usage engine also returns limitReached,
+        // which is the vendor's own UI concern and not a fact about this
+        // enquiry.
+        const usage = await getEnquiryUsage(vendorId);
+        return {
+          used: usage.used, allowance: usage.allowance, remaining: usage.remaining,
+          periodKey: usage.periodKey, resetsAt: usage.resetsAt,
+        };
+      });
+      if (!detail) {
+        // A pasted reference that names a pair with no history is a real
+        // answer, not a server error.
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'No enquiry exists between that vendor and that request.' });
+      }
+      return detail;
     }),
 
   placementPerformance: adminWith('marketplace.manage')

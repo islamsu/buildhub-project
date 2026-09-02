@@ -1,0 +1,33 @@
+PASS  anonymous caller is refused the list
+PASS  the SUPPORT_ADMIN probe account signs in
+PASS  SUPPORT_ADMIN is refused the list server-side
+PASS  an empty platform returns an empty page, not an error  [HTTP 200]
+PASS  the seeded list returns every pair  [total 6 of 6]
+PASS  each row carries a human reference in the ENQ- form  [ENQ-33-251]
+PASS  each row names the RFQ and the vendor in words, not only ids
+PASS  every row shows the state the rules say it has
+PASS  filtering by INVITED returns exactly its rows  [total 1, expected 1]
+PASS  filtering by VIEWED returns exactly its rows  [total 1, expected 1]
+PASS  filtering by DECLINED returns exactly its rows  [total 1, expected 1]
+PASS  filtering by OPENED returns exactly its rows  [total 1, expected 1]
+PASS  filtering by RESPONDED returns exactly its rows  [total 1, expected 1]
+PASS  filtering by CLOSED returns exactly its rows  [total 1, expected 1]
+PASS  filtering by vendor returns only that vendor  [total 2]
+PASS  filtering by RFQ status returns only enquiries on closed RFQs  [total 1]
+PASS  searching a vendor name finds that vendor's enquiries  [total 2]
+PASS  searching an RFQ title finds that RFQ's enquiries
+PASS  PASTING A REFERENCE FINDS EXACTLY THE ENQUIRY IT NAMES  [total 1]
+PASS  pasting "RFQ #<id>" finds that RFQ's enquiries  [total 3]
+PASS  a search that matches nothing returns an honest empty page
+PASS  a page reports the FULL total, not the page size  [total 6]
+PASS  paging returns each enquiry exactly once across the pages  [6 rows, 6 distinct]
+PASS  sorting reverses the order rather than being ignored
+PASS  an oversized limit is rejected rather than served  [HTTP 400]
+PASS  the fixture really has a quotation price in the database  [738291.55]
+PASS  NO QUOTATION PRICE APPEARS IN THE LIST RESPONSE
+PASS  the list still says WHETHER the vendor answered
+PASS  no password hash or session identifier reaches the response
+PASS  THE WHOLE PAGE COSTS TWO QUERIES, NOT ONE PER ROW  [2 queries for 6 rows]
+PASS  the fixture removed itself completely  [0 left]
+
+31 passed, 0 failed
