@@ -27,6 +27,10 @@ import {
   placedProviders,
   spotlightProducts,
   spotlightProviders,
+  applyBoost,
+  boostCandidates,
+  BOOST_STRIDE,
+  MAX_BOOST_SHARE,
 } from './publicPlacement';
 import { GLOBAL_PLACEMENT_SCOPE, placementLabel, rootScope, scopeFor } from '@shared/placement';
 
@@ -422,5 +426,136 @@ describe('Spotlight is the surface INSIDE a chosen type or category', () => {
     vi.mocked(getDb).mockResolvedValue(null as never);
     expect(await spotlightProviders('Lighting', NOW)).toEqual([]);
     expect(await spotlightProducts('Lighting', NOW)).toEqual([]);
+  });
+});
+
+// ── BOOST ──────────────────────────────────────────────────────────────────
+
+describe('Boost re-ranks results that already match; it never injects', () => {
+  const organic = (...ids: number[]) => ids.map(id => ({ id, name: `Row ${id}` }));
+  const boost = (...ids: number[]) => ids.map(id => ({ id, label: 'SPONSORED' as const }));
+
+  it('THE NO-INJECTION RULE: a boosted id the query did not return never appears', () => {
+    // The Tiles-product-in-a-Lighting-search case, reduced to its essence.
+    const out = applyBoost(organic(1, 2, 3), boost(99));
+    expect(out.map(r => r.id)).toEqual([1, 2, 3]);
+    expect(out.some(r => r.boosted)).toBe(false);
+  });
+
+  it('a boosted id that IS in the results is lifted to the top', () => {
+    const out = applyBoost(organic(1, 2, 3, 4, 5, 6), boost(5));
+    expect(out[0].id).toBe(5);
+    expect(out[0].boosted).toBe(true);
+  });
+
+  it('every other row keeps its organic relative order', () => {
+    const out = applyBoost(organic(1, 2, 3, 4, 5, 6), boost(5));
+    expect(out.filter(r => !r.boosted).map(r => r.id)).toEqual([1, 2, 3, 4, 6]);
+  });
+
+  it('returns exactly the rows it was given - none added, none lost', () => {
+    const out = applyBoost(organic(1, 2, 3, 4, 5, 6), boost(2, 4, 6));
+    expect(out).toHaveLength(6);
+    expect([...out.map(r => r.id)].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('BOOSTED ROWS ARE SPREAD, not stacked at the top', () => {
+    // The reader must meet an organic result immediately after the first
+    // sponsored one. All-boosted-first is an advertising page with a
+    // marketplace underneath it.
+    const out = applyBoost(organic(1, 2, 3, 4, 5, 6, 7, 8, 9), boost(7, 8, 9));
+    const positions = out.map((r, i) => (r.boosted ? i : -1)).filter(i => i >= 0);
+    expect(positions).toEqual([0, BOOST_STRIDE, BOOST_STRIDE * 2]);
+    expect(out[1].boosted).toBeUndefined();
+  });
+
+  it('AT MOST A THIRD of a page is boosted', () => {
+    // Nine organic rows, nine of them boosted: three may be lifted, not nine.
+    const out = applyBoost(organic(1, 2, 3, 4, 5, 6, 7, 8, 9), boost(1, 2, 3, 4, 5, 6, 7, 8, 9));
+    const boostedCount = out.filter(r => r.boosted).length;
+    expect(boostedCount).toBe(Math.floor(9 * MAX_BOOST_SHARE));
+    expect(boostedCount).toBe(3);
+  });
+
+  it('a short result list is not turned entirely into advertising', () => {
+    const out = applyBoost(organic(1, 2, 3), boost(1, 2, 3));
+    expect(out.filter(r => r.boosted).length).toBe(1);
+    expect(out).toHaveLength(3);
+  });
+
+  it('IS DETERMINISTIC: the same inputs give the same order every time', () => {
+    // A strip that reshuffles as the reader looks at it is unusable, and a
+    // random one cannot be audited when an advertiser asks where they appeared.
+    const runs = Array.from({ length: 8 }, () =>
+      applyBoost(organic(1, 2, 3, 4, 5, 6, 7, 8, 9), boost(4, 9)).map(r => r.id).join(','));
+    expect(new Set(runs).size).toBe(1);
+  });
+
+  it('honours the commercial order of the boosted list', () => {
+    const first = applyBoost(organic(1, 2, 3, 4, 5, 6), boost(6, 2));
+    const second = applyBoost(organic(1, 2, 3, 4, 5, 6), boost(2, 6));
+    expect(first[0].id).toBe(6);
+    expect(second[0].id).toBe(2);
+  });
+
+  it('carries each row own label, so a referral boost is not called Sponsored', () => {
+    const out = applyBoost(organic(1, 2, 3, 4, 5, 6), [
+      { id: 4, label: 'FEATURED' }, { id: 6, label: 'SPONSORED' },
+    ]);
+    expect(out.find(r => r.id === 4)?.label).toBe('FEATURED');
+    expect(out.find(r => r.id === 6)?.label).toBe('SPONSORED');
+  });
+
+  it('an empty list on either side changes nothing', () => {
+    expect(applyBoost([], boost(1))).toEqual([]);
+    expect(applyBoost(organic(1, 2), []).map(r => r.id)).toEqual([1, 2]);
+    expect(applyBoost(organic(1, 2), []).some(r => r.boosted)).toBe(false);
+  });
+});
+
+describe('Boost candidates are scoped to what the advertiser bought', () => {
+  it('asks for the BOOST surface only', async () => {
+    const { db, whereSql } = makeDb({ placements: [] });
+    await boostCandidates({ db, entityType: 'PRODUCT', now: NOW });
+    const where = whereSql.join(' | ');
+    expect(where).toContain('SEARCH_RESULTS_BOOST');
+    expect(where).not.toContain('MASTER_DISCOVERY');
+    expect(where).not.toContain('TYPE_CATEGORY_SPOTLIGHT');
+  });
+
+  it('THE SECOND GUARD: an active category filter restricts to that scope', async () => {
+    // A Contractor Boost must not lift a dual-listed provider inside a
+    // Designer-filtered search - that is a scope they did not buy.
+    const { db, whereSql } = makeDb({ placements: [] });
+    await boostCandidates({ db, entityType: 'PROVIDER', category: 'Design', now: NOW });
+    expect(whereSql.join(' | ')).toContain('Design');
+  });
+
+  it('with no filter active, scope is left to the intersection', async () => {
+    const { db, whereSql } = makeDb({ placements: [] });
+    await boostCandidates({ db, entityType: 'PROVIDER', now: NOW });
+    // No category predicate: the visitor is searching everything, and
+    // applyBoost drops anything the organic query did not return.
+    expect(whereSql.join(' | ')).not.toContain('Lighting');
+  });
+
+  it('respects the live-placement window', async () => {
+    const { db, whereSql } = makeDb({ placements: [] });
+    await boostCandidates({ db, entityType: 'PRODUCT', now: NOW });
+    const where = whereSql.join(' | ');
+    expect(where).toContain('revokedAt');
+    expect(where).toContain('startsAt');
+    expect(where).toContain('endsAt');
+  });
+
+  it('de-duplicates a vendor holding two boost bookings', async () => {
+    const { db } = makeDb({
+      placements: [
+        { vendorId: 10, productId: null, source: 'PAID_SPONSORSHIP' },
+        { vendorId: 10, productId: null, source: 'PAID_SPONSORSHIP' },
+      ],
+    });
+    const found = await boostCandidates({ db, entityType: 'PROVIDER', now: NOW });
+    expect(found).toHaveLength(1);
   });
 });

@@ -352,6 +352,87 @@ try {
     !spotProdIsolation.data?.some(v => v.id === lampId),
     JSON.stringify(spotProdIsolation.data?.map(v => v.id)));
 
+  // ══ BOOST ═══════════════════════════════════════════════════════════════
+  //
+  // Boost RE-RANKS a result set; it never adds to one. The decisive check is
+  // the Tiles-product-in-a-Lighting-search case: the placement is live, paid
+  // and correctly booked, and it must still not appear.
+
+  const boostSupplier = mkProvider('j', { userRole: 'supplier' });
+  const mkProduct = (suffix, category) => {
+    sql(`insert into products (supplierId, name, category, price, currency, unit, active)
+         values (${boostSupplier}, 'Probe Rebar ${stamp}-${suffix}', '${category}', '100.00', 'EGP', 'piece', 1)`);
+    const id = Number(sql(`select id from products where name='Probe Rebar ${stamp}-${suffix}'`));
+    made.products.push(id);
+    return id;
+  };
+
+  // Six Lighting products so the share cap has room to be meaningful.
+  const lightingIds = ['l1', 'l2', 'l3', 'l4', 'l5', 'l6'].map(n => mkProduct(n, 'Lighting'));
+  const tilesId = mkProduct('t1', 'Tiles');
+
+  // Boost the LAST Lighting product, and separately boost the Tiles product
+  // into the Lighting scope - a booking that must buy nothing.
+  const lastLighting = lightingIds[lightingIds.length - 1];
+  book({ entityType: 'PRODUCT', productId: lastLighting, vendorId: null, category: 'Lighting',
+         surface: 'SEARCH_RESULTS_BOOST', package: 'BOOST', priority: 0 });
+  book({ entityType: 'PRODUCT', productId: tilesId, vendorId: null, category: 'Lighting',
+         surface: 'SEARCH_RESULTS_BOOST', package: 'BOOST', priority: 1 });
+
+  const lightingList = await query('marketplace.list', { category: 'Lighting', limit: 50 });
+  const lightingIdsOut = (lightingList.data ?? []).map(p => p.id);
+
+  check('BOOST NO-INJECTION: a Tiles product boosted into Lighting does NOT appear',
+    !lightingIdsOut.includes(tilesId), `tiles=${tilesId} in=${JSON.stringify(lightingIdsOut)}`);
+
+  check('BOOST POSITIVE: a boosted Lighting product is lifted to the top of Lighting',
+    lightingIdsOut[0] === lastLighting, `first=${lightingIdsOut[0]} want=${lastLighting}`);
+
+  const boostedRow = (lightingList.data ?? []).find(p => p.id === lastLighting);
+  check('BOOST LABEL: the lifted row is labelled Sponsored',
+    boostedRow?.boosted === true && boostedRow?.label === 'SPONSORED',
+    `boosted=${boostedRow?.boosted} label=${boostedRow?.label}`);
+
+  // Compared against what the DATABASE actually holds, not against a number
+  // written by hand: the Spotlight fixture above also created a Lighting
+  // product, so a hardcoded 6 was this probe's arithmetic error rather than a
+  // defect in re-ranking.
+  const eligibleLighting = Number(sql(
+    `select count(*) from products where category='Lighting' and active=1`));
+  check('BOOST INTEGRITY: no row is added or lost by re-ranking',
+    lightingIdsOut.length === eligibleLighting &&
+      lightingIds.every(id => lightingIdsOut.includes(id)) &&
+      new Set(lightingIdsOut).size === lightingIdsOut.length,
+    `returned=${lightingIdsOut.length} eligible=${eligibleLighting}`);
+
+  const boostedCount = (lightingList.data ?? []).filter(p => p.boosted).length;
+  check('BOOST SHARE: at most a third of the page is boosted',
+    boostedCount <= Math.max(1, Math.floor(lightingIdsOut.length / 3)),
+    `boosted=${boostedCount} of ${lightingIdsOut.length}`);
+
+  // The Tiles product must still be findable IN ITS OWN category - Boost took
+  // nothing away from it.
+  const tilesList = await query('marketplace.list', { category: 'Tiles', limit: 50 });
+  check('BOOST CONTROL: the Tiles product is still visible under Tiles',
+    (tilesList.data ?? []).some(p => p.id === tilesId),
+    JSON.stringify((tilesList.data ?? []).map(p => p.id)));
+
+  // Determinism: the same request twice gives the same order.
+  const again = await query('marketplace.list', { category: 'Lighting', limit: 50 });
+  check('BOOST DETERMINISM: the same request returns the same order',
+    JSON.stringify((again.data ?? []).map(p => p.id)) === JSON.stringify(lightingIdsOut),
+    JSON.stringify((again.data ?? []).map(p => p.id)));
+
+  // Time applies to Boost exactly as to every other surface.
+  sql(`update vendorSponsorships set revokedAt=now()
+       where productId=${lastLighting} and surface='SEARCH_RESULTS_BOOST'`);
+  const afterRevoke = await query('marketplace.list', { category: 'Lighting', limit: 50 });
+  check('BOOST TIME: a REVOKED boost stops lifting immediately',
+    !(afterRevoke.data ?? []).some(p => p.boosted),
+    JSON.stringify((afterRevoke.data ?? []).filter(p => p.boosted).map(p => p.id)));
+  check('BOOST TIME: revoking the boost leaves the product itself in the results',
+    (afterRevoke.data ?? []).some(p => p.id === lastLighting), 'still listed');
+
 } catch (error) {
   check('THE PROBE ITSELF RAN TO COMPLETION', false, String(error && error.message).slice(0, 200));
 } finally {

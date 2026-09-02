@@ -39,7 +39,10 @@ import { readOperationalHealth } from './admin/operationalHealth';
 import { runPlatformSearch } from './admin/platformSearch';
 import { qualifyReferralEvent } from './referralEngine';
 import { bookPlacement } from './placementBooking';
-import { masterProduct, masterProvider, spotlightProducts, spotlightProviders } from './publicPlacement';
+import {
+  applyBoost, boostCandidates, masterProduct, masterProvider,
+  spotlightProducts, spotlightProviders,
+} from './publicPlacement';
 import { formatProjectContext, resolveProjectContext } from './_core/projectContext';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
@@ -1466,7 +1469,21 @@ const marketplaceRouter = router({
       search: z.string().max(MAX_SEARCH_LENGTH).optional(),
       limit: z.number().int().positive().max(100).optional(),
     }).optional())
-    .query(async ({ input }) => listDirectoryVendors(input ?? {})),
+    .query(async ({ input }) => {
+      const organic = await listDirectoryVendors(input ?? {});
+      const db = await getDb();
+      // No database means no organic rows either, so there is nothing to
+      // re-rank. Routed through applyBoost with an empty candidate list rather
+      // than returned early, so this path has the SAME response type as the
+      // boosted one - a union here would make every caller handle a row shape
+      // that depends on whether a query happened to find anything.
+      if (!db || organic.length === 0) return applyBoost(organic, []);
+      // Boost RE-RANKS the directory; it never adds a provider to it. A
+      // Contractor-boosted provider cannot surface inside a Designer-filtered
+      // search, because the organic query did not return them there.
+      const candidates = await boostCandidates({ db, entityType: 'PROVIDER', category: input?.category });
+      return applyBoost(organic, candidates);
+    }),
   vendorCategories: publicProcedure.query(async () => listDirectoryCategories()),
 
   /**
@@ -1605,10 +1622,25 @@ const marketplaceRouter = router({
           like(products.category, term),
         )!);
       }
-      return db.select().from(products)
+      const organic = await db.select().from(products)
         .where(and(...conditions))
         .orderBy(desc(products.featured), desc(products.createdAt))
         .limit(input.limit);
+
+      /**
+       * BOOST RE-RANKS THIS LIST. It does not add to it.
+       *
+       * The organic query above has already decided WHICH products match the
+       * category and search terms; boosting only changes the order of what it
+       * returned. A boosted product that does not match is simply not in
+       * `organic`, so it cannot be lifted - which is what makes "pay to appear
+       * in unrelated searches" impossible rather than merely discouraged.
+       */
+      const candidates = await boostCandidates({
+        db, entityType: 'PRODUCT',
+        category: input.category && input.category !== 'All' ? input.category : undefined,
+      });
+      return applyBoost(organic, candidates);
     }),
   /**
    * ONE VENDOR'S PUBLISHED CATALOGUE.

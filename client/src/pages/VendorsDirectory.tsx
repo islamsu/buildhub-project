@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { rfqCategoryLabel } from '@shared/rfqCategories';
-import { MasterProviderSlot, ProviderSpotlight } from '@/components/MasterPlacement';
+import { MasterProviderSlot, PlacementBadge, ProviderSpotlight } from '@/components/MasterPlacement';
 import { Search, Star, BadgeCheck, MapPin, Megaphone, Store, ChevronLeft, ChevronRight } from 'lucide-react';
 
 /**
@@ -200,9 +200,20 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
           </section>
         )}
 
+        {/* THE ORGANIC LIST, which may now contain BOOSTED rows. Boost changes
+            a provider's POSITION in this list and nothing else - it never adds
+            one - so a boosted row is an ordinary card carrying its own honest
+            label rather than a separate section. */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {vendors.map(vendor => (
-            <VendorCard key={vendor.id} vendor={vendor} lang={lang} t={t} onOpen={id => navigate(`/vendor/${id}`)} />
+            <div key={vendor.id} className="relative">
+              {vendor.boosted && vendor.label && (
+                <div className="mb-1.5" data-testid="boosted-vendor">
+                  <PlacementBadge label={vendor.label} />
+                </div>
+              )}
+              <VendorCard vendor={vendor} lang={lang} t={t} onOpen={id => navigate(`/vendor/${id}`)} />
+            </div>
           ))}
         </div>
       </main>

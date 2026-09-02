@@ -308,6 +308,150 @@ export async function masterProvider(category?: string, now?: Date): Promise<Pla
 }
 
 /**
+ * ── BOOST: better position among results that ALREADY MATCH ───────────────
+ *
+ * THE ONE RULE THAT MAKES BOOST HONEST: it RE-RANKS, it never INJECTS.
+ *
+ * Master and Spotlight put an advertiser onto a surface, so each has to prove
+ * relevance by matching a scope exactly. Boost is different in kind - it moves
+ * an entity UP a list it was already on. That difference is what this
+ * implementation is built around, and it is the reason "pay to appear in
+ * unrelated searches" is impossible here rather than merely discouraged:
+ *
+ *   A boosted entity that the organic query did not return cannot be lifted,
+ *   because there is nothing to lift. A Tiles product is absent from a Lighting
+ *   search result set, so no amount of Boost can put it there.
+ *
+ * A SECOND GUARD, for the case the intersection alone would let through. A
+ * provider legitimately listed under both Contractor and Designer appears in
+ * both result sets. If they bought Boost for Contractor, lifting them inside a
+ * Designer-filtered search would be selling a scope they did not buy. So when a
+ * category filter is active, the placement's own scope must match it.
+ *
+ * When NO filter is active the visitor is searching across everything, and the
+ * intersection is the relevance test on its own.
+ */
+
+/** At most this share of a result page may be boosted. */
+export const MAX_BOOST_SHARE = 0.34;
+
+/**
+ * Boosted results are spread, not stacked.
+ *
+ * Every third position, starting at the top. A boosted entity gets the most
+ * valuable slot on the page, and the reader still meets organic results
+ * immediately after it - which is the difference between a marketplace with
+ * advertising in it and an advertising page with a marketplace underneath.
+ */
+export const BOOST_STRIDE = 3;
+
+export type BoostAnnotated<T> = T & { boosted?: true; label?: PlacementLabel };
+
+/**
+ * Interleave boosted rows into an organic list.
+ *
+ * PURE, and deterministic: same inputs, same output, every time. Nothing here
+ * consults a clock or a random number generator. A sponsored strip that
+ * reshuffles while the reader looks at it is unusable, and a random one cannot
+ * be audited when an advertiser asks where their placement appeared.
+ *
+ * `boosted` is an ORDERED list of ids - commercial order, decided upstream. Ids
+ * absent from `organic` are silently dropped, which is the no-injection rule.
+ */
+export function applyBoost<T extends { id: number }>(
+  organic: T[],
+  boosted: { id: number; label: PlacementLabel }[],
+): BoostAnnotated<T>[] {
+  if (organic.length === 0 || boosted.length === 0) return organic;
+
+  const byId = new Map(organic.map(row => [row.id, row]));
+  const labelOf = new Map(boosted.map(b => [b.id, b.label]));
+
+  // The no-injection rule, applied: only ids the organic query returned.
+  const liftable = boosted.filter(b => byId.has(b.id)).map(b => b.id);
+  if (liftable.length === 0) return organic;
+
+  // Never more than a third of the page, and never more than the surface sells.
+  const cap = Math.min(
+    liftable.length,
+    SURFACE_CAPACITY.SEARCH_RESULTS_BOOST,
+    Math.max(1, Math.floor(organic.length * MAX_BOOST_SHARE)),
+  );
+  const lifted = liftable.slice(0, cap);
+  const liftedSet = new Set(lifted);
+
+  const rest = organic.filter(row => !liftedSet.has(row.id));
+  const out: BoostAnnotated<T>[] = [];
+  let nextLift = 0;
+  let nextRest = 0;
+
+  // Positions 0, 3, 6 ... take a boosted row while any remain; every other
+  // position takes the next organic row in its original relative order.
+  for (let position = 0; out.length < organic.length; position += 1) {
+    const wantsBoost = position % BOOST_STRIDE === 0 && nextLift < lifted.length;
+    if (wantsBoost) {
+      const row = byId.get(lifted[nextLift])!;
+      nextLift += 1;
+      out.push({ ...row, boosted: true, label: labelOf.get(row.id) });
+    } else if (nextRest < rest.length) {
+      out.push(rest[nextRest]);
+      nextRest += 1;
+    } else if (nextLift < lifted.length) {
+      // Organic exhausted before the boosted rows were placed.
+      const row = byId.get(lifted[nextLift])!;
+      nextLift += 1;
+      out.push({ ...row, boosted: true, label: labelOf.get(row.id) });
+    } else break;
+  }
+  return out;
+}
+
+/**
+ * The live BOOST placements applicable to the current view, in commercial
+ * order.
+ *
+ * `category` is the filter the visitor has applied, NOT the placement's scope:
+ * when it is set, a placement must have been bought for that scope to count.
+ * When it is absent the visitor is searching across everything, and the
+ * intersection performed by applyBoost is the relevance test.
+ */
+export async function boostCandidates(params: {
+  db: Db;
+  entityType: PlacementEntityType;
+  category?: string;
+  now?: Date;
+}): Promise<{ id: number; label: PlacementLabel }[]> {
+  const now = params.now ?? new Date();
+  const conditions = [
+    eq(vendorSponsorships.surface, 'SEARCH_RESULTS_BOOST'),
+    eq(vendorSponsorships.entityType, params.entityType),
+    livePlacementFilter(now),
+  ];
+  // The second guard: a scope the advertiser did not buy is not boosted.
+  if (params.category) conditions.push(eq(vendorSponsorships.category, params.category));
+
+  const rows = await params.db
+    .select({
+      vendorId: vendorSponsorships.vendorId,
+      productId: vendorSponsorships.productId,
+      source: vendorSponsorships.source,
+    })
+    .from(vendorSponsorships)
+    .where(and(...conditions))
+    .orderBy(asc(vendorSponsorships.priority), asc(vendorSponsorships.createdAt));
+
+  const seen = new Set<number>();
+  const out: { id: number; label: PlacementLabel }[] = [];
+  for (const row of rows as { vendorId: number | null; productId: number | null; source: string }[]) {
+    const id = params.entityType === 'PROVIDER' ? row.vendorId : row.productId;
+    if (id == null || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, label: placementLabel(row.source) });
+  }
+  return out;
+}
+
+/**
  * ── SPOTLIGHT: the premium block INSIDE a chosen type or category ─────────
  *
  * Master and Spotlight are different surfaces and must not be blurred:

@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { Search, SlidersHorizontal, Star, Package, ShoppingCart, Zap, ArrowLeft, ArrowRight, Heart, Scale, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
-import { MasterProductSlot, ProductSpotlight } from '@/components/MasterPlacement';
+import { MasterProductSlot, PlacementBadge, ProductSpotlight } from '@/components/MasterPlacement';
 
 const CATEGORY_ICONS: Record<string, string> = {
   'Materials': '🧱', 'Furniture': '🛋️', 'Lighting': '💡', 'Electrical': '⚡',
@@ -200,11 +200,21 @@ export default function Marketplace() {
                       ) : (
                         <Package className="w-16 h-16 text-muted-foreground/30" />
                       )}
-                      {product.featured && (
+                      {/* A BOOSTED row is labelled for what it is. Boost changed
+                          this product's POSITION in the organic grid and nothing
+                          else, so it stays an ordinary card - but a paid position
+                          must say so, and the label takes precedence over the
+                          catalogue's own `featured` flag, which is a different
+                          thing entirely and not a commercial arrangement. */}
+                      {product.boosted && product.label ? (
+                        <div className="absolute top-2 left-2" data-testid="boosted-product">
+                          <PlacementBadge label={product.label} />
+                        </div>
+                      ) : product.featured ? (
                         <Badge className="absolute top-2 left-2 bg-amber-500 text-white text-xs">
                           <Zap className="w-3 h-3 mr-1" /> {lang === 'ar' ? 'مميز' : 'Featured'}
                         </Badge>
-                      )}
+                      ) : null}
                       <Badge variant="secondary" className="absolute top-2 right-2 text-xs">
                         {lang === 'ar' ? (CATEGORY_AR[product.category] ?? product.category) : product.category}
                       </Badge>
