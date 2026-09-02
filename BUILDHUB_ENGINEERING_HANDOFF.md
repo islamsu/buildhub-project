@@ -6,7 +6,7 @@ REPOSITORY: islamsu/buildhub-project
 
 ACTIVE DEVELOPMENT BRANCH: codex/buildhub-final-closure
 
-LATEST VERIFIED DEVELOPMENT SHA: 95d3280c900e7212e4b6d97f84cdd0fb834a1fb1
+LATEST VERIFIED DEVELOPMENT SHA: 6431ec0a6f8c0b7343d3f741a495376bdbb2ddea
 
 WORKING TREE: CLEAN
 
@@ -75,6 +75,7 @@ Do not blur these states. A pushed commit exists in GitHub but is not necessaril
 ## RECENT COMMIT SUMMARY
 
 ```text
+6431ec0 Admin placement booking form
 95d3280 Commercial placement booking and referral featured integration
 f294dcb Commercial placement schema extension
 5c8f807 Referral effective qualification engine
@@ -99,7 +100,7 @@ a065aca Admin: vendor lookup by business identity, not database id
 
 ## LATEST RELEVANT MIGRATION
 
-The latest numbered migration file is `drizzle/0039_commercial_placement_fields.sql`.
+The latest numbered migration file is `drizzle/0040_product_placement.sql`.
 
 Migration lineage must be preserved with forward migrations only. Do not rewrite historical migrations.
 
@@ -132,6 +133,7 @@ Recent completed or regression-protected work includes:
 - Centralized referral qualification engine connected to real account-verification event with effective extra-enquiry reward grant
 - Commercial placement schema extension adding source, package, surface, and entityType to canonical vendorSponsorships
 - Canonical placement booking service with Master exclusivity, Spotlight capacity, and Referral TEMPORARY_FEATURED integration
+- Product placement model and Admin create-booking form with package/surface/scope/dates/priority
 - Initial user-facing dispute workflow
 
 ## PARTIAL / INCOMPLETE WORK
