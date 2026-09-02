@@ -1341,7 +1341,8 @@ export const referralRewards = mysqlTable('referralRewards', {
 // different column.
 export const vendorSponsorships = mysqlTable('vendorSponsorships', {
   id:       int('id').autoincrement().primaryKey(),
-  vendorId: int('vendorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  vendorId: int('vendorId').references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  productId: int('productId').references(() => products.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   /**
    * ONE CATEGORY PER ROW. A vendor sponsored in two categories has two rows,
    * which makes "who is sponsored in THIS category" a single indexed lookup
@@ -1378,6 +1379,7 @@ export const vendorSponsorships = mysqlTable('vendorSponsorships', {
   /** The directory's own query: live sponsorships in one category. */
   activeIdx:   index('vendorSponsorships_active_idx').on(table.category, table.revokedAt, table.startsAt),
   packageSurfaceIdx: index('vendorSponsorships_package_surface_idx').on(table.package, table.surface),
+  productIdx: index('vendorSponsorships_product_idx').on(table.productId),
 }));
 
 export type VendorProfile = typeof vendorProfiles.$inferSelect;

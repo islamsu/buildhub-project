@@ -1,5 +1,5 @@
 import { and, eq, gt, isNull, lte, or } from 'drizzle-orm';
-import { users, vendorSponsorships } from '../drizzle/schema';
+import { products, users, vendorSponsorships } from '../drizzle/schema';
 
 type Db = any;
 
@@ -28,9 +28,6 @@ const livePlacement = (now: Date) => and(
 );
 
 export async function bookPlacement(db: Db, booking: PlacementBooking, now: Date = new Date()): Promise<{ outcome: 'granted'; placementId: number } | { outcome: 'rejected'; reason: string }> {
-  if (booking.entityType !== 'PROVIDER') {
-    return { outcome: 'rejected', reason: 'Product placement requires the separate product placement model; provider placement is available now.' };
-  }
   if (booking.endsAt && booking.endsAt.getTime() <= booking.startsAt.getTime()) {
     return { outcome: 'rejected', reason: 'The placement end date must be after its start date.' };
   }
@@ -46,6 +43,9 @@ export async function bookPlacement(db: Db, booking: PlacementBooking, now: Date
     if (provider.onboardingStatus !== 'approved' || provider.accountStatus !== 'active') {
       return { outcome: 'rejected', reason: 'Only an approved, active provider can be placed.' };
     }
+  } else {
+    const [product] = await db.select({ id: products.id, active: products.active }).from(products).where(eq(products.id, booking.entityId)).limit(1);
+    if (!product || !product.active) return { outcome: 'rejected', reason: 'Only an active product can be placed.' };
   }
 
   if (booking.package === 'PREMIER' && booking.surface === 'MASTER_DISCOVERY') {
@@ -71,6 +71,7 @@ export async function bookPlacement(db: Db, booking: PlacementBooking, now: Date
 
   const result = await db.insert(vendorSponsorships).values({
     vendorId: booking.entityType === 'PROVIDER' ? booking.entityId : null,
+    productId: booking.entityType === 'PRODUCT' ? booking.entityId : null,
     category: booking.category,
     kind: booking.source === 'PAID_SPONSORSHIP' ? 'sponsored' : 'featured',
     source: booking.source,

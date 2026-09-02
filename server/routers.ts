@@ -4855,6 +4855,7 @@ const adminRouter = router({
     return db.select({
       id: vendorSponsorships.id,
       vendorId: vendorSponsorships.vendorId,
+      productId: vendorSponsorships.productId,
       category: vendorSponsorships.category,
       kind: vendorSponsorships.kind,
       source: vendorSponsorships.source,
@@ -4867,8 +4868,10 @@ const adminRouter = router({
       revokedAt: vendorSponsorships.revokedAt,
       createdAt: vendorSponsorships.createdAt,
       vendorName: users.name,
+      productName: products.name,
     }).from(vendorSponsorships)
       .leftJoin(users, eq(users.id, vendorSponsorships.vendorId))
+      .leftJoin(products, eq(products.id, vendorSponsorships.productId))
       .orderBy(desc(vendorSponsorships.createdAt))
       .limit(250);
   }),

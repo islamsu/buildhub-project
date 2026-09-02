@@ -64,9 +64,15 @@ export default function AdminPlacements() {
                   return (
                     <tr key={row.id} className="border-b last:border-0">
                       <td className="p-2">
-                        <Link href={`/vendor/${row.vendorId}`} className="font-medium underline-offset-2 hover:underline">
-                          {row.vendorName || `#${row.vendorId}`}
-                        </Link>
+                        {row.entityType === 'PRODUCT' ? (
+                          <Link href={`/marketplace/products/${row.productId}`} className="font-medium underline-offset-2 hover:underline">
+                            {row.productName || `#${row.productId}`}
+                          </Link>
+                        ) : (
+                          <Link href={`/vendor/${row.vendorId}`} className="font-medium underline-offset-2 hover:underline">
+                            {row.vendorName || `#${row.vendorId}`}
+                          </Link>
+                        )}
                       </td>
                       <td className="p-2 text-muted-foreground">{row.kind}</td>
                       <td className="p-2"><Badge variant="outline">{row.package || '—'}</Badge></td>

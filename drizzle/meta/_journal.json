@@ -281,6 +281,13 @@
       "when": 1788420000000,
       "tag": "0039_commercial_placement_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1788450000000,
+      "tag": "0040_product_placement",
+      "breakpoints": true
     }
   ]
 }
