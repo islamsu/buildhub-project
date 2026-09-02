@@ -40,6 +40,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import VendorProfileCard from '@/components/VendorProfileCard';
 import VendorBilling from '@/components/VendorBilling';
 import VendorCompanyProfile from '@/components/VendorCompanyProfile';
+import VendorNameChangeRequest from '@/components/VendorNameChangeRequest';
 import VendorServiceCategories from '@/components/VendorServiceCategories';
 import PortfolioManager from '@/components/PortfolioManager';
 import { Card, CardContent } from '@/components/ui/card';
@@ -124,6 +125,20 @@ export default function SettingsPage() {
                 ar={ar}
                 en="Company details apply to provider accounts — suppliers, contractors, engineers, architects and project managers."
                 arabic="بيانات الشركة تخص حسابات مقدّمي الخدمة: الموردين والمقاولين والمهندسين والمعماريين ومديري المشاريع."
+              />}
+        </Section>
+
+        <Section
+          id="settings-name-change"
+          icon={<UserRound className="h-5 w-5" />}
+          title={ar ? 'تغيير اسم الشركة' : 'Company name change'}
+        >
+          {isProvider
+            ? <Card><CardContent className="pt-6"><VendorNameChangeRequest /></CardContent></Card>
+            : <NotForThisAccount
+                ar={ar}
+                en="Name changes apply to provider accounts — suppliers, contractors, engineers, architects and project managers."
+                arabic="تغيير الاسم يخص حسابات مقدّمي الخدمة: الموردين والمقاولين والمهندسين والمعماريين ومديري المشاريع."
               />}
         </Section>
 

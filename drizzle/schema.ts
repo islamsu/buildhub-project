@@ -1216,6 +1216,30 @@ export const vendorProfiles = mysqlTable('vendorProfiles', {
   userIdUnique: uniqueIndex('vendorProfiles_userId_unique').on(table.userId),
 }));
 
+// ── Vendor name change requests (migration 0035) ───────────────────────────
+// A name change is not a silent profile write. A vendor requests a change to
+// companyName or tradingName, and an administrator reviews it. Direct admin
+// corrections use the same table with `adminCorrection = true` so the audit
+// trail has one shape rather than two.
+export const vendorNameChangeRequests = mysqlTable('vendorNameChangeRequests', {
+  id:             int('id').autoincrement().primaryKey(),
+  userId:         int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  field:          mysqlEnum('field', ['companyName', 'tradingName']).notNull(),
+  currentValue:   varchar('currentValue', { length: 191 }),
+  requestedValue: varchar('requestedValue', { length: 191 }).notNull(),
+  reason:         varchar('reason', { length: 1000 }),
+  status:         mysqlEnum('status', ['pending', 'under_review', 'needs_information', 'approved', 'rejected']).default('pending').notNull(),
+  reviewerId:     int('reviewerId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  reviewerNote:   text('reviewerNote'),
+  reviewedAt:     timestamp('reviewedAt'),
+  adminCorrection: boolean('adminCorrection').default(false).notNull(),
+  createdAt:      timestamp('createdAt').defaultNow().notNull(),
+  updatedAt:      timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  userIdIdx: index('vendorNameChangeRequests_userId_idx').on(table.userId),
+  statusIdx: index('vendorNameChangeRequests_status_idx').on(table.status),
+}));
+
 // ── Sponsored placement in the vendors directory (migration 0028) ───────────
 //
 // A REAL RECORD, because the alternative is fabricating one. The brief asks

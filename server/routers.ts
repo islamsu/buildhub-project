@@ -46,7 +46,7 @@ import {
   commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems, qualifiedEnquiries,
-  projectMembers, rfqSuppliers, portfolioItems, vendorProfiles,
+  projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests,
 } from '../drizzle/schema';
 import { and, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -4090,6 +4090,60 @@ const profileRouter = router({
       return { success: true as const, changed: true };
     }),
 
+  myVendorNameChanges: approvedProviderProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(vendorNameChangeRequests)
+      .where(eq(vendorNameChangeRequests.userId, ctx.user.id))
+      .orderBy(desc(vendorNameChangeRequests.createdAt))
+      .limit(50);
+  }),
+
+  requestVendorNameChange: approvedProviderProcedure
+    .input(z.object({
+      field: z.enum(['companyName', 'tradingName']),
+      requestedValue: z.string().trim().min(1).max(191),
+      reason: z.string().trim().max(1000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const openStatuses = ['pending', 'under_review', 'needs_information'] as const;
+      const [openRequest] = await db.select({ id: vendorNameChangeRequests.id })
+        .from(vendorNameChangeRequests)
+        .where(and(
+          eq(vendorNameChangeRequests.userId, ctx.user.id),
+          eq(vendorNameChangeRequests.field, input.field),
+          inArray(vendorNameChangeRequests.status, openStatuses),
+        ))
+        .limit(1);
+      if (openRequest) throw new TRPCError({ code: 'CONFLICT', message: 'An open name-change request already exists for this field' });
+
+      const [profile] = await db.select({
+        companyName: vendorProfiles.companyName,
+        tradingName: vendorProfiles.tradingName,
+      }).from(vendorProfiles).where(eq(vendorProfiles.userId, ctx.user.id)).limit(1);
+      const currentValue = profile ? (profile as any)[input.field] ?? null : null;
+
+      const result = await db.insert(vendorNameChangeRequests).values({
+        userId: ctx.user.id,
+        field: input.field,
+        currentValue,
+        requestedValue: input.requestedValue,
+        reason: input.reason ?? null,
+        status: 'pending',
+        adminCorrection: false,
+      });
+      await db.insert(userAccountAuditEvents).values({
+        userId: ctx.user.id,
+        actorId: ctx.user.id,
+        action: 'vendor_name_change_requested',
+        source: 'vendor_name_change',
+        note: `${input.field}: ${currentValue ?? '—'} -> ${input.requestedValue}`,
+      });
+      return { success: true, requestId: Number(result[0]?.insertId ?? 0) };
+    }),
+
   // ── Vendor service categories (Phase 4B.3) ──────────────────────────────
   // A vendor declares which of the nine shared RFQ categories describe their
   // work. This is what makes RFQ targeting possible without BuildHub guessing
@@ -5078,6 +5132,146 @@ const adminRouter = router({
       },
     };
   }),
+
+  vendorNameChanges: adminWith('marketplace.manage').query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.select({
+      id: vendorNameChangeRequests.id,
+      userId: vendorNameChangeRequests.userId,
+      field: vendorNameChangeRequests.field,
+      currentValue: vendorNameChangeRequests.currentValue,
+      requestedValue: vendorNameChangeRequests.requestedValue,
+      reason: vendorNameChangeRequests.reason,
+      status: vendorNameChangeRequests.status,
+      reviewerId: vendorNameChangeRequests.reviewerId,
+      reviewerNote: vendorNameChangeRequests.reviewerNote,
+      reviewedAt: vendorNameChangeRequests.reviewedAt,
+      adminCorrection: vendorNameChangeRequests.adminCorrection,
+      createdAt: vendorNameChangeRequests.createdAt,
+      userName: users.name,
+      userEmail: users.email,
+      companyName: vendorProfiles.companyName,
+      tradingName: vendorProfiles.tradingName,
+    }).from(vendorNameChangeRequests)
+      .innerJoin(users, eq(users.id, vendorNameChangeRequests.userId))
+      .leftJoin(vendorProfiles, eq(vendorProfiles.userId, vendorNameChangeRequests.userId))
+      .orderBy(desc(vendorNameChangeRequests.createdAt))
+      .limit(250);
+    return rows;
+  }),
+
+  reviewVendorNameChange: adminWith('marketplace.manage')
+    .input(z.object({
+      requestId: z.number().int().positive(),
+      status: z.enum(['under_review', 'needs_information', 'approved', 'rejected']),
+      reviewerNote: z.string().max(1000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [request] = await db.select().from(vendorNameChangeRequests).where(eq(vendorNameChangeRequests.id, input.requestId));
+      if (!request) throw new TRPCError({ code: 'NOT_FOUND', message: 'Name change request not found' });
+      if (['approved', 'rejected'].includes(request.status)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This request has already been decided' });
+      }
+
+      if (input.status === 'approved') {
+        const patch = request.field === 'companyName'
+          ? { companyName: request.requestedValue }
+          : { tradingName: request.requestedValue };
+        const [profile] = await db.select({ id: vendorProfiles.id })
+          .from(vendorProfiles).where(eq(vendorProfiles.userId, request.userId)).limit(1);
+        if (profile) {
+          await db.update(vendorProfiles).set(patch).where(eq(vendorProfiles.userId, request.userId));
+        } else {
+          await db.insert(vendorProfiles).values({ userId: request.userId, ...patch });
+        }
+      }
+
+      await db.update(vendorNameChangeRequests).set({
+        status: input.status,
+        reviewerId: ctx.user.id,
+        reviewerNote: input.reviewerNote ?? null,
+        reviewedAt: new Date(),
+      }).where(eq(vendorNameChangeRequests.id, input.requestId));
+      await db.insert(userAccountAuditEvents).values({
+        userId: request.userId,
+        actorId: ctx.user.id,
+        action: `vendor_name_change_${input.status}`,
+        source: 'vendor_name_change',
+        note: `${request.field}: ${request.currentValue ?? '—'} -> ${request.requestedValue}${input.reviewerNote ? ` (${input.reviewerNote})` : ''}`,
+      });
+      await notifyUser(db, {
+        userId: request.userId,
+        title: input.status === 'approved' ? 'Vendor name change approved' : 'Vendor name change update',
+        body: input.reviewerNote || `Your name change request is now ${input.status.replaceAll('_', ' ')}`,
+        type: 'admin',
+        link: '/settings',
+      });
+      return { success: true, status: input.status };
+    }),
+
+  directVendorNameCorrection: adminWith('marketplace.manage')
+    .input(z.object({
+      userId: z.number().int().positive(),
+      field: z.enum(['companyName', 'tradingName']),
+      requestedValue: z.string().trim().min(1).max(191),
+      reason: z.string().trim().min(1).max(1000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [target] = await db.select({ id: users.id, userRole: users.userRole })
+        .from(users).where(eq(users.id, input.userId)).limit(1);
+      if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor not found' });
+      if (!providerRoles.includes(target.userRole as typeof providerRoles[number])) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only provider accounts have vendor names' });
+      }
+
+      const [profile] = await db.select({
+        id: vendorProfiles.id,
+        companyName: vendorProfiles.companyName,
+        tradingName: vendorProfiles.tradingName,
+      }).from(vendorProfiles).where(eq(vendorProfiles.userId, input.userId)).limit(1);
+      const currentValue = profile ? (profile as any)[input.field] ?? null : null;
+      const patch = input.field === 'companyName'
+        ? { companyName: input.requestedValue }
+        : { tradingName: input.requestedValue };
+      if (profile) {
+        await db.update(vendorProfiles).set(patch).where(eq(vendorProfiles.userId, input.userId));
+      } else {
+        await db.insert(vendorProfiles).values({ userId: input.userId, ...patch });
+      }
+
+      const result = await db.insert(vendorNameChangeRequests).values({
+        userId: input.userId,
+        field: input.field,
+        currentValue,
+        requestedValue: input.requestedValue,
+        reason: input.reason,
+        status: 'approved',
+        reviewerId: ctx.user.id,
+        reviewerNote: input.reason,
+        reviewedAt: new Date(),
+        adminCorrection: true,
+      });
+      await db.insert(userAccountAuditEvents).values({
+        userId: input.userId,
+        actorId: ctx.user.id,
+        action: 'vendor_name_direct_correction',
+        source: 'vendor_name_change',
+        note: `${input.field}: ${currentValue ?? '—'} -> ${input.requestedValue} (${input.reason})`,
+      });
+      await notifyUser(db, {
+        userId: input.userId,
+        title: 'Vendor name corrected',
+        body: `Your ${input.field === 'companyName' ? 'company name' : 'trading name'} was corrected by an administrator.`,
+        type: 'admin',
+        link: '/settings',
+      });
+      return { success: true, requestId: Number(result[0]?.insertId ?? 0) };
+    }),
 
   /**
    * WHAT IS WRONG WITH THE DATA (Part 49).

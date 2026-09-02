@@ -366,6 +366,7 @@
 - [x] Promotion management for Featured and Sponsored supports search, status filters, sorting, and pagination
 - [x] Platform search links users to Admin User Detail and projects to Admin Project Detail
 - [x] RFQ investigation humanizes raw onboarding/account/bid/request statuses
+- [x] Vendor Name Change Request and Admin Direct Name Correction with audit, notifications, and security tests
 - [ ] System-wide entity-link/dead-control/raw-ID/raw-enum audit across remaining admin modules
 - [x] Resolve count semantics and make Platform Healthy / Live labels reflect verified runtime state
 - [ ] Vendor/business name clickable to Vendor Management across all remaining admin tables
