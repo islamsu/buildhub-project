@@ -6,7 +6,9 @@ REPOSITORY: islamsu/buildhub-project
 
 ACTIVE DEVELOPMENT BRANCH: codex/buildhub-final-closure
 
-LATEST VERIFIED DEVELOPMENT SHA: 0974e1110b04678191a65d51ba9115c580cb5b33
+LATEST CODE-BEARING SHA: 0974e1110b04678191a65d51ba9115c580cb5b33
+
+CURRENT REPOSITORY HEAD: VERIFY FROM FRESH REMOTE AT TAKEOVER
 
 WORKING TREE: CLEAN
 
@@ -14,7 +16,13 @@ MAIN MERGED: NO
 
 PRODUCTION DEPLOYED: NO
 
-STAGING DEPLOYED SHA: NOT VERIFIED
+STAGING URL: https://buildhub-staging.onrender.com
+
+LAST OBSERVED STAGING APP SHA: b9e94f61bb7d4c3d5234192435b2e16a70ed8e1a
+
+STAGING STATUS: BEHIND CURRENT DEVELOPMENT CODE
+
+RENDERED / INTERACTIVE QA: PENDING
 
 PAYMENT GATEWAY: DEFERRED BY OWNER
 
@@ -63,10 +71,13 @@ IMPLEMENT -> TARGETED TEST -> TYPECHECK -> REVIEW DIFF -> COMMIT -> PUSH -> FRES
 ## STAGING / DEPLOYMENT STATE
 
 - Development branch: `codex/buildhub-final-closure`
-- Latest committed and pushed development SHA: `ceb216920c055b5881c3c1344b7e4245387034e6`
-- Staging service / URL: NOT VERIFIED
-- Staging branch: NOT VERIFIED
-- Staging deployed SHA: NOT VERIFIED
+- Latest code-bearing SHA: `0974e1110b04678191a65d51ba9115c580cb5b33`
+- Current repository HEAD: verify with `git fetch` and `git rev-parse origin/codex/buildhub-final-closure`
+- Staging service: `buildhub-staging`
+- Staging URL: `https://buildhub-staging.onrender.com`
+- Last observed staging app SHA: `b9e94f61bb7d4c3d5234192435b2e16a70ed8e1a`
+- Staging match status: BEHIND current development code
+- Rendered/interactive QA: PENDING
 - Production branch: NOT MODIFIED
 - Production deployed SHA: NOT VERIFIED
 
@@ -162,6 +173,36 @@ Repository-controlled work that remains to finish:
 - Staging/infrastructure validation
 
 Use actual repository state, not assumptions, when continuing.
+
+## COMMERCIAL PLACEMENT EXACT REMAINING
+
+- Public Provider Master rendering
+- Public Product Master rendering
+- Public Provider Spotlight rendering
+- Public Product Spotlight rendering
+- Public Search Boost rendering
+- Sponsored / Featured source-based labels
+- public eligibility/relevance filtering
+- automatic expiry behavior on rendered placements
+- placement analytics foundation
+- Referral TEMPORARY_FEATURED rendering/expiry/reversal end-to-end
+- rendered/browser staging acceptance
+
+## REFERRAL EXACT REMAINING
+
+- PROVIDER_APPROVED qualification
+- PROFILE_COMPLETED qualification
+- FIRST_VALID_RFQ qualification
+- FIRST_VALID_QUOTATION_RESPONSE qualification
+- TEMPORARY_FEATURED through canonical placement engine
+- additional anti-abuse
+- attribution immutability
+- automatic expiry
+- safe effective reversal
+- notification lifecycle completeness
+- complete campaign/reward Admin UI
+- complete user reward/history UI
+- integration/concurrency tests
 
 ## OWNER-APPROVED PRODUCT RULES — DO NOT REOPEN WITHOUT REAL CONFLICT
 
@@ -340,9 +381,9 @@ Statuses should use DONE, IN PROGRESS, PARTIAL, OWNER DECISION, INFRASTRUCTURE B
 
 ## NEXT EXACT DEVELOPMENT ITEM
 
-NEXT EXACT ITEM: Implement the Referral / Invitation Reward system.
+NEXT EXACT ITEM: Finish public commercial placement rendering and labels.
 
-Before moving deeper into Referrals, ensure the remaining Admin entity-link/raw-ID/actionability gaps are closed or explicitly tracked.
+Begin with Provider `MASTER_DISCOVERY` and Product `MASTER_DISCOVERY` using the already-tested booking/capacity engine. Then complete Provider/Product Spotlight, Search Boost, source-based Sponsored/Featured labels, eligibility/relevance, automatic expiry, and analytics foundation. After that, finish Referral TEMPORARY_FEATURED and the remaining Referral gaps. Then move to the Complete Dispute lifecycle.
 
 ## PROMPT TO GIVE CLAUDE WHEN RESUMING
 
