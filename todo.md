@@ -399,3 +399,27 @@
 - [ ] `projects.spent` vs live expense-log sum — retain as OWNER DECISION unless resolved
 - [ ] Admin impersonation: classify SECURITY ARCHITECTURE REQUIRED unless a safe time-limited, audited, banner-protected mechanism exists
 - [ ] Payment gateway remains OWNER-DEFERRED; no live payments, orders, transactions, revenue, GMV, commissions, or cash rewards
+- [ ] Quotation revision model: ONE current quotation per supplier per RFQ + immutable controlled revision history + version/actor/time/change audit + privacy
+- [ ] Complete quotation workflow: detail, statuses, comparison, validity, timeline, warranty, payment/commercial terms, attachments, accept/reject, revision, expiry, notifications
+- [ ] Project Members: view/invite/add/capability/role-change/remove with removal access revocation and unrelated-denial
+- [ ] Project Documents: upload/list/open/download/replace/archive/remove with authorization and no cross-project leakage
+- [ ] Homeowner self-service second pass: profile, projects, members, documents, RFQ basket, RFQs, attachments, invitations, quotations, comparison, accept/reject, messages, notifications, settings
+- [ ] Project Manager self-service second pass: authorized creation/management, members, documents, RFQs, invitations, commercial authority by capability, messages, notifications, settings
+- [ ] Contractor/Engineer/Architect/Designer/other-provider self-service parity with shared provider architecture
+- [ ] Enquiries work queue: dedicated page, search/filter/status/date/category/source/RFQ reference/response state, open/respond, pagination
+- [ ] Compliance self-service and Admin queue completeness, provider never self-verifies
+- [ ] Messaging reconciliation: conversation list, thread, send/reply, unread, timestamps, attachments, Project/RFQ context, pagination, participant authorization
+- [ ] Messaging prior-relationship policy — retain OWNER DECISION unless later resolved
+- [ ] Notification centre completeness and role-specific scoping; notification preferences remain noncritical-only
+- [ ] Promotion management accuracy/regression for Featured and Sponsored prime placement and lifecycle
+- [ ] Marketplace discovery reconciliation across Home, Products, Vendors, Designers, Finishing, and provider directories
+- [ ] Admin global search opens entity management for Users, Vendors, Products, Projects, RFQs, Quotations, Disputes
+- [ ] Upload master pass for all applicable upload families with validation, storage, parent relationship, retrieval, replace/delete, authorization, IDOR protection
+- [ ] Onboarding reconciliation for providers and homeowners without unnecessary blocking
+- [ ] Role-specific Quick Actions accuracy
+- [ ] AI accuracy/security and knowledge-source completeness; distinguish engine capability from source completeness
+- [ ] Public marketplace SEO where framework supports it without exposing private data
+- [ ] Performance review: unbounded queries, N+1, pagination, indexes, payloads, debounce, Featured query efficiency
+- [ ] Reliability review: double-submit, idempotency, race-sensitive flows, state transitions, retry/timeouts
+- [ ] Historical owner decisions: project.spent vs expense log, renovation/finishing preset, mandatory product fields, provider comparison surface, RFQ budget exposure, messaging relationship policy, supplier answer edit/moderation policy
+- [ ] Accessibility/mobile/RTL evidence separated into responsive implementation vs VISUAL QA
