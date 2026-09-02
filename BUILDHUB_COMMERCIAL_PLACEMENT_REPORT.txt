@@ -1,0 +1,501 @@
+================================================================================
+BUILDHUB — COMMERCIAL PLACEMENT ENGINE
+Report 2: Spotlight, Boost and Analytics (CP-3, CP-4, CP-5)
+================================================================================
+
+Continues BUILDHUB_CLAUDE_TAKEOVER_REPORT.txt, which covered the takeover from
+DeepSeek through Master Discovery. This report covers only what was done AFTER
+that report.
+
+REPOSITORY          islamsu/buildhub-project
+BRANCH              codex/buildhub-final-closure
+HEAD AT LAST REPORT b726a685fa722996b76691a534146144f80abfc8
+HEAD NOW            28e98109bd949ad48e920512f2a70b898f633dbc
+LOCAL == REMOTE     YES (fresh fetch after every push)
+WORKING TREE        CLEAN
+MAIN MERGED         NO
+PRODUCTION          NOT TOUCHED
+STAGING             b9e94f6 — still behind; not deployed this session
+LATEST MIGRATION    drizzle/0040_product_placement.sql (unchanged — no schema
+                    change was needed for any of this work)
+DATE                2 September 2026
+
+COMMITS ADDED (3)
+  87a3a43  CP-3: Spotlight, and the scope dimension the owner defined
+  2bb6c63  CP-4: Boost re-ranks results; it never injects
+  28e9810  CP-5: commercial analytics an advertiser could be shown
+
+CHANGE VOLUME       22 files, +2,233 / -160
+TEST SUITE          3,111 passing / 0 failing   (was 3,066 at the last report)
+TYPECHECK           tsc --noEmit clean
+BUILD               dist/index.js 860.9kb
+CENSUS              Server procedures 210 -> 214
+
+
+================================================================================
+1. THE OWNER DECISION, LOCKED INTO THE CODE
+================================================================================
+
+GLOBAL was approved with a definition. That definition is now enforced by the
+type system rather than living in a document.
+
+WHAT GLOBAL MEANS
+  ROOT / TAXONOMY-WIDE DISCOVERY WITHIN THE APPLICABLE GEOGRAPHIC MARKET.
+
+WHAT IT DOES NOT MEAN
+  One worldwide BuildHub placement across every country, forever. The name is
+  the only thing about it that sounds global, and that is now said explicitly
+  at the top of shared/placement.ts.
+
+THE FOUR DIMENSIONS
+  GEOGRAPHIC SCOPE · TAXONOMY SCOPE · SURFACE · TIME
+  GLOBAL is a value of the TAXONOMY dimension only.
+
+HOW THE GEOGRAPHIC DIMENSION IS CARRIED WITHOUT BEING BUILT
+
+No market column was invented. BuildHub sells one market today, and adding a
+column for a business that does not exist yet would be building a feature out
+of a comment.
+
+Instead the dimension is carried STRUCTURALLY. Every scope-matched query now
+goes through one typed value:
+
+    export type PlacementScope = {
+      taxonomy: string;
+      market?: undefined;   // declared, deliberately unused - see below
+    };
+
+`market` is declared and always undefined. The day a second market opens, it
+becomes part of THIS type, and the compiler points at every site that has to
+account for it. A bare `category: string` would let that day arrive silently,
+with a Saudi Master and an Egyptian Master quietly contesting one exclusive
+slot - which is precisely the failure the owner's definition rules out.
+
+This was a real refactor, not a comment: livePlacementRows, placedProviders and
+placedProducts all changed signature, and the test suite caught the change at
+runtime (see section 6 for why tsc did not).
+
+
+================================================================================
+2. CP-3 — SPOTLIGHT (Provider and Product)
+================================================================================
+
+MASTER AND SPOTLIGHT ARE KEPT STRICTLY APART
+
+  MASTER      root discovery, before a type or category is chosen. ONE slot.
+  SPOTLIGHT   after a type or category is chosen. Up to THREE.
+  BOOST       among relevant search and results listings.
+
+Blurring them is a commercial error, not a cosmetic one. `spotlightProviders`
+and `spotlightProducts` REFUSE a root-scope request rather than falling back to
+the Master inventory: answering it from there would sell one advertiser's
+exclusive slot as three. A Spotlight request with no category returns nothing.
+
+CAPACITY IS DEFENDED AT RENDER TIME, not only at booking time
+
+The booking engine already refuses to oversell. The resolver does not trust
+that: four live bookings in one scope render three, in booking order, and if
+the first becomes ineligible the fourth takes the slot. Oversold inventory
+truncates rather than overflows - fail-closed, in the buyer's favour.
+
+SCOPE IS MATCHED EXACTLY
+
+A Tiles placement cannot appear under Lighting. A Designer-only placement
+cannot appear under Contractors. This is enforced in the WHERE clause, not
+filtered afterwards.
+
+UI
+
+Spotlight sits between the category heading and the organic results: prime
+position, capped at three, single column on narrow screens so the organic list
+stays one short scroll away rather than behind an advertising wall. It
+collapses entirely when nothing is booked - no empty premium heading, and no
+invented cards.
+
+ONE CARD COMPONENT, NOT TWO
+
+The provider card is now shared by the Master slot and the Spotlight block.
+Two card components is how a field ends up on the smaller surface that the
+larger one withholds - or how a fabricated field appears where nobody is
+looking. The comment claiming this was written first; the refactor that made it
+true followed immediately.
+
+
+================================================================================
+3. CP-4 — BOOST
+================================================================================
+
+THE RULE THAT MAKES "PAY TO APPEAR IN UNRELATED SEARCHES" IMPOSSIBLE
+
+Master and Spotlight PUT an advertiser onto a surface, so each proves relevance
+by matching a scope exactly. Boost is different in kind: it moves an entity UP
+a list it was already on. The implementation is built around that difference.
+
+  A boosted entity the organic query did not return cannot be lifted, because
+  there is nothing to lift.
+
+Both listings now run their organic query FIRST and hand the result to
+applyBoost, which drops every id the query did not return. A Tiles product is
+absent from a Lighting result set, so no amount of Boost can put it there. That
+is a structural guarantee, not a policy someone has to remember.
+
+THE SECOND GUARD
+
+A provider legitimately listed under both Contractor and Designer appears in
+both result sets. If they bought Boost for Contractor, lifting them inside a
+Designer-filtered search would sell a scope they did not buy. So when a
+category filter is active, the placement's own scope must match it. With no
+filter active the visitor is searching everything, and the intersection is the
+relevance test on its own.
+
+THE MARKETPLACE STAYS USEFUL
+
+  SHARE CAP     at most a THIRD of a page is boosted. Nine boosted rows in a
+                nine-row page yield three lifted, not nine. A three-row page
+                yields one.
+  SPREAD        boosted rows occupy every third position from the top, so the
+                reader meets an organic result immediately after the first
+                sponsored one. All-boosted-first is an advertising page with a
+                marketplace underneath it.
+  DETERMINISTIC applyBoost is a PURE function - no clock, no Math.random. A
+                strip that reshuffles while the reader looks at it is unusable,
+                and a random one cannot be audited when an advertiser asks
+                where their placement appeared.
+  LOSSLESS      re-ranking adds nothing and loses nothing.
+
+LABELS
+
+A boosted row is an ordinary card carrying its own honest label, not a separate
+section - because Boost changed its position and nothing else. On products the
+placement label takes precedence over the catalogue's `featured` flag, which is
+a different thing entirely and not a commercial arrangement.
+
+
+================================================================================
+4. CP-5 — PLACEMENT ANALYTICS
+================================================================================
+
+FOUR REAL OBSERVATIONS, AND DELIBERATELY NOT A FIFTH
+
+  PLACEMENT_IMPRESSION
+  PLACEMENT_ENTITY_VIEW
+  PLACEMENT_CTA_CLICK
+  PLACEMENT_QUALIFIED_ENQUIRY
+
+There is no SALE, ORDER, REVENUE, GMV or COMMISSION event anywhere in this
+change. BuildHub observes none of them while payments are deferred, and an
+event type is an invitation to populate it. A test asserts that no such field
+appears on a performance row.
+
+The existing analytics framework was reused rather than duplicated - same
+recordEvent, same metadata sanitisation, same never-break-the-product rule.
+
+WHAT AN IMPRESSION IS
+
+An API call is NOT an impression. The server answering masterProvider says only
+that a page asked the question; it may have been a prefetch, a bot, a
+background tab, or React Query refetching on window focus. So the rule is
+written down in shared/placementAnalytics.ts and implemented against it:
+
+  Half visible, for one continuous second, at most once per placement per page
+  view.
+
+  RENDERED        a fetched-but-undrawn placement was not seen.
+  HALF VISIBLE    a sliver at the edge of the viewport was not seen. 50% is the
+                  threshold most ad standards settle on; a published convention
+                  beats a private one.
+  ONE SECOND      a placement scrolled past at speed was not seen.
+  ONCE PER VIEW   the defence against rerender inflation. React re-renders for
+                  reasons unrelated to the reader - a parent state change, a
+                  refetch, a language toggle - and each would otherwise be
+                  another billable "view".
+
+It cannot prove a human looked; nothing available to a web page can. It is a
+conservative, documented, checkable approximation, written down so that what
+BuildHub sells is a DEFINED thing rather than a number of unexplained origin.
+
+Where IntersectionObserver is unavailable the client falls back to
+mounted-and-painted after the same dwell - more conservative in every respect
+except viewport position, and stated rather than hidden.
+
+WHAT A BROWSER MAY AND MAY NOT ASSERT
+
+This is the one analytics surface an untrusted party can write to, because most
+marketplace browsing is anonymous and an advertiser's impressions must not be
+limited to signed-in readers. It is narrowed accordingly:
+
+  - the event type is a CLOSED enum, and QUALIFIED_ENQUIRY IS NOT IN IT. A
+    visitor who can post their own conversions can manufacture an advertiser's
+    performance report. Attribution is written SERVER-SIDE from the enquiry
+    record, at the moment the real relationship comes into existence.
+  - the placement must EXIST and be LIVE, so a fabricated id records nothing
+    and an expired campaign stops accruing.
+  - the surface and entity are read from the placement ROW, never from the
+    request, so a reporter cannot attribute their event to another booking.
+  - nothing personal is stored: no address, no agent, no fingerprint. A test
+    asserts the metadata keys are exactly surface, entityType, entityId.
+  - it is rate limited by IP, since there is no account to key on - and
+    generously, because throttling honest reporting would UNDERSTATE what an
+    advertiser received, which is its own kind of dishonesty.
+
+HONEST LIMITATION, RECORDED IN THE MODULE RATHER THAN OMITTED
+
+What remains possible for a determined party is inflating the counts of a
+placement that genuinely exists. That is the same exposure any web analytics
+has, it is bounded by the checks above, and it is written into
+server/placementAnalytics.ts as a known limit rather than described as
+prevented.
+
+RATES ARE NULL, NOT ZERO
+
+A placement nobody has seen reports zeros and NULL rates, rendered as a dash.
+"0% clicked" asserts that people saw it and chose not to act; with no
+impressions the truth is that there is nothing to compute yet. Those are
+different facts for anyone deciding whether a campaign is working.
+
+THE FORMULAS ARE PRINTED ON THE SCREEN
+
+  CTR             CTA actions ÷ impressions
+  View rate       entity views ÷ impressions
+  Conversion      attributed qualified enquiries ÷ entity views
+
+Held as data in shared/placementAnalytics.ts so the Admin screen and the tests
+read the SAME definition. A rate computed one way in a report and another way
+in a test is how two people end up arguing about a number that means nothing.
+
+ADMIN SURFACE
+
+client/src/components/PlacementPerformance.tsx, mounted beside the bookings it
+measures so an administrator need not hold a placement id in their head. Names
+the business, not the row id. Zero placements renders a real empty state, not a
+demonstration table with plausible numbers in it.
+
+
+================================================================================
+5. VERIFICATION
+================================================================================
+
+5.1 UNIT TESTS
+  server/publicPlacement.test.ts       47 tests  (22 -> 47)
+  server/placementAnalytics.test.ts    19 tests  (new)
+  server/migrationSyntax.test.ts        3 tests  (unchanged, from report 1)
+
+Placement tests assert the COMPILED WHERE CLAUSE, not the rows a fake returns.
+applyBoost is a pure function, so its rules are asserted directly.
+
+5.2 MUTATION TESTING — 12 mutations this report, 12 killed
+
+  SPOTLIGHT
+   S1  root-scope Spotlight falls back to Master inventory      KILLED
+   S2  Spotlight served from the MASTER surface                 KILLED (3)
+   S3  Spotlight capacity raised to unlimited                   KILLED (2)
+
+  BOOST
+   B1  injection allowed (ids not in the organic set added)     KILLED
+   B2  share cap removed (whole page can be advertising)        KILLED (2)
+   B3  boosted stacked at the top instead of spread             KILLED
+   B4  scope guard dropped                                      KILLED
+   B5  ordering made random                                     KILLED (2)
+
+  ANALYTICS
+   A1  QUALIFIED_ENQUIRY made client-reportable                 KILLED
+   A2  live-placement check dropped                             KILLED
+   A3  zero denominator reports 0% instead of null              KILLED (2)
+   A4  surface/entity taken from request instead of the row     KILLED
+
+Every mutation was reverted and the source verified clean afterwards.
+
+5.3 LIVE VERIFICATION — evidence/zg-masterplacement.mjs
+
+  30 checks at the last report  ->  68 checks now.
+  Run TWICE, 68/68 both times, leaving zero residue in the database.
+
+  evidence/zg-masterplacement-run1.txt
+  evidence/zg-masterplacement-run2.txt
+
+Real MariaDB 10.11 and a real running HTTP server. Selected checks:
+
+  SPOTLIGHT
+    four live bookings render at most THREE, in booking priority order
+    a Lighting Spotlight does NOT leak into Tiles
+    a root-scope Spotlight request is NOT answered from Master inventory
+    the Lighting MASTER is the Master booking, not a Spotlight one
+    suspended / revoked / expired / scheduled all drop out correctly
+    a suspended provider drops out and the FOURTH takes the slot
+    each card labelled from its OWN source
+    a PRODUCT Spotlight booking never appears in the PROVIDER block
+
+  BOOST
+    a live, paid, correctly-booked TILES placement in the Lighting scope does
+      NOT appear in Lighting results
+    ...while the Tiles product remains visible under Tiles - Boost took nothing
+      away from it
+    a boosted Lighting product IS lifted to the top of Lighting
+    no row added or lost by re-ranking (compared against the database count)
+    at most a third of the page boosted
+    the same request returns the same order
+    a revoked boost stops lifting, and the product stays in the results
+
+  ANALYTICS
+    an anonymous browser can report an impression
+    the event reaches the DATABASE, not just a 200 response
+    metadata carries the surface from the ROW and nothing personal
+    a browser CANNOT report a qualified enquiry
+    an invented event type is refused
+    a non-existent placement id records nothing, and writes no row
+    expired and revoked placements stop accruing
+    the performance report is NOT public (401)
+
+5.4 FULL GATE
+  npx vitest run     3,111 passed / 0 failed
+  npx tsc --noEmit   clean
+  npm run build      dist/index.js 860.9kb
+
+
+================================================================================
+6. THINGS THAT WENT WRONG, AND WERE FIXED BEFORE ANY RESULT WAS REPORTED
+================================================================================
+
+SIX PROBE / INSTRUMENT DEFECTS. None of these were platform defects; all were
+faults in my own measuring equipment, and each was fixed rather than worked
+around.
+
+1. book() read LAST_INSERT_ID() on a SECOND mysql connection. That value is
+   per-connection, so it returned 0 and every placement id became NaN. The
+   insert and the read now share one statement.
+
+2. Multi-line `-e` queries make the MariaDB client emit a "PAGER set to stdout"
+   banner ahead of the result, which silently turned every Number(sql(...))
+   into NaN. Queries are now collapsed to one line and the banner is stripped.
+
+3. The row-integrity check hardcoded 6 Lighting products when an earlier
+   Spotlight fixture had already created a seventh. It now compares against
+   what the database actually holds.
+
+4. The impression observer's ref sat on <Card>. Card forwards its props onto a
+   div, so a ref would PROBABLY reach it - but "probably", resting on a React
+   version detail, is not a sound foundation for a number an advertiser is
+   billed against. It now sits on an explicit wrapper element.
+
+5. An orphaned server process was still holding port 5401 and answering with
+   OLD code, briefly making a working endpoint look missing.
+
+6. (From report 1, repeated here because it recurred) a crashed probe run left
+   rows behind; the probe purges its own namespace before asserting an empty
+   state.
+
+A GUARD OBJECTED, AND WAS RIGHT TO
+
+server/dataIsolationMatrix.test.ts flagged marketplace.recordPlacementEvent for
+taking an id without constraining by ctx.user.id. The rule is correct in
+general. An advertisement, however, has no owner among its viewers - it is
+shown to everyone, most of them anonymous - so owner-scoping it would limit an
+advertiser's impressions to signed-in readers.
+
+It is therefore a NAMED exemption with the reasoning recorded in the test file,
+not a silenced rule. The entry states what IS constrained (the placement must
+exist and be live), that the endpoint reads nothing back, and that the event
+worth forging is absent from the client enum entirely.
+
+A LIMITATION OF THE TYPECHECK, WORTH KNOWING
+
+tsconfig excludes `**/*.test.ts`. A clean `tsc --noEmit` therefore does NOT
+typecheck test files. When livePlacementRows changed signature, tsc stayed
+green and the test RUNTIME caught it. This is recorded so nobody reads "tsc
+clean" as broader than it is.
+
+
+================================================================================
+7. COMMERCIAL PLACEMENT — STATUS AGAINST THE DONE GATE
+================================================================================
+
+  Master Provider                          DONE
+  Master Product                           DONE
+  Provider Spotlight                       DONE
+  Product Spotlight                        DONE
+  Search Boost                             DONE
+  Sponsored / Featured labels              DONE  (EN + AR, text + distinct
+                                                 icon, never colour alone)
+  Public eligibility                       DONE
+  Relevance                                DONE
+  Time behaviour                           DONE
+  Capacity defence                         DONE
+  Admin booking                            PRE-EXISTING, untouched
+  Analytics foundation                     DONE
+  Tests                                    DONE
+  ------------------------------------------------------------------
+  RENDERED / INTERACTIVE BROWSER QA        PENDING
+
+
+================================================================================
+8. WHAT WAS NOT DONE
+================================================================================
+
+NOT VERIFIED — RENDERED QA STILL PENDING
+  Every placement surface is verified at API and database level, twice, against
+  a real server. NONE of it has been driven in a real browser at 375 / 768 /
+  1440 in English and Arabic/RTL. Specifically unverified: Master prime
+  position, Spotlight prime category position, Boost interleaving as SEEN,
+  label legibility, organic reachability on a narrow screen, and the empty
+  states. The impression rule in particular depends on IntersectionObserver
+  behaviour that only a real browser exercises.
+
+NOT DEPLOYED
+  Staging still runs b9e94f6. Nothing was deployed this session. The migration
+  fix from report 1 remains a prerequisite for staging to come up to date at
+  all.
+
+NOT STARTED — NEXT IN SEQUENCE
+  Referral remaining lifecycle (TEMPORARY_FEATURED through the canonical
+  placement engine at TYPE_CATEGORY_SPOTLIGHT and never MASTER_DISCOVERY,
+  respecting capacity with a truthful PENDING_PLACEMENT state; then the four
+  qualification events, anti-abuse, attribution immutability, expiry, safe
+  reversal, notifications, Admin campaign/reward UI, user history UI, and
+  integration/concurrency tests).
+  Then the complete Dispute lifecycle.
+  Then the todo.md master backlog.
+
+NOT IMPLEMENTED, ON PURPOSE
+  Payment gateway, checkout, card collection, invoices, orders, revenue, GMV,
+  commission. Deferred by the owner and deliberately absent from the analytics
+  schema, not merely unimplemented in the UI.
+
+BLOCKED BY INFRASTRUCTURE
+  Nothing new. No claim in this report depends on SMTP, S3 or a payment
+  provider.
+
+OWNER DECISION REQUIRED
+  None outstanding. The GLOBAL scope question is resolved and implemented to
+  the definition given.
+
+
+================================================================================
+9. SUMMARY
+================================================================================
+
+WHAT WAS IMPLEMENTED   Provider and Product Spotlight; Search Boost integrated
+                       among relevant results only; the commercial analytics
+                       foundation with a defined impression rule; the Admin
+                       performance surface; and the owner's GLOBAL definition
+                       enforced through a typed scope rather than a document.
+
+WHAT WAS UNIT VERIFIED 3,111 passing, 0 failing. 12 mutations planted across
+                       Spotlight, Boost and analytics; all 12 killed.
+
+WHAT WAS LIVE VERIFIED 68 checks against real MariaDB and a real HTTP server,
+                       twice, no residue.
+
+WHAT IS PENDING        Rendered / interactive browser QA at 375 / 768 / 1440 in
+                       EN and AR. Staging deployment.
+
+WHAT WAS COMMITTED     3 commits.
+WHAT WAS PUSHED        All 3, each with a fresh remote verify.
+WHAT WAS MERGED        NOTHING. main untouched.
+WHAT WAS DEPLOYED      NOTHING. Production untouched. Staging still behind.
+
+NO PRODUCTION VERDICT IS ISSUED. Rendered QA has not been performed, and the
+Referral and Dispute milestones remain open.
+
+================================================================================
+END OF REPORT
+================================================================================
