@@ -38,6 +38,7 @@ import { runDataQualityChecks } from './admin/dataQuality';
 import { readOperationalHealth } from './admin/operationalHealth';
 import { runPlatformSearch } from './admin/platformSearch';
 import { qualifyReferralEvent } from './referralEngine';
+import { bookPlacement } from './placementBooking';
 import { formatProjectContext, resolveProjectContext } from './_core/projectContext';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
@@ -4847,6 +4848,68 @@ const adminRouter = router({
         note: input.reason,
       });
       return { success: true as const, changed: true };
+    }),
+  placements: adminWith('marketplace.manage').query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select({
+      id: vendorSponsorships.id,
+      vendorId: vendorSponsorships.vendorId,
+      category: vendorSponsorships.category,
+      kind: vendorSponsorships.kind,
+      source: vendorSponsorships.source,
+      package: vendorSponsorships.package,
+      surface: vendorSponsorships.surface,
+      entityType: vendorSponsorships.entityType,
+      priority: vendorSponsorships.priority,
+      startsAt: vendorSponsorships.startsAt,
+      endsAt: vendorSponsorships.endsAt,
+      revokedAt: vendorSponsorships.revokedAt,
+      createdAt: vendorSponsorships.createdAt,
+      vendorName: users.name,
+    }).from(vendorSponsorships)
+      .leftJoin(users, eq(users.id, vendorSponsorships.vendorId))
+      .orderBy(desc(vendorSponsorships.createdAt))
+      .limit(250);
+  }),
+  bookPlacement: adminWith('marketplace.manage')
+    .input(z.object({
+      entityType: z.enum(['PROVIDER', 'PRODUCT']),
+      entityId: z.number().int().positive(),
+      package: z.enum(['BOOST', 'SPOTLIGHT', 'PREMIER']),
+      surface: z.enum(['MASTER_DISCOVERY', 'TYPE_CATEGORY_SPOTLIGHT', 'SEARCH_RESULTS_BOOST']),
+      source: z.enum(['PAID_SPONSORSHIP', 'ADMIN_EDITORIAL', 'REFERRAL_REWARD', 'PROMOTIONAL_COMP']),
+      category: z.string().trim().min(1).max(100),
+      startsAt: z.string().datetime(),
+      endsAt: z.string().datetime().nullable(),
+      priority: z.number().int().optional(),
+      reason: z.string().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const result = await bookPlacement(db, {
+        entityType: input.entityType,
+        entityId: input.entityId,
+        package: input.package,
+        surface: input.surface,
+        source: input.source,
+        category: input.category,
+        startsAt: new Date(input.startsAt),
+        endsAt: input.endsAt ? new Date(input.endsAt) : null,
+        priority: input.priority,
+        grantedBy: ctx.user.id,
+        reason: input.reason,
+      });
+      if (result.outcome === 'rejected') throw new TRPCError({ code: 'CONFLICT', message: result.reason });
+      await db.insert(userAccountAuditEvents).values({
+        userId: input.entityType === 'PROVIDER' ? input.entityId : ctx.user.id,
+        actorId: ctx.user.id,
+        action: 'placement_booked',
+        source: input.source,
+        note: `${input.package} / ${input.surface} / ${input.category}`,
+      });
+      return { success: true, placementId: result.placementId };
     }),
   // ── QA sign-in links ────────────────────────────────────────────────────
   issueTestLoginLink: adminWith('qa.manage').input(z.object({

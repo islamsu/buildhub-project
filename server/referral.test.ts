@@ -68,4 +68,10 @@ describe('referral foundation', () => {
     const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
     expect(source).toContain("qualifyReferralEvent(db, input.userId, 'ACCOUNT_VERIFIED'");
   });
+
+  it('provides the canonical placement booking API and Referral Featured integration', () => {
+    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    expect(source).toContain("bookPlacement: adminWith('marketplace.manage')");
+    expect(source).toContain("placements: adminWith('marketplace.manage')");
+  });
 });

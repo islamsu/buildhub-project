@@ -5,6 +5,7 @@ import {
 import { setEnquiryAllowance } from './billing/overrides';
 import { resolveVendorEntitlements } from './billing/entitlements';
 import { notifyUser } from './notifications';
+import { bookPlacement } from './placementBooking';
 
 type Db = any;
 
@@ -115,6 +116,22 @@ export async function qualifyReferralEvent(
         endsAt: rewardValues.expiresAt,
       });
     }
+  }
+
+  if (campaign.rewardType === 'TEMPORARY_FEATURED') {
+    await bookPlacement(db, {
+      entityType: 'PROVIDER',
+      entityId: referral.referrerId,
+      package: 'SPOTLIGHT',
+      surface: 'TYPE_CATEGORY_SPOTLIGHT',
+      source: 'REFERRAL_REWARD',
+      category: 'General',
+      startsAt: now,
+      endsAt: rewardValues.expiresAt,
+      priority: 0,
+      grantedBy: referral.referrerId,
+      reason: `Referral reward from ${campaign.name}`,
+    });
   }
 
   await db.update(referrals).set({ status: 'rewarded' }).where(eq(referrals.id, referral.id));
