@@ -156,7 +156,7 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
           <section className="mb-8" aria-label={t('market.featured')}>
             <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
               <h2 className="text-sm font-semibold">{t('market.featured')}</h2>
-              <p className="text-xs text-muted-foreground">{ar ? 'اختيار تحريري من المنصة.' : 'Editorial picks from the platform.'}</p>
+              <p className="text-xs text-muted-foreground">{t('vendorsDir.editorialNote')}</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {editorialFeatured.map(vendor => (

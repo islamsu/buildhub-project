@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 vi.mock('./db', () => ({
@@ -232,7 +232,27 @@ const unclassifiedRfq = { id: 503, title: 'Something else', category: null, loca
 
 const dupError = Object.assign(new Error('Duplicate entry'), { cause: { code: 'ER_DUP_ENTRY' } });
 
-beforeEach(() => vi.clearAllMocks());
+/**
+ * THE CLOCK IS FROZEN, and that is a correctness requirement rather than tidiness.
+ *
+ * The fixtures below pin the allowance period to NOW's month, but the router
+ * calls openQualifiedEnquiry without a `now`, so the engine used the REAL clock.
+ * The two agreed only for as long as the wall clock stayed inside August 2026;
+ * the moment it rolled over, the engine wrote `yearMonth: 2026-09` while the
+ * fake counted rows stamped `2026-08`, every usage figure read back as 0, and
+ * three assertions about spending exactly one credit began failing for a reason
+ * that had nothing to do with the code they cover.
+ *
+ * A test that passes only during the month it was written is not evidence.
+ * Freezing the clock makes the engine and the fixture share one definition of
+ * "this month", which is what the assertions were always meant to be about.
+ */
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+});
+afterEach(() => vi.useRealTimers());
 
 // ── Vendor category declarations ───────────────────────────────────────────
 

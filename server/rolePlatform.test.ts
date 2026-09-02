@@ -53,13 +53,26 @@ describe('no role workspace promises a capability that does not exist', () => {
     expect(PLATFORM_PAGE).not.toContain('Present architectural renderings and client mood boards');
   });
 
-  it('the missing capability is NAMED where the user would look for it', () => {
-    // Not silence, and not a quiet deletion: an architect arriving to upload a
-    // portfolio should be told BuildHub does not host one yet, and pointed at
-    // the public profile that does exist.
-    expect(PLATFORM_PAGE).toContain('Portfolio hosting - not available yet');
-    expect(PLATFORM_PAGE).toContain('border-dashed');
+  it('the capability that WAS missing is now real, and reachable where the user looks for it', () => {
+    // WHAT THIS TEST USED TO ASSERT, and why it changed.
+    //
+    // Portfolio hosting did not exist, so the honest thing was to say so: this
+    // test required the words "Portfolio hosting - not available yet" on the
+    // architect's card. Portfolio hosting now EXISTS - portfolioItems, the
+    // portfolio router, PortfolioManager, and public display on the vendor
+    // profile - so that disclaimer would be a false statement about the
+    // product, and demanding it would be a test insisting the UI lie.
+    //
+    // The obligation is unchanged, only its direction: what the architect
+    // looks for must be TRUE where they look. So the assertion is now that the
+    // real manager is mounted on the page, not that an apology is.
+    expect(PLATFORM_PAGE).toContain('<PortfolioManager />');
+    expect(PLATFORM_PAGE).toContain("import PortfolioManager from '@/components/PortfolioManager'");
+    // The route out to the public profile is still the other half of the
+    // answer, and is still required.
     expect(PLATFORM_PAGE).toContain('Go to my public profile');
+    // And the retired disclaimer must not linger beside the working feature.
+    expect(PLATFORM_PAGE).not.toContain('Portfolio hosting - not available yet');
   });
 
   it('every STATIC card carries a control or is marked unavailable', () => {

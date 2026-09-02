@@ -172,7 +172,8 @@ describe('all upload paths behave the same way', () => {
     // EIGHT since a supplier gained the ability to attach a proposal, a
     // specification, a certificate or a photograph to their quotation - the
     // eighth upload path, and the first that flows provider -> customer.
-    expect(wrapped.length).toBe(8);
+    // NINE since provider portfolio images became an upload path of their own.
+    expect(wrapped.length).toBe(9);
   });
 
   it('anything that is NOT a configuration problem still propagates', () => {

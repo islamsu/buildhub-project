@@ -217,6 +217,13 @@ const DESTINATIONS_THAT_ARE_A_RECORD: Record<string, string> = {
   // record page. The anchor matters: without it the notification lands at the
   // top of a settings page and leaves the vendor hunting for what changed.
   '/settings#settings-billing': 'the reader\'s own subscription, a singleton with no id-addressed route',
+  // A vendor has exactly ONE name-change request in flight and ONE company
+  // record; both are singletons keyed by the reader, with no /:id route to
+  // build from. The anchors are what make these destinations records rather
+  // than a dashboard: bare '/settings' put the vendor at the top of a long
+  // page and left them to find what an administrator had just decided.
+  '/settings#settings-name-change': 'the reader\'s own name-change request, a singleton with no id-addressed route',
+  '/settings#settings-company': 'the reader\'s own company record, which is where a correction is visible',
 };
 
 describe('no notification is sent to a list when a record exists', () => {

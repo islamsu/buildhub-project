@@ -169,7 +169,10 @@ describe('§2 storage.ts keeps its contract', () => {
     // EIGHT since a supplier gained the ability to attach a proposal, a
     // specification, a certificate or a photograph to their quotation - the
     // eighth upload path, and the first that flows provider -> customer.
-    expect(calls.length).toBe(8);
+    // NINE since provider portfolio images became an upload path of their own,
+    // and it goes through the same wrapper rather than touching a bucket
+    // directly - which is the property this count protects.
+    expect(calls.length).toBe(9);
     for (const prefix of [
       'registration/', 'project-documents/', 'message-attachments/', 'avatars/',
       // AI attachments get their own prefix so the proxy can classify them,

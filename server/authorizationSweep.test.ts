@@ -145,6 +145,15 @@ describe('§1 every procedure is pinned to a tier', () => {
       'billing.plans',
       // The public marketplace: product catalogue and vendor directory.
       'marketplace.categories',
+      // ADMIN-CURATED FEATURED PROVIDERS, the editorial counterpart to the
+      // paid strip below. Public for the same reason and on the same terms:
+      // it returns the directory's own column allowlist plus the category the
+      // pick was made in, resolved through the directory's own visibility
+      // filter. It carries no granter, no period, no reason and no billing
+      // state - those stay behind marketplace.manage. It reached the public
+      // surface without being written down here, which is exactly the drift
+      // this list exists to catch.
+      'marketplace.featuredProviders',
       'marketplace.featuredVendors',
       'marketplace.get',
       'marketplace.importTemplate',
@@ -409,7 +418,9 @@ describe('§2c messages', () => {
     // product images (the supplier catalogue), and QUOTATION attachments -
     // the fifth, added when a supplier gained the ability to send a proposal
     // or certificate with a bid.
-    expect((ROUTERS_CODE.match(/\[\^\\w\.-\]\+/g) ?? []).length).toBe(5);
+    // SIX since provider portfolio images gained their own upload endpoint,
+    // which sanitises its filename with the same corrected pattern.
+    expect((ROUTERS_CODE.match(/\[\^\\w\.-\]\+/g) ?? []).length).toBe(6);
   });
 });
 
@@ -525,7 +536,12 @@ describe('§3 uploads are checked against their bytes', () => {
     // EIGHT since a supplier gained the ability to attach a proposal, a
     // specification, a certificate or a photograph to their quotation - the
     // eighth upload path, and the first that flows provider -> customer.
-    expect(puts).toBe(8);
+    // NINE since provider portfolio images became an upload path of their own.
+    // Verified before the number was moved: `asserted + validated` is 9 too, so
+    // the ninth site is genuinely byte-checked and this is a stale counter
+    // rather than an unguarded endpoint. The equality below is the real
+    // invariant; the count exists so a NEW path cannot arrive unnoticed.
+    expect(puts).toBe(9);
     expect(asserted + validated).toBe(puts);
   });
 

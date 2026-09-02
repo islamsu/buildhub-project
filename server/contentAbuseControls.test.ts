@@ -108,19 +108,23 @@ describe('the limiter is actually wired to the endpoints that needed it', () => 
     ).toBeLessThan(writeAt);
   });
 
-  it('all eight upload endpoints enforce the upload limit', () => {
+  it('all nine upload endpoints enforce the upload limit', () => {
     // Counted rather than spot-checked: the gap was identical at every one of
     // them, and a fix applied to four out of five is not a fix.
     // NINE now: bulk product import accepts a file too, and an unbounded
     // import endpoint is the cheapest way to fill a database.
+    // TEN limits over NINE endpoints, and the extra one is not a miscount:
+    // bulk product import accepts a file without being named upload*, so it
+    // takes a limit of its own. Portfolio image upload is the ninth endpoint,
+    // added with provider portfolios.
     const wired = SOURCE.match(/enforceUploadRateLimit\(ctx\.user\.id\)/g) ?? [];
-    expect(wired).toHaveLength(9);
+    expect(wired).toHaveLength(10);
 
     const uploadEndpoints = SOURCE.match(/^\s+upload[A-Za-z]+:/gm) ?? [];
     expect(
       uploadEndpoints,
       'an upload endpoint was added or removed - it needs a rate limit too',
-    ).toHaveLength(8);
+    ).toHaveLength(9);
   });
 
   it('the limit runs before the file is decoded, not after', () => {

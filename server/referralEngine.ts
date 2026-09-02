@@ -148,6 +148,14 @@ export async function qualifyReferralEvent(
     body: `${campaign.rewardType}: ${campaign.rewardValue}`,
     type: 'referral',
     link: '/settings#settings-referral',
+    // Without a key this reward notice reached an Arabic referrer in English.
+    // The reward type is a stored enum rather than prose, so it is passed as a
+    // value the template names - not concatenated into a sentence here.
+    messageKey: 'notif.referral.reward',
+    messageParams: {
+      campaign: campaign.name,
+      reward: `${campaign.rewardType}: ${campaign.rewardValue}`,
+    },
   });
 
   return {

@@ -4609,7 +4609,17 @@ const adminRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [target] = await db.select().from(users).where(eq(users.id, input.userId));
+    // THE THREE COLUMNS THIS MUTATION ACTUALLY CONSULTS, and no more: the
+    // admin-tier check, and the two uniqueness comparisons below. A bare
+    // `select()` pulled passwordHash, reset-token columns and every future
+    // secret this table grows into a request handler that needs none of them.
+    // Nothing here is returned to the client, so this is defence in depth
+    // rather than a plugged leak - but the allowlist exists precisely so that
+    // the next edit to this procedure cannot turn it into one.
+    const [target] = await db
+      .select({ role: users.role, username: users.username, email: users.email })
+      .from(users)
+      .where(eq(users.id, input.userId));
     if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
     if (target.role === 'admin' && input.userRole) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Administrator roles are managed from Admin Management, not User Management' });
@@ -5558,7 +5568,17 @@ const adminRouter = router({
         title: input.status === 'approved' ? 'Vendor name change approved' : 'Vendor name change update',
         body: input.reviewerNote || `Your name change request is now ${input.status.replaceAll('_', ' ')}`,
         type: 'admin',
-        link: '/settings',
+        // The decision is ABOUT the request, and the request is rendered in
+        // one place. Bare '/settings' landed the vendor at the top of a long
+        // page with no indication of what had been decided.
+        link: '/settings#settings-name-change',
+        // Approved is its own sentence: it names the value now in force, which
+        // is the fact the vendor actually wants. The other outcomes report the
+        // status instead, because there is no new value to report.
+        messageKey: input.status === 'approved' ? 'notif.vendorName.approved' : 'notif.vendorName.reviewed',
+        messageParams: input.status === 'approved'
+          ? { fieldKey: `vendorField.${request.field}`, value: request.requestedValue }
+          : { fieldKey: `vendorField.${request.field}`, statusKey: `vendorNameStatus.${input.status}` },
       });
       return { success: true, status: input.status };
     }),
@@ -5619,7 +5639,12 @@ const adminRouter = router({
         title: 'Vendor name corrected',
         body: `Your ${input.field === 'companyName' ? 'company name' : 'trading name'} was corrected by an administrator.`,
         type: 'admin',
-        link: '/settings',
+        // A correction changed the COMPANY RECORD, so the destination is the
+        // company details section that now shows the corrected value - not the
+        // request form, which the vendor never submitted here.
+        link: '/settings#settings-company',
+        messageKey: 'notif.vendorName.corrected',
+        messageParams: { fieldKey: `vendorField.${input.field}`, value: input.requestedValue },
       });
       return { success: true, requestId: Number(result[0]?.insertId ?? 0) };
     }),

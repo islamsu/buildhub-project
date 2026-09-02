@@ -175,11 +175,21 @@ export default function MarketplaceHub() {
                 {t('marketHub.viewAll')}
               </button>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {featuredVendors.map(vendor => (
-                <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
-              ))}
-            </div>
+            {/* A HEADING IS A PROMISE. The outer block already hides itself
+                when nothing at all is curated, but each of these three lists is
+                filtered independently - picks in Design and none in Renovation
+                left a "Featured Finishing Companies" heading standing over an
+                empty grid. Naming the absence is the honest answer; padding it
+                with anything else would be filler. */}
+            {featuredVendors.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t('marketHub.noneYet')}</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {featuredVendors.map(vendor => (
+                  <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
+                ))}
+              </div>
+            )}
 
             <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-8">
               <div>
@@ -191,11 +201,15 @@ export default function MarketplaceHub() {
                     {t('marketHub.viewAll')}
                   </button>
                 </div>
-                <div className="space-y-3">
-                  {featuredDesigners.map(vendor => (
-                    <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
-                  ))}
-                </div>
+                {featuredDesigners.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t('marketHub.noneYet')}</p>
+                ) : (
+                  <div className="space-y-3">
+                    {featuredDesigners.map(vendor => (
+                      <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <div className="flex items-center justify-between mb-5">
@@ -206,11 +220,15 @@ export default function MarketplaceHub() {
                     {t('marketHub.viewAll')}
                   </button>
                 </div>
-                <div className="space-y-3">
-                  {featuredCompanies.map(vendor => (
-                    <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
-                  ))}
-                </div>
+                {featuredCompanies.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t('marketHub.noneYet')}</p>
+                ) : (
+                  <div className="space-y-3">
+                    {featuredCompanies.map(vendor => (
+                      <DirectoryCard key={vendor.id} vendor={vendor} t={t} onOpen={() => navigate(`/vendor/${vendor.id}`)} />
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>

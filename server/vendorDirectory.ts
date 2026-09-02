@@ -74,7 +74,7 @@ export type DirectoryFilters = {
  * already accepts password-less sign-in as a QA persona, which is a far larger
  * concession than listing one.
  */
-function directoryVisibilityFilter() {
+export function directoryVisibilityFilter() {
   const conditions = [
     inArray(users.userRole, PROVIDER_ROLES as readonly ProviderRole[]),
     eq(users.accountStatus, 'active'),
@@ -139,7 +139,7 @@ export async function listDirectoryVendors(filters: DirectoryFilters = {}): Prom
  * Two code paths computing reputation differently is how a vendor ends up with
  * 4.6 stars in one place and 4.8 in another.
  */
-async function enrichVendorRows(
+export async function enrichVendorRows(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   rows: { id: number }[],
 ): Promise<DirectoryVendor[]> {
