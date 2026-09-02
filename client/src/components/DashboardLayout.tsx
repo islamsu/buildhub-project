@@ -22,7 +22,7 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, UserRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -156,6 +156,7 @@ const ADMIN_MENU_KEYS: MenuItem[] = [
   { icon: LayoutDashboard, labelKey: 'admin.title', path: '/admin' },
   { icon: Users, labelKey: 'admin.users', path: '/admin/users' },
   { icon: UserRound, labelKey: 'admin.name_changes', path: '/admin/name-changes' },
+  { icon: UsersRound, labelKey: 'admin.referrals', path: '/admin/referrals' },
   { icon: Shield, labelKey: 'admin.pending_verifications', path: '/admin/compliance' },
   { icon: FileText, labelKey: 'admin.disputes', path: '/admin/disputes' },
   { icon: BarChart3, labelKey: 'admin.analytics', path: '/admin/analytics' },
