@@ -21,6 +21,16 @@ export type PlacementBooking = {
   reason?: string;
 };
 
+export const PACKAGE_SURFACES: Record<PlacementPackage, PlacementSurface[]> = {
+  BOOST: ['SEARCH_RESULTS_BOOST'],
+  SPOTLIGHT: ['TYPE_CATEGORY_SPOTLIGHT', 'SEARCH_RESULTS_BOOST'],
+  PREMIER: ['MASTER_DISCOVERY', 'TYPE_CATEGORY_SPOTLIGHT', 'SEARCH_RESULTS_BOOST'],
+};
+
+export function isValidPackageSurface(packageValue: PlacementPackage, surface: PlacementSurface): boolean {
+  return PACKAGE_SURFACES[packageValue].includes(surface);
+}
+
 const livePlacement = (now: Date) => and(
   isNull(vendorSponsorships.revokedAt),
   lte(vendorSponsorships.startsAt, now),
@@ -28,6 +38,9 @@ const livePlacement = (now: Date) => and(
 );
 
 export async function bookPlacement(db: Db, booking: PlacementBooking, now: Date = new Date()): Promise<{ outcome: 'granted'; placementId: number } | { outcome: 'rejected'; reason: string }> {
+  if (!isValidPackageSurface(booking.package, booking.surface)) {
+    return { outcome: 'rejected', reason: `${booking.package} does not include the ${booking.surface} surface.` };
+  }
   if (booking.endsAt && booking.endsAt.getTime() <= booking.startsAt.getTime()) {
     return { outcome: 'rejected', reason: 'The placement end date must be after its start date.' };
   }
