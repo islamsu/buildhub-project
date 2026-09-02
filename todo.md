@@ -385,6 +385,7 @@
 - [x] Admin commercial placement list surface and booking API
 - [x] Referral TEMPORARY_FEATURED wired through canonical placement engine as non-exclusive Spotlight
 - [x] Product placement model added to canonical engine with productId support
+- [x] Admin commercial placement create-booking form with package/surface/scope/dates/priority
 - [ ] Complete Dispute lifecycle: relationship eligibility, reference, respondent, evidence, participant communication, internal notes, assignment, priority, statuses, resolution, controlled reopen, notifications, audit
 - [ ] Support Tickets: user create/category/description/attachment/updates, Support Admin search/filter/assign/respond/request-info/resolve/close
 - [ ] Reviews / Reputation: relationship eligibility, self-review prevention, duplicate prevention, provider response policy, reporting, moderation, restore/hide, audit
