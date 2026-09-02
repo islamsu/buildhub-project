@@ -7,7 +7,7 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { startLogin } from '@/const';
 import { useEffect, useRef, useState } from 'react';
-import { useLocation, Link } from 'wouter';
+import { useLocation, useSearch, Link } from 'wouter';
 import LanguageToggle from '@/components/LanguageToggle';
 import { toast } from 'sonner';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
@@ -28,6 +28,8 @@ const ROLES: { id: UserRole; icon: React.ComponentType<any>; color: string; bg: 
 export default function AuthPage() {
   const { t, lang, dir } = useLanguage();
   const { user, isAuthenticated, loading } = useAuth();
+  const search = useSearch();
+  const referralCode = new URLSearchParams(search).get('ref') ?? undefined;
   const [location, navigate] = useLocation();
   const authMode = new URLSearchParams(window.location.search).get('mode');
   const isDummyMode = authMode === 'dummy';
@@ -185,6 +187,7 @@ export default function AuthPage() {
       name: name.trim() || normalizedUsername,
       phone: phone.trim() || undefined,
       userRole: selectedRole,
+      referralCode,
     });
   };
 

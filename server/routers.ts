@@ -46,7 +46,7 @@ import {
   commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems, qualifiedEnquiries,
-  projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes,
+  projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals,
 } from '../drizzle/schema';
 import { and, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -150,6 +150,8 @@ const TEST_LOGIN_TTL_MINUTES_DEFAULT = 60;
 const TEST_LOGIN_TTL_MINUTES_MAX = 24 * 60;
 
 const hashTestLoginToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
+
+const generateReferralCode = () => `BH-${randomBytes(8).toString('hex').toUpperCase()}`;
 
 /**
  * A PASSWORD RESET LINK IS A CREDENTIAL TOO.
@@ -479,6 +481,7 @@ const authRouter = router({
     password: z.string().min(PASSWORD_MIN_LENGTH).max(128),
     name: z.string().trim().min(1).max(255),
     phone: z.string().trim().max(32).optional(),
+    referralCode: z.string().trim().min(4).max(32).optional(),
     // 'admin' is absent by construction. Role and privilege are separate here:
     // `role` is pinned to 'user' below regardless of what is sent.
     userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager']),
@@ -526,6 +529,20 @@ const authRouter = router({
         throw new TRPCError({ code: 'CONFLICT', message: 'That username or email was just taken. Please try another.' });
       }
       throw error;
+    }
+
+    const ownReferralCode = generateReferralCode();
+    await db.update(users).set({ referralCode: ownReferralCode }).where(eq(users.id, userId));
+    if (input.referralCode) {
+      const [referrer] = await db.select({ id: users.id }).from(users).where(eq(users.referralCode, input.referralCode)).limit(1);
+      if (referrer && referrer.id !== userId) {
+        await db.insert(referrals).values({
+          referrerId: referrer.id,
+          referredId: userId,
+          code: input.referralCode,
+          status: 'registered',
+        });
+      }
     }
 
     const [created] = await db.select({ openId: users.openId }).from(users).where(eq(users.id, userId));
@@ -4038,6 +4055,23 @@ const profileRouter = router({
     return readOwnVendorProfile(db, ctx.user.id);
   }),
 
+  myReferral: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [row] = await db.select({ referralCode: users.referralCode }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
+    let code = row?.referralCode ?? null;
+    if (!code) {
+      code = generateReferralCode();
+      await db.update(users).set({ referralCode: code }).where(eq(users.id, ctx.user.id));
+    }
+    const [countRow] = await db.select({ count: sql<number>`count(*)` }).from(referrals).where(eq(referrals.referrerId, ctx.user.id));
+    return {
+      code,
+      link: `/auth?mode=signup&ref=${encodeURIComponent(code)}`,
+      referrals: Number(countRow?.count ?? 0),
+    };
+  }),
+
   /**
    * Save the caller's own company profile.
    *
@@ -4638,6 +4672,27 @@ const adminRouter = router({
       authorId: ctx.user.id,
     });
     return { success: true, noteId: Number(result[0]?.insertId ?? 0) };
+  }),
+  referrals: adminWith('marketplace.manage').query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.select({
+      id: referrals.id,
+      referrerId: referrals.referrerId,
+      referredId: referrals.referredId,
+      code: referrals.code,
+      status: referrals.status,
+      rewardType: referrals.rewardType,
+      rewardValue: referrals.rewardValue,
+      rewardExpiresAt: referrals.rewardExpiresAt,
+      createdAt: referrals.createdAt,
+      referrerName: users.name,
+      referrerEmail: users.email,
+    }).from(referrals)
+      .innerJoin(users, eq(users.id, referrals.referrerId))
+      .orderBy(desc(referrals.createdAt))
+      .limit(250);
+    return rows;
   }),
   // ── QA sign-in links ────────────────────────────────────────────────────
   issueTestLoginLink: adminWith('qa.manage').input(z.object({

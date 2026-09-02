@@ -21,6 +21,7 @@ export const users = mysqlTable('users', {
   name:        text('name'),
   email:       varchar('email', { length: 320 }),
   phone:       varchar('phone', { length: 32 }),
+  referralCode: varchar('referralCode', { length: 32 }),
   loginMethod: varchar('loginMethod', { length: 64 }),
   role:        mysqlEnum('role', ['user', 'admin']).default('user').notNull(),
   // WHICH KIND of administrator, meaningful only where role = 'admin'.
@@ -1252,6 +1253,26 @@ export const adminNotes = mysqlTable('adminNotes', {
 }, table => ({
   subjectIdx: index('adminNotes_subject_idx').on(table.subjectType, table.subjectId),
   authorIdx:  index('adminNotes_author_idx').on(table.authorId),
+}));
+
+// ── Referral / Invite & Earn attribution (migration 0037) ─────────────────
+export const referrals = mysqlTable('referrals', {
+  id:              int('id').autoincrement().primaryKey(),
+  referrerId:      int('referrerId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  referredId:      int('referredId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  code:            varchar('code', { length: 32 }).notNull(),
+  status:          mysqlEnum('status', ['registered', 'qualified', 'rewarded', 'expired', 'revoked']).default('registered').notNull(),
+  rewardType:      mysqlEnum('rewardType', ['qualified_enquiry_credit', 'featured_placement', 'subscription_extension']),
+  rewardValue:     varchar('rewardValue', { length: 100 }),
+  rewardExpiresAt: timestamp('rewardExpiresAt'),
+  revokedAt:       timestamp('revokedAt'),
+  revokedReason:   varchar('revokedReason', { length: 500 }),
+  createdAt:       timestamp('createdAt').defaultNow().notNull(),
+  updatedAt:       timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  referredUnique: uniqueIndex('referrals_referred_unique').on(table.referredId),
+  referrerIdx:    index('referrals_referrer_idx').on(table.referrerId),
+  statusIdx:      index('referrals_status_idx').on(table.status),
 }));
 
 // ── Sponsored placement in the vendors directory (migration 0028) ───────────
