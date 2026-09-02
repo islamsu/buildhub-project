@@ -11,6 +11,7 @@
 // really does return it, and proves the enquiry detail does not - which is the
 // difference between a deliberate boundary and an empty column.
 import { execSync } from 'node:child_process';
+import { adminSession } from './lib/session.mjs';
 
 const BASE = 'http://127.0.0.1:5401';
 const DB = 'buildhub_prelaunch';
@@ -40,7 +41,7 @@ async function signIn(identifier, password) {
   return { ok: res.status === 200, cookie: cookies.map(c => c.split(';')[0]).join('; ') };
 }
 
-const admin = await signIn('superadmin@buildhub.local', 'LocalSuperAdmin!2024');
+const admin = await adminSession('superadmin@buildhub.local', 'LocalSuperAdmin!2024');
 if (!admin.ok) { console.log('ABORT: bootstrap sign-in failed; every check would be vacuous.'); process.exit(1); }
 
 check('anonymous caller is refused the detail',
@@ -49,6 +50,8 @@ check('anonymous caller is refused the detail',
 // ── Fixture ───────────────────────────────────────────────────────────────
 
 const clean = () => sql(`
+  DELETE FROM adminNotes WHERE subjectId IN (SELECT id FROM users WHERE openId LIKE 'zg-ed-%')
+     OR subjectId IN (SELECT id FROM rfqs WHERE title LIKE 'ZG detail fixture%');
   DELETE FROM quotations WHERE providerId IN (SELECT id FROM users WHERE openId LIKE 'zg-ed-%');
   DELETE FROM qualifiedEnquiries WHERE userId IN (SELECT id FROM users WHERE openId LIKE 'zg-ed-%');
   DELETE FROM rfqSuppliers WHERE supplierId IN (SELECT id FROM users WHERE openId LIKE 'zg-ed-%');
@@ -133,6 +136,92 @@ check('the Super Admin investigation surface DOES return the bid, as designed',
   investigation.status === 200 && JSON.stringify(investigation.data).includes('654321'),
   `HTTP ${investigation.status}`);
 
+// ── Internal notes (§12) ──────────────────────────────────────────────────
+//
+// The interesting part is not that a note saves. It is that reading and writing
+// notes ON A PERSON still needs the user-directory permission, so the enquiry
+// screen cannot become a second door to them - the same rule as the bid price.
+
+const post = async (path, input, cookie) => {
+  const res = await fetch(`${BASE}/api/trpc/${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify({ json: input }),
+  });
+  const body = await res.json().catch(() => null);
+  return { status: res.status, data: body?.result?.data?.json, body };
+};
+
+const savedRfqNote = await post('admin.addEnquiryNote',
+  { scope: 'rfq', rfqId: r1, vendorId: v1, note: 'ZG probe: chased the vendor by phone.' }, admin.cookie);
+check('a note can be filed against the request', savedRfqNote.status === 200 && savedRfqNote.data?.success === true,
+  `HTTP ${savedRfqNote.status}`);
+const noteRow = sql(`SELECT subjectType, subjectId FROM adminNotes WHERE id = ${savedRfqNote.data?.noteId ?? 0};`);
+check('IT IS STORED AGAINST THE RFQ ITSELF, not a made-up enquiry id',
+  noteRow === `rfq\t${r1}`, noteRow);
+
+const savedVendorNote = await post('admin.addEnquiryNote',
+  { scope: 'vendor', rfqId: r1, vendorId: v1, note: 'ZG probe: vendor asked about allowance.' }, admin.cookie);
+check('a note can be filed against the vendor', savedVendorNote.status === 200);
+const vendorRow = sql(`SELECT subjectType, subjectId FROM adminNotes WHERE id = ${savedVendorNote.data?.noteId ?? 0};`);
+check("A VENDOR NOTE IS STORED AS subjectType 'user', so a person's notes stay in ONE place",
+  vendorRow === `user\t${v1}`, vendorRow);
+
+const readNotes = await get('admin.enquiryNotes', { rfqId: r1, vendorId: v1 }, admin.cookie);
+check('both notes come back for a Super Admin',
+  readNotes.data?.rfq?.length === 1 && readNotes.data?.vendor?.length === 1
+  && readNotes.data?.vendorNotesVisible === true,
+  JSON.stringify({ rfq: readNotes.data?.rfq?.length, vendor: readNotes.data?.vendor?.length }));
+check('a note carries its author and time, not just text',
+  typeof readNotes.data?.rfq?.[0]?.authorName === 'string' && !!readNotes.data?.rfq?.[0]?.createdAt);
+
+const missingSubject = await post('admin.addEnquiryNote',
+  { scope: 'rfq', rfqId: 99999999, vendorId: v1, note: 'against a typo' }, admin.cookie);
+check('a note against a subject that does not exist is REFUSED, not filed where nobody finds it',
+  missingSubject.status === 404, `HTTP ${missingSubject.status}`);
+
+// A MARKETPLACE_ADMIN holds marketplace.manage and NOT users.read/users.manage.
+const marketplaceEmail = 'zg-ed-marketplace@buildhub.local';
+sql(`DELETE FROM users WHERE email = '${marketplaceEmail}';`);
+const adminHash = sql('SELECT passwordHash FROM users WHERE id = 1;');
+sql(`INSERT INTO users (openId, email, name, role, adminRole, accountStatus, passwordHash, isDummy)
+     VALUES ('zg-ed-marketplace', '${marketplaceEmail}', 'Probe Marketplace Admin', 'admin', 'MARKETPLACE_ADMIN', 'active', '${adminHash}', 0);`);
+const marketplace = await adminSession(marketplaceEmail, 'LocalSuperAdmin!2024');
+check('the MARKETPLACE_ADMIN probe account has a session', marketplace.ok, marketplace.reason ?? '');
+
+if (marketplace.ok) {
+  const limited = await get('admin.enquiryNotes', { rfqId: r1, vendorId: v1 }, marketplace.cookie);
+  check('a marketplace admin CAN read the RFQ notes', limited.data?.rfq?.length === 1);
+
+  //
+  // WHAT THIS PROBE EXPECTED, AND WHY IT WAS WRONG.
+  //
+  // It asserted that a MARKETPLACE_ADMIN cannot read notes on a person. The
+  // endpoint returned them, and the endpoint was right: the permission map in
+  // shared/adminRoles.ts gives MARKETPLACE_ADMIN ['users.read',
+  // 'marketplace.manage'] - as it does every non-super role. So READING a
+  // person's notes is legitimately within this role's authority, and the
+  // vendorNotesVisible=false branch is unreachable for every role that exists
+  // today.
+  //
+  // The guard is KEPT rather than deleted, because it fails closed on a
+  // permission that a future role might not carry, and because deleting it
+  // would mean such a role silently gets a person's notes. It is exercised
+  // directly by a unit test, which can supply a role the product does not have.
+  //
+  // What IS reachable, and what actually matters, is the write boundary below.
+  check('reading a person\'s notes is within the role\'s real authority (users.read)',
+    limited.data?.vendorNotesVisible === true && limited.data?.vendor?.length === 1,
+    JSON.stringify({ visible: limited.data?.vendorNotesVisible, count: limited.data?.vendor?.length }));
+
+  const blocked = await post('admin.addEnquiryNote',
+    { scope: 'vendor', rfqId: r1, vendorId: v1, note: 'should not be written' }, marketplace.cookie);
+  check('BUT WRITING ONE IS REFUSED - users.manage is not in this role',
+    blocked.status === 403, `HTTP ${blocked.status}`);
+  const stillTwo = Number(sql(`SELECT COUNT(*) FROM adminNotes WHERE subjectType = 'user' AND subjectId = ${v1};`));
+  check('and nothing was written despite the attempt', stillTwo === 1, `${stillTwo} vendor notes`);
+}
+
 // ── Honest absence ────────────────────────────────────────────────────────
 
 const missing = await get('admin.enquiryDetail', { rfqId: r1, vendorId: 99999999 }, admin.cookie);
@@ -144,6 +233,7 @@ check('a malformed reference is refused rather than guessed at', malformed.statu
 
 // ── Cleanup ───────────────────────────────────────────────────────────────
 clean();
+sql("DELETE FROM users WHERE email = 'zg-ed-marketplace@buildhub.local';");
 check('the fixture removed itself completely',
   Number(sql("SELECT COUNT(*) FROM users WHERE openId LIKE 'zg-ed-%';")) === 0);
 

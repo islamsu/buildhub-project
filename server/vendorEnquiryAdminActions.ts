@@ -54,6 +54,8 @@
  * below so the next person does not have to rediscover them.
  */
 
+import { hasAdminPermission } from '@shared/adminRoles';
+
 /** How an action is classified once its underlying operation is known. */
 export type ActionSemantics =
   | {
@@ -179,3 +181,34 @@ export function implementableActions(): string[] {
     .filter(([, semantics]) => semantics.kind === 'REAL_DOMAIN_OPERATION')
     .map(([name]) => name);
 }
+
+/**
+ * WHO MAY READ AND WRITE THE INTERNAL NOTES ON AN ENQUIRY.
+ *
+ * A real function rather than an inline condition, for a reason found by
+ * mutation testing: the first version of this rule lived inside the router and
+ * was asserted by a test that checked the SOURCE contained the permission
+ * check. Wrapping the condition in `if (false && ...)` left the string intact,
+ * so the test passed while the guard did nothing. A source-text assertion is
+ * not a test of a guard - it is a test of a spelling.
+ *
+ * Here the rule can be called, so removing it fails a test that actually
+ * exercises it.
+ *
+ * THE RULE ITSELF: an enquiry is a marketplace object, but a note about a
+ * PERSON is user-directory material - `admin.userNotes` needs users.read and
+ * `admin.addUserNote` needs users.manage. Serving those from a marketplace
+ * endpoint would widen both permissions through a different door, which is the
+ * same mistake as putting a bid price in the enquiry detail.
+ */
+export function mayReadPersonNotes(actorAdminRole: string | null | undefined): boolean {
+  return hasAdminPermission(actorAdminRole, 'users.read');
+}
+
+export function mayWritePersonNotes(actorAdminRole: string | null | undefined): boolean {
+  return hasAdminPermission(actorAdminRole, 'users.manage');
+}
+
+/** The message the UI shows when the write is refused. Named so both agree. */
+export const PERSON_NOTE_FORBIDDEN_MESSAGE =
+  'Notes on a person require the user management permission.';

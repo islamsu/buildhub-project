@@ -3,7 +3,7 @@ PASS  the SUPPORT_ADMIN probe account signs in
 PASS  SUPPORT_ADMIN is refused the list server-side
 PASS  an empty platform returns an empty page, not an error  [HTTP 200]
 PASS  the seeded list returns every pair  [total 6 of 6]
-PASS  each row carries a human reference in the ENQ- form  [ENQ-30-246]
+PASS  each row carries a human reference in the ENQ- form  [ENQ-49-289]
 PASS  each row names the RFQ and the vendor in words, not only ids
 PASS  every row shows the state the rules say it has
 PASS  filtering by INVITED returns exactly its rows  [total 1, expected 1]

@@ -13,6 +13,7 @@
 //      general log, not asserted from reading the source: a twenty-row page
 //      that issues forty-one queries looks identical in the response.
 import { execSync } from 'node:child_process';
+import { adminSession } from './lib/session.mjs';
 
 const BASE = 'http://127.0.0.1:5401';
 const DB = 'buildhub_prelaunch';
@@ -52,8 +53,8 @@ async function signIn(identifier, password) {
 
 check('anonymous caller is refused the list', (await list({})).status === 401);
 
-const admin = await signIn('superadmin@buildhub.local', 'LocalSuperAdmin!2024');
-if (!admin.ok || !admin.cookie) {
+const admin = await adminSession('superadmin@buildhub.local', 'LocalSuperAdmin!2024');
+if (!admin.ok) {
   console.log('ABORT: bootstrap Super Admin sign-in failed; every check below would be vacuous.');
   process.exit(1);
 }
@@ -63,7 +64,7 @@ sql(`DELETE FROM users WHERE email = '${supportEmail}';`);
 const hash = sql('SELECT passwordHash FROM users WHERE id = 1;');
 sql(`INSERT INTO users (openId, email, name, role, adminRole, accountStatus, passwordHash, isDummy)
      VALUES ('zg-list-support', '${supportEmail}', 'Probe Support', 'admin', 'SUPPORT_ADMIN', 'active', '${hash}', 0);`);
-const support = await signIn(supportEmail, 'LocalSuperAdmin!2024');
+const support = await adminSession(supportEmail, 'LocalSuperAdmin!2024');
 check('the SUPPORT_ADMIN probe account signs in', support.ok);
 check('SUPPORT_ADMIN is refused the list server-side',
   (await list({}, support.cookie)).status === 403);

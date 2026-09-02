@@ -158,6 +158,7 @@ const ADMIN_MENU_KEYS: MenuItem[] = [
   { icon: UserRound, labelKey: 'admin.name_changes', path: '/admin/name-changes' },
   { icon: UsersRound, labelKey: 'admin.referrals', path: '/admin/referrals' },
   { icon: Megaphone, labelKey: 'admin.placements', path: '/admin/placements' },
+  { icon: Inbox, labelKey: 'admin.enquiries', path: '/admin/enquiries' },
   { icon: Shield, labelKey: 'admin.pending_verifications', path: '/admin/compliance' },
   { icon: FileText, labelKey: 'admin.disputes', path: '/admin/disputes' },
   { icon: BarChart3, labelKey: 'admin.analytics', path: '/admin/analytics' },

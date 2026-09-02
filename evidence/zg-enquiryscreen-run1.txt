@@ -1,0 +1,37 @@
+PASS  ZERO DATA RENDERS A REAL SENTENCE, not a fabricated row or a placeholder figure  [No enquiries yet. Every vendor invited to a request, who opens one, or who answers one will appear here.]
+PASS  an empty platform shows no state tiles at all  [0 tiles]
+PASS  the admin menu carries a Vendor Enquiries entry  [clicked]
+PASS  THE MENU ENTRY NAVIGATES TO THE SECTION - a tab nobody can reach is not a surface  [/admin/enquiries]
+PASS  the INVITED tile shows the real count  [{"INVITED":"1","VIEWED":"0","OPENED":"0","RESPONDED":"1","DECLINED":"0","CLOSED":"0"}]
+PASS  the RESPONDED tile shows the real count  [{"INVITED":"1","VIEWED":"0","OPENED":"0","RESPONDED":"1","DECLINED":"0","CLOSED":"0"}]
+PASS  THERE IS NO "AVAILABLE" TILE - it is a potential, not a record  [INVITED,VIEWED,OPENED,RESPONDED,DECLINED,CLOSED]
+PASS  both enquiries render as rows  [2 rows]
+PASS  a row shows the human reference  [ENQ-52-298	 | ZG screen fixture ONE | RFQ #52 | 	 | Sigma Tiles | 	Responded	One allowance unit consumed by the vendor	2]
+PASS  a row names the vendor in words, not only an id  [ENQ-52-298	 | ZG screen fixture ONE | RFQ #52 | 	 | Sigma Tiles | 	Responded	One allowance unit consumed by the vendor	2]
+PASS  a row explains the allowance rather than showing a raw enum  [ENQ-52-298	 | ZG screen fixture ONE | RFQ #52 | 	 | Sigma Tiles | 	Responded	One allowance unit consumed by the vendor	2]
+PASS  the fixture really holds a bid price in the database
+PASS  NO BID PRICE IS RENDERED ANYWHERE ON THE LIST SCREEN
+PASS  CLICKING A KPI TILE FILTERS THE LIST TO THAT STATE  [1 rows]
+PASS  clicking a row opens the enquiry detail
+PASS  the detail shows the reference
+PASS  the detail shows the timeline event that really happened  [Back to the list
+ENQ-52-297
+Invited
+
+The request
+
+RFQ #52
+
+ZG screen fixture ONE]
+PASS  the detail explains that the allowance is an entitlement, not a charge
+PASS  the detail renders no bid price
+PASS  the detail says where bid review actually happens
+PASS  the document direction is RTL in Arabic  [rtl]
+PASS  the screen is titled in Arabic
+PASS  the state badges are translated, not left in English
+PASS  no English state label leaks into the Arabic screen
+PASS  THE PAGE BODY DOES NOT SCROLL HORIZONTALLY AT 375px  [375 > 375]
+PASS  the wide table scrolls inside its own container instead
+PASS  the fixture removed itself completely
+
+27 passed, 0 failed

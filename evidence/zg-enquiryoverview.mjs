@@ -17,6 +17,7 @@
 // verification run, not product data: nothing here is shown to a user, and it
 // is all removed at the end. The counts under test are the platform's own.
 import { execSync } from 'node:child_process';
+import { adminSession } from './lib/session.mjs';
 
 const BASE = 'http://127.0.0.1:5401';
 const DB = 'buildhub_prelaunch';
@@ -55,10 +56,10 @@ const anon = await call('admin.enquiryOverview');
 check('anonymous caller is refused the counts', anon.status === 401,
   `HTTP ${anon.status}`);
 
-const admin = await signIn('superadmin@buildhub.local', 'LocalSuperAdmin!2024');
+const admin = await adminSession('superadmin@buildhub.local', 'LocalSuperAdmin!2024');
 // THE GATE. Everything below is meaningless if this sign-in did not happen -
 // an unauthenticated 401 would otherwise read as a successful denial.
-if (!admin.ok || !admin.cookie) {
+if (!admin.ok) {
   console.log('ABORT: could not sign in as the bootstrap Super Admin. Every check below would be vacuous.');
   process.exit(1);
 }
@@ -70,7 +71,7 @@ sql(`DELETE FROM users WHERE email = '${supportEmail}';`);
 const hash = sql("SELECT passwordHash FROM users WHERE id = 1;");
 sql(`INSERT INTO users (openId, email, name, role, adminRole, accountStatus, passwordHash, isDummy)
      VALUES ('zg-support-probe', '${supportEmail}', 'Probe Support Admin', 'admin', 'SUPPORT_ADMIN', 'active', '${hash}', 0);`);
-const support = await signIn(supportEmail, 'LocalSuperAdmin!2024');
+const support = await adminSession(supportEmail, 'LocalSuperAdmin!2024');
 check('the SUPPORT_ADMIN probe account can sign in at all', support.ok);
 const supportCall = await call('admin.enquiryOverview', support.cookie);
 check('SUPPORT_ADMIN is refused - marketplace.manage is checked server-side',

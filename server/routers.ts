@@ -48,6 +48,7 @@ import {
 } from './publicPlacement';
 import { placementPerformance, recordPlacementEvent } from './placementAnalytics';
 import { ENQUIRY_STATES, RFQ_STATUSES, parseEnquiryReference } from './vendorEnquiry';
+import { PERSON_NOTE_FORBIDDEN_MESSAGE, mayReadPersonNotes, mayWritePersonNotes } from './vendorEnquiryAdminActions';
 import { ENQUIRY_LIST_MAX_LIMIT, enquiryDetail, enquiryList, enquiryOverview } from './vendorEnquiryQuery';
 import { PLACEMENT_CLIENT_EVENTS, PLACEMENT_METRIC_FORMULAS } from '@shared/placementAnalytics';
 import { formatProjectContext, resolveProjectContext } from './_core/projectContext';
@@ -5136,6 +5137,102 @@ const adminRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'No enquiry exists between that vendor and that request.' });
       }
       return detail;
+    }),
+
+  /**
+   * INTERNAL NOTES FOR AN ENQUIRY, WITHOUT INVENTING A PLACE TO PUT THEM.
+   *
+   * An enquiry is a PAIR, and `adminNotes` addresses a single subject id. The
+   * options were to extend the table with a second subject column, or to accept
+   * that a note about "this vendor on this RFQ" belongs to one of the two
+   * things that actually exist. The second is honest and needs no migration:
+   * the screen shows the RFQ's notes and the vendor's notes side by side, each
+   * labelled with its scope, and adding one requires choosing.
+   *
+   * The vendor's notes are written with subjectType 'user', NOT 'vendor', so a
+   * person's notes stay in one place - the same list their user detail page
+   * shows. Splitting them across two subject types would mean an administrator
+   * reading one screen could not see what a colleague wrote on the other.
+   *
+   * THE PERMISSION, AND WHY IT IS NOT JUST marketplace.manage. Notes on a
+   * PERSON are user-directory material: `admin.userNotes` requires users.read
+   * and `admin.addUserNote` requires users.manage. Returning them from a
+   * marketplace endpoint would widen those permissions through a different
+   * door - the same mistake as putting a bid price in the enquiry detail. So
+   * the vendor half is gated on the permission it has always needed, and the
+   * response SAYS SO when the caller lacks it rather than silently returning an
+   * empty list that reads as "no notes".
+   */
+  enquiryNotes: adminWith('marketplace.manage')
+    .input(z.object({ rfqId: z.number().int().positive(), vendorId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const columns = {
+        id: adminNotes.id,
+        note: adminNotes.note,
+        createdAt: adminNotes.createdAt,
+        authorName: users.name,
+      };
+      const notesFor = (subjectType: 'rfq' | 'user', subjectId: number) => db.select(columns)
+        .from(adminNotes)
+        .innerJoin(users, eq(users.id, adminNotes.authorId))
+        .where(and(eq(adminNotes.subjectType, subjectType), eq(adminNotes.subjectId, subjectId)))
+        .orderBy(desc(adminNotes.createdAt))
+        .limit(100);
+
+      const mayReadVendorNotes = mayReadPersonNotes(ctx.user.adminRole);
+      const [rfq, vendor] = await Promise.all([
+        notesFor('rfq', input.rfqId),
+        mayReadVendorNotes ? notesFor('user', input.vendorId) : Promise.resolve([]),
+      ]);
+      return {
+        rfq,
+        vendor,
+        // Not a boolean nobody reads: the screen must say "you do not have
+        // permission to see these" rather than "there are none".
+        vendorNotesVisible: mayReadVendorNotes,
+      };
+    }),
+
+  /**
+   * Add one internal note, to the RFQ or to the vendor.
+   *
+   * The scope is explicit and required. A note silently filed against whichever
+   * subject the code happened to pick is a note nobody finds again.
+   */
+  addEnquiryNote: adminWith('marketplace.manage')
+    .input(z.object({
+      scope: z.enum(['rfq', 'vendor']),
+      rfqId: z.number().int().positive(),
+      vendorId: z.number().int().positive(),
+      note: z.string().trim().min(1).max(5000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      // Writing on a PERSON needs the permission that governs the user
+      // directory, exactly as admin.addUserNote does.
+      if (input.scope === 'vendor' && !mayWritePersonNotes(ctx.user.adminRole)) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: PERSON_NOTE_FORBIDDEN_MESSAGE });
+      }
+
+      // The subject must EXIST. Without this an administrator can file a note
+      // against a typo, and it is never seen again by anyone.
+      const [subject] = input.scope === 'rfq'
+        ? await db.select({ id: rfqs.id }).from(rfqs).where(eq(rfqs.id, input.rfqId)).limit(1)
+        : await db.select({ id: users.id }).from(users).where(eq(users.id, input.vendorId)).limit(1);
+      if (!subject) throw new TRPCError({ code: 'NOT_FOUND', message: 'That subject does not exist.' });
+
+      const result = await db.insert(adminNotes).values({
+        subjectType: input.scope === 'rfq' ? 'rfq' : 'user',
+        subjectId: input.scope === 'rfq' ? input.rfqId : input.vendorId,
+        note: input.note,
+        authorId: ctx.user.id,
+      });
+      return { success: true, noteId: Number(result[0]?.insertId ?? 0) };
     }),
 
   placementPerformance: adminWith('marketplace.manage')
