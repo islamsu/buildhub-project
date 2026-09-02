@@ -37,6 +37,7 @@ import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
 import { runDataQualityChecks } from './admin/dataQuality';
 import { readOperationalHealth } from './admin/operationalHealth';
 import { runPlatformSearch } from './admin/platformSearch';
+import { qualifyReferralEvent } from './referralEngine';
 import { formatProjectContext, resolveProjectContext } from './_core/projectContext';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
@@ -6188,6 +6189,9 @@ const adminRouter = router({
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     await db.update(users).set({ verified: input.verified }).where(eq(users.id, input.userId));
+    if (input.verified) {
+      await qualifyReferralEvent(db, input.userId, 'ACCOUNT_VERIFIED', `verified:${input.userId}`, new Date());
+    }
     return { success: true };
   }),
   setUserFrozen: adminWith('users.manage').input(z.object({ userId: z.number(), frozen: z.boolean(), reason: z.string().max(500).optional() })).mutation(async ({ ctx, input }) => {

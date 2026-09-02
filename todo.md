@@ -379,6 +379,7 @@
 - [x] Referral foundation: per-user secure code, signup attribution, referrals ledger, Invite & Earn Settings surface, Admin endpoint
 - [x] Admin Referral Management list with search/filter and humanized referrer links
 - [x] Referral campaign and reward ledger backend, campaign CRUD endpoints, manual qualification, reward reversal, and RBAC gating
+- [x] Centralized referral qualification engine connected to real account-verification event; effective EXTRA_QUALIFIED_ENQUIRIES reward grant
 - [ ] Complete Dispute lifecycle: relationship eligibility, reference, respondent, evidence, participant communication, internal notes, assignment, priority, statuses, resolution, controlled reopen, notifications, audit
 - [ ] Support Tickets: user create/category/description/attachment/updates, Support Admin search/filter/assign/respond/request-info/resolve/close
 - [ ] Reviews / Reputation: relationship eligibility, self-review prevention, duplicate prevention, provider response policy, reporting, moderation, restore/hide, audit

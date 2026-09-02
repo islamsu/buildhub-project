@@ -63,4 +63,9 @@ describe('referral foundation', () => {
     const caller = appRouter.createCaller(makeCtx(1, 'user', 'supplier'));
     await expect(caller.admin.referralCampaigns()).rejects.toThrow();
   });
+
+  it('connects real verification events to the centralized referral engine', () => {
+    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    expect(source).toContain("qualifyReferralEvent(db, input.userId, 'ACCOUNT_VERIFIED'");
+  });
 });
