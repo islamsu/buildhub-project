@@ -116,3 +116,9 @@ client/public/__manus__/version.json
 # Live-probe artefacts land in the repo root; the kept copies live in evidence/
 /crossrole-matrix.json
 /subscription-matrix.json
+
+# Agent session scratch: local env files, test-run JSON, pre-mutation backups.
+# It holds a real JWT_SECRET and database password for the LOCAL prelaunch
+# stack, so this entry is a secret-safety measure and not only tidiness. The
+# evidence worth keeping is committed under evidence/ instead.
+/scratchpad/
