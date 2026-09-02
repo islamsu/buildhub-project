@@ -267,6 +267,13 @@
       "when": 1788360000000,
       "tag": "0037_referrals",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "5",
+      "when": 1788390000000,
+      "tag": "0038_referral_campaigns_and_rewards",
+      "breakpoints": true
     }
   ]
 }

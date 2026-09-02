@@ -50,4 +50,17 @@ describe('referral foundation', () => {
     const caller = appRouter.createCaller(makeCtx(1, 'user', 'supplier'));
     await expect(caller.admin.referrals()).rejects.toThrow();
   });
+
+  it('provides campaign/reward/qualification/reversal procedures', () => {
+    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    expect(source).toContain("referralCampaigns: adminWith('marketplace.manage')");
+    expect(source).toContain("createReferralCampaign: adminWith('marketplace.manage')");
+    expect(source).toContain("qualifyReferral: adminWith('marketplace.manage')");
+    expect(source).toContain("reverseReferralReward: adminWith('marketplace.manage')");
+  });
+
+  it('denies a non-admin from campaign management', async () => {
+    const caller = appRouter.createCaller(makeCtx(1, 'user', 'supplier'));
+    await expect(caller.admin.referralCampaigns()).rejects.toThrow();
+  });
 });

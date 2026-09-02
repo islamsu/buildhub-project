@@ -1262,6 +1262,11 @@ export const referrals = mysqlTable('referrals', {
   referredId:      int('referredId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   code:            varchar('code', { length: 32 }).notNull(),
   status:          mysqlEnum('status', ['registered', 'qualified', 'rewarded', 'expired', 'revoked']).default('registered').notNull(),
+  campaignId:      int('campaignId').references((): any => referralCampaigns.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  qualificationType: mysqlEnum('qualificationType', ['ACCOUNT_VERIFIED', 'PROVIDER_APPROVED', 'PROFILE_COMPLETED', 'FIRST_VALID_RFQ', 'FIRST_VALID_QUOTATION_RESPONSE']),
+  qualificationEventKey: varchar('qualificationEventKey', { length: 191 }),
+  qualifiedAt:     timestamp('qualifiedAt'),
+  qualificationNote: varchar('qualificationNote', { length: 500 }),
   rewardType:      mysqlEnum('rewardType', ['qualified_enquiry_credit', 'featured_placement', 'subscription_extension']),
   rewardValue:     varchar('rewardValue', { length: 100 }),
   rewardExpiresAt: timestamp('rewardExpiresAt'),
@@ -1273,6 +1278,52 @@ export const referrals = mysqlTable('referrals', {
   referredUnique: uniqueIndex('referrals_referred_unique').on(table.referredId),
   referrerIdx:    index('referrals_referrer_idx').on(table.referrerId),
   statusIdx:      index('referrals_status_idx').on(table.status),
+  campaignIdx:    index('referrals_campaign_idx').on(table.campaignId),
+  qualificationUnique: uniqueIndex('referrals_qualification_event_unique').on(table.qualificationEventKey),
+}));
+
+// ── Referral campaigns and rewards (migration 0038) ──────────────────────
+export const referralCampaigns = mysqlTable('referralCampaigns', {
+  id:                   int('id').autoincrement().primaryKey(),
+  name:                 varchar('name', { length: 120 }).notNull(),
+  status:               mysqlEnum('status', ['draft', 'active', 'paused', 'ended']).default('draft').notNull(),
+  startsAt:             timestamp('startsAt'),
+  endsAt:               timestamp('endsAt'),
+  eligibleInviterRoles: text('eligibleInviterRoles').notNull(),
+  eligibleReferredRoles: text('eligibleReferredRoles').notNull(),
+  qualificationType:    mysqlEnum('qualificationType', ['ACCOUNT_VERIFIED', 'PROVIDER_APPROVED', 'PROFILE_COMPLETED', 'FIRST_VALID_RFQ', 'FIRST_VALID_QUOTATION_RESPONSE']).notNull(),
+  rewardType:           mysqlEnum('rewardType', ['EXTRA_QUALIFIED_ENQUIRIES', 'TEMPORARY_FEATURED', 'SUBSCRIPTION_EXTENSION']).notNull(),
+  rewardValue:          varchar('rewardValue', { length: 100 }).notNull(),
+  rewardDurationDays:   int('rewardDurationDays'),
+  perInviterCap:        int('perInviterCap').default(1).notNull(),
+  campaignCap:          int('campaignCap'),
+  createdBy:            int('createdBy').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  createdAt:            timestamp('createdAt').defaultNow().notNull(),
+  updatedAt:            timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  statusIdx: index('referralCampaigns_status_idx').on(table.status),
+  createdByIdx: index('referralCampaigns_createdBy_idx').on(table.createdBy),
+}));
+
+export const referralRewards = mysqlTable('referralRewards', {
+  id:              int('id').autoincrement().primaryKey(),
+  referralId:      int('referralId').notNull().references(() => referrals.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  campaignId:      int('campaignId').notNull().references(() => referralCampaigns.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  recipientUserId: int('recipientUserId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  rewardType:      mysqlEnum('rewardType', ['EXTRA_QUALIFIED_ENQUIRIES', 'TEMPORARY_FEATURED', 'SUBSCRIPTION_EXTENSION']).notNull(),
+  rewardValue:     varchar('rewardValue', { length: 100 }).notNull(),
+  source:          varchar('source', { length: 40 }).default('REFERRAL_REWARD').notNull(),
+  status:          mysqlEnum('status', ['PENDING', 'GRANTED', 'EXPIRED', 'REVERSED', 'REJECTED']).default('PENDING').notNull(),
+  effectiveFrom:   timestamp('effectiveFrom'),
+  expiresAt:       timestamp('expiresAt'),
+  grantedAt:       timestamp('grantedAt'),
+  reversedAt:      timestamp('reversedAt'),
+  reversalReason:  varchar('reversalReason', { length: 500 }),
+  createdAt:       timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  referralCampaignUnique: uniqueIndex('referralRewards_referral_campaign_unique').on(table.referralId, table.campaignId),
+  recipientIdx: index('referralRewards_recipient_idx').on(table.recipientUserId),
+  statusIdx: index('referralRewards_status_idx').on(table.status),
 }));
 
 // ── Sponsored placement in the vendors directory (migration 0028) ───────────

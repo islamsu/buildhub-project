@@ -46,7 +46,7 @@ import {
   commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems, qualifiedEnquiries,
-  projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals,
+  projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals, referralCampaigns, referralRewards,
 } from '../drizzle/schema';
 import { and, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -4694,6 +4694,159 @@ const adminRouter = router({
       .limit(250);
     return rows;
   }),
+  referralCampaigns: adminWith('marketplace.manage').query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(referralCampaigns).orderBy(desc(referralCampaigns.createdAt)).limit(100);
+  }),
+  createReferralCampaign: adminWith('marketplace.manage')
+    .input(z.object({
+      name: z.string().trim().min(1).max(120),
+      status: z.enum(['draft', 'active', 'paused', 'ended']).default('draft'),
+      startsAt: z.string().datetime().optional(),
+      endsAt: z.string().datetime().optional(),
+      eligibleInviterRoles: z.array(z.string()).min(1),
+      eligibleReferredRoles: z.array(z.string()).min(1),
+      qualificationType: z.enum(['ACCOUNT_VERIFIED', 'PROVIDER_APPROVED', 'PROFILE_COMPLETED', 'FIRST_VALID_RFQ', 'FIRST_VALID_QUOTATION_RESPONSE']),
+      rewardType: z.enum(['EXTRA_QUALIFIED_ENQUIRIES', 'TEMPORARY_FEATURED', 'SUBSCRIPTION_EXTENSION']),
+      rewardValue: z.string().trim().min(1).max(100),
+      rewardDurationDays: z.number().int().positive().optional(),
+      perInviterCap: z.number().int().positive().default(1),
+      campaignCap: z.number().int().positive().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const startsAt = input.startsAt ? new Date(input.startsAt) : null;
+      const endsAt = input.endsAt ? new Date(input.endsAt) : null;
+      if (startsAt && endsAt && endsAt <= startsAt) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Campaign end date must be after its start date' });
+      const result = await db.insert(referralCampaigns).values({
+        name: input.name,
+        status: input.status,
+        startsAt,
+        endsAt,
+        eligibleInviterRoles: JSON.stringify(input.eligibleInviterRoles),
+        eligibleReferredRoles: JSON.stringify(input.eligibleReferredRoles),
+        qualificationType: input.qualificationType,
+        rewardType: input.rewardType,
+        rewardValue: input.rewardValue,
+        rewardDurationDays: input.rewardDurationDays ?? null,
+        perInviterCap: input.perInviterCap,
+        campaignCap: input.campaignCap ?? null,
+        createdBy: ctx.user.id,
+      });
+      await db.insert(userAccountAuditEvents).values({
+        userId: ctx.user.id,
+        actorId: ctx.user.id,
+        action: 'referral_campaign_created',
+        source: 'referral',
+        note: `${input.name} (${input.status})`,
+      });
+      return { success: true, campaignId: Number(result[0]?.insertId ?? 0) };
+    }),
+  updateReferralCampaign: adminWith('marketplace.manage')
+    .input(z.object({
+      campaignId: z.number().int().positive(),
+      status: z.enum(['draft', 'active', 'paused', 'ended']).optional(),
+      name: z.string().trim().min(1).max(120).optional(),
+      startsAt: z.string().datetime().optional(),
+      endsAt: z.string().datetime().optional(),
+      perInviterCap: z.number().int().positive().optional(),
+      campaignCap: z.number().int().positive().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const patch: Record<string, string | number | Date | null> = {};
+      if (input.name !== undefined) patch.name = input.name;
+      if (input.status !== undefined) patch.status = input.status;
+      if (input.startsAt !== undefined) patch.startsAt = input.startsAt ? new Date(input.startsAt) : null;
+      if (input.endsAt !== undefined) patch.endsAt = input.endsAt ? new Date(input.endsAt) : null;
+      if (input.perInviterCap !== undefined) patch.perInviterCap = input.perInviterCap;
+      if (input.campaignCap !== undefined) patch.campaignCap = input.campaignCap ?? null;
+      if (Object.keys(patch).length === 0) return { success: true as const, changed: false };
+      await db.update(referralCampaigns).set(patch).where(eq(referralCampaigns.id, input.campaignId));
+      await db.insert(userAccountAuditEvents).values({
+        userId: ctx.user.id,
+        actorId: ctx.user.id,
+        action: 'referral_campaign_updated',
+        source: 'referral',
+        note: Object.keys(patch).join(', '),
+      });
+      return { success: true as const, changed: true };
+    }),
+  referralRewards: adminWith('marketplace.manage').query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select({
+      id: referralRewards.id,
+      referralId: referralRewards.referralId,
+      campaignId: referralRewards.campaignId,
+      recipientUserId: referralRewards.recipientUserId,
+      rewardType: referralRewards.rewardType,
+      rewardValue: referralRewards.rewardValue,
+      status: referralRewards.status,
+      effectiveFrom: referralRewards.effectiveFrom,
+      expiresAt: referralRewards.expiresAt,
+      reversedAt: referralRewards.reversedAt,
+      reversalReason: referralRewards.reversalReason,
+      createdAt: referralRewards.createdAt,
+      campaignName: referralCampaigns.name,
+      recipientName: users.name,
+    }).from(referralRewards)
+      .innerJoin(referralCampaigns, eq(referralCampaigns.id, referralRewards.campaignId))
+      .innerJoin(users, eq(users.id, referralRewards.recipientUserId))
+      .orderBy(desc(referralRewards.createdAt))
+      .limit(250);
+  }),
+  qualifyReferral: adminWith('marketplace.manage')
+    .input(z.object({ referralId: z.number().int().positive(), qualificationType: z.enum(['ACCOUNT_VERIFIED', 'PROVIDER_APPROVED', 'PROFILE_COMPLETED', 'FIRST_VALID_RFQ', 'FIRST_VALID_QUOTATION_RESPONSE']).optional(), note: z.string().max(500).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [referral] = await db.select().from(referrals).where(eq(referrals.id, input.referralId));
+      if (!referral) throw new TRPCError({ code: 'NOT_FOUND', message: 'Referral not found' });
+      if (referral.status === 'revoked' || referral.status === 'expired') throw new TRPCError({ code: 'BAD_REQUEST', message: 'Referral cannot be qualified' });
+      const eventKey = `referral:${referral.id}:qualify:${input.qualificationType ?? 'MANUAL'}`;
+      const qualificationType = input.qualificationType ?? 'ACCOUNT_VERIFIED';
+      await db.update(referrals).set({
+        status: 'qualified',
+        qualificationType,
+        qualificationEventKey: eventKey,
+        qualifiedAt: new Date(),
+        qualificationNote: input.note ?? null,
+      }).where(eq(referrals.id, input.referralId));
+      await db.insert(userAccountAuditEvents).values({
+        userId: referral.referrerId,
+        actorId: ctx.user.id,
+        action: 'referral_qualified',
+        source: 'referral',
+        note: `referral ${referral.id}`,
+      });
+      return { success: true, status: 'qualified' as const };
+    }),
+  reverseReferralReward: adminWith('marketplace.manage')
+    .input(z.object({ rewardId: z.number().int().positive(), reason: z.string().trim().min(1).max(500) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const [reward] = await db.select().from(referralRewards).where(eq(referralRewards.id, input.rewardId));
+      if (!reward) throw new TRPCError({ code: 'NOT_FOUND', message: 'Reward not found' });
+      if (reward.status === 'REVERSED') return { success: true as const, changed: false };
+      await db.update(referralRewards).set({
+        status: 'REVERSED',
+        reversedAt: new Date(),
+        reversalReason: input.reason,
+      }).where(eq(referralRewards.id, input.rewardId));
+      await db.insert(userAccountAuditEvents).values({
+        userId: reward.recipientUserId,
+        actorId: ctx.user.id,
+        action: 'referral_reward_reversed',
+        source: 'referral',
+        note: input.reason,
+      });
+      return { success: true as const, changed: true };
+    }),
   // ── QA sign-in links ────────────────────────────────────────────────────
   issueTestLoginLink: adminWith('qa.manage').input(z.object({
     userId: z.number().int().positive(),
