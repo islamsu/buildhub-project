@@ -1,0 +1,295 @@
+================================================================================
+BUILDHUB - VENDOR ENQUIRIES CONTROL PLANE
+Report 4 - continuation from current HEAD
+Branch: codex/buildhub-final-closure
+================================================================================
+
+Written to the short format the mandate asked for (§24). The long-form reports
+for the earlier phases remain: BUILDHUB_CLAUDE_TAKEOVER_REPORT.txt,
+BUILDHUB_COMMERCIAL_PLACEMENT_REPORT.txt, BUILDHUB_ADMIN_CONTROL_PLANE_REPORT.txt.
+
+
+================================================================================
+0. CONTINUITY - PROVEN, NOT ASSUMED (§0)
+================================================================================
+
+The DeepSeek referral checkpoint is an ancestor of the current work. Nothing was
+reset, rebased away or restarted.
+
+  DeepSeek checkpoint  7af01584d5429ef8b8c64b43987570c6e8da2a72
+  ancestor of eff9a02  YES
+  ancestor of HEAD     YES
+  local == remote      dd220c2 at the time of the check
+
+  Migrations 0037-0040 present. files: 41  journal: 41.
+  Referral tables present: referrals, referralCampaigns, referralRewards.
+  server/referralEngine.ts and server/referral.test.ts present.
+  77 referral references in server/routers.ts.
+
+
+================================================================================
+1. WHAT WAS IMPLEMENTED
+================================================================================
+
+§1 - THE ELIGIBILITY DRIFT GUARD, AND A REAL DEFECT IN MY OWN GUARD
+
+  Milestone A shipped countUsableSuperAdmins, which decides whether the last
+  Super Admin may be removed. Its value depends entirely on agreeing with
+  auth.adminSignIn about what "usable" means, and it did not:
+
+    adminSignIn excludes isDummy accounts.  countUsableSuperAdmins did not.
+
+  A QA persona carrying role='admin', adminRole='SUPER_ADMIN' and a password
+  hash would have been COUNTED as holding the fort while adminSignIn refused it
+  outright - so the guard would have permitted removing the last REAL Super
+  Admin because a test account appeared to be standing in for one.
+
+  Fixed with ADMIN_SIGN_IN_ELIGIBILITY, one list of columns asserted against
+  BOTH sides. The forward direction ("every declared rule is applied") is the
+  obvious half. The reverse direction is the one that earns its place:
+
+    adminSignIn gates on NOTHING ELSE.
+
+  so adding a new sign-in rule fails the test until the survival count learns
+  it. That assertion immediately caught a defect in its own instrument: the
+  first slice anchored on `const candidate = target && !target.isDummy`, which
+  appears FIRST in the ordinary signIn procedure, so it was asserting the wrong
+  function entirely.
+
+§2 - THE VOCABULARY CORRECTION
+
+  qualifiedEnquiries was described in server/vendorEnquiry.ts and in report 3 as
+  a "BILLING FACT" and a "FINANCIAL record". That was wrong about the
+  architecture. BuildHub collects no payment on this path - no gateway, no
+  invoice, no transaction - and payment is deliberately owner-deferred. What
+  happens is that an entitlement granted by a plan is DRAWN DOWN.
+
+  Corrected everywhere to: the ENTITLEMENT / QUALIFIED-ENQUIRY USAGE
+  CONSUMPTION RECORD. The risk in the old wording was concrete: it invites the
+  next engineer to build reconciliation, refunds or revenue reporting on a table
+  that has never seen money.
+
+  "Credit" was KEPT, deliberately. shared/platformRules.ts already defines
+  rfq.enquiry.credit as "one qualified-enquiry credit from the vendor's monthly
+  allowance", and that is the word the vendor's own usage screen uses. It means
+  an allowance unit, and the module now says so.
+
+§3/§4 - THE DERIVATION HELD
+
+  Status remains DERIVED from rfqs + rfqSuppliers + qualifiedEnquiries +
+  quotations. There is no vendorEnquiries table, no status column, and no
+  setEnquiryStatus of any shape - asserted by test.
+
+§5 - THE FIVE VERBS, ANSWERED BEFORE ANY OF THEM WAS BUILT
+
+  The brief listed create / open / cancel / close / reopen. A screen with five
+  buttons is easy to build and impossible to unbuild, so each was mapped to a
+  real domain operation FIRST (server/vendorEnquiryAdminActions.ts):
+
+    create   REAL           INVITE the vendor. Existing inviteSupplier(), real
+                            rfqSuppliers row, existing invitedBy trail.
+    open     NOT IMPLEMENTED  Opening consumes the VENDOR'S allowance for a
+                            decision the vendor did not make.
+    cancel   NEEDS A DOMAIN  Withdrawing an invitation is real and the enum
+             CHANGE         cannot express it. Deleting the row would erase the
+                            invitation from the investigation timeline; reusing
+                            'declined' would attribute the platform's decision
+                            to the vendor.
+    close    REAL           CLOSE THE RFQ (closeRfqSecure). There is no
+                            per-vendor close, and the screen must say what it is
+                            really doing - every vendor on that RFQ is affected.
+    reopen   NOT IMPLEMENTED  No per-vendor reopen. A decline records the
+                            vendor's own decision and is not an administrator's
+                            to rewrite.
+
+    adjust   REAL           vendorEntitlementOverrides - the existing dated,
+    allowance               reasoned, revocable architecture. Never a written
+                            remaining count, and no qualifiedEnquiries row is
+                            created, altered or removed.
+
+  Every claim in that catalogue is asserted against the real codebase, so a
+  claim that stops being true fails a test instead of misleading a reader.
+
+§6 - ADMIN_COMPLIMENTARY IS NOT NEEDED. THIS IS A FINDING, NOT A DEFERRAL.
+
+  The mandate anticipated a complimentary admin-granted open that must not
+  decrement the normal allowance. BuildHub already has the operation it was
+  meant to solve for: an INVITED supplier opens for free. openQualifiedEnquiry
+  returns byInvitation, writes NO qualifiedEnquiries row, and the commercial
+  trail records "opened by invitation, exempt from the allowance".
+
+  So "give this vendor access to this RFQ at no cost" is INVITE_VENDOR - real,
+  already audited, visible to the vendor as an invitation rather than as an
+  inexplicable act, and it leaves the decision to open with the vendor.
+
+  A second exemption mechanism would have the same effect with none of the
+  history, and would teach the vendor's own usage screen a new usageReason for
+  no gain. The §6 constraints are preserved verbatim as
+  ADMIN_COMPLIMENTARY_RULES in case the owner ever wants one that is genuinely
+  distinct from an invitation.
+
+§7 - THE HUMAN REFERENCE, REVIEWED BEFORE FINALISING
+
+  Checked whether public human-safe references already exist for the two halves.
+  They do, and they are exactly these numbers:
+
+    RFQ     no reference column, no slug. Every screen renders `RFQ #<id>` and
+            /rfq/:id is the canonical route. The id IS the public reference.
+    Vendor  no slug. /vendor/:id is the canonical provider profile route.
+
+  ENQ-<rfqId>-<vendorId> therefore composes two identifiers BuildHub already
+  prints and already puts in URLs. Rejected on inspection: users.openId is the
+  SESSION identifier and must never appear in a quotable reference, and
+  users.username is nullable - a reference built from it would be missing for
+  exactly the accounts most likely to need support.
+
+§8 - THE OVERVIEW, COUNTED IN THE DATABASE
+
+  AVAILABLE is not a record. It is every eligible vendor against every open RFQ
+  - a cartesian product whose count jumps when a vendor signs up and has nothing
+  to do with enquiries. So the universe an administrator can count is the union
+  of the three tables that record something HAPPENING:
+
+    rfqSuppliers  UNION  qualifiedEnquiries  UNION  quotations
+
+  AVAILABLE can never appear in those counts, and the payload declares it as
+  excluded rather than leaving a permanent zero unexplained.
+
+  Counting in Node is one round trip and a dashboard that times out at real
+  scale. Counting in SQL is a SECOND precedence ladder - the exact drift this
+  module exists to prevent. So the ladder is now DATA (ENQUIRY_STATE_RULES) and
+  both renderings are generated from it: deriveEnquiryState walks the array,
+  enquiryStateSql emits a CASE from the same array in the same order. A test
+  fails if a rung is ever hand-written into the SQL.
+
+  admin.enquiryOverview is gated on marketplace.manage, decided server-side, and
+  returns COUNTS ONLY - no vendor identity, no RFQ content, no quotation figure.
+
+
+================================================================================
+2. WHAT WAS TESTED
+================================================================================
+
+UNIT       3,182 passing, 0 failing, 151 files. tsc clean. Build clean.
+           New: vendorEnquiryQuery.test.ts (12), vendorEnquiryAdminActions.test.ts
+           (7), adminAuthority.test.ts extended 20 -> 23.
+
+MUTATION   6 planted, 6 killed. Selective, per §23 - critical invariants only.
+             - eq(users.isDummy, false) removed from the survival count   KILLED
+             - adminSignIn grows candidate.lockedUntil                    KILLED
+             - the byState zero-fill removed                              KILLED
+             - an unknown derived state swallowed instead of thrown       KILLED
+             - a CASE rung hand-written instead of generated              KILLED
+             - (live) the terminal-RFQ rung narrowed in SQL only          KILLED
+
+           One mutation SURVIVED and was investigated rather than recorded:
+           rewriting the SQL comparison 'declined' -> 'DECLINED' changed nothing.
+           That is not a weak test - it is MySQL's default collation being
+           case-insensitive where JavaScript === is not. See below.
+
+LIVE       evidence/zg-enquiryderivation.mjs - 81 checks, twice, exit 0.
+           All 80 evidence combinations compared between the generated SQL CASE
+           running in real MariaDB and deriveEnquiryState running in Node. Zero
+           disagreements. Proven able to fail: two meaning-changing mutations
+           produced 16 and 8 disagreements.
+
+           evidence/zg-enquiryoverview.mjs - 23 checks, twice, exit 0.
+             anonymous caller                  401
+             SUPPORT_ADMIN (no marketplace.manage)  403, server-side
+             empty platform                    every state an explicit zero
+             ten-pair fixture                  every state counted exactly
+             second quotation on one pair      does NOT double-count it
+             payload                           carries no vendor or RFQ identity
+             fixture                           removed itself completely
+
+           The sign-in is GATED: if the bootstrap Super Admin sign-in fails the
+           probe aborts, because an unauthenticated 401 would otherwise read as
+           a successful denial. That specific vacuous-pass failure happened in an
+           earlier probe and is now designed out.
+
+
+================================================================================
+3. WHAT THE VERIFICATION FOUND THAT THE TESTS DID NOT
+================================================================================
+
+Three findings, all from live work, none visible to a green suite.
+
+1. MY OWN GUARD WAS WRONG (§1). countUsableSuperAdmins omitted isDummy. Found by
+   reading the real adminSignIn source line by line rather than trusting the
+   comment I had written above my own function.
+
+2. MY TEST WAS ASSERTING THE WRONG FUNCTION. The drift guard's first slice
+   anchored on a line that appears in the ordinary signIn procedure before the
+   admin one. It reported adminSignIn as having lost its role checks. The
+   reverse assertion caught it - which is precisely why the reverse assertion is
+   there.
+
+3. TWO OF MY HAND-WRITTEN EXPECTATIONS WERE WRONG AND THE CODE WAS RIGHT. The
+   live fixture expects a state per row, written out by hand from the rules -
+   never by calling deriveEnquiryState, which would only prove the code agrees
+   with itself. Two rows disagreed. On investigation the terminal-RFQ rung
+   correctly outranks the invitation rungs: an awarded RFQ closes an enquiry
+   that produced no quotation, whatever the invitation says, because the vendor
+   cannot act. The combination is additionally unreachable in production -
+   markInvitationResponded is called only from the quotation-submit path, so a
+   'responded' invitation always has a quotation beside it in real data.
+
+4. SQL AND JAVASCRIPT GENUINELY DISAGREE IN ONE PLACE. MariaDB's default
+   collation is case-insensitive, so `invitationStatus = 'declined'` matches a
+   stored 'DECLINED' where === would not. Unreachable because both status
+   columns are ENUMs whose members are all lowercase - and that is now ASSERTED
+   live against information_schema, not assumed, because a future migration
+   adding a mixed-case member would make the divergence real and silent.
+
+
+================================================================================
+4. WHAT WAS NOT DONE, HONESTLY CLASSIFIED
+================================================================================
+
+NOT STARTED - the rest of the Vendor Enquiries control plane
+  §9  the searchable, filterable, sortable, paginated list
+  §11 the detail page, with quotation privacy
+  §12 internal notes (adminNotes exists and will be reused; note that an
+      enquiry is a PAIR and adminNotes addresses a single subject id - that
+      modelling question is open and will be answered before it is coded)
+  §13 assignment   §14 notifications   §15/§16 entitlement display and
+  adjustment   §17 safe bulk only   §18 permissioned export
+
+NOT STARTED - after that, in the mandated order
+  §25/§26 staging deployment (AUTHORIZED; production is NOT)
+  §28/§30 Referral lifecycle completion, preserving all inherited work, with
+          TEMPORARY_FEATURED going through the canonical placement engine as
+          source REFERRAL_REWARD / label Featured - not a second Featured flag
+  §32     Dispute lifecycle
+  todo.md backlog, which is not to be shrunk
+
+REQUIRES A DOMAIN CHANGE - not a fake state
+  Withdrawing an invitation. Needs 'withdrawn' on the rfqSuppliers.status enum
+  with withdrawnAt and withdrawnBy. Recorded, not faked.
+
+NOT VERIFIED - rendered browser QA
+  Everything in this report is verified at API, database and HTTP level. No
+  Admin screen for vendor enquiries exists yet, so there is nothing to render.
+
+NEVER DONE, BY INSTRUCTION
+  No payment gateway, checkout, orders, transactions, revenue, GMV or commission
+  revenue. No main merge. No production deployment. No production database.
+
+
+================================================================================
+5. DELIVERY
+================================================================================
+
+  COMMIT 1   72c911b  eligibility drift guard, entitlement vocabulary, §7 review
+  COMMIT 2   10b11f8  action semantics, and an overview counted in the database
+
+  LOCAL SHA          10b11f808d43c791fb58cfa5c1f04b8c13434458
+  FRESH REMOTE SHA   10b11f808d43c791fb58cfa5c1f04b8c13434458
+  TREE STATUS        clean
+  BRANCH             codex/buildhub-final-closure
+
+  NEXT EXACT ITEM    §9 - the paginated, searchable enquiry list, reusing the
+                     same universe query, human-first columns, quotation privacy
+                     enforced server-side.
+
+================================================================================
