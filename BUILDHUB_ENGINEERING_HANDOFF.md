@@ -6,7 +6,7 @@ REPOSITORY: islamsu/buildhub-project
 
 ACTIVE DEVELOPMENT BRANCH: codex/buildhub-final-closure
 
-LATEST VERIFIED DEVELOPMENT SHA: 9f36e5b6c2e66e28cd633b951ed30a1c43232f59
+LATEST VERIFIED DEVELOPMENT SHA: 2febc078480f0b270fa0bff7aae5bfc1782edf2f
 
 WORKING TREE: CLEAN
 
@@ -75,6 +75,7 @@ Do not blur these states. A pushed commit exists in GitHub but is not necessaril
 ## RECENT COMMIT SUMMARY
 
 ```text
+2febc07 Referral foundation and invite attribution
 9f36e5b BuildHub: complete master reconciliation tracker
 c66e232 Admin internal notes and complete backlog register
 fb0af30 Admin: allowlisted user detail editing
@@ -94,7 +95,7 @@ a065aca Admin: vendor lookup by business identity, not database id
 
 ## LATEST RELEVANT MIGRATION
 
-The latest numbered migration file is `drizzle/0036_admin_notes.sql`.
+The latest numbered migration file is `drizzle/0037_referrals.sql`.
 
 Migration lineage must be preserved with forward migrations only. Do not rewrite historical migrations.
 
@@ -122,6 +123,7 @@ Recent completed or regression-protected work includes:
 - Vendor Name Change Request and Admin Direct Vendor Name Correction with audit, notifications, and security tests
 - Admin User Detail account editing for permitted name/username/email/phone/role fields
 - Internal Admin Notes for User Detail with permission controls and non-public storage
+- Referral foundation: secure per-user code, signup attribution, referrals ledger, Invite & Earn Settings surface, Admin endpoint
 - Initial user-facing dispute workflow
 
 ## PARTIAL / INCOMPLETE WORK
