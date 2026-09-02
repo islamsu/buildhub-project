@@ -75,6 +75,35 @@ export const ANALYTICS_EVENTS = {
   SUBSCRIPTION_PAYMENT_FAILED: 'subscription.payment_failed',
   /** Payment recovered during grace. */
   SUBSCRIPTION_PAYMENT_RECOVERED: 'subscription.payment_recovered',
+
+  // ── Commercial placement ─────────────────────────────────────────────────
+  //
+  // The four facts a placement advertiser is entitled to, and NOT one step
+  // further. There is deliberately no SALE, ORDER, REVENUE, GMV or COMMISSION
+  // event here: BuildHub does not observe any of those, and an event type is
+  // an invitation to populate it.
+  //
+  // subject is always ('placement', placementId), so every row can be traced
+  // back to the exact booking it belongs to. metadata carries surface,
+  // entityType and entityId - all structural, none of it personal.
+
+  /**
+   * A placement was RENDERED and actually seen. Not an API call: see
+   * shared/placementAnalytics.ts for the visibility rule and why a fetch does
+   * not qualify.
+   */
+  PLACEMENT_IMPRESSION: 'placement.impression',
+  /** A visitor opened the provider profile or product page FROM a placement. */
+  PLACEMENT_ENTITY_VIEW: 'placement.entity_view',
+  /** A visitor took a real action offered by the placement - Get quote, Add to RFQ. */
+  PLACEMENT_CTA_CLICK: 'placement.cta_click',
+  /**
+   * A placement-originated journey ended in a REAL enquiry relationship - an
+   * RFQ actually submitted, or a qualified enquiry actually opened. This is an
+   * attributed enquiry and nothing more; it is NOT a sale, and it must never be
+   * reported as revenue.
+   */
+  PLACEMENT_QUALIFIED_ENQUIRY: 'placement.qualified_enquiry',
 } as const;
 
 export type AnalyticsEventType = (typeof ANALYTICS_EVENTS)[keyof typeof ANALYTICS_EVENTS];

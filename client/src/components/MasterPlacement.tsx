@@ -31,6 +31,7 @@ import { Badge } from '@/components/ui/badge';
 import { BadgeCheck, Building2, MapPin, Megaphone, Package, Star } from 'lucide-react';
 import { placementLabelText, type PlacementLabel } from '@shared/placement';
 import { rfqCategoryLabel } from '@shared/rfqCategories';
+import { useImpression, usePlacementReporter } from '@/hooks/usePlacementAnalytics';
 
 /**
  * The label, as text plus an icon.
@@ -75,7 +76,17 @@ function PlacedProviderCard({ placed, compact }: { placed: PlacedProviderCardDat
   const { lang, t } = useLanguage();
   const ar = lang === 'ar';
   const [, navigate] = useLocation();
+  // The impression is measured on THIS element, and the two actions below are
+  // the only things counted as a view or a CTA. An ordinary click elsewhere on
+  // the card is not a conversion and is not reported as one.
+  const impressionRef = useImpression(placed.placementId);
+  const report = usePlacementReporter();
+  // The ref goes on a plain wrapper rather than on <Card>. Card forwards its
+  // props onto a div, so a ref would probably reach it - but "probably", on a
+  // React version detail, is not a good foundation for a number an advertiser
+  // is billed against. A wrapper element is unambiguous.
   return (
+    <div ref={impressionRef}>
     <Card className={compact ? 'overflow-hidden' : 'overflow-hidden border-2'}>
       <CardContent className={`flex flex-col gap-4 p-5 ${compact ? '' : 'sm:flex-row sm:items-center'}`}>
         <div className="flex items-center gap-3">
@@ -119,19 +130,37 @@ function PlacedProviderCard({ placed, compact }: { placed: PlacedProviderCardDat
         </div>
 
         <div className="flex shrink-0 gap-2">
-          <Button size="sm" onClick={() => navigate(`/vendor/${placed.id}`)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              report(placed.placementId, 'ENTITY_VIEW');
+              navigate(`/vendor/${placed.id}`);
+            }}
+          >
             {ar ? 'عرض المزوّد' : 'View provider'}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => navigate(`/rfq/new?provider=${placed.id}`)}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              // A CTA is an intent to transact, not a conversion. The
+              // conversion - if it happens - is recorded server-side when a
+              // real RFQ is submitted.
+              report(placed.placementId, 'CTA_CLICK');
+              navigate(`/rfq/new?provider=${placed.id}&placement=${placed.placementId}`);
+            }}
+          >
             {ar ? 'اطلب عرض سعر' : 'Get quote'}
           </Button>
         </div>
       </CardContent>
     </Card>
+    </div>
   );
 }
 
 type PlacedProviderCardData = {
+  placementId: number;
   id: number; name: string | null; bio: string | null; avatar: string | null;
   location: string | null; userRole: string | null; verified: boolean | null;
   averageRating: number | null; reviewCount: number; label: PlacementLabel;

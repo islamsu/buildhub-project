@@ -141,6 +141,20 @@ export const contentLimiters = {
   // ceiling.
   uploadBurst: createRateLimiter({ windowMs: 60_000, max: 10 }),
   uploadSustained: createRateLimiter({ windowMs: 60 * 60_000, max: 60 }),
+  /**
+   * PLACEMENT ANALYTICS, reported by anonymous browsers.
+   *
+   * Keyed by IP rather than user, because most marketplace browsing has no
+   * session - so this is the one content limiter that has to work without one.
+   *
+   * Generous on purpose: a visitor scrolling a category page legitimately
+   * produces an impression per placement, and throttling honest reporting would
+   * UNDERSTATE what an advertiser received, which is its own kind of dishonesty.
+   * The ceiling exists to stop a script manufacturing a performance report, not
+   * to police normal reading.
+   */
+  placementEventBurst: createRateLimiter({ windowMs: 60_000, max: 60 }),
+  placementEventSustained: createRateLimiter({ windowMs: 60 * 60_000, max: 600 }),
 };
 
 export function resetContentLimiters() {

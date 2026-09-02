@@ -43,6 +43,8 @@ import {
   applyBoost, boostCandidates, masterProduct, masterProvider,
   spotlightProducts, spotlightProviders,
 } from './publicPlacement';
+import { placementPerformance, recordPlacementEvent } from './placementAnalytics';
+import { PLACEMENT_CLIENT_EVENTS, PLACEMENT_METRIC_FORMULAS } from '@shared/placementAnalytics';
 import { formatProjectContext, resolveProjectContext } from './_core/projectContext';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
@@ -1590,6 +1592,52 @@ const marketplaceRouter = router({
   spotlightProducts: publicProcedure
     .input(z.object({ category: z.string().min(1).max(MAX_SEARCH_LENGTH) }))
     .query(async ({ input }) => spotlightProducts(input.category)),
+
+  /**
+   * ── REPORTING A PLACEMENT EVENT ────────────────────────────────────────
+   *
+   * PUBLIC, because most marketplace browsing is anonymous and an advertiser's
+   * impressions must not be limited to signed-in readers. That makes this the
+   * one analytics surface an untrusted party can write to, so:
+   *
+   *   - the event type is a CLOSED enum - nobody invents a metric;
+   *   - QUALIFIED_ENQUIRY is absent from that enum, because a browser must
+   *     never be able to assert that a business relationship exists. That
+   *     event is written server-side from the enquiry record itself;
+   *   - the placement must exist and be LIVE, so a fabricated id records
+   *     nothing and an expired campaign cannot keep accruing;
+   *   - the surface and entity come from the placement ROW, not the request;
+   *   - it is rate limited by IP, since there is no account to key on.
+   *
+   * It returns whether the event was recorded rather than a bare success: "we
+   * recorded it" is the entire value of the call, and a refusal must not be
+   * reported as a write.
+   */
+  recordPlacementEvent: publicProcedure
+    .input(z.object({
+      placementId: z.number().int().positive(),
+      event: z.enum(PLACEMENT_CLIENT_EVENTS),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const now = Date.now();
+      const ip = getClientIp(ctx.req);
+      if (ip) {
+        const blocked = [
+          contentLimiters.placementEventBurst.check(ip, now),
+          contentLimiters.placementEventSustained.check(ip, now),
+        ].find(result => !result.allowed);
+        // A throttled report is DROPPED, not an error: analytics must never
+        // interrupt a visitor's browsing, and the page has nothing useful to
+        // do with the refusal.
+        if (blocked) return { recorded: false as const };
+      }
+      const result = await recordPlacementEvent({
+        placementId: input.placementId,
+        event: input.event,
+        userId: ctx.user?.id ?? null,
+      });
+      return { recorded: result.recorded };
+    }),
   list: publicProcedure
     // BOUNDED, matching marketplace.vendors below, which already was. This
     // endpoint is PUBLIC and unauthenticated: `limit` had no int, no minimum
@@ -4963,6 +5011,25 @@ const adminRouter = router({
       .orderBy(desc(vendorSponsorships.createdAt))
       .limit(250);
   }),
+  /**
+   * COMMERCIAL PLACEMENT PERFORMANCE, from real events only.
+   *
+   * Every figure is a COUNT of analytics rows that exist. A placement nobody
+   * has seen reports zeros and NULL rates - null rather than 0%, because "0%
+   * clicked" asserts that people saw it and did not click, while the truth is
+   * that there is nothing to compute yet. The screen renders that as an empty
+   * state, not as failure.
+   *
+   * There is no revenue, GMV or commission column, here or anywhere below it.
+   * BuildHub observes none of those - payments are deferred - and a column is
+   * an invitation to fill it in.
+   */
+  placementPerformance: adminWith('marketplace.manage')
+    .query(async () => ({
+      rows: await placementPerformance(),
+      formulas: PLACEMENT_METRIC_FORMULAS,
+    })),
+
   bookPlacement: adminWith('marketplace.manage')
     .input(z.object({
       entityType: z.enum(['PROVIDER', 'PRODUCT']),

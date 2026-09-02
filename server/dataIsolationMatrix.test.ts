@@ -86,6 +86,8 @@ const DELIBERATELY_SHARED: Record<string, string> = {
     'Public Q&A on a public listing. Returns a column allowlist that omits askerId, so the thread cannot be walked back to the buyers.',
   'marketplace.askQuestion':
     'Anyone signed in may ask about any listed product. Scoped by the same `active` predicate as marketplace.get.',
+  'marketplace.recordPlacementEvent':
+    'AN ADVERTISEMENT HAS NO OWNER AMONG ITS VIEWERS. It is shown to everyone, most of them anonymous, so "who may report having seen it" is not an ownership question and owner-scoping it would limit an advertiser\'s impressions to signed-in readers. The id IS constrained, just not by user: the placement must exist AND be live, so a fabricated id and an expired campaign both record nothing. It READS nothing back - it returns only whether the write happened - so there is no data to isolate. The event that WOULD be worth forging, QUALIFIED_ENQUIRY, is absent from the client enum entirely and is written server-side from the enquiry record.',
   'reviews.forUser':
     'A vendor reputation nobody but the vendor could read would not be a reputation.',
   'reviews.statsForUser':

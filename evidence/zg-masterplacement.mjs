@@ -13,7 +13,22 @@ import { execSync } from 'node:child_process';
 
 const BASE = 'http://127.0.0.1:5401';
 const DB = 'buildhub_prelaunch';
-const sql = q => execSync(`mysql -u root --default-character-set=utf8mb4 ${DB} -N -B -e ${JSON.stringify(q)}`).toString().trim();
+/**
+ * Run one SQL statement and return its output.
+ *
+ * The query is COLLAPSED TO ONE LINE first: a multi-line -e argument makes the
+ * MariaDB client emit a "PAGER set to stdout" banner ahead of the result, and
+ * that banner silently turned every `Number(sql(...))` into NaN. The banner is
+ * also stripped defensively, so a count is a count rather than a count with a
+ * sentence in front of it.
+ */
+const sql = q => execSync(
+  `mysql -u root --default-character-set=utf8mb4 ${DB} -N -B -e ${JSON.stringify(q.replace(/\s+/g, ' ').trim())}`,
+).toString()
+  .split('\n')
+  .filter(line => !/^PAGER set to/.test(line))
+  .join('\n')
+  .trim();
 
 let pass = 0, fail = 0;
 const results = [];
@@ -67,8 +82,15 @@ const book = (over = {}) => {
   };
   const cols = Object.keys(row).join(',');
   const vals = Object.values(row).map(v => v === null ? 'NULL' : `'${String(v).replace(/'/g, "''")}'`).join(',');
-  sql(`insert into vendorSponsorships (${cols}) values (${vals})`);
-  const id = Number(sql(`select last_insert_id()`));
+  // ONE connection for both statements. `mysql -e` opens a NEW connection per
+  // invocation, and LAST_INSERT_ID() is per-connection - reading it in a second
+  // call returned 0, which surfaced as NaN the moment a test actually used the
+  // returned id. The insert and the read must therefore share a statement.
+  const id = Number(sql(
+    `insert into vendorSponsorships (${cols}) values (${vals}); select last_insert_id();`));
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error(`probe setup: booked a placement but read back id "${id}"`);
+  }
   made.placements.push(id);
   return id;
 };
@@ -433,6 +455,94 @@ try {
   check('BOOST TIME: revoking the boost leaves the product itself in the results',
     (afterRevoke.data ?? []).some(p => p.id === lastLighting), 'still listed');
 
+  // ══ ANALYTICS ═══════════════════════════════════════════════════════════
+  //
+  // These are the numbers BuildHub intends to sell against, so the checks are
+  // about the ways one could become untrue.
+
+  const post = (path, input) => fetch(`${BASE}/api/trpc/${path}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ json: input }),
+  }).then(async r => {
+    const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch {}
+    return { status: r.status, data: j?.result?.data?.json ?? null, error: j?.error?.json?.message ?? null };
+  });
+
+  const analyticsVendor = mkProvider('k');
+  const analyticsPlacement = book({ vendorId: analyticsVendor, category: 'GLOBAL' });
+
+  const evBefore = Number(sql(`select count(*) from analyticsEvents
+    where subjectType='placement' and subjectId=${analyticsPlacement}`));
+
+  const imp = await post('marketplace.recordPlacementEvent',
+    { placementId: analyticsPlacement, event: 'IMPRESSION' });
+  check('ANALYTICS: an anonymous browser can report an impression',
+    imp.data?.recorded === true, JSON.stringify(imp.data ?? imp.error));
+
+  const evAfter = Number(sql(`select count(*) from analyticsEvents
+    where subjectType='placement' and subjectId=${analyticsPlacement}`));
+  check('ANALYTICS: the event reached the DATABASE, not just a 200 response',
+    evAfter === evBefore + 1, `before=${evBefore} after=${evAfter}`);
+
+  const storedType = sql(`select eventType from analyticsEvents
+    where subjectType='placement' and subjectId=${analyticsPlacement} order by id desc limit 1`);
+  check('ANALYTICS: it is stored as a placement impression',
+    storedType === 'placement.impression', storedType);
+
+  const storedMeta = sql(`select metadata from analyticsEvents
+    where subjectType='placement' and subjectId=${analyticsPlacement} order by id desc limit 1`);
+  check('ANALYTICS: metadata carries the surface from the ROW and nothing personal',
+    storedMeta.includes('MASTER_DISCOVERY') && !/email|ip|agent|token/i.test(storedMeta), storedMeta);
+
+  // A BROWSER MUST NOT BE ABLE TO ASSERT A CONVERSION.
+  const fakeConv = await post('marketplace.recordPlacementEvent',
+    { placementId: analyticsPlacement, event: 'QUALIFIED_ENQUIRY' });
+  check('ANALYTICS SECURITY: a browser CANNOT report a qualified enquiry',
+    fakeConv.status !== 200 || fakeConv.data?.recorded !== true,
+    `status=${fakeConv.status} ${JSON.stringify(fakeConv.data ?? fakeConv.error)}`);
+
+  const convCount = Number(sql(`select count(*) from analyticsEvents
+    where subjectType='placement' and subjectId=${analyticsPlacement}
+      and eventType='placement.qualified_enquiry'`));
+  check('ANALYTICS SECURITY: no conversion row was written by that attempt',
+    convCount === 0, `rows=${convCount}`);
+
+  const fakeSale = await post('marketplace.recordPlacementEvent',
+    { placementId: analyticsPlacement, event: 'SALE' });
+  check('ANALYTICS SECURITY: an invented event type is refused',
+    fakeSale.status !== 200 || fakeSale.data?.recorded !== true,
+    `status=${fakeSale.status}`);
+
+  // A FABRICATED PLACEMENT ID MUST RECORD NOTHING.
+  const ghost = await post('marketplace.recordPlacementEvent',
+    { placementId: 987654321, event: 'IMPRESSION' });
+  check('ANALYTICS SECURITY: an event against a non-existent placement records nothing',
+    ghost.data?.recorded === false, JSON.stringify(ghost.data ?? ghost.error));
+  const ghostRows = Number(sql(`select count(*) from analyticsEvents where subjectId=987654321`));
+  check('ANALYTICS SECURITY: and no row was written for it',
+    ghostRows === 0, `rows=${ghostRows}`);
+
+  // AN EXPIRED PLACEMENT MUST STOP ACCRUING.
+  sql(`update vendorSponsorships set endsAt='2021-01-01 00:00:00' where id=${analyticsPlacement}`);
+  const afterExpiry = await post('marketplace.recordPlacementEvent',
+    { placementId: analyticsPlacement, event: 'IMPRESSION' });
+  check('ANALYTICS: an EXPIRED placement stops accruing impressions',
+    afterExpiry.data?.recorded === false, JSON.stringify(afterExpiry.data));
+  sql(`update vendorSponsorships set endsAt=null where id=${analyticsPlacement}`);
+
+  sql(`update vendorSponsorships set revokedAt=now() where id=${analyticsPlacement}`);
+  const afterRevoked = await post('marketplace.recordPlacementEvent',
+    { placementId: analyticsPlacement, event: 'ENTITY_VIEW' });
+  check('ANALYTICS: a REVOKED placement stops accruing',
+    afterRevoked.data?.recorded === false, JSON.stringify(afterRevoked.data));
+  sql(`update vendorSponsorships set revokedAt=null where id=${analyticsPlacement}`);
+
+  // The admin report must be behind a permission, not public.
+  const perf = await query('admin.placementPerformance', undefined);
+  check('ANALYTICS SECURITY: the performance report is NOT public',
+    perf.status !== 200 || perf.data === null,
+    `status=${perf.status} ${String(perf.error).slice(0, 60)}`);
+
 } catch (error) {
   check('THE PROBE ITSELF RAN TO COMPLETION', false, String(error && error.message).slice(0, 200));
 } finally {
@@ -444,6 +554,9 @@ try {
       results.push(`CLEANUP  ${label} left rows behind: ${String(error && error.message).slice(0, 120)}`);
     }
   };
+  tidy('analytics', `delete from analyticsEvents where subjectType='placement' and subjectId in
+      (select id from vendorSponsorships where vendorId in
+        (select id from users where username like 'mp${stamp}%'))`);
   tidy('placements', `delete from vendorSponsorships where vendorId in
       (select id from users where username like 'mp${stamp}%')
       or productId in (select id from products where name like 'Probe Rebar ${stamp}%')`);

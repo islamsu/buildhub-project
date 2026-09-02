@@ -172,6 +172,15 @@ describe('§1 every procedure is pinned to a tier', () => {
       // server/platformStats.ts. It replaced four hardcoded marketing figures.
       'marketplace.platformStats',
       'marketplace.questions',
+      // REPORTING A PLACEMENT EVENT. Public because most marketplace browsing
+      // is anonymous and an advertiser's impressions must not be limited to
+      // signed-in readers. It is the one analytics surface an untrusted party
+      // may write to, and it is narrowed accordingly: a CLOSED event enum that
+      // excludes QUALIFIED_ENQUIRY entirely (a browser must never assert that a
+      // business relationship exists), a placement that must exist and be live,
+      // a subject read from the placement row rather than the request, and an
+      // IP rate limit. It READS nothing back.
+      'marketplace.recordPlacementEvent',
       // The sponsored strip above the vendors directory. Public because the
       // directory it sits above is public, and because it exposes strictly
       // LESS than that directory already does: the same vendor cards, from the
