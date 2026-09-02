@@ -253,6 +253,13 @@
       "when": 1788300000000,
       "tag": "0035_vendor_name_change_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "5",
+      "when": 1788330000000,
+      "tag": "0036_admin_notes",
+      "breakpoints": true
     }
   ]
 }

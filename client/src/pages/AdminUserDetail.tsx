@@ -87,11 +87,16 @@ export default function AdminUserDetail() {
     { userId },
     { enabled: validId && can('users.read') },
   );
+  const { data: userNotes = [] } = trpc.admin.userNotes.useQuery(
+    { userId },
+    { enabled: validId && can('users.read') },
+  );
 
   const [freezeOpen, setFreezeOpen] = useState(false);
   const [freezeReason, setFreezeReason] = useState('');
   const [freezeReasonDetail, setFreezeReasonDetail] = useState('');
   const [editForm, setEditForm] = useState({ name: '', username: '', email: '', phone: '', userRole: 'homeowner' });
+  const [noteDraft, setNoteDraft] = useState('');
 
   useEffect(() => {
     if (!detail) return;
@@ -142,6 +147,14 @@ export default function AdminUserDetail() {
       toast.success(lang === 'ar' ? 'تم حفظ بيانات المستخدم' : 'User details saved');
       utils.admin.userDetail.invalidate({ userId });
       utils.admin.users.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+  const addUserNote = trpc.admin.addUserNote.useMutation({
+    onSuccess: () => {
+      toast.success(lang === 'ar' ? 'تمت إضافة الملاحظة' : 'Note added');
+      setNoteDraft('');
+      utils.admin.userNotes.invalidate({ userId });
     },
     onError: error => toast.error(error.message),
   });
@@ -305,6 +318,40 @@ export default function AdminUserDetail() {
                     >
                       {lang === 'ar' ? 'حفظ التعديلات' : 'Save changes'}
                     </Button>
+                  </div>
+                )}
+
+                {canManageUsers && (
+                  <div className="rounded-xl border p-4">
+                    <p className="text-sm font-medium">{lang === 'ar' ? 'ملاحظات المشرف الداخلية' : 'Internal Admin Notes'}</p>
+                    <Textarea
+                      className="mt-3"
+                      rows={3}
+                      maxLength={5000}
+                      value={noteDraft}
+                      onChange={event => setNoteDraft(event.target.value)}
+                      placeholder={lang === 'ar' ? 'اكتب ملاحظة داخلية…' : 'Write an internal note…'}
+                    />
+                    <Button
+                      size="sm"
+                      className="mt-2"
+                      disabled={addUserNote.isPending || noteDraft.trim().length === 0}
+                      onClick={() => addUserNote.mutate({ userId, note: noteDraft.trim() })}
+                    >
+                      {lang === 'ar' ? 'إضافة ملاحظة' : 'Add note'}
+                    </Button>
+                    {userNotes.length > 0 && (
+                      <div className="mt-3 space-y-2 rounded-lg border p-3">
+                        {userNotes.map(note => (
+                          <div key={note.id} className="border-b pb-2 last:border-0 last:pb-0">
+                            <p className="text-sm">{note.note}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {note.authorName || note.authorEmail || '—'} · {new Date(note.createdAt).toLocaleString()}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 

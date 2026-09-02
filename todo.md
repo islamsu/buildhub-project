@@ -368,6 +368,34 @@
 - [x] RFQ investigation humanizes raw onboarding/account/bid/request statuses
 - [x] Vendor Name Change Request and Admin Direct Name Correction with audit, notifications, and security tests
 - [x] Admin User Detail gains allowlisted account editing for name, username, email, phone, and non-admin role
+- [x] Internal Admin Notes for User Detail with permission controls, author/time, and non-public storage
 - [ ] System-wide entity-link/dead-control/raw-ID/raw-enum audit across remaining admin modules
 - [x] Resolve count semantics and make Platform Healthy / Live labels reflect verified runtime state
 - [ ] Vendor/business name clickable to Vendor Management across all remaining admin tables
+
+## Master Reconciliation Remaining Scope
+
+- [ ] Referral / Invitation Reward system: secure code/link, attribution, campaigns, qualification, caps, non-cash rewards, expiry, reversal, notifications, audit, Admin management
+- [ ] Complete Dispute lifecycle: relationship eligibility, reference, respondent, evidence, participant communication, internal notes, assignment, priority, statuses, resolution, controlled reopen, notifications, audit
+- [ ] Support Tickets: user create/category/description/attachment/updates, Support Admin search/filter/assign/respond/request-info/resolve/close
+- [ ] Reviews / Reputation: relationship eligibility, self-review prevention, duplicate prevention, provider response policy, reporting, moderation, restore/hide, audit
+- [ ] Full Vendor Management command centre with real applicable modules and cross-links from Admin surfaces
+- [ ] Benefits, Limits & Privileges: central entitlement view showing base, campaign/referral, individual overrides, effective, used, remaining, reset/expiry
+- [ ] Admin Notes: internal-only, permission-controlled, authored/timestamped, never public
+- [ ] Admin Audit UX: search/filter/sort/pagination and humanized actor/target identities
+- [ ] Product image management: upload, primary, additional, replace, remove, reorder, persistence, ownership
+- [ ] Product lifecycle states: Draft, Active/Published, Inactive, Archived, preferring archive/deactivate where history matters
+- [ ] Service management for service providers distinct from physical product catalogue
+- [ ] RFQ basket workflow: select/add/remove/quantity/notes/specifications/persistence/submit without duplicate RFQs
+- [ ] Complete RFQ Detail navigation and authorized requester/project/items/attachments/status/response action
+- [ ] Supplier answer editing/moderation policy — retain as OWNER DECISION unless already resolved
+- [ ] Team / Organization management: concrete company role model and authorization plan if architecture requires redesign
+- [ ] Notification preferences for noncritical channels; mandatory security/legal notifications remain mandatory
+- [ ] Admin analytics using real data only; no fabricated revenue/orders/GMV/commissions while payments are deferred
+- [ ] AI knowledge completeness separated from AI engine capability; no fabricated primary-source authority
+- [ ] Performance/reliability review: unbounded queries, N+1, pagination, indexes, image payloads, debounce, double-submit/idempotency
+- [ ] Accessibility and mobile/RTL pass at 375/768/1440 for all modified areas
+- [ ] Public SEO/discovery for crawlable marketplace content while keeping private RFQs/projects/messages/admin non-indexed
+- [ ] `projects.spent` vs live expense-log sum — retain as OWNER DECISION unless resolved
+- [ ] Admin impersonation: classify SECURITY ARCHITECTURE REQUIRED unless a safe time-limited, audited, banner-protected mechanism exists
+- [ ] Payment gateway remains OWNER-DEFERRED; no live payments, orders, transactions, revenue, GMV, commissions, or cash rewards

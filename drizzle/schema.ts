@@ -1240,6 +1240,20 @@ export const vendorNameChangeRequests = mysqlTable('vendorNameChangeRequests', {
   statusIdx: index('vendorNameChangeRequests_status_idx').on(table.status),
 }));
 
+// ── Internal Admin Notes (migration 0036) ─────────────────────────────────
+export const adminNotes = mysqlTable('adminNotes', {
+  id:          int('id').autoincrement().primaryKey(),
+  subjectType: mysqlEnum('subjectType', ['user', 'vendor', 'project', 'rfq', 'quotation', 'dispute']).notNull(),
+  subjectId:   int('subjectId').notNull(),
+  note:        text('note').notNull(),
+  authorId:    int('authorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+  updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  subjectIdx: index('adminNotes_subject_idx').on(table.subjectType, table.subjectId),
+  authorIdx:  index('adminNotes_author_idx').on(table.authorId),
+}));
+
 // ── Sponsored placement in the vendors directory (migration 0028) ───────────
 //
 // A REAL RECORD, because the alternative is fabricating one. The brief asks

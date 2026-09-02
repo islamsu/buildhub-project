@@ -46,7 +46,7 @@ import {
   commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems, qualifiedEnquiries,
-  projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests,
+  projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes,
 } from '../drizzle/schema';
 import { and, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -4608,6 +4608,36 @@ const adminRouter = router({
       note: Object.keys(patch).join(', '),
     });
     return { success: true as const, changed: true };
+  }),
+  userNotes: adminWith('users.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.select({
+      id: adminNotes.id,
+      note: adminNotes.note,
+      createdAt: adminNotes.createdAt,
+      authorName: users.name,
+      authorEmail: users.email,
+    }).from(adminNotes)
+      .innerJoin(users, eq(users.id, adminNotes.authorId))
+      .where(and(eq(adminNotes.subjectType, 'user'), eq(adminNotes.subjectId, input.userId)))
+      .orderBy(desc(adminNotes.createdAt))
+      .limit(100);
+    return rows;
+  }),
+  addUserNote: adminWith('users.manage').input(z.object({
+    userId: z.number().int().positive(),
+    note: z.string().trim().min(1).max(5000),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const result = await db.insert(adminNotes).values({
+      subjectType: 'user',
+      subjectId: input.userId,
+      note: input.note,
+      authorId: ctx.user.id,
+    });
+    return { success: true, noteId: Number(result[0]?.insertId ?? 0) };
   }),
   // ── QA sign-in links ────────────────────────────────────────────────────
   issueTestLoginLink: adminWith('qa.manage').input(z.object({

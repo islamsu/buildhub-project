@@ -100,4 +100,15 @@ describe('admin.userDetail', () => {
       name: 'Changed Name',
     })).rejects.toThrow();
   });
+
+  it('provides internal admin notes gated on users.manage', () => {
+    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    expect(source).toContain("userNotes: adminWith('users.read')");
+    expect(source).toContain("addUserNote: adminWith('users.manage')");
+  });
+
+  it('denies a non-admin from adding an internal note', async () => {
+    const caller = appRouter.createCaller(makeCtx(1, 'user', 'homeowner'));
+    await expect(caller.admin.addUserNote({ userId: 20, note: 'Internal note' })).rejects.toThrow();
+  });
 });
