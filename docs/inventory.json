@@ -543,6 +543,16 @@
       "indent": 2
     },
     {
+      "name": "spotlightProviders",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "spotlightProducts",
+      "tier": "publicProcedure",
+      "indent": 3
+    },
+    {
       "name": "list",
       "tier": "publicProcedure",
       "indent": 2
@@ -1374,7 +1384,7 @@
     }
   ],
   "procedureTiers": {
-    "publicProcedure": 30,
+    "publicProcedure": 32,
     "protectedProcedure": 65,
     "complianceProcedure": 2,
     "approvedProviderProcedure": 29,
@@ -1753,67 +1763,67 @@
     },
     {
       "file": "server/routers.ts",
-      "line": 2115,
+      "line": 2134,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2195,
+      "line": 2214,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2923,
+      "line": 2942,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2980,
+      "line": 2999,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3387,
+      "line": 3406,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3634,
+      "line": 3653,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3774,
+      "line": 3793,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5593,
+      "line": 5612,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5664,
+      "line": 5683,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6052,
+      "line": 6071,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6253,
+      "line": 6272,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6278,
+      "line": 6297,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6303,
+      "line": 6322,
       "via": "notifyUser"
     },
     {

@@ -179,6 +179,13 @@ describe('§1 every procedure is pinned to a tier', () => {
       // It carries no sponsorship reason, no granter, no period and no
       // subscription state - those live behind marketplace.manage.
       'marketplace.sponsoredVendors',
+      // THE SPOTLIGHT BLOCK for one chosen provider type or product category.
+      // Public for the same reason and on the same terms as the Master slots
+      // and the sponsored strip: the directory's own card shape plus a
+      // Sponsored/Featured label, resolved through the directory's own
+      // visibility filter, carrying no granter, period, reason or price.
+      'marketplace.spotlightProducts',
+      'marketplace.spotlightProviders',
       'marketplace.vendorCategories',
       // One vendor's published catalogue, for the vendor detail page. Public
       // for the same reason marketplace.list is: it is the shop window.

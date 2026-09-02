@@ -25,8 +25,10 @@ import {
   masterProvider,
   placedProducts,
   placedProviders,
+  spotlightProducts,
+  spotlightProviders,
 } from './publicPlacement';
-import { GLOBAL_PLACEMENT_SCOPE, placementLabel } from '@shared/placement';
+import { GLOBAL_PLACEMENT_SCOPE, placementLabel, rootScope, scopeFor } from '@shared/placement';
 
 const NOW = new Date('2026-09-02T12:00:00.000Z');
 
@@ -137,7 +139,7 @@ describe('a paid advertiser is never presented as an editorial choice', () => {
       placements: [placementRow({ source: 'REFERRAL_REWARD' })],
       users: [{ id: 10, name: 'Nile Contracting' }],
     });
-    const [placed] = await placedProviders({ db, surface: 'MASTER_DISCOVERY', category: GLOBAL_PLACEMENT_SCOPE, now: NOW });
+    const [placed] = await placedProviders({ db, surface: 'MASTER_DISCOVERY', scope: rootScope(), now: NOW });
     expect(placed.label).toBe('FEATURED');
   });
 });
@@ -147,7 +149,7 @@ describe('a paid advertiser is never presented as an editorial choice', () => {
 describe('eligibility is derived from the clock, never swept', () => {
   it('the live filter names revokedAt, startsAt and endsAt in the query itself', async () => {
     const { db, whereSql } = makeDb({ placements: [] });
-    await livePlacementRows({ db, surface: 'MASTER_DISCOVERY', entityType: 'PROVIDER', category: 'Lighting', now: NOW });
+    await livePlacementRows({ db, surface: 'MASTER_DISCOVERY', entityType: 'PROVIDER', scope: scopeFor('Lighting'), now: NOW });
     const where = whereSql.join(' | ');
     // Asserted against the compiled condition rather than the returned rows:
     // an empty result proves nothing about the filter that produced it.
@@ -158,7 +160,7 @@ describe('eligibility is derived from the clock, never swept', () => {
 
   it('the surface and the entity type are both in the query', async () => {
     const { db, whereSql } = makeDb({ placements: [] });
-    await livePlacementRows({ db, surface: 'TYPE_CATEGORY_SPOTLIGHT', entityType: 'PRODUCT', category: 'Lighting', now: NOW });
+    await livePlacementRows({ db, surface: 'TYPE_CATEGORY_SPOTLIGHT', entityType: 'PRODUCT', scope: scopeFor('Lighting'), now: NOW });
     expect(whereSql.join(' | ')).toContain('surface');
     expect(whereSql.join(' | ')).toContain('entityType');
   });
@@ -172,13 +174,13 @@ describe('a placement never smuggles an ineligible entity onto the page', () => 
     // which is what the directory's visibility filter does to a suspended,
     // deactivated or unapproved account.
     const { db } = makeDb({ placements: [placementRow()], users: [] });
-    const placed = await placedProviders({ db, surface: 'MASTER_DISCOVERY', category: GLOBAL_PLACEMENT_SCOPE, now: NOW });
+    const placed = await placedProviders({ db, surface: 'MASTER_DISCOVERY', scope: rootScope(), now: NOW });
     expect(placed).toEqual([]);
   });
 
   it('the provider fetch applies the directory visibility filter, not just the id list', async () => {
     const { db, whereSql } = makeDb({ placements: [placementRow()], users: [{ id: 10, name: 'Nile' }] });
-    await placedProviders({ db, surface: 'MASTER_DISCOVERY', category: GLOBAL_PLACEMENT_SCOPE, now: NOW });
+    await placedProviders({ db, surface: 'MASTER_DISCOVERY', scope: rootScope(), now: NOW });
     const where = whereSql.join(' | ');
     expect(where).toContain('accountStatus');
     expect(where).toContain('onboardingStatus');
@@ -192,7 +194,7 @@ describe('a placement never smuggles an ineligible entity onto the page', () => 
       placements: [placementRow({ entityType: 'PRODUCT', vendorId: null, productId: 77 })],
       products: [{ id: 77, name: 'Rebar 12mm', supplierId: 10, supplierName: 'Nile' }],
     });
-    await placedProducts({ db, surface: 'MASTER_DISCOVERY', category: GLOBAL_PLACEMENT_SCOPE, now: NOW });
+    await placedProducts({ db, surface: 'MASTER_DISCOVERY', scope: rootScope(), now: NOW });
     const where = whereSql.join(' | ');
     expect(where).toContain('active');
     expect(where).toContain('accountStatus');
@@ -204,7 +206,7 @@ describe('a placement never smuggles an ineligible entity onto the page', () => 
       placements: [placementRow({ entityType: 'PRODUCT', vendorId: null, productId: 77 })],
       products: [],
     });
-    expect(await placedProducts({ db, surface: 'MASTER_DISCOVERY', category: GLOBAL_PLACEMENT_SCOPE, now: NOW })).toEqual([]);
+    expect(await placedProducts({ db, surface: 'MASTER_DISCOVERY', scope: rootScope(), now: NOW })).toEqual([]);
   });
 });
 
@@ -213,7 +215,7 @@ describe('a placement never smuggles an ineligible entity onto the page', () => 
 describe('paid visibility never defeats relevance', () => {
   it('the scope is matched exactly, and appears in the query', async () => {
     const { db, whereSql } = makeDb({ placements: [] });
-    await livePlacementRows({ db, surface: 'TYPE_CATEGORY_SPOTLIGHT', entityType: 'PRODUCT', category: 'Lighting', now: NOW });
+    await livePlacementRows({ db, surface: 'TYPE_CATEGORY_SPOTLIGHT', entityType: 'PRODUCT', scope: scopeFor('Lighting'), now: NOW });
     expect(whereSql.join(' | ')).toContain('category');
   });
 
@@ -258,7 +260,7 @@ describe('the exclusive slot is exclusive, and order follows the booking', () =>
       placements: [placementRow({ placementId: 1, vendorId: 10 }), placementRow({ placementId: 2, vendorId: 11 })],
       users: [{ id: 10, name: 'First' }, { id: 11, name: 'Second' }],
     });
-    const placed = await placedProviders({ db, surface: 'MASTER_DISCOVERY', category: GLOBAL_PLACEMENT_SCOPE, now: NOW });
+    const placed = await placedProviders({ db, surface: 'MASTER_DISCOVERY', scope: rootScope(), now: NOW });
     expect(placed).toHaveLength(1);
     // The FIRST by the booking's own order, not whichever the driver returned
     // first - `inArray` makes no promise about row order.
@@ -271,14 +273,14 @@ describe('the exclusive slot is exclusive, and order follows the booking', () =>
       users: [{ id: 10, name: 'Nile' }],
     });
     const placed = await placedProviders({
-      db, surface: 'TYPE_CATEGORY_SPOTLIGHT', category: 'Lighting', now: NOW,
+      db, surface: 'TYPE_CATEGORY_SPOTLIGHT', scope: scopeFor('Lighting'), now: NOW,
     });
     expect(placed).toHaveLength(1);
   });
 
   it('a malformed row with no entity id is skipped rather than rendered', async () => {
     const { db } = makeDb({ placements: [placementRow({ vendorId: null })], users: [{ id: 10 }] });
-    expect(await placedProviders({ db, surface: 'MASTER_DISCOVERY', category: GLOBAL_PLACEMENT_SCOPE, now: NOW })).toEqual([]);
+    expect(await placedProviders({ db, surface: 'MASTER_DISCOVERY', scope: rootScope(), now: NOW })).toEqual([]);
   });
 });
 
@@ -316,7 +318,7 @@ describe('the public placement payload carries no commercial record', () => {
         images: null, supplierName: 'Nile Steel',
       }],
     });
-    const [placed] = await placedProducts({ db, surface: 'MASTER_DISCOVERY', category: GLOBAL_PLACEMENT_SCOPE, now: NOW });
+    const [placed] = await placedProducts({ db, surface: 'MASTER_DISCOVERY', scope: rootScope(), now: NOW });
     // What a card needs, in order to be a real card about a real product.
     expect(placed.name).toBe('Rebar 12mm');
     expect(placed.supplierName).toBe('Nile Steel');
@@ -325,5 +327,100 @@ describe('the public placement payload carries no commercial record', () => {
     for (const forbidden of ['grantedBy', 'grantedReason', 'revokedBy', 'startsAt', 'endsAt', 'priority', 'package']) {
       expect(placed).not.toHaveProperty(forbidden);
     }
+  });
+});
+
+// ── SPOTLIGHT ──────────────────────────────────────────────────────────────
+
+describe('Spotlight is the surface INSIDE a chosen type or category', () => {
+  const spotlightRow = (over = {}) => placementRow({
+    surface: 'TYPE_CATEGORY_SPOTLIGHT', package: 'SPOTLIGHT', category: 'Lighting', ...over,
+  });
+
+  it('asks for the Spotlight surface, not the Master one', async () => {
+    const { db, whereSql } = makeDb({ placements: [] });
+    vi.mocked(getDb).mockResolvedValue(db as never);
+    await spotlightProviders('Lighting', NOW);
+    const where = whereSql.join(' | ');
+    expect(where).toContain('TYPE_CATEGORY_SPOTLIGHT');
+    expect(where).not.toContain('MASTER_DISCOVERY');
+  });
+
+  it('scopes to the chosen category, and to nothing else', async () => {
+    const { db, whereSql } = makeDb({ placements: [] });
+    vi.mocked(getDb).mockResolvedValue(db as never);
+    await spotlightProviders('Lighting', NOW);
+    const where = whereSql.join(' | ');
+    expect(where).toContain('Lighting');
+    expect(where).not.toContain(GLOBAL_PLACEMENT_SCOPE);
+  });
+
+  it('REFUSES a root-scope Spotlight request rather than falling back to Master', async () => {
+    // The failure this prevents is commercial, not cosmetic: answering a
+    // root-scope Spotlight from the Master inventory would sell one
+    // advertiser's exclusive slot as three.
+    const { db } = makeDb({ placements: [spotlightRow()], users: [{ id: 10, name: 'Nile' }] });
+    vi.mocked(getDb).mockResolvedValue(db as never);
+    expect(await spotlightProviders(GLOBAL_PLACEMENT_SCOPE, NOW)).toEqual([]);
+    expect(await spotlightProviders('', NOW)).toEqual([]);
+    expect(await spotlightProducts(GLOBAL_PLACEMENT_SCOPE, NOW)).toEqual([]);
+    expect(await spotlightProducts('', NOW)).toEqual([]);
+  });
+
+  it('CAPACITY IS DEFENDED AT RENDER TIME, not only at booking time', async () => {
+    // Four live bookings in one scope - which the booking engine should have
+    // prevented, but oversold inventory must truncate rather than overflow.
+    const { db } = makeDb({
+      placements: [10, 11, 12, 13].map((id, i) => spotlightRow({ placementId: i + 1, vendorId: id })),
+      users: [10, 11, 12, 13].map(id => ({ id, name: `Vendor ${id}` })),
+    });
+    vi.mocked(getDb).mockResolvedValue(db as never);
+    const shown = await spotlightProviders('Lighting', NOW);
+    expect(shown).toHaveLength(SURFACE_CAPACITY.TYPE_CATEGORY_SPOTLIGHT);
+    expect(shown).toHaveLength(3);
+    // The first three by booking order, not an arbitrary three.
+    expect(shown.map(v => v.id)).toEqual([10, 11, 12]);
+  });
+
+  it('drops a booked provider the directory filter would not show', async () => {
+    const { db } = makeDb({ placements: [spotlightRow()], users: [] });
+    vi.mocked(getDb).mockResolvedValue(db as never);
+    expect(await spotlightProviders('Lighting', NOW)).toEqual([]);
+  });
+
+  it('labels each card from its own source', async () => {
+    const { db } = makeDb({
+      placements: [
+        spotlightRow({ placementId: 1, vendorId: 10, source: 'PAID_SPONSORSHIP' }),
+        spotlightRow({ placementId: 2, vendorId: 11, source: 'REFERRAL_REWARD' }),
+      ],
+      users: [{ id: 10, name: 'Paid' }, { id: 11, name: 'Rewarded' }],
+    });
+    vi.mocked(getDb).mockResolvedValue(db as never);
+    const shown = await spotlightProviders('Lighting', NOW);
+    expect(shown.map(v => v.label)).toEqual(['SPONSORED', 'FEATURED']);
+  });
+
+  it('products: the same scope rule, on the other entity type', async () => {
+    const { db, whereSql } = makeDb({ placements: [] });
+    vi.mocked(getDb).mockResolvedValue(db as never);
+    await spotlightProducts('Lighting', NOW);
+    const where = whereSql.join(' | ');
+    expect(where).toContain('PRODUCT');
+    expect(where).toContain('Lighting');
+    expect(where).toContain('TYPE_CATEGORY_SPOTLIGHT');
+  });
+
+  it('an empty Spotlight is an empty array, never a filler card', async () => {
+    const { db } = makeDb({ placements: [] });
+    vi.mocked(getDb).mockResolvedValue(db as never);
+    expect(await spotlightProviders('Lighting', NOW)).toEqual([]);
+    expect(await spotlightProducts('Lighting', NOW)).toEqual([]);
+  });
+
+  it('no database is not an excuse to invent a Spotlight', async () => {
+    vi.mocked(getDb).mockResolvedValue(null as never);
+    expect(await spotlightProviders('Lighting', NOW)).toEqual([]);
+    expect(await spotlightProducts('Lighting', NOW)).toEqual([]);
   });
 });

@@ -34,7 +34,10 @@ import {
   enrichVendorRows,
   type DirectoryVendor,
 } from './vendorDirectory';
-import { GLOBAL_PLACEMENT_SCOPE, placementLabel, type PlacementLabel } from '@shared/placement';
+import {
+  GLOBAL_PLACEMENT_SCOPE, placementLabel, scopeFor,
+  type PlacementLabel, type PlacementScope,
+} from '@shared/placement';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -92,11 +95,21 @@ export async function livePlacementRows(params: {
   db: Db;
   surface: PlacementSurface;
   entityType: PlacementEntityType;
-  /** The exact scope. Use GLOBAL_PLACEMENT_SCOPE for platform-wide surfaces. */
-  category: string;
+  /**
+   * The exact scope, as ONE value. Taking a `PlacementScope` rather than a bare
+   * category string is what keeps the geographic dimension honest: when a
+   * market column exists it becomes part of THIS type, and the compiler finds
+   * every query that has to start matching on it.
+   */
+  scope: PlacementScope;
   now?: Date;
 }): Promise<PlacementRow[]> {
   const now = params.now ?? new Date();
+  // ONE market today, so there is no market predicate to add. When there is
+  // more than one, it belongs here, beside the taxonomy match - not filtered
+  // afterwards in JavaScript, which would let capacity be computed across
+  // markets that never competed.
+  const { taxonomy } = params.scope;
   const rows = await params.db
     .select({
       placementId: vendorSponsorships.id,
@@ -114,7 +127,7 @@ export async function livePlacementRows(params: {
       eq(vendorSponsorships.surface, params.surface),
       eq(vendorSponsorships.entityType, params.entityType),
       // Exact scope. No wildcard, no fallback - see rule 3.
-      eq(vendorSponsorships.category, params.category),
+      eq(vendorSponsorships.category, taxonomy),
       livePlacementFilter(now),
     ))
     // Lower priority value first, then the oldest booking - so a commercial
@@ -166,7 +179,7 @@ export type PlacedProvider = DirectoryVendor & {
 export async function placedProviders(params: {
   db: Db;
   surface: PlacementSurface;
-  category: string;
+  scope: PlacementScope;
   now?: Date;
   limit?: number;
 }): Promise<PlacedProvider[]> {
@@ -246,7 +259,7 @@ export type PlacedProduct = {
 export async function placedProducts(params: {
   db: Db;
   surface: PlacementSurface;
-  category: string;
+  scope: PlacementScope;
   now?: Date;
   limit?: number;
 }): Promise<PlacedProduct[]> {
@@ -289,9 +302,42 @@ export async function masterProvider(category?: string, now?: Date): Promise<Pla
   const db = await getDb();
   if (!db) return null;
   const found = await placedProviders({
-    db, surface: 'MASTER_DISCOVERY', category: category || GLOBAL_PLACEMENT_SCOPE, now, limit: 1,
+    db, surface: 'MASTER_DISCOVERY', scope: scopeFor(category), now, limit: 1,
   });
   return found[0] ?? null;
+}
+
+/**
+ * ── SPOTLIGHT: the premium block INSIDE a chosen type or category ─────────
+ *
+ * Master and Spotlight are different surfaces and must not be blurred:
+ *
+ *   MASTER    root discovery, before a type or category is chosen. One slot.
+ *   SPOTLIGHT after a type or category is chosen. Up to three.
+ *   BOOST     among relevant search and results listings.
+ *
+ * Spotlight is therefore ALWAYS scoped to a real taxonomy value. Asking for
+ * Spotlight at the root is not a wider query, it is a category error, and it
+ * returns nothing rather than quietly falling back to the Master inventory -
+ * which would sell one advertiser's exclusive slot as three.
+ */
+export async function spotlightProviders(category: string, now?: Date): Promise<PlacedProvider[]> {
+  const db = await getDb();
+  if (!db || !category || category === GLOBAL_PLACEMENT_SCOPE) return [];
+  return placedProviders({ db, surface: 'TYPE_CATEGORY_SPOTLIGHT', scope: scopeFor(category), now });
+}
+
+/**
+ * Spotlight products for one category.
+ *
+ * A Tiles placement does not appear under Lighting: the scope is matched
+ * exactly by livePlacementRows, so relevance is enforced in the query rather
+ * than hoped for.
+ */
+export async function spotlightProducts(category: string, now?: Date): Promise<PlacedProduct[]> {
+  const db = await getDb();
+  if (!db || !category || category === GLOBAL_PLACEMENT_SCOPE) return [];
+  return placedProducts({ db, surface: 'TYPE_CATEGORY_SPOTLIGHT', scope: scopeFor(category), now });
 }
 
 /** The Master product slot. Same rule, same honesty about emptiness. */
@@ -299,7 +345,7 @@ export async function masterProduct(category?: string, now?: Date): Promise<Plac
   const db = await getDb();
   if (!db) return null;
   const found = await placedProducts({
-    db, surface: 'MASTER_DISCOVERY', category: category || GLOBAL_PLACEMENT_SCOPE, now, limit: 1,
+    db, surface: 'MASTER_DISCOVERY', scope: scopeFor(category), now, limit: 1,
   });
   return found[0] ?? null;
 }

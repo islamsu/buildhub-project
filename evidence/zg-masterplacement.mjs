@@ -237,6 +237,121 @@ try {
   check('ISOLATION: a PROVIDER booking in Lighting does not fill the PRODUCT slot',
     productCategory.data === null, JSON.stringify(productCategory.data));
 
+  // ══ SPOTLIGHT ═══════════════════════════════════════════════════════════
+  //
+  // Master and Spotlight are different surfaces. The checks below are mostly
+  // about keeping them apart: a Spotlight request must never be answered from
+  // the exclusive Master inventory, and a Master booking must never appear as
+  // one of three Spotlight cards.
+
+  const spotQuery = (path, category) => query(path, { category });
+
+  // Three Lighting Spotlight providers, plus a fourth that oversells the scope.
+  const s1 = mkProvider('e');
+  const s2 = mkProvider('f');
+  const s3 = mkProvider('g');
+  const s4 = mkProvider('h');
+  for (const [i, id] of [s1, s2, s3, s4].entries()) {
+    book({ vendorId: id, category: 'Lighting', surface: 'TYPE_CATEGORY_SPOTLIGHT',
+           package: 'SPOTLIGHT', priority: i });
+  }
+
+  const spot = await spotQuery('marketplace.spotlightProviders', 'Lighting');
+  check('SPOTLIGHT POSITIVE: the Lighting Spotlight returns providers',
+    Array.isArray(spot.data) && spot.data.length > 0, `count=${spot.data?.length}`);
+  check('SPOTLIGHT CAPACITY: four live bookings render at most THREE',
+    spot.data?.length === 3, `count=${spot.data?.length}`);
+  check('SPOTLIGHT ORDER: the first three by booking priority, not an arbitrary three',
+    JSON.stringify(spot.data?.map(v => v.id)) === JSON.stringify([s1, s2, s3]),
+    JSON.stringify(spot.data?.map(v => v.id)));
+
+  const spotTiles = await spotQuery('marketplace.spotlightProviders', 'Tiles');
+  check('SPOTLIGHT SCOPE: a Lighting Spotlight does NOT leak into Tiles',
+    Array.isArray(spotTiles.data) && spotTiles.data.length === 0, JSON.stringify(spotTiles.data));
+
+  // THE SEPARATION THAT MATTERS COMMERCIALLY.
+  const spotGlobal = await spotQuery('marketplace.spotlightProviders', 'GLOBAL');
+  check('SEPARATION: a root-scope Spotlight request is NOT answered from Master inventory',
+    Array.isArray(spotGlobal.data) && spotGlobal.data.length === 0, JSON.stringify(spotGlobal.data));
+
+  const masterLighting = await query('marketplace.masterProvider', { category: 'Lighting' });
+  check('SEPARATION: the Lighting MASTER is the Master booking, not a Spotlight one',
+    masterLighting.data?.id === lighting, `got=${masterLighting.data?.id} want=${lighting}`);
+  check('SEPARATION: no Spotlight provider is returned as the Master',
+    ![s1, s2, s3, s4].includes(masterLighting.data?.id), `master=${masterLighting.data?.id}`);
+
+  // Eligibility applies to Spotlight exactly as it does to Master.
+  sql(`update users set accountStatus='frozen' where id=${s1}`);
+  const spotSuspended = await spotQuery('marketplace.spotlightProviders', 'Lighting');
+  check('SPOTLIGHT NEGATIVE: a SUSPENDED provider drops out and the fourth takes the slot',
+    spotSuspended.data?.length === 3 && !spotSuspended.data.some(v => v.id === s1),
+    JSON.stringify(spotSuspended.data?.map(v => v.id)));
+  sql(`update users set accountStatus='active' where id=${s1}`);
+
+  sql(`update vendorSponsorships set revokedAt=now() where vendorId=${s2}`);
+  const spotRevoked = await spotQuery('marketplace.spotlightProviders', 'Lighting');
+  check('SPOTLIGHT NEGATIVE: a REVOKED Spotlight placement stops rendering',
+    !spotRevoked.data?.some(v => v.id === s2), JSON.stringify(spotRevoked.data?.map(v => v.id)));
+  sql(`update vendorSponsorships set revokedAt=null where vendorId=${s2}`);
+
+  sql(`update vendorSponsorships set endsAt='2021-01-01 00:00:00' where vendorId=${s3}`);
+  const spotExpired = await spotQuery('marketplace.spotlightProviders', 'Lighting');
+  check('SPOTLIGHT NEGATIVE: an EXPIRED Spotlight placement stops rendering',
+    !spotExpired.data?.some(v => v.id === s3), JSON.stringify(spotExpired.data?.map(v => v.id)));
+  sql(`update vendorSponsorships set endsAt=null where vendorId=${s3}`);
+
+  sql(`update vendorSponsorships set startsAt='2037-01-01 00:00:00' where vendorId=${s4}`);
+  const spotScheduled = await spotQuery('marketplace.spotlightProviders', 'Lighting');
+  check('SPOTLIGHT NEGATIVE: a SCHEDULED Spotlight placement is not visible early',
+    !spotScheduled.data?.some(v => v.id === s4), JSON.stringify(spotScheduled.data?.map(v => v.id)));
+  sql(`update vendorSponsorships set startsAt='2020-01-01 00:00:00' where vendorId=${s4}`);
+
+  const spotRestored = await spotQuery('marketplace.spotlightProviders', 'Lighting');
+  check('SPOTLIGHT CONTROL: restoring everything returns the original three',
+    JSON.stringify(spotRestored.data?.map(v => v.id)) === JSON.stringify([s1, s2, s3]),
+    JSON.stringify(spotRestored.data?.map(v => v.id)));
+
+  // Labels, per card, from each placement own source.
+  sql(`update vendorSponsorships set source='REFERRAL_REWARD'
+       where vendorId=${s2} and surface='TYPE_CATEGORY_SPOTLIGHT'`);
+  const spotLabels = await spotQuery('marketplace.spotlightProviders', 'Lighting');
+  const labelOf = id => spotLabels.data?.find(v => v.id === id)?.label;
+  check('SPOTLIGHT LABEL: each card is labelled from its OWN source',
+    labelOf(s1) === 'SPONSORED' && labelOf(s2) === 'FEATURED' && labelOf(s3) === 'SPONSORED',
+    `${labelOf(s1)}/${labelOf(s2)}/${labelOf(s3)}`);
+  sql(`update vendorSponsorships set source='PAID_SPONSORSHIP'
+       where vendorId=${s2} and surface='TYPE_CATEGORY_SPOTLIGHT'`);
+
+  // Products: same rules, other entity type.
+  const spotSupplier = mkProvider('i', { userRole: 'supplier' });
+  sql(`insert into products (supplierId, name, category, price, currency, unit, active)
+       values (${spotSupplier}, 'Probe Rebar ${stamp}-lamp', 'Lighting', '450.00', 'EGP', 'piece', 1)`);
+  const lampId = Number(sql(`select id from products where name='Probe Rebar ${stamp}-lamp'`));
+  made.products.push(lampId);
+  book({ entityType: 'PRODUCT', productId: lampId, vendorId: null, category: 'Lighting',
+         surface: 'TYPE_CATEGORY_SPOTLIGHT', package: 'SPOTLIGHT' });
+
+  const spotProd = await spotQuery('marketplace.spotlightProducts', 'Lighting');
+  check('SPOTLIGHT PRODUCT: a Lighting Spotlight product renders under Lighting',
+    spotProd.data?.some(p => p.id === lampId), JSON.stringify(spotProd.data?.map(p => p.id)));
+
+  const spotProdTiles = await spotQuery('marketplace.spotlightProducts', 'Tiles');
+  check('SPOTLIGHT PRODUCT SCOPE: it does NOT leak into Tiles',
+    Array.isArray(spotProdTiles.data) && spotProdTiles.data.length === 0,
+    JSON.stringify(spotProdTiles.data));
+
+  sql(`update users set accountStatus='frozen' where id=${spotSupplier}`);
+  const spotProdBadSeller = await spotQuery('marketplace.spotlightProducts', 'Lighting');
+  check('SPOTLIGHT PRODUCT NEGATIVE: a SUSPENDED supplier removes the product',
+    !spotProdBadSeller.data?.some(p => p.id === lampId),
+    JSON.stringify(spotProdBadSeller.data?.map(p => p.id)));
+  sql(`update users set accountStatus='active' where id=${spotSupplier}`);
+
+  const spotProdIsolation = await spotQuery('marketplace.spotlightProviders', 'Lighting');
+  check('SPOTLIGHT ISOLATION: the PRODUCT Spotlight booking does not appear in the PROVIDER block',
+    !spotProdIsolation.data?.some(v => v.id === lampId),
+    JSON.stringify(spotProdIsolation.data?.map(v => v.id)));
+
 } catch (error) {
   check('THE PROBE ITSELF RAN TO COMPLETION', false, String(error && error.message).slice(0, 200));
 } finally {

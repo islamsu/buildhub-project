@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { rfqCategoryLabel } from '@shared/rfqCategories';
-import { MasterProviderSlot } from '@/components/MasterPlacement';
+import { MasterProviderSlot, ProviderSpotlight } from '@/components/MasterPlacement';
 import { Search, Star, BadgeCheck, MapPin, Megaphone, Store, ChevronLeft, ChevronRight } from 'lucide-react';
 
 /**
@@ -155,6 +155,13 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
             which is what a visitor sees before they narrow to a provider type.
             Renders nothing at all when no eligible Master is booked. */}
         <MasterProviderSlot category={category === 'all' ? undefined : category} />
+
+        {/* SPOTLIGHT, once a provider type is chosen. Master belongs to root
+            discovery and Spotlight to the chosen type; only one of the two ever
+            renders, because each asks for a different scope. Prime position,
+            capped at three, with the organic list immediately below rather than
+            an advertising wall. */}
+        <ProviderSpotlight category={category === 'all' ? undefined : category} />
 
         {/* Editorial Featured: platform-curated recognition, distinct from paid
             sponsorship. Shown before sponsored and organic so the strongest

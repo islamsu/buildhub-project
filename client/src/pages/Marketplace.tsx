@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { Search, SlidersHorizontal, Star, Package, ShoppingCart, Zap, ArrowLeft, ArrowRight, Heart, Scale, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
-import { MasterProductSlot } from '@/components/MasterPlacement';
+import { MasterProductSlot, ProductSpotlight } from '@/components/MasterPlacement';
 
 const CATEGORY_ICONS: Record<string, string> = {
   'Materials': '🧱', 'Furniture': '🛋️', 'Lighting': '💡', 'Electrical': '⚡',
@@ -176,6 +176,11 @@ export default function Marketplace() {
                   what a visitor sees before choosing a category. Collapses when
                   nothing eligible is booked. */}
               <MasterProductSlot category={selectedCategory === 'All' ? undefined : selectedCategory} />
+
+              {/* SPOTLIGHT, once a category is chosen. A Tiles placement cannot
+                  appear here under Lighting: the scope is matched exactly by
+                  the server. Collapses entirely when nothing is booked. */}
+              <ProductSpotlight category={selectedCategory === 'All' ? undefined : selectedCategory} />
 
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm text-muted-foreground">{filtered.length} {lang === 'ar' ? 'منتج' : 'products'}</p>

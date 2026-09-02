@@ -65,15 +65,171 @@ function SlotHeading({ children }: { children: React.ReactNode }) {
 }
 
 /**
+ * The provider card, shared by the Master slot and the Spotlight block.
+ *
+ * ONE card component, so a Spotlight advertiser cannot end up showing a field
+ * the Master slot withholds - or, worse, a fabricated one that only ever got
+ * added to the smaller component because nobody was looking at it.
+ */
+function PlacedProviderCard({ placed, compact }: { placed: PlacedProviderCardData; compact?: boolean }) {
+  const { lang, t } = useLanguage();
+  const ar = lang === 'ar';
+  const [, navigate] = useLocation();
+  return (
+    <Card className={compact ? 'overflow-hidden' : 'overflow-hidden border-2'}>
+      <CardContent className={`flex flex-col gap-4 p-5 ${compact ? '' : 'sm:flex-row sm:items-center'}`}>
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted">
+            {placed.avatar
+              ? <img src={placed.avatar} alt="" className="h-full w-full object-cover" />
+              : <Building2 className="h-6 w-6 text-muted-foreground" aria-hidden="true" />}
+          </div>
+          <div className="min-w-0">
+            <h3 className="truncate font-bold">{placed.name}</h3>
+            {placed.userRole && (
+              <p className="text-xs capitalize text-muted-foreground">{placed.userRole.replaceAll('_', ' ')}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <PlacementBadge label={placed.label} />
+            {placed.verified && (
+              <Badge variant="secondary" className="gap-1">
+                <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                {t('common.verified')}
+              </Badge>
+            )}
+            {placed.location && (
+              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                <MapPin className="h-3.5 w-3.5" aria-hidden="true" />{placed.location}
+              </span>
+            )}
+            {/* A rating only when verified reviews produced one. No reviews is
+                not a zero, and it is not a plausible 4.8 either. */}
+            {placed.averageRating != null && (
+              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-hidden="true" />
+                {placed.averageRating} ({placed.reviewCount})
+              </span>
+            )}
+          </div>
+          {placed.bio && <p className="mt-2 line-clamp-2 text-sm">{placed.bio}</p>}
+        </div>
+
+        <div className="flex shrink-0 gap-2">
+          <Button size="sm" onClick={() => navigate(`/vendor/${placed.id}`)}>
+            {ar ? 'عرض المزوّد' : 'View provider'}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => navigate(`/rfq/new?provider=${placed.id}`)}>
+            {ar ? 'اطلب عرض سعر' : 'Get quote'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+type PlacedProviderCardData = {
+  id: number; name: string | null; bio: string | null; avatar: string | null;
+  location: string | null; userRole: string | null; verified: boolean | null;
+  averageRating: number | null; reviewCount: number; label: PlacementLabel;
+};
+
+/**
+ * ── SPOTLIGHT: the premium block inside a chosen type or category ─────────
+ *
+ * Sits between the category heading and the organic results, which is prime
+ * position without being an advertising wall: at most three cards, then the
+ * organic list immediately. On a narrow screen that is the difference between
+ * a marketplace and a billboard, so the block stays a single column and the
+ * organic results remain reachable with one short scroll.
+ *
+ * Renders NOTHING when nothing is booked - no empty premium heading, and no
+ * invented cards to fill the space.
+ */
+export function ProviderSpotlight({ category }: { category?: string }) {
+  const { lang } = useLanguage();
+  const ar = lang === 'ar';
+  // Spotlight belongs to a CHOSEN category. With none chosen the visitor is
+  // still at root discovery, where the Master slot is the premium surface.
+  const enabled = !!category && category !== 'all';
+  const { data: placed = [] } = trpc.marketplace.spotlightProviders.useQuery(
+    { category: category ?? '' }, { enabled },
+  );
+  if (!enabled || placed.length === 0) return null;
+
+  return (
+    <section className="mb-8" aria-label={ar ? 'مزوّدون مميّزون' : 'Spotlight providers'} data-testid="provider-spotlight">
+      <SlotHeading>{ar ? 'مزوّدون مميّزون' : 'Spotlight providers'}</SlotHeading>
+      <div className="grid gap-3">
+        {placed.map(vendor => (
+          <PlacedProviderCard key={`spotlight-${vendor.placementId}`} placed={vendor} compact />
+        ))}
+      </div>
+      <div className="mt-4 h-px bg-border" />
+    </section>
+  );
+}
+
+/** The Spotlight block for products, inside one chosen category. */
+export function ProductSpotlight({ category }: { category?: string }) {
+  const { lang } = useLanguage();
+  const ar = lang === 'ar';
+  const [, navigate] = useLocation();
+  const enabled = !!category && category !== 'All';
+  const { data: placed = [] } = trpc.marketplace.spotlightProducts.useQuery(
+    { category: category ?? '' }, { enabled },
+  );
+  if (!enabled || placed.length === 0) return null;
+
+  return (
+    <section className="mb-6" aria-label={ar ? 'منتجات مميّزة' : 'Spotlight products'} data-testid="product-spotlight">
+      <SlotHeading>{ar ? 'منتجات مميّزة' : 'Spotlight products'}</SlotHeading>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {placed.map(product => (
+          <Card key={`spotlight-${product.placementId}`} className="overflow-hidden">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="truncate font-semibold">
+                  {ar && product.nameAr ? product.nameAr : product.name}
+                </h3>
+                <PlacementBadge label={product.label} />
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {product.brand ? `${product.brand} · ` : ''}{product.category}
+              </p>
+              <p className="mt-2 text-sm">
+                {product.price != null
+                  ? <span className="font-semibold">{product.price} {product.currency ?? 'EGP'}{product.unit ? ` / ${product.unit}` : ''}</span>
+                  : <span className="text-muted-foreground">{ar ? 'السعر عند الطلب' : 'Price on request'}</span>}
+              </p>
+              <Button
+                size="sm"
+                className="mt-3"
+                onClick={() => navigate(`/marketplace/products/${product.id}`)}
+              >
+                {ar ? 'عرض المنتج' : 'View product'}
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="mt-4 h-px bg-border" />
+    </section>
+  );
+}
+
+/**
  * ONE eligible Master provider, or nothing.
  *
  * `category` is the scope. Omitted means the platform-wide slot, which is
  * what provider discovery shows before a type is chosen.
  */
 export function MasterProviderSlot({ category }: { category?: string }) {
-  const { lang, t } = useLanguage();
+  const { lang } = useLanguage();
   const ar = lang === 'ar';
-  const [, navigate] = useLocation();
   const { data: placed } = trpc.marketplace.masterProvider.useQuery({ category });
 
   // Nothing booked, still loading, or nothing booked is eligible: the surface
@@ -84,67 +240,18 @@ export function MasterProviderSlot({ category }: { category?: string }) {
   return (
     <section className="mb-8" aria-label={ar ? 'مساحة إعلانية رئيسية' : 'Master placement'} data-testid="master-provider-slot">
       <SlotHeading>{ar ? 'مزوّد الخدمة المميّز' : 'Featured provider'}</SlotHeading>
-      <Card className="overflow-hidden border-2">
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted">
-            {placed.avatar
-              ? <img src={placed.avatar} alt="" className="h-full w-full object-cover" />
-              : <Building2 className="h-7 w-7 text-muted-foreground" aria-hidden="true" />}
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="truncate text-lg font-bold">{placed.name}</h3>
-              <PlacementBadge label={placed.label} />
-              {/* `verified` is compliance review, entirely separate from having
-                  bought a placement. It is shown only when the account really
-                  carries it. */}
-              {placed.verified && (
-                <Badge variant="secondary" className="gap-1">
-                  <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                  {t('common.verified')}
-                </Badge>
-              )}
-            </div>
-
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-              {placed.userRole && <span className="capitalize">{placed.userRole.replaceAll('_', ' ')}</span>}
-              {placed.location && (
-                <span className="inline-flex items-center gap-1">
-                  <MapPin className="h-3.5 w-3.5" aria-hidden="true" />{placed.location}
-                </span>
-              )}
-              {/* A rating only when verified reviews produced one. No reviews
-                  is not a zero, and it is not a plausible 4.8 either. */}
-              {placed.averageRating != null && (
-                <span className="inline-flex items-center gap-1">
-                  <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-hidden="true" />
-                  {placed.averageRating} ({placed.reviewCount})
-                </span>
-              )}
-            </div>
-
-            {placed.bio && <p className="mt-2 line-clamp-2 text-sm">{placed.bio}</p>}
-
-            {placed.categories.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {placed.categories.slice(0, 4).map(item => (
-                  <Badge key={item} variant="outline" className="text-xs">{rfqCategoryLabel(item, lang)}</Badge>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="flex shrink-0 gap-2">
-            <Button size="sm" onClick={() => navigate(`/vendor/${placed.id}`)}>
-              {ar ? 'عرض المزوّد' : 'View provider'}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => navigate(`/rfq/new?provider=${placed.id}`)}>
-              {ar ? 'اطلب عرض سعر' : 'Get quote'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* THE SAME CARD the Spotlight block renders, at full width. One
+          component means a field cannot appear on one surface and not the
+          other, and a fabricated field cannot be slipped into the smaller of
+          the two where nobody is looking. */}
+      <PlacedProviderCard placed={placed} />
+      {placed.categories.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {placed.categories.slice(0, 4).map(item => (
+            <Badge key={item} variant="outline" className="text-xs">{rfqCategoryLabel(item, lang)}</Badge>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

@@ -39,7 +39,7 @@ import { readOperationalHealth } from './admin/operationalHealth';
 import { runPlatformSearch } from './admin/platformSearch';
 import { qualifyReferralEvent } from './referralEngine';
 import { bookPlacement } from './placementBooking';
-import { masterProduct, masterProvider } from './publicPlacement';
+import { masterProduct, masterProvider, spotlightProducts, spotlightProviders } from './publicPlacement';
 import { formatProjectContext, resolveProjectContext } from './_core/projectContext';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
@@ -1554,6 +1554,25 @@ const marketplaceRouter = router({
   masterProduct: publicProcedure
     .input(z.object({ category: z.string().max(MAX_SEARCH_LENGTH).optional() }).optional())
     .query(async ({ input }) => masterProduct(input?.category)),
+
+  /**
+   * ── SPOTLIGHT: the premium block inside ONE chosen type or category ─────
+   *
+   * `category` is REQUIRED, and that is the design rather than an oversight.
+   * Spotlight is the surface a visitor reaches AFTER narrowing; a Spotlight
+   * request with no category is a category error, and answering it from the
+   * Master inventory would sell one advertiser's exclusive slot as three.
+   *
+   * Public on the same terms as the Master slots: the directory's own card
+   * shape plus a label, and no commercial record.
+   */
+  spotlightProviders: publicProcedure
+    .input(z.object({ category: z.string().min(1).max(MAX_SEARCH_LENGTH) }))
+    .query(async ({ input }) => spotlightProviders(input.category)),
+
+  spotlightProducts: publicProcedure
+    .input(z.object({ category: z.string().min(1).max(MAX_SEARCH_LENGTH) }))
+    .query(async ({ input }) => spotlightProducts(input.category)),
   list: publicProcedure
     // BOUNDED, matching marketplace.vendors below, which already was. This
     // endpoint is PUBLIC and unauthenticated: `limit` had no int, no minimum
