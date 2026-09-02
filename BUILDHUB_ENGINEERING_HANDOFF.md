@@ -6,7 +6,7 @@ REPOSITORY: islamsu/buildhub-project
 
 ACTIVE DEVELOPMENT BRANCH: codex/buildhub-final-closure
 
-LATEST VERIFIED DEVELOPMENT SHA: ac4e3d8eaaf6958f13319db35a4a031f817e263d
+LATEST VERIFIED DEVELOPMENT SHA: 5c8f807a9324c378dbd5922c6c8fc2258c2b765a
 
 WORKING TREE: CLEAN
 
@@ -75,6 +75,7 @@ Do not blur these states. A pushed commit exists in GitHub but is not necessaril
 ## RECENT COMMIT SUMMARY
 
 ```text
+5c8f807 Referral effective qualification engine
 ac4e3d8 Referral campaign and reward backend
 2febc07 Referral foundation and invite attribution
 9f36e5b BuildHub: complete master reconciliation tracker
@@ -126,6 +127,7 @@ Recent completed or regression-protected work includes:
 - Internal Admin Notes for User Detail with permission controls and non-public storage
 - Referral foundation: secure per-user code, signup attribution, referrals ledger, Invite & Earn Settings surface, Admin endpoint
 - Referral campaign and reward ledger backend with RBAC-gated campaign CRUD, qualification, and reversal endpoints
+- Centralized referral qualification engine connected to real account-verification event with effective extra-enquiry reward grant
 - Initial user-facing dispute workflow
 
 ## PARTIAL / INCOMPLETE WORK
