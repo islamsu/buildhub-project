@@ -38,6 +38,9 @@ import { runDataQualityChecks } from './admin/dataQuality';
 import { readOperationalHealth } from './admin/operationalHealth';
 import { runPlatformSearch } from './admin/platformSearch';
 import { qualifyReferralEvent } from './referralEngine';
+import {
+  assertSuperAdminSurvives, assertUserDirectoryMutationAllowed,
+} from './adminAuthority';
 import { bookPlacement } from './placementBooking';
 import {
   applyBoost, boostCandidates, masterProduct, masterProvider,
@@ -6421,9 +6424,18 @@ const adminRouter = router({
     await notifyUsers(db, applicants.map(applicant => ({ userId: applicant.id, title: input.status === 'approved' ? 'Registration approved' : 'Registration rejected', body: input.note || `Your registration is ${input.status}`, type: 'compliance', link: '/compliance', messageKey: `notif.compliance.applicant.${input.status}`, messageParams: (input.note ? { note: input.note } : {}) as Record<string, string> })));
     return { success: true, updatedCount: applicants.length, onboardingStatus: input.status };
   }),
-  verifyUser: adminWith('users.manage').input(z.object({ userId: z.number(), verified: z.boolean() })).mutation(async ({ input }) => {
+  verifyUser: adminWith('users.manage').input(z.object({ userId: z.number(), verified: z.boolean() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    // Same rule as setUserFrozen: the user directory does not administer
+    // administrators, even for a change that removes no access.
+    const [verifyTarget] = await db
+      .select({ id: users.id, role: users.role, adminRole: users.adminRole })
+      .from(users).where(eq(users.id, input.userId));
+    if (!verifyTarget) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such user' });
+    await assertUserDirectoryMutationAllowed({
+      db, actorAdminRole: ctx.user.adminRole, target: verifyTarget, removesAccess: false,
+    });
     await db.update(users).set({ verified: input.verified }).where(eq(users.id, input.userId));
     if (input.verified) {
       await qualifyReferralEvent(db, input.userId, 'ACCOUNT_VERIFIED', `verified:${input.userId}`, new Date());
@@ -6434,6 +6446,24 @@ const adminRouter = router({
     if (input.userId === ctx.user.id) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Administrators cannot freeze their own account' });
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    /**
+     * THE TARGET DECIDES WHICH AUTHORITY THIS NEEDS.
+     *
+     * `users.manage` runs the USER directory. It is not authority over the
+     * platform's own operators, and this endpoint previously accepted any
+     * userId with only a self-check - so a USER_ADMIN could freeze every Super
+     * Admin in turn and leave nobody able to unfreeze them or create another.
+     * Freezing an administrator now requires `admins.manage`, and freezing the
+     * last usable Super Admin is refused outright.
+     */
+    const [frozenTarget] = await db
+      .select({ id: users.id, role: users.role, adminRole: users.adminRole })
+      .from(users).where(eq(users.id, input.userId));
+    if (!frozenTarget) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such user' });
+    await assertUserDirectoryMutationAllowed({
+      db, actorAdminRole: ctx.user.adminRole, target: frozenTarget,
+      removesAccess: input.frozen,
+    });
     const action = input.frozen ? 'account_frozen' : 'account_unfrozen';
     const reasonText = input.frozen ? (input.reason || 'Suspended by an administrator') : 'Account unfrozen by administrator';
     await db.update(users).set({
@@ -6631,6 +6661,12 @@ const adminRouter = router({
       .from(users).where(eq(users.id, input.userId));
     if (!target || target.role !== 'admin') throw new TRPCError({ code: 'NOT_FOUND', message: 'No such administrator' });
 
+    // Demoting the last usable Super Admin empties the one role that can
+    // create administrators or restore anybody's access. The self-check above
+    // stops the obvious single-account case; this stops the two-account case
+    // where each demotes the other in turn.
+    if (input.adminRole !== 'SUPER_ADMIN') await assertSuperAdminSurvives(db, target);
+
     await db.update(users).set({ adminRole: input.adminRole }).where(eq(users.id, input.userId));
     await db.insert(userAccountAuditEvents).values({
       userId: input.userId, actorId: ctx.user.id, action: 'admin_role_changed', source: 'admin_management',
@@ -6656,8 +6692,13 @@ const adminRouter = router({
     }
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [target] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, input.userId));
+    const [target] = await db.select({ id: users.id, role: users.role, adminRole: users.adminRole })
+      .from(users).where(eq(users.id, input.userId));
     if (!target || target.role !== 'admin') throw new TRPCError({ code: 'NOT_FOUND', message: 'No such administrator' });
+
+    // Same invariant as demotion: deactivating is a different word for the same
+    // consequence when it lands on the last one.
+    if (!input.active) await assertSuperAdminSurvives(db, target);
 
     await db.update(users).set({
       accountStatus: input.active ? 'active' : 'frozen',

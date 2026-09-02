@@ -32,23 +32,72 @@ function makeAdminCtx(userId = 1): TrpcContext {
 describe('admin user controls', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('freezes and unfreezes another user with a persistent status', async () => {
+  /**
+   * setUserFrozen now READS ITS TARGET before writing.
+   *
+   * It has to: the target decides which authority the action needs. Freezing an
+   * ordinary user is what `users.manage` is for; freezing an ADMINISTRATOR is
+   * an Admin Management act needing `admins.manage`, and freezing the last
+   * usable Super Admin is refused outright. The fake therefore has to answer a
+   * select - which is not test scaffolding for its own sake, it is the shape of
+   * the endpoint changing.
+   */
+  const freezeDb = (target: Record<string, unknown>, superAdminsRemaining = 3) => {
     const setMock = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
     const insertMock = vi.fn().mockResolvedValue([]);
-    const db = { update: vi.fn().mockReturnValue({ set: setMock }), insert: vi.fn().mockReturnValue({ values: insertMock }) };
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    let call = 0;
+    const db = {
+      // First select is the target lookup; any later one is the Super Admin
+      // survival count.
+      select: vi.fn().mockImplementation(() => ({
+        from: () => ({
+          where: () => {
+            call += 1;
+            return Promise.resolve(call === 1 ? [target] : [{ total: superAdminsRemaining }]);
+          },
+        }),
+      })),
+      update: vi.fn().mockReturnValue({ set: setMock }),
+      insert: vi.fn().mockReturnValue({ values: insertMock }),
+    };
+    return { db, setMock };
+  };
+
+  it('freezes and unfreezes another user with a persistent status', async () => {
+    const ordinary = { id: 7, role: 'user', adminRole: null };
+    const first = freezeDb(ordinary);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(first.db);
     const caller = appRouter.createCaller(makeAdminCtx());
 
     await expect(caller.admin.setUserFrozen({ userId: 7, frozen: true, reason: 'Policy review' })).resolves.toEqual({ success: true, status: 'frozen' });
-    expect(setMock).toHaveBeenCalledWith(expect.objectContaining({ accountStatus: 'frozen', frozenReason: 'Policy review', frozenAt: expect.any(Date) }));
+    expect(first.setMock).toHaveBeenCalledWith(expect.objectContaining({ accountStatus: 'frozen', frozenReason: 'Policy review', frozenAt: expect.any(Date) }));
 
+    const second = freezeDb(ordinary);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(second.db);
     await expect(caller.admin.setUserFrozen({ userId: 7, frozen: false })).resolves.toEqual({ success: true, status: 'active' });
-    expect(setMock).toHaveBeenLastCalledWith({ accountStatus: 'active', frozenAt: null, frozenReason: null });
+    expect(second.setMock).toHaveBeenLastCalledWith({ accountStatus: 'active', frozenAt: null, frozenReason: null });
   });
 
   it('prevents an administrator from freezing their own account', async () => {
     const caller = appRouter.createCaller(makeAdminCtx(9));
     await expect(caller.admin.setUserFrozen({ userId: 9, frozen: true })).rejects.toThrow('cannot freeze their own account');
+  });
+
+  it('REFUSES to freeze a user that no longer exists, rather than writing anyway', async () => {
+    const { db, setMock } = freezeDb(undefined as unknown as Record<string, unknown>);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+    await expect(caller.admin.setUserFrozen({ userId: 999, frozen: true })).rejects.toThrow('No such user');
+    expect(setMock).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES to freeze the last usable Super Admin, even for a Super Admin caller', async () => {
+    const { db, setMock } = freezeDb({ id: 7, role: 'admin', adminRole: 'SUPER_ADMIN' }, 0);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+    await expect(caller.admin.setUserFrozen({ userId: 7, frozen: true }))
+      .rejects.toThrow('At least one active Super Admin is required');
+    expect(setMock, 'nothing may be written when the guard refuses').not.toHaveBeenCalled();
   });
 });
 
