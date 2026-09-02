@@ -50,12 +50,12 @@
 
 Dead param routes: **0**
 
-## Server procedures (214)
+## Server procedures (215)
 
 - `protectedProcedure` — 65
 - `publicProcedure` — 33
+- `adminWith:marketplace.manage` — 30
 - `approvedProviderProcedure` — 29
-- `adminWith:marketplace.manage` — 29
 - `superAdminProcedure` — 10
 - `adminWith:billing.manage` — 8
 - `adminWith:users.read` — 7
@@ -120,20 +120,20 @@ Dead param routes: **0**
 
 ## Notification write sites (18)
 
-- server/routers.ts:1262 — notifyUser
-- server/routers.ts:2217 — notifyUser
-- server/routers.ts:2297 — notifyUser
-- server/routers.ts:3025 — notifyUser
-- server/routers.ts:3082 — notifyUser
-- server/routers.ts:3489 — notifyUser
-- server/routers.ts:3736 — notifyUser
-- server/routers.ts:3876 — notifyUser
-- server/routers.ts:5714 — notifyUser
-- server/routers.ts:5785 — notifyUser
-- server/routers.ts:6173 — notifyUser
-- server/routers.ts:6374 — notifyUser
-- server/routers.ts:6399 — notifyUser
-- server/routers.ts:6424 — notifyUser
+- server/routers.ts:1264 — notifyUser
+- server/routers.ts:2219 — notifyUser
+- server/routers.ts:2299 — notifyUser
+- server/routers.ts:3027 — notifyUser
+- server/routers.ts:3084 — notifyUser
+- server/routers.ts:3491 — notifyUser
+- server/routers.ts:3738 — notifyUser
+- server/routers.ts:3878 — notifyUser
+- server/routers.ts:5743 — notifyUser
+- server/routers.ts:5814 — notifyUser
+- server/routers.ts:6202 — notifyUser
+- server/routers.ts:6403 — notifyUser
+- server/routers.ts:6428 — notifyUser
+- server/routers.ts:6453 — notifyUser
 - server/notifications.ts:40 — notifyUser
 - server/notifications.ts:43 — helper implementation
 - server/notifications.ts:57 — notifyUser

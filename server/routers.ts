@@ -47,6 +47,8 @@ import {
   spotlightProducts, spotlightProviders,
 } from './publicPlacement';
 import { placementPerformance, recordPlacementEvent } from './placementAnalytics';
+import { ENQUIRY_STATES } from './vendorEnquiry';
+import { enquiryOverview } from './vendorEnquiryQuery';
 import { PLACEMENT_CLIENT_EVENTS, PLACEMENT_METRIC_FORMULAS } from '@shared/placementAnalytics';
 import { formatProjectContext, resolveProjectContext } from './_core/projectContext';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
@@ -5027,6 +5029,33 @@ const adminRouter = router({
    * BuildHub observes none of those - payments are deferred - and a column is
    * an invitation to fill it in.
    */
+  /**
+   * THE VENDOR ENQUIRIES OVERVIEW.
+   *
+   * `marketplace.manage`, the same permission that governs every other view of
+   * RFQ and vendor activity, decided server-side. It returns COUNTS ONLY - no
+   * vendor identity, no RFQ content, no quotation figure - so the landing view
+   * of the control plane discloses nothing beyond volume, and the drill-downs
+   * that do show records carry their own checks.
+   *
+   * `states` travels with the counts so the screen renders every state,
+   * including the ones sitting at zero. A dashboard that hides its empty
+   * buckets reads as "no data" when it means "none in that state".
+   */
+  enquiryOverview: adminWith('marketplace.manage')
+    .query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return {
+        ...(await enquiryOverview(db)),
+        states: ENQUIRY_STATES,
+        // AVAILABLE is a potential, not a record: it is every eligible vendor
+        // against every open RFQ. It can never appear in these counts, and the
+        // screen is told so rather than left to wonder why it is always zero.
+        excludedFromCounts: ['AVAILABLE'] as const,
+      };
+    }),
+
   placementPerformance: adminWith('marketplace.manage')
     .query(async () => ({
       rows: await placementPerformance(),

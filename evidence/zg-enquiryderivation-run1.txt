@@ -1,0 +1,4 @@
+ok    both status enums are lowercase-only (open, closed, awarded, invited, viewed, responded, declined), so collation cannot diverge
+
+81 checks (80 evidence combinations + collation), 0 disagreement(s)
+PASS  the SQL ladder and the TypeScript ladder agree exhaustively

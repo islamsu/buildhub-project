@@ -129,16 +129,82 @@ export const RFQ_STATUSES = ['open', 'closed', 'awarded'] as const;
  * can have happened, and it stays true even after the RFQ closes - an Admin
  * looking at a closed RFQ still needs to see WHICH vendors answered it.
  */
-export function deriveEnquiryState(evidence: EnquiryEvidence): EnquiryState {
-  if (evidence.hasQuotation) return 'RESPONDED';
-  if (evidence.invitationStatus === 'declined') return 'DECLINED';
+/**
+ * THE PRECEDENCE, WRITTEN ONCE, IN ORDER.
+ *
+ * It is expressed as DATA rather than as a chain of ifs for a specific reason:
+ * the Admin overview has to count these states across the whole platform, and
+ * counting them by loading every enquiry into Node does not survive contact
+ * with a real marketplace. So the same ladder has to exist as a SQL CASE.
+ *
+ * Two hand-written ladders in two languages is exactly the drift this module
+ * was created to prevent, so neither is hand-written: `deriveEnquiryState`
+ * walks this array, and `enquiryStateSql` (server/vendorEnquiryQuery.ts) emits
+ * a CASE from the very same array, in the very same order.
+ */
+export const ENQUIRY_STATE_RULES: {
+  state: EnquiryState;
+  /** The rule, over already-loaded evidence. */
+  test: (evidence: EnquiryEvidence) => boolean;
+  /** The identical rule, over the four evidence columns of a SQL row. */
+  sql: (columns: EvidenceColumns) => string;
+}[] = [
+  // A submitted quotation outranks everything, and stays true after the RFQ
+  // closes: an Admin looking at a closed RFQ still needs to see who answered.
+  {
+    state: 'RESPONDED',
+    test: e => e.hasQuotation,
+    sql: c => `${c.hasQuotation} = 1`,
+  },
+  {
+    state: 'DECLINED',
+    test: e => e.invitationStatus === 'declined',
+    sql: c => `${c.invitationStatus} = 'declined'`,
+  },
   // A closed RFQ stops progress for everyone who has not already answered.
-  if (evidence.rfqStatus && TERMINAL_RFQ_STATUSES.has(evidence.rfqStatus)) return 'CLOSED';
-  if (evidence.creditSpent) return 'OPENED';
-  if (evidence.invitationStatus === 'responded') return 'OPENED';
-  if (evidence.invitationStatus === 'viewed') return 'VIEWED';
-  if (evidence.invitationStatus === 'invited') return 'INVITED';
-  return 'AVAILABLE';
+  {
+    state: 'CLOSED',
+    test: e => e.rfqStatus != null && TERMINAL_RFQ_STATUSES.has(e.rfqStatus),
+    sql: c => `${c.rfqStatus} IN (${Array.from(TERMINAL_RFQ_STATUSES).map(s => `'${s}'`).join(', ')})`,
+  },
+  {
+    state: 'OPENED',
+    test: e => e.creditSpent,
+    sql: c => `${c.creditSpent} = 1`,
+  },
+  {
+    state: 'OPENED',
+    test: e => e.invitationStatus === 'responded',
+    sql: c => `${c.invitationStatus} = 'responded'`,
+  },
+  {
+    state: 'VIEWED',
+    test: e => e.invitationStatus === 'viewed',
+    sql: c => `${c.invitationStatus} = 'viewed'`,
+  },
+  {
+    state: 'INVITED',
+    test: e => e.invitationStatus === 'invited',
+    sql: c => `${c.invitationStatus} = 'invited'`,
+  },
+];
+
+/** The SQL expressions holding each piece of evidence, for the CASE emitter. */
+export type EvidenceColumns = {
+  rfqStatus: string;
+  invitationStatus: string;
+  creditSpent: string;
+  hasQuotation: string;
+};
+
+/** The state when no rule matched. */
+export const DEFAULT_ENQUIRY_STATE: EnquiryState = 'AVAILABLE';
+
+export function deriveEnquiryState(evidence: EnquiryEvidence): EnquiryState {
+  for (const rule of ENQUIRY_STATE_RULES) {
+    if (rule.test(evidence)) return rule.state;
+  }
+  return DEFAULT_ENQUIRY_STATE;
 }
 
 /**

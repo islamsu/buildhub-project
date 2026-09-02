@@ -1,0 +1,25 @@
+PASS  anonymous caller is refused the counts  [HTTP 401]
+PASS  the SUPPORT_ADMIN probe account can sign in at all
+PASS  SUPPORT_ADMIN is refused - marketplace.manage is checked server-side  [HTTP 403]
+PASS  an empty platform returns a real object, not an error  [HTTP 200]
+PASS  every state is present as an explicit zero, not omitted  [{"AVAILABLE":0,"INVITED":0,"VIEWED":0,"OPENED":0,"RESPONDED":0,"DECLINED":0,"CLOSED":0}]
+PASS  the totals are zero
+PASS  AVAILABLE is declared as excluded from the counts
+PASS  the seeded overview returns data  [HTTP 200]
+PASS  AVAILABLE counts 0  [got 0]
+PASS  INVITED counts 1  [got 1]
+PASS  VIEWED counts 1  [got 1]
+PASS  OPENED counts 2  [got 2]
+PASS  RESPONDED counts 1  [got 1]
+PASS  DECLINED counts 2  [got 2]
+PASS  CLOSED counts 3  [got 3]
+PASS  the total equals the number of seeded pairs  [got 10 of 10]
+PASS  AVAILABLE is never counted, because it is not a record
+PASS  distinct vendors counted correctly  [got 5]
+PASS  distinct RFQs counted correctly  [got 3]
+PASS  consumed allowance units equals the qualifiedEnquiries rows  [got 3]
+PASS  A SECOND QUOTATION ON THE SAME PAIR DOES NOT DOUBLE-COUNT IT  [total 10, RESPONDED 1]
+PASS  the overview payload carries no vendor or RFQ identity
+PASS  the fixture removed itself completely  [0 rows left]
+
+23 passed, 0 failed
