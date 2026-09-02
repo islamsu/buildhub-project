@@ -6,7 +6,7 @@ REPOSITORY: islamsu/buildhub-project
 
 ACTIVE DEVELOPMENT BRANCH: codex/buildhub-final-closure
 
-LATEST VERIFIED DEVELOPMENT SHA: 8a7f6decde4188d9dbd7d425539d01e25f7de99f
+LATEST VERIFIED DEVELOPMENT SHA: 0974e1110b04678191a65d51ba9115c580cb5b33
 
 WORKING TREE: CLEAN
 
@@ -75,6 +75,7 @@ Do not blur these states. A pushed commit exists in GitHub but is not necessaril
 ## RECENT COMMIT SUMMARY
 
 ```text
+0974e11 Placement capacity overlap tests
 8a7f6de Enforce placement package surface rules
 fd053bc Product placement booking selector
 6431ec0 Admin placement booking form
@@ -138,6 +139,7 @@ Recent completed or regression-protected work includes:
 - Product placement model and Admin create-booking form with package/surface/scope/dates/priority
 - Product placement booking selector and mixed Provider/Product booking flow
 - Server-enforced package/surface integrity matrix with targeted placement-rule tests
+- Master exclusivity and Spotlight capacity/overlap behavior covered by placement booking tests
 - Initial user-facing dispute workflow
 
 ## PARTIAL / INCOMPLETE WORK
