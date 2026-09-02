@@ -18,10 +18,11 @@
  *                       invited / viewed / responded / declined - plus
  *                       invitedBy and the timestamps behind it.
  *
- *   qualifiedEnquiries  a BILLING FACT: this vendor spent one allowance credit
- *                       to open this RFQ. Unique on (userId, rfqId). It has no
- *                       status column and must not grow one - it records that a
- *                       charge happened, not how the conversation went.
+ *   qualifiedEnquiries  the ENTITLEMENT USAGE CONSUMPTION RECORD: this vendor
+ *                       consumed one qualified-enquiry allowance unit to open
+ *                       this RFQ. Unique on (userId, rfqId). It has no status
+ *                       column and must not grow one - it records that an
+ *                       allowance unit was used, not how the conversation went.
  *
  *   quotations          the vendor's ANSWER.
  *
@@ -32,9 +33,25 @@
  *     record, and would be wrong the first time one of those writes failed;
  *   - two sources for "has this vendor responded?" is how an Admin screen and
  *     a vendor screen end up disagreeing about the same RFQ;
- *   - `qualifiedEnquiries` is a FINANCIAL record. Overloading it with workflow
- *     states would put billing history and conversation state in one row, and
- *     the first "just reset the status" would destroy a charge record.
+ *   - `qualifiedEnquiries` is the ENTITLEMENT CONSUMPTION LEDGER. Overloading it
+ *     with workflow states would put usage history and conversation state in one
+ *     row, and the first "just reset the status" would destroy the record of
+ *     what a vendor's allowance was actually spent on.
+ *
+ * A NOTE ON WHAT THIS RECORD IS NOT. It is tempting to call a consumed enquiry
+ * a "charge" or a "billing fact", and an earlier draft of this file did. That
+ * would be a lie about the architecture: BuildHub collects no payment on this
+ * path - there is no gateway, no invoice, no transaction - and payment is
+ * deliberately owner-deferred. What actually happens is that an entitlement
+ * granted by a plan is DRAWN DOWN. Describing it as financial would invite the
+ * next person to build reconciliation, refunds or revenue reporting on top of a
+ * table that has never seen money.
+ *
+ * "CREDIT" throughout this file therefore means an ALLOWANCE UNIT, in the sense
+ * `rfq.enquiry.credit` already defines in shared/platformRules.ts - "one
+ * qualified-enquiry credit from the vendor's monthly allowance". The word is
+ * kept because it is the vocabulary the rest of the platform and the vendor's
+ * own usage screen already use; it is not a unit of currency.
  *
  * THE STATES, and the evidence each one is read from. Nothing here is a stored
  * string; every value is computed from rows that already exist, so the Admin
@@ -57,7 +74,8 @@ export const ENQUIRY_STATES = [
   'INVITED',
   /** An invited vendor has looked at it, but not answered. */
   'VIEWED',
-  /** The vendor opened the enquiry - a credit was spent, or an invitation covered it. */
+  /** The vendor opened the enquiry - an allowance unit was consumed, or an
+   *  invitation exempted them from consuming one. */
   'OPENED',
   /** The vendor submitted a quotation. */
   'RESPONDED',
@@ -75,7 +93,8 @@ export type EnquiryEvidence = {
   rfqStatus: string | null;
   /** rfqSuppliers.status when this vendor was invited; null when they were not. */
   invitationStatus: string | null;
-  /** True when a qualifiedEnquiries row exists for (vendor, rfq). */
+  /** True when a qualifiedEnquiries row exists for (vendor, rfq) - one
+   *  allowance unit consumed. Not a payment: see the header. */
   creditSpent: boolean;
   /** True when a quotation exists for (vendor, rfq). */
   hasQuotation: boolean;
@@ -142,6 +161,24 @@ export function isAwaitingVendor(state: EnquiryState): boolean {
  * It is deliberately NOT a random opaque code: an administrator reading it in a
  * support ticket can tell which RFQ it concerns, and the RFQ reference is the
  * thing the customer already quotes.
+ *
+ * CHECKED BEFORE FINALISING THIS FORMAT - does BuildHub already have public,
+ * human-safe references for the two halves? It does, and they are exactly these
+ * numbers:
+ *
+ *   - An RFQ has NO reference column and no slug. Every screen that names one
+ *     renders `RFQ #<id>` from the numeric id (RFQPage, RolePlatform, the admin
+ *     investigation view), and `/rfq/:id` is the canonical route. The id IS the
+ *     public reference.
+ *   - A vendor has no slug either. `/vendor/:id` is the canonical provider
+ *     profile route, so the numeric user id is likewise already public.
+ *
+ * So this composes two identifiers BuildHub already prints and puts in URLs; it
+ * discloses nothing a support ticket did not already contain. The alternatives
+ * were rejected on inspection rather than taste: `users.openId` is the SESSION
+ * identifier and must never appear in a quotable reference, and
+ * `users.username` is nullable, so a reference built from it would be missing
+ * for exactly the accounts most likely to need support.
  */
 export function enquiryReference(rfqId: number, vendorId: number): string {
   return `ENQ-${rfqId}-${vendorId}`;
@@ -212,7 +249,7 @@ export async function gatherEnquiryEvidence(
 }
 
 /**
- * HOW A CREDIT CAME TO BE SPENT - or why it was not.
+ * HOW AN ALLOWANCE UNIT CAME TO BE CONSUMED - or why it was not.
  *
  * The brief asks an Admin to be able to see this per enquiry, and the answer
  * must come from the same engine the vendor's own usage screen reads. These are

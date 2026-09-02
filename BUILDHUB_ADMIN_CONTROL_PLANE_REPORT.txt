@@ -131,17 +131,23 @@ answering a different question:
   rfqs                the CUSTOMER'S REQUEST — scope, budget, deadline, status
   rfqSuppliers        a TARGETED INVITATION, with its own small lifecycle:
                       invited / viewed / responded / declined
-  qualifiedEnquiries  a BILLING FACT: one allowance credit was spent. Unique on
-                      (userId, rfqId). No status column.
+  qualifiedEnquiries  the ENTITLEMENT USAGE CONSUMPTION RECORD: one allowance
+                      unit was consumed. Unique on (userId, rfqId). No status
+                      column. NOT a financial record - BuildHub collects no
+                      payment on this path; an entitlement is drawn down.
   quotations          the vendor's ANSWER
 
 So the lifecycle an Admin screen needs is DERIVED from those four, not stored a
 fifth time. Three reasons, in order of how expensive the mistake would be:
 
-  - qualifiedEnquiries is a FINANCIAL record. Giving it a workflow status would
-    put a charge and a conversation in the same row, and the first "just reset
-    the status" would destroy billing history. A test now asserts that table
-    has no status column.
+  - qualifiedEnquiries is the ENTITLEMENT CONSUMPTION LEDGER. Giving it a
+    workflow status would put allowance usage and a conversation in the same
+    row, and the first "just reset the status" would destroy the record of what
+    a vendor's allowance was spent on. A test now asserts that table has no
+    status column. (An earlier draft of this report and of the module called it
+    a billing/financial record. That was wrong about the architecture: payment
+    is owner-deferred and there is no gateway, invoice or transaction on this
+    path. The wording is corrected here and in server/vendorEnquiry.ts.)
   - two sources for "has this vendor responded?" is precisely how an Admin
     screen and a vendor screen come to disagree about the same RFQ — and the
     one that disagrees will be the one nobody is watching.
@@ -409,7 +415,7 @@ WHAT WAS FIXED         Both routes, behind two invariants in one module, with
 WHAT WAS IMPLEMENTED   The canonical vendor-enquiry model: seven derived states,
                        a schema-drift guard, human references, batched evidence
                        reads and usage attribution — with no fifth table and no
-                       status column added to a billing record.
+                       status column added to the entitlement usage record.
 
 WHAT WAS UNIT VERIFIED 3,160 passing, 0 failing. 9 mutations planted, 9 killed
                        (one only after strengthening a test that claimed more

@@ -14,9 +14,11 @@
  *   2. Two Super Admins demote each other. Each call is legal on its own; the
  *      self-check does not see the pair.
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { TRPCError } from '@trpc/server';
 import {
+  ADMIN_SIGN_IN_ELIGIBILITY,
   ADMIN_TARGET_MESSAGE,
   LAST_SUPER_ADMIN_MESSAGE,
   assertMayActOnAdminTarget,
@@ -196,6 +198,83 @@ describe('the user-directory guard applies both invariants in order', () => {
   });
 });
 
+// ── The two definitions of "usable" cannot drift ───────────────────────────
+
+/**
+ * THE DRIFT GUARD.
+ *
+ * `countUsableSuperAdmins` decides whether the last Super Admin may be removed,
+ * and it is only as good as its agreement with `auth.adminSignIn`. Two
+ * definitions of "this account can be used" WILL diverge - the first version of
+ * the count already had: it omitted `isDummy`, so a QA persona with an admin
+ * role and a password hash would have been counted as holding the fort while
+ * adminSignIn refused it outright.
+ *
+ * The count and the sign-in path live in different files and cannot share a
+ * drizzle condition (one gates an in-memory row, the other builds SQL), so the
+ * shared thing is the LIST OF COLUMNS, asserted against both sides here.
+ */
+describe('"usable Super Admin" tracks the real adminSignIn eligibility rules', () => {
+  const ROUTERS = readSource();
+
+  /**
+   * The eligibility region of adminSignIn: everything between the candidate
+   * being chosen and the session being issued. Sliced deliberately narrowly -
+   * after `const sessionToken` the same object is read for `openId`, `name` and
+   * `id`, which are not eligibility rules and would make the reverse assertion
+   * below meaningless.
+   */
+  const signInGate = (): string => {
+    // ANCHORED ON THE DECLARATION, not on the candidate line. The first draft
+    // searched for `const candidate = target && !target.isDummy` directly and
+    // landed in the ORDINARY `signIn` procedure, which happens to open with the
+    // same line - so it asserted the wrong function and reported adminSignIn as
+    // having lost its role checks. The reverse assertion below is what caught
+    // it, which is the reason that assertion exists.
+    const procedure = ROUTERS.indexOf('  adminSignIn: publicProcedure');
+    expect(procedure, 'the adminSignIn declaration must be findable').toBeGreaterThan(-1);
+    const start = ROUTERS.indexOf('const candidate =', procedure);
+    expect(start, 'the adminSignIn candidate gate must be findable').toBeGreaterThan(procedure);
+    const end = ROUTERS.indexOf('const sessionToken', start);
+    expect(end, 'the end of the gate must be findable').toBeGreaterThan(start);
+    return ROUTERS.slice(start, end);
+  };
+
+  const countSource = (): string => {
+    const source = readFileSync(new URL('./adminAuthority.ts', import.meta.url), 'utf8');
+    const start = source.indexOf('export async function countUsableSuperAdmins');
+    expect(start, 'countUsableSuperAdmins must be findable').toBeGreaterThan(-1);
+    return source.slice(start, source.indexOf('\nexport ', start + 1));
+  };
+
+  it('every declared rule is applied by adminSignIn', () => {
+    const gate = signInGate();
+    for (const column of ADMIN_SIGN_IN_ELIGIBILITY) {
+      expect(new RegExp(`(?:target|candidate)\\??\\.${column}\\b`).test(gate),
+        `adminSignIn no longer gates on ${column} - update ADMIN_SIGN_IN_ELIGIBILITY`).toBe(true);
+    }
+  });
+
+  it('every declared rule is applied by the survival count', () => {
+    const count = countSource();
+    for (const column of ADMIN_SIGN_IN_ELIGIBILITY) {
+      expect(count.includes(`users.${column}`),
+        `countUsableSuperAdmins ignores ${column}, so it would count an account that cannot sign in`)
+        .toBe(true);
+    }
+  });
+
+  it('AND ADMINSIGNIN GATES ON NOTHING ELSE - a new rule fails this test', () => {
+    // The direction that actually catches drift. The forward checks above stay
+    // green if somebody adds `candidate.lockedUntil` to the sign-in path and
+    // forgets the count; this one does not.
+    const found = new Set(
+      [...signInGate().matchAll(/(?:target|candidate)\??\.(\w+)/g)].map(m => m[1]),
+    );
+    expect([...found].sort()).toEqual([...ADMIN_SIGN_IN_ELIGIBILITY].sort());
+  });
+});
+
 // ── The endpoints really call it ───────────────────────────────────────────
 
 describe('the guard is wired into the endpoints that can reach the invariant', () => {
@@ -249,7 +328,5 @@ describe('the guard is wired into the endpoints that can reach the invariant', (
 });
 
 function readSource(): string {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { readFileSync } = require('node:fs');
   return readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
 }

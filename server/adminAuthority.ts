@@ -39,6 +39,31 @@ import { TRPCError } from '@trpc/server';
 import { users } from '../drizzle/schema';
 import { hasAdminPermission } from '@shared/adminRoles';
 
+/**
+ * THE ADMINISTRATOR SIGN-IN ELIGIBILITY RULES, AS ONE LIST.
+ *
+ * These are the conditions `auth.adminSignIn` applies before it will issue a
+ * session, restated here as data so the survival count and the sign-in path
+ * cannot drift apart. server/adminAuthority.test.ts compares this list against
+ * the real adminSignIn source and fails if either side grows a rule the other
+ * lacks.
+ *
+ * The drift this closes was real and mine: the first version of
+ * countUsableSuperAdmins omitted `isDummy`. A QA persona carrying
+ * role='admin', adminRole='SUPER_ADMIN' and a password hash would have been
+ * COUNTED as a usable Super Admin while adminSignIn refused it outright - so
+ * the guard would have allowed removing the last REAL Super Admin because a
+ * test account appeared to be holding the fort.
+ */
+export const ADMIN_SIGN_IN_ELIGIBILITY = [
+  'isDummy',          // QA personas can never hold administrator authority
+  'passwordHash',     // a null hash is treated as no account at all
+  'role',             // must be an administrator
+  'adminRole',        // ...with a real role assigned
+  'accountStatus',    // active
+  'deactivatedAt',    // and not deactivated
+] as const;
+
 type Db = { select: (...args: never[]) => unknown } & Record<string, unknown>;
 
 export const SUPER_ADMIN_ROLE = 'SUPER_ADMIN';
@@ -60,14 +85,19 @@ export async function countUsableSuperAdmins(
   db: unknown,
   excludeUserId?: number,
 ): Promise<number> {
+  // EVERY CONDITION adminSignIn APPLIES, in the same order as
+  // ADMIN_SIGN_IN_ELIGIBILITY above. "Usable" must mean "could actually sign in
+  // right now" - anything looser counts an account that cannot hold the fort.
   const conditions = [
+    // A QA persona is never an administrator, however its columns read.
+    eq(users.isDummy, false),
+    // Never redeemed their invitation: no password hash, so adminSignIn treats
+    // them as no account. A dormant invitation is not a safety net.
+    isNotNull(users.passwordHash),
     eq(users.role, 'admin'),
     eq(users.adminRole, SUPER_ADMIN_ROLE),
     eq(users.accountStatus, 'active'),
     isNull(users.deactivatedAt),
-    // Never redeemed their invitation: no password hash, so adminSignIn treats
-    // them as no account. A dormant invitation is not a safety net.
-    isNotNull(users.passwordHash),
   ];
   if (excludeUserId != null) conditions.push(ne(users.id, excludeUserId));
 

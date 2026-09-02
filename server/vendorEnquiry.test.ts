@@ -37,9 +37,11 @@ describe('a vendor enquiry is derived, never stored twice', () => {
     }
   });
 
-  it('qualifiedEnquiries stays a BILLING record with no workflow status', () => {
-    // Overloading it would put a charge record and a conversation state in one
-    // row, and the first "just reset the status" would destroy billing history.
+  it('qualifiedEnquiries stays an ENTITLEMENT USAGE record with no workflow status', () => {
+    // It records that one allowance unit was consumed - not a payment, and not
+    // how the conversation went. Overloading it would put usage history and
+    // conversation state in one row, and the first "just reset the status"
+    // would destroy the record of what a vendor's allowance was spent on.
     const schema = readFileSync(new URL('../drizzle/schema.ts', import.meta.url), 'utf8');
     const start = schema.indexOf("export const qualifiedEnquiries");
     const block = schema.slice(start, schema.indexOf('}));', start));
