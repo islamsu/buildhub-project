@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { rfqCategoryLabel } from '@shared/rfqCategories';
+import { MasterProviderSlot } from '@/components/MasterPlacement';
 import { Search, Star, BadgeCheck, MapPin, Megaphone, Store, ChevronLeft, ChevronRight } from 'lucide-react';
 
 /**
@@ -148,6 +149,12 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
             <p className="text-sm text-muted-foreground mt-1">{t('vendorsDir.emptyHint')}</p>
           </div>
         )}
+
+        {/* MASTER DISCOVERY, above everything. The scope is whichever category
+            is selected; with no category chosen it is the platform-wide slot,
+            which is what a visitor sees before they narrow to a provider type.
+            Renders nothing at all when no eligible Master is booked. */}
+        <MasterProviderSlot category={category === 'all' ? undefined : category} />
 
         {/* Editorial Featured: platform-curated recognition, distinct from paid
             sponsorship. Shown before sponsored and organic so the strongest

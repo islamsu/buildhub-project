@@ -158,6 +158,14 @@ describe('§1 every procedure is pinned to a tier', () => {
       'marketplace.get',
       'marketplace.importTemplate',
       'marketplace.list',
+      // THE MASTER DISCOVERY SLOT, provider and product. Public because the
+      // discovery pages they sit on are public, and each returns one entity in
+      // exactly the shape the organic listing beside it already returns, plus
+      // a Sponsored/Featured label. The commercial record behind the placement
+      // - who granted it, when it runs, what was paid - is not in the payload
+      // and stays behind marketplace.manage.
+      'marketplace.masterProduct',
+      'marketplace.masterProvider',
       // Real platform counts for the landing and sign-up pages, which are
       // both seen while logged out. It returns four aggregate numbers and no
       // row, no id and nothing about any individual - see

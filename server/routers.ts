@@ -39,6 +39,7 @@ import { readOperationalHealth } from './admin/operationalHealth';
 import { runPlatformSearch } from './admin/platformSearch';
 import { qualifyReferralEvent } from './referralEngine';
 import { bookPlacement } from './placementBooking';
+import { masterProduct, masterProvider } from './publicPlacement';
 import { formatProjectContext, resolveProjectContext } from './_core/projectContext';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
 import {
@@ -1527,6 +1528,32 @@ const marketplaceRouter = router({
   featuredProviders: publicProcedure
     .input(z.object({ category: z.string().max(MAX_SEARCH_LENGTH).optional() }).optional())
     .query(async ({ input }) => listFeaturedProviders(input ?? {})),
+
+  /**
+   * ── MASTER DISCOVERY: the single exclusive slot ─────────────────────────
+   *
+   * One provider, or none. The scope is the `category`; omitted means the
+   * platform-wide GLOBAL scope, which is what provider discovery shows before
+   * a visitor has chosen a type.
+   *
+   * Public for the same reason the directory is, and exposing strictly less:
+   * the same card the organic list already shows, plus a label saying whether
+   * the placement was paid for. No period, no granter, no reason, no price -
+   * the commercial record stays behind marketplace.manage.
+   *
+   * Returns null when nothing is booked or nothing booked is still eligible.
+   * The caller renders nothing in that case; there is no placeholder
+   * advertiser to fall back to and inventing one would be fabricating a
+   * business relationship.
+   */
+  masterProvider: publicProcedure
+    .input(z.object({ category: z.string().max(MAX_SEARCH_LENGTH).optional() }).optional())
+    .query(async ({ input }) => masterProvider(input?.category)),
+
+  /** The Master product slot. Same contract, same honesty about emptiness. */
+  masterProduct: publicProcedure
+    .input(z.object({ category: z.string().max(MAX_SEARCH_LENGTH).optional() }).optional())
+    .query(async ({ input }) => masterProduct(input?.category)),
   list: publicProcedure
     // BOUNDED, matching marketplace.vendors below, which already was. This
     // endpoint is PUBLIC and unauthenticated: `limit` had no int, no minimum

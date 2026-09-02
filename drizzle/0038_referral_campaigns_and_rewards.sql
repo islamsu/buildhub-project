@@ -1,3 +1,15 @@
+-- MIGRATION DELIMITERS. drizzle-kit hands each migration file to the driver as
+-- ONE query unless its statements are separated by the breakpoint marker used
+-- throughout this directory, and MySQL/MariaDB reject a multi-statement query
+-- outright. Without those markers this file failed on its SECOND statement and
+-- never applied - taking the migrations after it down too, since the runner
+-- stops at the first failure. Adding them is not rewriting applied history:
+-- this file had never successfully run anywhere, so there is nothing applied
+-- to rewrite.
+--
+-- (The marker itself is deliberately not quoted in this comment: the splitter
+-- matches that text ANYWHERE in the file, comments included, and naming it
+-- here cut this very note in half.)
 -- Referral campaigns and a proper reward ledger. Forward-only; does not
 -- rewrite 0037_referrals.sql.
 CREATE TABLE `referralCampaigns` (
@@ -23,7 +35,7 @@ CREATE TABLE `referralCampaigns` (
   CONSTRAINT `referralCampaigns_createdBy_users_id_fk`
     FOREIGN KEY (`createdBy`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 );
-
+--> statement-breakpoint
 CREATE TABLE `referralRewards` (
   `id` int NOT NULL AUTO_INCREMENT,
   `referralId` int NOT NULL,
@@ -50,7 +62,7 @@ CREATE TABLE `referralRewards` (
   CONSTRAINT `referralRewards_recipientUserId_users_id_fk`
     FOREIGN KEY (`recipientUserId`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 );
-
+--> statement-breakpoint
 ALTER TABLE `referrals`
   ADD `campaignId` int NULL,
   ADD `qualificationType` enum('ACCOUNT_VERIFIED', 'PROVIDER_APPROVED', 'PROFILE_COMPLETED', 'FIRST_VALID_RFQ', 'FIRST_VALID_QUOTATION_RESPONSE') NULL,

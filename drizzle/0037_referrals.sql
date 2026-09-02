@@ -1,8 +1,21 @@
+-- MIGRATION DELIMITERS. drizzle-kit hands each migration file to the driver as
+-- ONE query unless its statements are separated by the breakpoint marker used
+-- throughout this directory, and MySQL/MariaDB reject a multi-statement query
+-- outright. Without those markers this file failed on its SECOND statement and
+-- never applied - taking the migrations after it down too, since the runner
+-- stops at the first failure. Adding them is not rewriting applied history:
+-- this file had never successfully run anywhere, so there is nothing applied
+-- to rewrite.
+--
+-- (The marker itself is deliberately not quoted in this comment: the splitter
+-- matches that text ANYWHERE in the file, comments included, and naming it
+-- here cut this very note in half.)
 -- Referral code and attribution ledger. Rewards are non-cash and resolved
 -- through the existing entitlement/promotion engines, never a payment table.
 ALTER TABLE `users` ADD `referralCode` varchar(32) NULL;
+--> statement-breakpoint
 ALTER TABLE `users` ADD UNIQUE KEY `users_referralCode_unique` (`referralCode`);
-
+--> statement-breakpoint
 CREATE TABLE `referrals` (
   `id` int NOT NULL AUTO_INCREMENT,
   `referrerId` int NOT NULL,

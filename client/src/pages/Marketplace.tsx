@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { Search, SlidersHorizontal, Star, Package, ShoppingCart, Zap, ArrowLeft, ArrowRight, Heart, Scale, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
+import { MasterProductSlot } from '@/components/MasterPlacement';
 
 const CATEGORY_ICONS: Record<string, string> = {
   'Materials': '🧱', 'Furniture': '🛋️', 'Lighting': '💡', 'Electrical': '⚡',
@@ -169,6 +170,12 @@ export default function Marketplace() {
                   </button>
                 ))}
               </div>
+
+              {/* MASTER DISCOVERY for products, above the organic grid. Scoped
+                  to the selected category, or platform-wide on "All" - which is
+                  what a visitor sees before choosing a category. Collapses when
+                  nothing eligible is booked. */}
+              <MasterProductSlot category={selectedCategory === 'All' ? undefined : selectedCategory} />
 
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm text-muted-foreground">{filtered.length} {lang === 'ar' ? 'منتج' : 'products'}</p>
