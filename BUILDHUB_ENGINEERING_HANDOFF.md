@@ -6,7 +6,7 @@ REPOSITORY: islamsu/buildhub-project
 
 ACTIVE DEVELOPMENT BRANCH: codex/buildhub-final-closure
 
-LATEST VERIFIED DEVELOPMENT SHA: 2febc078480f0b270fa0bff7aae5bfc1782edf2f
+LATEST VERIFIED DEVELOPMENT SHA: ac4e3d8eaaf6958f13319db35a4a031f817e263d
 
 WORKING TREE: CLEAN
 
@@ -75,6 +75,7 @@ Do not blur these states. A pushed commit exists in GitHub but is not necessaril
 ## RECENT COMMIT SUMMARY
 
 ```text
+ac4e3d8 Referral campaign and reward backend
 2febc07 Referral foundation and invite attribution
 9f36e5b BuildHub: complete master reconciliation tracker
 c66e232 Admin internal notes and complete backlog register
@@ -95,7 +96,7 @@ a065aca Admin: vendor lookup by business identity, not database id
 
 ## LATEST RELEVANT MIGRATION
 
-The latest numbered migration file is `drizzle/0037_referrals.sql`.
+The latest numbered migration file is `drizzle/0038_referral_campaigns_and_rewards.sql`.
 
 Migration lineage must be preserved with forward migrations only. Do not rewrite historical migrations.
 
@@ -124,6 +125,7 @@ Recent completed or regression-protected work includes:
 - Admin User Detail account editing for permitted name/username/email/phone/role fields
 - Internal Admin Notes for User Detail with permission controls and non-public storage
 - Referral foundation: secure per-user code, signup attribution, referrals ledger, Invite & Earn Settings surface, Admin endpoint
+- Referral campaign and reward ledger backend with RBAC-gated campaign CRUD, qualification, and reversal endpoints
 - Initial user-facing dispute workflow
 
 ## PARTIAL / INCOMPLETE WORK
