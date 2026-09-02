@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Link } from 'wouter';
 import { Megaphone, Search } from 'lucide-react';
 import VendorIdentitySelect from '@/components/VendorIdentitySelect';
+import ProductIdentitySelect from '@/components/ProductIdentitySelect';
 
 export default function AdminPlacements() {
   const { lang } = useLanguage();
@@ -17,6 +18,8 @@ export default function AdminPlacements() {
   const { data: rows = [] } = trpc.admin.placements.useQuery(undefined, { retry: false });
   const utils = trpc.useUtils();
   const [vendorId, setVendorId] = useState<number | null>(null);
+  const [productId, setProductId] = useState<number | null>(null);
+  const [entityType, setEntityType] = useState<'PROVIDER' | 'PRODUCT'>('PROVIDER');
   const [packageValue, setPackageValue] = useState<'BOOST' | 'SPOTLIGHT' | 'PREMIER'>('BOOST');
   const [surface, setSurface] = useState<'MASTER_DISCOVERY' | 'TYPE_CATEGORY_SPOTLIGHT' | 'SEARCH_RESULTS_BOOST'>('SEARCH_RESULTS_BOOST');
   const [category, setCategory] = useState('General');
@@ -64,7 +67,15 @@ export default function AdminPlacements() {
         <div className="mb-5 rounded-xl border p-4">
           <p className="text-sm font-medium">{ar ? 'حجز مساحة تجارية' : 'Book a commercial placement'}</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <VendorIdentitySelect value={vendorId} onChange={setVendorId} label={ar ? 'المورّد' : 'Provider'} testId="placement-vendor" />
+            <Select value={entityType} onValueChange={value => setEntityType(value as typeof entityType)}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="PROVIDER">Provider</SelectItem><SelectItem value="PRODUCT">Product</SelectItem></SelectContent>
+            </Select>
+            {entityType === 'PROVIDER' ? (
+              <VendorIdentitySelect value={vendorId} onChange={setVendorId} label={ar ? 'المورّد' : 'Provider'} testId="placement-vendor" />
+            ) : (
+              <ProductIdentitySelect value={productId} onChange={setProductId} label={ar ? 'المنتج' : 'Product'} testId="placement-product" />
+            )}
             <Select value={packageValue} onValueChange={value => setPackageValue(value as typeof packageValue)}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="BOOST">BOOST</SelectItem><SelectItem value="SPOTLIGHT">SPOTLIGHT</SelectItem><SelectItem value="PREMIER">PREMIER</SelectItem></SelectContent>
@@ -81,10 +92,10 @@ export default function AdminPlacements() {
           <Button
             size="sm"
             className="mt-3"
-            disabled={vendorId === null || !category.trim() || !startsAt || book.isPending}
+            disabled={(entityType === 'PROVIDER' ? vendorId === null : productId === null) || !category.trim() || !startsAt || book.isPending}
             onClick={() => book.mutate({
-              entityType: 'PROVIDER',
-              entityId: vendorId!,
+              entityType,
+              entityId: entityType === 'PROVIDER' ? vendorId! : productId!,
               package: packageValue,
               surface,
               source: 'ADMIN_EDITORIAL',
