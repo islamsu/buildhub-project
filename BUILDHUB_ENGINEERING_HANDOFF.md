@@ -6,7 +6,7 @@ REPOSITORY: islamsu/buildhub-project
 
 ACTIVE DEVELOPMENT BRANCH: codex/buildhub-final-closure
 
-LATEST VERIFIED DEVELOPMENT SHA: fb0af30c044d781fe2984c66f254da2b0738e664
+LATEST VERIFIED DEVELOPMENT SHA: c66e2320388a984340240a84322c91acb3e88863
 
 WORKING TREE: CLEAN
 
@@ -75,6 +75,7 @@ Do not blur these states. A pushed commit exists in GitHub but is not necessaril
 ## RECENT COMMIT SUMMARY
 
 ```text
+c66e232 Admin internal notes and complete backlog register
 fb0af30 Admin: allowlisted user detail editing
 0284957 Vendor name change request and admin correction
 ceb2169 Admin: entity links and humanized investigation statuses
@@ -92,7 +93,7 @@ a065aca Admin: vendor lookup by business identity, not database id
 
 ## LATEST RELEVANT MIGRATION
 
-The latest numbered migration file is `drizzle/0035_vendor_name_change_requests.sql`.
+The latest numbered migration file is `drizzle/0036_admin_notes.sql`.
 
 Migration lineage must be preserved with forward migrations only. Do not rewrite historical migrations.
 
@@ -119,6 +120,7 @@ Recent completed or regression-protected work includes:
 - Promotion Management search, status filtering, sorting, and pagination for Featured and Sponsored
 - Vendor Name Change Request and Admin Direct Vendor Name Correction with audit, notifications, and security tests
 - Admin User Detail account editing for permitted name/username/email/phone/role fields
+- Internal Admin Notes for User Detail with permission controls and non-public storage
 - Initial user-facing dispute workflow
 
 ## PARTIAL / INCOMPLETE WORK
