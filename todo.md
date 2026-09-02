@@ -388,6 +388,7 @@
 - [x] Admin commercial placement create-booking form with package/surface/scope/dates/priority
 - [x] Product placement create-booking selector and mixed Provider/Product booking flow
 - [x] Server-enforced package/surface integrity with targeted placement-rule tests
+- [x] Master exclusivity and Spotlight capacity/overlap behavior covered by placement booking tests
 - [ ] Complete Dispute lifecycle: relationship eligibility, reference, respondent, evidence, participant communication, internal notes, assignment, priority, statuses, resolution, controlled reopen, notifications, audit
 - [ ] Support Tickets: user create/category/description/attachment/updates, Support Admin search/filter/assign/respond/request-info/resolve/close
 - [ ] Reviews / Reputation: relationship eligibility, self-review prevention, duplicate prevention, provider response policy, reporting, moderation, restore/hide, audit
