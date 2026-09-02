@@ -6,7 +6,7 @@ REPOSITORY: islamsu/buildhub-project
 
 ACTIVE DEVELOPMENT BRANCH: codex/buildhub-final-closure
 
-LATEST VERIFIED DEVELOPMENT SHA: ceb216920c055b5881c3c1344b7e4245387034e6
+LATEST VERIFIED DEVELOPMENT SHA: 028495750567b6b763881026b7fc62b1fa387315
 
 WORKING TREE: CLEAN
 
@@ -75,6 +75,7 @@ Do not blur these states. A pushed commit exists in GitHub but is not necessaril
 ## RECENT COMMIT SUMMARY
 
 ```text
+0284957 Vendor name change request and admin correction
 ceb2169 Admin: entity links and humanized investigation statuses
 d6ef973 Admin: promotion list search filter sort pagination
 ca1b2df Admin: human-first RFQ investigation search
@@ -90,7 +91,7 @@ a065aca Admin: vendor lookup by business identity, not database id
 
 ## LATEST RELEVANT MIGRATION
 
-The latest numbered migration file is `drizzle/0034_placement_priority.sql`.
+The latest numbered migration file is `drizzle/0035_vendor_name_change_requests.sql`.
 
 Migration lineage must be preserved with forward migrations only. Do not rewrite historical migrations.
 
@@ -115,6 +116,7 @@ Recent completed or regression-protected work includes:
 - Human-readable invitation and RFQ investigation statuses
 - Truthful platform health header and clarified real-user count semantics
 - Promotion Management search, status filtering, sorting, and pagination for Featured and Sponsored
+- Vendor Name Change Request and Admin Direct Vendor Name Correction with audit, notifications, and security tests
 - Initial user-facing dispute workflow
 
 ## PARTIAL / INCOMPLETE WORK
@@ -123,7 +125,6 @@ Repository-controlled work that remains to finish:
 
 - System-wide entity-link/dead-control/raw-ID/raw-enum audit across remaining admin modules
 - Vendor/business name link consistency across every remaining admin table
-- Vendor Name Change Request and Admin Direct Vendor Name Correction
 - Referral / Invitation Reward system
 - Complete Dispute lifecycle
 - Support Tickets
@@ -316,7 +317,7 @@ Statuses should use DONE, IN PROGRESS, PARTIAL, OWNER DECISION, INFRASTRUCTURE B
 
 ## NEXT EXACT DEVELOPMENT ITEM
 
-NEXT EXACT ITEM: Implement Vendor Name Change Request + Admin Direct Vendor Name Correction.
+NEXT EXACT ITEM: Implement the Referral / Invitation Reward system.
 
 Before moving deeper into Referrals, ensure the remaining Admin entity-link/raw-ID/actionability gaps are closed or explicitly tracked.
 
