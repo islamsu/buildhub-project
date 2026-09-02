@@ -1,0 +1,629 @@
+================================================================================
+BUILDHUB — CLAUDE TAKEOVER REPORT
+Work performed after the handoff from DeepSeek
+================================================================================
+
+REPOSITORY          islamsu/buildhub-project
+BRANCH              codex/buildhub-final-closure
+HEAD AT TAKEOVER    eb33947f20934f74cb409d195c17499d63b759b4
+HEAD NOW            529e71192ddb2da1a2c50a03158ea152b09f43c0
+LOCAL == REMOTE     YES (verified by fresh fetch after every push)
+WORKING TREE        CLEAN
+MAIN MERGED         NO
+PRODUCTION          NOT TOUCHED
+STAGING             b9e94f61bb7d4c3d5234192435b2e16a70ed8e1a — still behind
+LATEST MIGRATION    drizzle/0040_product_placement.sql
+DATE                2 September 2026
+
+COMMITS ADDED (3)
+  6846287  Green the branch: nine real defects behind sixteen failing tests
+  b7eeaa2  Master Discovery, rendered - and the migrations that had never run
+  529e711  Ignore the agent session scratchpad
+
+CHANGE VOLUME       28 files, +1,948 / -94
+TEST SUITE          3,066 passing / 0 failing  (was 3,025 passing / 16 FAILING)
+TYPECHECK           tsc --noEmit clean
+BUILD               dist/index.js 839.8kb
+
+
+================================================================================
+1. TAKEOVER VERIFICATION — WHAT WAS CHECKED BEFORE ANY CODE CHANGED
+================================================================================
+
+Git state confirmed against the handoff document before touching anything:
+
+  - Fetched origin; checked out codex/buildhub-final-closure.
+  - Local HEAD == remote HEAD == eb33947, exactly as the handoff stated.
+  - 0 ahead / 0 behind. Working tree clean.
+  - Latest migration file confirmed as drizzle/0040_product_placement.sql.
+  - Confirmed the earlier Claude branch (f5eed47) IS an ancestor of this branch,
+    so that work carried forward and nothing needed re-doing.
+
+Continuity sources read in full: todo.md (438 lines) and
+BUILDHUB_ENGINEERING_HANDOFF.md (408 lines), plus recent commits, migrations,
+placementBooking.ts / placementBooking.test.ts, referralEngine.ts,
+vendorSponsorship.ts, vendorDirectory.ts and the public discovery components.
+
+NOTHING WAS RESET. NOTHING WAS REBUILT. No DeepSeek or Codex work was discarded.
+
+Reconciliation of the handoff against the actual code found the stated gap to be
+real and precise: placementBooking.ts enforces the package/surface matrix, Master
+exclusivity and Spotlight capacity at BOOKING time and is covered by its own
+tests — but every public READ path (listSponsoredVendors, listFeaturedProviders,
+listFeaturedVendors) filters on `kind` and `category` and never reads `surface`,
+`package` or `entityType`. A booked PREMIER / MASTER_DISCOVERY row rendered
+nowhere. There was no product placement read path at all.
+
+
+================================================================================
+2. THE MOST SERIOUS FINDING — FOUR MIGRATIONS THAT HAD NEVER RUN ANYWHERE
+================================================================================
+
+SEVERITY: P0 (deployment-blocking). Discovered during live verification.
+STATUS:   FIXED and guarded.
+
+WHAT WAS WRONG
+--------------
+drizzle-kit hands each migration file to the database driver as ONE query unless
+its statements are separated by the breakpoint marker used throughout the
+drizzle/ directory. MySQL and MariaDB refuse a multi-statement query outright.
+
+Migrations 0037, 0038 and 0039 contained ZERO breakpoint markers. So:
+
+  0037_referrals.sql                    FAILED on its second statement
+  0038_referral_campaigns_and_rewards   never reached (runner stops on failure)
+  0039_commercial_placement_fields      never reached
+  0040_product_placement                never reached
+
+CONSEQUENCE
+-----------
+These objects existed in drizzle/schema.ts, in TypeScript, and IN NO DATABASE
+ANYWHERE:
+
+  tables   referrals, referralCampaigns, referralRewards
+  columns  vendorSponsorships.source
+           vendorSponsorships.package
+           vendorSponsorships.surface
+           vendorSponsorships.entityType
+           vendorSponsorships.productId
+
+Every feature built on top of them — the referral engine, the commercial
+placement booking engine, product placement — typechecked cleanly and passed its
+unit tests, because those tests mock the database driver. None of it could have
+worked against a real server.
+
+THIS IS WHY STAGING IS BEHIND. It is not a deploy that was never triggered; the
+application cannot migrate.
+
+HOW IT WAS FOUND
+----------------
+Not by a test. The unit suite was green on this code. It surfaced when the new
+Master Discovery endpoint was called against a real local MariaDB and returned
+HTTP 500. The server log said "the database rejected or dropped the query"; a
+direct driver probe showed the real cause, and `describe vendorSponsorships`
+showed the columns simply were not there.
+
+THE FIX
+-------
+Breakpoint markers added between statements in 0037, 0038 and 0039. 0040 is a
+single statement and correctly needed none.
+
+This is NOT rewriting applied migration history. These files had never
+successfully executed against any database, so there was no applied state to
+rewrite. Confirmed empirically: __drizzle_migrations held 37 rows (0000–0036)
+before the fix and 41 after.
+
+VERIFIED
+--------
+  - All 41 migrations now apply cleanly to a fresh MariaDB 10.11 database.
+  - The five placement columns and three referral tables exist and are queryable.
+  - The Master Discovery endpoints returned real data end to end afterwards.
+
+PERMANENT GUARD
+---------------
+server/migrationSyntax.test.ts (3 tests) now fails on:
+  - any multi-statement migration missing its delimiters;
+  - any drift between drizzle/meta/_journal.json and the .sql files on disk;
+  - a vacuous run (it asserts it found migration files at all).
+
+Mutation-tested: stripping the markers back out of 0039 makes it fail, naming
+the offending file.
+
+A NOTE ON A MISTAKE MADE AND CORRECTED HERE
+-------------------------------------------
+The first version of the explanatory comment quoted the breakpoint marker
+literally. drizzle's splitter matches that text ANYWHERE in a file, comments
+included, so the comment cut itself in half and the migration still failed. The
+comment was reworded to describe the marker without naming it, and the note
+records why.
+
+
+================================================================================
+3. THE BRANCH WAS HANDED OVER RED — 16 FAILING TESTS
+================================================================================
+
+SEVERITY: high (blocks any honest test-driven workflow).
+STATUS:   ALL FIXED. 3,066 passing / 0 failing.
+
+The handoff document did not mention this. A full suite run at eb33947, with my
+own files stashed so the tree matched the takeover commit exactly, produced:
+
+  16 failed tests across 12 files, 3,025 passing.
+
+Each was triaged individually. NONE was resolved by weakening an assertion,
+deleting a test, or lowering a threshold.
+
+3.1 REAL DEFECTS FIXED (5)
+--------------------------
+
+(a) admin.updateUser read the ENTIRE users row
+    server/routers.ts
+
+    `select().from(users)` pulled passwordHash, reset-token columns and every
+    future secret the table grows, in order to consult exactly three fields
+    (role, username, email). Narrowed to those three.
+
+    Stated honestly: nothing from that row was returned to any client, so this
+    was defence in depth rather than a plugged leak. The allowlist exists so
+    that the NEXT edit to this procedure cannot turn it into one.
+
+(b) Three notifications shipped English prose with no messageKey
+    server/routers.ts (x2), server/referralEngine.ts (x1)
+
+    Vendor name change reviewed, vendor name corrected, and referral reward
+    granted. An Arabic reader received English regardless of the language they
+    had chosen. Keys added to BOTH dictionaries. The field and status names are
+    resolved on the READER's client via the existing `...Key` param convention,
+    so the sentence is Arabic end to end rather than Arabic prose wrapped around
+    an English identifier.
+
+(c) Two notifications pointed at bare /settings
+    server/routers.ts
+
+    Dropping the vendor at the top of a long settings page with no indication of
+    what an administrator had just decided. Now anchored to the section that
+    renders the changed record: #settings-name-change for a decision on a
+    request, #settings-company for an administrative correction.
+
+(d) The marketplace hub lost its per-list empty states
+    client/src/pages/MarketplaceHub.tsx
+
+    The outer block hides itself when nothing at all is curated, but the three
+    lists are filtered independently. With picks in Design and none in
+    Renovation, a "Featured Finishing Companies" heading stood over an empty
+    grid. A heading is a promise; the absence is named again, in both languages.
+
+(e) A hardcoded Arabic/English ternary returned to the vendors directory
+    client/src/pages/VendorsDirectory.tsx
+
+    Replaced with a translation key present in both dictionaries.
+
+3.2 STALE COUNTERS — VERIFIED BEFORE BEING MOVED (3)
+----------------------------------------------------
+
+(f) Upload-site counters 8 -> 9 (four tests)
+    authorizationSweep, storagePortability, uploadUnavailable,
+    contentAbuseControls
+
+    Provider portfolio images became a real ninth upload path. The COUNT was
+    moved only after confirming the underlying invariant still holds:
+    `storagePutOrUnavailable` call sites = 9, and `assertUploadedFileMatches` +
+    `validateAiAttachment` = 9. The ninth site is genuinely byte-verified and
+    adapter-routed. The equality is the real invariant; the count exists so a
+    new path cannot arrive unnoticed.
+
+    Also corrected: 10 rate-limit calls over 9 upload endpoints is not a
+    miscount — bulk product import accepts a file without being named upload*,
+    so it carries a limit of its own.
+
+(g) marketplace.featuredProviders was public without being written down
+    server/authorizationSweep.test.ts
+
+    It had reached the public surface without an entry in the deliberate
+    public-surface allowlist — exactly the drift that list exists to catch. It
+    BELONGS there (it returns the directory's own column allowlist plus the
+    category, and no commercial metadata), so it is now listed, in sorted
+    position, with the reason recorded.
+
+(h) The repository census was stale
+    docs/INVENTORY.md, docs/inventory.json
+
+    Three routes and a page had been added without regeneration. Regenerated
+    from source: Routes 37 -> 40, Server procedures 208 -> 210.
+
+3.3 A TIME BOMB, NOT A DEFECT (3 tests)
+---------------------------------------
+
+(i) server/rfqTargetingAuthorization.test.ts
+
+    The fixtures pinned the allowance period to August 2026, but the router
+    called openQualifiedEnquiry without a `now`, so the engine used the REAL
+    clock. The two agreed only while the wall clock stayed inside that month.
+    When it rolled over, the engine wrote yearMonth 2026-09 while the fake
+    counted rows stamped 2026-08, every usage figure read back as 0, and three
+    assertions about spending exactly one credit began failing for a reason that
+    had nothing to do with the code they cover.
+
+    A test that passes only during the month it was written is not evidence. The
+    clock is now frozen so the fixture and the engine share one definition of
+    "this month".
+
+    STRENGTHENED, NOT WEAKENED — proven: recording the credit against a fixed
+    vendor id instead of the authenticated caller kills two of these tests.
+
+    ATTRIBUTION CORRECTED IN FLIGHT. I first reported these three as my own
+    regression, on the evidence that they failed at my earlier commit f5eed47.
+    Bisecting across six commits showed they fail at 78d2a6a^ and at 01fe3b7 too
+    — before that work existed. The cause is the calendar, not any commit.
+
+
+================================================================================
+4. THE MILESTONE — PUBLIC MASTER DISCOVERY (Provider and Product)
+================================================================================
+
+STATUS: DELIVERED, unit-tested, mutation-tested, and live-verified against a
+real MariaDB and a real HTTP server.
+
+4.1 WHAT WAS BUILT
+------------------
+
+shared/placement.ts (new, 72 lines)
+  The vocabulary the server and browser must agree on, with no database imports
+  so the client bundle can hold it.
+    - placementLabel(source): PAID_SPONSORSHIP -> SPONSORED, everything else ->
+      FEATURED, and an unknown source -> FEATURED.
+    - GLOBAL_PLACEMENT_SCOPE: the reserved platform-wide scope token.
+    - placementLabelText(label, lang): the label in English and Arabic.
+
+server/publicPlacement.ts (new, 305 lines)
+  The canonical surface-keyed resolver, for both entity types.
+    - livePlacementRows()  rows and commercial metadata only, no entity content
+    - placedProviders()    providers, already filtered to the publicly visible
+    - placedProducts()     products, with two eligibility gates
+    - masterProvider()     the single exclusive provider slot, or null
+    - masterProduct()      the single exclusive product slot, or null
+    - SURFACE_CAPACITY     MASTER 1, SPOTLIGHT 3, BOOST 12
+
+client/src/components/MasterPlacement.tsx (new, 218 lines)
+    - PlacementBadge, MasterProviderSlot, MasterProductSlot
+
+Two public tRPC procedures: marketplace.masterProvider, marketplace.masterProduct
+Both added to the deliberate public-surface allowlist with justification.
+
+Wired into the two discovery pages:
+    - VendorsDirectory  above everything, scoped to the selected category or
+                        platform-wide when none is chosen
+    - Marketplace       above the organic product grid, same scoping rule
+
+4.2 THE THREE RULES, EACH ENFORCED IN THE QUERY
+-----------------------------------------------
+
+RULE 1 — TIME IS DERIVED, NEVER SWEPT.
+  A row is live only if it is not revoked, has started, and has not ended,
+  evaluated against `now` at read time. Scheduled placements are invisible
+  early; expired ones vanish on their own. Nothing needs a cron job, so nothing
+  breaks when one fails to run.
+
+RULE 2 — A PLACEMENT BUYS A SLOT, NEVER AN EXEMPTION.
+  Target eligibility is re-checked at RENDER time against the SAME filter the
+  organic listings use. `directoryVisibilityFilter` and `enrichVendorRows` were
+  exported and imported rather than restated — two copies of an eligibility rule
+  is how one of them ends up laxer. Products carry TWO gates: the product must
+  be active AND its supplier must still be an eligible provider, because a
+  suspended seller keeps rows with active = 1 and would otherwise go on
+  advertising.
+
+RULE 3 — SCOPE IS MATCHED EXACTLY.
+  A placement bought for Lighting does not appear under Tiles. A platform-wide
+  GLOBAL placement does not leak into a category view, and a category placement
+  does not fill the global slot. No wildcard, no fallback.
+
+4.3 THE PUBLIC PAYLOAD
+----------------------
+Both endpoints return the same card shape the organic listing beside them
+already returns, plus a label. They carry NO commercial record: no grantedBy, no
+grantedReason, no revokedBy, no startsAt, no endsAt, no priority, no package, no
+price paid. That data stays behind marketplace.manage. Product columns are an
+explicit allowlist rather than select(), so a future column is not handed to
+anonymous readers the day somebody adds one.
+
+4.4 HONESTY PROPERTIES HELD
+---------------------------
+  - Nothing booked renders NOTHING. No placeholder advertiser is invented for
+    the most visible surface in the marketplace.
+  - No fabricated ratings, review counts, years in business, project counts,
+    certifications or discounts — a placement carries none of those.
+  - A provider with no verified reviews shows a NULL rating, not 0 and not a
+    plausible 4.8.
+  - A product without a price says "Price on request" rather than 0 EGP.
+  - `verified` remains compliance review, entirely separate from having bought a
+    placement.
+  - The label is TEXT plus a distinct icon, in English and Arabic — never colour
+    alone, which a colour-blind reader or greyscale print would lose.
+
+
+================================================================================
+5. AN OWNER DECISION EMBEDDED — PLEASE REVIEW
+================================================================================
+
+GLOBAL AS A RESERVED SCOPE TOKEN.
+
+Master Discovery is shown BEFORE a visitor chooses a provider type or product
+category, so the placement filling it cannot be scoped to one of them. The
+`category` column on a placement row is the scope, and GLOBAL is now the
+reserved value meaning "the whole marketplace".
+
+The alternative — "no category selected means any Master will do" — was
+rejected. Master capacity is one per scope; five category Masters would then be
+five candidates for one exclusive slot, and something would have to choose
+between them arbitrarily. That is not exclusivity, it is a lottery an advertiser
+paid for.
+
+It is NOT a wildcard in either direction, by design.
+
+This is documented in shared/placement.ts and is reversible. If a different
+shape is wanted, say so and it changes.
+
+
+================================================================================
+6. VERIFICATION PERFORMED
+================================================================================
+
+6.1 UNIT TESTS
+--------------
+server/publicPlacement.test.ts — 22 tests.
+
+These assert the COMPILED WHERE CLAUSE, not the rows a fake returns. The fake
+driver records every condition it is handed and renders both column names and
+bound parameter values. A rule that is written in a comment but not compiled
+into the query FAILS. Asserting on returned rows alone would pass just as
+happily against a query with no filter at all, because the fake decides what
+comes back.
+
+One assertion in the first draft was vacuous by construction
+(`expect(JSON.stringify(whereSql)).toBeTruthy()`). It was replaced with a real
+one — the GLOBAL token must reach the query as a bound value — and a second test
+added proving a category view asks for THAT category and does not contain the
+global scope.
+
+server/migrationSyntax.test.ts — 3 tests (see section 2).
+
+6.2 MUTATION TESTING — 7 mutations, 7 killed
+--------------------------------------------
+Each mutation is a real defect planted in the source; each was reverted and the
+source verified clean afterwards.
+
+  M1  drop directoryVisibilityFilter from providers        KILLED (1 test)
+  M2  drop the supplier-eligibility join from products     KILLED (1 test)
+  M3  ignore the capacity cap                              KILLED (1 test)
+  M4  placementLabel defaults to SPONSORED                 KILLED (3 tests)
+  M5  scope becomes a wildcard                             KILLED (1 test)
+  M6  drop the time filter entirely                        KILLED (1 test)
+  M7  remove de-duplication                                KILLED (1 test)
+
+Separately, the restored rfqTargeting guard was mutation-tested by recording the
+enquiry credit against a fixed vendor id (KILLED, 2 tests), and the migration
+guard by stripping delimiters from 0039 (KILLED).
+
+6.3 LIVE VERIFICATION — evidence/zg-masterplacement.mjs
+-------------------------------------------------------
+30 checks against a real MariaDB 10.11 and a real running HTTP server. Run
+TWICE, 30/30 both times, leaving zero residue in the database.
+
+  evidence/zg-masterplacement-run1.txt
+  evidence/zg-masterplacement-run2.txt
+
+Every positive control asserts the DATABASE. Every negative control is a row
+that EXISTS and must still not be rendered:
+
+  SETUP     the placement columns exist in the real schema
+  EMPTY     no booking returns null — not an error, not a placeholder
+  POSITIVE  live paid Master provider returned; SPONSORED label; real name
+  HONESTY   no reviews -> null rating and 0 count, not a number
+  NO LEAK   no commercial record in the public payload
+  NEGATIVE  SUSPENDED provider disappears though the paid booking is live
+  NEGATIVE  UNDER_REVIEW (unapproved) provider does not render
+  NEGATIVE  DEACTIVATED provider does not render
+  CONTROL   restoring eligibility brings the same provider back
+  TIME      REVOKED placement stops rendering immediately
+  TIME      EXPIRED placement stops rendering with nothing sweeping it
+  TIME      SCHEDULED placement is not visible early
+  SCOPE     Lighting Master appears under Lighting
+  SCOPE     Lighting Master does NOT appear under Tiles
+  SCOPE     a category Master does not fill the platform-wide slot
+  SCOPE     the platform-wide Master does not leak into a category view
+  CAPACITY  two live global Masters yield exactly ONE rendered provider
+  LABEL     referral reward is FEATURED, never Sponsored
+  LABEL     editorial pick is FEATURED
+  LABEL     paid placement is SPONSORED
+  PRODUCT   live Master product returned; real seller named; real price
+  PRODUCT   DELISTED product does not render though the booking is live
+  PRODUCT   active product of a SUSPENDED supplier does not render
+  PRODUCT   restoring the supplier brings it back
+  ISOLATION provider slot never returns a product
+  ISOLATION a PROVIDER booking in Lighting does not fill the PRODUCT slot
+
+THREE PROBE DEFECTS WERE FOUND AND FIXED BEFORE ANY RESULT WAS REPORTED:
+  - `openId` is NOT NULL with no default; the insert failed and the probe
+    correctly reported ITSELF as broken rather than reporting a platform defect.
+  - `onboardingStatus` has no 'pending' value; the real enum is
+    not_started / under_review / update_required / approved / rejected.
+  - A previous crashed run left rows behind, so the empty-state check saw a
+    stale advertiser. The probe now purges its own namespace first, verifies
+    each created id really is the row it made, and its cleanup can no longer
+    throw away the results it just produced.
+
+Also caught and fixed: an orphaned server process was still holding port 5401
+and answering with OLD code, which briefly made a working endpoint look missing.
+The instrument was verified before its output was trusted.
+
+6.4 FULL GATE
+-------------
+  npx vitest run     3,066 passed / 0 failed  (145 files)
+  npx tsc --noEmit   clean
+  npm run build      dist/index.js 839.8kb
+
+
+================================================================================
+7. SECURITY AND SAFETY POSTURE
+================================================================================
+  - PRODUCTION NOT TOUCHED. No production database, credentials, DNS, SMTP, S3,
+    payments or environment variables were accessed or changed.
+  - MAIN NOT MERGED. No deploy was triggered.
+  - No payment gateway, checkout, card collection, invoice, order, revenue, GMV
+    or commission code was written — payments remain owner-deferred.
+  - No secret appears in any commit. The session scratchpad holds a real
+    JWT_SECRET and the local database password; it was added to .gitignore
+    rather than committed, and that reason is recorded in the .gitignore entry
+    and its commit message.
+  - No fabricated business data of any kind was introduced. Every placement
+    rendered in verification came from a row deliberately inserted by the probe
+    and deleted afterwards.
+  - Server-side authorization unchanged and unweakened; the one security-shaped
+    change (admin.updateUser) narrowed exposure.
+
+
+================================================================================
+8. WHAT WAS NOT DONE — AND WHY
+================================================================================
+
+NOT STARTED (next in sequence, in this order)
+  CP-3  Provider and Product TYPE_CATEGORY_SPOTLIGHT rendering with scope
+        relevance, capacity 3
+  CP-4  SEARCH_RESULTS_BOOST integrated among relevant candidates only
+  CP-5  Placement analytics foundation — impression, entity view, CTA click,
+        attributed qualified enquiry, with an explicit rendered-visibility
+        impression rule and truthful zero states
+  Then  Referral remaining lifecycle, then the Dispute lifecycle, then the
+        todo.md master backlog
+
+NOT VERIFIED — RENDERED / INTERACTIVE QA STILL PENDING
+  The Master Discovery slots are verified at the API and database level, twice,
+  against a real server. They have NOT been driven in a real browser at 375 /
+  768 / 1440 in English and Arabic/RTL. That remains PENDING and is not claimed
+  as done.
+
+NOT DEPLOYED
+  Staging still runs b9e94f6 and is behind. It was not deployed this session.
+  Note that the migration fix in section 2 is a PREREQUISITE for staging to
+  come up to date at all — before it, the application could not migrate.
+
+BLOCKED BY INFRASTRUCTURE
+  Nothing new. SMTP, S3 and payment providers remain unconfigured in this
+  environment; no claim depends on them.
+
+OWNER DECISION REQUIRED
+  The GLOBAL scope token (section 5).
+
+
+================================================================================
+9. FILE-BY-FILE SUMMARY
+================================================================================
+
+NEW
+  shared/placement.ts                          72   label + scope vocabulary
+  server/publicPlacement.ts                   305   surface-keyed resolver
+  server/publicPlacement.test.ts              329   22 tests
+  server/migrationSyntax.test.ts               70   3 tests, permanent guard
+  client/src/components/MasterPlacement.tsx   218   badge + both slots
+  evidence/zg-masterplacement.mjs             260   30 live checks
+  evidence/zg-masterplacement-run1.txt         33   run 1 output
+  evidence/zg-masterplacement-run2.txt         33   run 2 output
+
+MODIFIED
+  drizzle/0037_referrals.sql                        statement delimiters
+  drizzle/0038_referral_campaigns_and_rewards.sql   statement delimiters
+  drizzle/0039_commercial_placement_fields.sql      statement delimiters
+  server/routers.ts                                 2 procedures; updateUser
+                                                    narrowed; 3 notification
+                                                    keys; 2 anchored links
+  server/referralEngine.ts                          reward notification key
+  server/vendorDirectory.ts                         export the shared filter
+                                                    and enrichment
+  client/src/contexts/LanguageContext.tsx           EN + AR keys
+  client/src/pages/MarketplaceHub.tsx               per-list empty states
+  client/src/pages/VendorsDirectory.tsx             Master slot; i18n key
+  client/src/pages/Marketplace.tsx                  Master product slot
+  docs/INVENTORY.md, docs/inventory.json            census regenerated
+  .gitignore                                        scratchpad (secret safety)
+  server/authorizationSweep.test.ts                 allowlist + counters
+  server/contentAbuseControls.test.ts               counters
+  server/storagePortability.test.ts                 counter
+  server/uploadUnavailable.test.ts                  counter
+  server/notificationDestinations.test.ts           2 anchored destinations
+  server/rolePlatform.test.ts                       portfolio now real
+  server/rfqTargetingAuthorization.test.ts          clock frozen
+
+
+================================================================================
+10. ONE TEST REWRITTEN RATHER THAN SATISFIED — STATED PLAINLY
+================================================================================
+
+server/rolePlatform.test.ts required the literal words
+"Portfolio hosting - not available yet" on the architect's workspace card.
+
+That was correct when portfolio hosting did not exist. It now DOES exist —
+portfolioItems, the portfolio router, PortfolioManager, and public display on
+the vendor profile, all delivered by DeepSeek. Keeping the assertion would have
+required the UI to make a FALSE statement about the product.
+
+The obligation is unchanged, only its direction: what the architect looks for
+must be TRUE where they look. The test now asserts the real manager is mounted
+on the page, that the route to the public profile is still there, and that the
+retired disclaimer does not linger beside the working feature.
+
+This is the only test in this session whose intent was changed, and it is
+recorded here so it is not mistaken for a weakened assertion.
+
+
+================================================================================
+11. SUMMARY
+================================================================================
+
+WHAT WAS MISSING       Public rendering for every commercial placement surface.
+                       A booked PREMIER / MASTER_DISCOVERY row, provider or
+                       product, appeared nowhere.
+
+WHAT WAS BROKEN        Four migrations that had never applied to any database,
+                       silently taking the referral tables and all five
+                       placement columns with them. Sixteen failing tests behind
+                       nine real defects. A full-users-row read in an admin
+                       mutation. Three unlocalised notifications. Two
+                       notification dead-ends. Lost empty states.
+
+WHAT WAS FIXED         All of the above.
+
+WHAT WAS IMPLEMENTED   Canonical surface-keyed public placement resolution for
+                       both entity types; Provider and Product Master Discovery
+                       rendering; Sponsored/Featured labelling from source;
+                       eligibility, expiry and scope enforcement at render time.
+
+WHAT WAS UNIT VERIFIED 3,066 tests passing, 0 failing. 25 of them new. Seven
+                       mutations planted and all seven killed.
+
+WHAT WAS LIVE VERIFIED 30 checks against real MariaDB and a real HTTP server,
+                       twice, no residue. All 41 migrations applying to a fresh
+                       database.
+
+WHAT IS NOT IMPLEMENTED  Spotlight rendering, Boost rendering, placement
+                         analytics, the remaining referral lifecycle, the
+                         dispute lifecycle.
+
+WHAT IS PENDING          Rendered / interactive browser QA at 375 / 768 / 1440
+                         in EN and AR. Staging deployment.
+
+WHAT IS BLOCKED          Nothing new.
+
+OWNER DECISION           The GLOBAL scope token (section 5).
+
+WHAT WAS COMMITTED       3 commits.
+WHAT WAS PUSHED          All 3, each with a fresh remote verify.
+WHAT WAS MERGED          NOTHING. main untouched.
+WHAT WAS DEPLOYED        NOTHING. Production untouched. Staging still behind.
+
+NO PRODUCTION VERDICT IS ISSUED. The milestone in progress is not complete, and
+rendered QA has not been performed.
+
+================================================================================
+END OF REPORT
+================================================================================
