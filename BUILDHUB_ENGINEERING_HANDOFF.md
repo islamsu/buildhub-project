@@ -6,7 +6,7 @@ REPOSITORY: islamsu/buildhub-project
 
 ACTIVE DEVELOPMENT BRANCH: codex/buildhub-final-closure
 
-LATEST VERIFIED DEVELOPMENT SHA: 028495750567b6b763881026b7fc62b1fa387315
+LATEST VERIFIED DEVELOPMENT SHA: fb0af30c044d781fe2984c66f254da2b0738e664
 
 WORKING TREE: CLEAN
 
@@ -75,6 +75,7 @@ Do not blur these states. A pushed commit exists in GitHub but is not necessaril
 ## RECENT COMMIT SUMMARY
 
 ```text
+fb0af30 Admin: allowlisted user detail editing
 0284957 Vendor name change request and admin correction
 ceb2169 Admin: entity links and humanized investigation statuses
 d6ef973 Admin: promotion list search filter sort pagination
@@ -117,6 +118,7 @@ Recent completed or regression-protected work includes:
 - Truthful platform health header and clarified real-user count semantics
 - Promotion Management search, status filtering, sorting, and pagination for Featured and Sponsored
 - Vendor Name Change Request and Admin Direct Vendor Name Correction with audit, notifications, and security tests
+- Admin User Detail account editing for permitted name/username/email/phone/role fields
 - Initial user-facing dispute workflow
 
 ## PARTIAL / INCOMPLETE WORK
