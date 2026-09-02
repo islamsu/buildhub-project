@@ -1,0 +1,433 @@
+================================================================================
+BUILDHUB — SUPER ADMIN CONTROL PLANE + VENDOR ENQUIRY RECONCILIATION
+Report 3: Milestones A and B-foundation
+================================================================================
+
+Continues BUILDHUB_COMMERCIAL_PLACEMENT_REPORT.txt. Covers only what was done
+after it.
+
+REPOSITORY          islamsu/buildhub-project
+BRANCH              codex/buildhub-final-closure
+HEAD AT LAST REPORT 7ccfab7065267969960e476e6c5a32537a27b735
+HEAD NOW            eff9a0270dc927d4630440e71eabe7c54e2e37ff
+LOCAL == REMOTE     YES (fresh fetch after every push)
+WORKING TREE        CLEAN
+MAIN MERGED         NO
+PRODUCTION          NOT TOUCHED
+STAGING             b9e94f6 — still behind; not deployed this session
+LATEST MIGRATION    drizzle/0040_product_placement.sql (UNCHANGED — neither
+                    milestone needed a schema change, which is itself a result)
+DATE                2 September 2026
+
+COMMITS ADDED (2)
+  ce068a3  Milestone A: BuildHub cannot be robbed of its own control plane
+  eff9a02  Milestone B foundation: what a "Vendor Enquiry" actually is
+
+CHANGE VOLUME       11 files, +1,402 / -35
+TEST SUITE          3,160 passing / 0 failing   (was 3,111 at the last report)
+TYPECHECK           tsc --noEmit clean
+BUILD               dist/index.js 863.7kb
+CENSUS              Routes 40 · Server procedures 214 · Tables 44
+
+
+================================================================================
+1. MILESTONE A — THE FINDING THAT MATTERED MOST
+================================================================================
+
+SEVERITY: P0-adjacent. Reachable by a real, legitimately-created administrator.
+STATUS:   FIXED, mutation-tested, and proven live over authenticated HTTP.
+
+WHAT WAS WRONG
+
+`admin.setUserFrozen` is gated on `users.manage` — a permission USER_ADMIN
+holds. It accepted any `userId` and refused only the caller's own account.
+
+So a USER_ADMIN could freeze every Super Admin in turn. Afterwards nobody could
+create an administrator, change a role, or unfreeze the people who could,
+because all three need `admins.manage` and every holder of it was frozen.
+Recovery would have required direct database access.
+
+`admin.verifyUser` had the same shape with a smaller blast radius.
+
+This was not on the brief's list. It was found by asking the question a feature
+checklist does not ask: what is the worst sequence of individually reasonable
+actions?
+
+THE SECOND ROUTE TO THE SAME PLACE
+
+Two Super Admins demoting each other. Each call is legal on its own, and the
+existing self-check — "you cannot change your own role" — cannot see the pair.
+One demotes the other, the survivor is demoted by a third party or by a second
+pass, and the role empties.
+
+TWO INVARIANTS, HELD IN ONE MODULE
+
+server/adminAuthority.ts, so adding an endpoint cannot quietly break one
+somewhere else.
+
+  1. ADMINISTRATORS ARE MANAGED IN ADMIN MANAGEMENT.
+     `users.manage` runs the USER directory — verifying accounts, freezing a
+     fraudulent vendor. It is not authority over the platform's own operators.
+     Acting on an account whose role is 'admin' now requires `admins.manage`.
+
+     THIS IS NOT A BLANKET DENIAL, and both a unit test and a live check prove
+     it: a USER_ADMIN can still freeze an ordinary user, which is exactly what
+     the permission exists for. A guard that broke the thing it protects would
+     be a worse outcome than the hole.
+
+  2. AT LEAST ONE SUPER ADMIN MUST REMAIN ABLE TO SIGN IN.
+     Demotion, deactivation and freezing are three words for the same
+     consequence when applied to the last one, so all three share a single
+     check and the last always fails whichever path it arrives by.
+
+THE SUBTLE PART: "ABLE TO SIGN IN", NOT "EXISTS"
+
+An invited Super Admin who has never redeemed their link has no password hash,
+and `adminSignIn` treats a null hash as no account at all. Counting them would
+allow removing the last WORKING Super Admin while a dormant invitation sat in
+the table — locked out, with the guard reporting success.
+
+The count therefore requires accountStatus active, no deactivatedAt, and a
+non-null passwordHash. Verified live rather than argued: at one point in the
+probe a naive count reads 2 where the real one reads 1.
+
+WHAT WAS ALREADY RIGHT, AND WAS DELIBERATELY LEFT ALONE
+
+Much of §2–§9 already existed and was correct:
+
+  - invitation-based creation. The account is created with NO password; the
+    invitee sets one by redeeming a single-use, expiring, hashed token. There
+    is no moment at which a plaintext password exists for a Super Admin to see.
+  - role change, deactivate-with-session-revocation, session revocation,
+    reset-link issuance, invitation revocation — all present, all
+    superAdminProcedure.
+  - §8 session safety: VERIFIED, not assumed. `db.getUserByOpenId` runs on
+    every request, so `ctx.user.adminRole` is always fresh and a demotion takes
+    effect on the next call without needing a session sweep.
+
+The role→permission map stays in code rather than becoming three database
+tables. Its rationale is written in shared/adminRoles.ts and is sound: a
+permission grant should be a diff someone approves, not a row someone can
+INSERT at 2am. The brief's §3 asked for capabilities over rigid roles; the
+repository already models capabilities, with roles as named bundles of them.
+No new roles were invented to match names in the prompt.
+
+
+================================================================================
+2. MILESTONE B FOUNDATION — THE RECONCILIATION (§11)
+================================================================================
+
+The brief asked for this first, and it was the right instruction: the answer
+decides whether a second enquiry system gets built by accident.
+
+THE ANSWER
+
+There is NO `vendorEnquiries` table, and there should not be one.
+
+A vendor enquiry is not a record. It is the RELATIONSHIP between one vendor and
+one RFQ, and BuildHub already stores every part of it across four tables, each
+answering a different question:
+
+  rfqs                the CUSTOMER'S REQUEST — scope, budget, deadline, status
+  rfqSuppliers        a TARGETED INVITATION, with its own small lifecycle:
+                      invited / viewed / responded / declined
+  qualifiedEnquiries  a BILLING FACT: one allowance credit was spent. Unique on
+                      (userId, rfqId). No status column.
+  quotations          the vendor's ANSWER
+
+So the lifecycle an Admin screen needs is DERIVED from those four, not stored a
+fifth time. Three reasons, in order of how expensive the mistake would be:
+
+  - qualifiedEnquiries is a FINANCIAL record. Giving it a workflow status would
+    put a charge and a conversation in the same row, and the first "just reset
+    the status" would destroy billing history. A test now asserts that table
+    has no status column.
+  - two sources for "has this vendor responded?" is precisely how an Admin
+    screen and a vendor screen come to disagree about the same RFQ — and the
+    one that disagrees will be the one nobody is watching.
+  - a fifth table needs writing on every event the other four already record,
+    and is wrong the first time one of those writes fails.
+
+SEVEN STATES, EVERY ONE EVIDENCED
+
+  AVAILABLE · INVITED · VIEWED · OPENED · RESPONDED · DECLINED · CLOSED
+
+The brief listed ten candidates. DRAFT, PENDING, IN_PROGRESS and EXPIRED are
+absent because BuildHub cannot evidence them from stored data today, and a
+state nothing can produce is a filter that always returns nothing and a badge
+nobody ever sees. A test proves every state that IS declared is reachable from
+some real evidence — the guard against the opposite mistake.
+
+TWO ORDERING DECISIONS WORTH NAMING
+
+  - A submitted quotation outranks everything, including a closed or awarded
+    RFQ. An administrator looking at an awarded RFQ still needs to see WHICH
+    vendors answered it; collapsing them all to CLOSED erases the most useful
+    fact on the page.
+  - A declined invitation likewise survives closure. "They said no" and "it
+    ended" are different outcomes and must not render identically.
+
+A SCHEMA-DRIFT GUARD
+
+The terminal RFQ set is ['closed', 'awarded'] — exactly what the enum holds.
+The first draft also listed 'cancelled', 'completed' and 'expired', which the
+column cannot store. That was the same fault this module's own comments warn
+about, caught before it shipped. A test now compares the module's assumption
+against the schema, so if the enum gains a terminal value the test fails until
+the derivation learns it — rather than a closed enquiry silently reading as
+AVAILABLE.
+
+HUMAN REFERENCES (§14)
+
+`ENQ-<rfqId>-<vendorId>`. An enquiry has no id of its own — it is a pair — so
+its reference is built from the pair. Derivable in both directions, needs no new
+column or sequence to allocate, and an administrator reading it in a support
+ticket can tell which RFQ it concerns. Parsing rejects anything malformed rather
+than guessing.
+
+BATCHED READS
+
+Four queries per page whatever the page size, with de-duplicated id lists. One
+query per row is fine on the twelve rows a demo has and unopenable on the
+thousands a working marketplace has.
+
+USAGE ATTRIBUTION (§28)
+
+VENDOR_OPEN / INVITATION_EXEMPT / NOT_OPENED — labels over evidence that already
+exists. Nothing here writes a counter. ADMIN_COMPLIMENTARY is documented as
+anticipated but deliberately not returned, because no admin-open path exists
+yet and returning a value nothing can produce would be a fabricated fact.
+
+
+================================================================================
+3. VERIFICATION
+================================================================================
+
+3.1 UNIT TESTS
+  server/adminAuthority.test.ts    20 tests  (new)
+  server/vendorEnquiry.test.ts     27 tests  (new)
+  server/admin.test.ts             16 tests  (extended from 13)
+
+3.2 MUTATION TESTING — 9 planted, 9 killed
+
+  MILESTONE A
+   G1  admin-target rule removed                          KILLED (4 tests)
+   G2  survival check always passes                       KILLED (3)
+   G3  count forgets passwordHash                         KILLED
+   G4  count does not exclude the target                  KILLED
+   G5  setUserFrozen stops calling the guard              KILLED
+
+  MILESTONE B
+   E1  RESPONDED collapses to CLOSED after closure        KILLED (3)
+   E2  terminal RFQ statuses forgotten                    KILLED (2)
+   E3  de-duplication removed                             KILLED — see 4.3
+   E4  reference parser accepts anything                  KILLED
+
+3.3 LIVE VERIFICATION — evidence/zg-adminauthority.mjs
+
+  22 checks against real MariaDB over REAL AUTHENTICATED HTTP. Run twice,
+  22/22 both times, no residue, bootstrap Super Admin restored afterwards.
+
+  evidence/zg-adminauthority-run1.txt
+  evidence/zg-adminauthority-run2.txt
+
+  The attacker is a genuinely signed-in USER_ADMIN, not a mocked context.
+  Selected checks:
+
+    the USER_ADMIN holds a real session and does NOT hold admins.manage
+    ATTACK BLOCKED: cannot freeze a Super Admin (403)
+    ATTACK BLOCKED: the Super Admin is still active IN THE DATABASE
+    ATTACK BLOCKED: cannot un-verify a Super Admin either
+    NOT A BLANKET DENIAL: can still freeze an ORDINARY user (200)
+    CONTROL: a Super Admin CAN be demoted while others remain
+    exactly ONE usable Super Admin remains — the dormant one does not count
+    CONTROL: demoting the DORMANT Super Admin is allowed — it protects nobody
+    PAIR CASE: the second Super Admin may demote the first, leaving one
+    LAST SUPER ADMIN: cannot freeze themselves
+    THE COUNT THAT MATTERS: naive=2 where real=1
+    AUDIT: every role change and deactivation left a row
+    AUDIT: the BLOCKED freeze wrote NO audit row — it never happened
+    NO SECRETS: the administrator directory carries no hash or token
+
+3.4 FULL GATE
+  npx vitest run     3,160 passed / 0 failed
+  npx tsc --noEmit   clean
+  npm run build      dist/index.js 863.7kb
+
+
+================================================================================
+4. WHAT WENT WRONG, AND WAS FIXED BEFORE ANY RESULT WAS REPORTED
+================================================================================
+
+4.1 FOUR VACUOUS PASSES — the most important item in this section
+
+The live probe's first run reported four PASSES on the attack checks. They were
+worthless.
+
+A scrypt hash looks like `scrypt$N$r$p$salt$hash`. The probe passed SQL to the
+MySQL client via `-e ${JSON.stringify(...)}`, which produces a DOUBLE-quoted
+shell argument — and bash expands `$N`, `$r` and `$p` inside double quotes
+before MySQL ever sees the string. The seeded credential was silently corrupted,
+every sign-in returned 401, and each attack check "passed" because the attacker
+had never been authenticated at all.
+
+A 401 meaning "you are not signed in" is not evidence that a guard refused you.
+
+Two fixes, both structural rather than cosmetic:
+  - SQL now goes to the client over STDIN, where there is no shell quoting to
+    get wrong. Not a cleverer escape — a mechanism with no escaping in it.
+  - the probe now REFUSES to attempt the attack unless the attacker session is
+    proven first, so that failure mode cannot recur silently.
+
+4.2 A PRODUCT BEHAVIOUR MISTAKEN FOR A DEFECT
+
+One check failed with "Please login" after an administrator was reactivated.
+That is correct behaviour, not a bug: `revocationCutoff()` is deliberately
+`Date.now() + 1000`, because session `iat` has second granularity and rounding
+the cutoff UP is what guarantees a token minted in the same second as a
+revocation cannot survive it. The cost is a sub-second window in which even a
+legitimate fresh sign-in is refused — the right trade, and already asserted in
+adminAuthorization.test.ts. The probe was signing in inside that window.
+
+Reported here rather than quietly patched, because "the probe was impatient" and
+"the product is broken" are different findings.
+
+4.3 A MUTATION THAT SURVIVED, AND WHAT I DID ABOUT IT
+
+The de-duplication mutation (E3) survived its first attempt. The honest reading
+was that my test claimed more than it checked: counting queries says nothing
+about what is bound inside them, and duplicate ids in an IN list return
+identical rows, so the mutation was not even a correctness defect.
+
+Rather than record a survivor and move on, the test now inspects the ids
+actually handed to the driver, which pins a genuine scale property — a fifty-row
+page about one vendor should not bind that vendor's id fifty times, three times
+over. The mutation is now killed.
+
+Getting there required reading drizzle's real condition shape off a live object:
+`inArray` renders an array of Param objects, not a `number[]`. My first
+collector guessed the latter, found nothing, and the test failed on its own
+instrument rather than on the code.
+
+4.4 A TEST FIXTURE THAT NEEDED EXTENDING, NOT ADAPTING
+
+`setUserFrozen` now READS its target before writing — it has to, because the
+target decides which authority the action needs. The existing fake had no
+`select`, so admin.test.ts was extended: the fake answers the lookup, and three
+new cases cover a missing target and the last-Super-Admin refusal. Nothing was
+weakened to accommodate the change.
+
+4.5 A COMMENT THAT BROKE ITS OWN TEST
+
+The first version of the endpoint-wiring test sliced routers.ts on the bare
+string `setUserFrozen:` — which matched a COMMENT inside verifyUser that
+mentions setUserFrozen by name. The slice ended before the code it was meant to
+inspect, and a correctly-guarded endpoint was reported as unguarded. The
+boundary is now a declaration pattern rather than a name. Same class of mistake
+as the migration-delimiter comment in report 1.
+
+
+================================================================================
+5. STATUS AGAINST THE BRIEF
+================================================================================
+
+  §2  Super Admin creates other Admin users            ALREADY BUILT, verified
+  §2  no plaintext password emailed                    ALREADY BUILT, verified
+  §3  role/capability hierarchy                        PRESERVED, not rebuilt
+  §4  admin creation security                          ALREADY BUILT, verified
+  §5  LAST SUPER ADMIN PROTECTION                       IMPLEMENTED THIS PASS
+  §6  admin self-modification                          ALREADY BUILT + extended
+  §7  Admin User Detail page                           NOT DONE — see §6 below
+  §8  role-change session safety                       VERIFIED (per-request)
+  §9  admin audit                                      ALREADY BUILT, verified
+  §11 enquiry reconciliation                           DONE THIS PASS
+  §14 human enquiry reference                          DONE THIS PASS
+  §24 deterministic status machine                     DONE THIS PASS (derived)
+  §28 usage history vocabulary                         DONE THIS PASS
+  ----------------------------------------------------------------------------
+  §12 Admin enquiry overview                           NOT STARTED
+  §13 full enquiry list: search/filter/sort/paginate   NOT STARTED
+  §15 enquiry detail                                   NOT STARTED
+  §16-§23 admin create / open / cancel / close / reopen NOT STARTED
+  §25-§27 entitlement display and management           NOT STARTED
+  §29-§33 assignment, notifications, notes, bulk, export NOT STARTED
+
+
+================================================================================
+6. WHAT WAS NOT DONE
+================================================================================
+
+NOT STARTED — the rest of Milestone B and everything after it
+  The Admin Vendor Enquiries surface itself: overview counts, the searchable
+  and paginated list, the detail page, admin create/open/cancel/close/reopen,
+  entitlement display and adjustment, assignment, notifications, internal notes,
+  bulk actions and export. The derivation this pass delivered is the foundation
+  those all read from; none of the screens exist yet.
+
+  Then, in the approved order: Placement Management consolidation, Featured
+  Provider and Featured Product relocation with real selectors, placement legacy
+  reconciliation, the remaining Referral lifecycle, Promo campaigns and codes,
+  Benefits consolidation, staging QA, Disputes, and the todo.md backlog.
+
+NOT VERIFIED — RENDERED BROWSER QA STILL PENDING
+  Unchanged from report 2, and now larger: the Commercial Placement surfaces
+  and everything in this report are verified at API, database and HTTP level
+  only. Nothing has been driven in a real browser at 375 / 768 / 1440 in
+  English and Arabic/RTL. §77 and §78 QA (admin creation flow, enquiry flows)
+  cannot be performed until the screens exist.
+
+NOT DEPLOYED
+  Staging still runs b9e94f6. Nothing was deployed this session. The migration
+  fix from report 1 remains a prerequisite for staging to come up to date.
+
+NOT IMPLEMENTED, ON PURPOSE
+  Payment gateway, checkout, card collection, invoices, orders, revenue, GMV,
+  commission. Deferred by the owner and absent from the schema, not merely
+  hidden in the UI.
+
+NO SCHEMA CHANGE
+  Neither milestone needed one. 0040 remains the latest migration, and the
+  migration syntax guard from report 1 remains in place.
+
+OWNER DECISION REQUIRED
+  None outstanding.
+
+
+================================================================================
+7. SUMMARY
+================================================================================
+
+WHAT WAS BROKEN        A USER_ADMIN could freeze every Super Admin and leave
+                       BuildHub with no working control plane, recoverable only
+                       by direct database access. Two Super Admins could demote
+                       each other to the same end.
+
+WHAT WAS FIXED         Both routes, behind two invariants in one module, with
+                       the "usable" definition that stops a dormant invitation
+                       being mistaken for a safety net.
+
+WHAT WAS IMPLEMENTED   The canonical vendor-enquiry model: seven derived states,
+                       a schema-drift guard, human references, batched evidence
+                       reads and usage attribution — with no fifth table and no
+                       status column added to a billing record.
+
+WHAT WAS UNIT VERIFIED 3,160 passing, 0 failing. 9 mutations planted, 9 killed
+                       (one only after strengthening a test that claimed more
+                       than it checked).
+
+WHAT WAS LIVE VERIFIED 22 checks against real MariaDB over real authenticated
+                       HTTP, twice, no residue.
+
+WHAT IS PENDING        The Admin Vendor Enquiries screens; rendered browser QA
+                       at 375/768/1440 in EN and AR; staging deployment.
+
+WHAT WAS COMMITTED     2 commits.
+WHAT WAS PUSHED        Both, each with a fresh remote verify.
+WHAT WAS MERGED        NOTHING. main untouched.
+WHAT WAS DEPLOYED      NOTHING. Production untouched. Staging still behind.
+
+NO PRODUCTION VERDICT IS ISSUED.
+
+================================================================================
+END OF REPORT
+================================================================================
