@@ -1353,6 +1353,10 @@ export const vendorSponsorships = mysqlTable('vendorSponsorships', {
    * placement). Shared grant/revoke/period machinery, distinct business meaning.
    */
   kind:     varchar('kind', { length: 20 }).notNull().default('sponsored'),
+  source:   varchar('source', { length: 40 }).notNull().default('ADMIN_EDITORIAL'),
+  package:  varchar('package', { length: 40 }),
+  surface:  varchar('surface', { length: 40 }),
+  entityType: varchar('entityType', { length: 20 }).notNull().default('PROVIDER'),
   /** Explicit commercial ordering; lower value = higher priority. */
   priority: int('priority').notNull().default(0),
   startsAt: timestamp('startsAt').defaultNow().notNull(),
@@ -1373,6 +1377,7 @@ export const vendorSponsorships = mysqlTable('vendorSponsorships', {
   vendorIdIdx: index('vendorSponsorships_vendorId_idx').on(table.vendorId),
   /** The directory's own query: live sponsorships in one category. */
   activeIdx:   index('vendorSponsorships_active_idx').on(table.category, table.revokedAt, table.startsAt),
+  packageSurfaceIdx: index('vendorSponsorships_package_surface_idx').on(table.package, table.surface),
 }));
 
 export type VendorProfile = typeof vendorProfiles.$inferSelect;

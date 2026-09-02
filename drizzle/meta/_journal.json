@@ -274,6 +274,13 @@
       "when": 1788390000000,
       "tag": "0038_referral_campaigns_and_rewards",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "5",
+      "when": 1788420000000,
+      "tag": "0039_commercial_placement_fields",
+      "breakpoints": true
     }
   ]
 }
