@@ -4563,6 +4563,52 @@ const adminRouter = router({
     if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
     return row;
   }),
+  updateUser: adminWith('users.manage').input(z.object({
+    userId: z.number().int().positive(),
+    name: z.string().trim().min(1).max(255).optional(),
+    username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/).optional(),
+    email: z.string().trim().email().optional(),
+    phone: z.string().trim().max(32).optional(),
+    userRole: z.enum(['homeowner', 'contractor', 'engineer', 'architect', 'supplier', 'project_manager']).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const [target] = await db.select().from(users).where(eq(users.id, input.userId));
+    if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+    if (target.role === 'admin' && input.userRole) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Administrator roles are managed from Admin Management, not User Management' });
+    }
+
+    const patch: Record<string, string | null> = {};
+    if (input.username !== undefined) {
+      const username = normalizeUsername(input.username)!;
+      if (username !== target.username && await getUserByUsername(username)) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Username is already in use' });
+      }
+      patch.username = username;
+    }
+    if (input.email !== undefined) {
+      const email = normalizeEmail(input.email)!;
+      if (email !== target.email && await getUserByEmail(email)) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Email is already in use' });
+      }
+      patch.email = email;
+    }
+    if (input.name !== undefined) patch.name = input.name;
+    if (input.phone !== undefined) patch.phone = input.phone || null;
+    if (input.userRole !== undefined) patch.userRole = input.userRole;
+
+    if (Object.keys(patch).length === 0) return { success: true as const, changed: false };
+    await db.update(users).set(patch).where(eq(users.id, input.userId));
+    await db.insert(userAccountAuditEvents).values({
+      userId: input.userId,
+      actorId: ctx.user.id,
+      action: 'admin_user_updated',
+      source: 'admin',
+      note: Object.keys(patch).join(', '),
+    });
+    return { success: true as const, changed: true };
+  }),
   // ── QA sign-in links ────────────────────────────────────────────────────
   issueTestLoginLink: adminWith('qa.manage').input(z.object({
     userId: z.number().int().positive(),

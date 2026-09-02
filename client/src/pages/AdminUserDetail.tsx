@@ -4,12 +4,13 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { trpc } from '@/lib/trpc';
 import { useLocation, useParams } from 'wouter';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -90,6 +91,18 @@ export default function AdminUserDetail() {
   const [freezeOpen, setFreezeOpen] = useState(false);
   const [freezeReason, setFreezeReason] = useState('');
   const [freezeReasonDetail, setFreezeReasonDetail] = useState('');
+  const [editForm, setEditForm] = useState({ name: '', username: '', email: '', phone: '', userRole: 'homeowner' });
+
+  useEffect(() => {
+    if (!detail) return;
+    setEditForm({
+      name: detail.name || '',
+      username: detail.username || '',
+      email: detail.email || '',
+      phone: detail.phone || '',
+      userRole: detail.userRole || 'homeowner',
+    });
+  }, [detail]);
 
   const verifyUser = trpc.admin.verifyUser.useMutation({
     onSuccess: () => {
@@ -119,6 +132,14 @@ export default function AdminUserDetail() {
         navigator.clipboard?.writeText?.(window.location.origin + data.invitationLink);
         toast.info(lang === 'ar' ? 'تم نسخ رابط الدعوة إلى الحافظة' : 'Invitation link copied to clipboard', { duration: 6000 });
       }
+      utils.admin.userDetail.invalidate({ userId });
+      utils.admin.users.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+  const updateUser = trpc.admin.updateUser.useMutation({
+    onSuccess: () => {
+      toast.success(lang === 'ar' ? 'تم حفظ بيانات المستخدم' : 'User details saved');
       utils.admin.userDetail.invalidate({ userId });
       utils.admin.users.invalidate();
     },
@@ -248,6 +269,41 @@ export default function AdminUserDetail() {
                     </div>
                     <Button size="sm" variant="outline" className="h-8" onClick={() => navigate(`/vendor/${detail.id}`)}>
                       {lang === 'ar' ? 'فتح إدارة المورّد' : 'Open vendor management'}
+                    </Button>
+                  </div>
+                )}
+
+                {canManageUsers && detail.role !== 'admin' && (
+                  <div className="rounded-xl border p-4">
+                    <p className="text-sm font-medium">{lang === 'ar' ? 'تعديل بيانات الحساب' : 'Edit account details'}</p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <Input value={editForm.name} onChange={event => setEditForm(prev => ({ ...prev, name: event.target.value }))} placeholder={lang === 'ar' ? 'الاسم الكامل' : 'Full name'} />
+                      <Input value={editForm.username} onChange={event => setEditForm(prev => ({ ...prev, username: event.target.value }))} placeholder={lang === 'ar' ? 'اسم المستخدم' : 'Username'} />
+                      <Input type="email" value={editForm.email} onChange={event => setEditForm(prev => ({ ...prev, email: event.target.value }))} placeholder={lang === 'ar' ? 'البريد الإلكتروني' : 'Email'} />
+                      <Input value={editForm.phone} onChange={event => setEditForm(prev => ({ ...prev, phone: event.target.value }))} placeholder={lang === 'ar' ? 'الهاتف' : 'Phone'} />
+                      <Select value={editForm.userRole} onValueChange={value => setEditForm(prev => ({ ...prev, userRole: value }))}>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(ROLE_LABELS).filter(([key]) => key !== 'admin').map(([key, labels]) => (
+                            <SelectItem key={key} value={key}>{labels[lang === 'ar' ? 1 : 0]}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="mt-3"
+                      disabled={updateUser.isPending || editForm.name.trim().length === 0}
+                      onClick={() => updateUser.mutate({
+                        userId,
+                        name: editForm.name.trim(),
+                        username: editForm.username.trim(),
+                        email: editForm.email.trim(),
+                        phone: editForm.phone.trim(),
+                        userRole: editForm.userRole as 'homeowner' | 'contractor' | 'engineer' | 'architect' | 'supplier' | 'project_manager',
+                      })}
+                    >
+                      {lang === 'ar' ? 'حفظ التعديلات' : 'Save changes'}
                     </Button>
                   </div>
                 )}

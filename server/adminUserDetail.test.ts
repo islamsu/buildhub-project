@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 vi.mock('./db', () => ({
   getDb: vi.fn(),
@@ -84,5 +85,19 @@ describe('admin.userDetail', () => {
   it('denies an unauthenticated caller', async () => {
     const caller = appRouter.createCaller(makeAnonCtx());
     await expect(caller.admin.userDetail({ userId: 20 })).rejects.toThrow();
+  });
+
+  it('provides an allowlisted user-edit procedure gated on users.manage', () => {
+    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    expect(source).toContain("updateUser: adminWith('users.manage')");
+    expect(source).toContain('Administrator roles are managed from Admin Management');
+  });
+
+  it('denies a non-admin from editing a user', async () => {
+    const caller = appRouter.createCaller(makeCtx(1, 'user', 'homeowner'));
+    await expect(caller.admin.updateUser({
+      userId: 20,
+      name: 'Changed Name',
+    })).rejects.toThrow();
   });
 });
