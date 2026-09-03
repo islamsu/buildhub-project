@@ -1,0 +1,184 @@
+================================================================================
+BUILDHUB - PR #41 INTEGRATION CHECK
+codex/buildhub-final-closure -> main      PR head: 71d1dcd      base: c07d6e2
+================================================================================
+
+THE PR IS OPEN AND IS NOT TO BE MERGED. It is a review and integration gate.
+It updates automatically as further commits land on the branch. The merge
+happens only when the owner explicitly authorizes it.
+
+  https://github.com/islamsu/buildhub-project/pull/41
+
+Result of the eight requested checks: NO BLOCKERS.
+
+
+================================================================================
+1. THE DIFF AND THE COMMIT HISTORY
+================================================================================
+
+  105 commits, 204 files, +28,884 / -1,131.
+  main is an ANCESTOR of the branch: 104 ahead, 0 behind.
+
+  The history is linear on top of main - no merge commits to untangle, and no
+  rewriting of anything already on the default branch.
+
+
+================================================================================
+2. CI
+================================================================================
+
+  Run 33724918189, against the PR head 71d1dcd, all three jobs SUCCESS:
+
+    Typecheck, test, build ......... success
+    Migrations apply from empty .... success
+    Image builds and starts ........ success
+
+  The same three passed on the previous head as well, so this is not a
+  first-time-lucky result.
+
+  Locally on the identical tree: 3,235 tests passing, 0 failing; tsc clean;
+  npm run build clean.
+
+
+================================================================================
+3. MIGRATION ORDERING AND FORWARD-ONLY COMPATIBILITY
+================================================================================
+
+  Fifteen migrations are added, 0027 through 0041, in unbroken sequence after
+  main's 0026.
+
+  EVERY MIGRATION CHANGE IS AN ADDITION. Not one existing migration file is
+  modified or deleted:
+
+      git diff --name-status origin/main..HEAD -- drizzle/*.sql
+      -> 15 lines, all 'A'
+
+  That is what forward-only means in practice, and it is the property that keeps
+  staging's already-applied journal valid. A modified 0019 would have made
+  staging's recorded history a lie about what its database actually contains.
+
+  Journal and files agree: 42 entries, 42 files.
+
+
+================================================================================
+4. DO THE MIGRATIONS APPLY TO STAGING'S CURRENT STATE?
+================================================================================
+
+  Tested by reproducing that state rather than reasoning about it.
+
+  STEP 1  A fresh database migrated with MAIN's drizzle directory only
+          (git archive origin/main): 27 migrations, 35 tables. This is what
+          staging has today.
+
+  STEP 2  REAL ROWS SEEDED INTO IT - 5 users, 1 project, 1 RFQ, 2 quotations.
+          This is the part that matters: an empty database cannot fail the way
+          a populated one does.
+
+  STEP 3  The branch's 15 migrations applied on top, with that data present,
+          using the exact command render.yaml's preDeployCommand runs.
+
+          RESULT: applied successfully. 27 -> 42 migrations, 35 -> 46 tables.
+
+  WHAT WAS THEN VERIFIED, RATHER THAN ASSUMED:
+
+    - Every seeded row survived: users 5, projects 1, rfqs 1, quotations 2.
+    - THE ONE GENUINELY RISKY STATEMENT WORKED. 0037 adds users.referralCode as
+      a nullable column and then a UNIQUE index on it. Five pre-existing rows
+      all hold NULL; MySQL permits repeated NULLs in a unique index, so the
+      index was created (non_unique=0) and no row was rejected. This was the
+      only statement in the fifteen that could have failed on existing data, so
+      it was checked directly instead of trusted.
+    - quotations.revisionNumber, added NOT NULL DEFAULT 1, really backfilled
+      both pre-existing rows to 1 rather than erroring.
+    - The resulting schema reconciles against drizzle/schema.ts IN BOTH
+      DIRECTIONS: all 45 declared tables present, and the only table in the
+      database that is not declared is drizzle's own __drizzle_migrations.
+
+  The same two-stage test also passes from empty, which CI now runs on every
+  push ("Migrations apply from empty").
+
+
+================================================================================
+5. MERGE CONFLICTS AND CONFIGURATION DRIFT
+================================================================================
+
+  CONFLICTS: none, and none are possible. main is an ancestor of the branch, so
+  the merge is a fast-forward. A trial merge produces zero conflict markers.
+
+  CONFIGURATION DRIFT: none. The only non-source files this branch changes are
+  three generated or evidence artefacts:
+
+      docs/inventory.json          the generated repository census
+      drizzle/meta/_journal.json   the migration journal (15 new entries)
+      evidence/*.json              recorded verification output
+
+  No workflow file, no Dockerfile, no vite/drizzle config, no package manifest
+  behaviour change.
+
+
+================================================================================
+6. PRODUCTION SECRETS AND CONFIGURATION
+================================================================================
+
+  UNCHANGED, verified by diff rather than by assertion:
+
+      .github/workflows/deploy-production.yml   not modified
+      render.yaml                               not modified
+      Dockerfile                                not modified
+      no .env file added or changed
+
+  A sweep of every added line for secret-shaped literals returns exactly one
+  hit: `invitationToken: 'must-never-be-returned'` in
+  server/adminUserDetail.test.ts - a test fixture whose entire purpose is to
+  assert that the field is never returned to a caller. It is not a credential.
+
+  render.yaml is deliberately untouched. Pointing the Render service at this
+  branch would have made the deployment work without a merge, and the file
+  itself records why that was rejected: it used to track a feature branch, so
+  "a push that had never been reviewed or merged went live on staging, while
+  merging to main deployed nothing." That was fixed on purpose.
+
+
+================================================================================
+7. WOULD MERGING TRIGGER PRODUCTION?
+================================================================================
+
+  NO. Read from the workflow triggers themselves:
+
+    deploy-staging.yml      on: push: branches: [main]   +  workflow_dispatch
+    deploy-production.yml   on: workflow_dispatch ONLY - no push trigger at all
+
+  So a merge to main starts the STAGING deploy and Render's autoDeploy of the
+  main tip. Production cannot start from a merge; it requires a human to
+  dispatch it, and it takes an image tag that the staging deploy must have
+  published first.
+
+  deploy-staging.yml is additionally inert unless STAGING_SSH_HOST and
+  STAGING_SSH_KEY exist - it checks for them and skips with a notice rather
+  than failing.
+
+
+================================================================================
+8. BLOCKERS
+================================================================================
+
+  NONE FOUND.
+
+  Two things are worth the owner's attention, neither of which blocks the PR:
+
+  a) THE MERGE IS STILL A 104-COMMIT FAST-FORWARD onto the default branch, and
+     Render auto-deploys the tip of main. Nothing about opening this PR changed
+     that; the PR makes it reviewable first, which is the point.
+
+  b) WHAT ONLY A REAL DEPLOYMENT CAN SHOW REMAINS UNVERIFIED: the app behind
+     Render's proxy, and preDeploy migrations against a real MySQL 8 instance
+     with staging's actual data. CI's "Image builds and starts" and the
+     two-stage migration test above are the closest available substitutes, and
+     both pass. This container cannot reach *.onrender.com - the egress proxy
+     returns 403 on CONNECT - so the staging gate runs from a GitHub runner
+     (staging-qa.yml, workflow_dispatch) with expect_commit set to the merged
+     SHA, which is what proves MAIN == DEPLOYED == GATE.
+
+  Development continues on codex/buildhub-final-closure. The PR follows it.
+
+================================================================================
