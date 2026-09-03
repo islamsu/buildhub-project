@@ -49,6 +49,7 @@ import {
 import { placementPerformance, recordPlacementEvent } from './placementAnalytics';
 import { ENQUIRY_STATES, RFQ_STATUSES, parseEnquiryReference } from './vendorEnquiry';
 import { PERSON_NOTE_FORBIDDEN_MESSAGE, mayReadPersonNotes, mayWritePersonNotes } from './vendorEnquiryAdminActions';
+import { assignEnquiry, assignableAdmins, currentAssignment, currentAssignments } from './enquiryAssignment';
 import { ENQUIRY_LIST_MAX_LIMIT, enquiryDetail, enquiryList, enquiryOverview } from './vendorEnquiryQuery';
 import { PLACEMENT_CLIENT_EVENTS, PLACEMENT_METRIC_FORMULAS } from '@shared/placementAnalytics';
 import { formatProjectContext, resolveProjectContext } from './_core/projectContext';
@@ -5089,7 +5090,27 @@ const adminRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      return enquiryList(db, input ?? {});
+      const page = await enquiryList(db, input ?? {});
+      // ONE extra query for the whole page, not one per row. The window
+      // function picks the latest assignment per pair in the database rather
+      // than pulling every assignment ever made into Node.
+      const assignments = await currentAssignments(db, page.rows.map(row => ({
+        rfqId: row.rfqId, vendorId: row.vendorId,
+      })));
+      return {
+        ...page,
+        rows: page.rows.map(row => {
+          const assignment = assignments.get(`${row.rfqId}:${row.vendorId}`);
+          return {
+            ...row,
+            // null means UNASSIGNED, whether the pair was never assigned or was
+            // assigned and then taken back. The screen says "unassigned" either
+            // way, which is the truth an operator needs.
+            assigneeId: assignment?.assigneeId ?? null,
+            assigneeName: assignment?.assigneeId == null ? null : assignment.assigneeName,
+          };
+        }),
+      };
     }),
 
   /**
@@ -5136,7 +5157,15 @@ const adminRouter = router({
         // answer, not a server error.
         throw new TRPCError({ code: 'NOT_FOUND', message: 'No enquiry exists between that vendor and that request.' });
       }
-      return detail;
+      const assignment = await currentAssignment(db, pair);
+      return {
+        ...detail,
+        // The whole row, including an unassignment: the screen shows who holds
+        // it now AND that somebody deliberately let it go, which a bare id
+        // cannot express.
+        assignment: assignment && assignment.assigneeId != null ? assignment : null,
+        lastAssignmentEvent: assignment,
+      };
     }),
 
   /**
@@ -5233,6 +5262,69 @@ const adminRouter = router({
         authorId: ctx.user.id,
       });
       return { success: true, noteId: Number(result[0]?.insertId ?? 0) };
+    }),
+
+  /** Administrators an enquiry may be handed to - those who could actually act. */
+  assignableAdmins: adminWith('marketplace.manage').query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return assignableAdmins(db);
+  }),
+
+  /**
+   * ASSIGN AN ENQUIRY, OR TAKE IT BACK.
+   *
+   * An enquiry has no table because its state is derived; an assignment is not
+   * derivable from anything, so it has one (see server/enquiryAssignment.ts for
+   * why those two decisions are consistent).
+   *
+   * The new assignee is NOTIFIED through the existing engine - the same
+   * notifyUser every other event uses, with a messageKey so the sentence is
+   * translated rather than an English string stored in the row. Unassignment
+   * notifies nobody: there is no one to tell, and messaging the previous
+   * assignee is a behaviour the owner has not asked for.
+   */
+  assignEnquiry: adminWith('marketplace.manage')
+    .input(z.object({
+      rfqId: z.number().int().positive(),
+      vendorId: z.number().int().positive(),
+      assigneeId: z.number().int().positive().nullable(),
+      note: z.string().trim().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      // The pair must be a real enquiry. Without this an administrator can
+      // assign a typo, and it sits in a queue pointing at nothing.
+      const existing = await enquiryDetail(db, { rfqId: input.rfqId, vendorId: input.vendorId });
+      if (!existing) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'No enquiry exists between that vendor and that request.' });
+      }
+
+      const { assignmentId, notify } = await assignEnquiry({
+        db, rfqId: input.rfqId, vendorId: input.vendorId,
+        assigneeId: input.assigneeId, actorId: ctx.user.id, note: input.note ?? null,
+      });
+
+      if (notify) {
+        await notifyUser(db, {
+          userId: notify.userId,
+          title: 'An enquiry was assigned to you',
+          body: `${notify.reference} - ${existing.rfq.title ?? `RFQ #${input.rfqId}`}`,
+          type: 'info',
+          // THE ENQUIRY ITSELF, not the list it sits in. An existing guard
+          // (server/notificationDestinations.test.ts) rejected the hardcoded
+          // '/admin/enquiries', and it was right: a notification about ENQ-501-10
+          // that lands on a list leaves the recipient hunting for the row. The
+          // reference is exactly what makes a per-enquiry route possible without
+          // a table, so the screen now reads it from the URL.
+          link: `/admin/enquiries/${notify.reference}`,
+          messageKey: 'notif.enquiry.assigned',
+          messageParams: { reference: notify.reference, request: existing.rfq.title ?? `RFQ #${input.rfqId}` },
+        });
+      }
+      return { success: true, assignmentId, notified: notify !== null };
     }),
 
   placementPerformance: adminWith('marketplace.manage')

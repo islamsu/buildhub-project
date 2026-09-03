@@ -115,6 +115,12 @@ function Router() {
       <Route path={"/admin/admins"} component={AdminAdmins} />
       <Route path={"/admin/users/:id"} component={AdminUserDetail} />
       <Route path={"/admin/projects/:id"} component={AdminProjectDetail} />
+      {/* A section may address ONE RECORD. `/admin/enquiries/ENQ-7-3` is what a
+          notification links to and what an administrator pastes into a ticket -
+          an enquiry has no id of its own, so its reference is derived from the
+          pair and the URL is derived from the reference. Registered AFTER the
+          two dedicated /:id routes above, which must keep their own pages. */}
+      <Route path={"/admin/:section/:record"} component={AdminDashboard} />
       <Route path={"/admin/:section"} component={AdminDashboard} />
       <Route path={"/admin"} component={AdminDashboard} />
       <Route path={"/pricing"} component={Pricing} />

@@ -222,6 +222,8 @@ const translations: Record<Language, Record<string, string>> = {
     'notif.compliance.document.under_review.title': 'Registration document under review',
     'notif.compliance.document.under_review.body': '{document} is under review.',
     'notif.compliance.document.under_review.bodyNote': '{document}: {note}',
+    'notif.enquiry.assigned.title': 'An enquiry was assigned to you',
+    'notif.enquiry.assigned.body': '{reference} - {request}',
     'notif.project.member.added.title': 'You were added to a project',
     'notif.project.member.added.body': 'You are now on {title} as {role}.',
     // {planKey}/{fromPlanKey} are TRANSLATION KEYS resolved by the reader's own
@@ -1267,6 +1269,8 @@ const translations: Record<Language, Record<string, string>> = {
     'notif.compliance.document.under_review.title': 'مستند التسجيل قيد المراجعة',
     'notif.compliance.document.under_review.body': '{document} قيد المراجعة.',
     'notif.compliance.document.under_review.bodyNote': '{document}: {note}',
+    'notif.enquiry.assigned.title': 'تم إسناد استفسار إليك',
+    'notif.enquiry.assigned.body': '{reference} - {request}',
     'notif.project.member.added.title': 'تمت إضافتك إلى مشروع',
     'notif.project.member.added.body': 'أنت الآن ضمن {title} بصفة {role}.',
     'notif.billing.plan.upgraded.title': 'تمت ترقية باقتك',

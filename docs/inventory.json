@@ -89,6 +89,14 @@
       "deadParamRoute": false
     },
     {
+      "path": "/admin/:section/:record",
+      "component": "AdminDashboard",
+      "source": "client/src/pages/AdminDashboard.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
       "path": "/admin/:section",
       "component": "AdminDashboard",
       "source": "client/src/pages/AdminDashboard.tsx",
@@ -1023,6 +1031,16 @@
       "indent": 2
     },
     {
+      "name": "assignableAdmins",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "assignEnquiry",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
       "name": "placementPerformance",
       "tier": "adminWith:marketplace.manage",
       "indent": 3
@@ -1427,7 +1445,7 @@
     "adminWith:users.manage": 6,
     "adminWith:audit.read": 5,
     "adminWith:qa.manage": 7,
-    "adminWith:marketplace.manage": 34,
+    "adminWith:marketplace.manage": 36,
     "adminWith:billing.read": 4,
     "superAdminProcedure": 10,
     "adminProcedure": 4,
@@ -1788,77 +1806,90 @@
       "references": 4,
       "notNull": 7,
       "unique": 0
+    },
+    {
+      "ident": "enquiryAssignments",
+      "name": "enquiryAssignments",
+      "columns": 9,
+      "references": 4,
+      "notNull": 3,
+      "unique": 0
     }
   ],
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 1265,
+      "line": 1266,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2220,
+      "line": 2221,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2300,
+      "line": 2301,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3028,
+      "line": 3029,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3085,
+      "line": 3086,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3492,
+      "line": 3493,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3739,
+      "line": 3740,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3879,
+      "line": 3880,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5922,
+      "line": 5311,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5993,
+      "line": 6014,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6381,
+      "line": 6085,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6582,
+      "line": 6473,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6607,
+      "line": 6674,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6632,
+      "line": 6699,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 6724,
       "via": "notifyUser"
     },
     {

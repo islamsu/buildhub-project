@@ -6,10 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import {
   Inbox, Search, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft,
-  Clock, Gauge, FileText, Building2, RefreshCw, StickyNote,
+  Clock, Gauge, FileText, Building2, RefreshCw, StickyNote, UserCheck,
 } from 'lucide-react';
 
 /**
@@ -78,18 +78,25 @@ function when(value: string | null | undefined, ar: boolean): string {
     { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-export default function AdminVendorEnquiries() {
+export default function AdminVendorEnquiries({ reference = null }: { reference?: string | null }) {
   const { lang } = useLanguage();
+  const [, navigate] = useLocation();
   const ar = lang === 'ar';
 
   const [search, setSearch] = useState('');
   const [state, setState] = useState('all');
   const [sort, setSort] = useState<'activity' | 'rfq' | 'vendor' | 'state'>('activity');
   const [page, setPage] = useState(0);
-  const [openReference, setOpenReference] = useState<string | null>(null);
+  // THE URL IS THE SOURCE OF TRUTH for which enquiry is open, not component
+  // state. That is what makes /admin/enquiries/ENQ-7-3 a real destination - for
+  // a notification, for a support ticket, and for the browser's back button.
+  const openReference = reference;
+  const setOpenReference = (next: string | null) =>
+    navigate(next ? `/admin/enquiries/${next}` : '/admin/enquiries');
   const [noteScope, setNoteScope] = useState<'rfq' | 'vendor'>('rfq');
   const [noteText, setNoteText] = useState('');
   const [noteError, setNoteError] = useState('');
+  const [assignError, setAssignError] = useState('');
 
   const overview = trpc.admin.enquiryOverview.useQuery();
   const list = trpc.admin.enquiryList.useQuery({
@@ -105,6 +112,11 @@ export default function AdminVendorEnquiries() {
     ? { rfqId: detail.data.rfq.id, vendorId: detail.data.vendor.id }
     : null;
   const notes = trpc.admin.enquiryNotes.useQuery(pair ?? { rfqId: 0, vendorId: 0 }, { enabled: !!pair });
+  const admins = trpc.admin.assignableAdmins.useQuery(undefined, { enabled: openReference !== null });
+  const assign = trpc.admin.assignEnquiry.useMutation({
+    onSuccess: () => { setAssignError(''); detail.refetch(); list.refetch(); },
+    onError: error => setAssignError(error.message),
+  });
   const addNote = trpc.admin.addEnquiryNote.useMutation({
     onSuccess: () => { setNoteText(''); setNoteError(''); notes.refetch(); },
     onError: error => setNoteError(error.message),
@@ -264,6 +276,47 @@ export default function AdminVendorEnquiries() {
                       </li>
                     ))}
                   </ol>
+                )}
+              </div>
+
+              <div className="rounded-xl border p-4" data-testid="enquiry-assignment">
+                <p className="mb-1 flex items-center gap-2 text-sm font-semibold">
+                  <UserCheck className="h-4 w-4 text-muted-foreground" />
+                  {ar ? 'المسؤول عن المتابعة' : 'Assigned to'}
+                </p>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  {data.assignment?.assigneeName
+                    ? `${data.assignment.assigneeName}${data.assignment.at ? ` · ${when(data.assignment.at as any, ar)}` : ''}`
+                    : (ar ? 'غير مُسند إلى أحد.' : 'Not assigned to anyone.')}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select
+                    value={data.assignment?.assigneeId ? String(data.assignment.assigneeId) : 'none'}
+                    onValueChange={value => pair && assign.mutate({
+                      ...pair, assigneeId: value === 'none' ? null : Number(value),
+                    })}
+                  >
+                    <SelectTrigger className="h-8 w-56" data-testid="assignee-select"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{ar ? 'بدون إسناد' : 'Unassigned'}</SelectItem>
+                      {(admins.data ?? []).map(person => (
+                        <SelectItem key={person.id} value={String(person.id)}>
+                          {person.name || `#${person.id}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {assign.isPending && <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                </div>
+                {assignError && <p className="mt-2 text-xs text-rose-600" data-testid="assign-error">{assignError}</p>}
+                {/* An unassignment is a real event, so the screen says one happened
+                    rather than silently showing "unassigned" as though it never was. */}
+                {!data.assignment && data.lastAssignmentEvent && (
+                  <p className="mt-2 text-xs text-muted-foreground" data-testid="assignment-released">
+                    {ar
+                      ? `أُلغي الإسناد في ${when(data.lastAssignmentEvent.at as any, ar)}.`
+                      : `Released on ${when(data.lastAssignmentEvent.at as any, ar)}.`}
+                  </p>
                 )}
               </div>
 
@@ -507,7 +560,7 @@ export default function AdminVendorEnquiries() {
           ) : (
             <>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] text-sm">
+                <table className="w-full min-w-[860px] text-sm">
                   <thead>
                     <tr className="border-b text-start text-xs text-muted-foreground">
                       <th className="py-2 text-start font-medium">{ar ? 'المرجع' : 'Reference'}</th>
@@ -515,6 +568,7 @@ export default function AdminVendorEnquiries() {
                       <th className="py-2 text-start font-medium">{ar ? 'المورد' : 'Vendor'}</th>
                       <th className="py-2 text-start font-medium">{ar ? 'الحالة' : 'State'}</th>
                       <th className="py-2 text-start font-medium">{ar ? 'الرصيد' : 'Allowance'}</th>
+                      <th className="py-2 text-start font-medium">{ar ? 'المسؤول' : 'Assignee'}</th>
                       <th className="py-2 text-start font-medium">{ar ? 'آخر نشاط' : 'Last activity'}</th>
                     </tr>
                   </thead>
@@ -551,6 +605,9 @@ export default function AdminVendorEnquiries() {
                           <td className="py-2.5 text-xs text-muted-foreground">
                             {ar ? USAGE_LABELS[row.usageReason]?.ar ?? row.usageReason
                                 : USAGE_LABELS[row.usageReason]?.en ?? row.usageReason}
+                          </td>
+                          <td className="py-2.5 text-xs text-muted-foreground">
+                            {row.assigneeName || (ar ? 'غير مُسند' : 'Unassigned')}
                           </td>
                           <td className="py-2.5 text-xs text-muted-foreground">{when(last as any, ar)}</td>
                         </tr>

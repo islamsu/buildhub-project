@@ -1387,3 +1387,26 @@ export type VendorSponsorship = typeof vendorSponsorships.$inferSelect;
 
 export type ProjectMember = typeof projectMembers.$inferSelect;
 export type RfqSupplierInvitation = typeof rfqSuppliers.$inferSelect;
+
+// ── Who is handling an enquiry (migration 0041) ───────────────────────────
+//
+// A vendor enquiry has no table because its STATE is derived. An ASSIGNMENT is
+// not derivable from anything - no existing row is about the platform's own
+// operators - so it is genuinely new state and gets storage.
+//
+// APPEND-ONLY: the current assignee is the assigneeId of the most recent row
+// for the pair, and a NULL assigneeId is an UNASSIGNMENT event rather than an
+// absence. History for free, and the record outlives the administrator.
+export const enquiryAssignments = mysqlTable('enquiryAssignments', {
+  id:         int('id').autoincrement().primaryKey(),
+  rfqId:      int('rfqId').notNull().references(() => rfqs.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  vendorId:   int('vendorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /** null = this event unassigned the enquiry. */
+  assigneeId: int('assigneeId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  actorId:    int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  note:       varchar('note', { length: 500 }),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  pairIdx:     index('enquiryAssignments_pair_idx').on(table.rfqId, table.vendorId, table.id),
+  assigneeIdx: index('enquiryAssignments_assignee_idx').on(table.assigneeId),
+}));

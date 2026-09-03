@@ -161,6 +161,54 @@ try {
   check('the detail says where bid review actually happens',
     /Super Admin investigation/i.test(detail));
 
+  // ── 7b. The enquiry is ADDRESSABLE ─────────────────────────────────────
+  //
+  // Added because an existing guard rejected the notification's hardcoded
+  // '/admin/enquiries' link. It was right: a notification about ENQ-501-10 that
+  // lands on a list leaves the recipient hunting for the row. The reference is
+  // derived from the pair, so the URL can be too - and that is what makes the
+  // reference worth having in a support ticket.
+  const openedAt = await page.evaluate('return location.pathname');
+  check('OPENING AN ENQUIRY PUTS IT IN THE URL', /\/admin\/enquiries\/ENQ-\d+-\d+$/.test(openedAt), openedAt);
+
+  // Wait for the TIMELINE, not the card. The first version waited for the
+  // detail container and passed while the panel still said "Loading…" - it
+  // proved the header renders the reference it read from the URL, which is
+  // nearly a tautology. Waiting for content loaded FROM THE SERVER is the
+  // claim that matters for a notification destination.
+  await page.goto(`${BASE}${openedAt}`, { waitFor: '[data-testid="enquiry-assignment"]' });
+  const direct = await page.evaluate(
+    'return document.querySelector(\'[data-testid="admin-enquiry-detail"]\')?.innerText ?? ""');
+  check('AND THAT URL OPENS THE ENQUIRY DIRECTLY, fully loaded - a real destination for a notification',
+    direct.includes(openedAt.split('/').pop()) && /Invited|Assigned to/i.test(direct)
+    && !/Loading/i.test(direct),
+    direct.slice(0, 70).replace(/\n/g, ' / '));
+
+  // ── 7c. Assignment, WHILE THE DETAIL IS STILL OPEN ─────────────────────
+  //
+  // Ordering matters and the first version got it wrong: these checks sat after
+  // the back-button click, so they queried an assignment panel that had already
+  // been replaced by the list and reported three working things as broken.
+  const assignmentPanel = await page.evaluate(
+    'return document.querySelector(\'[data-testid="enquiry-assignment"]\')?.innerText ?? ""');
+  check('the detail shows who is handling the enquiry', assignmentPanel.length > 0);
+  check('an unassigned enquiry says so plainly rather than showing a blank',
+    /Not assigned to anyone/i.test(assignmentPanel), assignmentPanel.slice(0, 60).replace(/\n/g, ' / '));
+  const assigneeOptions = await page.evaluate(
+    'return !!document.querySelector(\'[data-testid="assignee-select"]\')');
+  check('and offers a control to assign it', assigneeOptions === true);
+
+  const clickedBack = await page.evaluate(`
+    const back = document.querySelector('[data-testid="enquiry-detail-back"]');
+    if (!back) return 'NO BACK BUTTON';
+    back.click();
+    return 'clicked';
+  `);
+  check('the detail offers a way back to the list', clickedBack === 'clicked', clickedBack);
+  await new Promise(resolve => setTimeout(resolve, 900));
+  check('going back returns to the list URL',
+    (await page.evaluate('return location.pathname')) === '/admin/enquiries');
+
   // ── 8. Arabic and RTL ───────────────────────────────────────────────────
 
   await page.evaluate("localStorage.setItem('buildhub_lang','ar'); return true;");

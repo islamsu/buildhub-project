@@ -50,6 +50,8 @@ check('anonymous caller is refused the detail',
 // ── Fixture ───────────────────────────────────────────────────────────────
 
 const clean = () => sql(`
+  DELETE FROM enquiryAssignments WHERE rfqId IN (SELECT id FROM rfqs WHERE title LIKE 'ZG detail fixture%');
+  DELETE FROM notifications WHERE messageKey = 'notif.enquiry.assigned';
   DELETE FROM adminNotes WHERE subjectId IN (SELECT id FROM users WHERE openId LIKE 'zg-ed-%')
      OR subjectId IN (SELECT id FROM rfqs WHERE title LIKE 'ZG detail fixture%');
   DELETE FROM quotations WHERE providerId IN (SELECT id FROM users WHERE openId LIKE 'zg-ed-%');
@@ -222,6 +224,80 @@ if (marketplace.ok) {
   check('and nothing was written despite the attempt', stillTwo === 1, `${stillTwo} vendor notes`);
 }
 
+// ── Assignment and its notification (§13/§14) ─────────────────────────────
+//
+// An assignment is the one piece of enquiry state that is NOT derived - nothing
+// in the domain records which administrator is working an enquiry - so it has a
+// table, append-only. What is checked here is that the table really is
+// append-only, that an ineligible assignee is refused, and that the notified
+// person gets a TRANSLATABLE message rather than a stored English sentence.
+
+const admins = await get('admin.assignableAdmins', {}, admin.cookie);
+check('the assignable list contains the signed-in Super Admin',
+  Array.isArray(admins.data) && admins.data.some(person => person.id === 1),
+  `${admins.data?.length ?? 0} assignable`);
+
+// A deactivated administrator must not be offered: a queue assigned to someone
+// who cannot sign in is a queue nobody is working.
+const frozenEmail = 'zg-ed-frozen@buildhub.local';
+sql(`DELETE FROM users WHERE email = '${frozenEmail}';`);
+sql(`INSERT INTO users (openId, email, name, role, adminRole, accountStatus, passwordHash, isDummy, deactivatedAt)
+     VALUES ('zg-ed-frozen', '${frozenEmail}', 'Deactivated Admin', 'admin', 'SUPPORT_ADMIN', 'active', '${adminHash}', 0, NOW());`);
+const frozenId = Number(sql(`SELECT id FROM users WHERE email = '${frozenEmail}';`));
+const afterFrozen = await get('admin.assignableAdmins', {}, admin.cookie);
+check('A DEACTIVATED ADMINISTRATOR IS NOT OFFERED AS AN ASSIGNEE',
+  !afterFrozen.data?.some(person => person.id === frozenId));
+const refused = await post('admin.assignEnquiry',
+  { rfqId: r1, vendorId: v1, assigneeId: frozenId }, admin.cookie);
+check('and assigning to them is refused server-side, not merely hidden',
+  refused.status === 400, `HTTP ${refused.status}`);
+check('nothing was written by the refused attempt',
+  Number(sql(`SELECT COUNT(*) FROM enquiryAssignments WHERE rfqId = ${r1};`)) === 0);
+
+const assigned = await post('admin.assignEnquiry', { rfqId: r1, vendorId: v1, assigneeId: 1 }, admin.cookie);
+check('an enquiry can be assigned to a real administrator', assigned.status === 200 && assigned.data?.success === true,
+  `HTTP ${assigned.status}`);
+check('the assignment is stored', Number(sql(`SELECT COUNT(*) FROM enquiryAssignments WHERE rfqId = ${r1} AND assigneeId = 1;`)) === 1);
+check('the assignee is told', assigned.data?.notified === true);
+
+const notified = sql(`SELECT messageKey FROM notifications WHERE userId = 1 ORDER BY id DESC LIMIT 1;`);
+check('THE NOTIFICATION CARRIES A messageKey, so the sentence is translated not stored in English',
+  notified === 'notif.enquiry.assigned', notified);
+const notifiedBody = sql(`SELECT messageParams FROM notifications WHERE userId = 1 ORDER BY id DESC LIMIT 1;`);
+check('and its params name the enquiry by reference', notifiedBody.includes(`ENQ-${r1}-${v1}`), notifiedBody);
+check('the notification carries no email address or credential',
+  !/@buildhub\.local|scrypt\$/.test(notifiedBody), notifiedBody);
+
+const detailAssigned = await get('admin.enquiryDetail', { reference }, admin.cookie);
+check('the detail reports the current assignee', detailAssigned.data?.assignment?.assigneeId === 1);
+
+const again = await post('admin.assignEnquiry', { rfqId: r1, vendorId: v1, assigneeId: 1 }, admin.cookie);
+check('RE-ASSIGNING TO THE SAME PERSON WRITES NOTHING and notifies nobody',
+  again.data?.notified === false
+  && Number(sql(`SELECT COUNT(*) FROM enquiryAssignments WHERE rfqId = ${r1};`)) === 1);
+
+const released = await post('admin.assignEnquiry', { rfqId: r1, vendorId: v1, assigneeId: null }, admin.cookie);
+check('unassigning succeeds', released.status === 200);
+check('UNASSIGNING APPENDS A ROW rather than deleting the history',
+  Number(sql(`SELECT COUNT(*) FROM enquiryAssignments WHERE rfqId = ${r1};`)) === 2,
+  sql(`SELECT COUNT(*) FROM enquiryAssignments WHERE rfqId = ${r1};`));
+check('and nobody is notified of an unassignment', released.data?.notified === false);
+
+const detailReleased = await get('admin.enquiryDetail', { reference }, admin.cookie);
+check('the detail now shows no assignee', detailReleased.data?.assignment === null);
+check('but still records THAT it was released, with a time',
+  !!detailReleased.data?.lastAssignmentEvent?.at && detailReleased.data.lastAssignmentEvent.assigneeId === null);
+
+const assignMissing = await post('admin.assignEnquiry',
+  { rfqId: 99999999, vendorId: v1, assigneeId: 1 }, admin.cookie);
+check('assigning a pair that is not an enquiry is refused', assignMissing.status === 404,
+  `HTTP ${assignMissing.status}`);
+
+const listWithAssignee = await get('admin.enquiryList', { rfqId: r1 }, admin.cookie);
+check('the list reports the assignee per row (unassigned here, honestly)',
+  listWithAssignee.data?.rows?.[0]?.assigneeId === null
+  && 'assigneeName' in (listWithAssignee.data?.rows?.[0] ?? {}));
+
 // ── Honest absence ────────────────────────────────────────────────────────
 
 const missing = await get('admin.enquiryDetail', { rfqId: r1, vendorId: 99999999 }, admin.cookie);
@@ -233,7 +309,7 @@ check('a malformed reference is refused rather than guessed at', malformed.statu
 
 // ── Cleanup ───────────────────────────────────────────────────────────────
 clean();
-sql("DELETE FROM users WHERE email = 'zg-ed-marketplace@buildhub.local';");
+sql("DELETE FROM users WHERE email IN ('zg-ed-marketplace@buildhub.local', 'zg-ed-frozen@buildhub.local');");
 check('the fixture removed itself completely',
   Number(sql("SELECT COUNT(*) FROM users WHERE openId LIKE 'zg-ed-%';")) === 0);
 

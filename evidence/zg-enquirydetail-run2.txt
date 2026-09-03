@@ -19,9 +19,9 @@ PASS  the RFQ budget is not carried either
 PASS  no password hash or session identifier reaches the response
 PASS  the Super Admin investigation surface DOES return the bid, as designed  [HTTP 200]
 PASS  a note can be filed against the request  [HTTP 200]
-PASS  IT IS STORED AGAINST THE RFQ ITSELF, not a made-up enquiry id  [rfq	59]
+PASS  IT IS STORED AGAINST THE RFQ ITSELF, not a made-up enquiry id  [rfq	82]
 PASS  a note can be filed against the vendor
-PASS  A VENDOR NOTE IS STORED AS subjectType 'user', so a person's notes stay in ONE place  [user	312]
+PASS  A VENDOR NOTE IS STORED AS subjectType 'user', so a person's notes stay in ONE place  [user	371]
 PASS  both notes come back for a Super Admin  [{"rfq":1,"vendor":1}]
 PASS  a note carries its author and time, not just text
 PASS  a note against a subject that does not exist is REFUSED, not filed where nobody finds it  [HTTP 404]
@@ -30,8 +30,27 @@ PASS  a marketplace admin CAN read the RFQ notes
 PASS  reading a person's notes is within the role's real authority (users.read)  [{"visible":true,"count":1}]
 PASS  BUT WRITING ONE IS REFUSED - users.manage is not in this role  [HTTP 403]
 PASS  and nothing was written despite the attempt  [1 vendor notes]
+PASS  the assignable list contains the signed-in Super Admin  [2 assignable]
+PASS  A DEACTIVATED ADMINISTRATOR IS NOT OFFERED AS AN ASSIGNEE
+PASS  and assigning to them is refused server-side, not merely hidden  [HTTP 400]
+PASS  nothing was written by the refused attempt
+PASS  an enquiry can be assigned to a real administrator  [HTTP 200]
+PASS  the assignment is stored
+PASS  the assignee is told
+PASS  THE NOTIFICATION CARRIES A messageKey, so the sentence is translated not stored in English  [notif.enquiry.assigned]
+PASS  and its params name the enquiry by reference  [{"reference":"ENQ-82-371","request":"ZG detail fixture ONE"}]
+PASS  the notification carries no email address or credential  [{"reference":"ENQ-82-371","request":"ZG detail fixture ONE"}]
+PASS  the detail reports the current assignee
+PASS  RE-ASSIGNING TO THE SAME PERSON WRITES NOTHING and notifies nobody
+PASS  unassigning succeeds
+PASS  UNASSIGNING APPENDS A ROW rather than deleting the history  [2]
+PASS  and nobody is notified of an unassignment
+PASS  the detail now shows no assignee
+PASS  but still records THAT it was released, with a time
+PASS  assigning a pair that is not an enquiry is refused  [HTTP 404]
+PASS  the list reports the assignee per row (unassigned here, honestly)
 PASS  a pair with no history is NOT FOUND, not an empty shell  [HTTP 404]
 PASS  a malformed reference is refused rather than guessed at  [HTTP 400]
 PASS  the fixture removed itself completely
 
-35 passed, 0 failed
+54 passed, 0 failed
