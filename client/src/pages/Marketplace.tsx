@@ -71,7 +71,7 @@ export default function Marketplace() {
   };
   const BackIcon = lang === 'ar' ? ArrowRight : ArrowLeft;
 
-  const { data: categories } = trpc.marketplace.categories.useQuery();
+  const { data: categories } = trpc.marketplace.categoryNames.useQuery();
 
   const allCategories = ['All', ...(categories ?? [])];
 

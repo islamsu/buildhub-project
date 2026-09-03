@@ -140,6 +140,78 @@ describe('rejections say WHICH problem it is', () => {
     }
   });
 
+  /**
+   * A SUGGESTION IS ACTED ON BY A PERSON, SO IT IS HELD TO THE SAME STANDARD
+   * AS AN ASSIGNMENT.
+   *
+   * These exist because a live probe found the previous rule - plain substring
+   * containment - offering "Roofing" for "Watrproofing", since "watrproofing"
+   * happens to end in "roofing". Nothing was auto-applied, so no product was
+   * misfiled by the code; a supplier who accepts that suggestion misfiles it
+   * himself one step later, which is the same outcome.
+   */
+  describe('and a suggestion is never a misleading one', () => {
+    const suggestionsFor = (supplied: string, index = full()) => {
+      const result = resolveCategory(index, supplied);
+      if (result.ok || result.rejection.reason !== 'UNKNOWN') return null;
+      return result.rejection.suggestions;
+    };
+
+    it('offers the right category for a one-letter typo', () => {
+      expect(suggestionsFor('Watrproofing')).toContain('Waterproofing');
+    });
+
+    it('THE REGRESSION: and does not offer an unrelated trade it merely contains', () => {
+      // Roofing and Waterproofing are different trades at different prices. A
+      // bitumen membrane filed under Roofing is wrong stock in the wrong place.
+      expect(suggestionsFor('Watrproofing')).not.toContain('Roofing');
+    });
+
+    it('reaches a category through a typo of its ALIAS, not only its name', () => {
+      // "Poolz" is nowhere near "Swimming Pool Equipment", and one letter from
+      // the "Pools" alias. Offering nothing here is a worse answer than the
+      // alias can give.
+      expect(suggestionsFor('Poolz')).toContain('Swimming Pool Equipment');
+    });
+
+    it('offers a category the supplied value NARROWS - a prefix or a whole word', () => {
+      expect(suggestionsFor('Waterproof')).toContain('Waterproofing');
+      expect(suggestionsFor('Pool')).toContain('Swimming Pool Equipment');
+    });
+
+    it('offers nothing at all rather than something wrong', () => {
+      // Genuinely unrelated. An empty list tells the supplier to go and look;
+      // a wrong one tells him to stop looking.
+      expect(suggestionsFor('Zqxwv')).toEqual([]);
+    });
+
+    it('never proposes a value that is itself ambiguous', () => {
+      // Two categories claiming one name is refused on resolution, so offering
+      // it as the fix would send the supplier round the same loop.
+      const index = indexFrom([
+        ...SEED_CATEGORIES,
+        { slug: 'granite-alt', nameEn: 'Granite', nameAr: 'جرانيت بديل' },
+      ]);
+      expect(suggestionsFor('Granit', index) ?? []).not.toContain('Granite');
+    });
+
+    it('never proposes a hidden or service-only category', () => {
+      const index = indexFrom(SEED_CATEGORIES, { waterproofing: { status: 'hidden' } });
+      expect(suggestionsFor('Watrproofing', index) ?? []).not.toContain('Waterproofing');
+    });
+
+    it('is deterministic and bounded - the same file gives the same message twice', () => {
+      const first = suggestionsFor('Cemen');
+      expect(suggestionsFor('Cemen')).toEqual(first);
+      expect((first ?? []).length).toBeLessThanOrEqual(3);
+    });
+
+    it('does not guess from two or three characters', () => {
+      // At that length almost everything is within two edits of something.
+      expect(suggestionsFor('ce')).toEqual([]);
+    });
+  });
+
   it('a hidden category is INACTIVE, never "not a BuildHub category"', () => {
     // The distinction the reported error could not make. A hidden category
     // EXISTS; the uploader needs to ask an administrator, not hunt for a typo.

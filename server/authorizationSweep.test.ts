@@ -144,7 +144,21 @@ describe('§1 every procedure is pinned to a tier', () => {
       // The plan catalogue: prices a signed-out visitor must be able to read.
       'billing.plans',
       // The public marketplace: product catalogue and vendor directory.
+      // Both category readers are public because BROWSING IS PUBLIC - the
+      // marketplace filter renders before anyone signs in. They return the
+      // taxonomy and nothing else: slug, English and Arabic name, scope,
+      // status, ordering and icon. No usage counts, no vendor, no product, no
+      // administrator identity, no audit. `categoryNames` is the string-array
+      // form the marketplace filter consumes; `categories` is the richer form,
+      // and its 'listable'/'public' views are BOTH public filters over active
+      // rows - the administrator's view of hidden and archived categories is a
+      // separate, permissioned procedure and is not reachable from here.
+      //
+      // `categoryNames` replaced a hard-coded array of 27 names that was
+      // already served on this same public surface, so this is the same
+      // exposure through one canonical source rather than a new one.
       'marketplace.categories',
+      'marketplace.categoryNames',
       // ADMIN-CURATED FEATURED PROVIDERS, the editorial counterpart to the
       // paid strip below. Public for the same reason and on the same terms:
       // it returns the directory's own column allowlist plus the category the

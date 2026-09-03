@@ -30,7 +30,17 @@ export type ImportRow = {
   line: number;
   name: string;
   nameAr?: string;
+  /** Exactly what the file said, kept so an error can quote it back. */
   category: string;
+  /**
+   * The canonical category this row resolved to.
+   *
+   * Present only on rows that resolved. The preview shows it so a supplier who
+   * typed "Pools" can see it will be filed under "Swimming Pool Equipment"
+   * BEFORE anything is written, rather than discovering it afterwards.
+   */
+  categoryId?: number;
+  resolvedCategory?: string;
   brand?: string;
   price?: number;
   stock?: number;
@@ -46,6 +56,14 @@ export type ParsedImport = {
   errors: RowError[];
   /** Names appearing more than once IN THE FILE - a supplier's own typo. */
   duplicatesInFile: string[];
+  /**
+   * The category failures, grouped by the value that caused them.
+   *
+   * Empty when every row resolved. The row-level `errors` above still carry one
+   * entry per affected line - an error export needs those - but a screen that
+   * shows only those makes a fifty-row problem look like fifty problems.
+   */
+  categoryIssues: CategoryIssue[];
 };
 
 /**
@@ -117,10 +135,39 @@ const numeric = (raw: string, line: number, column: string, errors: RowError[], 
  * than stopping at the first: a supplier fixing a 400-row file one error per
  * upload is not a feature.
  */
-export function parseProductImport(text: string, allowedCategories: readonly string[]): ParsedImport {
+/**
+ * HOW A ROW'S CATEGORY IS DECIDED - supplied by the caller, never owned here.
+ *
+ * The parser used to hold a list of permitted category strings, which is how
+ * bulk upload came to disagree with single product listing: two lists, edited
+ * apart. It now asks the SAME resolver the single-product path asks, so the two
+ * cannot answer differently. `reason` travels with the failure because "we do
+ * not know that category" and "that category is hidden right now" are different
+ * problems for the person holding the spreadsheet.
+ */
+export type ImportCategoryResolver = (supplied: string) =>
+  | { ok: true; id: number; canonicalName: string }
+  | { ok: false; reason: string; message: string; suggestions?: string[] };
+
+/**
+ * One offending value, with every row it appears on.
+ *
+ * A file with fifty Waterproofing rows produced fifty identical errors and no
+ * summary. The row-level errors are still there - they are what an error export
+ * needs - but this is what the screen leads with.
+ */
+export type CategoryIssue = {
+  supplied: string;
+  reason: string;
+  message: string;
+  suggestions: string[];
+  lines: number[];
+};
+
+export function parseProductImport(text: string, resolveCategory: ImportCategoryResolver): ParsedImport {
   const errors: RowError[] = [];
   const table = parseCsv(text);
-  if (table.length === 0) return { rows: [], errors: [{ line: 1, column: 'file', message: 'The file is empty' }], duplicatesInFile: [] };
+  if (table.length === 0) return { rows: [], errors: [{ line: 1, column: 'file', message: 'The file is empty' }], duplicatesInFile: [], categoryIssues: [] };
 
   const header = table[0].map(cell => cell.trim());
   const index = new Map(header.map((name, i) => [name, i]));
@@ -129,16 +176,18 @@ export function parseProductImport(text: string, allowedCategories: readonly str
       errors.push({ line: 1, column: required, message: `Missing required column "${required}"` });
     }
   }
-  if (errors.length > 0) return { rows: [], errors, duplicatesInFile: [] };
+  if (errors.length > 0) return { rows: [], errors, duplicatesInFile: [], categoryIssues: [] };
 
   const body = table.slice(1);
   if (body.length > MAX_IMPORT_ROWS) {
-    return { rows: [], errors: [{ line: 1, column: 'file', message: `${body.length} rows exceeds the maximum of ${MAX_IMPORT_ROWS}` }], duplicatesInFile: [] };
+    return { rows: [], errors: [{ line: 1, column: 'file', message: `${body.length} rows exceeds the maximum of ${MAX_IMPORT_ROWS}` }], duplicatesInFile: [], categoryIssues: [] };
   }
 
   const rows: ImportRow[] = [];
   const seen = new Map<string, number>();
   const duplicatesInFile: string[] = [];
+  /** Offending value -> the rows it appears on, so the screen can group them. */
+  const categoryIssues = new Map<string, CategoryIssue>();
 
   body.forEach((cells, i) => {
     const line = i + 2;   // header is line 1
@@ -150,9 +199,26 @@ export function parseProductImport(text: string, allowedCategories: readonly str
     const category = cell('category').trim();
     if (!name) errors.push({ line, column: 'name', message: 'Name is required' });
     if (name.length > 255) errors.push({ line, column: 'name', message: 'Name is longer than 255 characters' });
+    let categoryId: number | undefined;
+    let resolvedCategory: string | undefined;
     if (!category) errors.push({ line, column: 'category', message: 'Category is required' });
-    else if (!allowedCategories.includes(category)) {
-      errors.push({ line, column: 'category', message: `"${category}" is not a BuildHub category` });
+    else {
+      const resolution = resolveCategory(category);
+      if (resolution.ok) {
+        categoryId = resolution.id;
+        resolvedCategory = resolution.canonicalName;
+      } else {
+        errors.push({ line, column: 'category', message: resolution.message });
+        const existing = categoryIssues.get(category);
+        if (existing) existing.lines.push(line);
+        else categoryIssues.set(category, {
+          supplied: category,
+          reason: resolution.reason,
+          message: resolution.message,
+          suggestions: resolution.suggestions ?? [],
+          lines: [line],
+        });
+      }
     }
 
     const price = numeric(cell('price'), line, 'price', errors, { min: 0 });
@@ -169,7 +235,7 @@ export function parseProductImport(text: string, allowedCategories: readonly str
     }
 
     rows.push({
-      line, name, category,
+      line, name, category, categoryId, resolvedCategory,
       nameAr: cell('nameAr').trim() || undefined,
       brand: cell('brand').trim() || undefined,
       unit: cell('unit').trim() || undefined,
@@ -178,5 +244,5 @@ export function parseProductImport(text: string, allowedCategories: readonly str
     });
   });
 
-  return { rows, errors, duplicatesInFile };
+  return { rows, errors, duplicatesInFile, categoryIssues: Array.from(categoryIssues.values()) };
 }

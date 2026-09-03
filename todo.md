@@ -440,20 +440,20 @@ product-category vocabularies, none of them administrable:
 `products.category` is `varchar(100)` - free text in the database, constrained only at
 write time by list 1.
 
-- [ ] CAT-1: forward-only migration for a canonical `productCategories` table - id, slug,
+- [x] CAT-1: forward-only migration for a canonical `productCategories` table - id, slug,
       nameEn, nameAr, type/scope (PRODUCT | SERVICE | BOTH), status (active | hidden |
       archived), parentId, sortOrder - plus a controlled alias table. Seed from the real
       current vocabulary; reconcile the three lists WITHOUT silently merging categories
       whose meaning differs. Verify the migration against seeded products/RFQs/placements,
       never only an empty database.
-- [ ] CAT-2: one canonical server category service. Authorized views over the SAME
+- [x] CAT-2: one canonical server category service. Authorized views over the SAME
       taxonomy - public active, vendor-listable, admin-all. Every UI reads it; no screen
       queries the table its own way.
-- [ ] CAT-3: category resolver used by BOTH single product and bulk upload, so the two
+- [x] CAT-3: category resolver used by BOTH single product and bulk upload, so the two
       can never diverge again. Case/whitespace/Unicode normalisation, canonical EN and AR
       names, slug, and Admin-controlled aliases. No fuzzy matching that could silently
       assign the wrong category. Ambiguous input is rejected with an actionable error.
-- [ ] CAT-4: error quality - distinguish UNKNOWN from KNOWN-BUT-INACTIVE from
+- [x] CAT-4: error quality - distinguish UNKNOWN from KNOWN-BUT-INACTIVE from
       NOT-ALLOWED-FOR-THIS-VENDOR from SERVICE-ONLY from AMBIGUOUS-ALIAS. A hidden
       category must not report "is not a BuildHub category".
 - [ ] CAT-5: bulk upload UX - grouped error summary by offending value with row ranges,
@@ -474,13 +474,42 @@ write time by list 1.
       vendor eligible to list in it where BuildHub's catalogue rules restrict that.
 - [ ] CAT-10: RBAC (narrow admin permission) + audit of every category mutation with
       actor, timestamp, old and new value.
-- [ ] CAT-11: integration tests that exercise the real resolver, not source text -
+- [x] CAT-11: integration tests that exercise the real resolver, not source text -
       the reported Waterproofing/Pools case; Super Admin adds a category and a vendor
       bulk-uploads it successfully; Super Admin hides a category with existing products
       and they survive while new listings are refused with the INACTIVE message, then
       reactivation restores it. Plus single-vs-bulk parity as a standing invariant.
 - [ ] CAT-12: 375/768/1440 in EN and AR/RTL for the category management surface and every
       category selector; semantic controls, keyboard access, focus management.
+
+CAT-1 through CAT-4 and CAT-11 are proven live, not merely unit-tested:
+`evidence/zg-categoryupload.mjs` (39/39, run twice) drives the real HTTP server and a
+real MariaDB - it uploads Waterproofing and Pools through the actual bulk parser and
+asserts the stored `categoryId`, checks single-vs-bulk parity as a standing invariant,
+plants and removes a genuine name collision to prove AMBIGUOUS is refused rather than
+guessed, hides and reactivates a category to prove propagation with no deployment, and
+confirms every name the browse filter offers is one a supplier may list against - the
+latent defect that was larger than the reported one.
+
+It also caught the THIRD write path. Add and Bulk were reconciled onto one resolver,
+but `updateProduct` still took `category` as free text and never touched `categoryId`,
+so a product created as Waterproofing could be edited to any string while its link
+still pointed at Waterproofing - the reported defect reached through Edit instead of
+Add. All three paths now resolve through `resolveCategory`, and the link moves with
+the name.
+
+That probe also found a second defect the unit suite could not: `suggestionsFor` used
+substring containment and offered "Roofing" for the typo "Watrproofing", because
+"watrproofing" ends in "roofing". Nothing was auto-applied, but a supplier accepting
+that suggestion files a bitumen membrane under Roofing. Replaced with a bounded edit
+distance plus prefix/whole-word narrowing over every key including aliases, so "Poolz"
+now reaches "Swimming Pool Equipment" and nothing unrelated is proposed.
+
+CAT-5 through CAT-10 and CAT-12 remain: the bulk upload error UI, the Super Admin
+category management page, RBAC and audit of category mutations, the remaining client
+dropdowns still reading compiled-in lists (`RolePlatform.tsx` imports
+`PRODUCT_CATEGORIES`; `MarketplaceHub.tsx` still uses `marketplaceData.ts`), and the
+responsive/RTL pass.
 
 ## Master Reconciliation Remaining Scope
 

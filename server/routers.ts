@@ -121,7 +121,7 @@ import {
   MAX_ITEM_VARIANT, MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY,
 } from '../shared/rfqBasket';
 import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shared/productImport';
-import { PRODUCT_CATEGORIES } from '../shared/productCategories';
+import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories } from './categoryService';
 import { normaliseUnit, PRODUCT_UNITS } from '../shared/productUnits';
 import { canCreateProject, creatorProjectRole, PROJECT_ROLES, capabilitiesFor } from '../shared/projectAccess';
 import { requireProjectAccess, readableProjectIds, liveMembership } from './projectMembership';
@@ -1772,10 +1772,19 @@ const marketplaceRouter = router({
       name: z.string().min(1),
       nameAr: z.string().optional(),
       description: z.string().optional(),
-      // Was `z.string().min(1)`: any string at all. A category outside the
-      // taxonomy matches no marketplace filter, so the product becomes
-      // unfindable the moment it is listed. Bulk import enforces the same list.
-      category: z.enum(PRODUCT_CATEGORIES),
+      /**
+       * VALIDATED AGAINST THE DATABASE, NOT A COMPILED-IN LIST.
+       *
+       * This was `z.enum(PRODUCT_CATEGORIES)` - nineteen strings frozen into
+       * the bundle. An administrator could not add a category without a
+       * deployment, and the same list was the reason bulk upload refused
+       * "Waterproofing" for a category BuildHub already had.
+       *
+       * The shape check stays here; WHICH categories are acceptable is decided
+       * below by the same resolver bulk import uses, so the two paths cannot
+       * disagree again.
+       */
+      category: z.string().min(1).max(120),
       brand: z.string().optional(),
       /**
        * WHERE IT COMES FROM. The column has existed all along and
@@ -1812,8 +1821,35 @@ const marketplaceRouter = router({
       }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      /**
+       * THE CATEGORY IS RESOLVED SERVER-SIDE, against the live taxonomy.
+       *
+       * The same call bulk import makes, so the two paths cannot disagree - and
+       * the refusal names WHICH problem it is. A category that exists but is
+       * hidden is not an unknown one, and telling a supplier otherwise sends
+       * them looking for a typo that is not there.
+       */
+      const categoryIndex = await loadCategoryIndex(db);
+      const resolved = resolveProductCategory(categoryIndex, input.category);
+      if (!resolved.ok) {
+        const rejection = resolved.rejection;
+        const message = rejection.reason === 'INACTIVE'
+          ? `"${rejection.category.nameEn}" is not currently available for new listings.`
+          : rejection.reason === 'SERVICE_ONLY'
+            ? `"${rejection.category.nameEn}" is a service category and cannot be used for a product.`
+            : rejection.reason === 'AMBIGUOUS'
+              ? `"${rejection.supplied}" matches more than one category. Use the exact category name.`
+              : `"${input.category}" is not a BuildHub category.`;
+        throw new TRPCError({ code: 'BAD_REQUEST', message });
+      }
+
       const result = await db.insert(products).values({
         ...input,
+        // The canonical name and its id, so a product created here is
+        // indistinguishable from one created by bulk import.
+        category: resolved.category.nameEn,
+        categoryId: resolved.category.id,
         unit: unit.value ?? undefined,
         supplierId: ctx.user.id,
         price: input.price != null ? String(input.price) : undefined,
@@ -1868,7 +1904,14 @@ const marketplaceRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
-      const parsed = parseProductImport(input.csv, PRODUCT_CATEGORIES);
+      /**
+       * THE SAME RESOLVER THE SINGLE-PRODUCT PATH USES.
+       *
+       * Passing a resolver rather than a list of strings is the whole point:
+       * there is no second copy of "which categories are acceptable" to drift.
+       */
+      const categoryIndex = await loadCategoryIndex(db);
+      const parsed = parseProductImport(input.csv, importCategoryResolver(categoryIndex));
 
       // Names this supplier already lists. Scoped to them: another supplier
       // selling "Rebar 12mm" is not this supplier's problem, and telling them
@@ -1913,6 +1956,20 @@ const marketplaceRouter = router({
         errors,
         errorCount: [...parsed.errors, ...conflicts, ...unitErrors].length,
         duplicatesInFile: parsed.duplicatesInFile,
+        /**
+         * Grouped by the offending value, so fifty Waterproofing rows read as
+         * one problem affecting fifty rows rather than fifty problems. The
+         * per-row errors above are unchanged - an error export needs them.
+         */
+        categoryIssues: parsed.categoryIssues,
+        /**
+         * What each row WILL be filed under, shown before anything is written.
+         * A supplier who typed "Pools" sees "Swimming Pool Equipment" here
+         * rather than discovering the mapping afterwards.
+         */
+        resolvedCategories: Array.from(new Map(parsed.rows
+          .filter(row => row.resolvedCategory)
+          .map(row => [row.category, { supplied: row.category, resolved: row.resolvedCategory! }])).values()),
         imported: 0,
         dryRun: input.dryRun,
       };
@@ -1924,7 +1981,12 @@ const marketplaceRouter = router({
           supplierId: ctx.user.id,          // never from the file
           name: row.name,
           nameAr: row.nameAr,
-          category: row.category,
+          // The CANONICAL name and its id - not the raw cell. A supplier who
+          // typed "Pools" gets the same stored result as one who picked
+          // "Swimming Pool Equipment" from the dropdown, which is what makes
+          // bulk and single product genuinely the same operation.
+          category: row.resolvedCategory ?? row.category,
+          categoryId: row.categoryId,
           brand: row.brand,
           description: row.description,
           unit: row.unit,
@@ -1940,6 +2002,26 @@ const marketplaceRouter = router({
       return { ...summary, imported: parsed.rows.length };
     }),
 
+  /**
+   * THE LIVE TAXONOMY, for every surface that offers a category.
+   *
+   * Public because browsing is public, and because the alternative - each
+   * screen shipping its own compiled-in copy - is precisely the architecture
+   * that produced three disagreeing category lists.
+   *
+   * `scope` chooses the view: 'listable' is what a vendor may list against,
+   * 'public' is what may be browsed. Both are filters over the same rows.
+   */
+  categories: publicProcedure
+    .input(z.object({ view: z.enum(['listable', 'public']).default('listable') }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { categories: [] as ReturnType<typeof listableCategories> };
+      const index = await loadCategoryIndex(db);
+      const view = input?.view ?? 'listable';
+      return { categories: view === 'public' ? publicCategories(index) : listableCategories(index) };
+    }),
+
   /** The file a supplier fills in. Static, so it needs no authorization. */
   importTemplate: publicProcedure.query(() => ({ csv: importTemplateCsv() })),
 
@@ -1952,7 +2034,12 @@ const marketplaceRouter = router({
       nameAr: z.string().max(255).optional(),
       description: z.string().max(5000).optional(),
       descriptionAr: z.string().max(5000).optional(),
-      category: z.string().min(1).max(100).optional(),
+      /**
+       * Shape only. WHICH categories are acceptable is decided below by the
+       * same resolver create and bulk import use - see the block that sets
+       * `patch.categoryId`.
+       */
+      category: z.string().min(1).max(120).optional(),
       brand: z.string().max(100).optional(),
       origin: z.string().max(100).optional(),
       // Bounds match decimal(12,2). A negative price is not a discount.
@@ -2008,6 +2095,40 @@ const marketplaceRouter = router({
         if (value !== undefined) patch[key] = value;
       }
       if (price !== undefined) patch.price = String(price);
+
+      /**
+       * EDITING A CATEGORY GOES THROUGH THE SAME RESOLVER, and moves the LINK
+       * with the name.
+       *
+       * This is the third write path, and it was the remaining way for the two
+       * to drift apart: `category` was free text here and `categoryId` was
+       * never touched, so a product created as Waterproofing could be edited to
+       * any string at all while its link still pointed at Waterproofing. The
+       * row would then say two different things about itself - which is the
+       * exact shape of the reported defect, reached through Edit instead of
+       * through Add.
+       *
+       * A supplier who does not touch the category is unaffected: `patch` only
+       * carries what the PATCH actually sent.
+       */
+      if (typeof patch.category === 'string') {
+        const categoryIndex = await loadCategoryIndex(db);
+        const resolved = resolveProductCategory(categoryIndex, patch.category);
+        if (!resolved.ok) {
+          const rejection = resolved.rejection;
+          const message = rejection.reason === 'INACTIVE'
+            ? `"${rejection.category.nameEn}" is not currently available for new listings.`
+            : rejection.reason === 'SERVICE_ONLY'
+              ? `"${rejection.category.nameEn}" is a service category and cannot be used for a product.`
+              : rejection.reason === 'AMBIGUOUS'
+                ? `"${rejection.supplied}" matches more than one category. Use the exact category name.`
+                : `"${patch.category}" is not a BuildHub category.`;
+          throw new TRPCError({ code: 'BAD_REQUEST', message });
+        }
+        patch.category = resolved.category.nameEn;
+        patch.categoryId = resolved.category.id;
+      }
+
       if (Object.keys(patch).length === 0) return { id };
 
       await db.update(products).set(patch)
@@ -2178,14 +2299,25 @@ const marketplaceRouter = router({
       return { id: input.id, images: input.images };
     }),
 
-  categories: publicProcedure.query(async () => {
-    return [
-      'Materials', 'Furniture', 'Lighting', 'Electrical', 'Plumbing',
-      'HVAC', 'Paint', 'Ceramics', 'Granite', 'Marble', 'Wood',
-      'Doors', 'Windows', 'Roofing', 'Glass', 'Steel', 'Concrete',
-      'Waterproofing', 'Solar', 'Smart Home', 'Pools', 'Landscaping',
-      'Security', 'Fire Fighting', 'Cleaning', 'Maintenance', 'Moving',
-    ];
+  /**
+   * THE FOURTH LIST, AND THE ONE THAT EXPLAINS THE REPORTED FAILURE.
+   *
+   * This returned a hard-coded array of 27 names that INCLUDED "Waterproofing"
+   * and "Pools" - while the write path validated against a different list of
+   * 19 that did not. The marketplace filter offered a category, a supplier
+   * chose it, and listing it was then refused as "not a BuildHub category".
+   * The product was telling the user two different things about itself.
+   *
+   * It now serves the same taxonomy as everything else. The shape stays a
+   * string array so Marketplace.tsx keeps working; `marketplace.categories`
+   * with a view argument is the richer form for surfaces that need slugs and
+   * Arabic names.
+   */
+  categoryNames: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [] as string[];
+    const index = await loadCategoryIndex(db);
+    return publicCategories(index).map(category => category.nameEn);
   }),
   questions: publicProcedure.input(z.object({ productId: z.number() })).query(async ({ input }) => {
     const db = await getDb();

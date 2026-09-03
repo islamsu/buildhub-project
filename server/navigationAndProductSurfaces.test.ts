@@ -26,7 +26,18 @@ import { readSourceForAssertions } from './_testing/sourceText';
 import { PRODUCT_UNITS, isProductUnit, normaliseUnit } from '@shared/productUnits';
 import { parseProductImport } from '@shared/productImport';
 import { canCreateProject, creatorProjectRole } from '@shared/projectAccess';
-import { PRODUCT_CATEGORIES } from '@shared/productCategories';
+import { SEED_CATEGORIES } from '@shared/categoryTaxonomy';
+import { indexFromSeed, importCategoryResolver } from './categoryService';
+
+/**
+ * The REAL resolver over the REAL seed.
+ *
+ * parseProductImport used to take a list of permitted category strings, which
+ * is exactly how bulk upload came to disagree with single product listing. It
+ * now takes the same resolver the single-product path uses, so these tests
+ * exercise the actual resolution rather than a stand-in list.
+ */
+const CATEGORY_RESOLVER = importCategoryResolver(indexFromSeed(SEED_CATEGORIES));
 
 const read = (relative: string) => readSourceForAssertions(readFileSync(new URL(relative, import.meta.url), 'utf8'));
 const ROUTERS = read('./routers.ts');
@@ -198,7 +209,7 @@ describe('country of origin', () => {
       'Rebar 12mm,steel,22500,ton,Materials',
       'Washed sand,sand,180,m3,Materials',
     ].join('\n');
-    const parsed = parseProductImport(csv, PRODUCT_CATEGORIES);
+    const parsed = parseProductImport(csv, CATEGORY_RESOLVER);
     expect(parsed.rows, 'the parser produced no rows').toHaveLength(2);
     // The parser must actually carry the unit through; if it ever stops, the
     // rule silently passes everything and this catches that too.

@@ -3,7 +3,19 @@ import {
   importTemplateCsv, parseCsv, parseProductImport,
   MAX_IMPORT_ROWS, IMPORT_COLUMNS,
 } from '@shared/productImport';
-import { PRODUCT_CATEGORIES } from '@shared/productCategories';
+import { SEED_CATEGORIES } from '@shared/categoryTaxonomy';
+import { indexFromSeed, importCategoryResolver } from './categoryService';
+import { productCategories, productCategoryAliases } from '../drizzle/schema';
+
+/**
+ * The REAL resolver over the REAL seed.
+ *
+ * parseProductImport used to take a list of permitted category strings, which
+ * is exactly how bulk upload came to disagree with single product listing. It
+ * now takes the same resolver the single-product path uses, so these tests
+ * exercise the actual resolution rather than a stand-in list.
+ */
+const CATEGORY_RESOLVER = importCategoryResolver(indexFromSeed(SEED_CATEGORIES));
 
 vi.mock('./db', () => ({ getDb: vi.fn() }));
 import { appRouter } from './routers';
@@ -36,10 +48,35 @@ const ctx = (userRole = 'supplier', onboardingStatus = 'approved'): TrpcContext 
 const HEAD = IMPORT_COLUMNS.join(',');
 const csv = (...rows: string[]) => [HEAD, ...rows].join('\n');
 
+/**
+ * The taxonomy rows the resolver reads, shaped like the table.
+ *
+ * Derived from the real seed rather than invented, so a test cannot pass
+ * against a category vocabulary the product does not have.
+ */
+const CATEGORY_ROWS = SEED_CATEGORIES.map((seed, i) => ({
+  id: i + 1, slug: seed.slug, nameEn: seed.nameEn, nameAr: seed.nameAr,
+  scope: seed.scope ?? 'PRODUCT', status: 'active', parentId: null, sortOrder: i, icon: null,
+}));
+const ALIAS_ROWS = SEED_CATEGORIES.flatMap((seed, i) =>
+  (seed.aliases ?? []).map(alias => ({ id: 0, categoryId: i + 1, alias, normalized: alias.toLowerCase() })));
+
 function stubDb(existingNames: string[] = []) {
   const written: Record<string, unknown>[][] = [];
   (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
-    select: () => ({ from: () => ({ where: () => Promise.resolve(existingNames.map(name => ({ name }))) }) }),
+    // `from()` is itself awaitable, because loadCategoryIndex reads a whole
+    // table with no WHERE, while the supplier-name lookup chains one.
+    select: () => ({
+      from: (table: any) => {
+        const rows = table === productCategories ? CATEGORY_ROWS
+          : table === productCategoryAliases ? ALIAS_ROWS
+          : existingNames.map(name => ({ name }));
+        return Object.assign(
+          { where: () => Promise.resolve(existingNames.map(name => ({ name }))) },
+          { then: (resolve: (v: unknown) => unknown) => resolve(rows) },
+        );
+      },
+    }),
     transaction: async (cb: (t: unknown) => Promise<unknown>) => cb({
       insert: () => ({ values: (rows: Record<string, unknown>[]) => { written.push(rows); return Promise.resolve([{ insertId: 1 }]); } }),
     }),
@@ -73,7 +110,7 @@ describe('the file is read as CSV, not split on commas', () => {
   });
 
   it('the template it hands out actually parses, and carries Arabic', () => {
-    const parsed = parseProductImport(importTemplateCsv(), PRODUCT_CATEGORIES);
+    const parsed = parseProductImport(importTemplateCsv(), CATEGORY_RESOLVER);
     expect(parsed.errors, JSON.stringify(parsed.errors)).toEqual([]);
     expect(parsed.rows.length).toBeGreaterThan(0);
     expect(parsed.rows.some(row => /[؀-ۿ]/.test(row.nameAr ?? ''))).toBe(true);
@@ -88,7 +125,7 @@ describe('validation reports every problem, not the first', () => {
       ',Materials,,,,,,,',                     // no name
       'Cement,NotACategory,,,,,,,',            // bad category
       'Tile,Materials,,notanumber,,,,,',       // bad price
-    ), PRODUCT_CATEGORIES);
+    ), CATEGORY_RESOLVER);
     expect(errors.length).toBeGreaterThanOrEqual(3);
     expect(errors.map(e => e.line)).toEqual(expect.arrayContaining([2, 3, 4]));
     expect(errors.some(e => e.column === 'name')).toBe(true);
@@ -97,18 +134,18 @@ describe('validation reports every problem, not the first', () => {
 
   it('rejects a category outside the BuildHub taxonomy', () => {
     // A category the directory has no filter for makes the product unfindable.
-    const { errors } = parseProductImport(csv('Rebar,,Invented Category,,,,,,'), PRODUCT_CATEGORIES);
+    const { errors } = parseProductImport(csv('Rebar,,Invented Category,,,,,,'), CATEGORY_RESOLVER);
     expect(errors.some(e => e.column === 'category')).toBe(true);
   });
 
   it('accepts Arabic-Indic digits, which an Egyptian spreadsheet may hold', () => {
-    const { rows, errors } = parseProductImport(csv('Rebar,,Materials,,١٢٥٠,,,,'), PRODUCT_CATEGORIES);
+    const { rows, errors } = parseProductImport(csv('Rebar,,Materials,,١٢٥٠,,,,'), CATEGORY_RESOLVER);
     expect(errors).toEqual([]);
     expect(rows[0].price).toBe(1250);
   });
 
   it('accepts a thousands separator', () => {
-    const { rows } = parseProductImport(csv('Rebar,,Materials,,"18,500",,,,'), PRODUCT_CATEGORIES);
+    const { rows } = parseProductImport(csv('Rebar,,Materials,,"18,500",,,,'), CATEGORY_RESOLVER);
     expect(rows[0].price).toBe(18500);
   });
 
@@ -116,7 +153,7 @@ describe('validation reports every problem, not the first', () => {
     const { errors } = parseProductImport(csv(
       'A,,Materials,,-5,,,,',
       'B,,Materials,,10,2.5,,,',
-    ), PRODUCT_CATEGORIES);
+    ), CATEGORY_RESOLVER);
     expect(errors.some(e => e.column === 'price')).toBe(true);
     expect(errors.some(e => e.column === 'stock')).toBe(true);
   });
@@ -125,25 +162,25 @@ describe('validation reports every problem, not the first', () => {
     const { errors, duplicatesInFile } = parseProductImport(csv(
       'Rebar 12mm,,Materials,,10,,,,',
       'Rebar 12mm,,Materials,,20,,,,',
-    ), PRODUCT_CATEGORIES);
+    ), CATEGORY_RESOLVER);
     expect(errors.some(e => /Duplicate of row 2/.test(e.message))).toBe(true);
     expect(duplicatesInFile).toContain('Rebar 12mm');
   });
 
   it('refuses a missing required column outright', () => {
-    const { errors } = parseProductImport('name,price\nRebar,10', PRODUCT_CATEGORIES);
+    const { errors } = parseProductImport('name,price\nRebar,10', CATEGORY_RESOLVER);
     expect(errors.some(e => /Missing required column "category"/.test(e.message))).toBe(true);
   });
 
   it('refuses a file with more rows than the cap', () => {
     const many = Array.from({ length: MAX_IMPORT_ROWS + 1 }, (_, i) => `P${i},,Materials,,1,,,,`);
-    const { errors, rows } = parseProductImport(csv(...many), PRODUCT_CATEGORIES);
+    const { errors, rows } = parseProductImport(csv(...many), CATEGORY_RESOLVER);
     expect(rows).toEqual([]);
     expect(errors[0].message).toMatch(/exceeds the maximum/);
   });
 
   it('an empty file is an error, not an empty success', () => {
-    expect(parseProductImport('', PRODUCT_CATEGORIES).errors[0].message).toMatch(/empty/i);
+    expect(parseProductImport('', CATEGORY_RESOLVER).errors[0].message).toMatch(/empty/i);
   });
 });
 
@@ -183,16 +220,35 @@ describe('the server owns what the file cannot', () => {
      */
     const { rows } = parseProductImport(
       'name,category,supplierId,active,featured,rating\nRebar,Materials,999,1,1,5\n',
-      PRODUCT_CATEGORIES,
+      CATEGORY_RESOLVER,
     );
     expect(rows).toHaveLength(1);
-    const allowed = new Set([...IMPORT_COLUMNS, 'line']);
+    // The rule is "nothing FROM THE FILE reaches the insert". `categoryId` and
+    // `resolvedCategory` are the server's own answer from the category
+    // resolver, not columns anybody can put in a spreadsheet - a file
+    // containing a `categoryId` column is ignored exactly like `supplierId`,
+    // which the explicit list below still proves.
+    const serverDerived = ['categoryId', 'resolvedCategory'];
+    const allowed = new Set([...IMPORT_COLUMNS, 'line', ...serverDerived]);
     for (const key of Object.keys(rows[0])) {
       expect(allowed.has(key), `"${key}" must not survive parsing`).toBe(true);
     }
     for (const forbidden of ['supplierId', 'active', 'featured', 'rating']) {
       expect(rows[0]).not.toHaveProperty(forbidden);
     }
+  });
+
+  it('a categoryId column in the file cannot choose the category', async () => {
+    // Now that products carry a real categoryId, a file offering one is the
+    // obvious way to try to reach a category the resolver would refuse.
+    const { rows } = parseProductImport(
+      'name,category,categoryId\nRebar,Materials,9999\n',
+      CATEGORY_RESOLVER,
+    );
+    expect(rows).toHaveLength(1);
+    // The id comes from resolving "Materials", never from the cell.
+    expect(rows[0].categoryId).not.toBe(9999);
+    expect(rows[0].resolvedCategory).toBe('Materials');
   });
 
   it('a supplier cannot mark their own import featured or pre-rated', async () => {
@@ -290,5 +346,96 @@ describe('an import is all or nothing', () => {
     const result = await appRouter.createCaller(ctx()).marketplace.importProducts({ csv: csv(...bad), dryRun: true });
     expect(result.errors.length).toBeLessThanOrEqual(100);
     expect(result.errorCount).toBeGreaterThan(result.errors.length);
+  });
+});
+
+// ══ 5. THE THIRD WRITE PATH ════════════════════════════════════════════════
+//
+// Add and Bulk were reconciled onto one resolver; EDIT was the remaining way
+// for them to drift apart. `updateProduct` took `category` as free text, never
+// resolved it, and never touched `categoryId` - so a product created as
+// Waterproofing could be edited to any string at all while its link still
+// pointed at Waterproofing. The row then says two different things about
+// itself, which is the reported defect reached through a different door.
+
+describe('editing a product goes through the SAME resolver', () => {
+  const OWNED = {
+    id: 77, supplierId: 501, name: 'Bitumen Membrane', category: 'Waterproofing',
+    categoryId: SEED_CATEGORIES.findIndex(s => s.slug === 'waterproofing') + 1,
+    unit: 'roll', price: '850', stock: 10, active: true, description: null,
+  };
+
+  /** Enough of a driver for one edit: read the row, write the patch, audit it. */
+  function editStub() {
+    const patches: Record<string, unknown>[] = [];
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+      select: () => ({
+        from: (table: any) => {
+          const rows = table === productCategories ? CATEGORY_ROWS
+            : table === productCategoryAliases ? ALIAS_ROWS
+            : [OWNED];
+          return Object.assign(
+            { where: () => Promise.resolve(rows) },
+            { then: (resolve: (v: unknown) => unknown) => resolve(rows) },
+          );
+        },
+      }),
+      update: () => ({ set: (patch: Record<string, unknown>) => { patches.push(patch); return { where: () => Promise.resolve() }; } }),
+      insert: () => ({ values: () => Promise.resolve([{ insertId: 1 }]) }),
+    });
+    return patches;
+  }
+
+  const supplier = () => {
+    const base = ctx();
+    (base.user as { id: number }).id = OWNED.supplierId;
+    return base;
+  };
+
+  it('accepts the alias and stores the CANONICAL name, exactly as bulk does', async () => {
+    const patches = editStub();
+    await appRouter.createCaller(supplier()).marketplace.updateProduct({ id: OWNED.id, category: 'Pools' });
+    expect(patches[0].category).toBe('Swimming Pool Equipment');
+  });
+
+  it('THE LINK MOVES WITH THE NAME - never left pointing at the old category', async () => {
+    const patches = editStub();
+    await appRouter.createCaller(supplier()).marketplace.updateProduct({ id: OWNED.id, category: 'Pools' });
+    const pools = SEED_CATEGORIES.findIndex(s => s.slug === 'pools') + 1;
+    expect(patches[0].categoryId).toBe(pools);
+    expect(patches[0].categoryId).not.toBe(OWNED.categoryId);
+  });
+
+  it('refuses free text rather than storing it', async () => {
+    const patches = editStub();
+    await expect(
+      appRouter.createCaller(supplier()).marketplace.updateProduct({ id: OWNED.id, category: 'Not A Category At All' }),
+    ).rejects.toThrow(/not a BuildHub category/);
+    expect(patches, 'a refused edit must write nothing').toEqual([]);
+  });
+
+  it('names a hidden category as hidden, not as unknown', async () => {
+    // Same distinction the bulk path makes. A supplier told "not a BuildHub
+    // category" about a category that plainly exists goes hunting for a typo.
+    const patches = editStub();
+    CATEGORY_ROWS[OWNED.categoryId - 1].status = 'hidden';
+    try {
+      await expect(
+        appRouter.createCaller(supplier()).marketplace.updateProduct({ id: OWNED.id, category: 'Waterproofing' }),
+      ).rejects.toThrow(/not currently available for new listings/);
+    } finally {
+      CATEGORY_ROWS[OWNED.categoryId - 1].status = 'active';
+    }
+    expect(patches).toEqual([]);
+  });
+
+  it('leaves the category alone when the edit does not mention it', async () => {
+    // A supplier changing the price must not be refused because of a field
+    // they did not touch, and must not have their link rewritten.
+    const patches = editStub();
+    await appRouter.createCaller(supplier()).marketplace.updateProduct({ id: OWNED.id, price: 900 });
+    expect(patches[0]).not.toHaveProperty('category');
+    expect(patches[0]).not.toHaveProperty('categoryId');
+    expect(patches[0].price).toBe('900');
   });
 });
