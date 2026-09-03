@@ -670,16 +670,28 @@ restart.
       exhausted campaign ineligible and takes the next one, and a signup aged past
       the window earns nothing at all.
 
-- [ ] REF-2: correct the grant - wrap qualify -> reward -> apply -> status -> audit ->
-      notify in one transaction, and honour the return values currently discarded
-      (`setEnquiryAllowance`'s {ok:false} and `bookPlacement`'s {outcome:'rejected'}).
-      A reward becomes GRANTED only when its effect commits; otherwise PENDING or
-      REJECTED, which the schema already has and nothing writes.
-- [ ] REF-3: make the two working rewards actually work - entitlement rewards must
-      STACK rather than clobber an unrelated admin grant, and referral placements must
-      render (the hard-coded `category: 'General'` matches no scope, so the Spotlight
-      appears nowhere; `grantedBy` records the beneficiary as grantor of his own
-      placement).
+- [x] REF-2: the ledger no longer claims more than the effect delivered. The reward was
+      inserted as GRANTED before anything was applied, and BOTH calls that apply it
+      return a refusal that was discarded - so a row could read GRANTED while the
+      allowance was refused and the placement was never booked. It is now written
+      PENDING, applied, and promoted to GRANTED only once the effect commits;
+      otherwise REJECTED with the reason, the referral stays `qualified` (it did
+      qualify - the payout is what failed), and the inviter is NOT told they received
+      something they did not. PENDING/GRANTED/REJECTED were all already in the schema
+      and nothing wrote anything but GRANTED.
+- [x] REF-3 (placement half): the Spotlight is bookable where it can be seen.
+      `category: 'General'` is neither GLOBAL_PLACEMENT_SCOPE nor a taxonomy value and
+      publicPlacement matches scope EXACTLY, so every referral Spotlight ever booked
+      was invisible on every surface. Now GLOBAL. `grantedBy` recorded the beneficiary
+      as the grantor of his own placement; it is null - the platform - and both
+      `setEnquiryAllowance.actorId` and `bookPlacement.grantedBy` were widened to
+      `number | null` to match columns that were always nullable.
+- [ ] REF-3 (stacking half): entitlement rewards still CLOBBER rather than stack.
+      `setEnquiryAllowance` revokes the prior override and writes an absolute number,
+      so a referral reward silently destroys an unrelated admin grant and, on expiry,
+      the vendor falls back to the plan value rather than to the admin's. Needs the
+      referral bonus modelled as its own additive override row so both survive
+      independently.
 - [ ] REF-4: SUBSCRIPTION_EXTENSION as a real period extension, per the owner's
       decision - extend from the existing end date, never from now, refuse honestly
       when there is no finite period, and fabricate no payment or invoice.

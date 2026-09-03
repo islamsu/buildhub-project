@@ -214,6 +214,70 @@ try {
     && Number(sql(`select count(*) from referralRewards where referralId=${thirdReferral}`)) === 0,
     sql(`select ifnull(campaignId,'NULL') from referrals where id=${thirdReferral}`));
 
+  // ── THE LEDGER NEVER CLAIMS MORE THAN THE EFFECT DELIVERED ─────────────
+  check('the granted reward is GRANTED, with a grant timestamp',
+    sql(`select concat(status,'|',grantedAt is not null) from referralRewards where referralId=${referralId}`) === 'GRANTED|1',
+    sql(`select concat(status,'|',ifnull(grantedAt,'NULL')) from referralRewards where referralId=${referralId}`));
+
+  /*
+   * A REWARD WHOSE EFFECT CANNOT BE APPLIED MUST NOT READ AS GRANTED.
+   *
+   * The reward was inserted as GRANTED before anything was applied, and BOTH
+   * calls that apply it return a refusal that was discarded - so a row could
+   * say GRANTED while the allowance was refused and the placement was never
+   * booked. That row is the one an administrator quotes back to a vendor.
+   *
+   * Provoked with a campaign whose reward value is not a number of enquiries at
+   * all, which the application path refuses.
+   */
+  const broken = campaign(`ZG Unpayable ${stamp}`, { priority: 200, rewardValue: 'not-a-number' });
+  const fourth = await signUp('ref4', 'homeowner', code);
+  const fourthReferral = Number(sql(`select id from referrals where referredId=${fourth.id}`));
+  await admin.mutate('admin.verifyUser', { userId: fourth.id, verified: true });
+  check('an unpayable reward is recorded REJECTED, not GRANTED',
+    sql(`select status from referralRewards where referralId=${fourthReferral}`) === 'REJECTED',
+    sql(`select ifnull(status,'no row') from referralRewards where referralId=${fourthReferral}`));
+  check('and it carries the REASON it could not be paid',
+    /not a positive number/i.test(sql(`select ifnull(reversalReason,'') from referralRewards where referralId=${fourthReferral}`)),
+    sql(`select ifnull(reversalReason,'') from referralRewards where referralId=${fourthReferral}`));
+  check('the referral stays QUALIFIED - it qualified; the payout is what failed',
+    sql(`select status from referrals where id=${fourthReferral}`) === 'qualified',
+    sql(`select status from referrals where id=${fourthReferral}`));
+  check('and the inviter is NOT told they received a reward they did not receive',
+    Number(sql(`select count(*) from notifications where userId=${inviter.id} and type='referral'`))
+      === Number(sql(`select count(*) from referralRewards where recipientUserId=${inviter.id} and status='GRANTED'`)),
+    `${sql(`select count(*) from notifications where userId=${inviter.id} and type='referral'`)} notices for `
+    + `${sql(`select count(*) from referralRewards where recipientUserId=${inviter.id} and status='GRANTED'`)} grants`);
+  check('no entitlement was moved by the rejected reward',
+    (await inviter.session.query('billing.myEntitlements', undefined)).data?.qualifiedEnquiryAllowance
+      === (await inviter.session.query('billing.myEntitlements', undefined)).data?.qualifiedEnquiryAllowance);
+
+  // ── THE PLACEMENT REWARD IS BOOKED WHERE IT CAN BE SEEN ────────────────
+  // `category: 'General'` is neither GLOBAL_PLACEMENT_SCOPE nor a taxonomy
+  // value, and publicPlacement matches scope EXACTLY - so every referral
+  // Spotlight ever booked was invisible on every surface.
+  const spotlight = campaign(`ZG Spotlight ${stamp}`, {
+    priority: 300, rewardType: 'TEMPORARY_FEATURED', rewardValue: 'SPOTLIGHT', rewardDurationDays: 14,
+  });
+  const fifth = await signUp('ref5', 'homeowner', code);
+  const fifthReferral = Number(sql(`select id from referrals where referredId=${fifth.id}`));
+  await admin.mutate('admin.verifyUser', { userId: fifth.id, verified: true });
+  const placementStatus = sql(`select ifnull(status,'no row') from referralRewards where referralId=${fifthReferral}`);
+  if (placementStatus === 'GRANTED') {
+    check('PLACEMENT: booked with a scope the public resolver can actually match',
+      sql(`select category from vendorSponsorships where vendorId=${inviter.id} and source='REFERRAL_REWARD' limit 1`) === 'GLOBAL',
+      sql(`select ifnull(category,'none') from vendorSponsorships where vendorId=${inviter.id} and source='REFERRAL_REWARD' limit 1`));
+    check('PLACEMENT: the platform is the grantor, not the beneficiary himself',
+      sql(`select ifnull(grantedBy,'NULL') from vendorSponsorships where vendorId=${inviter.id} and source='REFERRAL_REWARD' limit 1`) === 'NULL');
+  } else {
+    // A refusal is a legitimate outcome here (the inviter may already hold a
+    // Spotlight). What must NOT happen is a GRANTED row with no placement.
+    check('PLACEMENT: a refused booking is recorded REJECTED, with its reason',
+      placementStatus === 'REJECTED'
+      && sql(`select ifnull(reversalReason,'') from referralRewards where referralId=${fifthReferral}`).length > 0,
+      `${placementStatus}: ${sql(`select ifnull(reversalReason,'') from referralRewards where referralId=${fifthReferral}`)}`);
+  }
+
   // ── AUDIT AND NOTIFICATION ─────────────────────────────────────────────
   // ONE AUDIT ROW PER REWARD, not a hard-coded one: the second referral also
   // paid this inviter, from the next eligible campaign. Tying the count to the

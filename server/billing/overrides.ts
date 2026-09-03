@@ -303,7 +303,13 @@ export async function setEnquiryAllowance(args: {
   /** null = unlimited. */
   limit: number | null;
   reason: string | null;
-  actorId: number;
+  /**
+   * Who granted it. NULL means the platform itself - a referral reward has no
+   * administrator behind it, and recording the beneficiary as the actor made a
+   * vendor the author of his own entitlement. The column has always been
+   * nullable; only this parameter was not.
+   */
+  actorId: number | null;
   endsAt?: Date | null;
   now?: Date;
 }): Promise<SetAllowanceResult> {
