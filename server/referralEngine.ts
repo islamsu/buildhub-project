@@ -5,6 +5,7 @@ import {
 import { resolveReferralCampaign, type CampaignRejection } from './referralCampaignResolution';
 import { GLOBAL_PLACEMENT_SCOPE } from '../shared/placement';
 import { grantEnquiryBonus } from './billing/overrides';
+import { extendSubscriptionPeriod } from './billing/lifecycle';
 import { resolveVendorEntitlements } from './billing/entitlements';
 import { notifyUser } from './notifications';
 import { bookPlacement } from './placementBooking';
@@ -242,9 +243,46 @@ export async function qualifyReferralEvent(
       return { ok: true as const };
     }
 
+    if (campaign.rewardType === 'SUBSCRIPTION_EXTENSION') {
+      /*
+       * A REAL PERIOD EXTENSION, AND NOTHING THAT LOOKS LIKE A PAYMENT.
+       *
+       * The owner's decision: this may extend a legitimate existing
+       * subscription period, and must never fabricate a payment, an invoice, a
+       * transaction, revenue, commission, a card charge or a paid renewal.
+       * extendSubscriptionPeriod touches only the end date, and refuses when
+       * there is no finite period to extend rather than manufacturing one -
+       * which would be granting paid access nobody decided to give.
+       *
+       * The reward value is a NUMBER OF DAYS. rewardDurationDays is a different
+       * thing entirely: it is how long the reward itself remains in force, and
+       * for an extension the effect is permanent once applied.
+       */
+      const days = Number(campaign.rewardValue);
+      if (!Number.isInteger(days) || days <= 0) {
+        return { ok: false as const, reason: `Campaign reward value "${campaign.rewardValue}" is not a whole number of days.` };
+      }
+      const extension = await extendSubscriptionPeriod({
+        userId: referral.referrerId,
+        days,
+        reason: `Referral reward from ${campaign.name}`,
+        source: 'system',
+        actorId: null,
+        now,
+      });
+      if (extension.outcome !== 'applied') {
+        const why = extension.outcome === 'rejected' || extension.outcome === 'noop' ? extension.reason : 'unknown';
+        return { ok: false as const, reason: `Subscription extension refused: ${why}` };
+      }
+      // No effectRef: the effect is a moved date on the subscription itself,
+      // not a row that could be deleted. Reversal shortens it back, which
+      // REF-6 must do carefully - see the note there about never taking away
+      // time the vendor paid for or an administrator granted.
+      return { ok: true as const };
+    }
+
     // A reward type with no implementation must not silently read as granted.
-    // SUBSCRIPTION_EXTENSION lands in REF-4.
-    return { ok: false as const, reason: `${campaign.rewardType} is not yet applied by BuildHub.` };
+    return { ok: false as const, reason: `${campaign.rewardType} is not applied by BuildHub.` };
   })();
 
   if (!applied.ok) {

@@ -697,9 +697,25 @@ restart.
       0045 adds `referralRewards.effectRef` (`OVERRIDE:123` / `PLACEMENT:45`) so a
       reversal can undo exactly what a reward created rather than matching on a reason
       string that two campaigns could share.
-- [ ] REF-4: SUBSCRIPTION_EXTENSION as a real period extension, per the owner's
-      decision - extend from the existing end date, never from now, refuse honestly
-      when there is no finite period, and fabricate no payment or invoice.
+- [x] REF-4: SUBSCRIPTION_EXTENSION is a real period extension, per the owner's
+      decision. `extendSubscriptionPeriod` in server/billing/lifecycle.ts moves the
+      END DATE and nothing else - a test sweeps every other vendorSubscriptions column
+      and fails if any is written, and another refuses any money-shaped field. It
+      extends FROM THE EXISTING END DATE (extending from `now` would confiscate a
+      vendor's unused time and call it a reward), prefers the TRIAL end date while a
+      trial is running, cannot move a period backwards however it is called, and
+      REFUSES when there is no finite period rather than manufacturing one - which
+      would be granting paid access nobody decided to give. Proven live: 21 days left
+      plus 30 is 51, a free account is refused with that reason, and no payment,
+      invoice or renewal event is written.
+
+      A REAL DEFECT the probe exposed while proving this: a REJECTED reward was
+      consuming the campaign cap. A misconfigured campaign - a reward value that is
+      not a number, an extension for an account with no period - silently burned the
+      inviter's one slot, and they could never be paid by that campaign. Only rewards
+      that HAPPENED count now (PENDING, GRANTED, EXPIRED, REVERSED); REJECTED never
+      did. REVERSED still counts deliberately, or reversal becomes a way to farm
+      rewards.
 - [ ] REF-5: wire the remaining qualification events (only ACCOUNT_VERIFIED is hooked),
       and route `admin.qualifyReferral` through the same engine.
 - [ ] REF-6: reversal that reverses; expiry as derived state; anti-abuse; the admin and

@@ -332,6 +332,61 @@ try {
       twoBonuses === 49, `expected 40+6+3=49, got ${twoBonuses}`);
   }
 
+  // ── SUBSCRIPTION_EXTENSION: real time, and no invented money ───────────
+  //
+  // The owner's decision: this may extend a legitimate existing period, and
+  // must never fabricate a payment, invoice, transaction, revenue, commission
+  // or paid renewal. It must extend from the EXISTING end date - extending
+  // from now would confiscate a vendor's unused time and call it a reward -
+  // and must refuse honestly when there is no finite period to extend.
+  const extInviter = await signUp('inv3', 'supplier');
+  sql(`update users set onboardingStatus='approved', verified=1 where id=${extInviter.id}`);
+  const extCode = sql(`select referralCode from users where id=${extInviter.id}`);
+  const extCampaign = campaign(`ZG Extend ${stamp}`, {
+    priority: 500, rewardType: 'SUBSCRIPTION_EXTENSION', rewardValue: '30', rewardDurationDays: null,
+  });
+
+  // FIRST, the refusal: this account has no finite period.
+  const noPeriod = await signUp('ref7', 'homeowner', extCode);
+  const noPeriodReferral = Number(sql(`select id from referrals where referredId=${noPeriod.id}`));
+  await admin.mutate('admin.verifyUser', { userId: noPeriod.id, verified: true });
+  check('EXTENSION: a free account with no finite period is REFUSED, not given one',
+    sql(`select status from referralRewards where referralId=${noPeriodReferral}`) === 'REJECTED'
+    && /no finite subscription period/i.test(sql(`select ifnull(reversalReason,'') from referralRewards where referralId=${noPeriodReferral}`)),
+    sql(`select concat(ifnull(status,'none'),': ',ifnull(reversalReason,'')) from referralRewards where referralId=${noPeriodReferral}`));
+  check('and no subscription period was invented for them',
+    sql(`select ifnull(count(*),0) from vendorSubscriptions where userId=${extInviter.id} and currentPeriodEnd is not null`) === '0',
+    sql(`select ifnull(count(*),0) from vendorSubscriptions where userId=${extInviter.id} and currentPeriodEnd is not null`));
+
+  // NOW give the inviter a real period, and extend THAT.
+  sql(`insert into vendorSubscriptions (userId, plan, status, currentPeriodEnd)
+       values (${extInviter.id}, 'professional', 'active', date_add(now(), interval 21 day))
+       on duplicate key update plan='professional', status='active', currentPeriodEnd=date_add(now(), interval 21 day)`);
+  const endBefore = sql(`select currentPeriodEnd from vendorSubscriptions where userId=${extInviter.id}`);
+  const daysBefore = Number(sql(`select datediff(currentPeriodEnd, now()) from vendorSubscriptions where userId=${extInviter.id}`));
+
+  const extended = await signUp('ref8', 'homeowner', extCode);
+  const extendedReferral = Number(sql(`select id from referrals where referredId=${extended.id}`));
+  await admin.mutate('admin.verifyUser', { userId: extended.id, verified: true });
+
+  check('EXTENSION: the reward is GRANTED once the period actually moved',
+    sql(`select status from referralRewards where referralId=${extendedReferral}`) === 'GRANTED',
+    sql(`select concat(ifnull(status,'none'),': ',ifnull(reversalReason,'')) from referralRewards where referralId=${extendedReferral}`));
+  const daysAfter = Number(sql(`select datediff(currentPeriodEnd, now()) from vendorSubscriptions where userId=${extInviter.id}`));
+  check('EXTENSION: extended FROM THE EXISTING END DATE - 21 days left plus 30 is 51, not 30',
+    daysAfter === daysBefore + 30, `${daysBefore} -> ${daysAfter}`);
+  check('EXTENSION: and the period only ever moved FORWARD',
+    sql(`select currentPeriodEnd > '${endBefore}' from vendorSubscriptions where userId=${extInviter.id}`) === '1');
+
+  // NO INVENTED MONEY. Whatever billing history it wrote, none of it is a
+  // payment, and no invoice or transaction row appeared.
+  const moneyEvents = Number(sql(`select count(*) from billingEvents
+      where userId=${extInviter.id} and (action like '%payment%' or action like '%invoice%' or action like '%renew%')`));
+  check('EXTENSION: no payment, invoice or renewal event was fabricated', moneyEvents === 0, `${moneyEvents}`);
+  check('EXTENSION: the billing history names what actually happened',
+    Number(sql(`select count(*) from billingEvents where userId=${extInviter.id} and action='subscription_extended'`)) >= 1,
+    sql(`select group_concat(distinct action) from billingEvents where userId=${extInviter.id}`));
+
   // ── AUDIT AND NOTIFICATION ─────────────────────────────────────────────
   // ONE AUDIT ROW PER REWARD, not a hard-coded one: the second referral also
   // paid this inviter, from the next eligible campaign. Tying the count to the
@@ -353,6 +408,8 @@ try {
     sql(`delete from referralRewards where recipientUserId in (${ids})`);
     sql(`delete from referrals where referrerId in (${ids}) or referredId in (${ids})`);
     sql(`delete from vendorSponsorships where vendorId in (${ids})`);
+    sql(`delete from billingEvents where userId in (${ids})`);
+    sql(`delete from vendorSubscriptions where userId in (${ids})`);
     sql(`delete from notifications where userId in (${ids})`);
     sql(`delete from userAccountAuditEvents where userId in (${ids}) or actorId in (${ids})`);
     sql(`delete from users where id in (${ids})`);

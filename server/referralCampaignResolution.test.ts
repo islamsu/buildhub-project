@@ -154,6 +154,30 @@ describe('ELIGIBILITY FIRST, PRIORITY SECOND', () => {
   });
 });
 
+describe('a cap counts rewards that HAPPENED', () => {
+  /*
+   * A live probe found this: a REJECTED reward - one the application path
+   * refused, so nothing was ever paid - consumed the inviter's one slot on
+   * that campaign, and they could never be paid by it. A campaign
+   * misconfiguration silently burned a vendor's entitlement.
+   *
+   * chooseCampaign takes the counts already tallied, so the rule lives in
+   * capUsage; these pin the vocabulary that decides it.
+   */
+  it('names exactly the states that consume a cap', async () => {
+    const source = readFileSync(new URL('./referralCampaignResolution.ts', import.meta.url), 'utf8');
+    expect(source).toContain("new Set(['PENDING', 'GRANTED', 'EXPIRED', 'REVERSED'])");
+    expect(source).not.toMatch(/COUNTS_TOWARD_CAP = new Set\(\[[^\]]*'REJECTED'/);
+  });
+
+  it('and the tally filters on that set rather than counting every row', () => {
+    const source = readFileSync(new URL('./referralCampaignResolution.ts', import.meta.url), 'utf8');
+    expect(source).toContain('if (!COUNTS_TOWARD_CAP.has(String(row.status))) continue;');
+    // Grouping has to include status, or the filter has nothing to read.
+    expect(source).toContain('referralRewards.status');
+  });
+});
+
 describe('the attribution window is part of eligibility', () => {
   it('a referral inside the window qualifies', () => {
     expect(choose([campaign({ attributionWindowDays: 90 })],

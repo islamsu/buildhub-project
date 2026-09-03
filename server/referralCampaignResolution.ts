@@ -94,6 +94,16 @@ const rolesFrom = (raw: string): string[] => {
   }
 };
 
+/**
+ * Which reward states use up a cap.
+ *
+ * PENDING is in flight and will resolve one way or the other; counting it stops
+ * two concurrent events both believing there is room. GRANTED plainly counts.
+ * EXPIRED and REVERSED were real rewards that ran their course or were taken
+ * back. REJECTED is the one that never happened at all.
+ */
+const COUNTS_TOWARD_CAP = new Set(['PENDING', 'GRANTED', 'EXPIRED', 'REVERSED']);
+
 const time = (value: Date | string | null | undefined): number | null =>
   value == null ? null : new Date(value).getTime();
 
@@ -119,14 +129,24 @@ async function capUsage(db: any, campaignIds: number[], referrerId: number) {
   const rows = await db.select({
     campaignId: referralRewards.campaignId,
     recipientUserId: referralRewards.recipientUserId,
+    status: referralRewards.status,
     total: sql<number>`count(*)`,
-  }).from(referralRewards).groupBy(referralRewards.campaignId, referralRewards.recipientUserId);
+  }).from(referralRewards).groupBy(referralRewards.campaignId, referralRewards.recipientUserId, referralRewards.status);
 
   const perCampaign = new Map<number, number>();
   const perInviter = new Map<number, number>();
   for (const row of rows as any[]) {
     const campaignId = Number(row.campaignId);
     if (!campaignIds.includes(campaignId)) continue;
+    // A REJECTED reward never happened, so it must not consume the cap.
+    // Otherwise a campaign misconfiguration - a reward value that is not a
+    // number, an extension for an account with no period - silently burns the
+    // inviter's one chance at that campaign, and they can never be paid by it.
+    // A live probe found exactly that.
+    //
+    // REVERSED is different and DOES consume: that reward was granted and then
+    // withdrawn. Freeing the cap would make reversal a way to farm rewards.
+    if (!COUNTS_TOWARD_CAP.has(String(row.status))) continue;
     const count = Number(row.total ?? 0);
     perCampaign.set(campaignId, (perCampaign.get(campaignId) ?? 0) + count);
     if (Number(row.recipientUserId) === referrerId) {
