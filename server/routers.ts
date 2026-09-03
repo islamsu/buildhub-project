@@ -47,10 +47,10 @@ import {
   spotlightProducts, spotlightProviders,
 } from './publicPlacement';
 import { placementPerformance, recordPlacementEvent } from './placementAnalytics';
-import { ENQUIRY_STATES, RFQ_STATUSES, parseEnquiryReference } from './vendorEnquiry';
+import { ENQUIRY_STATES, RFQ_STATUSES, enquiryReference, parseEnquiryReference } from './vendorEnquiry';
 import { PERSON_NOTE_FORBIDDEN_MESSAGE, mayReadPersonNotes, mayWritePersonNotes } from './vendorEnquiryAdminActions';
-import { assignEnquiry, assignableAdmins, currentAssignment, currentAssignments } from './enquiryAssignment';
-import { ENQUIRY_LIST_MAX_LIMIT, enquiryDetail, enquiryList, enquiryOverview } from './vendorEnquiryQuery';
+import { ASSIGNEE_INELIGIBLE_MESSAGE, assignEnquiry, assignableAdmins, currentAssignment, isAssignable } from './enquiryAssignment';
+import { BULK_ASSIGN_LIMIT, ENQUIRY_EXPORT_LIMIT, ENQUIRY_LIST_MAX_LIMIT, enquiryDetail, enquiryList, enquiryOverview, iso, toCsvRow } from './vendorEnquiryQuery';
 import { PLACEMENT_CLIENT_EVENTS, PLACEMENT_METRIC_FORMULAS } from '@shared/placementAnalytics';
 import { formatProjectContext, resolveProjectContext } from './_core/projectContext';
 import { isAllowedProjectDocumentType, clampProjectProgress } from '../shared/projectFeatures';
@@ -5081,8 +5081,11 @@ const adminRouter = router({
       rfqStatus: z.enum(RFQ_STATUSES).optional(),
       vendorId: z.number().int().positive().optional(),
       rfqId: z.number().int().positive().optional(),
+      // null asks for the unassigned ones - a real question, and distinct from
+      // omitting the filter entirely.
+      assigneeId: z.number().int().positive().nullable().optional(),
       search: z.string().trim().max(200).optional(),
-      sort: z.enum(['activity', 'rfq', 'vendor', 'state']).optional(),
+      sort: z.enum(['activity', 'rfq', 'vendor', 'state', 'assignee']).optional(),
       direction: z.enum(['asc', 'desc']).optional(),
       limit: z.number().int().min(1).max(ENQUIRY_LIST_MAX_LIMIT).optional(),
       offset: z.number().int().min(0).optional(),
@@ -5090,27 +5093,10 @@ const adminRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const page = await enquiryList(db, input ?? {});
-      // ONE extra query for the whole page, not one per row. The window
-      // function picks the latest assignment per pair in the database rather
-      // than pulling every assignment ever made into Node.
-      const assignments = await currentAssignments(db, page.rows.map(row => ({
-        rfqId: row.rfqId, vendorId: row.vendorId,
-      })));
-      return {
-        ...page,
-        rows: page.rows.map(row => {
-          const assignment = assignments.get(`${row.rfqId}:${row.vendorId}`);
-          return {
-            ...row,
-            // null means UNASSIGNED, whether the pair was never assigned or was
-            // assigned and then taken back. The screen says "unassigned" either
-            // way, which is the truth an operator needs.
-            assigneeId: assignment?.assigneeId ?? null,
-            assigneeName: assignment?.assigneeId == null ? null : assignment.assigneeName,
-          };
-        }),
-      };
+      // The assignee comes from the query itself, not a merge afterwards -
+      // that is what lets `assigneeId` be a FILTER rather than a decoration,
+      // and it is one query rather than two.
+      return enquiryList(db, input ?? {});
     }),
 
   /**
@@ -5325,6 +5311,155 @@ const adminRouter = router({
         });
       }
       return { success: true, assignmentId, notified: notify !== null };
+    }),
+
+  /**
+   * BULK ASSIGNMENT - AND ONLY BULK ASSIGNMENT (§17).
+   *
+   * The brief asks for bulk actions. Most of the verbs on this screen must
+   * never be bulk:
+   *
+   *   CLOSING is an RFQ-level act affecting every vendor on it, so a bulk close
+   *     of twenty enquiries could close twenty RFQs and end hundreds of other
+   *     vendors' work. There is no undo.
+   *   INVITING in bulk would notify vendors who were never chosen by the
+   *     requester, on the requester's behalf.
+   *   ADJUSTING ALLOWANCES in bulk is a Super Admin action with a per-vendor
+   *     consumption check that cannot be answered in aggregate.
+   *
+   * Assignment is different in every way that matters: it is reversible, it is
+   * append-only so nothing is destroyed, it touches no customer or vendor
+   * state, and it is the one action an operations lead genuinely performs on
+   * twenty rows at once. So it is the only one offered, and the ceiling is low
+   * enough that a mistaken click is a minute's work to undo.
+   */
+  bulkAssignEnquiries: adminWith('marketplace.manage')
+    .input(z.object({
+      pairs: z.array(z.object({
+        rfqId: z.number().int().positive(),
+        vendorId: z.number().int().positive(),
+      })).min(1).max(BULK_ASSIGN_LIMIT),
+      assigneeId: z.number().int().positive().nullable(),
+      note: z.string().trim().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      // Eligibility is checked ONCE, before anything is written. Checking it
+      // per pair would let the first fifteen succeed and the sixteenth fail on
+      // a rule that was already false for all of them.
+      if (input.assigneeId != null && !(await isAssignable(db, input.assigneeId))) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: ASSIGNEE_INELIGIBLE_MESSAGE });
+      }
+
+      let assigned = 0;
+      let unchanged = 0;
+      const skipped: string[] = [];
+      for (const pair of input.pairs) {
+        // Each pair must be a real enquiry. A bulk action is exactly where a
+        // stale selection turns into rows pointing at nothing.
+        const exists = await enquiryDetail(db, pair);
+        if (!exists) { skipped.push(enquiryReference(pair.rfqId, pair.vendorId)); continue; }
+        const { assignmentId } = await assignEnquiry({
+          db, ...pair, assigneeId: input.assigneeId, actorId: ctx.user.id, note: input.note ?? null,
+        });
+        if (assignmentId === 0) unchanged += 1; else assigned += 1;
+      }
+
+      // ONE notification for the batch, not one per row. Twenty notifications
+      // saying the same thing is a notification nobody reads, and the
+      // destination is genuinely the filtered queue rather than any single
+      // enquiry - built from the assignee's own id, so it is still a record.
+      if (input.assigneeId != null && assigned > 0) {
+        await notifyUser(db, {
+          userId: input.assigneeId,
+          title: 'Enquiries were assigned to you',
+          body: `${assigned} ${assigned === 1 ? 'enquiry' : 'enquiries'}`,
+          type: 'info',
+          link: `/admin/enquiries/assignee/${input.assigneeId}`,
+          messageKey: 'notif.enquiry.assigned.bulk',
+          messageParams: { count: assigned },
+        });
+      }
+      // Honest counts: what changed, what was already so, and what could not be
+      // found. A bare "success" would hide all three.
+      return { success: true, assigned, unchanged, skipped };
+    }),
+
+  /**
+   * EXPORT (§18).
+   *
+   * The same filters as the list, the same authorization, and the same columns
+   * the screen shows - a CSV that contains a bid price would be the whole
+   * market's bids in one file, which is precisely why the list does not carry
+   * one either.
+   *
+   * Capped. An unbounded export is a denial-of-service against your own
+   * database and a single file containing everything, and the response says
+   * plainly when it was truncated rather than handing over a quiet subset.
+   */
+  exportEnquiries: adminWith('marketplace.manage')
+    .input(z.object({
+      state: z.enum(ENQUIRY_STATES).optional(),
+      rfqStatus: z.enum(RFQ_STATUSES).optional(),
+      vendorId: z.number().int().positive().optional(),
+      rfqId: z.number().int().positive().optional(),
+      assigneeId: z.number().int().positive().nullable().optional(),
+      search: z.string().trim().max(200).optional(),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const page = await enquiryList(db, { ...(input ?? {}), limit: ENQUIRY_EXPORT_LIMIT, offset: 0 });
+
+      const header = [
+        'reference', 'rfqId', 'rfqTitle', 'rfqStatus', 'vendorId', 'vendor',
+        'state', 'allowanceUsage', 'assignee', 'invitedAt', 'viewedAt',
+        'consumedAt', 'respondedAt', 'declinedAt',
+      ];
+      const rows = page.rows.map(row => [
+        row.reference, row.rfqId, row.rfqTitle ?? '', row.rfqStatus ?? '',
+        row.vendorId, row.vendorCompany || row.vendorName || '',
+        row.state, row.usageReason, row.assigneeName ?? '',
+        iso(row.invitedAt), iso(row.viewedAt), iso(row.consumedAt),
+        iso(row.respondedAt), iso(row.declinedAt),
+      ]);
+
+      // WHO EXPORTED WHAT, WHEN. An export is a copy of operational data
+      // leaving the platform, and a trail that records reads is the only way to
+      // answer that afterwards.
+      //
+      // NOT in commercialAuditEvents. That trail's rule - enforced by
+      // server/commercialAudit.test.ts - is that subjectId always names a row in
+      // the table subjectType names. An export is about no single RFQ, so the
+      // only way to fit it there was `subjectId: 0`, which names nothing. The
+      // guard rejected exactly that, and it was right.
+      //
+      // It belongs here instead, on the ADMINISTRATOR'S OWN activity, which is
+      // the shape userAccountAuditEvents already uses for 'admin_signed_in':
+      // userId and actorId are both the administrator, because the event is
+      // something they did rather than something done to somebody.
+      await db.insert(userAccountAuditEvents).values({
+        userId: ctx.user.id,
+        actorId: ctx.user.id,
+        action: 'enquiries_exported',
+        source: 'admin_export',
+        note: `${rows.length} row(s)${page.total > rows.length ? ` of ${page.total} (truncated)` : ''}`
+          + `${input?.state ? `, state=${input.state}` : ''}`
+          + `${input?.vendorId ? `, vendor=${input.vendorId}` : ''}`
+          + `${input?.rfqId ? `, rfq=${input.rfqId}` : ''}`,
+      });
+
+      return {
+        csv: [header, ...rows].map(toCsvRow).join('\n'),
+        rowCount: rows.length,
+        total: page.total,
+        // Named, not inferred from a length comparison the caller has to make.
+        truncated: page.total > rows.length,
+        limit: ENQUIRY_EXPORT_LIMIT,
+      };
     }),
 
   placementPerformance: adminWith('marketplace.manage')

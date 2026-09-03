@@ -92,7 +92,8 @@ describe('user input never becomes SQL text', () => {
     // ORDER BY takes an expression, not a value, so this is the one input that
     // reaches the statement as text - and therefore the one that must never
     // come from the caller unchecked.
-    expect(Object.keys(ENQUIRY_SORTS).sort()).toEqual(['activity', 'rfq', 'state', 'vendor']);
+    expect(Object.keys(ENQUIRY_SORTS).sort())
+      .toEqual(['activity', 'assignee', 'rfq', 'state', 'vendor']);
     for (const expression of Object.values(ENQUIRY_SORTS)) {
       expect(expression).toMatch(/^[A-Za-z0-9_.,()\s]+$/);
     }

@@ -172,3 +172,36 @@ describe('notes on a PERSON keep the permission they have always needed', () => 
     expect(write).toMatch(/if \(!subject\) throw new TRPCError\(\{ code: 'NOT_FOUND'/);
   });
 });
+
+// ── The entitlement boundary (§15/§16) ─────────────────────────────────────
+
+describe('there is exactly ONE way to change an allowance, and this screen is not it', () => {
+  const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+
+  it('the adjustment stays a Super Admin action', () => {
+    // Rebuilding it at marketplace.manage would hand every marketplace
+    // administrator an authority the platform reserved - the same mistake as
+    // putting a bid price in the enquiry detail.
+    expect(ROUTERS).toContain('setVendorEnquiryLimit: superAdminProcedure');
+  });
+
+  it('NO ENQUIRY ENDPOINT WRITES AN ENTITLEMENT', () => {
+    // The enquiry endpoints may READ the allowance through the centralized
+    // engine; none of them may change it.
+    for (const name of ['enquiryOverview', 'enquiryList', 'enquiryDetail', 'enquiryNotes', 'addEnquiryNote', 'assignEnquiry']) {
+      const start = ROUTERS.indexOf(`  ${name}: adminWith(`);
+      expect(start, `${name} must be findable`).toBeGreaterThan(-1);
+      const rest = ROUTERS.slice(start + 1);
+      const next = rest.search(/^ {2}\w+: (adminWith|superAdminProcedure|adminProcedure)/m);
+      const body = next === -1 ? rest : rest.slice(0, next);
+      expect(body, `${name} must not write an entitlement`).not.toContain('setEnquiryAllowance');
+      expect(body, `${name} must not write an override row`).not.toContain('vendorEntitlementOverrides');
+    }
+  });
+
+  it('and nothing anywhere sets a remaining count directly', () => {
+    // The shape §16 forbids: a written "remaining", which destroys the
+    // relationship between the allowance, the usage and the history.
+    expect(ROUTERS).not.toMatch(/setRemaining|remaining:\s*input\./);
+  });
+});

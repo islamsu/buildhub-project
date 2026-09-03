@@ -51,7 +51,8 @@ check('anonymous caller is refused the detail',
 
 const clean = () => sql(`
   DELETE FROM enquiryAssignments WHERE rfqId IN (SELECT id FROM rfqs WHERE title LIKE 'ZG detail fixture%');
-  DELETE FROM notifications WHERE messageKey = 'notif.enquiry.assigned';
+  DELETE FROM notifications WHERE messageKey LIKE 'notif.enquiry.assigned%';
+  DELETE FROM userAccountAuditEvents WHERE action = 'enquiries_exported';
   DELETE FROM adminNotes WHERE subjectId IN (SELECT id FROM users WHERE openId LIKE 'zg-ed-%')
      OR subjectId IN (SELECT id FROM rfqs WHERE title LIKE 'ZG detail fixture%');
   DELETE FROM quotations WHERE providerId IN (SELECT id FROM users WHERE openId LIKE 'zg-ed-%');
@@ -297,6 +298,65 @@ const listWithAssignee = await get('admin.enquiryList', { rfqId: r1 }, admin.coo
 check('the list reports the assignee per row (unassigned here, honestly)',
   listWithAssignee.data?.rows?.[0]?.assigneeId === null
   && 'assigneeName' in (listWithAssignee.data?.rows?.[0] ?? {}));
+
+// ── Bulk assignment and export (§17/§18) ─────────────────────────────────
+//
+// The interesting properties are what bulk REFUSES and what the export LEAVES
+// OUT, not that either one runs.
+
+const bulkPairs = [{ rfqId: r1, vendorId: v1 }];
+const bulkRefused = await post('admin.bulkAssignEnquiries',
+  { pairs: bulkPairs, assigneeId: frozenId }, admin.cookie);
+check('bulk assignment refuses an ineligible assignee BEFORE writing anything',
+  bulkRefused.status === 400
+  && Number(sql(`SELECT COUNT(*) FROM enquiryAssignments WHERE rfqId = ${r1};`)) === 2,
+  `HTTP ${bulkRefused.status}`);
+
+const bulkOk = await post('admin.bulkAssignEnquiries',
+  { pairs: [...bulkPairs, { rfqId: r1, vendorId: 99999999 }], assigneeId: 1 }, admin.cookie);
+check('bulk assignment assigns what it can', bulkOk.data?.assigned === 1, JSON.stringify(bulkOk.data));
+check('AND REPORTS WHAT IT SKIPPED rather than claiming a clean success',
+  bulkOk.data?.skipped?.length === 1, JSON.stringify(bulkOk.data?.skipped));
+
+const bulkAgain = await post('admin.bulkAssignEnquiries',
+  { pairs: bulkPairs, assigneeId: 1 }, admin.cookie);
+check('a repeated bulk assignment reports unchanged rather than writing again',
+  bulkAgain.data?.unchanged === 1 && bulkAgain.data?.assigned === 0,
+  JSON.stringify(bulkAgain.data));
+
+const overCap = await post('admin.bulkAssignEnquiries', {
+  pairs: Array.from({ length: 500 }, (_unused, i) => ({ rfqId: r1, vendorId: i + 1 })),
+  assigneeId: 1,
+}, admin.cookie);
+check('an over-cap bulk request is refused', overCap.status === 400, `HTTP ${overCap.status}`);
+
+// THE ONLY BULK ACTION. A bulk close would close RFQs and end other vendors'
+// work; a bulk invite would notify vendors the requester never chose.
+for (const absent of ['bulkCloseEnquiries', 'bulkInviteEnquiries', 'bulkAdjustAllowance']) {
+  const probe = await post(`admin.${absent}`, {}, admin.cookie);
+  check(`${absent} DOES NOT EXIST`, probe.status === 404, `HTTP ${probe.status}`);
+}
+
+const exported = await get('admin.exportEnquiries', { rfqId: r1 }, admin.cookie);
+check('the export returns CSV', exported.status === 200 && typeof exported.data?.csv === 'string',
+  `HTTP ${exported.status}`);
+check('with a header row naming real columns',
+  exported.data?.csv?.split('\n')[0]?.includes('"reference"'),
+  exported.data?.csv?.split('\n')[0]);
+check('and a row for the enquiry', exported.data?.csv?.includes(reference));
+check('THE EXPORT CARRIES NO BID PRICE', !exported.data?.csv?.includes('654321'));
+check('nor a password hash', !/scrypt\$/.test(exported.data?.csv ?? ''));
+check('it reports its own row count and total honestly',
+  exported.data?.rowCount === 1 && exported.data?.total === 1 && exported.data?.truncated === false,
+  JSON.stringify({ rowCount: exported.data?.rowCount, total: exported.data?.total }));
+
+const exportTrail = sql("SELECT action, source FROM userAccountAuditEvents ORDER BY id DESC LIMIT 1;");
+check('AN EXPORT IS RECORDED - who took a copy, and when',
+  exportTrail === 'enquiries_exported\tadmin_export', exportTrail);
+
+const supportExport = await get('admin.exportEnquiries', {}, marketplace.ok ? marketplace.cookie : admin.cookie);
+check('the export honours the same permission as the list',
+  marketplace.ok ? supportExport.status === 200 : true, `HTTP ${supportExport.status}`);
 
 // ── Honest absence ────────────────────────────────────────────────────────
 

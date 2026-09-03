@@ -6,28 +6,28 @@ PASS  the INVITED tile shows the real count  [{"INVITED":"1","VIEWED":"0","OPENE
 PASS  the RESPONDED tile shows the real count  [{"INVITED":"1","VIEWED":"0","OPENED":"0","RESPONDED":"1","DECLINED":"0","CLOSED":"0"}]
 PASS  THERE IS NO "AVAILABLE" TILE - it is a potential, not a record  [INVITED,VIEWED,OPENED,RESPONDED,DECLINED,CLOSED]
 PASS  both enquiries render as rows  [2 rows]
-PASS  a row shows the human reference  [ENQ-75-357	 | ZG screen fixture ONE | RFQ #75 | 	 | Sigma Tiles | 	Responded	One allowance unit consumed by the vendor	U]
-PASS  a row names the vendor in words, not only an id  [ENQ-75-357	 | ZG screen fixture ONE | RFQ #75 | 	 | Sigma Tiles | 	Responded	One allowance unit consumed by the vendor	U]
-PASS  a row explains the allowance rather than showing a raw enum  [ENQ-75-357	 | ZG screen fixture ONE | RFQ #75 | 	 | Sigma Tiles | 	Responded	One allowance unit consumed by the vendor	U]
+PASS  a row shows the human reference  [	ENQ-92-399	 | ZG screen fixture ONE | RFQ #92 | 	 | Sigma Tiles | 	Responded	One allowance unit consumed by the vendor	]
+PASS  a row names the vendor in words, not only an id  [	ENQ-92-399	 | ZG screen fixture ONE | RFQ #92 | 	 | Sigma Tiles | 	Responded	One allowance unit consumed by the vendor	]
+PASS  a row explains the allowance rather than showing a raw enum  [	ENQ-92-399	 | ZG screen fixture ONE | RFQ #92 | 	 | Sigma Tiles | 	Responded	One allowance unit consumed by the vendor	]
 PASS  the fixture really holds a bid price in the database
 PASS  NO BID PRICE IS RENDERED ANYWHERE ON THE LIST SCREEN
 PASS  CLICKING A KPI TILE FILTERS THE LIST TO THAT STATE  [1 rows]
 PASS  clicking a row opens the enquiry detail
 PASS  the detail shows the reference
 PASS  the detail shows the timeline event that really happened  [Back to the list
-ENQ-75-356
+ENQ-92-398
 Invited
 
 The request
 
-RFQ #75
+RFQ #92
 
 ZG screen fixture ONE]
 PASS  the detail explains that the allowance is an entitlement, not a charge
 PASS  the detail renders no bid price
 PASS  the detail says where bid review actually happens
-PASS  OPENING AN ENQUIRY PUTS IT IN THE URL  [/admin/enquiries/ENQ-75-356]
-PASS  AND THAT URL OPENS THE ENQUIRY DIRECTLY, fully loaded - a real destination for a notification  [Back to the list / ENQ-75-356 / Invited /  / The request /  / RFQ #75 /  / ZG screen f]
+PASS  OPENING AN ENQUIRY PUTS IT IN THE URL  [/admin/enquiries/ENQ-92-398]
+PASS  AND THAT URL OPENS THE ENQUIRY DIRECTLY, fully loaded - a real destination for a notification  [Back to the list / ENQ-92-398 / Invited /  / The request /  / RFQ #92 /  / ZG screen f]
 PASS  the detail shows who is handling the enquiry
 PASS  an unassigned enquiry says so plainly rather than showing a blank  [Assigned to /  / Not assigned to anyone. /  / Unassigned]
 PASS  and offers a control to assign it

@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Link, useLocation } from 'wouter';
 import {
   Inbox, Search, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft,
-  Clock, Gauge, FileText, Building2, RefreshCw, StickyNote, UserCheck,
+  Clock, Gauge, FileText, Building2, RefreshCw, StickyNote, UserCheck, Download,
 } from 'lucide-react';
 
 /**
@@ -97,6 +97,10 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
   const [noteText, setNoteText] = useState('');
   const [noteError, setNoteError] = useState('');
   const [assignError, setAssignError] = useState('');
+  const [selected, setSelected] = useState<string[]>([]);
+  const [bulkAssignee, setBulkAssignee] = useState('none');
+  const [bulkResult, setBulkResult] = useState('');
+  const [exportError, setExportError] = useState('');
 
   const overview = trpc.admin.enquiryOverview.useQuery();
   const list = trpc.admin.enquiryList.useQuery({
@@ -112,7 +116,20 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
     ? { rfqId: detail.data.rfq.id, vendorId: detail.data.vendor.id }
     : null;
   const notes = trpc.admin.enquiryNotes.useQuery(pair ?? { rfqId: 0, vendorId: 0 }, { enabled: !!pair });
-  const admins = trpc.admin.assignableAdmins.useQuery(undefined, { enabled: openReference !== null });
+  // Needed on the LIST too, for bulk assignment - not only on the detail.
+  const admins = trpc.admin.assignableAdmins.useQuery();
+  const bulkAssign = trpc.admin.bulkAssignEnquiries.useMutation({
+    onSuccess: result => {
+      setSelected([]);
+      setBulkResult(ar
+        ? `تم إسناد ${result.assigned}، دون تغيير ${result.unchanged}${result.skipped.length ? `، تخطي ${result.skipped.length}` : ''}.`
+        : `${result.assigned} assigned, ${result.unchanged} unchanged${result.skipped.length ? `, ${result.skipped.length} skipped` : ''}.`);
+      list.refetch();
+      overview.refetch();
+    },
+    onError: error => setBulkResult(error.message),
+  });
+  const exportRows = trpc.useUtils().admin.exportEnquiries;
   const assign = trpc.admin.assignEnquiry.useMutation({
     onSuccess: () => { setAssignError(''); detail.refetch(); list.refetch(); },
     onError: error => setAssignError(error.message),
@@ -244,6 +261,26 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
                   {ar
                     ? 'الرصيد هو استحقاق ضمن الباقة. لا يتم تحصيل أي مبلغ عند فتح الاستفسار.'
                     : 'This is a plan entitlement being drawn down. No payment is taken when an enquiry is opened.'}
+                </p>
+                {/*
+                  ADJUSTING an allowance is NOT done from here, and that is
+                  deliberate. BuildHub already has one adjustment path - a dated,
+                  reasoned, revocable override that refuses to set a limit below
+                  what a vendor has already consumed - and it is a Super Admin
+                  action. Rebuilding it on this screen would hand every
+                  marketplace administrator an authority the platform reserved,
+                  through a different door. So the screen POINTS at the one that
+                  exists instead of growing a second one.
+                */}
+                <p className="mt-2 text-xs text-muted-foreground" data-testid="entitlement-adjust-note">
+                  <Link href="/admin/billing#admin-enquiry-allowance"
+                    className="text-primary underline-offset-2 hover:underline">
+                    {ar ? 'تعديل رصيد هذا المورد' : 'Adjust this vendor\u2019s allowance'}
+                  </Link>
+                  {' \u00b7 '}
+                  {ar
+                    ? 'يتم التعديل عبر سجل الاستحقاقات ويتطلب صلاحية مدير النظام الأعلى.'
+                    : 'Adjustments go through the entitlement record and require Super Admin.'}
                 </p>
               </div>
 
@@ -559,10 +596,104 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
             </p>
           ) : (
             <>
+              <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border bg-muted/20 p-3"
+                data-testid="enquiry-bulk-bar">
+                <label className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    data-testid="select-all"
+                    checked={selected.length > 0 && selected.length === list.data!.rows.length}
+                    onChange={event => setSelected(event.target.checked
+                      ? list.data!.rows.map(row => row.reference) : [])}
+                  />
+                  {ar ? 'تحديد الصفحة' : 'Select page'}
+                </label>
+                <span className="text-xs text-muted-foreground" data-testid="selected-count">
+                  {selected.length} {ar ? 'محدد' : 'selected'}
+                </span>
+                {selected.length > 0 && (
+                  <>
+                    <Select value={bulkAssignee} onValueChange={setBulkAssignee}>
+                      <SelectTrigger className="h-8 w-52" data-testid="bulk-assignee"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">{ar ? 'إلغاء الإسناد' : 'Unassign'}</SelectItem>
+                        {(admins.data ?? []).map(person => (
+                          <SelectItem key={person.id} value={String(person.id)}>
+                            {person.name || `#${person.id}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button" size="sm" className="h-8 gap-1"
+                      data-testid="bulk-assign"
+                      disabled={bulkAssign.isPending}
+                      onClick={() => {
+                        const pairs = selected
+                          .map(reference => list.data!.rows.find(row => row.reference === reference))
+                          .filter((row): row is NonNullable<typeof row> => !!row)
+                          .map(row => ({ rfqId: row.rfqId, vendorId: row.vendorId }));
+                        bulkAssign.mutate({
+                          pairs,
+                          assigneeId: bulkAssignee === 'none' ? null : Number(bulkAssignee),
+                        });
+                      }}
+                    >
+                      <UserCheck className="h-3.5 w-3.5" />{ar ? 'إسناد جماعي' : 'Assign selected'}
+                    </Button>
+                  </>
+                )}
+                {/* ASSIGNMENT IS THE ONLY BULK ACTION OFFERED. Closing in bulk
+                    would close RFQs and end other vendors' work with no undo;
+                    inviting in bulk would notify vendors the requester never
+                    chose. Assignment is reversible and touches no customer or
+                    vendor state. */}
+                <span className="ms-auto flex items-center gap-2">
+                  <Button
+                    type="button" size="sm" variant="outline" className="h-8 gap-1"
+                    data-testid="enquiry-export"
+                    onClick={async () => {
+                      setExportError('');
+                      try {
+                        const result = await exportRows.fetch({
+                          ...(state === 'all' ? {} : { state: state as any }),
+                          ...(search.trim() ? { search: search.trim() } : {}),
+                        });
+                        const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8;' });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `buildhub-enquiries-${new Date().toISOString().slice(0, 10)}.csv`;
+                        link.click();
+                        URL.revokeObjectURL(url);
+                        // TRUNCATION IS SAID OUT LOUD. A quiet subset is worse
+                        // than a refusal: it looks like the whole answer.
+                        if (result.truncated) {
+                          setExportError(ar
+                            ? `تم تصدير ${result.rowCount} من ${result.total}. حدّد الفلاتر لتصدير الباقي.`
+                            : `Exported ${result.rowCount} of ${result.total}. Narrow the filters to export the rest.`);
+                        }
+                      } catch (error) {
+                        setExportError(error instanceof Error ? error.message : String(error));
+                      }
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5" />{ar ? 'تصدير CSV' : 'Export CSV'}
+                  </Button>
+                </span>
+                {bulkResult && (
+                  <p className="w-full text-xs text-muted-foreground" data-testid="bulk-result">{bulkResult}</p>
+                )}
+                {exportError && (
+                  <p className="w-full text-xs text-amber-700" data-testid="export-note">{exportError}</p>
+                )}
+              </div>
+
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px] text-sm">
+                <table className="w-full min-w-[900px] text-sm">
                   <thead>
                     <tr className="border-b text-start text-xs text-muted-foreground">
+                      <th className="w-8 py-2"></th>
                       <th className="py-2 text-start font-medium">{ar ? 'المرجع' : 'Reference'}</th>
                       <th className="py-2 text-start font-medium">{ar ? 'الطلب' : 'Request'}</th>
                       <th className="py-2 text-start font-medium">{ar ? 'المورد' : 'Vendor'}</th>
@@ -591,6 +722,16 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
                             }
                           }}
                         >
+                          <td className="py-2.5" onClick={event => event.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              data-testid={`select-${row.reference}`}
+                              checked={selected.includes(row.reference)}
+                              onChange={event => setSelected(current => event.target.checked
+                                ? [...current, row.reference]
+                                : current.filter(reference => reference !== row.reference))}
+                            />
+                          </td>
                           <td className="py-2.5 font-mono text-xs">{row.reference}</td>
                           <td className="max-w-[220px] py-2.5">
                             <span className="block truncate">{row.rfqTitle ?? `RFQ #${row.rfqId}`}</span>

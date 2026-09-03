@@ -211,6 +211,9 @@ const LIST_SELECT = `
     s.declinedAt             AS declinedAt,
     (SELECT q.createdAt FROM qualifiedEnquiries q
       WHERE q.rfqId = p.rfqId AND q.userId = p.vendorId)            AS consumedAt,
+    ea.assigneeId            AS assigneeId,
+    au.name                  AS assigneeName,
+    ea.createdAt             AS assignedAt,
     EXISTS (SELECT 1 FROM qualifiedEnquiries q
              WHERE q.rfqId = p.rfqId AND q.userId = p.vendorId)     AS creditSpent,
     EXISTS (SELECT 1 FROM quotations qt
@@ -227,12 +230,24 @@ const LIST_SELECT = `
 const LIST_FROM = `${ENQUIRY_UNIVERSE_FROM}
   LEFT JOIN users u ON u.id = p.vendorId
   LEFT JOIN vendorProfiles vp ON vp.userId = p.vendorId
+  -- THE LATEST assignment event for the pair. The table is append-only, so the
+  -- current assignee is the newest row and an unassignment is a row whose
+  -- assigneeId is NULL. Joined here rather than merged afterwards in Node so
+  -- the list can FILTER on it: "show me what is on Rana's desk" is the question
+  -- an operations lead actually asks, and it cannot be answered by a merge that
+  -- happens after the page has already been chosen.
+  LEFT JOIN enquiryAssignments ea ON ea.id = (
+    SELECT MAX(ea2.id) FROM enquiryAssignments ea2
+     WHERE ea2.rfqId = p.rfqId AND ea2.vendorId = p.vendorId
+  )
+  LEFT JOIN users au ON au.id = ea.assigneeId
 `;
 
 /** How a list may be ordered. An allowlist, because this reaches ORDER BY. */
 export const ENQUIRY_SORTS = {
   /** Default. What changed most recently, whichever event it was. */
   activity: 'COALESCE(enq.respondedAt, enq.declinedAt, enq.consumedAt, enq.viewedAt, enq.invitedAt, enq.rfqCreatedAt)',
+  assignee: 'enq.assigneeName',
   rfq: 'enq.rfqId',
   vendor: 'enq.vendorName',
   state: 'enq.state',
@@ -245,6 +260,8 @@ export type EnquiryListFilters = {
   rfqStatus?: string;
   vendorId?: number;
   rfqId?: number;
+  /** Whose desk it is on. `null` asks for the ones on nobody's. */
+  assigneeId?: number | null;
   /** Matches an RFQ title, a vendor name or company, or a pasted ENQ-/RFQ id. */
   search?: string;
   sort?: EnquirySort;
@@ -262,6 +279,10 @@ export type EnquiryListRow = {
   vendorId: number;
   vendorName: string | null;
   vendorCompany: string | null;
+  /** null = on nobody's desk, whether never assigned or released. */
+  assigneeId: number | null;
+  assigneeName: string | null;
+  assignedAt: Date | null;
   state: EnquiryState;
   usageReason: EnquiryUsageReason;
   invitedAt: Date | null;
@@ -297,6 +318,11 @@ export async function enquiryList(
   if (filters.rfqStatus) conditions.push(sql`enq.rfqStatus = ${filters.rfqStatus}`);
   if (filters.vendorId != null) conditions.push(sql`enq.vendorId = ${filters.vendorId}`);
   if (filters.rfqId != null) conditions.push(sql`enq.rfqId = ${filters.rfqId}`);
+  if (filters.assigneeId !== undefined) {
+    conditions.push(filters.assigneeId === null
+      ? sql`enq.assigneeId IS NULL`
+      : sql`enq.assigneeId = ${filters.assigneeId}`);
+  }
   if (filters.search) {
     const term = `%${filters.search.trim()}%`;
     // A pasted ENQ-501-10 or "RFQ #501" should find the thing it names rather
@@ -354,6 +380,9 @@ export async function enquiryList(
         vendorId: Number(row.vendorId),
         vendorName: (row.vendorName as string) ?? null,
         vendorCompany: (row.vendorCompany as string) ?? null,
+        assigneeId: row.assigneeId == null ? null : Number(row.assigneeId),
+        assigneeName: row.assigneeId == null ? null : ((row.assigneeName as string) ?? null),
+        assignedAt: row.assigneeId == null ? null : asDate(row.assignedAt),
         // The state comes from the SQL ladder, and is re-derived here from the
         // same evidence as a cross-check: if the two ever disagree the row is
         // refused rather than rendered, because a badge that contradicts the
@@ -534,4 +563,35 @@ export async function enquiryDetail(
     // engine's own dependencies; the router passes the real one.
     entitlement: usageFor ? await usageFor(pair.vendorId) : null,
   };
+}
+
+/** How many enquiries one bulk assignment may touch. */
+export const BULK_ASSIGN_LIMIT = 50;
+
+/** How many rows one export may contain. */
+export const ENQUIRY_EXPORT_LIMIT = 5000;
+
+/**
+ * One CSV row, quoted correctly.
+ *
+ * Written rather than concatenated with commas because the fields here are
+ * free text an administrator and a customer typed: an RFQ title containing a
+ * comma silently shifts every later column, and one containing a quotation mark
+ * corrupts the row. Both happen in real data on the first day.
+ *
+ * The leading apostrophe on a value starting with = + - @ is FORMULA INJECTION
+ * defence: a spreadsheet treats such a cell as a formula, and a vendor name is
+ * attacker-controlled text.
+ */
+export function toCsvRow(values: (string | number | null)[]): string {
+  return values.map(value => {
+    const text = value == null ? '' : String(value);
+    const guarded = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+    return `"${guarded.replace(/"/g, '""')}"`;
+  }).join(',');
+}
+
+/** A timestamp as a stable ISO string, or empty - never "Invalid Date". */
+export function iso(value: Date | null | undefined): string {
+  return value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString() : '';
 }

@@ -1041,6 +1041,16 @@
       "indent": 2
     },
     {
+      "name": "bulkAssignEnquiries",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "exportEnquiries",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
       "name": "placementPerformance",
       "tier": "adminWith:marketplace.manage",
       "indent": 3
@@ -1445,7 +1455,7 @@
     "adminWith:users.manage": 6,
     "adminWith:audit.read": 5,
     "adminWith:qa.manage": 7,
-    "adminWith:marketplace.manage": 36,
+    "adminWith:marketplace.manage": 38,
     "adminWith:billing.read": 4,
     "superAdminProcedure": 10,
     "adminProcedure": 4,
@@ -1859,37 +1869,42 @@
     },
     {
       "file": "server/routers.ts",
-      "line": 5311,
+      "line": 5297,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6014,
+      "line": 5375,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6085,
+      "line": 6149,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6473,
+      "line": 6220,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6674,
+      "line": 6608,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6699,
+      "line": 6809,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6724,
+      "line": 6834,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 6859,
       "via": "notifyUser"
     },
     {

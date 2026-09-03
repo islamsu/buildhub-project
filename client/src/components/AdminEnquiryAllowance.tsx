@@ -91,7 +91,7 @@ export default function AdminEnquiryAllowance() {
     value === null || value === undefined ? unlimited : String(value);
 
   return (
-    <Card data-testid="admin-enquiry-allowance">
+    <Card id="admin-enquiry-allowance" data-testid="admin-enquiry-allowance">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Gauge className="h-5 w-5" />
