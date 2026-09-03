@@ -413,6 +413,75 @@ than relaxed to pass. Diagnosed against a live server and a real browser, not fr
 - [ ] Re-run `staging-qa.yml` against the deployed SHA with the corrected gate and confirm
       704/704 minus the five standing infrastructure SKIPs (SMTP_HOST, S3_* x3, paid AI).
 
+## Central Category Management + Bulk Upload Reconciliation (HIGH PRIORITY)
+
+Reported from real use: Bulk Product Upload rejects legitimate BuildHub categories -
+"Waterproofing is not a BuildHub category", "Pools is not a BuildHub category" - across
+dozens of rows. The fix is NOT to add two strings to an array.
+
+ROOT CAUSE, established by inspection before any change. There are THREE unrelated
+product-category vocabularies, none of them administrable:
+
+1. `shared/productCategories.ts` - 19 flat English strings. This is the write-path
+   validator for BOTH single product creation (`z.enum(PRODUCT_CATEGORIES)` at
+   routers.ts:1778) and bulk import (`parseProductImport(csv, PRODUCT_CATEGORIES)` at
+   routers.ts:1871). Single and bulk DO already share it, so the reported failure is not
+   a parity bug - it is that the taxonomy is a frozen code constant. Neither Waterproofing
+   nor Pools is in it, so single product listing rejects them too.
+2. `client/src/lib/marketplaceData.ts` - a SECOND, completely different list of 20+
+   categories with ids, EN/AR names and icons, used by the Marketplace Discovery Hub
+   browse chips. Its values ("Cement & Concrete", "Steel & Reinforcement") match NONE of
+   list 1, so a shopper browsing a hub chip can never find a product: no product can be
+   listed under that name. This is a larger latent defect than the reported one.
+3. `shared/rfqCategories.ts` - 9 SERVICE categories for RFQ-to-vendor matching, persisted
+   in `rfqs.category` and `vendorCategories.category`. A separate and legitimate concern
+   that must NOT be merged into the product taxonomy.
+
+`products.category` is `varchar(100)` - free text in the database, constrained only at
+write time by list 1.
+
+- [ ] CAT-1: forward-only migration for a canonical `productCategories` table - id, slug,
+      nameEn, nameAr, type/scope (PRODUCT | SERVICE | BOTH), status (active | hidden |
+      archived), parentId, sortOrder - plus a controlled alias table. Seed from the real
+      current vocabulary; reconcile the three lists WITHOUT silently merging categories
+      whose meaning differs. Verify the migration against seeded products/RFQs/placements,
+      never only an empty database.
+- [ ] CAT-2: one canonical server category service. Authorized views over the SAME
+      taxonomy - public active, vendor-listable, admin-all. Every UI reads it; no screen
+      queries the table its own way.
+- [ ] CAT-3: category resolver used by BOTH single product and bulk upload, so the two
+      can never diverge again. Case/whitespace/Unicode normalisation, canonical EN and AR
+      names, slug, and Admin-controlled aliases. No fuzzy matching that could silently
+      assign the wrong category. Ambiguous input is rejected with an actionable error.
+- [ ] CAT-4: error quality - distinguish UNKNOWN from KNOWN-BUT-INACTIVE from
+      NOT-ALLOWED-FOR-THIS-VENDOR from SERVICE-ONLY from AMBIGUOUS-ALIAS. A hidden
+      category must not report "is not a BuildHub category".
+- [ ] CAT-5: bulk upload UX - grouped error summary by offending value with row ranges,
+      row detail retained, preview showing RESOLVED canonical categories before commit,
+      and a valid-category reference reachable from the upload page rather than a stale
+      help article.
+- [ ] CAT-6: Super Admin category management page - create, edit, activate, hide,
+      archive, reactivate, reorder, EN/AR names, slug, type, parent, real usage counts,
+      search/filter/sort/pagination. Dependency warning with the real count before hiding.
+      Human-readable identities, not raw ids.
+- [ ] CAT-7: propagation without deployment - a new active PRODUCT category appears in
+      Add Product, Edit Product, Bulk Upload, marketplace filters, admin forms and
+      applicable RFQ/placement selectors. Cache invalidated on change; no restart.
+- [ ] CAT-8: lifecycle safety - hiding a category never corrupts or recategorises existing
+      products; used categories are not hard-deleted; renaming does not break product
+      relationships, import history, RFQs, URLs or placements (stable id/slug identity).
+- [ ] CAT-9: vendor eligibility preserved - adding a global category must not make every
+      vendor eligible to list in it where BuildHub's catalogue rules restrict that.
+- [ ] CAT-10: RBAC (narrow admin permission) + audit of every category mutation with
+      actor, timestamp, old and new value.
+- [ ] CAT-11: integration tests that exercise the real resolver, not source text -
+      the reported Waterproofing/Pools case; Super Admin adds a category and a vendor
+      bulk-uploads it successfully; Super Admin hides a category with existing products
+      and they survive while new listings are refused with the INACTIVE message, then
+      reactivation restores it. Plus single-vs-bulk parity as a standing invariant.
+- [ ] CAT-12: 375/768/1440 in EN and AR/RTL for the category management surface and every
+      category selector; semantic controls, keyboard access, focus management.
+
 ## Master Reconciliation Remaining Scope
 
 - [ ] Referral / Invitation Reward system: secure code/link, attribution, campaigns, qualification, caps, non-cash rewards, expiry, reversal, notifications, audit, Admin management
