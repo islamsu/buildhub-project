@@ -73,9 +73,20 @@ describe('the fabricated provider lists are gone', () => {
   });
 
   it('the taxonomy that remains asserts nothing about anybody', () => {
-    // Category chips are browse vocabulary and are allowed to stay. What must
-    // NOT survive is a per-entity claim.
-    expect(DATA).toContain('export const PRODUCT_CATEGORIES');
+    // Browse vocabulary is allowed to stay; what must NOT survive is a
+    // per-entity claim. This asserted PRODUCT_CATEGORIES specifically, as the
+    // control proving the honesty pass had not over-deleted. That list has
+    // since become a database table - see shared/categoryTaxonomy.ts and
+    // /admin/categories - so the control now names the two vocabularies that
+    // legitimately remain. The rule is unchanged and the coverage is the same:
+    // something must still be here, and it must claim nothing about anybody.
+    expect(DATA).toContain('export const DESIGN_CATEGORIES');
+    expect(DATA).toContain('export const FINISHING_CATEGORIES');
+    // And the product list must NOT come back. A category vocabulary compiled
+    // into the client is the exact defect that produced
+    // "Waterproofing is not a BuildHub category".
+    expect(DATA, 'the product category list is a database table now')
+      .not.toContain('export const PRODUCT_CATEGORIES');
     for (const attribute of ['rating:', 'reviewCount:', 'verified:', 'yearsExperience:', 'teamSize:', 'projectCount:', 'awardWinning:']) {
       expect(DATA, `${attribute} survives in the data file`).not.toContain(attribute);
     }

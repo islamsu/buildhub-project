@@ -3,7 +3,6 @@ import { useAuth } from '@/_core/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getRolePlatformPath, isPlatformRole, ROLE_PLATFORM_COPY, type PlatformRole } from '@/lib/rolePlatform';
 import { trpc } from '@/lib/trpc';
-import { PRODUCT_CATEGORIES, isProductCategory } from '@shared/productCategories';
 import PortfolioManager from '@/components/PortfolioManager';
 import { isComplianceRole } from '@shared/compliance';
 import { Button } from '@/components/ui/button';

@@ -32,7 +32,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { PRODUCT_CATEGORIES, isProductCategory } from '@shared/productCategories';
 import { PRODUCT_UNITS, isProductUnit } from '@shared/productUnits';
 import { toast } from 'sonner';
 import { ArrowLeft, PackagePlus, Save, AlertTriangle, FileSpreadsheet } from 'lucide-react';
@@ -131,8 +130,35 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
    */
   const legacyUnit = editing && form.unit && !isProductUnit(form.unit) ? form.unit : null;
 
+  /**
+   * THE CATEGORIES, READ LIVE - not a list compiled into this bundle.
+   *
+   * This rendered nineteen strings frozen into `shared/productCategories.ts`,
+   * which is how a supplier came to be told "Waterproofing is not a BuildHub
+   * category" for a category the platform already had. An administrator adding
+   * one now appears here on the next load, with no deployment.
+   */
+  const taxonomy = trpc.marketplace.categories.useQuery({ view: 'listable' });
+  const categories = taxonomy.data?.categories ?? [];
+
+  /**
+   * The category the product ALREADY has, when it is no longer listable.
+   *
+   * Same rule as legacyUnit, and for the same reason: an administrator hiding
+   * a category must not make every product in it unsaveable, so a supplier
+   * editing the price of one is not forced to recategorise it first. The
+   * server accepts it because the row is unchanged; a supplier who picks
+   * something else cannot pick this one again.
+   */
+  const legacyCategory = editing && form.category
+    && categories.length > 0 && !categories.some(c => c.nameEn === form.category)
+    ? form.category : null;
+
   const submit = () => {
-    if (!isProductCategory(form.category)) {
+    // A shape check only. WHICH categories are acceptable is the server's
+    // decision, made by the same resolver bulk upload uses - a second opinion
+    // computed here is exactly how the two paths came to disagree.
+    if (!form.category.trim()) {
       toast.error(ar ? 'اختر فئة من القائمة' : 'Choose a category from the list');
       return;
     }
@@ -233,8 +259,26 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
               value={form.category}
               onChange={e => set('category')(e.target.value)}
             >
-              <option value="">{ar ? 'اختر الفئة' : 'Choose a category'}</option>
-              {PRODUCT_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
+              <option value="">
+                {taxonomy.isLoading
+                  ? (ar ? 'جارٍ التحميل…' : 'Loading…')
+                  : (ar ? 'اختر الفئة' : 'Choose a category')}
+              </option>
+              {legacyCategory && (
+                <option value={legacyCategory}>
+                  {legacyCategory}{ar ? ' (الحالية)' : ' (current)'}
+                </option>
+              )}
+              {categories.map(category => (
+                // The VALUE is the canonical English name, which is what the
+                // server resolves and stores; the LABEL follows the reader's
+                // language. A product listed by an Arabic-speaking supplier and
+                // one listed by an English-speaking supplier must land in the
+                // same category, not in two.
+                <option key={category.id} value={category.nameEn}>
+                  {ar ? category.nameAr : category.nameEn}
+                </option>
+              ))}
             </select>
           </Field>
 

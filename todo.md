@@ -464,7 +464,7 @@ write time by list 1.
       archive, reactivate, reorder, EN/AR names, slug, type, parent, real usage counts,
       search/filter/sort/pagination. Dependency warning with the real count before hiding.
       Human-readable identities, not raw ids.
-- [ ] CAT-7: propagation without deployment - a new active PRODUCT category appears in
+- [x] CAT-7: propagation without deployment - a new active PRODUCT category appears in
       Add Product, Edit Product, Bulk Upload, marketplace filters, admin forms and
       applicable RFQ/placement selectors. Cache invalidated on change; no restart.
 - [x] CAT-8: lifecycle safety - hiding a category never corrupts or recategorises existing
@@ -549,8 +549,35 @@ answers to it, and the wrong administrator is told plainly rather than shown an 
 table - at 375/768/1440 in EN and AR, with the page never scrolling sideways and the
 wide table scrolling inside its own container.
 
-Remaining: the client dropdowns still reading compiled-in lists (`RolePlatform.tsx`
-imports `PRODUCT_CATEGORIES`; `MarketplaceHub.tsx` still uses `marketplaceData.ts`).
+CAT-7 closes the loop. Every surface that offers a category now reads
+`marketplace.categories`, and the compiled-in lists are DELETED rather than left
+unused: `shared/productCategories.ts` is gone, `marketplaceData.PRODUCT_CATEGORIES` is
+gone, and so are Marketplace.tsx's own `CATEGORY_AR` and `CATEGORY_ICONS` maps - a
+fifth and sixth vocabulary, keyed on the retired 27-name list, which had already fallen
+behind: the canonical "Cement & Concrete" appeared in neither, so an Arabic-reading
+shopper saw an English chip with no icon.
+
+Two further defects were fixed on the way. The Add Product form rendered the frozen 19
+strings and client-validated against them, so a supplier could not pick Waterproofing
+there either - it now reads the taxonomy, keeps a product's own category selectable when
+an administrator has since hidden it (so hiding never makes existing products
+unsaveable), and leaves the decision about which categories are acceptable to the
+server. And the Marketplace Hub linked its chips with `?cat=<slug from a third
+vocabulary>` while the marketplace ignored the parameter entirely - every chip landed on
+the unfiltered marketplace. The link now carries the canonical name and the marketplace
+honours it.
+
+`server/categorySingleSource.test.ts` is the standing guard: it sweeps client, shared
+and server for any file listing three or more canonical category names (comments
+stripped, so the files that DOCUMENT the fix do not fail it), asserts every category
+surface queries the one procedure, verifies the detector can still see a planted
+violation, and pins the two words the product and RFQ vocabularies have always shared -
+"Materials" and "Furniture" - so a third would be a deliberate decision rather than a
+discovery. Proven live by `evidence/zg-categorysurfaces.mjs` (17/17, twice): the form
+offers exactly the database's listable set, the Arabic chip renders in Arabic, a `?cat=`
+link actually filters, and a category created in the database appears in the form, the
+filter and the upload reference - then disappears from all of them when hidden - with no
+restart.
 
 ## Master Reconciliation Remaining Scope
 
