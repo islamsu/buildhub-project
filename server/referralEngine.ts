@@ -1,11 +1,12 @@
 import { and, eq, sql } from 'drizzle-orm';
 import {
-  referrals, referralCampaigns, referralRewards, userAccountAuditEvents, users,
+  referrals, referralCampaigns, referralRewards, users,
 } from '../drizzle/schema';
 import { setEnquiryAllowance } from './billing/overrides';
 import { resolveVendorEntitlements } from './billing/entitlements';
 import { notifyUser } from './notifications';
 import { bookPlacement } from './placementBooking';
+import { recordAccountEvent } from './_core/accountAudit';
 
 type Db = any;
 
@@ -135,7 +136,7 @@ export async function qualifyReferralEvent(
   }
 
   await db.update(referrals).set({ status: 'rewarded' }).where(eq(referrals.id, referral.id));
-  await db.insert(userAccountAuditEvents).values({
+  await recordAccountEvent(db, {
     userId: referral.referrerId,
     actorId: null,
     action: 'referral_reward_granted',

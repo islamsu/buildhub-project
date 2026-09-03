@@ -34,6 +34,7 @@ import { ENV, isTestLoginEnabled } from './_core/env';
 import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
 import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
+import { recordAccountEvent } from './_core/accountAudit';
 import { listAdminUsers, type AdminDirectoryPage } from './adminUserDirectory';
 import { runDataQualityChecks } from './admin/dataQuality';
 import { readOperationalHealth } from './admin/operationalHealth';
@@ -377,7 +378,7 @@ const authRouter = router({
     const cookieOptions = getSessionCookieOptions(ctx.req);
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions });
     await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, target.id));
-    await db.insert(userAccountAuditEvents).values({ userId: target.id, actorId: target.id, action: 'dummy_user_signed_in', source: 'dummy', note: 'Dummy user signed in with a locally managed password' });
+    await recordAccountEvent(db, { userId: target.id, actorId: target.id, action: 'dummy_user_signed_in', source: 'dummy', note: 'Dummy user signed in with a locally managed password' });
     return { success: true, userRole: target.userRole, onboardingStatus: target.onboardingStatus } as const;
   }),
   // ── First-party password authentication (Slice 3) ───────────────────────
@@ -453,7 +454,7 @@ const authRouter = router({
     const sessionToken = await sdk.createSessionToken(target.openId, { name: target.name || target.username || 'QA user' });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
     await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, target.id));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: target.id, actorId: row.issuedBy, action: 'test_login_link_redeemed', source: 'admin',
       note: 'QA persona signed in through an admin-issued link',
     });
@@ -564,7 +565,7 @@ const authRouter = router({
     const [created] = await db.select({ openId: users.openId }).from(users).where(eq(users.id, userId));
     const sessionToken = await sdk.createSessionToken(created.openId, { name: input.name });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId, actorId: userId, action: 'password_account_created', source: 'self_registered',
       note: 'Account created with an email address and password',
     });
@@ -614,7 +615,7 @@ const authRouter = router({
     });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
     await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, candidate.id));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: candidate.id, actorId: candidate.id, action: 'password_signed_in', source: 'password',
       note: identifier.includes('@') ? 'Signed in with email and password' : 'Signed in with username and password',
     });
@@ -677,7 +678,7 @@ const authRouter = router({
     });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
     await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, candidate.id));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: candidate.id, actorId: candidate.id, action: 'admin_signed_in', source: 'admin_login',
       note: `Administrator sign-in as ${candidate.adminRole}`,
     });
@@ -739,7 +740,7 @@ const authRouter = router({
       invitationStatus: 'password_set',
     }).where(eq(users.id, row.userId));
 
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: row.userId, actorId: row.userId, action: 'admin_invitation_redeemed', source: 'admin_invite',
       note: `Administrator account activated as ${row.adminRole}`,
     });
@@ -789,7 +790,7 @@ const authRouter = router({
         // an account-existence oracle.
         console.error('[auth] Password reset email failed to send', error);
       }
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: target.id, actorId: target.id, action: 'password_reset_requested', source: 'password',
         note: 'A password reset link was issued',
       });
@@ -832,7 +833,7 @@ const authRouter = router({
       sessionsInvalidBefore: now,
     }).where(eq(users.id, target.id));
 
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: target.id, actorId: target.id, action: 'password_reset_completed', source: 'password',
       note: 'Password changed via reset link; all existing sessions invalidated',
     });
@@ -877,7 +878,7 @@ const authRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       await db.update(users).set({ username: input.username ? normalizeUsername(input.username) : undefined, userRole: input.userRole, name: input.name, phone: input.phone, location: input.location, onboardingStatus: isComplianceRole(input.userRole) ? 'not_started' : 'approved', verified: isComplianceRole(input.userRole) ? false : true }).where(eq(users.id, ctx.user.id));
-      await db.insert(userAccountAuditEvents).values({ userId: ctx.user.id, actorId: ctx.user.id, action: 'profile_role_completed', source: 'self_registered', note: `Role selected: ${input.userRole}` });
+      await recordAccountEvent(db, { userId: ctx.user.id, actorId: ctx.user.id, action: 'profile_role_completed', source: 'self_registered', note: `Role selected: ${input.userRole}` });
       recordEventAsync({
         type: ANALYTICS_EVENTS.VENDOR_PROFILE_COMPLETED,
         userId: ctx.user.id,
@@ -4317,7 +4318,7 @@ const profileRouter = router({
         status: 'pending',
         adminCorrection: false,
       });
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: ctx.user.id,
         actorId: ctx.user.id,
         action: 'vendor_name_change_requested',
@@ -4643,7 +4644,7 @@ const adminRouter = router({
       invitationSentAt: input.sendInvitation ? new Date() : null,
     });
     const userId = Number(result[0]?.insertId);
-    await db.insert(userAccountAuditEvents).values({ userId, actorId: ctx.user.id, action: input.sendInvitation ? 'admin_created_account_with_invite' : 'admin_created_account', source: 'admin_created', note: input.note || null });
+    await recordAccountEvent(db, { userId, actorId: ctx.user.id, action: input.sendInvitation ? 'admin_created_account_with_invite' : 'admin_created_account', source: 'admin_created', note: input.note || null });
     return { success: true, userId, invitationLink: input.sendInvitation ? `/auth/setup-password?token=${inviteToken}` : null };
   }),
   resendInvitation: adminWith('users.manage').input(z.object({ userId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
@@ -4654,7 +4655,7 @@ const adminRouter = router({
     const inviteToken = randomUUID() + '-' + randomUUID().slice(0, 8);
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await db.update(users).set({ invitationStatus: 'invitation_sent', invitationToken: inviteToken, invitationExpiresAt: expiresAt, invitationSentAt: new Date() }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'invitation_resent', source: 'admin_created', note: `Resent to ${target.email}` });
+    await recordAccountEvent(db, { userId: input.userId, actorId: ctx.user.id, action: 'invitation_resent', source: 'admin_created', note: `Resent to ${target.email}` });
     return { success: true, invitationLink: `/auth/setup-password?token=${inviteToken}` };
   }),
   completeInvitation: publicProcedure.input(z.object({ token: z.string().min(10), password: z.string().min(6).max(128) })).mutation(async ({ ctx, input }) => {
@@ -4675,7 +4676,7 @@ const adminRouter = router({
     }
     const passwordHash = await hashPassword(input.password);
     await db.update(users).set({ invitationStatus: 'password_set', invitationToken: null, invitationExpiresAt: null, passwordSetAt: new Date(), passwordHash, verified: true, accountStatus: 'active' }).where(eq(users.id, target.id));
-    await db.insert(userAccountAuditEvents).values({ userId: target.id, actorId: target.id, action: 'password_set_via_invitation', source: 'admin_created', note: 'Password successfully configured by user' });
+    await recordAccountEvent(db, { userId: target.id, actorId: target.id, action: 'password_set_via_invitation', source: 'admin_created', note: 'Password successfully configured by user' });
     return { success: true, username: target.username };
   }),
   fullAuditReport: adminWith('audit.read').query(async ({ ctx }) => {
@@ -4738,7 +4739,7 @@ const adminRouter = router({
       openId: `dummy_${randomUUID()}`, username, name: input.name?.trim() || `Dummy ${input.userRole}`, email, loginMethod: 'dummy', role: 'user', userRole: input.userRole, accountSource: 'admin_created', isDummy: true, createdBy: ctx.user.id, creationNote: input.note || 'Created for testing', accountStatus: 'frozen', frozenAt: new Date(), frozenReason: 'Dummy/test accounts are disabled by default', deactivatedAt: new Date(), onboardingStatus: professional ? 'not_started' : 'approved', verified: false, passwordHash, invitationStatus: passwordHash ? 'password_set' : 'none', passwordSetAt: passwordHash ? new Date() : null,
     });
     const userId = Number(result[0]?.insertId);
-    await db.insert(userAccountAuditEvents).values({ userId, actorId: ctx.user.id, action: 'dummy_user_created', source: 'dummy', note: input.note || 'Created for testing' });
+    await recordAccountEvent(db, { userId, actorId: ctx.user.id, action: 'dummy_user_created', source: 'dummy', note: input.note || 'Created for testing' });
     return { success: true, userId, username, email };
   }),
   userDetail: adminWith('users.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
@@ -4815,7 +4816,7 @@ const adminRouter = router({
 
     if (Object.keys(patch).length === 0) return { success: true as const, changed: false };
     await db.update(users).set(patch).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: input.userId,
       actorId: ctx.user.id,
       action: 'admin_user_updated',
@@ -4916,7 +4917,7 @@ const adminRouter = router({
         campaignCap: input.campaignCap ?? null,
         createdBy: ctx.user.id,
       });
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: ctx.user.id,
         actorId: ctx.user.id,
         action: 'referral_campaign_created',
@@ -4947,7 +4948,7 @@ const adminRouter = router({
       if (input.campaignCap !== undefined) patch.campaignCap = input.campaignCap ?? null;
       if (Object.keys(patch).length === 0) return { success: true as const, changed: false };
       await db.update(referralCampaigns).set(patch).where(eq(referralCampaigns.id, input.campaignId));
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: ctx.user.id,
         actorId: ctx.user.id,
         action: 'referral_campaign_updated',
@@ -4997,7 +4998,7 @@ const adminRouter = router({
         qualifiedAt: new Date(),
         qualificationNote: input.note ?? null,
       }).where(eq(referrals.id, input.referralId));
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: referral.referrerId,
         actorId: ctx.user.id,
         action: 'referral_qualified',
@@ -5019,7 +5020,7 @@ const adminRouter = router({
         reversedAt: new Date(),
         reversalReason: input.reason,
       }).where(eq(referralRewards.id, input.rewardId));
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: reward.recipientUserId,
         actorId: ctx.user.id,
         action: 'referral_reward_reversed',
@@ -5477,7 +5478,7 @@ const adminRouter = router({
       // the shape userAccountAuditEvents already uses for 'admin_signed_in':
       // userId and actorId are both the administrator, because the event is
       // something they did rather than something done to somebody.
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: ctx.user.id,
         actorId: ctx.user.id,
         action: 'enquiries_exported',
@@ -5534,7 +5535,7 @@ const adminRouter = router({
         reason: input.reason,
       });
       if (result.outcome === 'rejected') throw new TRPCError({ code: 'CONFLICT', message: result.reason });
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: input.entityType === 'PROVIDER' ? input.entityId : ctx.user.id,
         actorId: ctx.user.id,
         action: 'placement_booked',
@@ -5570,7 +5571,7 @@ const adminRouter = router({
       issuedBy: ctx.user.id,
       expiresAt: new Date(Date.now() + input.expiresInMinutes * 60_000),
     });
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: target.id, actorId: ctx.user.id, action: 'test_login_link_issued', source: 'admin',
       note: `Expires in ${input.expiresInMinutes} minute(s)`,
     });
@@ -5606,7 +5607,7 @@ const adminRouter = router({
     await db.update(testLoginTokens)
       .set({ revokedAt: new Date(), revokedBy: ctx.user.id })
       .where(eq(testLoginTokens.id, input.tokenId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: row.userId, actorId: ctx.user.id, action: 'test_login_link_revoked', source: 'admin',
     });
     return { success: true } as const;
@@ -5622,7 +5623,7 @@ const adminRouter = router({
     if (!target?.isDummy) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only dummy users can have a manually managed password' });
     const passwordHash = await hashPassword(input.password);
     await db.update(users).set({ passwordHash, invitationStatus: 'password_set', invitationToken: null, invitationExpiresAt: null, passwordSetAt: new Date() }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'dummy_user_password_changed', source: 'dummy', note: 'Password updated by an administrator' });
+    await recordAccountEvent(db, { userId: input.userId, actorId: ctx.user.id, action: 'dummy_user_password_changed', source: 'dummy', note: 'Password updated by an administrator' });
     return { success: true };
   }),
   setDummyUserActive: adminWith('qa.manage').input(z.object({ userId: z.number().int().positive(), active: z.boolean(), note: z.string().max(500).optional() })).mutation(async ({ ctx, input }) => {
@@ -5631,7 +5632,7 @@ const adminRouter = router({
     const [target] = await db.select().from(users).where(eq(users.id, input.userId));
     if (!target?.isDummy) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only dummy users can be changed here' });
     await db.update(users).set({ accountStatus: input.active ? 'active' : 'frozen', deactivatedAt: input.active ? null : new Date(), frozenAt: input.active ? null : new Date(), frozenReason: input.active ? null : (input.note || 'Disabled by an administrator') }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: input.active ? 'dummy_user_activated' : 'dummy_user_deactivated', source: 'dummy', note: input.note });
+    await recordAccountEvent(db, { userId: input.userId, actorId: ctx.user.id, action: input.active ? 'dummy_user_activated' : 'dummy_user_deactivated', source: 'dummy', note: input.note });
     return { success: true, active: input.active };
   }),
   deleteDummyUser: adminWith('qa.manage').input(z.object({ userId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
@@ -5639,7 +5640,7 @@ const adminRouter = router({
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const [target] = await db.select().from(users).where(eq(users.id, input.userId));
     if (!target?.isDummy) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only dummy users can be deleted' });
-    await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'dummy_user_deleted', source: 'dummy', note: target.creationNote });
+    await recordAccountEvent(db, { userId: input.userId, actorId: ctx.user.id, action: 'dummy_user_deleted', source: 'dummy', note: target.creationNote });
     try {
       await db.delete(users).where(eq(users.id, input.userId));
     } catch (err) {
@@ -5919,7 +5920,7 @@ const adminRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'A qualified-enquiry limit must be zero or a positive whole number' });
       }
 
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: input.userId, actorId: ctx.user.id, action: 'enquiry_allowance_changed', source: 'admin',
         note: `${result.previous ?? 'plan default'} -> ${input.limit ?? 'unlimited'}${input.reason ? ` (${input.reason})` : ''}`,
       });
@@ -6175,7 +6176,7 @@ const adminRouter = router({
         reviewerNote: input.reviewerNote ?? null,
         reviewedAt: new Date(),
       }).where(eq(vendorNameChangeRequests.id, input.requestId));
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: request.userId,
         actorId: ctx.user.id,
         action: `vendor_name_change_${input.status}`,
@@ -6246,7 +6247,7 @@ const adminRouter = router({
         reviewedAt: new Date(),
         adminCorrection: true,
       });
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: input.userId,
         actorId: ctx.user.id,
         action: 'vendor_name_direct_correction',
@@ -6385,7 +6386,7 @@ const adminRouter = router({
 
       // The account trail, alongside the sponsorship row itself: one records
       // the arrangement, the other records that an administrator made it.
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: input.vendorId, actorId: ctx.user.id,
         action: 'sponsorship_granted', source: 'admin',
         note: `${input.category}${input.endsAt ? ` until ${input.endsAt}` : ' (open-ended)'} (${input.reason})`,
@@ -6412,7 +6413,7 @@ const adminRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'That sponsorship is already revoked.' });
       }
 
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: row.vendorId, actorId: ctx.user.id,
         action: 'sponsorship_revoked', source: 'admin',
         note: `${row.category}${input.reason ? ` (${input.reason})` : ''}`,
@@ -6461,7 +6462,7 @@ const adminRouter = router({
       if (result.outcome === 'rejected') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
       }
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: input.vendorId, actorId: ctx.user.id,
         action: 'featured_granted', source: 'admin',
         note: input.category,
@@ -6484,7 +6485,7 @@ const adminRouter = router({
       if (!removed) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'That featured placement is already removed.' });
       }
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: row.vendorId, actorId: ctx.user.id,
         action: 'featured_removed', source: 'admin',
         note: row.category,
@@ -6606,7 +6607,7 @@ const adminRouter = router({
       const from = outcome.previousPlan ?? 'free';
       const to = outcome.state.storedPlan;
 
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: input.userId,
         actorId: ctx.user.id,
         action: 'plan_changed_manually',
@@ -6942,7 +6943,7 @@ const adminRouter = router({
       frozenAt: input.frozen ? new Date() : null,
       frozenReason: input.frozen ? reasonText : null,
     }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: input.userId,
       actorId: ctx.user.id,
       action,
@@ -7097,7 +7098,7 @@ const adminRouter = router({
       invitedBy: ctx.user.id,
       expiresAt: new Date(Date.now() + ADMIN_INVITE_TTL_HOURS * 60 * 60 * 1000),
     });
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId, actorId: ctx.user.id, action: 'admin_created', source: 'admin_invite',
       note: `Administrator ${username} created with role ${input.adminRole}`,
     });
@@ -7139,7 +7140,7 @@ const adminRouter = router({
     if (input.adminRole !== 'SUPER_ADMIN') await assertSuperAdminSurvives(db, target);
 
     await db.update(users).set({ adminRole: input.adminRole }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: input.userId, actorId: ctx.user.id, action: 'admin_role_changed', source: 'admin_management',
       note: `Role changed from ${target.adminRole} to ${input.adminRole}`,
     });
@@ -7178,7 +7179,7 @@ const adminRouter = router({
       ...(input.active ? {} : { sessionsInvalidBefore: revocationCutoff() }),
     }).where(eq(users.id, input.userId));
 
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: input.userId, actorId: ctx.user.id,
       action: input.active ? 'admin_reactivated' : 'admin_deactivated',
       source: 'admin_management',
@@ -7197,7 +7198,7 @@ const adminRouter = router({
     if (!target || target.role !== 'admin') throw new TRPCError({ code: 'NOT_FOUND', message: 'No such administrator' });
 
     await db.update(users).set({ sessionsInvalidBefore: revocationCutoff() }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: input.userId, actorId: ctx.user.id, action: 'admin_sessions_revoked', source: 'admin_management',
       note: 'All sessions revoked',
     });
@@ -7237,7 +7238,7 @@ const adminRouter = router({
       expiresAt,
     });
     await db.update(users).set({ sessionsInvalidBefore: revocationCutoff() }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: input.userId, actorId: ctx.user.id, action: 'admin_password_reset_requested', source: 'admin_management',
       note: 'One-time password reset link issued; existing sessions revoked',
     });
@@ -7276,7 +7277,7 @@ const adminRouter = router({
     await db.update(adminInvitations)
       .set({ revokedAt: new Date(), revokedBy: ctx.user.id })
       .where(eq(adminInvitations.id, input.invitationId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: row.userId, actorId: ctx.user.id, action: 'admin_invitation_revoked', source: 'admin_management',
       note: 'Outstanding administrator link revoked',
     });
@@ -7317,7 +7318,7 @@ const adminRouter = router({
     });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
 
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: ctx.user.id, actorId: ctx.user.id, action: 'admin_password_changed', source: 'admin_management',
       note: 'Administrator changed their own password; other sessions revoked',
     });
