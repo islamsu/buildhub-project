@@ -45,6 +45,25 @@ function makeAnonCtx(): TrpcContext {
   return { user: null, req: { protocol: 'https', headers: {} } as TrpcContext['req'], res: { clearCookie: vi.fn() } as unknown as TrpcContext['res'] };
 }
 
+
+/**
+ * A database that answers `notifications.unreadCount`.
+ *
+ * These tests are about the requireUser MIDDLEWARE - whether a frozen account
+ * is stopped before the body runs - and they used `getDb -> null` purely to
+ * make the body a no-op, then asserted the `{ count: 0 }` that fell out of it.
+ *
+ * That payload was never the subject, and it stopped being available when the
+ * read started FAILING on an unreachable database instead of reporting zero
+ * unread notifications the user actually has (see server/_core/requireDb.ts).
+ * A real stub is the honest replacement, and a stronger one: the positive
+ * control now proves the middleware let the call through to a body that ran,
+ * rather than proving it reached a body that did nothing.
+ */
+const reachableDb = () => (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+  select: () => ({ from: () => ({ where: () => Promise.resolve([{ count: 3 }]) }) }),
+});
+
 describe('requireUser middleware re-checks account state on every request (Phase 4A.6.8)', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -55,9 +74,9 @@ describe('requireUser middleware re-checks account state on every request (Phase
   });
 
   it('a session whose account is active succeeds on the same endpoint', async () => {
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    reachableDb();
     const caller = appRouter.createCaller(makeCtx({ accountStatus: 'active', role: 'user' }));
-    await expect(caller.notifications.unreadCount()).resolves.toEqual({ count: 0 });
+    await expect(caller.notifications.unreadCount()).resolves.toEqual({ count: 3 });
   });
 
   it('a frozen non-admin session is rejected regardless of userRole (homeowner, contractor, engineer)', async () => {
@@ -69,9 +88,9 @@ describe('requireUser middleware re-checks account state on every request (Phase
   });
 
   it('DOCUMENTS the existing, deliberate admin exemption: a frozen admin session still passes requireUser (live-verified in the Phase 4A.6.8 report; only another admin can freeze an admin account, since self-freeze is separately blocked)', async () => {
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    reachableDb();
     const caller = appRouter.createCaller(makeCtx({ accountStatus: 'frozen', role: 'admin' }));
-    await expect(caller.notifications.unreadCount()).resolves.toEqual({ count: 0 });
+    await expect(caller.notifications.unreadCount()).resolves.toEqual({ count: 3 });
   });
 
   it('auth.me still returns profile data for a frozen account (publicProcedure - a user must be able to see their own frozen status without hitting protectedProcedure)', async () => {

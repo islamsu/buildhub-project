@@ -127,7 +127,22 @@ describe('internal authorization still uses the full ctx.user (unaffected by the
   beforeEach(() => vi.clearAllMocks());
 
   it('admin functionality (adminProcedure) still works - gated on the real ctx.user.role, not the trimmed DTO', async () => {
-    (db.getDb as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    /*
+     * A REACHABLE database, not a null one.
+     *
+     * This used `getDb -> null` to make admin.settings a no-op and asserted
+     * only that it resolved. That stopped working when admin.settings began
+     * FAILING on an unreachable database instead of serving DEFAULT_ADMIN_SETTINGS
+     * as though they were the stored ones - which an administrator could then
+     * have saved over the real settings.
+     *
+     * The subject is unchanged and the positive control is now stronger: the
+     * admin caller reaches a body that runs, the non-admin is still refused by
+     * the tier before any of it.
+     */
+    (db.getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+      select: () => ({ from: () => Promise.resolve([]) }),
+    });
     const adminCaller = appRouter.createCaller(makeCtx({ role: 'admin', adminRole: 'SUPER_ADMIN' }));
     await expect(adminCaller.admin.settings()).resolves.toBeDefined();
 

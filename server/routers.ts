@@ -10,6 +10,7 @@ import { publicProcedure, protectedProcedure, router } from './_core/trpc';
 import type { TrpcContext } from './_core/context';
 import { TRPCError } from '@trpc/server';
 import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername, revokeSession } from './db';
+import { requireDb } from './_core/requireDb';
 import { hashPassword, verifyPassword, NO_SUCH_ACCOUNT_HASH } from './passwords';
 import { generateAIResponse, isAiConfigured, AiError, type AiFailureCategory } from './_core/ai';
 import { buildSystemPrompt, type KnowledgeLanguage } from './_core/buildhubKnowledge';
@@ -1040,8 +1041,7 @@ const approvedProviderProcedure = protectedProcedure.use(({ ctx, next }) => {
 
 const projectsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     // Owned OR joined. Before the project team model this was ownership alone,
     // which is why a contractor put on a job could not see it: there was no
     // membership to see it through.
@@ -1053,8 +1053,7 @@ const projectsRouter = router({
     if (!providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Provider access required' });
     }
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     // Lead-directory listing only - never select budget/spent (or other owner-private
     // columns) here. Confirmed against every consumer of this query (RolePlatform.tsx's
     // provider/supplier/PM workspaces) that only id/title/type/status/location/progress
@@ -1362,8 +1361,7 @@ const projectsRouter = router({
       return { success: true };
     }),
   milestones: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     return db.select().from(milestones).where(eq(milestones.projectId, input.projectId)).orderBy(milestones.dueDate);
   }),
@@ -1377,8 +1375,7 @@ const projectsRouter = router({
       return { success: true };
     }),
   tasks: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     return db.select().from(tasks).where(eq(tasks.projectId, input.projectId)).orderBy(desc(tasks.createdAt));
   }),
@@ -1408,8 +1405,7 @@ const projectsRouter = router({
       return { success: true };
     }),
   expenses: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     await requireProjectAccess(db, input.projectId, ctx.user.id, 'finance');
     return db.select().from(expenses).where(eq(expenses.projectId, input.projectId)).orderBy(desc(expenses.date));
   }),
@@ -1423,8 +1419,7 @@ const projectsRouter = router({
       return { success: true };
     }),
   dailyLogs: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     return db.select().from(dailyLogs).where(eq(dailyLogs.projectId, input.projectId)).orderBy(desc(dailyLogs.date));
   }),
@@ -1438,8 +1433,7 @@ const projectsRouter = router({
       return { success: true };
     }),
   documents: protectedProcedure.input(z.object({ projectId: z.number(), type: z.enum(['drawing', 'boq', 'photo', 'contract', 'invoice', 'other']).optional() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     const filters = input.type ? and(eq(documents.projectId, input.projectId), eq(documents.type, input.type)) : eq(documents.projectId, input.projectId);
     return db.select().from(documents).where(filters).orderBy(desc(documents.createdAt));
@@ -1469,8 +1463,7 @@ const projectsRouter = router({
       return { id: Number(result?.[0]?.insertId ?? 0), key, url, name: input.name, type: input.type, size: buffer.length };
     }),
   progressReports: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     return db.select().from(progressReports).where(eq(progressReports.projectId, input.projectId)).orderBy(desc(progressReports.createdAt));
   }),
@@ -1540,10 +1533,10 @@ const marketplaceRouter = router({
    * number.
    */
   platformStats: publicProcedure.query(async () => {
-    const db = await getDb();
-    // No database is not an excuse to invent figures. Zeroes with a null
-    // satisfaction render as "no figure yet", which is accurate.
-    if (!db) return { registeredUsers: 0, activeProjects: 0, verifiedProviders: 0, satisfaction: null };
+    // No database is not an excuse to invent figures - and ZEROES ARE A
+    // FIGURE. "0 registered users" on the public homepage is a claim about
+    // BuildHub, made confidently, and false. It fails instead.
+    const db = await requireDb();
     return getPlatformStats(db);
   }),
 
@@ -1677,8 +1670,7 @@ const marketplaceRouter = router({
       limit: z.number().int().positive().max(100).default(24),
     }))
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return [];
+      const db = await requireDb();
       // Slice 10: `category` and `search` were accepted and then silently
       // ignored - the query built the filter variable and never used it. It
       // went unnoticed because the products page filtered a hardcoded array on
@@ -1728,8 +1720,7 @@ const marketplaceRouter = router({
   vendorProducts: publicProcedure
     .input(z.object({ vendorId: z.number().int().positive(), limit: z.number().int().positive().max(60).default(24) }))
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return [];
+      const db = await requireDb();
       return db.select().from(products)
         .where(and(eq(products.supplierId, input.vendorId), eq(products.active, true)))
         .orderBy(desc(products.createdAt))
@@ -1768,8 +1759,7 @@ const marketplaceRouter = router({
     if (ctx.user.userRole !== 'supplier') {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
     }
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(products).where(eq(products.supplierId, ctx.user.id)).orderBy(desc(products.createdAt));
   }),
   create: approvedProviderProcedure
@@ -2020,8 +2010,9 @@ const marketplaceRouter = router({
   categories: publicProcedure
     .input(z.object({ view: z.enum(['listable', 'public']).default('listable') }).optional())
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return { categories: [] as ReturnType<typeof listableCategories> };
+      // An empty taxonomy would empty every category dropdown on the platform
+      // and read as "BuildHub has no categories".
+      const db = await requireDb();
       const index = await loadCategoryIndex(db);
       const view = input?.view ?? 'listable';
       return { categories: view === 'public' ? publicCategories(index) : listableCategories(index) };
@@ -2319,14 +2310,12 @@ const marketplaceRouter = router({
    * Arabic names.
    */
   categoryNames: publicProcedure.query(async () => {
-    const db = await getDb();
-    if (!db) return [] as string[];
+    const db = await requireDb();
     const index = await loadCategoryIndex(db);
     return publicCategories(index).map(category => category.nameEn);
   }),
   questions: publicProcedure.input(z.object({ productId: z.number() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     // Slice 9: an explicit column allowlist. This is a PUBLIC endpoint and the
     // bare select returned `askerId`, so anyone could walk the product
     // catalogue and collect the user id of every buyer who had asked about
@@ -2468,8 +2457,7 @@ const marketplaceRouter = router({
    * threads and no one else's.
    */
   myProductQuestions: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db
       .select({
         id: productQuestions.id,
@@ -2526,8 +2514,7 @@ const rfqRouter = router({
   // "full detail" - and narrowing it would change what the product gives away.
   // That is a call for you, not something to infer from a table.
   list: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     /**
      * WHO THE FEED IS FOR.
      *
@@ -2561,8 +2548,7 @@ const rfqRouter = router({
       .orderBy(desc(rfqs.createdAt)).limit(50);
   }),
   myList: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(rfqs).where(eq(rfqs.requesterId, ctx.user.id)).orderBy(desc(rfqs.createdAt));
   }),
   /**
@@ -3012,8 +2998,7 @@ const rfqRouter = router({
     if (!providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Provider access required' });
     }
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select({
       id: quotations.id,
       rfqId: quotations.rfqId,
@@ -3043,8 +3028,7 @@ const rfqRouter = router({
   // matches the same pattern already used by every other project/RFQ-scoped
   // query in this file (projects.get, projects.expenses, projects.dailyLogs).
   quotations: protectedProcedure.input(z.object({ rfqId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const [rfq] = await db.select({ requesterId: rfqs.requesterId }).from(rfqs).where(eq(rfqs.id, input.rfqId));
     if (!rfq || rfq.requesterId !== ctx.user.id) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this RFQ' });
@@ -3735,8 +3719,7 @@ const rfqRouter = router({
 // ── Messages Router ─────────────────────────────────────────────────────────
 const messagesRouter = router({
   conversations: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const rows = await db.select({ senderId: messages.senderId, receiverId: messages.receiverId, content: messages.content, createdAt: messages.createdAt, read: messages.read }).from(messages).where(sql`${messages.senderId} = ${ctx.user.id} OR ${messages.receiverId} = ${ctx.user.id}`).orderBy(desc(messages.createdAt));
     const otherIds = Array.from(new Set(rows.map(row => row.senderId === ctx.user.id ? row.receiverId : row.senderId)));
     if (!otherIds.length) return [];
@@ -3791,8 +3774,7 @@ const messagesRouter = router({
     };
   }),
   list: protectedProcedure.input(z.object({ otherUserId: z.number().optional() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const filter = input.otherUserId
       ? and(sql`(${messages.senderId} = ${ctx.user.id} AND ${messages.receiverId} = ${input.otherUserId}) OR (${messages.senderId} = ${input.otherUserId} AND ${messages.receiverId} = ${ctx.user.id})`)
       : sql`${messages.senderId} = ${ctx.user.id} OR ${messages.receiverId} = ${ctx.user.id}`;
@@ -3919,13 +3901,12 @@ const messagesRouter = router({
 // ── Notifications Router ───────────────────────────────────────────────────
 const notificationsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(notifications).where(eq(notifications.userId, ctx.user.id)).orderBy(desc(notifications.createdAt)).limit(50);
   }),
   unreadCount: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return { count: 0 };
+    // "0 unread" hides real notifications behind a number the user trusts.
+    const db = await requireDb();
     const result = await db.select({ count: sql<number>`count(*)` }).from(notifications).where(and(eq(notifications.userId, ctx.user.id), eq(notifications.read, false)));
     return { count: Number(result[0]?.count ?? 0) };
   }),
@@ -3940,8 +3921,7 @@ const notificationsRouter = router({
 // ── Reviews Router ─────────────────────────────────────────────────────────
 const reviewsRouter = router({
   forUser: publicProcedure.input(z.object({ userId: z.number() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(reviews).where(and(eq(reviews.revieweeId, input.userId), eq(reviews.verified, true))).orderBy(desc(reviews.createdAt));
   }),
   // Dynamic/computed rating (Phase 4A.4 decision): always derived live from the
@@ -3950,8 +3930,9 @@ const reviewsRouter = router({
   // `verified: true` filter as `forUser` above, since this is an aggregate over
   // exactly the same public-by-design data, not a new/competing calculation.
   statsForUser: publicProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return { averageRating: null as number | null, reviewCount: 0 };
+    // "No reviews" about a vendor who has them is a reputational statement,
+    // not a degraded read.
+    const db = await requireDb();
     const [row] = await db.select({
       avg: sql<string | null>`avg(${reviews.rating})`,
       count: sql<number>`count(*)`,
@@ -3968,8 +3949,7 @@ const reviewsRouter = router({
   // fallback, since that fallback has no well-defined, enumerable participant
   // list to safely offer as UI choices.
   eligibleReviewees: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const [project] = await db.select().from(projects).where(and(eq(projects.id, input.projectId), eq(projects.status, 'completed')));
     if (!project || project.ownerId !== ctx.user.id) return [];
     const awardedProviders = await db.select({ providerId: quotations.providerId, name: users.name })
@@ -4064,8 +4044,7 @@ async function completedProjectCount(db: NonNullable<Awaited<ReturnType<typeof g
 // The admin side (list/update) already exists; this is the missing user half.
 const disputesRouter = router({
   myDisputes: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(disputes)
       .where(or(eq(disputes.reporterId, ctx.user.id), eq(disputes.respondentId, ctx.user.id)))
       .orderBy(desc(disputes.createdAt));
@@ -4127,16 +4106,14 @@ const portfolioRouter = router({
   list: protectedProcedure
     .input(z.object({ userId: z.number().int().positive() }))
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return [];
+      const db = await requireDb();
       return db.select().from(portfolioItems)
         .where(eq(portfolioItems.userId, input.userId))
         .orderBy(desc(portfolioItems.createdAt));
     }),
 
   myItems: approvedProviderProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(portfolioItems)
       .where(eq(portfolioItems.userId, ctx.user.id))
       .orderBy(desc(portfolioItems.createdAt));
@@ -4412,8 +4389,7 @@ const profileRouter = router({
     }),
 
   myVendorNameChanges: approvedProviderProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(vendorNameChangeRequests)
       .where(eq(vendorNameChangeRequests.userId, ctx.user.id))
       .orderBy(desc(vendorNameChangeRequests.createdAt))
@@ -4798,8 +4774,8 @@ const adminRouter = router({
     }),
 
   stats: adminWith('users.read').query(async () => {
-    const db = await getDb();
-    if (!db) return { users: 0, projects: 0, products: 0, rfqs: 0, disputes: 0 };
+    // An all-zero admin dashboard is the most convincing lie on the platform.
+    const db = await requireDb();
     const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.isDummy, false));
     const dummyRows = await db.select({ id: users.id }).from(users).where(eq(users.isDummy, true));
     const dummyIds = dummyRows.map(row => row.id);
@@ -4849,12 +4825,10 @@ const adminRouter = router({
       const { search, group, sort, page, pageSize } = {
         group: 'all', sort: 'newest' as const, page: 0, pageSize: 10, ...(input ?? {}),
       };
-      const empty: AdminDirectoryPage = {
-        rows: [], total: 0, page: 0, pageSize,
-        counts: { all: 0, real: 0, dummy: 0, byRole: {}, byRoleReal: {} },
-      };
-      const db = await getDb();
-      if (!db) return empty;
+      // No "empty page" fallback. An administrator looking at a user directory
+      // that reports zero accounts would conclude something very different from
+      // "the directory could not be loaded".
+      const db = await requireDb();
       return listAdminUsers(db, { search, group, sort, page, pageSize });
     }),
   // 'admin' is NOT creatable here. This endpoint is gated on `users.manage`,
@@ -4930,8 +4904,7 @@ const adminRouter = router({
     return { success: true, username: target.username };
   }),
   fullAuditReport: adminWith('audit.read').query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const events = await db.select().from(userAccountAuditEvents).orderBy(desc(userAccountAuditEvents.createdAt)).limit(1000);
     // COLUMN LIST, not `select().from(users)`.
     //
@@ -5076,8 +5049,7 @@ const adminRouter = router({
     return { success: true as const, changed: true };
   }),
   userNotes: adminWith('users.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const rows = await db.select({
       id: adminNotes.id,
       note: adminNotes.note,
@@ -5106,8 +5078,7 @@ const adminRouter = router({
     return { success: true, noteId: Number(result[0]?.insertId ?? 0) };
   }),
   referrals: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const rows = await db.select({
       id: referrals.id,
       referrerId: referrals.referrerId,
@@ -5127,8 +5098,7 @@ const adminRouter = router({
     return rows;
   }),
   referralCampaigns: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(referralCampaigns).orderBy(desc(referralCampaigns.createdAt)).limit(100);
   }),
   createReferralCampaign: adminWith('marketplace.manage')
@@ -5208,8 +5178,7 @@ const adminRouter = router({
       return { success: true as const, changed: true };
     }),
   referralRewards: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select({
       id: referralRewards.id,
       referralId: referralRewards.referralId,
@@ -5280,8 +5249,7 @@ const adminRouter = router({
       return { success: true as const, changed: true };
     }),
   placements: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select({
       id: vendorSponsorships.id,
       vendorId: vendorSponsorships.vendorId,
@@ -5539,8 +5507,7 @@ const adminRouter = router({
 
   /** Administrators an enquiry may be handed to - those who could actually act. */
   assignableAdmins: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return assignableAdmins(db);
   }),
 
@@ -5906,8 +5873,9 @@ const adminRouter = router({
   // explicit ADMIN_SUBSCRIPTION_COLUMNS allowlist (no provider references, and
   // BuildHub stores no card/token/credential data anywhere to begin with).
   vendorBilling: adminWith('billing.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return null;
+    // null reads as "this vendor has no subscription", which is a billing
+    // statement an administrator acts on.
+    const db = await requireDb();
     const [row] = await db
       .select(ADMIN_SUBSCRIPTION_COLUMNS)
       .from(vendorSubscriptions)
@@ -6266,8 +6234,7 @@ const adminRouter = router({
     }),
 
   projects: adminWith('users.read').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const rows = await db.select({
       id: projects.id,
       title: projects.title,
@@ -6288,8 +6255,7 @@ const adminRouter = router({
   }),
 
   products: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const rows = await db.select({
       id: products.id,
       name: products.name,
@@ -6365,8 +6331,7 @@ const adminRouter = router({
   }),
 
   vendorNameChanges: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const rows = await db.select({
       id: vendorNameChangeRequests.id,
       userId: vendorNameChangeRequests.userId,
@@ -6951,13 +6916,11 @@ const adminRouter = router({
     return { ...diagnostics, usage };
   }),
   accountAudit: adminWith('users.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(userAccountAuditEvents).where(eq(userAccountAuditEvents.userId, input.userId)).orderBy(desc(userAccountAuditEvents.createdAt)).limit(100);
   }),
   analyticsSummary: adminWith('audit.read').input(z.object({ includeDummy: z.boolean().default(false) }).optional()).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const dummyRows = await db.select({ id: users.id }).from(users).where(eq(users.isDummy, true));
     const dummyIds = dummyRows.map(row => row.id);
     const userRows = await db.select({ createdAt: users.createdAt, isDummy: users.isDummy }).from(users).where(input?.includeDummy ? undefined : eq(users.isDummy, false));
@@ -7053,8 +7016,7 @@ const adminRouter = router({
   // compliance queue list, registration CSV export (shared/registrationMetrics.ts),
   // and the applicant detail dialog.
   complianceQueue: adminWith('marketplace.manage').input(z.object({ includeDummy: z.boolean().default(false) }).optional()).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const applicantFilter = input?.includeDummy ? inArray(users.userRole, providerRoles) : and(inArray(users.userRole, providerRoles), eq(users.isDummy, false));
     const applicants = await db.select(COMPLIANCE_APPLICANT_COLUMNS).from(users).where(applicantFilter);
     const docs = await db.select().from(registrationDocuments).orderBy(desc(registrationDocuments.createdAt));
@@ -7202,8 +7164,7 @@ const adminRouter = router({
     return { success: true, status: input.frozen ? 'frozen' : 'active' };
   }),
   disputes: adminWith('support.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const rows = await db.select().from(disputes).orderBy(desc(disputes.createdAt));
     const userRows = await db.select({ id: users.id, name: users.name }).from(users);
     const names = new Map(userRows.map(row => [row.id, row.name]));
@@ -7224,8 +7185,9 @@ const adminRouter = router({
     return { success: true };
   }),
   settings: adminWith('settings.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return DEFAULT_ADMIN_SETTINGS;
+    // Showing the DEFAULTS as though they were the stored settings invites an
+    // administrator to save them over the real ones.
+    const db = await requireDb();
     const rows = await db.select({ settingKey: adminSettings.settingKey, value: adminSettings.value }).from(adminSettings);
     return { ...DEFAULT_ADMIN_SETTINGS, ...Object.fromEntries(rows.map(row => [row.settingKey, row.value])) };
   }),
@@ -7276,8 +7238,7 @@ const adminRouter = router({
    * Admin Management screen.
    */
   admins: superAdminProcedure.query(async () => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select({
       id: users.id,
       name: users.name,
@@ -7499,8 +7460,7 @@ const adminRouter = router({
   adminInvitations: superAdminProcedure.input(z.object({
     userId: z.number().int().positive(),
   })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select({
       id: adminInvitations.id,
       adminRole: adminInvitations.adminRole,
@@ -8049,8 +8009,7 @@ const auditRouter = router({
   mine: protectedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(100).default(50) }).optional())
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) return [];
+      const db = await requireDb();
       return db.select({
         id: commercialAuditEvents.id,
         subjectType: commercialAuditEvents.subjectType,
@@ -8071,8 +8030,7 @@ const auditRouter = router({
   all: adminWith('audit.read')
     .input(z.object({ limit: z.number().int().min(1).max(200).default(100) }).optional())
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return [];
+      const db = await requireDb();
       return db.select()
         .from(commercialAuditEvents)
         .orderBy(desc(commercialAuditEvents.createdAt))

@@ -579,6 +579,53 @@ link actually filters, and a category created in the database appears in the for
 filter and the upload reference - then disappears from all of them when hidden - with no
 restart.
 
+## Truthful Error vs Empty States (P0-5)
+
+- [x] P0-5: an outage must never render as an empty state. `const db = await getDb();
+      if (!db) return [];` appeared 45 times in routers.ts, plus 8 more returning a
+      zeroed shape - "No disputes have been filed", "0 registered users", "0 unread",
+      "no subscription". Every one is a confident claim about the user's data, and
+      every one is false when the database is unreachable. Replaced by ONE canonical
+      `requireDb()` (server/_core/requireDb.ts) that throws with a message saying in
+      words that this is not an empty result.
+
+      It lives in `_core` rather than in db.ts for two reasons: db.ts is the connection
+      module and should not import the transport layer to describe a failure, and every
+      test that drives a procedure mocks './db' with a factory - a helper added there
+      would have broken all of them at once for no benefit.
+
+      What still degrades quietly does so deliberately and says so at its own
+      definition: the analytics recorder and the commercial audit helper are
+      side-channels, and failing a supplier's listing because a metric could not be
+      written is the worse outcome. The ACCOUNT audit trail still THROWS, and
+      `isSessionRevoked` still fails closed. Three policies, one decision: reads fail,
+      side-channels swallow, privileged writes throw.
+
+      The client half: AdminDashboard rendered `loading ? spinner : rows.length === 0 ?
+      <EmptyState/>` for disputes, compliance and the user directory, so a failed fetch
+      fell through to the middle branch. `usersFailed` was already destructured there
+      and rendered nowhere - the observation existed, the honesty did not. All three
+      now render a failure with Retry, in both languages.
+
+      Proven live by `evidence/zg-outage.mjs` (22/22, run twice), which BREAKS THE
+      DATABASE FOR REAL: it revokes the application account's SELECT, kills the pool's
+      connections so the privilege change actually takes effect, verifies with a real
+      table read that the account genuinely cannot read, then asserts every endpoint
+      returns 500 or 401 rather than an empty list - and that all of them recover.
+      Positive controls run first against a working database, so the outage half cannot
+      pass against an endpoint that was broken all along.
+
+      `marketplace.platformStats` is the one deliberate exception and is asserted
+      separately: it memoises, so during an outage it serves the LAST REAL figures.
+      Stale is not fabricated. What it must never do is report zero, which is exactly
+      what its old `if (!db)` branch did.
+
+      Recorded while investigating: a connection that survives an ACL change keeps the
+      old privileges for its whole life, so restoring the grant alone leaves a pooled
+      connection denied. That is MySQL's privilege semantics, reproduced in isolation
+      with a bare drizzle+mysql2 pool outside this application - not a BuildHub defect.
+      A real outage closes the sockets and mysql2 reconnects on its own.
+
 ## Master Reconciliation Remaining Scope
 
 - [ ] Referral / Invitation Reward system: secure code/link, attribution, campaigns, qualification, caps, non-cash rewards, expiry, reversal, notifications, audit, Admin management
