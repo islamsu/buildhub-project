@@ -1,0 +1,114 @@
+================================================================================
+BUILDHUB - THE STAGING BLOCKER (§25/§26)
+Branch: codex/buildhub-final-closure   HEAD: d280e0b
+================================================================================
+
+The mandate says two things that this repository's wiring makes mutually
+exclusive:
+
+    "Staging deployment is authorized for verification."
+    "Do not merge main. Do not touch production."
+
+EVERY staging deployment path in this repository deploys from `main`:
+
+    render.yaml                       branch: main, autoDeploy: true
+    .github/workflows/deploy-staging  on: push: branches: [main]
+
+The working branch is 104 commits AHEAD of main and 0 behind, so the merge would
+be a clean fast-forward - but it would put 104 commits onto the default branch
+in one step, and Render would then auto-deploy the tip. That is a materially
+larger act than "deploy to staging", it is what every future PR would be based
+on, and it is not reversible without a force-push.
+
+So the blocker is NOT technical. It is an authorization question that only the
+owner can answer, and it is stated here rather than resolved by assumption.
+
+
+================================================================================
+WHAT IS ALREADY PROVEN, AND DOES NOT DEPEND ON THE ANSWER
+================================================================================
+
+MIGRATIONS APPLY CLEANLY FROM ZERO - the thing a fresh staging database does.
+Run against an empty database with the exact command render.yaml uses
+(preDeployCommand: ./node_modules/.bin/drizzle-kit migrate):
+
+    42 migration files, 42 journal entries, applied successfully
+    46 tables created; 45 declared in schema.ts plus drizzle's own
+      __drizzle_migrations journal
+    NOTHING DECLARED IS MISSING - reconciled both directions, not just counted
+    enquiryAssignments (0041) present with its four foreign keys and the
+      intended delete rules: RESTRICT on rfqId and vendorId, SET NULL on
+      assigneeId and actorId, so the trail outlives its actors
+
+THE BUILD AND THE SUITE are green on exactly this tree: 3,235 passing, 0
+failing, tsc clean, `npm run build` clean.
+
+THE VERIFICATION MECHANISM EXISTS AND IS THE RIGHT ONE. This container cannot
+reach the deployment - `*.onrender.com` returns 403 at the egress proxy
+(CONNECT tunnel failed, verified, not assumed). A GitHub runner has ordinary
+internet access, which is why staging-qa.yml is a workflow_dispatch job. Its
+`expect_commit` input is what turns "staging is up" into
+MAIN == DEPLOYED == GATE: set it to the exact SHA and a mismatch FAILS the gate
+instead of being reported.
+
+
+================================================================================
+THE OPTIONS, WITH THE TRADE-OFF EACH ONE REALLY CARRIES
+================================================================================
+
+A. AUTHORIZE THE FAST-FORWARD MERGE TO MAIN, THEN DEPLOY AND GATE.
+   What happens: 104 commits land on main; Render auto-deploys the tip; the
+   staging gate runs against it with expect_commit set to that SHA.
+   Cost: the default branch advances by 104 commits with no PR review. Nothing
+   is lost - it is a fast-forward - but it is the act the standing instruction
+   forbids without this authorization.
+   This is the only option that uses the deployment path as designed.
+
+B. POINT THE RENDER SERVICE AT THE BRANCH INSTEAD.
+   NOT RECOMMENDED, and the repository says why in its own words: render.yaml
+   used to track a feature branch, "which meant staging deployed whatever that
+   branch happened to hold - so a push that had never been reviewed or merged
+   went live on staging, while merging to main deployed nothing." That was
+   deliberately fixed. Reintroducing it would undo a decision made on purpose.
+
+C. A SECOND, SEPARATE RENDER SERVICE PINNED TO THE BRANCH.
+   Keeps main untouched and keeps staging honest. Requires provisioning in the
+   Render dashboard - an owner action with its own cost (a second database, a
+   second set of secrets) - and I have neither Render credentials nor egress to
+   Render from here.
+
+D. DO NOT DEPLOY YET.
+   Everything above stays true and the work stays verified locally, at API,
+   database, HTTP and rendered-browser level. What remains unverified is what
+   only a real deployment can show: the Docker image, the preDeploy migration
+   against a real MySQL 8, and the app behind Render's proxy.
+
+RECOMMENDATION: A. The branch is a fast-forward, the suite and build are green
+on this exact tree, the migrations are proven to apply from zero, and the gate
+can prove MAIN == DEPLOYED == GATE afterwards. B is a regression of a decision
+already made; C is real but needs infrastructure work the owner must do anyway.
+
+
+================================================================================
+RUNBOOK FOR OPTION A - the exact sequence, once authorized
+================================================================================
+
+  1. git fetch origin main
+  2. git checkout main && git merge --ff-only codex/buildhub-final-closure
+  3. git push origin main
+  4. Render auto-deploys the tip of main. preDeployCommand runs
+     `drizzle-kit migrate`; a failed migration HALTS THE DEPLOY and keeps the
+     old version serving, so a broken migration is a refused deploy rather than
+     an outage.
+  5. Read the deployed SHA:  GET https://buildhub-staging.onrender.com/version
+  6. Dispatch Staging QA (workflow_dispatch) with
+       base_url       = https://buildhub-staging.onrender.com
+       expect_commit  = the exact SHA from step 3
+     A mismatch fails the gate. An older green gate is never evidence for newly
+     changed code.
+  7. Record MAIN == DEPLOYED == GATE, all three equal, in the final report.
+
+  NOT IN THIS RUNBOOK, BY INSTRUCTION: production. deploy-production.yml is a
+  separate workflow only a human can start, and it stays unstarted.
+
+================================================================================
