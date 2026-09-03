@@ -1384,6 +1384,12 @@ export const referralRewards = mysqlTable('referralRewards', {
   grantedAt:       timestamp('grantedAt'),
   reversedAt:      timestamp('reversedAt'),
   reversalReason:  varchar('reversalReason', { length: 500 }),
+  /**
+   * What this reward actually created - `OVERRIDE:123` or `PLACEMENT:45`.
+   * Written when the effect commits, so a reversal can undo THIS grant and not
+   * somebody else's. See drizzle/0045.
+   */
+  effectRef:       varchar('effectRef', { length: 64 }),
   createdAt:       timestamp('createdAt').defaultNow().notNull(),
 }, table => ({
   referralCampaignUnique: uniqueIndex('referralRewards_referral_campaign_unique').on(table.referralId, table.campaignId),

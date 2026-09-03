@@ -119,7 +119,7 @@ Dead param routes: **0**
 | `adminNotes` | 9 | 1 | 6 | 0 |
 | `referrals` | 22 | 3 | 6 | 0 |
 | `referralCampaigns` | 21 | 1 | 13 | 0 |
-| `referralRewards` | 17 | 3 | 8 | 0 |
+| `referralRewards` | 18 | 3 | 8 | 0 |
 | `vendorSponsorships` | 22 | 4 | 7 | 0 |
 | `enquiryAssignments` | 9 | 4 | 3 | 0 |
 

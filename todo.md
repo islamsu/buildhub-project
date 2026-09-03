@@ -686,12 +686,17 @@ restart.
       as the grantor of his own placement; it is null - the platform - and both
       `setEnquiryAllowance.actorId` and `bookPlacement.grantedBy` were widened to
       `number | null` to match columns that were always nullable.
-- [ ] REF-3 (stacking half): entitlement rewards still CLOBBER rather than stack.
-      `setEnquiryAllowance` revokes the prior override and writes an absolute number,
-      so a referral reward silently destroys an unrelated admin grant and, on expiry,
-      the vendor falls back to the plan value rather than to the admin's. Needs the
-      referral bonus modelled as its own additive override row so both survive
-      independently.
+- [x] REF-3 (stacking half): entitlement rewards ADD instead of clobbering.
+      `setEnquiryAllowance` writes an ABSOLUTE number and revokes the previous
+      override - right for an administrator, wrong for "+5 on top of what they have".
+      Routing the reward through it destroyed the administrator's grant, and when the
+      reward's own expiry passed the vendor fell back to the PLAN value rather than to
+      the administrator's number: a temporary bonus permanently deleting a permanent
+      decision. Bonuses now live in their own key (`qualifiedEnquiryBonus`), are never
+      revoked by each other, and SUM; an unlimited allowance stays unlimited. Migration
+      0045 adds `referralRewards.effectRef` (`OVERRIDE:123` / `PLACEMENT:45`) so a
+      reversal can undo exactly what a reward created rather than matching on a reason
+      string that two campaigns could share.
 - [ ] REF-4: SUBSCRIPTION_EXTENSION as a real period extension, per the owner's
       decision - extend from the existing end date, never from now, refuse honestly
       when there is no finite period, and fabricate no payment or invoice.

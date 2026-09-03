@@ -1863,7 +1863,7 @@
     {
       "ident": "referralRewards",
       "name": "referralRewards",
-      "columns": 17,
+      "columns": 18,
       "references": 3,
       "notNull": 8,
       "unique": 0

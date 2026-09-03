@@ -316,6 +316,13 @@
       "when": 1788712800000,
       "tag": "0044_referral_late_binding",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "5",
+      "when": 1788716400000,
+      "tag": "0045_referral_effect_ref",
+      "breakpoints": true
     }
   ]
 }

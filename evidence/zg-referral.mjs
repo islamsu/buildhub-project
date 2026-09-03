@@ -278,6 +278,60 @@ try {
       `${placementStatus}: ${sql(`select ifnull(reversalReason,'') from referralRewards where referralId=${fifthReferral}`)}`);
   }
 
+  // ── A BONUS AND AN ADMIN GRANT MUST SURVIVE EACH OTHER ─────────────────
+  //
+  // The reward used to be applied with setEnquiryAllowance(current + bonus),
+  // which REVOKES whatever override was there. So a referral reward silently
+  // destroyed an administrator's grant, and when the reward expired the vendor
+  // fell back to the PLAN value rather than to the administrator's number - a
+  // temporary bonus permanently deleting a permanent decision.
+  const sixth = await signUp('inv2', 'supplier');
+  sql(`update users set onboardingStatus='approved', verified=1 where id=${sixth.id}`);
+  const sixthCode = sql(`select referralCode from users where id=${sixth.id}`);
+
+  // An administrator sets an absolute allowance, through the real endpoint.
+  const adminGrant = await admin.mutate('admin.setVendorEnquiryLimit', { userId: sixth.id, limit: 40, reason: 'ZG admin grant' });
+  const adminGrantWorked = adminGrant.status === 200;
+  check('SETUP: an administrator set an absolute allowance', adminGrantWorked,
+    `${adminGrant.status} ${adminGrant.error ?? ''}`);
+
+  if (adminGrantWorked) {
+    const stackCampaign = campaign(`ZG Stack ${stamp}`, { priority: 400, rewardValue: '6' });
+    const seventh = await signUp('ref6', 'homeowner', sixthCode);
+    const seventhReferral = Number(sql(`select id from referrals where referredId=${seventh.id}`));
+    await admin.mutate('admin.verifyUser', { userId: seventh.id, verified: true });
+
+    const stacked = (await sixth.session.query('billing.myEntitlements', undefined)).data?.qualifiedEnquiryAllowance;
+    check('STACKING: the bonus ADDS to the administrator\'s number, it does not replace it',
+      stacked === 46, `admin 40 + bonus 6 = expected 46, got ${stacked}`);
+    check('DATABASE: the administrator\'s override is still live, not revoked by the reward',
+      Number(sql(`select count(*) from vendorEntitlementOverrides
+                  where userId=${sixth.id} and entitlementKey='qualifiedEnquiriesPerMonth' and revokedAt is null`)) === 1);
+    check('and the bonus is its own row in its own slot',
+      Number(sql(`select count(*) from vendorEntitlementOverrides
+                  where userId=${sixth.id} and entitlementKey='qualifiedEnquiryBonus' and revokedAt is null`)) === 1);
+    check('the reward records WHAT it created, so a reversal can undo exactly that',
+      /^OVERRIDE:\d+$/.test(sql(`select ifnull(effectRef,'') from referralRewards where referralId=${seventhReferral}`)),
+      sql(`select ifnull(effectRef,'none') from referralRewards where referralId=${seventhReferral}`));
+
+    // EXPIRY: age the bonus past its end date. The administrator's 40 must be
+    // what remains - not the plan value.
+    sql(`update vendorEntitlementOverrides set endsAt = date_sub(now(), interval 1 day)
+         where userId=${sixth.id} and entitlementKey='qualifiedEnquiryBonus'`);
+    const afterLapse = (await sixth.session.query('billing.myEntitlements', undefined)).data?.qualifiedEnquiryAllowance;
+    check('EXPIRY: when the bonus lapses the ADMINISTRATOR\'s number remains, not the plan\'s',
+      afterLapse === 40, `expected 40, got ${afterLapse}`);
+
+    // TWO BONUSES SUM rather than supersede.
+    sql(`update vendorEntitlementOverrides set endsAt = null
+         where userId=${sixth.id} and entitlementKey='qualifiedEnquiryBonus'`);
+    sql(`insert into vendorEntitlementOverrides (userId, entitlementKey, value, reason, startsAt)
+         values (${sixth.id}, 'qualifiedEnquiryBonus', '3', 'ZG second bonus', now())`);
+    const twoBonuses = (await sixth.session.query('billing.myEntitlements', undefined)).data?.qualifiedEnquiryAllowance;
+    check('two bonuses in force SUM, rather than one superseding the other',
+      twoBonuses === 49, `expected 40+6+3=49, got ${twoBonuses}`);
+  }
+
   // ── AUDIT AND NOTIFICATION ─────────────────────────────────────────────
   // ONE AUDIT ROW PER REWARD, not a hard-coded one: the second referral also
   // paid this inviter, from the next eligible campaign. Tying the count to the

@@ -183,6 +183,25 @@ export const MAX_ENQUIRY_ALLOWANCE = 100_000;
 
 export const ENQUIRY_ALLOWANCE_KEY = 'qualifiedEnquiriesPerMonth';
 
+/**
+ * THE ADDITIVE SLOT, AND WHY IT IS A DIFFERENT KEY.
+ *
+ * `setEnquiryAllowance` writes an ABSOLUTE number and REVOKES the previous
+ * override, which is right for an administrator: "this vendor's allowance is
+ * 40" supersedes "this vendor's allowance is 25", and the trail records both.
+ *
+ * A referral reward is not that. It is "+5 on top of whatever they have", and
+ * routing it through the same slot did two wrong things at once: it destroyed
+ * an unrelated administrative grant, and when the reward's own expiry passed
+ * the vendor fell back to the PLAN value rather than to the administrator's -
+ * so a temporary bonus permanently deleted a permanent decision.
+ *
+ * Bonuses live in their own key, are never revoked by each other, and SUM. Two
+ * referral rewards running at once are worth both. Each expires on its own
+ * `endsAt` with no sweep, exactly as the absolute overrides already do.
+ */
+export const ENQUIRY_BONUS_KEY = 'qualifiedEnquiryBonus';
+
 export type EnquiryAllowanceView = {
   userId: number;
   planId: PlanId;
@@ -378,6 +397,78 @@ export async function setEnquiryAllowance(args: {
     const overrideId = Number((Array.isArray(inserted) ? inserted[0] : inserted)?.insertId ?? 0);
     return { ok: true, overrideId, previous };
   });
+}
+
+/**
+ * Add a bonus to a vendor's qualified-enquiry allowance, WITHOUT touching
+ * anything that is already there.
+ *
+ * Deliberately not a transaction with a lock, unlike setEnquiryAllowance: that
+ * one has to read current usage and refuse a limit below it, and it supersedes
+ * a row. This only ever INSERTS, and two concurrent bonuses summing to more
+ * than either is the correct answer, so there is nothing to serialise.
+ *
+ * Returns the row's id so the caller can record exactly what it created - a
+ * reversal has to be able to undo THIS bonus and not somebody else's.
+ */
+export async function grantEnquiryBonus(args: {
+  db: never;
+  userId: number;
+  /** A positive whole number of extra enquiries. */
+  amount: number;
+  reason: string | null;
+  /** Null means it never lapses; a referral reward always sets one. */
+  endsAt?: Date | null;
+  /** Null = the platform. A referral reward has no administrator behind it. */
+  actorId?: number | null;
+  now?: Date;
+}): Promise<{ ok: true; overrideId: number } | { ok: false; reason: string }> {
+  const { userId, amount, reason } = args;
+  const now = args.now ?? new Date();
+  if (!Number.isInteger(amount) || amount <= 0) {
+    return { ok: false, reason: 'A bonus must be a positive whole number of enquiries.' };
+  }
+  if (amount > MAX_ENQUIRY_ALLOWANCE) {
+    return { ok: false, reason: `A bonus above ${MAX_ENQUIRY_ALLOWANCE} is refused.` };
+  }
+
+  const db = args.db as unknown as {
+    insert: (t: unknown) => { values: (v: unknown) => Promise<{ insertId: number }[] | { insertId: number }> };
+  };
+  const inserted = await db.insert(vendorEntitlementOverrides).values({
+    userId,
+    entitlementKey: ENQUIRY_BONUS_KEY,
+    value: encodeEntitlementValue(amount),
+    // Nothing was superseded, so there is no previous value to record.
+    previousValue: null,
+    reason,
+    actorId: args.actorId ?? null,
+    startsAt: now,
+    endsAt: args.endsAt ?? null,
+  });
+  return { ok: true, overrideId: Number((Array.isArray(inserted) ? inserted[0] : inserted)?.insertId ?? 0) };
+}
+
+/**
+ * Every bonus in force right now, SUMMED.
+ *
+ * A separate read from activeOverridesFor because that one deliberately keeps
+ * only the highest-id row per key - correct for supersession, and exactly wrong
+ * for a slot whose whole point is that the rows add up.
+ */
+export function sumActiveBonuses(rows: readonly OverrideRow[], now: Date = new Date()): number {
+  let total = 0;
+  for (const row of rows) {
+    if (row.entitlementKey !== ENQUIRY_BONUS_KEY) continue;
+    if (row.revokedAt) continue;
+    if (row.endsAt && new Date(row.endsAt).getTime() <= now.getTime()) continue;
+    const value = decodeEntitlementValue(row.value);
+    // A malformed bonus is ignored, never guessed at. FAILS CLOSED, like every
+    // other override read: a bad row must not be the reason someone gets more.
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) continue;
+    total += value;
+  }
+  return total;
 }
 
 /** 'YYYY-MM' in UTC - the same period key qualifiedEnquiries.yearMonth carries. */

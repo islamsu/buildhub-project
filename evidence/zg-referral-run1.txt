@@ -1,12 +1,12 @@
-PASS  SETUP: signup minted a real referral code for the inviter  [BH-F00E453A606D41B9]
-PASS  SETUP: two eligible campaigns exist  [low=23 high=24]
-PASS  the signup recorded the referral against the real code  [referral 22]
+PASS  SETUP: signup minted a real referral code for the inviter  [BH-43F1A99F2DAAFD68]
+PASS  SETUP: two eligible campaigns exist  [low=39 high=40]
+PASS  the signup recorded the referral against the real code  [referral 38]
 PASS  THE DEFECT: signup binds NO campaign - that is the design, not a gap
 PASS  and no reward exists yet
 PASS  SETUP: an administrator is genuinely signed in  [200]
 PASS  the administrator verifies the referred account
-PASS  LATE BINDING: a campaign is now bound to the referral  [campaign 24]
-PASS  DETERMINISM: it is the HIGHER-PRIORITY campaign, not whichever row came back first  [bound=24 expected=24]
+PASS  LATE BINDING: a campaign is now bound to the referral  [campaign 40]
+PASS  DETERMINISM: it is the HIGHER-PRIORITY campaign, not whichever row came back first  [bound=40 expected=40]
 PASS  the referral records what qualified it, and when
 PASS  exactly one reward row was written  [1]
 PASS  it belongs to the campaign that was chosen
@@ -14,12 +14,12 @@ PASS  and it SNAPSHOTS the terms rather than pointing at a campaign that can cha
 PASS  THE EFFECT: the inviter's real enquiry allowance increased by the reward  [5 -> 12]
 PASS  DATABASE: an entitlement override row backs it, not just a ledger entry
 PASS  re-verifying the same account does not grant a second reward
-PASS  a higher-priority campaign appearing LATER does not re-bind a qualified referral  [still 24, better=25]
+PASS  a higher-priority campaign appearing LATER does not re-bind a qualified referral  [still 40, better=41]
 PASS  and still exactly one reward
-PASS  a second referral does NOT bind the campaign this inviter has exhausted  [bound=25 exhausted=24]
-PASS  it takes the next eligible campaign instead of failing outright  [bound=25]
+PASS  a second referral does NOT bind the campaign this inviter has exhausted  [bound=41 exhausted=40]
+PASS  it takes the next eligible campaign instead of failing outright  [bound=41]
 PASS  ATTRIBUTION WINDOW: a signup older than the window earns nothing  [NULL]
-PASS  the granted reward is GRANTED, with a grant timestamp  [GRANTED|2026-09-03 20:32:01]
+PASS  the granted reward is GRANTED, with a grant timestamp  [GRANTED|2026-09-03 20:38:18]
 PASS  an unpayable reward is recorded REJECTED, not GRANTED  [REJECTED]
 PASS  and it carries the REASON it could not be paid  [Campaign reward value "not-a-number" is not a positive number of enquiries.]
 PASS  the referral stays QUALIFIED - it qualified; the payout is what failed  [qualified]
@@ -27,8 +27,15 @@ PASS  and the inviter is NOT told they received a reward they did not receive  [
 PASS  no entitlement was moved by the rejected reward
 PASS  PLACEMENT: booked with a scope the public resolver can actually match  [GLOBAL]
 PASS  PLACEMENT: the platform is the grantor, not the beneficiary himself
+PASS  SETUP: an administrator set an absolute allowance  [200 ]
+PASS  STACKING: the bonus ADDS to the administrator's number, it does not replace it  [admin 40 + bonus 6 = expected 46, got 46]
+PASS  DATABASE: the administrator's override is still live, not revoked by the reward
+PASS  and the bonus is its own row in its own slot
+PASS  the reward records WHAT it created, so a reversal can undo exactly that  [OVERRIDE:23]
+PASS  EXPIRY: when the bonus lapses the ADMINISTRATOR's number remains, not the plan's  [expected 40, got 40]
+PASS  two bonuses in force SUM, rather than one superseding the other  [expected 40+6+3=49, got 49]
 PASS  AUDIT: every grant is recorded against the inviter, one row each  [4 audit rows for 4 rewards]
 PASS  the inviter was notified
 PASS  CLEANUP: every row this probe planted is gone
 
-32/32 passed
+39/39 passed

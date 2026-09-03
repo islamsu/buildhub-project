@@ -4,7 +4,7 @@ import {
 } from '../drizzle/schema';
 import { resolveReferralCampaign, type CampaignRejection } from './referralCampaignResolution';
 import { GLOBAL_PLACEMENT_SCOPE } from '../shared/placement';
-import { setEnquiryAllowance } from './billing/overrides';
+import { grantEnquiryBonus } from './billing/overrides';
 import { resolveVendorEntitlements } from './billing/entitlements';
 import { notifyUser } from './notifications';
 import { bookPlacement } from './placementBooking';
@@ -164,6 +164,15 @@ export async function qualifyReferralEvent(
    * a business outcome to record, not a crash in the middle of somebody's
    * account verification.
    */
+  /**
+   * WHAT THIS REWARD ACTUALLY CREATED.
+   *
+   * Recorded so a reversal can undo THIS grant and not somebody else's - see
+   * REF-6. Matching on the reason text would work until two campaigns shared a
+   * name.
+   */
+  let effectRef: string | null = null;
+
   const applied: { ok: true } | { ok: false; reason: string } = await (async () => {
     if (campaign.rewardType === 'EXTRA_QUALIFIED_ENQUIRIES') {
       const bonus = Number(campaign.rewardValue);
@@ -171,23 +180,36 @@ export async function qualifyReferralEvent(
         return { ok: false as const, reason: `Campaign reward value "${campaign.rewardValue}" is not a positive number of enquiries.` };
       }
       const resolution = await resolveVendorEntitlements(referral.referrerId, now);
-      const current = resolution.qualifiedEnquiryAllowance;
-      if (current === null) {
+      if (resolution.qualifiedEnquiryAllowance === null) {
         // An unlimited allowance cannot be increased, and pretending otherwise
         // would leave a GRANTED row promising something already true.
         return { ok: false as const, reason: 'This account already has an unlimited qualified-enquiry allowance.' };
       }
-      const result = await setEnquiryAllowance({
+      /**
+       * AN ADDITIVE BONUS, not a new absolute allowance.
+       *
+       * This called setEnquiryAllowance with `current + bonus`, which REVOKES
+       * whatever override was there. So a referral reward silently destroyed an
+       * administrator's grant, and when the reward expired the vendor fell back
+       * to the PLAN value rather than to the administrator's - a temporary
+       * bonus permanently deleting a permanent decision. Bonuses now live in
+       * their own slot, stack with each other, and lapse without touching
+       * anything else.
+       */
+      const result = await grantEnquiryBonus({
         db: db as never,
         userId: referral.referrerId,
-        limit: current + bonus,
+        amount: bonus,
         reason: `Referral reward from ${campaign.name}`,
-        // The PLATFORM granted this, not the beneficiary. Recording the
-        // referrer as the actor made a vendor the author of his own entitlement.
+        // The PLATFORM granted this. Recording the referrer as the actor made a
+        // vendor the author of his own entitlement.
         actorId: null,
         endsAt: expiresAt,
+        now,
       });
-      return result.ok ? { ok: true as const } : { ok: false as const, reason: `Allowance refused: ${result.reason}` };
+      if (!result.ok) return { ok: false as const, reason: `Allowance refused: ${result.reason}` };
+      effectRef = `OVERRIDE:${result.overrideId}`;
+      return { ok: true as const };
     }
 
     if (campaign.rewardType === 'TEMPORARY_FEATURED') {
@@ -213,9 +235,11 @@ export async function qualifyReferralEvent(
         grantedBy: null,
         reason: `Referral reward from ${campaign.name}`,
       });
-      return booking.outcome === 'granted'
-        ? { ok: true as const }
-        : { ok: false as const, reason: `Placement refused: ${booking.reason}` };
+      if (booking.outcome !== 'granted') {
+        return { ok: false as const, reason: `Placement refused: ${booking.reason}` };
+      }
+      effectRef = `PLACEMENT:${booking.placementId}`;
+      return { ok: true as const };
     }
 
     // A reward type with no implementation must not silently read as granted.
@@ -247,7 +271,7 @@ export async function qualifyReferralEvent(
 
   // ONLY NOW. The effect is committed, so the ledger may say so.
   await db.update(referralRewards)
-    .set({ status: 'GRANTED', grantedAt: now })
+    .set({ status: 'GRANTED', grantedAt: now, effectRef })
     .where(eq(referralRewards.id, rewardId));
 
   await db.update(referrals).set({ status: 'rewarded' }).where(eq(referrals.id, referral.id));

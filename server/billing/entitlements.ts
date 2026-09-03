@@ -17,8 +17,10 @@ import {
 } from '@shared/billing';
 import type { BillingState } from './domain';
 import { getBillingState } from './service';
+import { and, eq } from 'drizzle-orm';
+import { vendorEntitlementOverrides } from '../../drizzle/schema';
 import { getDb } from '../db';
-import { activeOverridesFor, applyOverrides } from './overrides';
+import { activeOverridesFor, applyOverrides, sumActiveBonuses, ENQUIRY_BONUS_KEY } from './overrides';
 
 /**
  * Named capabilities, so callers ask `can(resolution, 'advanced_analytics')`
@@ -185,12 +187,51 @@ async function withOverrides(userId: number, state: BillingState, now: Date): Pr
     const db = await getDb();
     if (!db) return state;
     const overrides = await activeOverridesFor(db as never, userId, now);
-    if (overrides.size === 0) return state;
-    const { entitlements } = applyOverrides(state.entitlements, overrides);
+    const withAbsolute = overrides.size === 0
+      ? state.entitlements
+      : applyOverrides(state.entitlements, overrides).entitlements;
+
+    /**
+     * BONUSES ADD, ON TOP OF WHATEVER WON ABOVE.
+     *
+     * A referral reward is "+5 on top of what they have", not "their allowance
+     * is now 5". Routing it through the absolute slot destroyed any
+     * administrative grant it superseded, and when the reward's own expiry
+     * passed the vendor fell back to the PLAN rather than to the
+     * administrator's number - a temporary bonus permanently deleting a
+     * permanent decision.
+     *
+     * An UNLIMITED allowance stays unlimited: null plus anything is still no
+     * limit, and turning it into a number would be a downgrade dressed as a
+     * reward.
+     */
+    const bonus = await activeBonusFor(db, userId, now);
+    const allowance = (withAbsolute as Record<string, unknown>).qualifiedEnquiriesPerMonth;
+    const entitlements = bonus > 0 && typeof allowance === 'number'
+      ? { ...withAbsolute, qualifiedEnquiriesPerMonth: allowance + bonus }
+      : withAbsolute;
+
     return { ...state, entitlements };
   } catch {
     return state;
   }
+}
+
+/**
+ * The bonus rows in force, summed. Read separately from activeOverridesFor
+ * because that one keeps only the highest-id row per key - right for
+ * supersession, and exactly wrong for a slot whose rows are meant to add up.
+ */
+async function activeBonusFor(db: unknown, userId: number, now: Date): Promise<number> {
+  const rows = await (db as {
+    select: () => { from: (t: unknown) => { where: (c: unknown) => Promise<unknown[]> } };
+  }).select().from(vendorEntitlementOverrides).where(
+    and(
+      eq(vendorEntitlementOverrides.userId, userId),
+      eq(vendorEntitlementOverrides.entitlementKey, ENQUIRY_BONUS_KEY),
+    ),
+  );
+  return sumActiveBonuses(rows as never[], now);
 }
 
 /** Pure projection of a BillingState into the full resolution. Exported for testing. */
