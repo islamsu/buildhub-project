@@ -164,6 +164,26 @@ export type CategoryIssue = {
   lines: number[];
 };
 
+/**
+ * Consecutive rows collapsed into ranges, so a fifty-row problem reads as
+ * "rows 2-51" rather than as fifty numbers.
+ *
+ * Lives here beside CategoryIssue rather than in the component, because it is
+ * a pure fact about the shape and the screen should not be the only thing that
+ * can be wrong about it. Input order is not trusted: a caller assembling lines
+ * from a Map gets the same answer as one assembling them in order.
+ */
+export function summariseLines(lines: readonly number[]): { from: number; to: number }[] {
+  const sorted = Array.from(new Set(lines)).sort((a, b) => a - b);
+  const ranges: { from: number; to: number }[] = [];
+  for (const line of sorted) {
+    const last = ranges[ranges.length - 1];
+    if (last && line === last.to + 1) last.to = line;
+    else ranges.push({ from: line, to: line });
+  }
+  return ranges;
+}
+
 export function parseProductImport(text: string, resolveCategory: ImportCategoryResolver): ParsedImport {
   const errors: RowError[] = [];
   const table = parseCsv(text);

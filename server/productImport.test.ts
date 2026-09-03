@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  importTemplateCsv, parseCsv, parseProductImport,
+  importTemplateCsv, parseCsv, parseProductImport, summariseLines,
   MAX_IMPORT_ROWS, IMPORT_COLUMNS,
 } from '@shared/productImport';
 import { SEED_CATEGORIES } from '@shared/categoryTaxonomy';
@@ -437,5 +437,37 @@ describe('editing a product goes through the SAME resolver', () => {
     expect(patches[0]).not.toHaveProperty('category');
     expect(patches[0]).not.toHaveProperty('categoryId');
     expect(patches[0].price).toBe('900');
+  });
+});
+
+// ══ 6. A FIFTY-ROW PROBLEM READS AS ONE PROBLEM ════════════════════════════
+
+describe('summariseLines collapses consecutive rows into ranges', () => {
+  it('collapses a run', () => {
+    expect(summariseLines([2, 3, 4, 5])).toEqual([{ from: 2, to: 5 }]);
+  });
+
+  it('keeps separate runs separate', () => {
+    expect(summariseLines([2, 3, 7, 9, 10])).toEqual([
+      { from: 2, to: 3 }, { from: 7, to: 7 }, { from: 9, to: 10 },
+    ]);
+  });
+
+  it('does not depend on the order it was given', () => {
+    // The lines arrive from a Map, and a screen must not read differently
+    // because of insertion order.
+    expect(summariseLines([10, 2, 9, 3])).toEqual([{ from: 2, to: 3 }, { from: 9, to: 10 }]);
+  });
+
+  it('ignores a repeated line rather than emitting it twice', () => {
+    expect(summariseLines([4, 4, 5])).toEqual([{ from: 4, to: 5 }]);
+  });
+
+  it('is empty for no lines, so a caller renders nothing rather than "rows"', () => {
+    expect(summariseLines([])).toEqual([]);
+  });
+
+  it('a single line is a range of one, not a special case the caller handles', () => {
+    expect(summariseLines([12])).toEqual([{ from: 12, to: 12 }]);
   });
 });

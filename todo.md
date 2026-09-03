@@ -456,7 +456,7 @@ write time by list 1.
 - [x] CAT-4: error quality - distinguish UNKNOWN from KNOWN-BUT-INACTIVE from
       NOT-ALLOWED-FOR-THIS-VENDOR from SERVICE-ONLY from AMBIGUOUS-ALIAS. A hidden
       category must not report "is not a BuildHub category".
-- [ ] CAT-5: bulk upload UX - grouped error summary by offending value with row ranges,
+- [x] CAT-5: bulk upload UX - grouped error summary by offending value with row ranges,
       row detail retained, preview showing RESOLVED canonical categories before commit,
       and a valid-category reference reachable from the upload page rather than a stale
       help article.
@@ -505,11 +505,22 @@ that suggestion files a bitumen membrane under Roofing. Replaced with a bounded 
 distance plus prefix/whole-word narrowing over every key including aliases, so "Poolz"
 now reaches "Swimming Pool Equipment" and nothing unrelated is proposed.
 
-CAT-5 through CAT-10 and CAT-12 remain: the bulk upload error UI, the Super Admin
-category management page, RBAC and audit of category mutations, the remaining client
-dropdowns still reading compiled-in lists (`RolePlatform.tsx` imports
-`PRODUCT_CATEGORIES`; `MarketplaceHub.tsx` still uses `marketplaceData.ts`), and the
-responsive/RTL pass.
+CAT-5 is proven in a real browser by `evidence/zg-categoryui.mjs` (44/44, run twice):
+Chromium uploads real files through the real file input and reads what the screen
+renders. Thirty identical category mistakes render as ONE grouped issue reading
+"rows 2-31" with the near match offered; the per-row detail is retained behind a
+collapsed disclosure and asserted to actually hold the thirty rows; the clean preview
+shows "Pools -> Swimming Pool Equipment" before anything is written; and the acceptable
+categories are listed on the upload page itself, read live from the taxonomy - the
+screen's count is asserted equal to the database's. Covered at 375/768/1440 in EN and
+AR with no sideways scroll at any size and the category NAMES in Arabic, not just the
+heading, which discharges CAT-12 for this surface.
+
+CAT-6 through CAT-10 remain, plus CAT-12 for the management page that does not exist
+yet: the Super Admin category management page, lifecycle safety, vendor eligibility,
+RBAC and audit of category mutations, and the remaining client dropdowns still reading
+compiled-in lists (`RolePlatform.tsx` imports `PRODUCT_CATEGORIES`; `MarketplaceHub.tsx`
+still uses `marketplaceData.ts`).
 
 ## Master Reconciliation Remaining Scope
 
