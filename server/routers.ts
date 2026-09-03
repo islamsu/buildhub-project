@@ -34,6 +34,7 @@ import { ENV, isTestLoginEnabled } from './_core/env';
 import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
 import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
+import { listAdminUsers, type AdminDirectoryPage } from './adminUserDirectory';
 import { runDataQualityChecks } from './admin/dataQuality';
 import { readOperationalHealth } from './admin/operationalHealth';
 import { runPlatformSearch } from './admin/platformSearch';
@@ -4492,7 +4493,8 @@ const superAdminProcedure = adminWith('admins.manage');
 // field-by-field trace. Adding a new users column later does NOT expose it here
 // automatically; it must be added to this list deliberately.
 // The people named in a dispute investigation. An explicit allowlist for the
-// same reason ADMIN_USER_LIST_COLUMNS is one: `users` holds passwordHash and a
+// same reason ADMIN_DIRECTORY_COLUMNS (server/adminUserDirectory.ts) is one:
+// `users` holds passwordHash and a
 // live invitationToken, and Part 53 forbids surfacing either even to a Super
 // Admin. Enough to identify a party and understand their standing; nothing that
 // could be redeemed or replayed.
@@ -4505,22 +4507,6 @@ const INVESTIGATION_PARTY_COLUMNS = {
   verified: users.verified,
   accountStatus: users.accountStatus,
   onboardingStatus: users.onboardingStatus,
-  createdAt: users.createdAt,
-} as const;
-
-const ADMIN_USER_LIST_COLUMNS = {
-  id: users.id,
-  name: users.name,
-  email: users.email,
-  username: users.username,
-  role: users.role,
-  userRole: users.userRole,
-  accountStatus: users.accountStatus,
-  frozenReason: users.frozenReason,
-  verified: users.verified,
-  isDummy: users.isDummy,
-  accountSource: users.accountSource,
-  invitationStatus: users.invitationStatus,
   createdAt: users.createdAt,
 } as const;
 
@@ -4578,11 +4564,48 @@ const adminRouter = router({
       disputes: Number(disputeCount?.count ?? 0),
     };
   }),
-  users: adminWith('users.read').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
-    return db.select(ADMIN_USER_LIST_COLUMNS).from(users).orderBy(desc(users.createdAt)).limit(250);
-  }),
+  /**
+   * THE USER DIRECTORY, PAGED AND COUNTED BY THE DATABASE.
+   *
+   * This was `.limit(250)` with no total and no indication that a limit had
+   * been reached, and the screen then did its own searching, grouping, sorting
+   * and pagination over whatever came back. Past 250 accounts that is not a
+   * slow screen, it is a WRONG one: users become invisible to administration
+   * with nothing to say so, search silently misses people who exist, and the
+   * group tiles under "User Management by Group" report counts of a truncated
+   * sample as though they were counts of the platform.
+   *
+   * Filtering, sorting and counting now happen where the rows are. The reply
+   * carries `total` for the current filter and `counts` for the tiles, so the
+   * screen never has to infer a population from a page of it.
+   *
+   * THE GROUP EXPRESSION IS `COALESCE(userRole, role)` because that is exactly
+   * what the screen used to compute in JavaScript. It is reproduced rather than
+   * improved on: changing which group an account falls into is a product
+   * decision, and this change is about correctness at scale, not about that.
+   */
+  users: adminWith('users.read')
+    .input(z.object({
+      search: z.string().trim().max(MAX_SEARCH_LENGTH).optional(),
+      /** A role key, or 'all'. Unknown values are treated as 'all' rather than matching nothing. */
+      group: z.string().trim().max(40).default('all'),
+      sort: z.enum(['newest', 'name', 'role']).default('newest'),
+      page: z.number().int().min(0).max(100_000).default(0),
+      /** Bounded: an administrator cannot ask for the whole table in one reply. */
+      pageSize: z.number().int().min(1).max(100).default(10),
+    }).optional())
+    .query(async ({ input }) => {
+      const { search, group, sort, page, pageSize } = {
+        group: 'all', sort: 'newest' as const, page: 0, pageSize: 10, ...(input ?? {}),
+      };
+      const empty: AdminDirectoryPage = {
+        rows: [], total: 0, page: 0, pageSize,
+        counts: { all: 0, real: 0, dummy: 0, byRole: {}, byRoleReal: {} },
+      };
+      const db = await getDb();
+      if (!db) return empty;
+      return listAdminUsers(db, { search, group, sort, page, pageSize });
+    }),
   // 'admin' is NOT creatable here. This endpoint is gated on `users.manage`,
   // which USER_ADMIN holds - but shared/adminRoles.ts states the invariant that
   // only SUPER_ADMIN (`admins.manage`) may create or re-role an administrator,
@@ -4665,7 +4688,7 @@ const adminRouter = router({
     // no private column ever reached the response. But this pulled EVERY column
     // of EVERY user - passwordHash, invitationToken, openId - into process
     // memory to build an audit export, and it is the precise pattern
-    // ADMIN_USER_LIST_COLUMNS exists to forbid, one endpoint over. The next
+    // ADMIN_DIRECTORY_COLUMNS exists to forbid, one endpoint over. The next
     // person to add `...targetUser` to the mapped object would have shipped the
     // leak without touching this line.
     const allUsersList = await db.select({
@@ -6770,7 +6793,7 @@ const adminRouter = router({
     }),
 
   // SECURITY (Phase 4A cumulative final audit): same passwordHash/invitationToken
-  // exposure risk as ADMIN_USER_LIST_COLUMNS above, found independently in the
+  // exposure risk as ADMIN_DIRECTORY_COLUMNS, found independently in the
   // two Compliance Queue endpoints below - both previously did a bare
   // `select().from(users)` and spread the full row (including passwordHash and
   // the live, still-usable invitationToken bearer credential) into the admin

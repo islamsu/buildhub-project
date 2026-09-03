@@ -141,6 +141,21 @@ export default function AdminDashboard() {
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [userPage, setUserPage] = useState(0);
   const [userSort, setUserSort] = useState<'newest' | 'name' | 'role'>('newest');
+  /**
+   * The search that actually reaches the server, a beat behind the box.
+   *
+   * Now that searching is a query rather than an array filter, every keystroke
+   * would otherwise be a round trip. 300ms is long enough to stop that and
+   * short enough that the list still feels like it is answering you.
+   */
+  const [debouncedUserSearch, setDebouncedUserSearch] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedUserSearch(userSearch.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [userSearch]);
+  // A new filter starts at its first page: staying on page 4 of the previous
+  // one shows an empty table for a result set that is not empty.
+  useEffect(() => { setUserPage(0); }, [debouncedUserSearch, selectedGroup, userSort]);
   const [freezeTarget, setFreezeTarget] = useState<any | null>(null);
   const [freezeReason, setFreezeReason] = useState('');
   const [freezeReasonDetail, setFreezeReasonDetail] = useState('');
@@ -195,7 +210,24 @@ export default function AdminDashboard() {
   const can = (permission: string) => adminMe?.permissions.includes(permission as never) ?? false;
 
   const { data: stats } = trpc.admin.stats.useQuery(undefined, { enabled: can('users.read') });
-  const { data: allUsers = [], isLoading: usersLoading } = trpc.admin.users.useQuery(undefined, { enabled: can('users.read') });
+  /**
+   * THE DIRECTORY IS FILTERED, SORTED, PAGED AND COUNTED BY THE SERVER.
+   *
+   * This used to fetch a hard `limit(250)` and do all four in the browser.
+   * Past 250 accounts that is not slow, it is wrong: accounts became invisible
+   * to administration with nothing saying so, a search for one of them read as
+   * "no such user", and the group tiles reported counts of a truncated sample
+   * as counts of the platform.
+   */
+  const { data: userDirectory, isLoading: usersLoading, isError: usersFailed } = trpc.admin.users.useQuery(
+    { search: debouncedUserSearch || undefined, group: selectedGroup, sort: userSort, page: userPage, pageSize: USER_PAGE_SIZE },
+    { enabled: can('users.read'), placeholderData: previous => previous },
+  );
+  /** The seven newest, for the overview card - its own small read, never a slice of a filtered page. */
+  const { data: recentDirectory } = trpc.admin.users.useQuery(
+    { group: 'all', sort: 'newest', page: 0, pageSize: 7 },
+    { enabled: can('users.read') },
+  );
   const { data: disputes = [], isLoading: disputesLoading } = trpc.admin.disputes.useQuery(undefined, { enabled: can('support.manage') });
   const { data: settings } = trpc.admin.settings.useQuery(undefined, { enabled: can('settings.manage') });
   const { data: complianceQueue = [], isLoading: complianceLoading } = trpc.admin.complianceQueue.useQuery(complianceQueueInput, { enabled: can('marketplace.manage') });
@@ -375,49 +407,22 @@ export default function AdminDashboard() {
     releasePreviewObjectUrl();
   }, []);
 
-  const userFilteredTotal = useMemo(() => allUsers.filter(userRow => {
-    const role = (userRow as any).userRole ?? userRow.role;
-    const matchesGroup = selectedGroup === 'all' || role === selectedGroup;
-    const query = userSearch.trim().toLowerCase();
-    const matchesSearch = !query || `${userRow.name ?? ''} ${userRow.email ?? ''}`.toLowerCase().includes(query);
-    return matchesGroup && matchesSearch;
-  }).length, [allUsers, selectedGroup, userSearch]);
-
-  const filteredUsers = useMemo(() => {
-    const query = userSearch.trim().toLowerCase();
-    const matched = allUsers.filter(userRow => {
-      const role = (userRow as any).userRole ?? userRow.role;
-      const matchesGroup = selectedGroup === 'all' || role === selectedGroup;
-      const matchesSearch = !query || `${userRow.name ?? ''} ${userRow.email ?? ''}`.toLowerCase().includes(query);
-      return matchesGroup && matchesSearch;
-    });
-    const sorted = [...matched].sort((left, right) => {
-      if (userSort === 'name') return String(left.name ?? '').localeCompare(String(right.name ?? ''));
-      if (userSort === 'role') return String((left as any).userRole ?? left.role ?? '').localeCompare(String((right as any).userRole ?? right.role ?? ''));
-      return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
-    });
-    const start = userPage * USER_PAGE_SIZE;
-    return sorted.slice(start, start + USER_PAGE_SIZE);
-  }, [allUsers, selectedGroup, userSearch, userSort, userPage]);
-
+  const filteredUsers = userDirectory?.rows ?? [];
+  const userFilteredTotal = userDirectory?.total ?? 0;
   const userPageCount = Math.max(1, Math.ceil(userFilteredTotal / USER_PAGE_SIZE));
   useEffect(() => {
     if (userPage >= userPageCount) setUserPage(userPageCount - 1);
   }, [userPage, userPageCount]);
 
-  const groupCounts = useMemo(() => ROLE_GROUPS.reduce<Record<string, number>>((result, group) => {
-    result[group.key] = allUsers.filter(userRow => ((userRow as any).userRole ?? userRow.role) === group.key).length;
-    return result;
-  }, {}), [allUsers]);
-
-  const realGroupCounts = useMemo(() => ROLE_GROUPS.reduce<Record<string, number>>((result, group) => {
-    result[group.key] = allUsers.filter(userRow => !(userRow as any).isDummy && ((userRow as any).userRole ?? userRow.role) === group.key).length;
-    return result;
-  }, {}), [allUsers]);
-
-  const recentUsers = useMemo(() => allUsers.slice(0, 7), [allUsers]);
-  const realUserCount = useMemo(() => allUsers.filter(userRow => !(userRow as any).isDummy).length, [allUsers]);
-  const dummyUserCount = allUsers.length - realUserCount;
+  // Counts describe the WHOLE directory rather than the current filter, which
+  // is what a group tile means: clicking "Suppliers" must not make the other
+  // tiles read zero.
+  const groupCounts = userDirectory?.counts.byRole ?? {};
+  const realGroupCounts = userDirectory?.counts.byRoleReal ?? {};
+  const totalUserCount = userDirectory?.counts.all ?? 0;
+  const realUserCount = userDirectory?.counts.real ?? 0;
+  const dummyUserCount = userDirectory?.counts.dummy ?? 0;
+  const recentUsers = recentDirectory?.rows ?? [];
   const userSummaryCounts = useMemo(() => ({
     total: realUserCount,
     homeowners: realGroupCounts.homeowner ?? 0,
@@ -709,7 +714,7 @@ export default function AdminDashboard() {
           <TabsContent value="users">
             <Card>
               <CardHeader className="space-y-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><CardTitle className="flex items-center gap-2"><Users className="w-5 h-5" />{lang === 'ar' ? 'إدارة المستخدمين حسب المجموعة' : 'User Management by Group'}</CardTitle><div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" className="h-8 gap-1" onClick={exportAuditPdf}><Download className="h-3.5 w-3.5" />{lang === 'ar' ? 'تصدير سجل التدقيق PDF' : 'Export Audit PDF'}</Button><Button size="sm" className="h-8 gap-1" onClick={() => { setCreateAccountType('admin'); setAccountDraft({ name: '', username: '', email: '', phone: '', userRole: 'homeowner', note: '', password: '' }); }}><UserPlus className="h-3.5 w-3.5" />{lang === 'ar' ? 'إنشاء حساب' : 'Create account'}</Button><Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => { setCreateAccountType('dummy'); setAccountDraft({ name: '', username: '', email: '', phone: '', userRole: 'homeowner', note: '', password: '' }); }}><Power className="h-3.5 w-3.5" />{lang === 'ar' ? 'مستخدم تجريبي' : 'Dummy user'}</Button><div className="relative w-full lg:w-72"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9 h-9 text-sm" placeholder={lang === 'ar' ? 'بحث بالاسم أو البريد...' : 'Search by name or email...'} value={userSearch} onChange={event => setUserSearch(event.target.value)} /></div></div></div><div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-8">
-<button type="button" onClick={() => setSelectedGroup('all')} className={`rounded-lg border p-3 text-start transition-colors ${selectedGroup === 'all' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="text-xs text-muted-foreground">{lang === 'ar' ? 'الكل' : 'All Users'}</p><p className="text-lg font-semibold">{allUsers.length}</p></button>{ROLE_GROUPS.map(group => <button type="button" key={group.key} onClick={() => setSelectedGroup(group.key)} className={`rounded-lg border p-3 text-start transition-colors ${selectedGroup === group.key ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="truncate text-xs text-muted-foreground">{lang === 'ar' ? group.ar : group.en}</p><p className="text-lg font-semibold">{groupCounts[group.key] ?? 0}</p></button>)}</div></CardHeader>
+<button type="button" onClick={() => setSelectedGroup('all')} className={`rounded-lg border p-3 text-start transition-colors ${selectedGroup === 'all' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="text-xs text-muted-foreground">{lang === 'ar' ? 'الكل' : 'All Users'}</p><p className="text-lg font-semibold">{totalUserCount}</p></button>{ROLE_GROUPS.map(group => <button type="button" key={group.key} onClick={() => setSelectedGroup(group.key)} className={`rounded-lg border p-3 text-start transition-colors ${selectedGroup === group.key ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="truncate text-xs text-muted-foreground">{lang === 'ar' ? group.ar : group.en}</p><p className="text-lg font-semibold">{groupCounts[group.key] ?? 0}</p></button>)}</div></CardHeader>
               <CardContent><div className="mb-3 flex items-center justify-between text-sm text-muted-foreground"><span>{selectedGroup === 'all' ? (lang === 'ar' ? 'كل المجموعات' : 'All groups') : labelForRole(selectedGroup, lang)}</span>{usersLoading && <RefreshCw className="h-4 w-4 animate-spin" />}</div><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-border"><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الاسم' : 'Name'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'البريد الإلكتروني' : 'Email'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'المجموعة' : 'Group'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الحالة' : 'Status'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الانضمام' : 'Joined'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{t('admin.actions')}</th></tr></thead><tbody>{filteredUsers.map(userRow => { const status = (userRow as any).accountStatus ?? 'active'; const isFrozen = status === 'frozen'; const isSelf = userRow.id === (user as any).id; return <tr key={userRow.id} className="border-b border-border/50 hover:bg-muted/30"><td className="py-3 px-2 font-medium"><div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-muted-foreground" /><button type="button" data-testid={`admin-user-link-${userRow.id}`} onClick={() => navigate(`/admin/users/${userRow.id}`)} className="truncate text-start font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{userRow.name ?? '—'}</button>{(userRow as any).isDummy ? <Badge className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">{lang === 'ar' ? 'تجريبي / اختباري' : 'Dummy / Test'}</Badge> : (userRow as any).accountSource === 'admin_created' ? <Badge className="border-blue-200 bg-blue-50 text-[10px] text-blue-700">{lang === 'ar' ? 'منشأ بواسطة المشرف' : 'Admin Created'}</Badge> : <Badge className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">{lang === 'ar' ? 'تسجيل ذاتي' : 'Self Registered'}</Badge>}</div><p className="mt-1 text-xs font-normal text-muted-foreground">@{(userRow as any).username ?? '—'} · {(userRow as any).invitationStatus && (userRow as any).invitationStatus !== 'none' ? `${lang === 'ar' ? 'الدعوة' : 'Invite'}: ${formatInvitationStatus((userRow as any).invitationStatus, lang)}` : ''}</p></td><td className="py-3 px-2 text-muted-foreground">{userRow.email ?? '—'}</td><td className="py-3 px-2"><Badge variant="secondary">{labelForRole((userRow as any).userRole ?? userRow.role, lang)}</Badge></td><td className="py-3 px-2"><Badge variant={isFrozen ? 'destructive' : 'outline'} title={isFrozen && (userRow as any).frozenReason ? formatFreezeReason((userRow as any).frozenReason, lang) : undefined}>{formatStatus(status, lang)}{isFrozen ? (formatFreezeReason((userRow as any).frozenReason, lang) ? ` · ${formatFreezeReason((userRow as any).frozenReason, lang)}` : '') : ` · ${formatStatus((userRow as any).verified ? 'accepted' : 'pending', lang)}`}</Badge></td><td className="py-3 px-2 text-muted-foreground">{new Date(userRow.createdAt).toLocaleDateString()}</td><td className="py-3 px-2"><div className="flex flex-wrap items-center gap-1"><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setAuditTarget(userRow)}><History className="h-3 w-3" />{lang === 'ar' ? 'السجل' : 'Audit'}</Button>{(userRow as any).accountSource === 'admin_created' && !(userRow as any).isDummy && <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => resendInvitation.mutate({ userId: userRow.id })} disabled={resendInvitation.isPending}><SendHorizontal className="h-3 w-3" />{lang === 'ar' ? 'إعادة دعوة' : 'Resend Invite'}</Button>}{(userRow as any).isDummy ? <><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => { setDummyPasswordTarget(userRow); setDummyPassword(''); }}><KeyRound className="h-3 w-3" />{lang === 'ar' ? 'كلمة المرور' : 'Password'}</Button><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => { setLinkTarget(userRow); setIssuedToken(null); setLinkMinutes(60); }}><LinkIcon className="h-3 w-3" />{lang === 'ar' ? 'رابط دخول' : 'QA link'}</Button><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setDummyUserActive.mutate({ userId: userRow.id, active: isFrozen })} disabled={setDummyUserActive.isPending}>{isFrozen ? <Power className="h-3 w-3" /> : <Ban className="h-3 w-3" />}{isFrozen ? (lang === 'ar' ? 'تفعيل' : 'Activate') : (lang === 'ar' ? 'تعطيل' : 'Deactivate')}</Button><Button size="sm" variant="ghost" className="h-7 gap-1 text-xs text-destructive hover:text-destructive" onClick={() => { if (window.confirm(lang === 'ar' ? 'حذف المستخدم التجريبي؟' : 'Delete this dummy user?')) deleteDummyUser.mutate({ userId: userRow.id }); }} disabled={deleteDummyUser.isPending}><Trash2 className="h-3 w-3" />{lang === 'ar' ? 'حذف' : 'Delete'}</Button></> : <><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => verifyUser.mutate({ userId: userRow.id, verified: !(userRow as any).verified })} disabled={verifyUser.isPending}><ShieldCheck className="h-3 w-3" />{(userRow as any).verified ? (lang === 'ar' ? 'إلغاء التحقق' : 'Unverify') : (lang === 'ar' ? 'تحقق' : 'Verify')}</Button><Button size="sm" variant={isFrozen ? 'outline' : 'ghost'} className={`h-7 gap-1 text-xs ${isFrozen ? '' : 'text-destructive hover:text-destructive'}`} onClick={() => { setFreezeTarget(userRow); setFreezeReason((userRow as any).accountStatus === 'frozen' ? '' : ''); setFreezeReasonDetail(''); }} disabled={isSelf}>{isFrozen ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}{isFrozen ? (lang === 'ar' ? 'إلغاء التجميد' : 'Unfreeze') : (lang === 'ar' ? 'تجميد' : 'Freeze')}</Button></>}
 </div></td></tr>; })}{filteredUsers.length === 0 && <tr><td colSpan={6} className="py-10 text-center text-muted-foreground">{lang === 'ar' ? 'لا يوجد مستخدمون في هذه المجموعة' : 'No users in this group'}</td></tr>}</tbody></table></div>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
