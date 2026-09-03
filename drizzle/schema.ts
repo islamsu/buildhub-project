@@ -376,6 +376,12 @@ export const products = mysqlTable('products', {
   description: text('description'),
   descriptionAr: text('descriptionAr'),
   category:    varchar('category', { length: 100 }).notNull(),
+  /**
+   * The canonical link. `category` above stays as the stored display value for
+   * now: it is what every existing row already holds, and forward-only means
+   * the varchar is retired only once everything reads the link instead.
+   */
+  categoryId:  int('categoryId').references(() => productCategories.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   subCategory: varchar('subCategory', { length: 100 }),
   brand:       varchar('brand', { length: 100 }),
   origin:      varchar('origin', { length: 100 }),
@@ -803,6 +809,57 @@ export const billingEvents = mysqlTable('billingEvents', {
 // follows the Phase 3C convention; the unique index makes a duplicate
 // declaration impossible at the database level rather than by application
 // convention.
+/**
+ * THE CANONICAL PRODUCT CATEGORY TAXONOMY.
+ *
+ * `slug` is the identity; the display names are editable without breaking
+ * anything that references a category. See shared/categoryTaxonomy.ts for how
+ * the three previous vocabularies were reconciled into this one.
+ */
+export const productCategories = mysqlTable('productCategories', {
+  id:        int('id').autoincrement().primaryKey(),
+  slug:      varchar('slug', { length: 80 }).notNull().unique(),
+  nameEn:    varchar('nameEn', { length: 120 }).notNull(),
+  nameAr:    varchar('nameAr', { length: 120 }).notNull(),
+  /** PRODUCT and BOTH are listable; SERVICE is deliberately not. */
+  scope:     mysqlEnum('scope', ['PRODUCT', 'SERVICE', 'BOTH']).default('PRODUCT').notNull(),
+  /** hidden and archived keep existing products intact; nothing is deleted. */
+  status:    mysqlEnum('status', ['active', 'hidden', 'archived']).default('active').notNull(),
+  parentId:  int('parentId').references((): any => productCategories.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  sortOrder: int('sortOrder').default(0).notNull(),
+  icon:      varchar('icon', { length: 16 }),
+  createdBy: int('createdBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  statusIdx: index('productCategories_status_idx').on(table.status),
+  scopeIdx: index('productCategories_scope_idx').on(table.scope),
+  parentIdx: index('productCategories_parentId_idx').on(table.parentId),
+  sortIdx: index('productCategories_sortOrder_idx').on(table.sortOrder),
+}));
+
+/**
+ * A controlled second name for ONE category.
+ *
+ * The unique index on `normalized` is what makes resolution deterministic: two
+ * categories cannot both claim "pools", so bulk upload can never silently pick
+ * one of them.
+ */
+export const productCategoryAliases = mysqlTable('productCategoryAliases', {
+  id:         int('id').autoincrement().primaryKey(),
+  categoryId: int('categoryId').notNull().references(() => productCategories.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  alias:      varchar('alias', { length: 120 }).notNull(),
+  /** Lower-cased, whitespace-collapsed form used for lookup. */
+  normalized: varchar('normalized', { length: 120 }).notNull().unique(),
+  createdBy:  int('createdBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  categoryIdx: index('productCategoryAliases_categoryId_idx').on(table.categoryId),
+}));
+
+export type ProductCategoryRow = typeof productCategories.$inferSelect;
+export type ProductCategoryAliasRow = typeof productCategoryAliases.$inferSelect;
+
 export const vendorCategories = mysqlTable('vendorCategories', {
   id:        int('id').autoincrement().primaryKey(),
   userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),

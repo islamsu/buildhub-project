@@ -1572,8 +1572,8 @@
     {
       "ident": "products",
       "name": "products",
-      "columns": 25,
-      "references": 1,
+      "columns": 26,
+      "references": 2,
       "notNull": 5,
       "unique": 0
     },
@@ -1696,6 +1696,22 @@
       "references": 3,
       "notNull": 2,
       "unique": 0
+    },
+    {
+      "ident": "productCategories",
+      "name": "productCategories",
+      "columns": 16,
+      "references": 2,
+      "notNull": 8,
+      "unique": 1
+    },
+    {
+      "ident": "productCategoryAliases",
+      "name": "productCategoryAliases",
+      "columns": 7,
+      "references": 2,
+      "notNull": 4,
+      "unique": 1
     },
     {
       "ident": "vendorCategories",

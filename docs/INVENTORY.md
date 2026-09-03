@@ -70,7 +70,7 @@ Dead param routes: **0**
 - `adminWith:settings.manage` — 2
 - `aiChatProcedure` — 1
 
-## Tables (45)
+## Tables (47)
 
 | Table | Columns | FK refs | NOT NULL | UNIQUE |
 |---|---|---|---|---|
@@ -87,7 +87,7 @@ Dead param routes: **0**
 | `registrationDocumentSubmissions` | 15 | 1 | 9 | 0 |
 | `registrationReviewEvents` | 11 | 3 | 4 | 0 |
 | `productQuestions` | 9 | 2 | 4 | 0 |
-| `products` | 25 | 1 | 5 | 0 |
+| `products` | 26 | 2 | 5 | 0 |
 | `portfolioItems` | 12 | 1 | 4 | 0 |
 | `rfqs` | 16 | 2 | 4 | 0 |
 | `rfqItems` | 13 | 2 | 5 | 0 |
@@ -103,6 +103,8 @@ Dead param routes: **0**
 | `vendorSubscriptions` | 28 | 1 | 8 | 0 |
 | `analyticsEvents` | 11 | 1 | 2 | 0 |
 | `billingEvents` | 13 | 3 | 2 | 0 |
+| `productCategories` | 16 | 2 | 8 | 1 |
+| `productCategoryAliases` | 7 | 2 | 4 | 1 |
 | `vendorCategories` | 6 | 1 | 3 | 0 |
 | `qualifiedEnquiries` | 10 | 2 | 4 | 0 |
 | `testLoginTokens` | 11 | 3 | 5 | 1 |
