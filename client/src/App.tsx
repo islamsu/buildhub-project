@@ -27,6 +27,7 @@ const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const AdminLogin = lazy(() => import("./pages/AdminLogin"));
 const AdminAcceptInvitation = lazy(() => import("./pages/AdminAcceptInvitation"));
 const AdminAdmins = lazy(() => import("./pages/AdminAdmins"));
+const AdminCategories = lazy(() => import("./pages/AdminCategories"));
 const AdminUserDetail = lazy(() => import("./pages/AdminUserDetail"));
 const AdminProjectDetail = lazy(() => import("./pages/AdminProjectDetail"));
 const Marketplace = lazy(() => import("./pages/Marketplace"));
@@ -113,6 +114,7 @@ function Router() {
       <Route path={"/admin/login"} component={AdminLogin} />
       <Route path={"/admin/accept-invitation"} component={AdminAcceptInvitation} />
       <Route path={"/admin/admins"} component={AdminAdmins} />
+      <Route path={"/admin/categories"} component={AdminCategories} />
       <Route path={"/admin/users/:id"} component={AdminUserDetail} />
       <Route path={"/admin/projects/:id"} component={AdminProjectDetail} />
       {/* A section may address ONE RECORD. `/admin/enquiries/ENQ-7-3` is what a

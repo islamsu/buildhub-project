@@ -994,7 +994,7 @@ export const commercialAuditEvents = mysqlTable('commercialAuditEvents', {
   actorId:     int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   // Who the subject record belonged to when the event happened.
   ownerId:     int('ownerId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
-  subjectType: mysqlEnum('subjectType', ['rfq', 'quotation', 'product', 'document', 'enquiry', 'message']).notNull(),
+  subjectType: mysqlEnum('subjectType', ['rfq', 'quotation', 'product', 'document', 'enquiry', 'message', 'category']).notNull(),
   // Deliberately NOT a foreign key. An audit row must survive its subject being
   // deleted - that deletion is often the very thing worth auditing - and a FK
   // would either block it or cascade the evidence away.
@@ -1083,7 +1083,7 @@ export const vendorEntitlementOverrides = mysqlTable('vendorEntitlementOverrides
 // of the code that happens to read it today.
 export const fieldValueHistory = mysqlTable('fieldValueHistory', {
   id:          int('id').autoincrement().primaryKey(),
-  subjectType: mysqlEnum('subjectType', ['rfq', 'quotation', 'product', 'user', 'subscription']).notNull(),
+  subjectType: mysqlEnum('subjectType', ['rfq', 'quotation', 'product', 'user', 'subscription', 'category']).notNull(),
   // Not a foreign key, for the same reason commercialAuditEvents.subjectId is
   // not one: the history must survive its subject being deleted.
   subjectId:   int('subjectId').notNull(),

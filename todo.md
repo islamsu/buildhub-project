@@ -460,26 +460,26 @@ write time by list 1.
       row detail retained, preview showing RESOLVED canonical categories before commit,
       and a valid-category reference reachable from the upload page rather than a stale
       help article.
-- [ ] CAT-6: Super Admin category management page - create, edit, activate, hide,
+- [x] CAT-6: Super Admin category management page - create, edit, activate, hide,
       archive, reactivate, reorder, EN/AR names, slug, type, parent, real usage counts,
       search/filter/sort/pagination. Dependency warning with the real count before hiding.
       Human-readable identities, not raw ids.
 - [ ] CAT-7: propagation without deployment - a new active PRODUCT category appears in
       Add Product, Edit Product, Bulk Upload, marketplace filters, admin forms and
       applicable RFQ/placement selectors. Cache invalidated on change; no restart.
-- [ ] CAT-8: lifecycle safety - hiding a category never corrupts or recategorises existing
+- [x] CAT-8: lifecycle safety - hiding a category never corrupts or recategorises existing
       products; used categories are not hard-deleted; renaming does not break product
       relationships, import history, RFQs, URLs or placements (stable id/slug identity).
-- [ ] CAT-9: vendor eligibility preserved - adding a global category must not make every
+- [x] CAT-9: vendor eligibility preserved - adding a global category must not make every
       vendor eligible to list in it where BuildHub's catalogue rules restrict that.
-- [ ] CAT-10: RBAC (narrow admin permission) + audit of every category mutation with
+- [x] CAT-10: RBAC (narrow admin permission) + audit of every category mutation with
       actor, timestamp, old and new value.
 - [x] CAT-11: integration tests that exercise the real resolver, not source text -
       the reported Waterproofing/Pools case; Super Admin adds a category and a vendor
       bulk-uploads it successfully; Super Admin hides a category with existing products
       and they survive while new listings are refused with the INACTIVE message, then
       reactivation restores it. Plus single-vs-bulk parity as a standing invariant.
-- [ ] CAT-12: 375/768/1440 in EN and AR/RTL for the category management surface and every
+- [x] CAT-12: 375/768/1440 in EN and AR/RTL for the category management surface and every
       category selector; semantic controls, keyboard access, focus management.
 
 CAT-1 through CAT-4 and CAT-11 are proven live, not merely unit-tested:
@@ -516,11 +516,41 @@ screen's count is asserted equal to the database's. Covered at 375/768/1440 in E
 AR with no sideways scroll at any size and the category NAMES in Arabic, not just the
 heading, which discharges CAT-12 for this surface.
 
-CAT-6 through CAT-10 remain, plus CAT-12 for the management page that does not exist
-yet: the Super Admin category management page, lifecycle safety, vendor eligibility,
-RBAC and audit of category mutations, and the remaining client dropdowns still reading
-compiled-in lists (`RolePlatform.tsx` imports `PRODUCT_CATEGORIES`; `MarketplaceHub.tsx`
-still uses `marketplaceData.ts`).
+CAT-6, CAT-8, CAT-9, CAT-10 and CAT-12 land together in `/admin/categories`, gated on
+`marketplace.manage` - the existing permission the roles table already describes as
+"vendor directory, products, compliance review, marketplace content", rather than an
+eleventh permission for one table.
+
+Migration 0043 adds `category` to the `fieldValueHistory` and `commercialAuditEvents`
+subject enums, appended at the END so existing rows keep their meaning: renames, scope
+and status changes record OLD -> NEW with the actor, while creation and alias changes
+record the action. Verified against the dev database's 50 fieldValueHistory and 19
+commercialAuditEvents rows - every one kept its exact value - and the whole 44-migration
+chain applies cleanly from empty.
+
+The invariants are enforced in `server/categoryAdmin.ts` and checked by observing the
+writes, not by reading the source: nothing there writes to `products`, so hiding or
+renaming can never recategorise anything; the slug is immutable and has no input at all;
+there is no delete endpoint; a name or alias another category already answers to is
+refused at the point of choosing it, rather than becoming an AMBIGUOUS refusal a
+supplier can do nothing about; and a status change echoes the count the screen showed,
+so a stale confirmation is refused rather than applied to a situation nobody saw. All
+four guards were mutation-tested.
+
+Proven live by `evidence/zg-categoryadmin.mjs` (37/37, twice): real sessions walk
+create -> supplier uploads into it with no restart -> rename -> hide -> refuse a new
+listing as INACTIVE while existing products stay byte-identical -> reactivate, with a
+SUPPORT_ADMIN and an ordinary supplier both genuinely signed in and both refused. And by
+`evidence/zg-categoryadminui.mjs` (53/53, twice): the page is reached by CLICKING the
+menu entry, the row count equals the database's, the product count equals the products
+table's, there is no Delete control anywhere, the dependency warning names a real
+non-zero count before anything changes, searching an alias finds the category that
+answers to it, and the wrong administrator is told plainly rather than shown an empty
+table - at 375/768/1440 in EN and AR, with the page never scrolling sideways and the
+wide table scrolling inside its own container.
+
+Remaining: the client dropdowns still reading compiled-in lists (`RolePlatform.tsx`
+imports `PRODUCT_CATEGORIES`; `MarketplaceHub.tsx` still uses `marketplaceData.ts`).
 
 ## Master Reconciliation Remaining Scope
 

@@ -73,6 +73,14 @@
       "deadParamRoute": false
     },
     {
+      "path": "/admin/categories",
+      "component": "AdminCategories",
+      "source": "client/src/pages/AdminCategories.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
       "path": "/admin/users/:id",
       "component": "AdminUserDetail",
       "source": "client/src/pages/AdminUserDetail.tsx",
@@ -916,9 +924,39 @@
       "indent": 2
     },
     {
+      "name": "categories",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "createCategory",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "updateCategory",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "setCategoryStatus",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "addCategoryAlias",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "removeCategoryAlias",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
       "name": "stats",
       "tier": "adminWith:users.read",
-      "indent": 2
+      "indent": 3
     },
     {
       "name": "users",
@@ -1456,11 +1494,11 @@
     "protectedProcedure": 65,
     "complianceProcedure": 2,
     "approvedProviderProcedure": 29,
+    "adminWith:marketplace.manage": 44,
     "adminWith:users.read": 7,
     "adminWith:users.manage": 6,
     "adminWith:audit.read": 5,
     "adminWith:qa.manage": 7,
-    "adminWith:marketplace.manage": 38,
     "adminWith:billing.read": 4,
     "superAdminProcedure": 10,
     "adminProcedure": 4,
@@ -1850,82 +1888,82 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 1281,
+      "line": 1286,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2368,
+      "line": 2373,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2448,
+      "line": 2453,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3176,
+      "line": 3181,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3233,
+      "line": 3238,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3640,
+      "line": 3645,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3887,
+      "line": 3892,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4027,
+      "line": 4032,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5466,
+      "line": 5584,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5544,
+      "line": 5662,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6318,
+      "line": 6436,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6389,
+      "line": 6507,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6777,
+      "line": 6895,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6978,
+      "line": 7096,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7003,
+      "line": 7121,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7028,
+      "line": 7146,
       "via": "notifyUser"
     },
     {

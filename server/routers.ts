@@ -122,6 +122,11 @@ import {
 } from '../shared/rfqBasket';
 import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shared/productImport';
 import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories } from './categoryService';
+import {
+  listCategoriesForAdmin, createCategory, updateCategory, setCategoryStatus,
+  addCategoryAlias, removeCategoryAlias, CategoryAdminError,
+  CATEGORY_SCOPES, CATEGORY_STATUSES,
+} from './categoryAdmin';
 import { normaliseUnit, PRODUCT_UNITS } from '../shared/productUnits';
 import { canCreateProject, creatorProjectRole, PROJECT_ROLES, capabilitiesFor } from '../shared/projectAccess';
 import { requireProjectAccess, readableProjectIds, liveMembership } from './projectMembership';
@@ -4612,6 +4617,27 @@ const adminWith = (permission: AdminPermission) =>
     return next({ ctx });
   });
 
+/**
+ * A category refusal becomes a BAD_REQUEST carrying the SERVICE's message.
+ *
+ * The reasons - DUPLICATE, NO_DELETE, STALE_COUNT, CYCLE - are the whole value
+ * of those refusals, and flattening them into "something went wrong" would put
+ * the administrator in exactly the position the supplier was in when the
+ * category error said nothing useful. Anything that is NOT a deliberate refusal
+ * is rethrown untouched, so a genuine fault stays a 500 rather than being
+ * reported to the caller as their mistake.
+ */
+async function asCategoryResult<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof CategoryAdminError) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: error.message, cause: error });
+    }
+    throw error;
+  }
+}
+
 /** Only a Super Admin may touch the authority model itself. */
 const superAdminProcedure = adminWith('admins.manage');
 
@@ -4679,6 +4705,98 @@ const COMPLIANCE_APPLICANT_COLUMNS = {
 } as const;
 
 const adminRouter = router({
+  /**
+   * ── THE PRODUCT TAXONOMY, ADMINISTERED ──────────────────────────────────
+   *
+   * Gated on `marketplace.manage`, which the roles table already describes as
+   * "vendor directory, products, compliance review, marketplace content" - the
+   * taxonomy is precisely marketplace content, and it is what a MARKETPLACE_ADMIN
+   * exists to curate. A fresh eleventh permission for one table would cut
+   * against this file's stated reason for having ten: "a permission per
+   * endpoint would be 37 permissions nobody can reason about".
+   *
+   * Every mutation below records who did it. See server/categoryAdmin.ts for
+   * which trail takes which kind of change, and why hiding a category never
+   * touches a product.
+   */
+  categories: adminWith('marketplace.manage').query(async () => {
+    const db = await getDb();
+    // NOT an empty list. "The taxonomy has no categories" and "we could not
+    // reach the database" are different facts and the screen must not render
+    // the second as the first.
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'The category taxonomy is unavailable right now.' });
+    return { categories: await listCategoriesForAdmin(db) };
+  }),
+
+  createCategory: adminWith('marketplace.manage')
+    .input(z.object({
+      slug: z.string().trim().min(3).max(60),
+      nameEn: z.string().trim().min(1).max(120),
+      nameAr: z.string().trim().min(1).max(120),
+      scope: z.enum(CATEGORY_SCOPES),
+      parentId: z.number().int().positive().nullable().optional(),
+      sortOrder: z.number().int().min(0).max(9999).optional(),
+      icon: z.string().max(64).nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return asCategoryResult(() => createCategory(db, ctx.user.id, input));
+    }),
+
+  updateCategory: adminWith('marketplace.manage')
+    .input(z.object({
+      id: z.number().int().positive(),
+      // `slug` is deliberately absent: it is half the stable identity, and a
+      // category whose slug can move makes every URL and stored reference a
+      // guess about when it was written.
+      nameEn: z.string().trim().min(1).max(120).optional(),
+      nameAr: z.string().trim().min(1).max(120).optional(),
+      scope: z.enum(CATEGORY_SCOPES).optional(),
+      parentId: z.number().int().positive().nullable().optional(),
+      sortOrder: z.number().int().min(0).max(9999).optional(),
+      icon: z.string().max(64).nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return asCategoryResult(() => updateCategory(db, ctx.user.id, input));
+    }),
+
+  setCategoryStatus: adminWith('marketplace.manage')
+    .input(z.object({
+      id: z.number().int().positive(),
+      status: z.enum(CATEGORY_STATUSES),
+      /**
+       * The dependency confirmation. The screen shows the real product count
+       * and echoes it back here, so an administrator who read "3 products" and
+       * clicks Hide after somebody listed forty more is stopped rather than
+       * surprised.
+       */
+      expectedProductCount: z.number().int().min(0).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return asCategoryResult(() => setCategoryStatus(db, ctx.user.id, input));
+    }),
+
+  addCategoryAlias: adminWith('marketplace.manage')
+    .input(z.object({ categoryId: z.number().int().positive(), alias: z.string().trim().min(2).max(120) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return asCategoryResult(() => addCategoryAlias(db, ctx.user.id, input));
+    }),
+
+  removeCategoryAlias: adminWith('marketplace.manage')
+    .input(z.object({ aliasId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return asCategoryResult(() => removeCategoryAlias(db, ctx.user.id, input.aliasId));
+    }),
+
   stats: adminWith('users.read').query(async () => {
     const db = await getDb();
     if (!db) return { users: 0, projects: 0, products: 0, rfqs: 0, disputes: 0 };

@@ -33,7 +33,7 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
  *    never happened, and nobody reading it later could tell which.
  */
 
-export type CommercialSubject = 'rfq' | 'quotation' | 'product' | 'document' | 'enquiry' | 'message';
+export type CommercialSubject = 'rfq' | 'quotation' | 'product' | 'document' | 'enquiry' | 'message' | 'category';
 
 /**
  * The vocabulary. A closed set rather than free text, so the trail can be
@@ -52,7 +52,11 @@ export type CommercialAction =
   | 'product_featured' | 'product_unfeatured'
   | 'product_images_changed' | 'product_question_answered'
   // Files
-  | 'document_uploaded' | 'document_deleted' | 'attachment_added' | 'attachment_removed';
+  | 'document_uploaded' | 'document_deleted' | 'attachment_added' | 'attachment_removed'
+  // The product taxonomy. Creating a category and pointing an alias at one have
+  // no prior value to contrast, so they belong here rather than in
+  // fieldValueHistory - a rename or a status change, which do, go there.
+  | 'category_created' | 'category_alias_added' | 'category_alias_removed';
 
 export type CommercialEvent = {
   actorId: number | null;

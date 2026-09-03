@@ -302,6 +302,13 @@
       "when": 1788540000000,
       "tag": "0042_product_category_taxonomy",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "5",
+      "when": 1788626400000,
+      "tag": "0043_category_administration",
+      "breakpoints": true
     }
   ]
 }

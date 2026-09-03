@@ -36,6 +36,7 @@ export type AdminNavEntry = {
 export const ADMIN_NAV: readonly AdminNavEntry[] = [
   { path: '/admin', labelKey: 'admin.title', permission: 'users.read' },
   { path: '/admin/users', labelKey: 'admin.users', permission: 'users.read' },
+  { path: '/admin/categories', labelKey: 'admin.categories', permission: 'marketplace.manage' },
   { path: '/admin/name-changes', labelKey: 'admin.name_changes', permission: 'marketplace.manage' },
   { path: '/admin/referrals', labelKey: 'admin.referrals', permission: 'marketplace.manage' },
   { path: '/admin/placements', labelKey: 'admin.placements', permission: 'marketplace.manage' },
