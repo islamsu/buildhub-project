@@ -626,6 +626,68 @@ restart.
       with a bare drizzle+mysql2 pool outside this application - not a BuildHub defect.
       A real outage closes the sockets and mysql2 reconnects on its own.
 
+## Referral Lifecycle (P1-REF)
+
+- [x] REF-1: THE ENGINE HAS NEVER FIRED. `server/referralEngine.ts` read
+      `referrals.campaignId` on every qualification attempt and NOTHING HAS EVER
+      WRITTEN IT - the signup insert omits it and no other writer exists. Every
+      referral in the product's history short-circuited at 'no campaign'. No reward
+      has ever been granted by BuildHub, and none could have been.
+
+      Implemented per the owner's decision, LATE BINDING AT QUALIFICATION:
+      `server/referralCampaignResolution.ts` chooses the campaign when a real
+      qualifying event fires, from what is eligible at that moment. Five rules make
+      that safe rather than arbitrary - a TOTAL order (priority, then id) so the same
+      input always selects the same campaign; eligibility BEFORE priority, with caps
+      participating in eligibility so an exhausted campaign can never win and then
+      fail to pay; one referral, one campaign, one reward; an already-set campaignId
+      honoured rather than overridden; and the attribution window measured from the
+      referral, so a two-year-old signup does not earn a reward because somebody
+      finally verified their email. The refusal carries a reason PER CANDIDATE,
+      because "your invite was 100 days old and the window is 90" and "no campaign is
+      running for that event" are different answers to the same complaint.
+
+      `shared/referralRewards.ts` retires the third copy of each closed set (the
+      schema enum, the ledger enum, and a z.enum in the router), and migration 0044
+      adds the two columns late binding needs - `priority` and
+      `attributionWindowDays`, both defaulted so every existing campaign keeps
+      working. Verified from empty across all 45 migrations, and against seeded
+      campaign rows which kept every value.
+
+      A SECOND, OLDER DEFECT surfaced the moment the first was fixed:
+      `const [referrerRow, referredRow] = await Promise.all([...])` bound each name to
+      a one-element ARRAY, so every `referrerRow.userRole` read `undefined` and both
+      role checks compared against ''. It had never shown, because the function
+      returned at 'no campaign' several lines earlier - on every referral, always.
+
+      Proven live by `evidence/zg-referral.mjs` (24/24, run twice): a real inviter's
+      real code, a real signup carrying it, a real administrator verifying the
+      account, a campaign RESOLVED and BOUND, one reward row snapshotting its terms,
+      and the ACTUAL ENTITLEMENT read back through the billing engine (5 -> 12
+      qualified enquiries, with a real override row behind it). Plus the negative
+      half: re-verifying grants nothing more, a higher-priority campaign arriving
+      LATER does not re-bind a qualified referral, a second referral finds the
+      exhausted campaign ineligible and takes the next one, and a signup aged past
+      the window earns nothing at all.
+
+- [ ] REF-2: correct the grant - wrap qualify -> reward -> apply -> status -> audit ->
+      notify in one transaction, and honour the return values currently discarded
+      (`setEnquiryAllowance`'s {ok:false} and `bookPlacement`'s {outcome:'rejected'}).
+      A reward becomes GRANTED only when its effect commits; otherwise PENDING or
+      REJECTED, which the schema already has and nothing writes.
+- [ ] REF-3: make the two working rewards actually work - entitlement rewards must
+      STACK rather than clobber an unrelated admin grant, and referral placements must
+      render (the hard-coded `category: 'General'` matches no scope, so the Spotlight
+      appears nowhere; `grantedBy` records the beneficiary as grantor of his own
+      placement).
+- [ ] REF-4: SUBSCRIPTION_EXTENSION as a real period extension, per the owner's
+      decision - extend from the existing end date, never from now, refuse honestly
+      when there is no finite period, and fabricate no payment or invoice.
+- [ ] REF-5: wire the remaining qualification events (only ACCOUNT_VERIFIED is hooked),
+      and route `admin.qualifyReferral` through the same engine.
+- [ ] REF-6: reversal that reverses; expiry as derived state; anti-abuse; the admin and
+      user surfaces; the Benefits/Limits view.
+
 ## Master Reconciliation Remaining Scope
 
 - [ ] Referral / Invitation Reward system: secure code/link, attribution, campaigns, qualification, caps, non-cash rewards, expiry, reversal, notifications, audit, Admin management

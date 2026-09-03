@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import {
   referrals, referralCampaigns, referralRewards, users,
 } from '../drizzle/schema';
+import { resolveReferralCampaign, type CampaignRejection } from './referralCampaignResolution';
 import { setEnquiryAllowance } from './billing/overrides';
 import { resolveVendorEntitlements } from './billing/entitlements';
 import { notifyUser } from './notifications';
@@ -12,20 +13,12 @@ type Db = any;
 
 type QualifyResult =
   | { outcome: 'no_referral' }
-  | { outcome: 'campaign_ineligible'; reason: string }
+  | { outcome: 'campaign_ineligible'; reason: string; rejections?: { campaignId: number; name: string; reason: CampaignRejection }[] }
   | { outcome: 'cap_reached' }
   | { outcome: 'already_qualified'; referralId: number }
   | { outcome: 'granted'; referralId: number; rewardId: number; rewardType: string; rewardValue: string }
   | { outcome: 'reward_pending'; referralId: number; rewardId: number; rewardType: string; rewardValue: string };
 
-function rolesFrom(raw: string): string[] {
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
 
 export async function qualifyReferralEvent(
   db: Db,
@@ -38,38 +31,81 @@ export async function qualifyReferralEvent(
   if (!referral) return { outcome: 'no_referral' };
   if (referral.status === 'rewarded' && referral.qualificationEventKey) return { outcome: 'already_qualified', referralId: referral.id };
 
-  const campaignId = referral.campaignId;
-  if (!campaignId) return { outcome: 'campaign_ineligible', reason: 'no campaign' };
-  const [campaign] = await db.select().from(referralCampaigns).where(eq(referralCampaigns.id, campaignId)).limit(1);
-  if (!campaign || campaign.status !== 'active') return { outcome: 'campaign_ineligible', reason: 'campaign inactive' };
-  if (campaign.startsAt && new Date(campaign.startsAt).getTime() > now.getTime()) return { outcome: 'campaign_ineligible', reason: 'campaign not started' };
-  if (campaign.endsAt && new Date(campaign.endsAt).getTime() < now.getTime()) return { outcome: 'campaign_ineligible', reason: 'campaign ended' };
-  if (campaign.qualificationType !== eventType) return { outcome: 'campaign_ineligible', reason: 'qualification mismatch' };
-
   if (eventKey && referral.qualificationEventKey === eventKey) return { outcome: 'already_qualified', referralId: referral.id };
 
-  const eligibleInviterRoles = rolesFrom(campaign.eligibleInviterRoles);
-  const eligibleReferredRoles = rolesFrom(campaign.eligibleReferredRoles);
-  const [referrerRow, referredRow] = await Promise.all([
-    db.select({ userRole: users.userRole }).from(users).where(eq(users.id, referral.referrerId)).limit(1),
-    db.select({ userRole: users.userRole }).from(users).where(eq(users.id, referral.referredId)).limit(1),
-  ]);
-  if (!referrerRow || !eligibleInviterRoles.includes(referrerRow.userRole ?? '')) return { outcome: 'campaign_ineligible', reason: 'inviter role' };
-  if (!referredRow || !eligibleReferredRoles.includes(referredRow.userRole ?? '')) return { outcome: 'campaign_ineligible', reason: 'referred role' };
-
+  // A referral that already holds a reward is finished, whatever fires next.
+  // ONE REFERRAL, ONE CAMPAIGN, ONE REWARD.
   const [rewardCount] = await db.select({ count: sql<number>`count(*)` }).from(referralRewards).where(eq(referralRewards.referralId, referral.id));
   if (Number(rewardCount?.count ?? 0) > 0) return { outcome: 'already_qualified', referralId: referral.id };
 
-  const [inviterRewards] = await db.select({ count: sql<number>`count(*)` }).from(referralRewards)
-    .where(and(eq(referralRewards.campaignId, campaign.id), eq(referralRewards.recipientUserId, referral.referrerId)));
-  if (Number(inviterRewards?.count ?? 0) >= campaign.perInviterCap) return { outcome: 'cap_reached' };
-  if (campaign.campaignCap) {
-    const [campaignRewards] = await db.select({ count: sql<number>`count(*)` }).from(referralRewards).where(eq(referralRewards.campaignId, campaign.id));
-    if (Number(campaignRewards?.count ?? 0) >= campaign.campaignCap) return { outcome: 'cap_reached' };
+  /**
+   * NOTE THE DOUBLE DESTRUCTURE.
+   *
+   * `Promise.all` of two queries yields an array of RESULT ARRAYS, so the
+   * previous `const [referrerRow, referredRow] = await Promise.all([...])`
+   * bound each name to a one-element array and every `referrerRow.userRole`
+   * read `undefined`. Both role checks below therefore compared against '' and
+   * would have refused every campaign.
+   *
+   * It never showed, because the function returned at 'no campaign' several
+   * lines earlier - on every referral, always. Fixing the binding is what made
+   * this reachable, and a live probe caught it on the first run.
+   */
+  const [[referrerRow], [referredRow]] = await Promise.all([
+    db.select({ userRole: users.userRole }).from(users).where(eq(users.id, referral.referrerId)).limit(1),
+    db.select({ userRole: users.userRole }).from(users).where(eq(users.id, referral.referredId)).limit(1),
+  ]);
+
+  /**
+   * THE CAMPAIGN IS CHOSEN HERE, NOW - not at signup.
+   *
+   * `referrals.campaignId` was read on this line and NOTHING HAS EVER WRITTEN
+   * IT: the signup insert omits it and no other writer exists, so every
+   * referral in the product's history short-circuited at 'no campaign' and the
+   * engine has never granted a reward.
+   *
+   * The owner's decision is late binding, so the campaign is resolved from
+   * whatever is eligible at THIS moment. An id already on the row - a
+   * historical binding, or any future path that binds deliberately - is
+   * honoured rather than overridden.
+   */
+  let campaign: any = null;
+  if (referral.campaignId) {
+    const [bound] = await db.select().from(referralCampaigns).where(eq(referralCampaigns.id, referral.campaignId)).limit(1);
+    if (!bound) return { outcome: 'campaign_ineligible', reason: 'bound campaign missing' };
+    if (bound.status !== 'active') return { outcome: 'campaign_ineligible', reason: 'campaign inactive' };
+    if (bound.qualificationType !== eventType) return { outcome: 'campaign_ineligible', reason: 'qualification mismatch' };
+    campaign = bound;
+  } else {
+    const resolution = await resolveReferralCampaign(db, {
+      qualificationType: eventType,
+      referredAt: new Date(referral.createdAt),
+      inviterRole: referrerRow?.userRole ?? null,
+      referredRole: referredRow?.userRole ?? null,
+      referrerId: referral.referrerId,
+      eventAt: now,
+    });
+    if (!resolution.ok) {
+      // The per-candidate reasons travel with the refusal. "Your invite was 100
+      // days old and the window is 90" and "no campaign is running for that
+      // event" are different answers, and an administrator investigating a
+      // complaint needs the first one.
+      return {
+        outcome: 'campaign_ineligible',
+        reason: resolution.considered === 0 ? 'no campaign' : 'no eligible campaign',
+        rejections: resolution.rejections,
+      };
+    }
+    campaign = resolution.campaign;
   }
 
   await db.update(referrals).set({
     status: 'qualified',
+    // BOUND, and bound once. The row now names the campaign it qualified
+    // under, and nothing above will re-resolve it: the reward-count check at
+    // the top of this function returns `already_qualified` on every later
+    // event, so a better campaign appearing tomorrow cannot move it.
+    campaignId: campaign.id,
     qualificationType: eventType,
     qualificationEventKey: eventKey,
     qualifiedAt: now,

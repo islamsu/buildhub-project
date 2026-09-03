@@ -1354,12 +1354,20 @@ export const referralCampaigns = mysqlTable('referralCampaigns', {
   rewardDurationDays:   int('rewardDurationDays'),
   perInviterCap:        int('perInviterCap').default(1).notNull(),
   campaignCap:          int('campaignCap'),
+  /**
+   * Which campaign wins when several are eligible. Higher first, id breaking a
+   * tie, so resolution is TOTAL and reproducible - see drizzle/0044.
+   */
+  priority:             int('priority').default(0).notNull(),
+  /** How long after signup a referral may still qualify under this campaign. */
+  attributionWindowDays: int('attributionWindowDays').default(90).notNull(),
   createdBy:            int('createdBy').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   createdAt:            timestamp('createdAt').defaultNow().notNull(),
   updatedAt:            timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
 }, table => ({
   statusIdx: index('referralCampaigns_status_idx').on(table.status),
   createdByIdx: index('referralCampaigns_createdBy_idx').on(table.createdBy),
+  resolutionIdx: index('referralCampaigns_resolution_idx').on(table.status, table.qualificationType, table.priority),
 }));
 
 export const referralRewards = mysqlTable('referralRewards', {

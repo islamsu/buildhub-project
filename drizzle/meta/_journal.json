@@ -309,6 +309,13 @@
       "when": 1788626400000,
       "tag": "0043_category_administration",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "5",
+      "when": 1788712800000,
+      "tag": "0044_referral_late_binding",
+      "breakpoints": true
     }
   ]
 }

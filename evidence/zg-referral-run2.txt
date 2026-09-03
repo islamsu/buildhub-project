@@ -1,0 +1,26 @@
+PASS  SETUP: signup minted a real referral code for the inviter  [BH-1E4C5A5934E6A280]
+PASS  SETUP: two eligible campaigns exist  [low=15 high=16]
+PASS  the signup recorded the referral against the real code  [referral 14]
+PASS  THE DEFECT: signup binds NO campaign - that is the design, not a gap
+PASS  and no reward exists yet
+PASS  SETUP: an administrator is genuinely signed in  [200]
+PASS  the administrator verifies the referred account
+PASS  LATE BINDING: a campaign is now bound to the referral  [campaign 16]
+PASS  DETERMINISM: it is the HIGHER-PRIORITY campaign, not whichever row came back first  [bound=16 expected=16]
+PASS  the referral records what qualified it, and when
+PASS  exactly one reward row was written  [1]
+PASS  it belongs to the campaign that was chosen
+PASS  and it SNAPSHOTS the terms rather than pointing at a campaign that can change
+PASS  THE EFFECT: the inviter's real enquiry allowance increased by the reward  [5 -> 12]
+PASS  DATABASE: an entitlement override row backs it, not just a ledger entry
+PASS  re-verifying the same account does not grant a second reward
+PASS  a higher-priority campaign appearing LATER does not re-bind a qualified referral  [still 16, better=17]
+PASS  and still exactly one reward
+PASS  a second referral does NOT bind the campaign this inviter has exhausted  [bound=17 exhausted=16]
+PASS  it takes the next eligible campaign instead of failing outright  [bound=17]
+PASS  ATTRIBUTION WINDOW: a signup older than the window earns nothing  [NULL]
+PASS  AUDIT: every grant is recorded against the inviter, one row each  [2 audit rows for 2 rewards]
+PASS  the inviter was notified
+PASS  CLEANUP: every row this probe planted is gone
+
+24/24 passed
