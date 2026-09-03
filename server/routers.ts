@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { COOKIE_NAME, NOT_ADMIN_ERR_MSG } from '@shared/const';
 import {
-  ADMIN_ROLES, isAdminRole, hasAdminPermission, permissionsForAdminRole,
+  ADMIN_ROLES, ADMIN_PASSWORD_MIN_LENGTH, isAdminRole, hasAdminPermission, permissionsForAdminRole,
   type AdminPermission, type AdminRole,
 } from '@shared/adminRoles';
 import { getSessionCookieOptions } from './_core/cookies';
@@ -201,7 +201,7 @@ const hashPasswordResetToken = (raw: string) => createHash('sha256').update(raw)
 const ADMIN_TOKEN_BYTES = 32;
 const ADMIN_INVITE_TTL_HOURS = 48;
 /** Longer than a customer's 8. One of these reaches the whole admin surface. */
-const ADMIN_PASSWORD_MIN_LENGTH = 12;
+// ADMIN_PASSWORD_MIN_LENGTH now lives in shared/adminRoles.ts - see there.
 const hashAdminToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
 /**
