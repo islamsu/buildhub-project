@@ -1090,10 +1090,23 @@ const projectsRouter = router({
    * `directory`, a lead list, not ownership. A provider-owned project has no
    * meaning in any of those paths.
    *
-   * VERIFIED BEFORE RESTRICTING, not assumed: every project in the database is
+   * VERIFIED BEFORE RESTRICTING, not assumed: every project in the database was
    * owned by a homeowner (32 of 32 at the time of the change; group by userRole
-   * returned that single row). So this takes no capability away from anyone who
-   * had it - it closes a door nobody had walked through.
+   * returned that single row).
+   *
+   * THAT OBSERVATION WAS THEN USED AS A RULE, AND IT SHOULD NOT HAVE BEEN. The
+   * restriction was drawn at `homeowner` because homeowners were the only
+   * accounts that had ever created a project - but the only reason no
+   * contractor had created one is that the UI never offered it. A restriction
+   * cannot be evidence for itself.
+   *
+   * The rule the code enforces now is the one the business actually has, and it
+   * lives in `PROJECT_CREATOR_ROLES`: every professional role that participates
+   * in delivering a job may commission one, because a main contractor
+   * subcontracting a package and a project manager commissioning on a client's
+   * behalf are ordinary construction practice. SUPPLIER STAYS EXCLUDED, and
+   * that exclusion is the whole security content of this guard - a supplier
+   * answers a request for work rather than commissioning one.
    */
   create: protectedProcedure
     .input(z.object({

@@ -373,6 +373,46 @@
 - [x] Resolve count semantics and make Platform Healthy / Live labels reflect verified runtime state
 - [ ] Vendor/business name clickable to Vendor Management across all remaining admin tables
 
+## Staging Gate Correction after the PR #41 Merge
+
+The merge of PR #41 into `main` deployed cleanly to staging - `/version` served the
+authorized SHA - and the gate then reported 696/704 with eight failures. All eight were
+STALE GATE ASSERTIONS, not product defects: each named a rule the merged work had
+deliberately changed, and each was corrected to assert the rule that now exists rather
+than relaxed to pass. Diagnosed against a live server and a real browser, not from source.
+
+- [x] Section 33 x5 — `PROJECT_CREATOR_ROLES` was widened from `homeowner` alone to every
+      professional role that delivers a job; supplier stays excluded. The loop that
+      asserted four refusals was INVERTED, not deleted, and each role's project id is now
+      asserted to exist. The refusal-message regex follows the message that replaced it.
+- [x] Section 33 — corrected the stale doc comment above `projects.create`, which still
+      described the narrower rule the code had stopped enforcing.
+- [x] Section 14 — `submitQuotation` gained TWO requirements the gate routed around: a
+      required `validUntil`, and response authority (an opened qualified enquiry, a live
+      invitation, or an existing quotation). The old single-POST check had been asserting
+      that a provider could quote WITHOUT consuming the entitlement that pays for access.
+      The gate now walks the real journey (declare category -> open enquiry -> quote) and
+      asserts the guard it used to bypass.
+- [x] Section 14 — the `post` helper learned superjson's `meta` tags, without which a
+      `z.date()` input can never be exercised over the wire.
+- [x] Section 14 — the unapproved-provider, nonexistent-RFQ and negative-price controls
+      now send fully-formed quotations, so each fails for the reason it names rather than
+      for a missing field.
+- [x] Section 26 x2 — the in-page admin tab strip was removed in favour of the single
+      sidebar, and the full user table moved from `/admin` to `/admin/users`. Substring
+      checks over the dashboard's innerText could not tell a missing surface from a
+      renamed label - six of seven passed on incidental sidebar words. Navigation is now
+      asserted BY NAVIGATING: each of the seven admin sections must render the surface
+      only it renders, and `/admin` must show the compact summary WITHOUT duplicating the
+      full table.
+- [x] Mutation-tested the one new invariant that matters: disabling the response-authority
+      guard turns the corrected section 14 red (2 checks fail). The old gate had no
+      assertion that could have caught it.
+- [x] 35/35 corrected assertions verified live before commit — 23 over HTTP against a real
+      server, 12 in a real browser against the real bundle.
+- [ ] Re-run `staging-qa.yml` against the deployed SHA with the corrected gate and confirm
+      704/704 minus the five standing infrastructure SKIPs (SMTP_HOST, S3_* x3, paid AI).
+
 ## Master Reconciliation Remaining Scope
 
 - [ ] Referral / Invitation Reward system: secure code/link, attribution, campaigns, qualification, caps, non-cash rewards, expiry, reversal, notifications, audit, Admin management

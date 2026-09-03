@@ -55,11 +55,25 @@ const check = (ok, name, detail = '') => {
 const skip = (name, why) => { skipped++; console.log(`SKIP  ${name}  — ${why}`); };
 const section = t => console.log(`\n───── ${t} ─────`);
 
-const post = async (proc, body, cookie) => {
+/**
+ * `meta` CARRIES SUPERJSON'S TYPE TAGS, and it is not optional decoration.
+ *
+ * BuildHub's tRPC link is superjson, so a procedure whose input is `z.date()`
+ * receives a real Date only when the request names the field as one:
+ *
+ *   { json: { validUntil: "2026-10-03T..." },
+ *     meta: { values: { validUntil: ["Date"] } } }
+ *
+ * Send the same ISO string WITHOUT the meta and it stays a string, and zod
+ * refuses it with `expected date, received string`. That is not a quirk of the
+ * harness - it is exactly what the real browser client sends, and a gate that
+ * could not express it could never exercise a procedure that takes a date.
+ */
+const post = async (proc, body, cookie, meta) => {
   const r = await fetch(`${BASE}/api/trpc/${proc}`, {
     method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(30_000),
     headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
-    body: JSON.stringify({ json: body }),
+    body: JSON.stringify(meta ? { json: body, meta } : { json: body }),
   });
   return { s: r.status, t: await r.text(), c: (r.headers.getSetCookie?.() ?? []).map(x => x.split(';')[0]).join('; '), raw: r };
 };
@@ -426,8 +440,15 @@ try {
   const u0 = json(usage.t);
   check(u0 && typeof u0.used === 'number', '13. enquiry usage reports a real count', JSON.stringify(u0));
 
-  const unapprovedQuote = await post('rfq.submitQuotation', { rfqId, price: 1000, timeline: 7 }, users.contractor.cookie);
-  check(unapprovedQuote.s !== 200, '14. an UNAPPROVED provider cannot quote', `http ${unapprovedQuote.s}`);
+  // FULLY FORMED, deliberately. A quotation that is missing a required field
+  // is refused for that reason, so a malformed one here would have passed this
+  // check without the approval rule existing at all - the check has to fail for
+  // the reason it names, which means sending something that would otherwise
+  // succeed.
+  const unapprovedQuote = await post('rfq.submitQuotation',
+    { rfqId, price: 1000, timeline: 7, validUntil: new Date(Date.now() + 30 * 86_400_000).toISOString() },
+    users.contractor.cookie, { values: { validUntil: ['Date'] } });
+  check(unapprovedQuote.s === 403, '14. an UNAPPROVED provider cannot quote', `http ${unapprovedQuote.s}`);
   // The approved-provider half runs in the admin section below, because
   // approving a vendor requires an admin. It is skipped THERE when no admin is
   // supplied, so it is not announced twice.
@@ -732,18 +753,89 @@ try {
       const contractorId = json((await get('auth.me', undefined, users.contractor.cookie)).t)?.id;
       if (contractorId) {
         await post('admin.updateApplicantStatus', { userId: contractorId, status: 'approved' }, admin);
-        const q = await post('rfq.submitQuotation', { rfqId, price: 9000, timeline: 14 }, users.contractor.cookie);
+
+        /**
+         * QUOTING IS NO LONGER ONE CALL, AND THIS SECTION NOW WALKS THE REAL
+         * JOURNEY INSTEAD OF THE SHORTCUT IT USED TO TAKE.
+         *
+         * This check used to be a single POST with `{ rfqId, price, timeline }`
+         * and it passed. It passed because `submitQuotation` accepted any
+         * approved provider, against any RFQ, with no validity date - which
+         * meant a provider could put a quote on a request WITHOUT opening the
+         * qualified enquiry, so the entitlement that is supposed to pay for
+         * access to a request could be walked straight past. The gate was
+         * asserting that the hole was open.
+         *
+         * Two things closed it, and both are now asserted here rather than
+         * routed around:
+         *
+         *   1. RESPONSE AUTHORITY. A quotation requires an opened qualified
+         *      enquiry, a live invitation, or an existing quotation on the RFQ.
+         *   2. VALIDITY. `validUntil` is required and must not be in the past.
+         *      A quotation with no expiry is not a commercial offer.
+         *
+         * So the negative control comes FIRST - a correctly-formed quotation
+         * from an approved provider who has not opened the enquiry must be
+         * refused - and only then is the real journey walked. Ordering it this
+         * way is deliberate: run the journey first and the negative control
+         * would be satisfied by the quotation the journey just created, which
+         * is the same vacuous pass in a different disguise.
+         */
+        const validUntil = new Date(Date.now() + 30 * 86_400_000).toISOString();
+        const dateMeta = { values: { validUntil: ['Date'] } };
+
+        const unauthorised = await post('rfq.submitQuotation',
+          { rfqId, price: 9000, timeline: 14, validUntil }, users.contractor.cookie, dateMeta);
+        check(unauthorised.s === 403,
+          '14. an approved provider who has NOT opened the enquiry cannot quote on it',
+          `http ${unauthorised.s}`);
+        check(/open this qualified enquiry|invitation/i.test(errMsg(unauthorised.t) ?? ''),
+          '14. and the refusal names what would grant access, not just "forbidden"',
+          (errMsg(unauthorised.t) ?? '').slice(0, 70));
+
+        // The journey. Declaring the category is what makes the request a
+        // qualified enquiry for this vendor at all, so it is part of the path,
+        // not setup noise.
+        const declared = await post('profile.setMyCategories', { categories: ['Materials'] }, users.contractor.cookie);
+        check(declared.s === 200, '14. a provider declares the service category they work in', `http ${declared.s}`);
+
+        const opened = await post('rfq.openEnquiry', { rfqId }, users.contractor.cookie);
+        check(opened.s === 200, '14. and opens the qualified enquiry', `http ${opened.s}`);
+        const openedUsage = json(opened.t)?.usage;
+        check(Number.isInteger(openedUsage?.used) && openedUsage.used >= 1,
+          '14. opening it consumes a real qualified-enquiry entitlement, counted server-side',
+          `used=${openedUsage?.used} of ${openedUsage?.allowance}`);
+
+        const q = await post('rfq.submitQuotation',
+          { rfqId, price: 9000, timeline: 14, validUntil }, users.contractor.cookie, dateMeta);
         check(q.s === 200, '14. an APPROVED provider can submit a quotation', `http ${q.s}`);
+
+        // The date is REQUIRED, and the gate proves that rather than assuming
+        // it: send the same quotation without one and it must be refused.
+        const undated = await post('rfq.submitQuotation',
+          { rfqId, price: 9050, timeline: 14 }, users.contractor.cookie);
+        check(undated.s === 400, '14. a quotation with no validity date is refused', `http ${undated.s}`);
+        const expired = await post('rfq.submitQuotation',
+          { rfqId, price: 9060, timeline: 14, validUntil: new Date(Date.now() - 5 * 86_400_000).toISOString() },
+          users.contractor.cookie, dateMeta);
+        check(expired.s === 400, '14. a quotation that expired before it was sent is refused', `http ${expired.s}`);
         // PHASE 1B. submitQuotation used to insert first and look the RFQ up
         // afterwards, so a quotation against an id that does not exist hit the
         // foreign key and came back a 500. It must be a clean refusal, and the
         // status code is the difference between "you asked for something that
         // is not there" and "we broke".
-        const ghost = await post('rfq.submitQuotation', { rfqId: 999_999_999, price: 100 }, users.contractor.cookie);
+        //
+        // Both of these carry a valid `validUntil` for the same reason as the
+        // unapproved-provider control above: with the field missing they would
+        // be refused for the missing field, and would pass while saying nothing
+        // about the rule each one is named for.
+        const ghost = await post('rfq.submitQuotation',
+          { rfqId: 999_999_999, price: 100, validUntil }, users.contractor.cookie, dateMeta);
         check(ghost.s >= 400 && ghost.s < 500, '14. quoting a nonexistent RFQ is refused, not a server error', `http ${ghost.s}`);
         check(!/at Object\.|node_modules|ER_NO_REFERENCED_ROW/.test(ghost.t),
           '14. the refusal carries no database error or stack', ghost.t.slice(0, 80));
-        const negative = await post('rfq.submitQuotation', { rfqId, price: -5 }, users.contractor.cookie);
+        const negative = await post('rfq.submitQuotation',
+          { rfqId, price: -5, validUntil }, users.contractor.cookie, dateMeta);
         check(negative.s >= 400 && negative.s < 500, '14. a negative price is refused', `http ${negative.s}`);
         const stranger = await post('rfq.acceptQuotation', { quotationId: 1, rfqId }, users.engineer.cookie);
         check(stranger.s !== 200, '14. a stranger cannot accept a quotation on another RFQ', `http ${stranger.s}`);
@@ -914,9 +1006,43 @@ try {
     // asserting the presence of a dead surface would have been asserting the
     // presence of a defect, and deleting the line without replacing it would
     // have quietly shrunk what the gate covers.
-    for (const tab of ['Users', 'Compliance', 'Analytics', 'Vendor billing', 'Disputes', 'Operations', 'Settings']) {
-      check(dash.includes(tab), `26. the dashboard navigation offers "${tab}"`);
+    //
+    // NAVIGATION IS NOW ASSERTED BY NAVIGATING, and that is a correction of
+    // this gate rather than a relaxation of it.
+    //
+    // What stood here was `dash.includes(tab)` over the whole dashboard's
+    // innerText, and it was a bad instrument in both directions. The admin
+    // screen used to carry an in-page tab strip AND a sidebar; the tab strip
+    // has since gone, leaving the sidebar as the single navigation. Six of the
+    // seven words in the old list went on matching anyway - because the
+    // sidebar happens to contain them - so those six checks passed while
+    // testing nothing, and the seventh ("Compliance") failed because the
+    // sidebar names that destination "Pending Verifications", which is a
+    // LABEL difference, not a missing surface.
+    //
+    // A substring of a page cannot tell those two cases apart. Reaching each
+    // section and asserting the surface that only it renders can, so that is
+    // what happens now: the check fails if a destination is unreachable or
+    // renders the wrong screen, and it cannot pass on an incidental word.
+    const ADMIN_SECTIONS = [
+      { path: '/admin/users', renders: 'User Management by Group' },
+      { path: '/admin/compliance', renders: 'Legal document review queue' },
+      { path: '/admin/analytics', renders: 'Vendor funnel' },
+      { path: '/admin/billing', renders: 'Qualified enquiry allowance' },
+      { path: '/admin/disputes', renders: 'Dispute Management' },
+      { path: '/admin/operations', renders: 'Data quality' },
+      { path: '/admin/settings', renders: 'Platform Settings' },
+    ];
+    for (const target of ADMIN_SECTIONS) {
+      await ap.goto(`${BASE}${target.path}`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+      await ap.waitForTimeout(1_800);
+      const sectionText = await ap.locator('body').innerText().catch(() => '');
+      check(sectionText.includes(target.renders),
+        `26. ${target.path} renders its own surface ("${target.renders}")`,
+        sectionText.includes('Access Denied') ? 'Access Denied' : sectionText.slice(0, 60).replace(/\n/g, ' '));
     }
+    await ap.goto(`${BASE}/admin`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
+    await ap.waitForTimeout(1_500);
     check(!dash.includes('Fraud Detection'),
       '26. the dead "Fraud Detection" surface is gone, not merely emptied');
     // And the section that took its place actually answers, rather than being
@@ -941,8 +1067,28 @@ try {
       `data-configured=${storageState}`);
     await ap.goto(`${BASE}/admin`, { waitUntil: 'networkidle', timeout: 45_000 }).catch(() => {});
     await ap.waitForTimeout(1_500);
-    check(dash.includes('User Management by Group'), '26. the Users tab renders the user-management surface');
-    check(!/scrypt\$|passwordHash|tokenHash/.test(dash),
+    //
+    // THE USER BASE MOVED OFF THE LANDING SCREEN, and this is the check that
+    // it moved rather than vanished.
+    //
+    // `/admin` used to render the whole user table. It now renders a compact
+    // summary with a control that leads to the full surface at `/admin/users`,
+    // which is asserted in ADMIN_SECTIONS above. The old line looked for the
+    // full table's heading in `dash` - text captured from `/admin` near the
+    // top of this section, and never re-read - so it could only ever describe
+    // the landing screen anyway.
+    //
+    // Both halves are asserted, because either one alone would pass on a
+    // defect: the summary is present on `/admin`, AND the full table is not
+    // ALSO still rendered there (a duplicate, not a move).
+    const overview = await ap.locator('body').innerText().catch(() => '');
+    check(await ap.locator('[data-testid="admin-users-preview"]').count() > 0,
+      '26. /admin renders the compact user summary');
+    check(await ap.locator('[data-testid="admin-view-all-users"]').count() > 0,
+      '26. and offers the route to the full user-management surface');
+    check(!overview.includes('User Management by Group'),
+      '26. the full user table moved to /admin/users rather than being duplicated');
+    check(!/scrypt\$|passwordHash|tokenHash/.test(overview),
       '26/21. the rendered dashboard carries no credential material');
 
     // ── C. /admin/admins, as rendered ──────────────────────────────────
@@ -1996,14 +2142,37 @@ try {
       { title: `QA gate probe ${STAMP}`, type: 'residential' }, users.supplier?.cookie);
     check(supplierProject.s === 403, '33. a supplier calling projects.create directly is refused',
       `http ${supplierProject.s}`);
-    check(/customer commissioning the work/i.test(errMsg(supplierProject.t) ?? ''),
+    check(/sell into projects rather than commissioning them/i.test(errMsg(supplierProject.t) ?? ''),
       '33. and the refusal names the rule rather than saying "forbidden"',
       (errMsg(supplierProject.t) ?? '').slice(0, 70));
 
+    /**
+     * THE RULE IS "WHO COMMISSIONS WORK", NOT "WHO IS A HOMEOWNER".
+     *
+     * This loop used to assert that a contractor, engineer, architect and
+     * project manager were ALL refused, because when the restriction was first
+     * added the only accounts that had ever created a project were homeowners
+     * and the rule was drawn around that observation.
+     *
+     * That was the wrong shape, and it is stated plainly in the rule's own
+     * source: a restriction cannot be evidence for itself. A main contractor
+     * subcontracting a package, or a project manager commissioning on a
+     * client's behalf, is ordinary construction practice, and refusing them was
+     * refusing the business. `PROJECT_CREATOR_ROLES` now names every
+     * professional role that participates in delivering a job.
+     *
+     * SUPPLIER REMAINS EXCLUDED, and that exclusion is the whole security
+     * content of this rule: a supplier answers a request for work, they do not
+     * commission one. So the loop is not deleted - it is INVERTED, which keeps
+     * the same number of assertions and makes each of them mean something. The
+     * negative control above is what still proves the rule bites.
+     */
     for (const role of ['contractor', 'engineer', 'architect', 'project_manager']) {
       if (!users[role]?.cookie) { skip(`33. ${role} projects.create`, 'no session for this role'); continue; }
       const r = await post('projects.create', { title: `QA gate probe ${STAMP}`, type: 'residential' }, users[role].cookie);
-      check(r.s === 403, `33. a ${role} is refused too`, `http ${r.s}`);
+      check(r.s === 200, `33. a ${role} commissions a project, as the trade does`, `http ${r.s}`);
+      check(Number.isInteger(json(r.t)?.id) && json(r.t).id > 0,
+        `33. and the ${role}'s project really exists - the id came back`, `id=${json(r.t)?.id}`);
     }
 
     // The positive control. Without it, a rule that refused EVERYONE would
