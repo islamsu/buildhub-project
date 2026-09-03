@@ -716,8 +716,22 @@ restart.
       that HAPPENED count now (PENDING, GRANTED, EXPIRED, REVERSED); REJECTED never
       did. REVERSED still counts deliberately, or reversal becomes a way to farm
       rewards.
-- [ ] REF-5: wire the remaining qualification events (only ACCOUNT_VERIFIED is hooked),
-      and route `admin.qualifyReferral` through the same engine.
+- [x] REF-5: all five qualification events fire from real product actions, and the
+      manual path grants. Only ACCOUNT_VERIFIED was hooked - the other four campaign
+      types existed in the schema, in the admin form and in the resolver, and NOTHING
+      in the product could ever fire them, so four of the five campaign types a
+      marketplace administrator can create were decorative. Now:
+      PROFILE_COMPLETED at the same line the product already treats a profile as
+      complete; PROVIDER_APPROVED at BOTH the single and the bulk compliance review,
+      so the reward does not depend on which button an administrator used;
+      FIRST_VALID_RFQ and FIRST_VALID_QUOTATION_RESPONSE counted so the name is true
+      (a quotation revision is not a new response - counted DISTINCT by RFQ).
+
+      `admin.qualifyReferral` wrote `status: 'qualified'` and granted nothing - no
+      reward, no notification, no entitlement. A permanent dead end that looked like
+      it had worked. It runs the same engine now, preserves the administrator's note,
+      and REFUSES with the reason when no campaign is eligible rather than returning
+      success over a dead end.
 - [ ] REF-6: reversal that reverses; expiry as derived state; anti-abuse; the admin and
       user surfaces; the Benefits/Limits view.
 

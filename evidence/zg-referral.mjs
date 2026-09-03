@@ -387,6 +387,86 @@ try {
     Number(sql(`select count(*) from billingEvents where userId=${extInviter.id} and action='subscription_extended'`)) >= 1,
     sql(`select group_concat(distinct action) from billingEvents where userId=${extInviter.id}`));
 
+  // ── ALL FIVE QUALIFICATION EVENTS, NOT JUST ONE ────────────────────────
+  //
+  // Only ACCOUNT_VERIFIED was hooked. The other four campaign types existed in
+  // the schema, in the admin form and in the resolver, and NOTHING in the
+  // product could ever fire them - so four of the five campaign types a
+  // marketplace administrator can create were decorative.
+  const eventInviter = await signUp('inv4', 'supplier');
+  sql(`update users set onboardingStatus='approved', verified=1 where id=${eventInviter.id}`);
+  const eventCode = sql(`select referralCode from users where id=${eventInviter.id}`);
+
+  const eventCases = [
+    { type: 'PROFILE_COMPLETED', role: 'homeowner', suffix: 'e1' },
+    { type: 'PROVIDER_APPROVED', role: 'contractor', suffix: 'e2' },
+    { type: 'FIRST_VALID_RFQ', role: 'homeowner', suffix: 'e3' },
+  ];
+  for (const [index, testCase] of eventCases.entries()) {
+    const campaignId = campaign(`ZG ${testCase.type} ${stamp}`, {
+      priority: 600 + index,
+      qualificationType: testCase.type,
+      eligibleReferredRoles: JSON.stringify([testCase.role]),
+      rewardValue: String(2 + index),
+      perInviterCap: 5,
+    });
+    const referred = await signUp(testCase.suffix, testCase.role, eventCode);
+    const referralRow = Number(sql(`select id from referrals where referredId=${referred.id}`));
+
+    if (testCase.type === 'PROFILE_COMPLETED') {
+      // The REAL product action, through the real endpoint.
+      await referred.session.mutate('auth.updateRole', { userRole: testCase.role, name: 'Profile Probe' });
+    } else if (testCase.type === 'PROVIDER_APPROVED') {
+      await admin.mutate('admin.updateApplicantStatus', { userId: referred.id, status: 'approved' });
+    } else if (testCase.type === 'FIRST_VALID_RFQ') {
+      await referred.session.mutate('rfq.create', { category: 'Materials', title: `ZG referral RFQ ${stamp}` });
+    }
+
+    check(`EVENT ${testCase.type}: the real product action qualifies the referral`,
+      Number(sql(`select ifnull(campaignId,0) from referrals where id=${referralRow}`)) === campaignId,
+      `bound=${sql(`select ifnull(campaignId,'NULL') from referrals where id=${referralRow}`)} expected=${campaignId}`);
+    check(`EVENT ${testCase.type}: and a reward was granted for it`,
+      sql(`select ifnull(status,'no row') from referralRewards where referralId=${referralRow}`) === 'GRANTED',
+      sql(`select concat(ifnull(status,'none'),' ',ifnull(reversalReason,'')) from referralRewards where referralId=${referralRow}`));
+  }
+
+  // ── THE ADMIN PATH GRANTS, INSTEAD OF MOVING A WORD ────────────────────
+  //
+  // admin.qualifyReferral wrote `status: 'qualified'` and granted nothing: no
+  // reward, no notification, no entitlement. A permanent dead end that looked
+  // like it had worked.
+  const manualCampaign = campaign(`ZG Manual ${stamp}`, { priority: 700, rewardValue: '9', perInviterCap: 5 });
+  const manual = await signUp('m1', 'homeowner', eventCode);
+  const manualReferral = Number(sql(`select id from referrals where referredId=${manual.id}`));
+  const beforeManual = (await eventInviter.session.query('billing.myEntitlements', undefined)).data?.qualifiedEnquiryAllowance;
+  const manualResult = await admin.mutate('admin.qualifyReferral', {
+    referralId: manualReferral, qualificationType: 'ACCOUNT_VERIFIED', note: 'ZG manual qualification',
+  });
+  check('ADMIN: manual qualification runs the SAME engine and reports what happened',
+    manualResult.status === 200 && manualResult.data?.status === 'rewarded',
+    `${manualResult.status} ${JSON.stringify(manualResult.data ?? manualResult.error)}`);
+  check('ADMIN: a real reward row exists, not just a status word',
+    sql(`select ifnull(status,'no row') from referralRewards where referralId=${manualReferral}`) === 'GRANTED');
+  const afterManual = (await eventInviter.session.query('billing.myEntitlements', undefined)).data?.qualifiedEnquiryAllowance;
+  check('ADMIN: and the inviter\'s real entitlement moved',
+    Number(afterManual) - Number(beforeManual) === 9, `${beforeManual} -> ${afterManual}`);
+  check('ADMIN: the administrator\'s note is preserved on the referral',
+    sql(`select ifnull(qualificationNote,'') from referrals where id=${manualReferral}`) === 'ZG manual qualification');
+
+  // And when nothing is eligible, the administrator is TOLD, not shown a
+  // success message over a dead end.
+  const orphan = await signUp('m2', 'architect', eventCode);
+  const orphanReferral = Number(sql(`select id from referrals where referredId=${orphan.id}`));
+  const refused = await admin.mutate('admin.qualifyReferral', {
+    referralId: orphanReferral, qualificationType: 'FIRST_VALID_QUOTATION_RESPONSE',
+  });
+  check('ADMIN: with no eligible campaign the administrator is refused, not congratulated',
+    refused.status !== 200 && /no campaign is currently eligible/i.test(refused.error ?? ''),
+    `${refused.status} ${refused.error ?? ''}`);
+  check('ADMIN: and nothing was written for it',
+    Number(sql(`select count(*) from referralRewards where referralId=${orphanReferral}`)) === 0
+    && sql(`select status from referrals where id=${orphanReferral}`) === 'registered');
+
   // ── AUDIT AND NOTIFICATION ─────────────────────────────────────────────
   // ONE AUDIT ROW PER REWARD, not a hard-coded one: the second referral also
   // paid this inviter, from the next eligible campaign. Tying the count to the
@@ -402,27 +482,50 @@ try {
 } catch (error) {
   check(`PROBE ABORTED: ${(error && error.message) || error}`, false);
 } finally {
+  /*
+   * CLEANUP, IN DEPENDENCY ORDER, AND STATEMENT BY STATEMENT.
+   *
+   * Two things went wrong before this shape. The list did not keep up with the
+   * tables each new section touched - registrationReviewEvents and rfqs among
+   * them - and every FK in this schema is RESTRICT, so ONE blocked delete
+   * aborted the whole block and left everything after it behind. The next run
+   * then inherited campaigns that won its tie-break, and reported a correct
+   * resolution as a determinism failure.
+   *
+   * Each statement now runs on its own and reports rather than throws; the
+   * final checks below are what decide whether the cleanup actually worked.
+   */
+  const ids = made.users.join(',');
+  const failures = [];
+  const attempt = (statement) => {
+    try { sql(statement); } catch (error) { failures.push(String(error.message).split('\n').pop()); }
+  };
   if (made.users.length > 0) {
-    const ids = made.users.join(',');
-    sql(`delete from vendorEntitlementOverrides where userId in (${ids})`);
-    sql(`delete from referralRewards where recipientUserId in (${ids})`);
-    sql(`delete from referrals where referrerId in (${ids}) or referredId in (${ids})`);
-    sql(`delete from vendorSponsorships where vendorId in (${ids})`);
-    sql(`delete from billingEvents where userId in (${ids})`);
-    sql(`delete from vendorSubscriptions where userId in (${ids})`);
-    sql(`delete from notifications where userId in (${ids})`);
-    sql(`delete from userAccountAuditEvents where userId in (${ids}) or actorId in (${ids})`);
-    sql(`delete from users where id in (${ids})`);
+    // Children first, parents last.
+    attempt(`delete from referralRewards where referralId in (select id from referrals where referrerId in (${ids}) or referredId in (${ids}))`);
+    attempt(`delete from referralRewards where recipientUserId in (${ids})`);
+    attempt(`delete from referrals where referrerId in (${ids}) or referredId in (${ids})`);
+    attempt(`delete from vendorEntitlementOverrides where userId in (${ids})`);
+    attempt(`delete from vendorSponsorships where vendorId in (${ids})`);
+    attempt(`delete from billingEvents where userId in (${ids})`);
+    attempt(`delete from vendorSubscriptions where userId in (${ids})`);
+    attempt(`delete from quotations where providerId in (${ids})`);
+    attempt(`delete from rfqItems where rfqId in (select id from rfqs where requesterId in (${ids}))`);
+    attempt(`delete from rfqs where requesterId in (${ids})`);
+    attempt(`delete from products where supplierId in (${ids})`);
+    attempt(`delete from registrationReviewEvents where userId in (${ids}) or actorId in (${ids})`);
+    attempt(`delete from analyticsEvents where userId in (${ids})`);
+    attempt(`delete from notifications where userId in (${ids})`);
+    attempt(`delete from userAccountAuditEvents where userId in (${ids}) or actorId in (${ids})`);
+    attempt(`delete from users where id in (${ids})`);
   }
   if (made.campaigns.length > 0) {
-    // Dependency order: referralRewards.campaignId is RESTRICT, and so is
-    // referrals.campaignId's own reference. Rewards go first, referrals are
-    // unbound, then the campaigns can go.
-    const ids = made.campaigns.join(',');
-    sql(`delete from referralRewards where campaignId in (${ids})`);
-    sql(`update referrals set campaignId = null where campaignId in (${ids})`);
-    sql(`delete from referralCampaigns where id in (${ids})`);
+    const campaignIds = made.campaigns.join(',');
+    attempt(`delete from referralRewards where campaignId in (${campaignIds})`);
+    attempt(`update referrals set campaignId = null where campaignId in (${campaignIds})`);
+    attempt(`delete from referralCampaigns where id in (${campaignIds})`);
   }
+  if (failures.length > 0) check(`CLEANUP: ${failures.length} statement(s) failed`, false, failures.slice(0, 2).join(' | '));
 }
 
 check('CLEANUP: every row this probe planted is gone',

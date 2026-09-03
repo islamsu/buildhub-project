@@ -890,6 +890,12 @@ const authRouter = router({
         userId: ctx.user.id,
         metadata: { role: input.userRole, professional: isComplianceRole(input.userRole) },
       });
+      // PROFILE_COMPLETED, at the moment the product ALREADY treats a profile
+      // as complete - the same line that emits the analytics event and writes
+      // `profile_role_completed`. Inventing a separate definition of "complete"
+      // for the referral engine would make the reward fire at a moment nothing
+      // else on the platform recognises.
+      await qualifyReferralEvent(db, ctx.user.id, 'PROFILE_COMPLETED', `profile:${ctx.user.id}`, new Date());
       return { success: true };
     }),
 });
@@ -2968,6 +2974,22 @@ const rfqRouter = router({
           + `${resolvedItems.length ? `, ${resolvedItems.length} item(s)` : ''}`
           + `${attachments?.length ? `, ${attachments.length} attachment(s)` : ''}`,
       });
+
+      /**
+       * FIRST_VALID_RFQ - and it checks that it IS the first.
+       *
+       * The engine is idempotent on its own, so firing on every RFQ would
+       * record the qualification only once anyway. But the campaign type is
+       * named FIRST_VALID_RFQ, and a referral qualifying on somebody's tenth
+       * RFQ - because that is when a campaign finally became eligible - is not
+       * what an administrator budgeting that campaign agreed to. The count is
+       * the cheap way to make the name true.
+       */
+      const [rfqCount] = await db.select({ count: sql<number>`count(*)` })
+        .from(rfqs).where(eq(rfqs.requesterId, ctx.user.id));
+      if (Number(rfqCount?.count ?? 0) === 1) {
+        await qualifyReferralEvent(db, ctx.user.id, 'FIRST_VALID_RFQ', `firstrfq:${ctx.user.id}`, new Date());
+      }
       return { id: rfqId };
     }),
   uploadAttachment: protectedProcedure
@@ -3654,6 +3676,19 @@ const rfqRouter = router({
           + `${input.timeline ? `, ${input.timeline} days` : ''}`
           + `${attachments?.length ? `, ${attachments.length} attachment(s)` : ''}`,
       });
+      /**
+       * FIRST_VALID_QUOTATION_RESPONSE - counted the same way as the RFQ event.
+       *
+       * A REVISION is not a new response: `revisionNumber` increments on the
+       * same RFQ, and counting rows would make a supplier who revised twice
+       * look like a supplier who answered three RFQs. Counted DISTINCT by RFQ.
+       */
+      const [quoteCount] = await db.select({ count: sql<number>`count(distinct ${quotations.rfqId})` })
+        .from(quotations).where(eq(quotations.providerId, ctx.user.id));
+      if (Number(quoteCount?.count ?? 0) === 1) {
+        await qualifyReferralEvent(db, ctx.user.id, 'FIRST_VALID_QUOTATION_RESPONSE', `firstquote:${ctx.user.id}`, new Date());
+      }
+
       await recordFieldChanges(db, {
         subjectType: 'quotation', subjectId: quotationId,
         ownerId: ctx.user.id, actorId: ctx.user.id,
@@ -5208,23 +5243,63 @@ const adminRouter = router({
       const [referral] = await db.select().from(referrals).where(eq(referrals.id, input.referralId));
       if (!referral) throw new TRPCError({ code: 'NOT_FOUND', message: 'Referral not found' });
       if (referral.status === 'revoked' || referral.status === 'expired') throw new TRPCError({ code: 'BAD_REQUEST', message: 'Referral cannot be qualified' });
-      const eventKey = `referral:${referral.id}:qualify:${input.qualificationType ?? 'MANUAL'}`;
+      /**
+       * THE SAME ENGINE THE PRODUCT USES - not a second implementation.
+       *
+       * This wrote `status: 'qualified'` directly and granted nothing. An
+       * administrator clicking Qualify moved a word in the database and the
+       * inviter received no reward, no notification and no entitlement: a
+       * permanent dead end, and one that looked like it had worked.
+       *
+       * Routing it through qualifyReferralEvent means the manual path resolves
+       * a campaign, writes a reward, applies its effect and reports the truth,
+       * under exactly the rules the automatic events follow. The note the
+       * administrator wrote is preserved on the referral afterwards.
+       */
       const qualificationType = input.qualificationType ?? 'ACCOUNT_VERIFIED';
-      await db.update(referrals).set({
-        status: 'qualified',
-        qualificationType,
-        qualificationEventKey: eventKey,
-        qualifiedAt: new Date(),
-        qualificationNote: input.note ?? null,
-      }).where(eq(referrals.id, input.referralId));
+      const eventKey = `admin:${referral.id}:${qualificationType}`;
+      const result = await qualifyReferralEvent(db, referral.referredId, qualificationType, eventKey, new Date());
+
+      if (input.note) {
+        await db.update(referrals).set({ qualificationNote: input.note }).where(eq(referrals.id, input.referralId));
+      }
       await recordAccountEvent(db, {
         userId: referral.referrerId,
         actorId: ctx.user.id,
         action: 'referral_qualified',
         source: 'referral',
-        note: `referral ${referral.id}`,
+        note: `referral ${referral.id} manually qualified as ${qualificationType}: ${result.outcome}`,
       });
-      return { success: true, status: 'qualified' as const };
+
+      /*
+       * The administrator is told what actually happened. "Qualified" when no
+       * campaign was eligible would be the same dead end wearing a success
+       * message.
+       */
+      if (result.outcome === 'granted') {
+        return { success: true, status: 'rewarded' as const, outcome: result.outcome, rewardType: result.rewardType, rewardValue: result.rewardValue };
+      }
+      if (result.outcome === 'already_qualified') {
+        return { success: true, status: 'qualified' as const, outcome: result.outcome };
+      }
+      if (result.outcome === 'reward_pending') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'The referral qualified but its reward could not be applied. See the reward ledger for the reason.',
+        });
+      }
+      if (result.outcome === 'cap_reached') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Every eligible campaign has reached its cap for this inviter.' });
+      }
+      if (result.outcome === 'no_referral') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That referral no longer exists.' });
+      }
+      // campaign_ineligible - and its `reason` is the useful half, so it is
+      // passed through rather than flattened into "not eligible".
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `No campaign is currently eligible to reward this referral (${result.reason}).`,
+      });
     }),
   reverseReferralReward: adminWith('marketplace.manage')
     .input(z.object({ rewardId: z.number().int().positive(), reason: z.string().trim().min(1).max(500) }))
@@ -7068,6 +7143,11 @@ const adminRouter = router({
     const [applicant] = await db.select().from(users).where(eq(users.id, input.userId));
     if (!applicant || !isComplianceRole(applicant.userRole)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Compliance applicant not found' });
     await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: new Date(), onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(eq(users.id, input.userId));
+    if (input.status === 'approved') {
+      // PROVIDER_APPROVED. The event key names the USER, not this review, so a
+      // second approval after a later re-review cannot pay twice.
+      await qualifyReferralEvent(db, input.userId, 'PROVIDER_APPROVED', `approved:${input.userId}`, new Date());
+    }
     // Part 42 names supplier approval explicitly. registrationReviewEvents
     // already records the new status; what it cannot answer is what the
     // status was before, which is the question asked when a vendor says they
@@ -7104,6 +7184,14 @@ const adminRouter = router({
     if (applicants.some(applicant => !['under_review', 'update_required', 'not_started'].includes(applicant.onboardingStatus))) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Bulk decisions may only include pending applicants' });
     const reviewedAt = new Date();
     await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: reviewedAt, onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(inArray(users.id, userIds));
+    if (input.status === 'approved') {
+      // The SAME event as the single review above. A bulk approval that paid no
+      // referrals while a one-by-one approval did would make the reward depend
+      // on which button an administrator happened to use.
+      for (const approvedId of userIds) {
+        await qualifyReferralEvent(db, approvedId, 'PROVIDER_APPROVED', `approved:${approvedId}`, reviewedAt);
+      }
+    }
     await db.insert(registrationReviewEvents).values(applicants.map(applicant => ({ userId: applicant.id, actorId: ctx.user.id, action: 'bulk_applicant_status_updated', status: input.status, note: input.note })));
     await notifyUsers(db, applicants.map(applicant => ({ userId: applicant.id, title: input.status === 'approved' ? 'Registration approved' : 'Registration rejected', body: input.note || `Your registration is ${input.status}`, type: 'compliance', link: '/compliance', messageKey: `notif.compliance.applicant.${input.status}`, messageParams: (input.note ? { note: input.note } : {}) as Record<string, string> })));
     return { success: true, updatedCount: applicants.length, onboardingStatus: input.status };
