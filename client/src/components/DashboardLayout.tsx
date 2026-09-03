@@ -22,13 +22,14 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags, Megaphone } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags, Megaphone, ShieldCheck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import LanguageToggle from "./LanguageToggle";
 import { workspaceHref, type SectionId, type WorkspaceRole } from "@shared/roleWorkspaceSections";
+import { adminMenuFor } from "@/lib/adminNavigation";
 import { useHashSection, revealSection } from "@/hooks/useSectionAnchor";
 
 /**
@@ -152,22 +153,40 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
   ],
 };
 
-const ADMIN_MENU_KEYS: MenuItem[] = [
-  { icon: LayoutDashboard, labelKey: 'admin.title', path: '/admin' },
-  { icon: Users, labelKey: 'admin.users', path: '/admin/users' },
-  { icon: UserRound, labelKey: 'admin.name_changes', path: '/admin/name-changes' },
-  { icon: UsersRound, labelKey: 'admin.referrals', path: '/admin/referrals' },
-  { icon: Megaphone, labelKey: 'admin.placements', path: '/admin/placements' },
-  { icon: Inbox, labelKey: 'admin.enquiries', path: '/admin/enquiries' },
-  { icon: Shield, labelKey: 'admin.pending_verifications', path: '/admin/compliance' },
-  { icon: FileText, labelKey: 'admin.disputes', path: '/admin/disputes' },
-  { icon: BarChart3, labelKey: 'admin.analytics', path: '/admin/analytics' },
-  { icon: CreditCard, labelKey: 'adminBilling.title', path: '/admin/billing' },
-  // Reachable by ordinary navigation, not only by typing the URL: a tab that
-  // exists but is not in the menu is a surface nobody finds.
-  { icon: Activity, labelKey: 'admin.operations', path: '/admin/operations' },
-  { icon: Settings, labelKey: 'dash.settings', path: '/admin/settings' },
-];
+/**
+ * THE ADMIN MENU IS THE ONLY WAY INTO THESE SCREENS, so anything missing from
+ * it is missing from the product.
+ *
+ * The destinations themselves live in `client/src/lib/adminNavigation.ts` as
+ * plain data, so a test can hold App.tsx's route table against them without
+ * importing this component and everything it pulls in. Only the icons stay
+ * here, because only this file draws anything.
+ *
+ * `/admin/admins` was absent from this list and had no inbound link anywhere.
+ * See the header of that module for why that mattered.
+ */
+const ADMIN_ICONS: Record<string, typeof LayoutDashboard> = {
+  '/admin': LayoutDashboard,
+  '/admin/users': Users,
+  '/admin/name-changes': UserRound,
+  '/admin/referrals': UsersRound,
+  '/admin/placements': Megaphone,
+  '/admin/enquiries': Inbox,
+  '/admin/compliance': Shield,
+  '/admin/disputes': FileText,
+  '/admin/analytics': BarChart3,
+  '/admin/billing': CreditCard,
+  '/admin/operations': Activity,
+  '/admin/admins': ShieldCheck,
+  '/admin/settings': Settings,
+};
+
+const adminMenuItems = (permissions: readonly string[]): MenuItem[] =>
+  adminMenuFor(permissions).map(entry => ({
+    icon: ADMIN_ICONS[entry.path] ?? LayoutDashboard,
+    labelKey: entry.labelKey,
+    path: entry.path,
+  }));
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
@@ -266,8 +285,24 @@ function DashboardLayoutContent({
   // Every link behind it failed server-side, so nothing leaked - but a menu
   // that misrepresents an account is its own problem, and a UI control keyed
   // on user-supplied data is the habit worth removing, not the symptom.
-  const menuKeys = user?.role === 'admin'
-    ? ADMIN_MENU_KEYS
+  /**
+   * An administrator's menu is built from THEIR permissions, not from the fact
+   * that they are an administrator.
+   *
+   * Every screen behind these entries is gated server-side, so an entry the
+   * viewer cannot use never leaked anything - it simply led to a refusal or an
+   * empty screen, which reads as a broken product rather than as a boundary.
+   * A MARKETPLACE_ADMIN was being offered Disputes and shown nothing.
+   *
+   * While the query is in flight the permission list is empty, so gated
+   * entries appear a moment after the ungated ones rather than appearing
+   * wrongly and disappearing. Briefly showing less is honest; briefly showing
+   * a destination the viewer does not have is not.
+   */
+  const isAdminViewer = user?.role === 'admin';
+  const { data: adminMe } = trpc.admin.me.useQuery(undefined, { enabled: isAdminViewer, retry: false });
+  const menuKeys = isAdminViewer
+    ? adminMenuItems(adminMe?.permissions ?? [])
     : ROLE_MENU_KEYS[userRole as keyof typeof ROLE_MENU_KEYS] ?? HOMEOWNER_MENU_KEYS;
   const menuItems = menuKeys.map(item => ({ ...item, label: t(item.labelKey) }));
 

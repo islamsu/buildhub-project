@@ -240,13 +240,21 @@ it('keeps AdminDashboard hooks unconditional before loading and access returns',
 
 it('wires admin sidebar items to distinct dashboard sections', async () => {
   const { readFileSync } = await import('node:fs');
-  const layout = readFileSync(new URL('../client/src/components/DashboardLayout.tsx', import.meta.url), 'utf8');
   const dashboard = readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
-  expect(layout).toContain("path: '/admin/users'");
-  expect(layout).toContain("path: '/admin/compliance'");
-  expect(layout).toContain("path: '/admin/disputes'");
-  expect(layout).toContain("path: '/admin/analytics'");
-  expect(layout).toContain("path: '/admin/settings'");
+  // The destinations moved out of DashboardLayout.tsx into a plain data module
+  // so they could be asserted rather than grepped. This check follows them
+  // instead of being deleted, and gets STRONGER in the move: reading the real
+  // list catches a wrong path, where `layout.toContain("path: '/admin/users'")`
+  // only ever caught the string's absence and would have passed on a menu
+  // entry pointing at a route that does not exist.
+  const { ADMIN_NAV } = await import('../client/src/lib/adminNavigation');
+  const paths = ADMIN_NAV.map(entry => entry.path);
+  for (const section of ['/admin/users', '/admin/compliance', '/admin/disputes', '/admin/analytics', '/admin/settings']) {
+    expect(paths).toContain(section);
+  }
+  // Distinct, which is what "distinct dashboard sections" claims: two entries
+  // sharing a path render as active together and one of them is unreachable.
+  expect(new Set(paths).size).toBe(paths.length);
   expect(dashboard).toContain('<Tabs value={adminSection} onValueChange={handleAdminSectionChange}>');
 });
 
