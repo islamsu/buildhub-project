@@ -45,6 +45,7 @@ import { reverseRewardEffect, markRewardReversed, markReferralAfterReversal } fr
 import {
   listAdminReferrals, listReferralRewards, listMyReferralRewards, myReferralCounts,
 } from './referralRewardView';
+import { explainEnquiryAllowance } from './billing/allowanceBreakdown';
 import {
   assertSuperAdminSurvives, assertUserDirectoryMutationAllowed,
 } from './adminAuthority';
@@ -8366,6 +8367,34 @@ const billingRouter = router({
   // Self-scoped - no input, reads ctx.user.id only.
   myEnquiryUsage: protectedProcedure.query(async ({ ctx }) => {
     return getEnquiryUsage(ctx.user.id);
+  }),
+
+  /**
+   * EVERYTHING A VENDOR IS ENTITLED TO, AND WHY - in one read.
+   *
+   * `myEntitlements` returns one effective number and `myPlan` returns a plan
+   * id, and NEITHER HAS EVER HAD A SCREEN. A vendor whose allowance changed -
+   * a referral paid out, an administrator granted something, a bonus lapsed -
+   * had nowhere to find out why. "You have 46 qualified enquiries" is not an
+   * answer to "why 46".
+   *
+   * SELF-SCOPED BY CONSTRUCTION: no userId in the input, so no payload can read
+   * another vendor's entitlements or the administrative reasons attached to
+   * them.
+   */
+  myBenefits: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    const now = new Date();
+    const resolution = await resolveVendorEntitlements(ctx.user.id, now);
+    const [usage, breakdown] = await Promise.all([
+      getEnquiryUsage(ctx.user.id, now),
+      explainEnquiryAllowance(db, ctx.user.id, resolution.effectivePlan, resolution.qualifiedEnquiryAllowance, now),
+    ]);
+    return {
+      plan: toVendorEntitlementResponse(resolution),
+      usage,
+      allowance: breakdown,
+    };
   }),
 
   // ── Subscription lifecycle (Phase 4B.4) ─────────────────────────────────

@@ -368,6 +368,74 @@ try {
                                     and revokedAt is null limit 1`));
   }
 
+
+  // ── BENEFITS AND LIMITS: the number, and where it came from ──────────────
+  //
+  // `billing.myEntitlements` and `billing.myPlan` have existed for a long time
+  // and NEITHER HAS EVER HAD A SCREEN. A vendor whose allowance changed had
+  // nowhere to find out why.
+  if (adminGrantWorked && stackInviterId > 0) {
+    const benefits = await sixth.session.query('billing.myBenefits', undefined);
+    check('BENEFITS: a vendor can read what they are entitled to', benefits.status === 200,
+      `${benefits.status} ${benefits.error ?? ''}`);
+
+    const allowance = benefits.data?.allowance;
+    check('BENEFITS: the EFFECTIVE number matches what the platform enforces',
+      allowance?.effective
+        === (await sixth.session.query('billing.myEntitlements', undefined)).data?.qualifiedEnquiryAllowance,
+      `${allowance?.effective}`);
+    check('BENEFITS: and the PARTS add up to it - no mismatch',
+      allowance?.mismatch === false && allowance?.computed === allowance?.effective,
+      `computed=${allowance?.computed} effective=${allowance?.effective} mismatch=${allowance?.mismatch}`);
+
+    // The whole point: the breakdown NAMES the administrator's grant and the
+    // bonus separately, which is the answer to "why has my number changed".
+    check("BENEFITS: the administrator's absolute grant is named, with its reason",
+      Number(allowance?.adminOverride?.value) === 40 && String(allowance?.adminOverride?.reason ?? '').length > 0,
+      `${allowance?.adminOverride?.value}: ${allowance?.adminOverride?.reason}`);
+    check('BENEFITS: the surviving bonus is listed separately, not folded into the total',
+      Array.isArray(allowance?.bonuses) && allowance.bonuses.length >= 1
+      && allowance.bonuses.every(bonus => Number(bonus.value) > 0),
+      JSON.stringify(allowance?.bonuses));
+    check('BENEFITS: the plan figure is shown too, so the vendor can see what changed',
+      allowance?.planAllowance !== undefined, String(allowance?.planAllowance));
+
+    const usage = benefits.data?.usage;
+    check('BENEFITS: usage, remaining and the reset date are real, not placeholders',
+      typeof usage?.used === 'number' && usage?.resetsAt
+      && (usage.remaining === null || usage.remaining === Math.max(0, allowance.effective - usage.used)),
+      `used=${usage?.used} remaining=${usage?.remaining} resets=${usage?.resetsAt}`);
+
+    check('BENEFITS: only capabilities BuildHub has actually built are listed',
+      Object.values(benefits.data?.plan?.capabilities ?? {}).every(value => typeof value === 'boolean'),
+      JSON.stringify(benefits.data?.plan?.capabilities));
+
+    // SELF-SCOPED. There is no userId in the input, and a different account
+    // reading the same endpoint gets their own entitlements.
+    const other = await inviter.session.query('billing.myBenefits', undefined);
+    check('BENEFITS: another account reads THEIR entitlements, not this vendor\'s',
+      other.status === 200 && other.data?.allowance?.effective !== allowance?.effective,
+      `${other.data?.allowance?.effective} vs ${allowance?.effective}`);
+    check('BENEFITS: and sees no trace of the administrative reason written for someone else',
+      !JSON.stringify(other.data ?? {}).includes('ZG admin grant'));
+
+    // THE ADMINISTRATOR'S OWN VIEW AGREES. readEnquiryAllowance read only the
+    // absolute slot, so after bonuses arrived an administrator saw a number
+    // LOWER than the one being enforced - on the screen they use to decide
+    // whether to grant more.
+    const adminView = await admin.query('admin.vendorEnquiryAllowance', { userId: sixth.id });
+    if (adminView.status === 200) {
+      check('BENEFITS: the ADMINISTRATOR sees the same effective number the vendor does',
+        adminView.data?.effectiveAllowance === allowance?.effective,
+        `admin=${adminView.data?.effectiveAllowance} vendor=${allowance?.effective}`);
+      check('BENEFITS: and the bonus is broken out for them as well',
+        Number(adminView.data?.bonusAllowance) > 0, String(adminView.data?.bonusAllowance));
+    } else {
+      check('BENEFITS: the administrator allowance view is reachable', false,
+        `${adminView.status} ${adminView.error ?? ''}`);
+    }
+  }
+
   // ── SUBSCRIPTION_EXTENSION: real time, and no invented money ───────────
   //
   // The owner's decision: this may extend a legitimate existing period, and

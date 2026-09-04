@@ -207,8 +207,13 @@ export type EnquiryAllowanceView = {
   planId: PlanId;
   /** What the vendor's plan alone would grant. null = unlimited. */
   planAllowance: number | null;
-  /** What is actually in force - the override if there is one, otherwise the plan. */
+  /**
+   * What is actually in force: the override if there is one, otherwise the
+   * plan, PLUS every bonus row in force. null = unlimited.
+   */
   effectiveAllowance: number | null;
+  /** The part of the above that came from additive bonuses - referral rewards. */
+  bonusAllowance: number;
   overridden: boolean;
   used: number;
   /** null = unlimited. NEVER NEGATIVE - see the clamp below. */
@@ -262,12 +267,32 @@ export async function readEnquiryAllowance(
     && (!row.endsAt || new Date(row.endsAt).getTime() > now.getTime())
     && (!row.startsAt || new Date(row.startsAt).getTime() <= now.getTime()));
 
-  const effectiveAllowance = active ? asAllowance(active.value) : planAllowance;
+  /*
+   * THE BONUSES COUNT HERE TOO.
+   *
+   * This read only ENQUIRY_ALLOWANCE_KEY rows, which was complete until
+   * additive bonuses were introduced for referral rewards. After that an
+   * administrator looking at a vendor holding a bonus saw a number LOWER than
+   * the one the platform was enforcing - and this is the screen they use to
+   * decide whether to grant more.
+   */
+  const bonusRows = await anyDb.select().from(vendorEntitlementOverrides).where(
+    sqlAnd(
+      sqlEq(vendorEntitlementOverrides.userId, userId),
+      sqlEq(vendorEntitlementOverrides.entitlementKey, ENQUIRY_BONUS_KEY),
+    ),
+  ).orderBy(sqlDesc(vendorEntitlementOverrides.id));
+  const bonus = sumActiveBonuses(bonusRows, now);
+
+  const base = active ? asAllowance(active.value) : planAllowance;
+  // Unlimited stays unlimited: null plus anything is still no limit.
+  const effectiveAllowance = base === null ? null : base + bonus;
   return {
     userId,
     planId,
     planAllowance,
     effectiveAllowance,
+    bonusAllowance: bonus,
     overridden: Boolean(active),
     used,
     // CLAMPED AT ZERO, deliberately. A vendor whose limit was lowered after
@@ -276,7 +301,9 @@ export async function readEnquiryAllowance(
     // happened and are never rewritten to make an arithmetic result tidy.
     remaining: effectiveAllowance === null ? null : Math.max(0, effectiveAllowance - used),
     periodKey,
-    history: rows.map(row => ({
+    // The bonus rows belong in the history too: "who changed it" is not
+    // answerable if a whole class of change is missing from the list.
+    history: [...rows, ...bonusRows].sort((a, b) => b.id - a.id).map(row => ({
       id: row.id,
       value: asAllowance(row.value),
       previousValue: asAllowance(row.previousValue),

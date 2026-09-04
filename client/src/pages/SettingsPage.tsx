@@ -42,6 +42,7 @@ import VendorBilling from '@/components/VendorBilling';
 import VendorCompanyProfile from '@/components/VendorCompanyProfile';
 import VendorNameChangeRequest from '@/components/VendorNameChangeRequest';
 import ReferralInviteEarn from '@/components/ReferralInviteEarn';
+import BenefitsAndLimits from '@/components/BenefitsAndLimits';
 import VendorServiceCategories from '@/components/VendorServiceCategories';
 import PortfolioManager from '@/components/PortfolioManager';
 import { Card, CardContent } from '@/components/ui/card';
@@ -158,7 +159,16 @@ export default function SettingsPage() {
           title={ar ? 'الباقة والفوترة' : 'Plan & billing'}
         >
           {isProvider
-            ? <VendorBilling />
+            ? <div className="space-y-4">
+                {/*
+                  BENEFITS AND LIMITS, above the billing controls.
+                  `billing.myEntitlements` and `billing.myPlan` had no screen at
+                  all, so a vendor could not find out what they were entitled to
+                  or why it had changed.
+                */}
+                <BenefitsAndLimits />
+                <VendorBilling />
+              </div>
             : <NotForThisAccount
                 ar={ar}
                 en="Plans apply to provider accounts — suppliers, contractors, engineers, architects and project managers. Posting requests is free."

@@ -213,6 +213,24 @@ describe('the screens read the real reward, not the dead columns', () => {
     expect(ADMIN).toContain('<LoadFailed');
   });
 
+  it('and it states no record count until it actually has one', () => {
+    /*
+     * `total ?? 0` printed a confident "0 records" while the query was still in
+     * flight - and on a failed query too, since the pager renders outside the
+     * error branch. An administrator glancing at that reads "no referrals":
+     * the same defect as an empty state standing in for a failure, in a smaller
+     * place. Found by a live browser probe, which caught the loading state.
+     */
+    expect(ADMIN).not.toContain('total={referrals.data?.total ?? 0}');
+    expect(ADMIN).not.toContain('total={rewards.data?.total ?? 0}');
+    expect(ADMIN).toContain('total={referrals.data?.total ?? null}');
+    expect(ADMIN).toContain('total={rewards.data?.total ?? null}');
+    // And the unknown case says so, in both languages.
+    expect(ADMIN).toContain("total === null");
+    expect(ADMIN).toContain("'Counting…'");
+    expect(ADMIN).toContain("'جارٍ الحساب…'");
+  });
+
   it("the inviter's own screen shows the rewards, and does not promise one", () => {
     const MINE = readFileSync(new URL('../client/src/components/ReferralInviteEarn.tsx', import.meta.url), 'utf8');
     expect(MINE).toContain('data.rewards');
