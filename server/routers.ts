@@ -56,6 +56,7 @@ import {
 import { applyTransition } from './disputeWorkflow';
 import { notifyDisputeParties } from './disputeNotifications';
 import { subjectColumns, assignDisputeReference, hasSubject } from './disputeSubject';
+import { adminDisputeDetail, disputeStatusCounts, listAdminDisputes } from './disputeAdminView';
 import {
   requireSubjectParty, requireDisputeAccess, respondentCandidates, validateRespondent,
   partiesForSubject,
@@ -7778,16 +7779,58 @@ const adminRouter = router({
     });
     return { success: true, status: input.frozen ? 'frozen' : 'active' };
   }),
-  disputes: adminWith('support.manage').query(async () => {
+  /**
+   * ── THE SUPPORT QUEUE ────────────────────────────────────────────────────
+   *
+   * Was: every dispute ever filed in one response, plus EVERY USER ON THE
+   * PLATFORM read into memory to resolve two names per row, with the search and
+   * the status filter applied in the browser over whatever arrived. See
+   * server/disputeAdminView.ts for why each of those is a defect rather than
+   * merely slow.
+   */
+  disputes: adminWith('support.manage').input(z.object({
+    page: z.number().int().min(0).default(0),
+    pageSize: z.number().int().min(1).max(100).default(25),
+    search: z.string().trim().max(120).optional(),
+    status: z.string().max(24).optional(),
+    priority: z.string().max(24).optional(),
+    category: z.string().max(24).optional(),
+    subjectType: z.string().max(24).optional(),
+    assignment: z.enum(['all', 'mine', 'assigned', 'unassigned']).optional(),
+  }).default({ page: 0, pageSize: 25 })).query(async ({ ctx, input }) => {
     const db = await requireDb();
-    const rows = await db.select().from(disputes).orderBy(desc(disputes.createdAt));
-    const userRows = await db.select({ id: users.id, name: users.name }).from(users);
-    const names = new Map(userRows.map(row => [row.id, row.name]));
-    return rows.map(row => ({
-      ...row,
-      reporterName: names.get(row.reporterId) ?? null,
-      respondentName: row.respondentId ? names.get(row.respondentId) ?? null : null,
-    }));
+    const [page, counts] = await Promise.all([
+      // `actorId` comes from the SESSION. Taking "mine" from the client would
+      // let one administrator read another's queue under their own label.
+      listAdminDisputes(db, { ...input, actorId: ctx.user.id }),
+      disputeStatusCounts(db),
+    ]);
+    return { ...page, counts };
+  }),
+
+  /** One dispute in full, for the administrator working it. */
+  disputeDetail: adminWith('support.manage')
+    .input(z.object({ disputeId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const detail = await adminDisputeDetail(db, input.disputeId);
+      if (!detail) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dispute not found' });
+      return detail;
+    }),
+
+  /**
+   * Administrators a DISPUTE may be handed to.
+   *
+   * Deliberately NOT `admin.assignableAdmins`, which is gated on
+   * `marketplace.manage` and offers everybody who can sign in: a support
+   * administrator cannot call it, and it would offer names that
+   * `assignDispute` then refuses. This returns exactly the set that mutation
+   * accepts, and a test holds the two together.
+   */
+  disputeAssignees: adminWith('support.manage').query(async () => {
+    const db = await requireDb();
+    const admins = await assignableAdmins(db);
+    return admins.filter(admin => hasAdminPermission(admin.adminRole as any, 'support.manage'));
   }),
   /**
    * Move a dispute, THROUGH THE STATE MACHINE.

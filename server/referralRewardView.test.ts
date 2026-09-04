@@ -229,10 +229,18 @@ describe('the screens read the real reward, not the dead columns', () => {
     expect(ADMIN).not.toContain('total={rewards.data?.total ?? 0}');
     expect(ADMIN).toContain('total={referrals.data?.total ?? null}');
     expect(ADMIN).toContain('total={rewards.data?.total ?? null}');
-    // And the unknown case says so, in both languages.
-    expect(ADMIN).toContain("total === null");
-    expect(ADMIN).toContain("'Counting…'");
-    expect(ADMIN).toContain("'جارٍ الحساب…'");
+    /*
+     * The control itself is now SHARED - the dispute queue needs the same one,
+     * and a second copy would be a second place for this correction to be
+     * missing from. Asserted where it lives, and asserted that this screen
+     * still uses that one rather than having grown its own back.
+     */
+    const PAGER = readFileSync(new URL('../client/src/components/Pager.tsx', import.meta.url), 'utf8');
+    expect(PAGER).toContain('total === null');
+    expect(PAGER).toContain("'Counting…'");
+    expect(PAGER).toContain("'جارٍ الحساب…'");
+    expect(ADMIN).toContain("import { Pager } from '@/components/Pager'");
+    expect(ADMIN).not.toContain('function Pager(');
   });
 
   it("the inviter's own screen shows the rewards, and does not promise one", () => {

@@ -151,20 +151,49 @@ describe('deleteDummyUser (Phase 3C: FK-constraint aware deletion)', () => {
 describe('admin disputes and settings', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('returns disputes with reporter and respondent names', async () => {
-    let selectCount = 0;
+  /**
+   * RESTATED, NOT WEAKENED.
+   *
+   * This asserted that `admin.disputes` returned a bare ARRAY whose rows
+   * carried resolved names - which was satisfied by the implementation's two
+   * defects: no pagination, and every user on the platform read into memory to
+   * map two names per row. A test that asserts an array cannot see that the
+   * array is unbounded.
+   *
+   * It now asserts the same thing it always meant - the names are resolved and
+   * the row is real - over the paged envelope, PLUS the total and the page
+   * bounds it could not see before. Strictly stronger: it fails if the queue
+   * stops paging, and server/disputeAdminView.test.ts fails if it goes back to
+   * scanning the user table.
+   */
+  it('returns a page of disputes, with a real total and resolved names', async () => {
+    const row = {
+      id: 3, reference: 'DSP-2026-000003', reporterId: 10, respondentId: 11,
+      title: 'Late delivery', description: 'Arrived short', status: 'open', priority: 'high',
+      reporterName: 'Homeowner', respondentName: 'Contractor', createdAt: new Date(),
+    };
     const db = {
-      select: vi.fn(() => {
-        selectCount += 1;
-        if (selectCount === 1) {
-          return { from: () => ({ orderBy: () => Promise.resolve([{ id: 3, reporterId: 10, respondentId: 11, title: 'Payment issue', description: 'Late payment', type: 'payment', priority: 'high', status: 'open', resolutionNotes: null, createdAt: new Date(), updatedAt: new Date() }]) }) };
-        }
-        return { from: () => Promise.resolve([{ id: 10, name: 'Homeowner' }, { id: 11, name: 'Contractor' }]) };
+      select: vi.fn((projection?: Record<string, unknown>) => {
+        const keys = Object.keys(projection ?? {});
+        const data = keys.includes('count') && keys.includes('status') ? [{ status: 'open', count: 1 }]
+          : keys.includes('count') ? [{ count: 1 }]
+            : [row];
+        const chain: any = new Proxy({}, {
+          get: (_target, key) => (key === 'then'
+            ? (resolve: any, reject: any) => Promise.resolve(data).then(resolve, reject)
+            : () => chain),
+        });
+        return chain;
       }),
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
     const caller = appRouter.createCaller(makeAdminCtx());
-    await expect(caller.admin.disputes()).resolves.toEqual([expect.objectContaining({ reporterName: 'Homeowner', respondentName: 'Contractor', status: 'open' })]);
+    const page = await caller.admin.disputes({ page: 0, pageSize: 25 });
+    expect(page.rows).toEqual([expect.objectContaining({
+      reporterName: 'Homeowner', respondentName: 'Contractor', status: 'open',
+    })]);
+    expect(page).toMatchObject({ total: 1, page: 0, pageSize: 25 });
+    expect(page.counts.open).toBe(1);
   });
 
   /**

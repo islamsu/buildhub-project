@@ -134,7 +134,6 @@ describe('the client can tell the difference', () => {
   });
 
   it.each([
-    ['disputes', 'disputesFailed'],
     ['compliance', 'complianceFailed'],
     ['the user directory', 'usersFailed'],
   ])('AdminDashboard renders a FAILURE for %s, not its empty state', (_section, flag) => {
@@ -146,6 +145,31 @@ describe('the client can tell the difference', () => {
     expect(text, `${flag} is observed but never rendered`).toContain(`{${flag} ? <LoadFailed`);
   });
 
+  /*
+   * DISPUTES MOVED, THE RULE DID NOT.
+   *
+   * The dispute queue left AdminDashboard for its own component when it gained
+   * pagination, filtering and a real detail view. Restated against where it now
+   * lives, and STRENGTHENED while it was here: the old assertion covered only
+   * the failure branch, and the screen has a second way to mislead - an empty
+   * result under an active filter reading as "no disputes have been filed",
+   * which is the sentence that stops an administrator looking.
+   */
+  it('AdminDisputes renders a FAILURE for the queue, not its empty state', () => {
+    const text = readFileSync(new URL('components/AdminDisputes.tsx', CLIENT), 'utf8');
+    expect(text, 'the query failure is not observed').toContain('queue.isError ?');
+    expect(text, 'the failure is observed but never rendered').toContain('<LoadFailed');
+  });
+
+  it('and distinguishes "nothing matches this filter" from "nothing has ever been filed"', () => {
+    const text = readFileSync(new URL('components/AdminDisputes.tsx', CLIENT), 'utf8');
+    expect(text).toContain('No disputes match this search.');
+    expect(text).toContain('No disputes have been filed.');
+    // Both languages, both sentences.
+    expect(text).toContain('لا توجد نزاعات مطابقة لهذا البحث.');
+    expect(text).toContain('لم يُسجَّل أي نزاع.');
+  });
+
   it('and the failure says plainly that it is not an empty result', () => {
     const text = readFileSync(new URL('pages/AdminDashboard.tsx', CLIENT), 'utf8');
     expect(text).toContain('This is not an empty result');
@@ -155,9 +179,12 @@ describe('the client can tell the difference', () => {
 
   it('the failure offers Retry rather than forcing a reload that loses the filters', () => {
     const text = readFileSync(new URL('pages/AdminDashboard.tsx', CLIENT), 'utf8');
-    expect(text).toContain('onRetry={() => void refetchDisputes()}');
     expect(text).toContain('onRetry={() => void refetchCompliance()}');
     expect(text).toContain('onRetry={() => void refetchUsers()}');
+    // The dispute queue's own retry, where it now lives.
+    const disputes = readFileSync(new URL('components/AdminDisputes.tsx', CLIENT), 'utf8');
+    expect(disputes).toContain('onRetry={() => void queue.refetch()}');
+    expect(disputes).toContain('onRetry={() => void detail.refetch()}');
   });
 
   it('and the admin category page does too', () => {
