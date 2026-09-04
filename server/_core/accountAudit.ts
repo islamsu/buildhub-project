@@ -103,6 +103,18 @@ export const ACCOUNT_AUDIT_ACTIONS = [
    */
   'referral_code_unusable',
 
+  // ── Disputes ─────────────────────────────────────────────────────────────
+  // A dispute is a record two parties are entitled to see the shape of, so
+  // every transition on it is an account event as well as a status-history row.
+  'dispute_opened',
+  'dispute_status_changed',
+  'dispute_withdrawn',
+  'dispute_reopened',
+  'dispute_assigned',
+  'dispute_resolved',
+  'dispute_evidence_added',
+  'dispute_evidence_removed',
+
   // Vendor identity
   'vendor_name_change_requested',
   'vendor_name_change_under_review',

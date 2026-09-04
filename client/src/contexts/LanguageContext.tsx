@@ -269,6 +269,10 @@ const translations: Record<Language, Record<string, string>> = {
     'notif.referral.reversed.nothing_to_undo.title': 'Referral reward reversed',
     'notif.referral.reversed.nothing_to_undo.body': 'A referral reward was reversed. Any subscription time already granted stays in place.',
     'notif.referral.reversed.nothing_to_undo.bodyNote': 'A referral reward was reversed. Any subscription time already granted stays in place. Reason: {note}',
+    // A dispute names a person, and a dispute they never hear about cannot be
+    // answered - the record would show only one side given the chance.
+    'notif.dispute.raised.title': 'A dispute names you',
+    'notif.dispute.raised.body': 'A dispute ({reference}) has been raised about {subject}. You can read it and respond.',
     'notif.rfq.invited.body': 'You were invited to submit a quotation for "{rfqTitle}". Opening it does not use one of your monthly enquiries.',
     'notif.rfq.invitationDeclined.title': 'A supplier declined your invitation',
     'notif.rfq.invitationDeclined.body': '{supplier} declined to quote for "{rfqTitle}".',
@@ -1320,6 +1324,8 @@ const translations: Record<Language, Record<string, string>> = {
     'notif.referral.reversed.nothing_to_undo.title': 'تم عكس مكافأة الإحالة',
     'notif.referral.reversed.nothing_to_undo.body': 'تم عكس مكافأة إحالة. تبقى أي مدة اشتراك مُنحت بالفعل كما هي.',
     'notif.referral.reversed.nothing_to_undo.bodyNote': 'تم عكس مكافأة إحالة. تبقى أي مدة اشتراك مُنحت بالفعل كما هي. السبب: {note}',
+    'notif.dispute.raised.title': 'نزاع يذكر اسمك',
+    'notif.dispute.raised.body': 'تم رفع نزاع ({reference}) بخصوص {subject}. يمكنك الاطلاع عليه والرد.',
     'notif.rfq.invited.body': 'تمت دعوتك لتقديم عرض سعر لطلب "{rfqTitle}". فتح هذا الطلب لا يستهلك من طلباتك المؤهلة الشهرية.',
     'notif.rfq.invitationDeclined.title': 'مورّد اعتذر عن الدعوة',
     'notif.rfq.invitationDeclined.body': 'اعتذر {supplier} عن تقديم عرض سعر لطلب "{rfqTitle}".',

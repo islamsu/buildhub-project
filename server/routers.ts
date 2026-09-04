@@ -47,8 +47,12 @@ import {
 } from './referralRewardView';
 import { explainEnquiryAllowance } from './billing/allowanceBreakdown';
 import { splitCampaignEdit, refuseCampaignEdit, refuseCampaignDates } from './referralCampaignEdit';
-import { DISPUTE_ADMIN_SETTABLE_STATUSES, DISPUTE_CATEGORIES } from '@shared/disputes';
-import { subjectColumns, assignDisputeReference } from './disputeSubject';
+import { DISPUTE_ADMIN_SETTABLE_STATUSES, DISPUTE_CATEGORIES, DISPUTE_SUBJECT_TYPES } from '@shared/disputes';
+import { subjectColumns, assignDisputeReference, hasSubject } from './disputeSubject';
+import {
+  requireSubjectParty, requireDisputeAccess, respondentCandidates, validateRespondent,
+  partiesForSubject,
+} from './disputeEligibility';
 import {
   DEFAULT_ATTRIBUTION_WINDOW_DAYS, REFERRAL_QUALIFICATION_TYPES, REFERRAL_REWARD_TYPES,
 } from '@shared/referralRewards';
@@ -76,6 +80,7 @@ import {
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems, qualifiedEnquiries,
   projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals, referralCampaigns, referralRewards,
+  disputeStatusHistory, disputeMessages, disputeEvidence,
 } from '../drizzle/schema';
 import { and, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -4117,16 +4122,74 @@ async function completedProjectCount(db: NonNullable<Awaited<ReturnType<typeof g
 // A customer or provider can open a dispute against a real project relationship.
 // The admin side (list/update) already exists; this is the missing user half.
 const disputesRouter = router({
+  /**
+   * The caller's own disputes - raised by them, or against them.
+   *
+   * Self-scoped by construction: no userId in the input. The subject's label
+   * comes with each row because "dispute about project 7" is not something a
+   * user can read, and a screen that has to fetch each subject separately would
+   * either N+1 or show ids.
+   */
   myDisputes: protectedProcedure.query(async ({ ctx }) => {
     const db = await requireDb();
-    return db.select().from(disputes)
+    const rows = await db.select().from(disputes)
       .where(or(eq(disputes.reporterId, ctx.user.id), eq(disputes.respondentId, ctx.user.id)))
-      .orderBy(desc(disputes.createdAt));
+      .orderBy(desc(disputes.createdAt))
+      .limit(200);
+    return Promise.all(rows.map(async (row: any) => ({
+      ...row,
+      // A pre-0046 row with no project had nothing to backfill a subject from.
+      // Reported as unknown rather than rendered as "project 0", which would be
+      // a fabricated relationship.
+      subject: hasSubject(row)
+        ? (await partiesForSubject(db, row.subjectType, Number(row.subjectId)))?.label ?? null
+        : null,
+    })));
   }),
 
+  /**
+   * WHO CAN BE NAMED, for the "open a dispute" form.
+   *
+   * The respondent is chosen from the real cast of the subject, never typed in:
+   * `create` used to take a `respondentId` from the client and check only that
+   * they were on the project, which does not survive RFQ and quotation
+   * subjects where "on the project" means nothing.
+   *
+   * Refuses with NOT_FOUND when the caller has no relationship to the subject,
+   * so this cannot be used to enumerate the parties of somebody else's RFQ.
+   */
+  subjectParties: protectedProcedure
+    .input(z.object({
+      subjectType: z.enum(DISPUTE_SUBJECT_TYPES),
+      subjectId: z.number().int().positive(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const { relation, subject } = await requireSubjectParty(db, input.subjectType, input.subjectId, ctx.user.id);
+      return {
+        subjectType: subject.subjectType,
+        subjectId: subject.subjectId,
+        label: subject.label,
+        yourRelation: relation,
+        candidates: await respondentCandidates(db, subject, ctx.user.id),
+      };
+    }),
+
+  /**
+   * Raise a dispute about a PROJECT, an RFQ or a QUOTATION.
+   *
+   * Every rule comes from server/disputeEligibility.ts rather than being
+   * restated here: eligibility from a real relationship to the subject, the
+   * respondent validated against that subject's cast, and a competitor supplier
+   * refused - two suppliers bidding on the same RFQ are commercial rivals, and
+   * a dispute about one bid is none of the other's business.
+   */
   create: protectedProcedure
     .input(z.object({
-      projectId: z.number().int().positive(),
+      subjectType: z.enum(DISPUTE_SUBJECT_TYPES).default('project'),
+      subjectId: z.number().int().positive().optional(),
+      /** Pre-0046 callers named the project directly; still accepted. */
+      projectId: z.number().int().positive().optional(),
       respondentId: z.number().int().positive().optional(),
       title: z.string().trim().min(1).max(255),
       description: z.string().trim().min(1).max(5000),
@@ -4134,37 +4197,21 @@ const disputesRouter = router({
       category: z.enum(DISPUTE_CATEGORIES).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      // The reporter must be a participant of the project they dispute about.
-      const access = await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
-
-      let respondentId: number | null = input.respondentId ?? null;
-      if (respondentId != null) {
-        if (respondentId === ctx.user.id) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot open a dispute against yourself.' });
-        }
-        const isOwner = access.ownerId === respondentId;
-        const [member] = await db
-          .select({ userId: projectMembers.userId })
-          .from(projectMembers)
-          .where(and(
-            eq(projectMembers.projectId, input.projectId),
-            eq(projectMembers.userId, respondentId),
-            isNull(projectMembers.removedAt),
-          ))
-          .limit(1);
-        if (!member && !isOwner) {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'The respondent must be a participant on this project.' });
-        }
+      const db = await requireDb();
+      const subjectId = input.subjectId ?? input.projectId;
+      if (!subjectId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'A dispute must name what it is about.' });
       }
+
+      const { subject } = await requireSubjectParty(db, input.subjectType, subjectId, ctx.user.id);
+      const respondentId = validateRespondent(subject, ctx.user.id, input.respondentId ?? null);
 
       const result = await db.insert(disputes).values({
         reporterId: ctx.user.id,
         respondentId,
         // The subject is authoritative; `projectId` is its legacy mirror and is
         // written only from here - see server/disputeSubject.ts.
-        ...subjectColumns('project', input.projectId),
+        ...subjectColumns(input.subjectType, subjectId),
         title: input.title,
         description: input.description,
         type: input.type ?? 'general',
@@ -4175,7 +4222,61 @@ const disputesRouter = router({
       const id = Number(result[0].insertId);
       // Derived from the id, so it can only be written after the insert.
       const reference = await assignDisputeReference(db, id);
+
+      // The opening of the record, so the history is complete from the start
+      // rather than beginning at the first administrator action.
+      await db.insert(disputeStatusHistory).values({
+        disputeId: id, fromStatus: 'none', toStatus: 'open',
+        actorId: ctx.user.id, reason: 'Dispute raised',
+      });
+      await recordAccountEvent(db, {
+        userId: ctx.user.id, actorId: ctx.user.id,
+        action: 'dispute_opened', source: 'dispute',
+        note: `${reference ?? id}: ${input.title}`.slice(0, 500),
+      });
+
+      // The respondent is told. A dispute named against somebody who never
+      // hears about it cannot be answered, and the record would show only one
+      // side having been given the chance.
+      if (respondentId != null) {
+        await notifyUser(db, {
+          userId: respondentId,
+          title: 'A dispute names you',
+          body: `${input.title}`,
+          type: 'dispute',
+          link: `/disputes/${id}`,
+          messageKey: 'notif.dispute.raised',
+          messageParams: { reference: reference ?? String(id), subject: subject.label },
+        });
+      }
       return { id, reference };
+    }),
+
+  /**
+   * One dispute, for somebody entitled to see it.
+   *
+   * NOT_FOUND both for a dispute that does not exist and for one this account
+   * may not read, so an id cannot be probed for existence.
+   */
+  get: protectedProcedure
+    .input(z.object({ disputeId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const dispute = await requireDisputeAccess(db, input.disputeId, ctx.user.id);
+      const subject = hasSubject(dispute)
+        ? await partiesForSubject(db, dispute.subjectType, Number(dispute.subjectId))
+        : null;
+      const history = await db.select().from(disputeStatusHistory)
+        .where(eq(disputeStatusHistory.disputeId, input.disputeId))
+        .orderBy(desc(disputeStatusHistory.createdAt))
+        .limit(100);
+      return {
+        dispute,
+        // The label only. The cast of the subject is not a participant's
+        // business, and returning it here would leak who else bid on an RFQ.
+        subjectLabel: subject?.label ?? null,
+        history,
+      };
     }),
 });
 

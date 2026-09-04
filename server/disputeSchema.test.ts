@@ -122,7 +122,9 @@ describe('the subject is written in ONE place', () => {
       ROUTERS.indexOf('const disputesRouter = router({'),
       ROUTERS.indexOf('// ── Provider Portfolio'),
     );
-    expect(create).toContain("...subjectColumns('project', input.projectId)");
+    // The subject type is now whichever of the three the caller named, so the
+    // literal 'project' is gone - but it still goes through the one writer.
+    expect(create).toContain('...subjectColumns(input.subjectType, subjectId)');
     // No hand-written projectId anywhere in the dispute router.
     expect(create).not.toMatch(/projectId:\s*input\.projectId/);
   });
