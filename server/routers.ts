@@ -41,6 +41,7 @@ import { runDataQualityChecks } from './admin/dataQuality';
 import { readOperationalHealth } from './admin/operationalHealth';
 import { runPlatformSearch } from './admin/platformSearch';
 import { qualifyReferralEvent } from './referralEngine';
+import { reverseRewardEffect, markRewardReversed, markReferralAfterReversal } from './referralReversal';
 import {
   assertSuperAdminSurvives, assertUserDirectoryMutationAllowed,
 } from './adminAuthority';
@@ -5304,24 +5305,80 @@ const adminRouter = router({
   reverseReferralReward: adminWith('marketplace.manage')
     .input(z.object({ rewardId: z.number().int().positive(), reason: z.string().trim().min(1).max(500) }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const [reward] = await db.select().from(referralRewards).where(eq(referralRewards.id, input.rewardId));
-      if (!reward) throw new TRPCError({ code: 'NOT_FOUND', message: 'Reward not found' });
-      if (reward.status === 'REVERSED') return { success: true as const, changed: false };
-      await db.update(referralRewards).set({
-        status: 'REVERSED',
-        reversedAt: new Date(),
-        reversalReason: input.reason,
-      }).where(eq(referralRewards.id, input.rewardId));
-      await recordAccountEvent(db, {
-        userId: reward.recipientUserId,
-        actorId: ctx.user.id,
-        action: 'referral_reward_reversed',
-        source: 'referral',
-        note: input.reason,
+      const db = await requireDb();
+      /**
+       * THE EFFECT, NOT JUST THE WORD.
+       *
+       * This set `status: 'REVERSED'` on the ledger row and stopped. The
+       * entitlement stayed granted and the Spotlight kept running, so an
+       * administrator reversing a fraudulent referral changed a label and
+       * nothing else - and the ledger then disagreed with the platform about
+       * what the vendor actually had.
+       *
+       * ONE TRANSACTION, with the reward row locked. Withdrawing the effect
+       * and recording the withdrawal are the same event: a failure between
+       * them would leave either a revoked entitlement the ledger still calls
+       * GRANTED, or a REVERSED ledger row sitting over a live benefit. The
+       * lock also settles two administrators pressing reverse at the same
+       * moment - the second reads the first's REVERSED and reports no change,
+       * rather than both running and one of them revoking a row that a later
+       * grant had since reused.
+       */
+      const outcome = await db.transaction(async (tx: any) => {
+        const [reward] = await tx.select().from(referralRewards)
+          .where(eq(referralRewards.id, input.rewardId)).for('update');
+        if (!reward) throw new TRPCError({ code: 'NOT_FOUND', message: 'Reward not found' });
+        if (reward.status === 'REVERSED') {
+          return {
+            changed: false as const, recipientUserId: reward.recipientUserId,
+            effect: 'already_reversed' as const, detail: '',
+          };
+        }
+
+        const undone = await reverseRewardEffect(tx, reward, ctx.user.id, new Date());
+        if (!undone.ok) {
+          // The effect could not be identified safely - an effectRef pointing
+          // at another account's row. Marking the ledger REVERSED anyway would
+          // bury that, so this writes nothing at all and says why.
+          throw new TRPCError({ code: 'BAD_REQUEST', message: undone.reason });
+        }
+
+        await markRewardReversed(tx, reward.id, input.reason, new Date());
+        await markReferralAfterReversal(tx, reward.referralId);
+        await recordAccountEvent(tx, {
+          userId: reward.recipientUserId,
+          actorId: ctx.user.id,
+          action: 'referral_reward_reversed',
+          source: 'referral',
+          note: `${input.reason} [${undone.effect}]`,
+        });
+        return {
+          changed: true as const, recipientUserId: reward.recipientUserId,
+          effect: undone.effect, detail: undone.detail,
+        };
       });
-      return { success: true as const, changed: true };
+
+      if (outcome.changed) {
+        // AFTER the commit, and only if something changed. A notice about a
+        // withdrawal that rolled back is a message the vendor cannot reconcile
+        // with what they still have.
+        await notifyUser(db, {
+          userId: outcome.recipientUserId,
+          title: 'Referral reward reversed',
+          body: outcome.detail,
+          type: 'referral',
+          link: '/settings#settings-referral',
+          // Per effect, because "your bonus was withdrawn" and "your
+          // subscription time stands" are different facts and a vendor reading
+          // the wrong one would go looking for days that are still there.
+          messageKey: `notif.referral.reversed.${outcome.effect}`,
+          messageParams: { note: input.reason },
+        });
+      }
+      return {
+        success: true as const, changed: outcome.changed,
+        effect: outcome.effect, detail: outcome.detail,
+      };
     }),
   placements: adminWith('marketplace.manage').query(async () => {
     const db = await requireDb();

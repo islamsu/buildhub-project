@@ -264,9 +264,14 @@ try {
   await admin.mutate('admin.verifyUser', { userId: fifth.id, verified: true });
   const placementStatus = sql(`select ifnull(status,'no row') from referralRewards where referralId=${fifthReferral}`);
   if (placementStatus === 'GRANTED') {
-    check('PLACEMENT: booked with a scope the public resolver can actually match',
-      sql(`select category from vendorSponsorships where vendorId=${inviter.id} and source='REFERRAL_REWARD' limit 1`) === 'GLOBAL',
-      sql(`select ifnull(category,'none') from vendorSponsorships where vendorId=${inviter.id} and source='REFERRAL_REWARD' limit 1`));
+    check('PLACEMENT: booked on a SURFACE AND SCOPE some public reader actually queries',
+      sql(`select concat(surface,'@',category) from vendorSponsorships
+           where vendorId=${inviter.id} and source='REFERRAL_REWARD' limit 1`) === 'SEARCH_RESULTS_BOOST@GLOBAL',
+      sql(`select concat(ifnull(surface,'none'),'@',ifnull(category,'none')) from vendorSponsorships
+           where vendorId=${inviter.id} and source='REFERRAL_REWARD' limit 1`));
+    check('PLACEMENT: and it is not the exclusive Master slot, which is sold rather than given',
+      sql(`select count(*) from vendorSponsorships
+           where vendorId=${inviter.id} and source='REFERRAL_REWARD' and surface='MASTER_DISCOVERY'`) === '0');
     check('PLACEMENT: the platform is the grantor, not the beneficiary himself',
       sql(`select ifnull(grantedBy,'NULL') from vendorSponsorships where vendorId=${inviter.id} and source='REFERRAL_REWARD' limit 1`) === 'NULL');
   } else {
@@ -285,6 +290,9 @@ try {
   // destroyed an administrator's grant, and when the reward expired the vendor
   // fell back to the PLAN value rather than to the administrator's number - a
   // temporary bonus permanently deleting a permanent decision.
+  // Hoisted: the reversal section below withdraws exactly this reward and has
+  // to prove the ADMINISTRATOR's grant beside it survives.
+  let stackRewardId = 0, stackBonusOverrideId = 0, adminOverrideId = 0, stackInviterId = 0;
   const sixth = await signUp('inv2', 'supplier');
   sql(`update users set onboardingStatus='approved', verified=1 where id=${sixth.id}`);
   const sixthCode = sql(`select referralCode from users where id=${sixth.id}`);
@@ -330,6 +338,14 @@ try {
     const twoBonuses = (await sixth.session.query('billing.myEntitlements', undefined)).data?.qualifiedEnquiryAllowance;
     check('two bonuses in force SUM, rather than one superseding the other',
       twoBonuses === 49, `expected 40+6+3=49, got ${twoBonuses}`);
+
+    stackInviterId = sixth.id;
+    stackRewardId = Number(sql(`select id from referralRewards where referralId=${seventhReferral}`));
+    stackBonusOverrideId = Number(sql(`select substring_index(effectRef,':',-1)
+                                       from referralRewards where id=${stackRewardId}`));
+    adminOverrideId = Number(sql(`select id from vendorEntitlementOverrides
+                                  where userId=${sixth.id} and entitlementKey='qualifiedEnquiriesPerMonth'
+                                    and revokedAt is null limit 1`));
   }
 
   // ── SUBSCRIPTION_EXTENSION: real time, and no invented money ───────────
@@ -466,6 +482,179 @@ try {
   check('ADMIN: and nothing was written for it',
     Number(sql(`select count(*) from referralRewards where referralId=${orphanReferral}`)) === 0
     && sql(`select status from referrals where id=${orphanReferral}`) === 'registered');
+
+
+  // ── REVERSAL TAKES THE REWARD BACK, NOT JUST THE WORD ──────────────────
+  //
+  // `admin.reverseReferralReward` set `status: 'REVERSED'` on the ledger row
+  // and stopped. The entitlement stayed granted, the Spotlight kept running,
+  // the subscription kept its extra days - so the ledger an administrator
+  // quotes back to a vendor disagreed with what the vendor actually had. Every
+  // assertion here reads the EFFECT, through the same surfaces a real user
+  // does, not the ledger word.
+  if (stackRewardId > 0) {
+    const beforeReversal = (await sixth.session.query('billing.myEntitlements', undefined))
+      .data?.qualifiedEnquiryAllowance;
+
+    const reversed = await admin.mutate('admin.reverseReferralReward', {
+      rewardId: stackRewardId, reason: 'ZG reversal: fraudulent signup',
+    });
+    check('REVERSAL: the administrator\'s reversal is accepted and says what it undid',
+      reversed.status === 200 && reversed.data?.changed === true && reversed.data?.effect === 'bonus_revoked',
+      `${reversed.status} ${JSON.stringify(reversed.data ?? reversed.error)}`);
+
+    const afterReversal = (await sixth.session.query('billing.myEntitlements', undefined))
+      .data?.qualifiedEnquiryAllowance;
+    check('REVERSAL: THE EFFECT is gone - the inviter\'s real allowance drops by the reward',
+      afterReversal === beforeReversal - 6, `${beforeReversal} -> ${afterReversal}, expected -6`);
+
+    // SURGICAL. The vendor also holds an administrator's absolute grant of 40
+    // and a second, unrelated bonus of 3. Reversing a referral must remove ONE
+    // ROW - the one this reward created - and leave both of those standing.
+    check('REVERSAL: it revoked exactly the row this reward created',
+      sql(`select revokedAt is not null from vendorEntitlementOverrides where id=${stackBonusOverrideId}`) === '1');
+    check('REVERSAL: and stamped WHO withdrew it',
+      Number(sql(`select ifnull(revokedBy,0) from vendorEntitlementOverrides where id=${stackBonusOverrideId}`)) === 1,
+      sql(`select ifnull(revokedBy,'NULL') from vendorEntitlementOverrides where id=${stackBonusOverrideId}`));
+    check('REVERSAL: the ADMINISTRATOR\'s unrelated absolute grant is untouched',
+      sql(`select revokedAt is null from vendorEntitlementOverrides where id=${adminOverrideId}`) === '1');
+    check('REVERSAL: and the OTHER bonus, which this reward did not create, still stands',
+      afterReversal === 43, `admin 40 + surviving bonus 3 = 43, got ${afterReversal}`);
+
+    check('REVERSAL: the ledger row now reads REVERSED, with the reason and the time',
+      sql(`select concat(status,'|',reversedAt is not null,'|',ifnull(reversalReason,''))
+           from referralRewards where id=${stackRewardId}`)
+        === 'REVERSED|1|ZG reversal: fraudulent signup',
+      sql(`select concat(status,'|',ifnull(reversalReason,'')) from referralRewards where id=${stackRewardId}`));
+    check('REVERSAL: the referral stays QUALIFIED - it did qualify; the reward is what was withdrawn',
+      sql(`select status from referrals where id=${sql(`select referralId from referralRewards where id=${stackRewardId}`)}`)
+        === 'qualified');
+    check('REVERSAL: it is audited against the vendor who lost the benefit',
+      Number(sql(`select count(*) from userAccountAuditEvents
+                  where userId=${stackInviterId} and action='referral_reward_reversed'`)) === 1);
+    check('REVERSAL: and the vendor is TOLD, in a message a client can translate',
+      sql(`select ifnull(messageKey,'') from notifications
+           where userId=${stackInviterId} and type='referral' order by id desc limit 1`)
+        === 'notif.referral.reversed.bonus_revoked',
+      sql(`select ifnull(messageKey,'none') from notifications where userId=${stackInviterId} order by id desc limit 1`));
+
+    // IDEMPOTENT. Pressing reverse twice must not revoke a second row, and
+    // must not tell the vendor twice.
+    const noticesAfterOne = Number(sql(`select count(*) from notifications
+                                        where userId=${stackInviterId} and type='referral'`));
+    const again = await admin.mutate('admin.reverseReferralReward', {
+      rewardId: stackRewardId, reason: 'ZG reversal: pressed twice',
+    });
+    check('REVERSAL: pressing it again changes nothing and says so',
+      again.status === 200 && again.data?.changed === false, JSON.stringify(again.data ?? again.error));
+    check('REVERSAL: the second press did not re-notify the vendor',
+      Number(sql(`select count(*) from notifications where userId=${stackInviterId} and type='referral'`))
+        === noticesAfterOne);
+    check('REVERSAL: nor overwrite the reason the FIRST reversal recorded',
+      sql(`select reversalReason from referralRewards where id=${stackRewardId}`) === 'ZG reversal: fraudulent signup');
+    check('REVERSAL: and the surviving allowance is unchanged by the second press',
+      (await sixth.session.query('billing.myEntitlements', undefined)).data?.qualifiedEnquiryAllowance === 43);
+  } else {
+    check('REVERSAL: the stacking reward this section reverses was not created', false);
+  }
+
+  // ── A TAMPERED EFFECT REFERENCE CANNOT REACH ANOTHER ACCOUNT ───────────
+  //
+  // `effectRef` is a string in a column. If reversal followed it blindly, a
+  // wrong or altered value would be a way to revoke an UNRELATED vendor's
+  // entitlement - one an administrator granted for their own reasons - from a
+  // referral screen. The reversal must refuse and write nothing.
+  if (adminOverrideId > 0) {
+    const manualRewardId = Number(sql(`select id from referralRewards where referralId=${manualReferral}`));
+    const honestRef = sql(`select ifnull(effectRef,'') from referralRewards where id=${manualRewardId}`);
+    sql(`update referralRewards set effectRef='OVERRIDE:${adminOverrideId}' where id=${manualRewardId}`);
+
+    const tampered = await admin.mutate('admin.reverseReferralReward', {
+      rewardId: manualRewardId, reason: 'ZG tampered effectRef',
+    });
+    check('TAMPER: a reference pointing at another account\'s row is REFUSED',
+      tampered.status !== 200 && /different account/i.test(tampered.error ?? ''),
+      `${tampered.status} ${tampered.error ?? ''}`);
+    check('TAMPER: the other vendor\'s entitlement is still live',
+      sql(`select revokedAt is null from vendorEntitlementOverrides where id=${adminOverrideId}`) === '1');
+    check('TAMPER: and the ledger was NOT marked reversed over a refusal',
+      sql(`select status from referralRewards where id=${manualRewardId}`) === 'GRANTED',
+      sql(`select status from referralRewards where id=${manualRewardId}`));
+    check('TAMPER: nothing was audited for an action that did not happen',
+      Number(sql(`select count(*) from userAccountAuditEvents
+                  where userId=${eventInviter.id} and action='referral_reward_reversed'`)) === 0);
+
+    sql(`update referralRewards set effectRef=${honestRef ? `'${honestRef}'` : 'NULL'} where id=${manualRewardId}`);
+  } else {
+    check('TAMPER: no second-account override existed to attempt this with', false);
+  }
+
+  // ── REVERSING A PLACEMENT TAKES IT OFF THE PUBLIC SURFACE ──────────────
+  if (placementStatus === 'GRANTED') {
+    const placementRewardId = Number(sql(`select id from referralRewards where referralId=${fifthReferral}`));
+    /*
+     * READ THE SURFACE A VISITOR READS.
+     *
+     * An earlier version of this section asked `marketplace.spotlightProviders`
+     * and would have reported an empty list as a reversal success - it returns
+     * [] for the GLOBAL scope BY DESIGN, so it could never have shown this
+     * placement before OR after. That is how the booking's real defect was
+     * found: TYPE_CATEGORY_SPOTLIGHT + GLOBAL is a combination no reader
+     * queries, so the reward was granted, recorded and notified while being
+     * visible nowhere. It is now a root-scope BOOST, and the unfiltered vendor
+     * directory is where that renders.
+     */
+    const directory = async () => (await session().query('marketplace.vendors', {})).data ?? [];
+    const listedBefore = await directory();
+    const boostedRow = listedBefore.find(row => Number(row.id) === inviter.id);
+    check('SETUP: the referral placement is genuinely visible on the public directory first',
+      Boolean(boostedRow) && boostedRow.boosted === true,
+      `${listedBefore.length} row(s), boosted=${boostedRow?.boosted ?? 'not listed'}`);
+    check('SETUP: and it is labelled FEATURED, never Sponsored - no money bought it',
+      boostedRow?.label === 'FEATURED', String(boostedRow?.label));
+
+    const off = await admin.mutate('admin.reverseReferralReward', {
+      rewardId: placementRewardId, reason: 'ZG reversal: placement',
+    });
+    check('REVERSAL: a placement reward reports that the placement was revoked',
+      off.status === 200 && off.data?.effect === 'placement_revoked',
+      `${off.status} ${JSON.stringify(off.data ?? off.error)}`);
+    check('REVERSAL: the sponsorship row carries a revocation, not a deletion',
+      sql(`select count(*) from vendorSponsorships
+           where vendorId=${inviter.id} and source='REFERRAL_REWARD' and revokedAt is not null`) === '1');
+
+    const listedAfter = await directory();
+    const afterRow = listedAfter.find(row => Number(row.id) === inviter.id);
+    check('REVERSAL: THE EFFECT is gone - the vendor carries no placement any more',
+      afterRow === undefined || !afterRow.boosted,
+      `boosted=${afterRow?.boosted ?? 'not listed'} label=${afterRow?.label ?? 'none'}`);
+    check('REVERSAL: and the vendor was not deleted from the directory, only un-placed',
+      listedAfter.length === listedBefore.length, `${listedBefore.length} -> ${listedAfter.length}`);
+  }
+
+  // ── REVERSING SUBSCRIPTION TIME DOES NOT CONFISCATE IT ─────────────────
+  //
+  // The owner's decision: "Never shorten current/paid/manually granted
+  // subscription period." Days on a period cannot be attributed to one grant -
+  // the vendor may have renewed since - so reversal records the withdrawal and
+  // says the time stands, rather than taking back days that were not its own.
+  {
+    const extRewardId = Number(sql(`select id from referralRewards where referralId=${extendedReferral}`));
+    const periodBefore = sql(`select currentPeriodEnd from vendorSubscriptions where userId=${extInviter.id}`);
+    const undo = await admin.mutate('admin.reverseReferralReward', {
+      rewardId: extRewardId, reason: 'ZG reversal: extension',
+    });
+    check('REVERSAL: an extension reversal succeeds and reports that nothing was taken back',
+      undo.status === 200 && undo.data?.changed === true && undo.data?.effect === 'nothing_to_undo',
+      `${undo.status} ${JSON.stringify(undo.data ?? undo.error)}`);
+    check('REVERSAL: and it says WHY, rather than leaving the administrator to guess',
+      /does not shorten a period/i.test(String(undo.data?.detail ?? '')), String(undo.data?.detail ?? ''));
+    check('REVERSAL: the subscription period is EXACTLY where it was - no time confiscated',
+      sql(`select currentPeriodEnd from vendorSubscriptions where userId=${extInviter.id}`) === periodBefore,
+      `${periodBefore} -> ${sql(`select currentPeriodEnd from vendorSubscriptions where userId=${extInviter.id}`)}`);
+    check('REVERSAL: the ledger still records the withdrawal truthfully',
+      sql(`select status from referralRewards where id=${extRewardId}`) === 'REVERSED');
+  }
 
   // ── AUDIT AND NOTIFICATION ─────────────────────────────────────────────
   // ONE AUDIT ROW PER REWARD, not a hard-coded one: the second referral also

@@ -123,24 +123,25 @@ Dead param routes: **0**
 | `vendorSponsorships` | 22 | 4 | 7 | 0 |
 | `enquiryAssignments` | 9 | 4 | 3 | 0 |
 
-## Notification write sites (20)
+## Notification write sites (21)
 
-- server/routers.ts:1291 — notifyUser
-- server/routers.ts:2368 — notifyUser
-- server/routers.ts:2448 — notifyUser
-- server/routers.ts:3187 — notifyUser
-- server/routers.ts:3244 — notifyUser
-- server/routers.ts:3651 — notifyUser
-- server/routers.ts:3909 — notifyUser
-- server/routers.ts:4047 — notifyUser
-- server/routers.ts:5626 — notifyUser
-- server/routers.ts:5704 — notifyUser
-- server/routers.ts:6476 — notifyUser
-- server/routers.ts:6547 — notifyUser
-- server/routers.ts:6935 — notifyUser
-- server/routers.ts:7133 — notifyUser
-- server/routers.ts:7163 — notifyUser
-- server/routers.ts:7196 — notifyUser
+- server/routers.ts:1292 — notifyUser
+- server/routers.ts:2369 — notifyUser
+- server/routers.ts:2449 — notifyUser
+- server/routers.ts:3188 — notifyUser
+- server/routers.ts:3245 — notifyUser
+- server/routers.ts:3652 — notifyUser
+- server/routers.ts:3910 — notifyUser
+- server/routers.ts:4048 — notifyUser
+- server/routers.ts:5365 — notifyUser
+- server/routers.ts:5683 — notifyUser
+- server/routers.ts:5761 — notifyUser
+- server/routers.ts:6533 — notifyUser
+- server/routers.ts:6604 — notifyUser
+- server/routers.ts:6992 — notifyUser
+- server/routers.ts:7190 — notifyUser
+- server/routers.ts:7220 — notifyUser
+- server/routers.ts:7253 — notifyUser
 - server/notifications.ts:40 — notifyUser
 - server/notifications.ts:43 — helper implementation
 - server/notifications.ts:57 — notifyUser

@@ -70,6 +70,10 @@ describe('every key the server can write has both languages', () => {
   // unexpanded template silently covers nothing - which is how this test
   // reported a clean pass over three untranslated keys the first time.
   const PLAN_CHANGE_DIRECTIONS = ['upgraded', 'downgraded', 'scheduled'];
+  // A referral reversal names what it actually undid, because "your bonus was
+  // withdrawn" and "your subscription time stands" are different facts. Same
+  // reason as the two lists above: an unexpanded template covers nothing.
+  const REVERSAL_EFFECTS = ['bonus_revoked', 'placement_revoked', 'nothing_to_undo'];
 
   function expandedKeys(): string[] {
     const keys: string[] = [];
@@ -77,8 +81,10 @@ describe('every key the server can write has both languages', () => {
       const raw = match[1];
       const status = raw.match(/^(.*)\$\{input\.status\}$/);
       const direction = raw.match(/^(.*)\$\{direction\}$/);
+      const effect = raw.match(/^(.*)\$\{outcome\.effect\}$/);
       if (status) keys.push(...COMPLIANCE_STATUSES.map(s => status[1] + s));
       else if (direction) keys.push(...PLAN_CHANGE_DIRECTIONS.map(d => direction[1] + d));
+      else if (effect) keys.push(...REVERSAL_EFFECTS.map(e => effect[1] + e));
       else keys.push(raw);
     }
     return [...new Set(keys)];
@@ -92,6 +98,8 @@ describe('every key the server can write has both languages', () => {
     expect(keys).toContain('notif.compliance.applicant.approved');
     expect(keys).toContain('notif.billing.plan.upgraded');
     expect(keys).toContain('notif.billing.plan.scheduled');
+    expect(keys).toContain('notif.referral.reversed.bonus_revoked');
+    expect(keys).toContain('notif.referral.reversed.nothing_to_undo');
     expect(keys.length).toBeGreaterThanOrEqual(10);
   });
 
@@ -104,10 +112,13 @@ describe('every key the server can write has both languages', () => {
     });
 
     it(`${lang}: every key that can carry an administrator note has a .bodyNote`, () => {
-      // The compliance paths pass `note` through; the others never do.
+      // The compliance paths pass `note` through, and so does a referral
+      // reversal - the administrator's stated reason is their own words, and
+      // the sentence around it has to read correctly with and without one.
       const table = lang === 'ar' ? AR : EN;
+      const CARRY_NOTE = ['notif.compliance.', 'notif.referral.reversed.'];
       const missing = expandedKeys()
-        .filter(key => key.startsWith('notif.compliance.'))
+        .filter(key => CARRY_NOTE.some(prefix => key.startsWith(prefix)))
         .filter(key => !table.has(key + '.bodyNote'));
       expect(missing, `no .bodyNote in ${lang}`).toEqual([]);
     });

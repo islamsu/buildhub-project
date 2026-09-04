@@ -217,17 +217,30 @@ export async function qualifyReferralEvent(
       const booking = await bookPlacement(db, {
         entityType: 'PROVIDER',
         entityId: referral.referrerId,
-        package: 'SPOTLIGHT',
-        surface: 'TYPE_CATEGORY_SPOTLIGHT',
-        source: 'REFERRAL_REWARD',
         /*
-         * GLOBAL, not the string 'General'.
+         * A SURFACE THAT CAN ACTUALLY BE READ AT THIS SCOPE.
          *
-         * 'General' is neither GLOBAL_PLACEMENT_SCOPE nor a taxonomy value, and
-         * publicPlacement.ts matches scope EXACTLY - so every referral Spotlight
-         * ever booked was invisible on every surface. The reward existed in the
-         * ledger and nowhere a buyer could see it.
+         * Two things were wrong here, and fixing the first exposed the second.
+         * The scope was the string 'General', which is neither
+         * GLOBAL_PLACEMENT_SCOPE nor a taxonomy value, and publicPlacement.ts
+         * matches scope EXACTLY. Correcting it to GLOBAL was still invisible:
+         * `spotlightProviders` returns [] for GLOBAL BY DESIGN, because
+         * Spotlight is the block shown AFTER a type or category is chosen and
+         * asking for it at the root is a category error, not a wider query.
+         * TYPE_CATEGORY_SPOTLIGHT + GLOBAL is a combination no reader queries.
+         *
+         * BOOST at the root taxonomy is the one that renders: the unfiltered
+         * vendor directory calls boostCandidates with no category, so a
+         * root-scoped boost re-ranks the provider there, labelled FEATURED
+         * rather than Sponsored because no money bought it.
+         *
+         * NOT the Master slot, which was the other candidate. Master is ONE
+         * exclusive slot an advertiser buys; handing it out as a referral
+         * reward would give away inventory that is sold.
          */
+        package: 'BOOST',
+        surface: 'SEARCH_RESULTS_BOOST',
+        source: 'REFERRAL_REWARD',
         category: GLOBAL_PLACEMENT_SCOPE,
         startsAt: now,
         endsAt: expiresAt,
