@@ -656,6 +656,147 @@ try {
       sql(`select status from referralRewards where id=${extRewardId}`) === 'REVERSED');
   }
 
+
+  // ── THE SURFACES: what an administrator and an inviter can actually SEE ──
+  //
+  // Six referral procedures had no client caller at all, so nothing BuildHub
+  // granted was visible to anyone: an administrator could not read the reward
+  // ledger, and the recipient's only notice of a benefit was a notification
+  // they may have missed. These assert the data those screens now read.
+  {
+    // The inviter's own view. Self-scoped, and it must name nobody.
+    const mine = await inviter.session.query('profile.myReferral', undefined);
+    check('MINE: an inviter can read their own programme', mine.status === 200, `${mine.status} ${mine.error ?? ''}`);
+    check('MINE: the counts BREAK DOWN rather than collapsing into one number',
+      typeof mine.data?.counts?.registered === 'number' && typeof mine.data?.counts?.qualified === 'number'
+      && mine.data.counts.total === Number(sql(`select count(*) from referrals where referrerId=${inviter.id}`)),
+      JSON.stringify(mine.data?.counts));
+    check('MINE: the rewards are surfaced at all - they were visible nowhere before',
+      Array.isArray(mine.data?.rewards) && mine.data.rewards.length
+        === Number(sql(`select count(*) from referralRewards where recipientUserId=${inviter.id}`)),
+      `${mine.data?.rewards?.length} shown for ${sql(`select count(*) from referralRewards where recipientUserId=${inviter.id}`)} rows`);
+
+    /*
+     * PRIVACY. A referral code can be posted publicly, so anyone who signs up
+     * through it lands in this list. Their name or address must not be in it.
+     */
+    const serialised = JSON.stringify(mine.data ?? {});
+    const invitedNames = sql(`select group_concat(name separator '||') from users
+                              where id in (select referredId from referrals where referrerId=${inviter.id})`);
+    const leaked = String(invitedNames || '').split('||').filter(Boolean)
+      .filter(name => serialised.includes(name));
+    check('MINE: it names NOBODY the inviter invited', leaked.length === 0, leaked.join(', ') || 'no names present');
+    check('MINE: and carries no email address at all', !/@/.test(serialised.replace(/"link":"[^"]*"/, '')),
+      serialised.slice(0, 120));
+
+    // A DIFFERENT user reading the same procedure gets their OWN programme.
+    const other = await second.session.query('profile.myReferral', undefined);
+    check('MINE: another account reading the same endpoint gets THEIR programme, not this one',
+      other.status === 200 && other.data?.code !== mine.data?.code,
+      `${other.data?.code} vs ${mine.data?.code}`);
+    check('MINE: and none of this inviter\'s rewards appear in it',
+      (other.data?.rewards ?? []).length === Number(sql(`select count(*) from referralRewards where recipientUserId=${second.id}`)));
+
+    // An ordinary account cannot read the administration surfaces.
+    for (const path of ['admin.referrals', 'admin.referralRewards']) {
+      const denied = await inviter.session.query(path, { page: 0, pageSize: 5 });
+      check(`RBAC: an ordinary account is refused ${path}`,
+        denied.status !== 200 && denied.data === null, `${denied.status} ${denied.error ?? ''}`);
+    }
+  }
+
+  {
+    // The administrator's list: PAGED, with a real total, filtered in the query.
+    const listed = await admin.query('admin.referrals', { page: 0, pageSize: 5 });
+    const realTotal = Number(sql(`select count(*) from referrals`));
+    check('ADMIN LIST: it reports the REAL total, not the size of the page it returned',
+      listed.data?.total === realTotal && listed.data.rows.length <= 5,
+      `total=${listed.data?.total} rows=${listed.data?.rows?.length} actual=${realTotal}`);
+    check('ADMIN LIST: page 2 is different rows, not the same ones again',
+      String((await admin.query('admin.referrals', { page: 1, pageSize: 5 })).data?.rows?.[0]?.id ?? '')
+        !== String(listed.data?.rows?.[0]?.id ?? ''),
+      `page0=${listed.data?.rows?.[0]?.id}`);
+
+    /*
+     * THE REWARD COLUMN. It was built from `referrals.rewardType` and
+     * `.rewardValue`, two columns NOTHING has ever written, so it read "-" on
+     * every row for every referral the platform has ever recorded.
+     */
+    const rewardedRow = (listed.data?.rows ?? []).find(row => (row.rewards ?? []).length > 0)
+      ?? (await admin.query('admin.referrals', { page: 0, pageSize: 100 })).data?.rows
+        ?.find(row => (row.rewards ?? []).length > 0);
+    check('ADMIN LIST: a rewarded referral carries its REAL reward, from the ledger',
+      Boolean(rewardedRow) && typeof rewardedRow.rewards[0].rewardType === 'string'
+      && rewardedRow.rewards[0].rewardType.length > 0,
+      JSON.stringify(rewardedRow?.rewards?.[0] ?? 'none'));
+
+    // Search runs in the QUERY. Filtering in the browser over a truncated list
+    // answers "no matches" for a row it never loaded.
+    const byCode = await admin.query('admin.referrals', { page: 0, pageSize: 5, search: code });
+    check('ADMIN LIST: searching a code finds it through the query, not the page',
+      (byCode.data?.rows ?? []).length > 0 && byCode.data.rows.every(row => row.code === code),
+      `${byCode.data?.rows?.length} row(s) for ${code}`);
+    const byStatus = await admin.query('admin.referrals', { page: 0, pageSize: 50, status: 'qualified' });
+    check('ADMIN LIST: the status filter is applied server-side',
+      (byStatus.data?.rows ?? []).every(row => row.status === 'qualified')
+      && byStatus.data.total === Number(sql(`select count(*) from referrals where status='qualified'`)),
+      `${byStatus.data?.total} vs ${sql(`select count(*) from referrals where status='qualified'`)}`);
+    const noMatch = await admin.query('admin.referrals', { page: 0, pageSize: 5, search: `zzz-no-such-${stamp}` });
+    check('ADMIN LIST: a genuine no-match reports zero, and says so honestly',
+      noMatch.status === 200 && noMatch.data?.rows?.length === 0 && noMatch.data.total === 0);
+  }
+
+  {
+    // The reward ledger, and expiry DERIVED rather than swept.
+    const ledger = await admin.query('admin.referralRewards', { page: 0, pageSize: 100 });
+    check('LEDGER: the reward ledger has a screen to read it, and a real total',
+      ledger.status === 200 && ledger.data?.total === Number(sql(`select count(*) from referralRewards`)),
+      `${ledger.data?.total} vs ${sql(`select count(*) from referralRewards`)}`);
+
+    /*
+     * NOTHING HAS EVER WRITTEN `EXPIRED`. A bonus whose end date passed last
+     * month still read GRANTED - to the administrator deciding whether to grant
+     * another, and to the vendor asking why their allowance had dropped.
+     */
+    const liveReward = Number(sql(`select id from referralRewards
+      where recipientUserId=${eventInviter.id} and status='GRANTED' and expiresAt is not null order by id desc limit 1`));
+    if (liveReward > 0) {
+      const before = (await admin.query('admin.referralRewards', { page: 0, pageSize: 100 }))
+        .data?.rows?.find(row => Number(row.id) === liveReward);
+      check('LEDGER: a live reward reads GRANTED', before?.status === 'GRANTED', String(before?.status));
+
+      sql(`update referralRewards set expiresAt = date_sub(now(), interval 1 day) where id=${liveReward}`);
+      const after = (await admin.query('admin.referralRewards', { page: 0, pageSize: 100 }))
+        .data?.rows?.find(row => Number(row.id) === liveReward);
+      check('LEDGER: once its end date passes it reads EXPIRED, with nothing having swept it',
+        after?.status === 'EXPIRED', String(after?.status));
+      check('LEDGER: and the DATABASE still holds GRANTED - the truth is derived, not rewritten',
+        sql(`select status from referralRewards where id=${liveReward}`) === 'GRANTED'
+        && after?.storedStatus === 'GRANTED',
+        `column=${sql(`select status from referralRewards where id=${liveReward}`)} reported=${after?.status}`);
+
+      // The inviter's own screen tells them the same thing.
+      const mineAfter = await eventInviter.session.query('profile.myReferral', undefined);
+      check('LEDGER: the recipient sees it as ended too, not still active',
+        (mineAfter.data?.rewards ?? []).find(row => Number(row.id) === liveReward)?.status === 'EXPIRED',
+        String((mineAfter.data?.rewards ?? []).find(row => Number(row.id) === liveReward)?.status));
+
+      sql(`update referralRewards set expiresAt = date_add(now(), interval 30 day) where id=${liveReward}`);
+    } else {
+      check('LEDGER: a bounded live reward existed to test expiry against', false);
+    }
+
+    // A REVERSED reward is not turned into a lapsed one by a date passing.
+    const reversedReward = Number(sql(`select id from referralRewards where status='REVERSED' order by id desc limit 1`));
+    if (reversedReward > 0) {
+      sql(`update referralRewards set expiresAt = date_sub(now(), interval 1 day) where id=${reversedReward}`);
+      const row = (await admin.query('admin.referralRewards', { page: 0, pageSize: 100 }))
+        .data?.rows?.find(entry => Number(entry.id) === reversedReward);
+      check('LEDGER: a REVERSED reward stays reversed - an administrator decided that, and time does not undo it',
+        row?.status === 'REVERSED', String(row?.status));
+    }
+  }
+
   // ── AUDIT AND NOTIFICATION ─────────────────────────────────────────────
   // ONE AUDIT ROW PER REWARD, not a hard-coded one: the second referral also
   // paid this inviter, from the next eligible campaign. Tying the count to the

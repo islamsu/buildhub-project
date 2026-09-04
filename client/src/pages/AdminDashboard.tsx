@@ -34,6 +34,7 @@ import AdminProjects from '@/components/AdminProjects';
 import AdminProducts from '@/components/AdminProducts';
 import AdminVendorNameChanges from '@/components/AdminVendorNameChanges';
 import AdminReferrals from '@/components/AdminReferrals';
+import { LoadFailed } from '@/components/LoadFailed';
 import AdminPlacements from '@/components/AdminPlacements';
 import PlacementPerformance from '@/components/PlacementPerformance';
 
@@ -844,17 +845,8 @@ export default function AdminDashboard() {
  * as an error, and this is what it must look like. Offering Retry matters:
  * the alternative is a reload that loses every filter on the page.
  */
-function LoadFailed({ text, onRetry, retryText }: { text: string; onRetry?: () => void; retryText: string }) {
-  return (
-    <div className="py-10 text-center" data-testid="section-failed">
-      <AlertTriangle className="mx-auto mb-2 h-6 w-6 text-destructive" />
-      <p className="text-sm font-medium">{text}</p>
-      {onRetry && (
-        <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>{retryText}</Button>
-      )}
-    </div>
-  );
-}
+// Moved to client/src/components/LoadFailed.tsx so the second screen that
+// needs it uses THIS sentence rather than growing its own.
 
 function EmptyState({ text }: { text: string }) {
   return <div className="rounded-xl border border-dashed py-10 text-center text-sm text-muted-foreground">{text}</div>;

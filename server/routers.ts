@@ -43,6 +43,9 @@ import { runPlatformSearch } from './admin/platformSearch';
 import { qualifyReferralEvent } from './referralEngine';
 import { reverseRewardEffect, markRewardReversed, markReferralAfterReversal } from './referralReversal';
 import {
+  listAdminReferrals, listReferralRewards, listMyReferralRewards, myReferralCounts,
+} from './referralRewardView';
+import {
   assertSuperAdminSurvives, assertUserDirectoryMutationAllowed,
 } from './adminAuthority';
 import { bookPlacement } from './placementBooking';
@@ -4355,20 +4358,40 @@ const profileRouter = router({
     return readOwnVendorProfile(db, ctx.user.id);
   }),
 
+  /**
+   * The caller's own referral programme.
+   *
+   * SELF-SCOPED BY CONSTRUCTION: there is no userId in the input, so no payload
+   * can read another account's invitations or rewards.
+   *
+   * It used to report ONE number - how many people used the code - which is the
+   * one thing an inviter cannot act on. Registered and qualified are different
+   * facts, and a programme where nothing ever qualifies looked identical to one
+   * that worked. The rewards, until now, were not surfaced anywhere at all:
+   * BuildHub granted a benefit and never told the recipient it existed beyond a
+   * single notification they may have missed.
+   */
   myReferral: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const db = await requireDb();
     const [row] = await db.select({ referralCode: users.referralCode }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
     let code = row?.referralCode ?? null;
     if (!code) {
       code = generateReferralCode();
       await db.update(users).set({ referralCode: code }).where(eq(users.id, ctx.user.id));
     }
-    const [countRow] = await db.select({ count: sql<number>`count(*)` }).from(referrals).where(eq(referrals.referrerId, ctx.user.id));
+    const [counts, rewards] = await Promise.all([
+      myReferralCounts(db, ctx.user.id),
+      listMyReferralRewards(db, ctx.user.id),
+    ]);
     return {
       code,
       link: `/auth?mode=signup&ref=${encodeURIComponent(code)}`,
-      referrals: Number(countRow?.count ?? 0),
+      // Kept, because callers render it. It is now the sum of the breakdown
+      // beside it rather than an independently counted number that could
+      // disagree with it.
+      referrals: counts.total,
+      counts,
+      rewards,
     };
   }),
 
@@ -5113,26 +5136,26 @@ const adminRouter = router({
     });
     return { success: true, noteId: Number(result[0]?.insertId ?? 0) };
   }),
-  referrals: adminWith('marketplace.manage').query(async () => {
-    const db = await requireDb();
-    const rows = await db.select({
-      id: referrals.id,
-      referrerId: referrals.referrerId,
-      referredId: referrals.referredId,
-      code: referrals.code,
-      status: referrals.status,
-      rewardType: referrals.rewardType,
-      rewardValue: referrals.rewardValue,
-      rewardExpiresAt: referrals.rewardExpiresAt,
-      createdAt: referrals.createdAt,
-      referrerName: users.name,
-      referrerEmail: users.email,
-    }).from(referrals)
-      .innerJoin(users, eq(users.id, referrals.referrerId))
-      .orderBy(desc(referrals.createdAt))
-      .limit(250);
-    return rows;
-  }),
+  /**
+   * The referral list, PAGED, with the REAL reward attached.
+   *
+   * The Reward column was built from `referrals.rewardType` / `.rewardValue`,
+   * two columns nothing has ever written, so it read "-" on every row while the
+   * actual reward sat in `referralRewards` next to it. And the query was
+   * `.limit(250)` with no count, so a platform past that saw a silent subset.
+   */
+  referrals: adminWith('marketplace.manage')
+    .input(z.object({
+      page: z.number().int().min(0).max(100_000).default(0),
+      pageSize: z.number().int().min(1).max(100).default(25),
+      search: z.string().trim().max(MAX_SEARCH_LENGTH).optional(),
+      status: z.enum(['all', 'registered', 'qualified', 'rewarded', 'expired', 'revoked']).default('all'),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { page, pageSize, search, status } = { page: 0, pageSize: 25, status: 'all' as const, ...(input ?? {}) };
+      return listAdminReferrals(db, { page, pageSize, search, status });
+    }),
   referralCampaigns: adminWith('marketplace.manage').query(async () => {
     const db = await requireDb();
     return db.select().from(referralCampaigns).orderBy(desc(referralCampaigns.createdAt)).limit(100);
@@ -5213,29 +5236,25 @@ const adminRouter = router({
       });
       return { success: true as const, changed: true };
     }),
-  referralRewards: adminWith('marketplace.manage').query(async () => {
-    const db = await requireDb();
-    return db.select({
-      id: referralRewards.id,
-      referralId: referralRewards.referralId,
-      campaignId: referralRewards.campaignId,
-      recipientUserId: referralRewards.recipientUserId,
-      rewardType: referralRewards.rewardType,
-      rewardValue: referralRewards.rewardValue,
-      status: referralRewards.status,
-      effectiveFrom: referralRewards.effectiveFrom,
-      expiresAt: referralRewards.expiresAt,
-      reversedAt: referralRewards.reversedAt,
-      reversalReason: referralRewards.reversalReason,
-      createdAt: referralRewards.createdAt,
-      campaignName: referralCampaigns.name,
-      recipientName: users.name,
-    }).from(referralRewards)
-      .innerJoin(referralCampaigns, eq(referralCampaigns.id, referralRewards.campaignId))
-      .innerJoin(users, eq(users.id, referralRewards.recipientUserId))
-      .orderBy(desc(referralRewards.createdAt))
-      .limit(250);
-  }),
+  /**
+   * The reward ledger, PAGED and READ TRUTHFULLY.
+   *
+   * Two things were wrong with the previous shape. It was `.limit(250)` with no
+   * count - the same silent truncation the user directory had, where an
+   * administrator sees a subset with nothing saying it is one. And it returned
+   * the STORED status, so a bonus whose `expiresAt` passed months ago still
+   * read GRANTED to the administrator deciding whether to grant another.
+   */
+  referralRewards: adminWith('marketplace.manage')
+    .input(z.object({
+      page: z.number().int().min(0).max(100_000).default(0),
+      pageSize: z.number().int().min(1).max(100).default(25),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { page, pageSize } = { page: 0, pageSize: 25, ...(input ?? {}) };
+      return listReferralRewards(db, { page, pageSize });
+    }),
   qualifyReferral: adminWith('marketplace.manage')
     .input(z.object({ referralId: z.number().int().positive(), qualificationType: z.enum(['ACCOUNT_VERIFIED', 'PROVIDER_APPROVED', 'PROFILE_COMPLETED', 'FIRST_VALID_RFQ', 'FIRST_VALID_QUOTATION_RESPONSE']).optional(), note: z.string().max(500).optional() }))
     .mutation(async ({ ctx, input }) => {
