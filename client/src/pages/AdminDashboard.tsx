@@ -34,6 +34,7 @@ import AdminProjects from '@/components/AdminProjects';
 import AdminProducts from '@/components/AdminProducts';
 import AdminVendorNameChanges from '@/components/AdminVendorNameChanges';
 import AdminReferrals from '@/components/AdminReferrals';
+import { isAdminSettableStatus, type DisputeAdminStatus } from '@shared/disputes';
 import { LoadFailed } from '@/components/LoadFailed';
 import AdminPlacements from '@/components/AdminPlacements';
 import PlacementPerformance from '@/components/PlacementPerformance';
@@ -161,7 +162,11 @@ export default function AdminDashboard() {
   const [freezeReason, setFreezeReason] = useState('');
   const [freezeReasonDetail, setFreezeReasonDetail] = useState('');
   const [activeDispute, setActiveDispute] = useState<any | null>(null);
-  const [disputeStatus, setDisputeStatus] = useState<'open' | 'investigating' | 'resolved' | 'rejected'>('investigating');
+  // Typed from the shared vocabulary rather than a fourth copy of the list.
+  // The admin-settable set excludes `withdrawn`: withdrawing is the REPORTER's
+  // decision about their own dispute, and an administrator recording it would
+  // put the platform's name on a choice it did not make.
+  const [disputeStatus, setDisputeStatus] = useState<DisputeAdminStatus>('investigating');
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [settingDrafts, setSettingDrafts] = useState<Record<string, string>>({});
   const [activeApplicant, setActiveApplicant] = useState<any | null>(null);
@@ -784,7 +789,7 @@ export default function AdminDashboard() {
 
           <TabsContent value="billing"><div className="space-y-6"><AdminVendorBilling /><AdminEnquiryAllowance /></div></TabsContent>
 
-          <TabsContent value="disputes"><div className="space-y-6"><AdminPlatformSearch /><AdminRfqInvestigation /><Card><CardHeader><CardTitle className="flex items-center gap-2"><MessageSquare className="w-5 h-5" />{lang === 'ar' ? 'إدارة النزاعات' : 'Dispute Management'}</CardTitle></CardHeader><CardContent>{disputesFailed ? <LoadFailed text={loadFailedText} retryText={retryText} onRetry={() => void refetchDisputes()} /> : disputesLoading ? <div className="py-10 text-center text-muted-foreground"><RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" />{t('common.loading')}</div> : disputes.length === 0 ? <EmptyState text={lang === 'ar' ? 'لا توجد نزاعات مسجلة' : 'No disputes have been filed'} /> : <div className="space-y-3">{disputes.map(dispute => <div key={dispute.id} className="rounded-xl border p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><h3 className="font-semibold text-sm">{dispute.title}</h3><Badge variant={dispute.priority === 'high' ? 'destructive' : 'outline'}>{dispute.priority}</Badge><Badge variant="secondary">{formatStatus(dispute.status, lang)}</Badge></div><p className="text-sm text-muted-foreground line-clamp-2">{dispute.description}</p><p className="mt-2 text-xs text-muted-foreground">{dispute.reporterName || `#${dispute.reporterId}`} {dispute.respondentName ? ` · ${dispute.respondentName}` : ''} · {dispute.type} · {new Date(dispute.createdAt).toLocaleDateString()}</p></div><Button size="sm" variant="outline" className="h-8 shrink-0 gap-1" onClick={() => { setActiveDispute(dispute); setDisputeStatus(dispute.status); setResolutionNotes(dispute.resolutionNotes ?? ''); }}><Eye className="w-3 h-3" />{lang === 'ar' ? 'مراجعة' : 'Review'}</Button></div></div>)}</div>}</CardContent></Card></div></TabsContent>
+          <TabsContent value="disputes"><div className="space-y-6"><AdminPlatformSearch /><AdminRfqInvestigation /><Card><CardHeader><CardTitle className="flex items-center gap-2"><MessageSquare className="w-5 h-5" />{lang === 'ar' ? 'إدارة النزاعات' : 'Dispute Management'}</CardTitle></CardHeader><CardContent>{disputesFailed ? <LoadFailed text={loadFailedText} retryText={retryText} onRetry={() => void refetchDisputes()} /> : disputesLoading ? <div className="py-10 text-center text-muted-foreground"><RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" />{t('common.loading')}</div> : disputes.length === 0 ? <EmptyState text={lang === 'ar' ? 'لا توجد نزاعات مسجلة' : 'No disputes have been filed'} /> : <div className="space-y-3">{disputes.map(dispute => <div key={dispute.id} className="rounded-xl border p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><h3 className="font-semibold text-sm">{dispute.title}</h3><Badge variant={dispute.priority === 'high' ? 'destructive' : 'outline'}>{dispute.priority}</Badge><Badge variant="secondary">{formatStatus(dispute.status, lang)}</Badge></div><p className="text-sm text-muted-foreground line-clamp-2">{dispute.description}</p><p className="mt-2 text-xs text-muted-foreground">{dispute.reporterName || `#${dispute.reporterId}`} {dispute.respondentName ? ` · ${dispute.respondentName}` : ''} · {dispute.type} · {new Date(dispute.createdAt).toLocaleDateString()}</p></div><Button size="sm" variant="outline" className="h-8 shrink-0 gap-1" onClick={() => { setActiveDispute(dispute); setDisputeStatus(isAdminSettableStatus(dispute.status) ? dispute.status : 'investigating'); setResolutionNotes(dispute.resolutionNotes ?? ''); }}><Eye className="w-3 h-3" />{lang === 'ar' ? 'مراجعة' : 'Review'}</Button></div></div>)}</div>}</CardContent></Card></div></TabsContent>
 
           {/* Operations. The tab this replaces was "Fraud Detection", which
               rendered a permanent empty state - there is no detector and no

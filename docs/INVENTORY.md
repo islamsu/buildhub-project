@@ -71,7 +71,7 @@ Dead param routes: **0**
 - `adminWith:settings.manage` — 2
 - `aiChatProcedure` — 1
 
-## Tables (47)
+## Tables (50)
 
 | Table | Columns | FK refs | NOT NULL | UNIQUE |
 |---|---|---|---|---|
@@ -97,7 +97,10 @@ Dead param routes: **0**
 | `notifications` | 11 | 1 | 3 | 0 |
 | `reviews` | 11 | 3 | 5 | 0 |
 | `progressReports` | 9 | 2 | 6 | 0 |
-| `disputes` | 15 | 3 | 8 | 0 |
+| `disputes` | 35 | 7 | 11 | 0 |
+| `disputeEvidence` | 12 | 3 | 7 | 0 |
+| `disputeMessages` | 7 | 2 | 4 | 0 |
+| `disputeStatusHistory` | 8 | 2 | 4 | 0 |
 | `adminSettings` | 6 | 1 | 4 | 1 |
 | `dailyLogs` | 10 | 2 | 5 | 0 |
 | `expenses` | 10 | 1 | 3 | 0 |
@@ -125,23 +128,23 @@ Dead param routes: **0**
 
 ## Notification write sites (21)
 
-- server/routers.ts:1328 — notifyUser
-- server/routers.ts:2405 — notifyUser
-- server/routers.ts:2485 — notifyUser
-- server/routers.ts:3224 — notifyUser
-- server/routers.ts:3281 — notifyUser
-- server/routers.ts:3688 — notifyUser
-- server/routers.ts:3946 — notifyUser
-- server/routers.ts:4084 — notifyUser
-- server/routers.ts:5481 — notifyUser
-- server/routers.ts:5799 — notifyUser
-- server/routers.ts:5877 — notifyUser
-- server/routers.ts:6649 — notifyUser
-- server/routers.ts:6720 — notifyUser
-- server/routers.ts:7108 — notifyUser
-- server/routers.ts:7306 — notifyUser
-- server/routers.ts:7336 — notifyUser
-- server/routers.ts:7369 — notifyUser
+- server/routers.ts:1330 — notifyUser
+- server/routers.ts:2407 — notifyUser
+- server/routers.ts:2487 — notifyUser
+- server/routers.ts:3226 — notifyUser
+- server/routers.ts:3283 — notifyUser
+- server/routers.ts:3690 — notifyUser
+- server/routers.ts:3948 — notifyUser
+- server/routers.ts:4086 — notifyUser
+- server/routers.ts:5490 — notifyUser
+- server/routers.ts:5808 — notifyUser
+- server/routers.ts:5886 — notifyUser
+- server/routers.ts:6658 — notifyUser
+- server/routers.ts:6729 — notifyUser
+- server/routers.ts:7117 — notifyUser
+- server/routers.ts:7315 — notifyUser
+- server/routers.ts:7345 — notifyUser
+- server/routers.ts:7378 — notifyUser
 - server/notifications.ts:40 — notifyUser
 - server/notifications.ts:43 — helper implementation
 - server/notifications.ts:57 — notifyUser

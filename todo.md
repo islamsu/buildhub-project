@@ -732,9 +732,47 @@ restart.
       it had worked. It runs the same engine now, preserves the administrator's note,
       and REFUSES with the reason when no campaign is eligible rather than returning
       success over a dead end.
-- [ ] REF-6: reversal that reverses; expiry as derived state; anti-abuse; the admin and
-      user surfaces; the Benefits/Limits view.
-
+- [x] REF-6: REVERSAL THAT REVERSES. `admin.reverseReferralReward` set
+      `status: 'REVERSED'` on the ledger row and stopped: the entitlement stayed
+      granted, the Spotlight kept running, the subscription kept its extra days.
+      `server/referralReversal.ts` undoes the EFFECT, found through the
+      `effectRef` the grant wrote rather than by matching a reason string. The
+      target row must belong to the reward's recipient, so a tampered reference
+      cannot revoke somebody else's entitlement; `parseEffectRef` matches one
+      canonical shape whole (it accepted `OVERRIDE:1e3` as row 1000). Effect,
+      ledger, referral status and audit run in one transaction with the reward
+      row locked. SUBSCRIPTION_EXTENSION is deliberately NOT reversed and says
+      so: the owner's decision forbids shortening legitimate time. Also fixed:
+      the placement reward was still invisible - `spotlightProviders` returns []
+      for GLOBAL by design, so TYPE_CATEGORY_SPOTLIGHT + GLOBAL is a combination
+      no reader queries. It is a root-scope BOOST now, which the unfiltered
+      vendor directory does read.
+- [x] REF-7: EXPIRY AS DERIVED STATE, and the ledger gets screens. Nothing had
+      ever written `EXPIRED`, so a lapsed bonus still read GRANTED. It is derived
+      at read time from `expiresAt`, exactly as entitlement overrides and
+      placements already are, with the stored value kept beside it. Two more
+      silent `.limit(250)` truncations paged with real totals, and the browser
+      filtering that answered "no matches" for a row it never loaded moved into
+      the query. The Reward column read two columns nothing has ever written and
+      showed "-" on every row; it reads the real ledger now. A user-facing
+      reward history that names nobody they invited.
+- [x] REF-8: ANTI-ABUSE. The cap was checked and consumed in separate
+      statements, so two simultaneous qualifying events for one inviter both
+      read "cap intact" and both paid; the inviter's row is locked for the whole
+      check-and-claim now. `GLOBAL_REFERRAL_REWARD_CAP` bounds an account across
+      ALL campaigns, which nothing did. A referral code matching no account, or
+      the signer's own, was dropped in silence - audited now, without telling the
+      user, which would make signup an oracle for which codes exist.
+- [x] REF-9: BENEFITS AND LIMITS. `billing.myEntitlements` and `billing.myPlan`
+      had no screen at all. Plan + administrator grant + bonuses, adding to the
+      number the platform enforces, with usage, remaining and reset beside it -
+      and when the parts do not add up, it says so. Fixed on the way: the
+      ADMINISTRATOR's own allowance view ignored bonus rows and showed a number
+      lower than the one being enforced.
+- [x] REF-10: CAMPAIGN ADMINISTRATION. Reward terms and eligibility could not be
+      edited at all; they can be corrected until the campaign grants its first
+      reward and are fixed after, while the schedule and caps stay editable. The
+      attribution window is settable at creation. Campaigns have a screen.
 ## Master Reconciliation Remaining Scope
 
 - [ ] Referral / Invitation Reward system: secure code/link, attribution, campaigns, qualification, caps, non-cash rewards, expiry, reversal, notifications, audit, Admin management
@@ -755,7 +793,7 @@ restart.
 - [ ] Support Tickets: user create/category/description/attachment/updates, Support Admin search/filter/assign/respond/request-info/resolve/close
 - [ ] Reviews / Reputation: relationship eligibility, self-review prevention, duplicate prevention, provider response policy, reporting, moderation, restore/hide, audit
 - [ ] Full Vendor Management command centre with real applicable modules and cross-links from Admin surfaces
-- [ ] Benefits, Limits & Privileges: central entitlement view showing base, campaign/referral, individual overrides, effective, used, remaining, reset/expiry
+- [x] Benefits, Limits & Privileges: central entitlement view showing base, campaign/referral, individual overrides, effective, used, remaining, reset/expiry (REF-9)
 - [ ] Admin Notes: internal-only, permission-controlled, authored/timestamped, never public
 - [ ] Admin Audit UX: search/filter/sort/pagination and humanized actor/target identities
 - [ ] Product image management: upload, primary, additional, replace, remove, reorder, persistence, ownership

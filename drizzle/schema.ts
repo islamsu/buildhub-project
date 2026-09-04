@@ -608,20 +608,157 @@ export const disputes = mysqlTable('disputes', {
   id:             int('id').autoincrement().primaryKey(),
   reporterId:     int('reporterId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   respondentId:   int('respondentId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  /**
+   * ── THE POLYMORPHIC SUBJECT (migration 0046) ─────────────────────────────
+   *
+   * The owner's decision: ONE dispute architecture with a subject, not three
+   * parallel dispute systems. A dispute names the thing it is about, and
+   * eligibility is derived from the real BuildHub relationship to that thing.
+   *
+   * `projectId` alone meant a supplier who disagreed with a quotation had
+   * nothing to dispute against.
+   */
+  subjectType:    mysqlEnum('subjectType', ['project', 'rfq', 'quotation']).default('project').notNull(),
+  subjectId:      int('subjectId').notNull().default(0),
+  /**
+   * LEGACY, and derived. Kept so `admin.projectDetail`'s existing count keeps
+   * working and so the 0046 backfill is reversible by inspection. It is written
+   * in exactly ONE place - server/disputeSubject.ts - from the subject above,
+   * never independently, and a test holds the two in agreement. It is scheduled
+   * for removal once nothing reads it; deliberately NOT a second authoritative
+   * field, which is the shape that produced four disagreeing category
+   * vocabularies elsewhere in this codebase.
+   */
   projectId:      int('projectId').references(() => projects.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  /**
+   * The human reference - `DSP-2026-000123`. A dispute is discussed in email
+   * and on the phone, and "dispute 123" is ambiguous the moment a second system
+   * has its own 123. Nullable only because it is derived from the id, so it is
+   * written immediately after the insert.
+   */
+  reference:      varchar('reference', { length: 32 }),
   title:          varchar('title', { length: 255 }).notNull(),
   description:    text('description').notNull(),
+  /** Free text, pre-0046. Superseded by `category`; kept for the old rows. */
   type:           varchar('type', { length: 80 }).default('general').notNull(),
+  /** The closed set in shared/disputes.ts. Nothing about money: BuildHub holds no funds. */
+  category:       mysqlEnum('category', ['quality', 'delivery', 'quantity', 'specification', 'communication', 'conduct', 'pricing', 'other']).default('other').notNull(),
   priority:       mysqlEnum('priority', ['low', 'medium', 'high']).default('medium').notNull(),
-  status:         mysqlEnum('status', ['open', 'investigating', 'resolved', 'rejected']).default('open').notNull(),
+  /**
+   * `withdrawn` is the REPORTER's own decision, and is not the same outcome as
+   * an administrator rejecting the dispute. Recording both as `rejected` would
+   * blame the platform for a choice the reporter made.
+   */
+  status:         mysqlEnum('status', ['open', 'investigating', 'resolved', 'rejected', 'withdrawn']).default('open').notNull(),
+
+  // ── Assignment: who is working on it ─────────────────────────────────────
+  assignedTo:     int('assignedTo').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  assignedBy:     int('assignedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  assignedAt:     timestamp('assignedAt'),
+
+  // ── Resolution: never a bare status flip ─────────────────────────────────
   resolutionNotes:text('resolutionNotes'),
+  resolutionType: mysqlEnum('resolutionType', ['resolved_by_agreement', 'resolved_by_platform', 'no_action_required', 'insufficient_evidence', 'out_of_scope']),
+  resolvedBy:     int('resolvedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  resolvedAt:     timestamp('resolvedAt'),
+
+  // ── Reopen and withdrawal, with an actor and a reason ────────────────────
+  reopenedBy:     int('reopenedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  reopenedAt:     timestamp('reopenedAt'),
+  reopenReason:   varchar('reopenReason', { length: 500 }),
+  withdrawnAt:    timestamp('withdrawnAt'),
+
   createdAt:      timestamp('createdAt').defaultNow().notNull(),
   updatedAt:      timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
 }, table => ({
   reporterIdIdx: index('disputes_reporterId_idx').on(table.reporterId),
   respondentIdIdx: index('disputes_respondentId_idx').on(table.respondentId),
   projectIdIdx: index('disputes_projectId_idx').on(table.projectId),
+  // The columns the admin list orders and filters on, and the one
+  // server/admin/operationalHealth.ts counts open disputes with.
+  subjectIdx:   index('disputes_subject_idx').on(table.subjectType, table.subjectId),
+  statusIdx:    index('disputes_status_idx').on(table.status),
+  priorityIdx:  index('disputes_priority_idx').on(table.priority),
+  createdIdx:   index('disputes_createdAt_idx').on(table.createdAt),
+  assignedIdx:  index('disputes_assignedTo_idx').on(table.assignedTo),
+  referenceIdx: uniqueIndex('disputes_reference_unique').on(table.reference),
 }));
+
+/**
+ * ── EVIDENCE ───────────────────────────────────────────────────────────────
+ *
+ * A file a participant attached to make their case. Stored through the same
+ * `server/storage.ts` every other upload uses, under a `dispute-evidence/`
+ * prefix, and downloadable only through an authorization check against the
+ * dispute it belongs to - a participant in dispute A must not be able to fetch
+ * dispute B's file by guessing a key.
+ *
+ * SOFT REMOVAL. The row stays so the record shows the file existed and who
+ * withdrew it; deleting it outright would let a party quietly retract evidence
+ * the other side had already answered.
+ */
+export const disputeEvidence = mysqlTable('disputeEvidence', {
+  id:          int('id').autoincrement().primaryKey(),
+  disputeId:   int('disputeId').notNull().references(() => disputes.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  uploadedBy:  int('uploadedBy').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  storageKey:  varchar('storageKey', { length: 500 }).notNull(),
+  fileName:    varchar('fileName', { length: 255 }).notNull(),
+  contentType: varchar('contentType', { length: 120 }).notNull(),
+  sizeBytes:   int('sizeBytes').notNull(),
+  removedAt:   timestamp('removedAt'),
+  removedBy:   int('removedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  disputeIdx:  index('disputeEvidence_dispute_idx').on(table.disputeId),
+  uploaderIdx: index('disputeEvidence_uploader_idx').on(table.uploadedBy),
+}));
+
+/**
+ * ── WHAT THE PARTICIPANTS SAY TO EACH OTHER ────────────────────────────────
+ *
+ * PARTICIPANT MESSAGES ONLY. An administrator's internal note goes in
+ * `adminNotes` with `subjectType: 'dispute'`, which that enum has always
+ * allowed and nothing has ever written.
+ *
+ * The separation is a TABLE, not a visibility column, on purpose: a forgotten
+ * `where visibility = 'participants'` would show a reporter what an
+ * administrator wrote about them, and a rule that can be got wrong by omitting
+ * a clause will eventually be got wrong. Internal notes are not in this table
+ * at all, so no query against it can leak one.
+ */
+export const disputeMessages = mysqlTable('disputeMessages', {
+  id:        int('id').autoincrement().primaryKey(),
+  disputeId: int('disputeId').notNull().references(() => disputes.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  authorId:  int('authorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  body:      text('body').notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  disputeIdx: index('disputeMessages_dispute_idx').on(table.disputeId, table.createdAt),
+  authorIdx:  index('disputeMessages_author_idx').on(table.authorId),
+}));
+
+/**
+ * ── HOW IT GOT HERE ────────────────────────────────────────────────────────
+ *
+ * Append-only. `admin.updateDispute` accepted any status from any state and
+ * wrote nothing but the new value, so "who moved this to resolved, and when,
+ * and from what" was unanswerable - on the record a party is entitled to see.
+ */
+export const disputeStatusHistory = mysqlTable('disputeStatusHistory', {
+  id:         int('id').autoincrement().primaryKey(),
+  disputeId:  int('disputeId').notNull().references(() => disputes.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  fromStatus: varchar('fromStatus', { length: 20 }).notNull(),
+  toStatus:   varchar('toStatus', { length: 20 }).notNull(),
+  actorId:    int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  reason:     varchar('reason', { length: 500 }),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  disputeIdx: index('disputeStatusHistory_dispute_idx').on(table.disputeId, table.createdAt),
+}));
+
+export type DisputeEvidence = typeof disputeEvidence.$inferSelect;
+export type DisputeMessage = typeof disputeMessages.$inferSelect;
+export type DisputeStatusChange = typeof disputeStatusHistory.$inferSelect;
 
 // ── Admin Settings ──────────────────────────────────────────────────────────
 export const adminSettings = mysqlTable('adminSettings', {

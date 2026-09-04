@@ -47,6 +47,8 @@ import {
 } from './referralRewardView';
 import { explainEnquiryAllowance } from './billing/allowanceBreakdown';
 import { splitCampaignEdit, refuseCampaignEdit, refuseCampaignDates } from './referralCampaignEdit';
+import { DISPUTE_ADMIN_SETTABLE_STATUSES, DISPUTE_CATEGORIES } from '@shared/disputes';
+import { subjectColumns, assignDisputeReference } from './disputeSubject';
 import {
   DEFAULT_ATTRIBUTION_WINDOW_DAYS, REFERRAL_QUALIFICATION_TYPES, REFERRAL_REWARD_TYPES,
 } from '@shared/referralRewards';
@@ -4129,6 +4131,7 @@ const disputesRouter = router({
       title: z.string().trim().min(1).max(255),
       description: z.string().trim().min(1).max(5000),
       type: z.string().max(80).optional(),
+      category: z.enum(DISPUTE_CATEGORIES).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -4159,14 +4162,20 @@ const disputesRouter = router({
       const result = await db.insert(disputes).values({
         reporterId: ctx.user.id,
         respondentId,
-        projectId: input.projectId,
+        // The subject is authoritative; `projectId` is its legacy mirror and is
+        // written only from here - see server/disputeSubject.ts.
+        ...subjectColumns('project', input.projectId),
         title: input.title,
         description: input.description,
         type: input.type ?? 'general',
+        category: input.category ?? 'other',
         status: 'open',
         priority: 'medium',
       });
-      return { id: Number(result[0].insertId) };
+      const id = Number(result[0].insertId);
+      // Derived from the id, so it can only be written after the insert.
+      const reference = await assignDisputeReference(db, id);
+      return { id, reference };
     }),
 });
 
@@ -7437,7 +7446,8 @@ const adminRouter = router({
   }),
   updateDispute: adminWith('support.manage').input(z.object({
     disputeId: z.number(),
-    status: z.enum(['open', 'investigating', 'resolved', 'rejected']),
+    // The shared set, which excludes `withdrawn` - the reporter's own decision.
+    status: z.enum(DISPUTE_ADMIN_SETTABLE_STATUSES),
     resolutionNotes: z.string().max(2000).optional(),
   })).mutation(async ({ input }) => {
     const db = await getDb();
