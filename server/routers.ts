@@ -569,6 +569,34 @@ const authRouter = router({
           code: input.referralCode,
           status: 'registered',
         });
+      } else {
+        /*
+         * A CODE THAT WENT NOWHERE, RECORDED.
+         *
+         * This branch did not exist: a code matching no account, or matching
+         * the signer themselves, was dropped in silence. So somebody walking
+         * the code space to find valid ones left no trace at all, and a real
+         * user who mistyped a friend's code had no record of why they were
+         * never credited.
+         *
+         * THE SIGNUP STILL SUCCEEDS, and the user is NOT told the code was
+         * bad. Refusing would block a real registration over a typo in an
+         * optional field, and reporting it would turn signup into an oracle
+         * that confirms which codes exist - which is the thing being walked.
+         * The record is server-side, for the administrator investigating.
+         */
+        await recordAccountEvent(db, {
+          userId,
+          actorId: userId,
+          action: 'referral_code_unusable',
+          source: 'self_registered',
+          // The code itself, because "somebody tried 400 codes" is only
+          // answerable if the attempts name what was tried. It is not a
+          // credential: it is a public invitation token its owner shares.
+          note: referrer
+            ? `Self-referral attempted with own code ${input.referralCode}`
+            : `No account holds referral code ${input.referralCode}`,
+        });
       }
     }
 

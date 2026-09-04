@@ -71,92 +71,139 @@ export async function qualifyReferralEvent(
    * historical binding, or any future path that binds deliberately - is
    * honoured rather than overridden.
    */
-  let campaign: any = null;
-  if (referral.campaignId) {
-    const [bound] = await db.select().from(referralCampaigns).where(eq(referralCampaigns.id, referral.campaignId)).limit(1);
-    if (!bound) return { outcome: 'campaign_ineligible', reason: 'bound campaign missing' };
-    if (bound.status !== 'active') return { outcome: 'campaign_ineligible', reason: 'campaign inactive' };
-    if (bound.qualificationType !== eventType) return { outcome: 'campaign_ineligible', reason: 'qualification mismatch' };
-    campaign = bound;
-  } else {
-    const resolution = await resolveReferralCampaign(db, {
-      qualificationType: eventType,
-      referredAt: new Date(referral.createdAt),
-      inviterRole: referrerRow?.userRole ?? null,
-      referredRole: referredRow?.userRole ?? null,
-      referrerId: referral.referrerId,
-      eventAt: now,
-    });
-    if (!resolution.ok) {
-      // The per-candidate reasons travel with the refusal. "Your invite was 100
-      // days old and the window is 90" and "no campaign is running for that
-      // event" are different answers, and an administrator investigating a
-      // complaint needs the first one.
-      return {
-        outcome: 'campaign_ineligible',
-        reason: resolution.considered === 0 ? 'no campaign' : 'no eligible campaign',
-        rejections: resolution.rejections,
-      };
+  async function resolveUnderLock(tx: any): Promise<
+    | { refusal: QualifyResult }
+    | { campaign: any; rewardId: number; expiresAt: Date | null }
+  > {
+    let campaign: any = null;
+    if (referral.campaignId) {
+      const [bound] = await tx.select().from(referralCampaigns).where(eq(referralCampaigns.id, referral.campaignId)).limit(1);
+      if (!bound) return { refusal: { outcome: 'campaign_ineligible', reason: 'bound campaign missing' } };
+      if (bound.status !== 'active') return { refusal: { outcome: 'campaign_ineligible', reason: 'campaign inactive' } };
+      if (bound.qualificationType !== eventType) return { refusal: { outcome: 'campaign_ineligible', reason: 'qualification mismatch' } };
+      campaign = bound;
+    } else {
+      const resolution = await resolveReferralCampaign(tx, {
+        qualificationType: eventType,
+        referredAt: new Date(referral.createdAt),
+        inviterRole: referrerRow?.userRole ?? null,
+        referredRole: referredRow?.userRole ?? null,
+        referrerId: referral.referrerId,
+        eventAt: now,
+      });
+      if (!resolution.ok) {
+        // The per-candidate reasons travel with the refusal. "Your invite was 100
+        // days old and the window is 90" and "no campaign is running for that
+        // event" are different answers, and an administrator investigating a
+        // complaint needs the first one.
+        return {
+          refusal: {
+            outcome: 'campaign_ineligible',
+            reason: resolution.considered === 0 ? 'no campaign' : 'no eligible campaign',
+            rejections: resolution.rejections,
+          },
+        };
+      }
+      campaign = resolution.campaign;
     }
-    campaign = resolution.campaign;
-  }
 
-  await db.update(referrals).set({
-    status: 'qualified',
-    // BOUND, and bound once. The row now names the campaign it qualified
-    // under, and nothing above will re-resolve it: the reward-count check at
-    // the top of this function returns `already_qualified` on every later
-    // event, so a better campaign appearing tomorrow cannot move it.
-    campaignId: campaign.id,
-    qualificationType: eventType,
-    qualificationEventKey: eventKey,
-    qualifiedAt: now,
-    qualificationNote: null,
-  }).where(eq(referrals.id, referral.id));
-
-  /**
-   * THE REWARD IS WRITTEN PENDING, AND BECOMES GRANTED ONLY WHEN ITS EFFECT
-   * COMMITS.
-   *
-   * It used to be inserted as GRANTED before anything was applied, and the two
-   * calls that apply it - setEnquiryAllowance and bookPlacement - both RETURN
-   * A REFUSAL, and both return values were discarded. So a reward could read
-   * GRANTED in the ledger while the allowance it promises was refused and the
-   * placement it promises was never booked.
-   *
-   * That row is the one an administrator quotes back to a vendor. PENDING,
-   * GRANTED, REJECTED are all already in the schema and nothing wrote anything
-   * but GRANTED; this is what those states are for.
-   */
-  const expiresAt = campaign.rewardDurationDays
-    ? new Date(now.getTime() + campaign.rewardDurationDays * 24 * 60 * 60 * 1000)
-    : null;
-
-  let rewardId = 0;
-  try {
-    const inserted = await db.insert(referralRewards).values({
-      referralId: referral.id,
+    await tx.update(referrals).set({
+      status: 'qualified',
+      // BOUND, and bound once. The row now names the campaign it qualified
+      // under, and nothing above will re-resolve it: the reward-count check at
+      // the top of this function returns `already_qualified` on every later
+      // event, so a better campaign appearing tomorrow cannot move it.
       campaignId: campaign.id,
-      recipientUserId: referral.referrerId,
-      // SNAPSHOT. A later edit to the campaign must not change what this
-      // referral was promised.
-      rewardType: campaign.rewardType,
-      rewardValue: campaign.rewardValue,
-      source: 'REFERRAL_REWARD',
-      status: 'PENDING' as const,
-      effectiveFrom: now,
-      expiresAt,
-      grantedAt: null,
-    });
-    rewardId = Number(inserted?.[0]?.insertId ?? 0);
-  } catch (error) {
-    const code = (error as { cause?: { code?: string }; code?: string })?.cause?.code
-      ?? (error as { code?: string })?.code;
-    if (code === 'ER_DUP_ENTRY') {
-      return { outcome: 'already_qualified', referralId: referral.id };
+      qualificationType: eventType,
+      qualificationEventKey: eventKey,
+      qualifiedAt: now,
+      qualificationNote: null,
+    }).where(eq(referrals.id, referral.id));
+
+    /**
+     * THE REWARD IS WRITTEN PENDING, AND BECOMES GRANTED ONLY WHEN ITS EFFECT
+     * COMMITS.
+     *
+     * It used to be inserted as GRANTED before anything was applied, and the two
+     * calls that apply it - setEnquiryAllowance and bookPlacement - both RETURN
+     * A REFUSAL, and both return values were discarded. So a reward could read
+     * GRANTED in the ledger while the allowance it promises was refused and the
+     * placement it promises was never booked.
+     *
+     * That row is the one an administrator quotes back to a vendor. PENDING,
+     * GRANTED, REJECTED are all already in the schema and nothing wrote anything
+     * but GRANTED; this is what those states are for.
+     */
+    const expiresAt = campaign.rewardDurationDays
+      ? new Date(now.getTime() + campaign.rewardDurationDays * 24 * 60 * 60 * 1000)
+      : null;
+
+    let rewardId = 0;
+    try {
+      const inserted = await tx.insert(referralRewards).values({
+        referralId: referral.id,
+        campaignId: campaign.id,
+        recipientUserId: referral.referrerId,
+        // SNAPSHOT. A later edit to the campaign must not change what this
+        // referral was promised.
+        rewardType: campaign.rewardType,
+        rewardValue: campaign.rewardValue,
+        source: 'REFERRAL_REWARD',
+        status: 'PENDING' as const,
+        effectiveFrom: now,
+        expiresAt,
+        grantedAt: null,
+      });
+      rewardId = Number(inserted?.[0]?.insertId ?? 0);
+    } catch (error) {
+      const code = (error as { cause?: { code?: string }; code?: string })?.cause?.code
+        ?? (error as { code?: string })?.code;
+      if (code === 'ER_DUP_ENTRY') {
+        return { refusal: { outcome: 'already_qualified', referralId: referral.id } };
+      }
+      throw error;
     }
-    throw error;
+
+    // The claim is made. Everything past this point applies it, outside the lock.
+    return { campaign, rewardId, expiresAt };
   }
+
+  /*
+   * ── THE CAP IS CHECKED AND CLAIMED UNDER ONE LOCK ────────────────────────
+   *
+   * Resolution counts how many rewards an inviter already holds, and the insert
+   * that consumes the cap happened afterwards, on a separate statement. Two
+   * qualifying events for the same inviter arriving together - two invitees
+   * verifying their email in the same second, which is exactly what a
+   * coordinated abuse attempt looks like - both read "0 used, cap 1" and both
+   * inserted. The `referralRewards` unique index does not help: it is per
+   * REFERRAL and campaign, and these are two different referrals.
+   *
+   * The inviter's own row is locked for the whole check-and-claim, which is the
+   * granularity `perInviterCap` and the global cap are defined at. The second
+   * event waits, re-counts, and sees the first one's PENDING row - PENDING
+   * counts toward a cap for precisely this reason.
+   *
+   * ONLY the decision is in here. Applying the effect touches the billing
+   * engine, the placement engine and the subscription lifecycle, and holding a
+   * row lock across all of that would serialise unrelated work on one inviter's
+   * row for as long as those take.
+   */
+  const claim = await db.transaction(async (tx: any) => {
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, referral.referrerId)).for('update');
+
+    // Re-read under the lock. A concurrent event may have claimed the reward
+    // for this very referral while this one was waiting.
+    const [claimed] = await tx.select({ count: sql<number>`count(*)` })
+      .from(referralRewards).where(eq(referralRewards.referralId, referral.id));
+    if (Number(claimed?.count ?? 0) > 0) return { taken: true as const };
+
+    return { taken: false as const, resolved: await resolveUnderLock(tx) };
+  });
+  if (claim.taken) return { outcome: 'already_qualified', referralId: referral.id };
+  if ('refusal' in claim.resolved) return claim.resolved.refusal;
+  const { campaign, rewardId, expiresAt } = claim.resolved;
+
 
   /**
    * APPLY IT, AND BELIEVE WHAT THE APPLICATION SAYS.

@@ -3,6 +3,7 @@ import { chooseCampaign, type CampaignRow, type ResolutionInput } from './referr
 import {
   REFERRAL_REWARD_TYPES, REFERRAL_QUALIFICATION_TYPES, REFERRAL_CAMPAIGN_STATUSES,
   REFERRAL_REWARD_STATUSES, REFERRAL_STATUSES, DEFAULT_ATTRIBUTION_WINDOW_DAYS,
+  GLOBAL_REFERRAL_REWARD_CAP,
 } from '@shared/referralRewards';
 import { readFileSync } from 'node:fs';
 
@@ -231,7 +232,24 @@ describe('the engine actually binds what the resolver returns', () => {
   const ENGINE = readFileSync(new URL('./referralEngine.ts', import.meta.url), 'utf8');
 
   it('calls the resolver rather than reading a campaignId nobody writes', () => {
-    expect(ENGINE).toContain('resolveReferralCampaign(db, {');
+    expect(ENGINE).toContain('resolveReferralCampaign(');
+  });
+
+  it('and resolves UNDER THE LOCK, not on a loose connection', () => {
+    /*
+     * This read `resolveReferralCampaign(db, {`. The handle changed to `tx`
+     * when the check-then-act race was closed - counting an inviter's rewards
+     * and inserting the row that consumes the cap are now one locked step - so
+     * the literal went stale while the behaviour it stood for got stronger.
+     *
+     * Restated to assert the stronger property directly: the count that decides
+     * eligibility must happen on the transaction that holds the inviter's row,
+     * or two simultaneous events both read "cap intact" and both pay out.
+     */
+    expect(ENGINE).toContain('resolveReferralCampaign(tx, {');
+    expect(ENGINE).toContain("where(eq(users.id, referral.referrerId)).for('update')");
+    // And the insert that consumes the cap is on the same handle.
+    expect(ENGINE).toContain('await tx.insert(referralRewards).values({');
   });
 
   it('WRITES the resolved campaign onto the referral', () => {
@@ -249,5 +267,103 @@ describe('the engine actually binds what the resolver returns', () => {
     // a better campaign tomorrow from moving a referral that already paid.
     const guard = ENGINE.slice(ENGINE.indexOf('const [rewardCount]'), ENGINE.indexOf('const [referrerRow'));
     expect(guard).toContain("already_qualified");
+  });
+});
+
+// ── ANTI-ABUSE ─────────────────────────────────────────────────────────────
+
+describe('the platform-wide brake', () => {
+  /*
+   * Campaign caps each bound ONE campaign. Nothing bounded an account across
+   * all of them, so somebody running many invitations through a rotation of
+   * campaigns collected without limit while every campaign correctly reported
+   * its own cap intact.
+   */
+  const many = () => [campaign({ id: 1, perInviterCap: 100 }), campaign({ id: 2, priority: 5, perInviterCap: 100 })];
+  const usageWith = (globalForInviter: number) => ({ ...noUsage(), globalForInviter });
+
+  it('lets a normal inviter through', () => {
+    const result = choose(many(), {}, usageWith(3));
+    expect(result.ok).toBe(true);
+  });
+
+  it('stops an account that has collected the platform limit, on EVERY campaign', () => {
+    const result = choose(many(), {}, usageWith(GLOBAL_REFERRAL_REWARD_CAP));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // Every candidate is refused for the SAME stated reason, so an
+    // administrator reading it knows which rule fired.
+    expect(result.rejections.map(r => r.reason)).toEqual(['global_cap_reached', 'global_cap_reached']);
+  });
+
+  it('the limit is a ceiling, not a target - one below still qualifies', () => {
+    expect(choose(many(), {}, usageWith(GLOBAL_REFERRAL_REWARD_CAP - 1)).ok).toBe(true);
+  });
+
+  it('a caller that supplies no global count is not silently capped at zero', () => {
+    // Older callers pass the two per-campaign maps only. Treating a missing
+    // count as 0 used, rather than as "at the cap", is the safe default: the
+    // per-campaign caps still apply.
+    expect(chooseCampaign(many(), input(), noUsage()).ok).toBe(true);
+  });
+
+  it('the brake sits far above any campaign cap, so it never shapes a campaign', () => {
+    expect(GLOBAL_REFERRAL_REWARD_CAP).toBeGreaterThan(10);
+  });
+});
+
+describe('the cap query does not scan the whole ledger', () => {
+  const SOURCE = readFileSync(new URL('./referralCampaignResolution.ts', import.meta.url), 'utf8');
+  const capUsage = SOURCE.slice(SOURCE.indexOf('async function capUsage'), SOURCE.indexOf('export function chooseCampaign'));
+
+  it('the per-campaign count is restricted to the candidates', () => {
+    // This grouped the WHOLE reward ledger and filtered in JavaScript, on the
+    // hot path of a real user action.
+    expect(capUsage).toContain('inArray(referralRewards.campaignId, campaignIds)');
+  });
+
+  it('and the global count is restricted to the one inviter', () => {
+    expect(capUsage).toContain('eq(referralRewards.recipientUserId, referrerId)');
+  });
+
+  it('both use the same rule about which states consume a cap', () => {
+    // A REJECTED reward never happened; counting it globally but not per
+    // campaign would make the two disagree about the same row.
+    expect(capUsage).toContain('COUNTS_TOWARD_CAP.has(String(row.status))');
+  });
+});
+
+describe('a referral code that goes nowhere is recorded', () => {
+  const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+  const signup = ROUTERS.slice(ROUTERS.indexOf('const ownReferralCode = generateReferralCode();'));
+  const branch = signup.slice(0, signup.indexOf('const [created] ='));
+
+  it('the signup branch was actually found', () => {
+    expect(branch).toContain('input.referralCode');
+    expect(branch.length).toBeLessThan(4000);
+  });
+
+  it('an unusable code writes an audit event instead of being dropped in silence', () => {
+    expect(branch).toContain("action: 'referral_code_unusable'");
+  });
+
+  it('it distinguishes a code nobody holds from a self-referral', () => {
+    // Two different problems. One is somebody walking the code space; the other
+    // is a user misreading their own screen.
+    expect(branch).toContain('Self-referral attempted with own code');
+    expect(branch).toContain('No account holds referral code');
+  });
+
+  it('and the signup still succeeds - it does not throw or refuse', () => {
+    // Refusing would block a real registration over a typo in an optional
+    // field, and telling the user would make signup an oracle for which codes
+    // exist, which is exactly what a code-walker wants.
+    expect(branch).not.toContain('TRPCError');
+    expect(branch).not.toContain('referral code is not valid');
+  });
+
+  it('the action is in the closed audit vocabulary, so it can actually be written', () => {
+    const audit = readFileSync(new URL('./_core/accountAudit.ts', import.meta.url), 'utf8');
+    expect(audit).toContain("'referral_code_unusable'");
   });
 });

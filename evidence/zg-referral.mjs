@@ -62,17 +62,37 @@ function session(initial = '') {
 const stamp = Date.now() % 100000000;
 const made = { users: [], campaigns: [] };
 
+/**
+ * WAITING OUT THE RATE LIMITER RATHER THAN CALLING IT A FAILURE.
+ *
+ * This probe now creates around twenty accounts, and BuildHub's auth limiter
+ * allows 60 attempts per minute from one address - so a second run started
+ * within the same minute got a 429 and the probe aborted, reporting the
+ * limiter working correctly as a defect. The limiter is right; the probe was
+ * impatient. It now honours the wait the server states, and gives up loudly
+ * rather than quietly if the wait does not clear it.
+ */
 async function signUp(suffix, userRole, referralCode) {
   const username = `zgref${stamp}${suffix}`;
-  const res = await fetch(`${BASE}/api/trpc/auth.signUp`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ json: {
-      username, email: `${username}@example.test`, password: 'ProbeUser!2024',
-      name: `Referral Probe ${suffix}`, userRole,
-      ...(referralCode ? { referralCode } : {}),
-    } }),
-  });
-  if (res.status !== 200) throw new Error(`probe setup: signUp ${suffix} failed ${res.status}`);
+  let res = null, body = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    res = await fetch(`${BASE}/api/trpc/auth.signUp`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ json: {
+        username, email: `${username}@example.test`, password: 'ProbeUser!2024',
+        name: `Referral Probe ${suffix}`, userRole,
+        ...(referralCode ? { referralCode } : {}),
+      } }),
+    });
+    if (res.status !== 429) break;
+    body = await res.text();
+    // The server states the wait in seconds; honour it rather than guessing.
+    const seconds = Number(/Try again in (\d+)s/.exec(body)?.[1] ?? 20);
+    await new Promise(resolve => setTimeout(resolve, Math.min(seconds + 2, 70) * 1000));
+  }
+  if (res.status !== 200) {
+    throw new Error(`probe setup: signUp ${suffix} failed ${res.status}${res.status === 429 ? ' (rate limited, waited and retried)' : ''}`);
+  }
   const id = Number(sql(`select id from users where username='${username}'`));
   if (sql(`select username from users where id=${id}`) !== username) throw new Error('probe setup: wrong row');
   made.users.push(id);
@@ -656,6 +676,172 @@ try {
       sql(`select status from referralRewards where id=${extRewardId}`) === 'REVERSED');
   }
 
+
+
+  // ── ANTI-ABUSE: the cap holds under a race, and a bad code leaves a trace ──
+  {
+    /*
+     * THE CHECK-THEN-ACT RACE.
+     *
+     * Resolution counted an inviter's rewards, and the insert that consumes the
+     * cap happened afterwards on a separate statement. Two qualifying events
+     * for the same inviter arriving together - which is exactly what a
+     * coordinated abuse attempt looks like - both read "0 used, cap 1" and both
+     * inserted. The referralRewards unique index does not help: it is per
+     * REFERRAL and campaign, and these are two DIFFERENT referrals.
+     */
+    /*
+     * ISOLATED ON PURPOSE. An earlier version of this section used a 'supplier'
+     * inviter, and the second event correctly fell through to another of this
+     * probe's campaigns - which is the DESIGNED behaviour ("it takes the next
+     * eligible campaign instead of failing outright"), not a race. The probe
+     * reported that correct fallback as a cap failure.
+     *
+     * The inviter is an ENGINEER, and this is the only campaign that accepts
+     * one, so a second reward here can only come from the cap being breached.
+     */
+    const raceInviter = await signUp('race', 'engineer');
+    sql(`update users set onboardingStatus='approved', verified=1 where id=${raceInviter.id}`);
+    const raceCode = sql(`select referralCode from users where id=${raceInviter.id}`);
+    const raceCampaign = campaign(`ZG Race ${stamp}`, {
+      priority: 800, rewardValue: '4', perInviterCap: 1,
+      eligibleInviterRoles: JSON.stringify(['engineer']),
+    });
+    check('SETUP: exactly one campaign can pay this inviter, so a second reward can only be a breach',
+      Number(sql(`select count(*) from referralCampaigns
+        where status='active' and qualificationType='ACCOUNT_VERIFIED'
+          and eligibleInviterRoles like '%engineer%'`)) === 1,
+      sql(`select count(*) from referralCampaigns where status='active'
+           and qualificationType='ACCOUNT_VERIFIED' and eligibleInviterRoles like '%engineer%'`));
+
+    // Two invitees, both about to be verified at the same instant.
+    const a = await signUp('ra', 'homeowner', raceCode);
+    const b = await signUp('rb', 'homeowner', raceCode);
+
+    const [ra, rb] = await Promise.all([
+      admin.mutate('admin.verifyUser', { userId: a.id, verified: true }),
+      admin.mutate('admin.verifyUser', { userId: b.id, verified: true }),
+    ]);
+    check('RACE: both simultaneous verifications completed without erroring',
+      ra.status === 200 && rb.status === 200, `${ra.status}/${rb.status}`);
+
+    const paid = Number(sql(`select count(*) from referralRewards
+      where campaignId=${raceCampaign} and recipientUserId=${raceInviter.id}`));
+    check('RACE: the per-inviter cap of 1 held - exactly ONE reward, not two',
+      paid === 1, `${paid} reward(s) for a cap of 1`);
+    check('RACE: and the EFFECT was applied once - one bonus row, not two',
+      Number(sql(`select count(*) from vendorEntitlementOverrides
+        where userId=${raceInviter.id} and entitlementKey='qualifiedEnquiryBonus' and revokedAt is null`)) === 1,
+      sql(`select count(*) from vendorEntitlementOverrides
+        where userId=${raceInviter.id} and entitlementKey='qualifiedEnquiryBonus' and revokedAt is null`));
+    check('RACE: the losing referral is left UNBOUND and unrewarded, not half-written',
+      Number(sql(`select count(*) from referrals
+        where referrerId=${raceInviter.id} and campaignId is not null`)) === 1
+      && Number(sql(`select count(*) from referrals
+        where referrerId=${raceInviter.id} and campaignId=${raceCampaign}`)) === 1,
+      sql(`select group_concat(concat(id,':',ifnull(campaignId,'NULL'),':',status)) from referrals where referrerId=${raceInviter.id}`));
+
+    /*
+     * THE PLATFORM BRAKE. Campaign caps each bound one campaign; nothing
+     * bounded an account across all of them, so a rotation of campaigns paid
+     * without limit while every campaign reported its own cap intact.
+     */
+    /*
+     * The unique index is per (referral, campaign), so 25 rows means 25
+     * DISTINCT pairs. An earlier version looped over the referrals alone and
+     * could only plant one row each - it reached 5 and reported a setup
+     * failure, correctly, rather than pretending the brake had been tested.
+     */
+    /*
+     * Two referrals x twelve campaigns yielded 24 distinct pairs and one was
+     * already taken by the real reward, so the first attempt reached 24 and
+     * reported the setup as failed rather than pretending the brake had been
+     * exercised. Two more invitees give the loop room.
+     */
+    for (const suffix of ['bk1', 'bk2']) await signUp(suffix, 'homeowner', raceCode);
+    const brakeReferrals = sql(`select group_concat(id) from referrals where referrerId=${raceInviter.id}`)
+      .split(',').filter(Boolean);
+    const brakeCampaigns = sql(`select group_concat(id) from referralCampaigns where name like 'ZG %${stamp}'`)
+      .split(',').filter(Boolean);
+    let planted = Number(sql(`select count(*) from referralRewards where recipientUserId=${raceInviter.id}`));
+    for (const campaignId of brakeCampaigns) {
+      for (const referralId of brakeReferrals) {
+        if (planted >= 25) break;
+        try {
+          sql(`insert into referralRewards (referralId, campaignId, recipientUserId, rewardType, rewardValue, status)
+               values (${referralId}, ${campaignId}, ${raceInviter.id}, 'EXTRA_QUALIFIED_ENQUIRIES', '1', 'GRANTED')`);
+          planted += 1;
+        } catch { /* the unique index refused this pair; try the next */ }
+      }
+      if (planted >= 25) break;
+    }
+    check('SETUP: the account is at the platform limit of 25 rewards', planted >= 25,
+      `${planted} from ${brakeReferrals.length} referral(s) x ${brakeCampaigns.length} campaign(s)`);
+
+    if (planted >= 25) {
+      const capped = await signUp('capped', 'homeowner', raceCode);
+      // The race campaign accepts this inviter and has an inviter cap of 1 that
+      // is already used; the point is that the PLATFORM brake refuses first and
+      // says so, rather than the refusal reading as "no campaign".
+
+      const cappedReferral = Number(sql(`select id from referrals where referredId=${capped.id}`));
+      await admin.mutate('admin.verifyUser', { userId: capped.id, verified: true });
+      check('BRAKE: an account at the platform limit earns nothing more, from ANY campaign',
+        Number(sql(`select count(*) from referralRewards where referralId=${cappedReferral}`)) === 0
+        && sql(`select ifnull(campaignId,'NULL') from referrals where id=${cappedReferral}`) === 'NULL',
+        `rewards=${sql(`select count(*) from referralRewards where referralId=${cappedReferral}`)}`);
+      const why = await admin.mutate('admin.qualifyReferral', { referralId: cappedReferral });
+      check('BRAKE: and an administrator is told WHICH rule stopped it',
+        why.status !== 200 && /no eligible campaign/i.test(why.error ?? ''), `${why.status} ${why.error ?? ''}`);
+    }
+  }
+
+  {
+    /*
+     * A CODE THAT WENT NOWHERE. This branch did not exist: a code matching no
+     * account, or the signer's own, was dropped in silence - so somebody
+     * walking the code space left no trace at all.
+     */
+    const stranger = await signUp('bad', 'homeowner', `BH-NOSUCHCODE${stamp}`);
+    check('BAD CODE: the signup still succeeds - a typo does not block a registration',
+      Number(sql(`select count(*) from users where id=${stranger.id}`)) === 1);
+    check('BAD CODE: no referral was invented for a code nobody holds',
+      Number(sql(`select count(*) from referrals where referredId=${stranger.id}`)) === 0);
+    check('BAD CODE: but it is RECORDED, so a code-walker is visible to an administrator',
+      Number(sql(`select count(*) from userAccountAuditEvents
+        where userId=${stranger.id} and action='referral_code_unusable'`)) === 1,
+      sql(`select ifnull(group_concat(action),'none') from userAccountAuditEvents where userId=${stranger.id}`));
+    check('BAD CODE: and the record names the code that was tried',
+      sql(`select note from userAccountAuditEvents where userId=${stranger.id} and action='referral_code_unusable'`)
+        .includes(`BH-NOSUCHCODE${stamp}`),
+      sql(`select ifnull(note,'') from userAccountAuditEvents where userId=${stranger.id} and action='referral_code_unusable'`));
+
+    // The API response must not confirm whether the code existed - that would
+    // make signup an oracle for the thing being walked.
+    const probeGood = await fetch(`${BASE}/api/trpc/auth.signUp`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ json: {
+        username: `zgorc${stamp}`, email: `zgorc${stamp}@example.test`, password: 'ProbeUser!2024',
+        name: 'Oracle Probe', userRole: 'homeowner', referralCode: code,
+      } }),
+    });
+    const goodBody = await probeGood.text();
+    made.users.push(Number(sql(`select id from users where username='zgorc${stamp}'`)));
+    const probeBad = await fetch(`${BASE}/api/trpc/auth.signUp`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ json: {
+        username: `zgorb${stamp}`, email: `zgorb${stamp}@example.test`, password: 'ProbeUser!2024',
+        name: 'Oracle Probe', userRole: 'homeowner', referralCode: `BH-ALSONOSUCH${stamp}`,
+      } }),
+    });
+    const badBody = await probeBad.text();
+    made.users.push(Number(sql(`select id from users where username='zgorb${stamp}'`)));
+    const shape = (body, username) => body.replace(new RegExp(username, 'g'), 'U').replace(/"[^"]*@[^"]*"/g, '"E"');
+    check('ORACLE: a valid and an invalid code are indistinguishable from the response',
+      probeGood.status === probeBad.status
+      && shape(goodBody, `zgorc${stamp}`) === shape(badBody, `zgorb${stamp}`),
+      `${probeGood.status} vs ${probeBad.status}`);
+  }
 
   // ── THE SURFACES: what an administrator and an inviter can actually SEE ──
   //

@@ -95,6 +95,13 @@ export const ACCOUNT_AUDIT_ACTIONS = [
   'referral_qualified',
   'referral_reward_granted',
   'referral_reward_reversed',
+  /**
+   * A referral code at signup that matched no account, or matched the signer
+   * themselves. Recorded because the branch that dropped it did so in silence:
+   * somebody walking the code space left no trace, and a real user who mistyped
+   * a friend's code had no record of why they were never credited.
+   */
+  'referral_code_unusable',
 
   // Vendor identity
   'vendor_name_change_requested',

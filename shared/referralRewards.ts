@@ -69,3 +69,23 @@ export const DEFAULT_ATTRIBUTION_WINDOW_DAYS = 90;
 /** The bounds an administrator may choose within. */
 export const MIN_ATTRIBUTION_WINDOW_DAYS = 1;
 export const MAX_ATTRIBUTION_WINDOW_DAYS = 730;
+
+/**
+ * ── THE PLATFORM-WIDE BRAKE ────────────────────────────────────────────────
+ *
+ * Campaign caps bound ONE campaign. Nothing bounded an account across all of
+ * them, so somebody running many invitations through a rotation of campaigns
+ * could collect without limit - each campaign correctly reporting that its own
+ * cap was intact.
+ *
+ * This is a fraud brake, not a business parameter: it sits far above what any
+ * legitimate inviter reaches, and its job is to make a runaway visible rather
+ * than to shape a campaign. The number a campaign owner actually tunes is
+ * `perInviterCap`, per campaign, which is unchanged.
+ *
+ * NOT ADMINISTRABLE YET, and said plainly rather than faked: BuildHub has no
+ * platform-settings table, and inventing one for a single number would be a
+ * second configuration system beside the campaign rows that already exist.
+ * When a settings surface lands this becomes a row in it.
+ */
+export const GLOBAL_REFERRAL_REWARD_CAP = 25;

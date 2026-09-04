@@ -40,9 +40,9 @@
  * NOTHING HERE WRITES. It answers a question; the engine decides what to do
  * with the answer, and is the only thing that binds.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { referralCampaigns, referralRewards } from '../drizzle/schema';
-import type { ReferralQualificationType } from '../shared/referralRewards';
+import { GLOBAL_REFERRAL_REWARD_CAP, type ReferralQualificationType } from '../shared/referralRewards';
 
 export type CampaignRow = {
   id: number;
@@ -71,6 +71,7 @@ export type CampaignRow = {
  * administrator investigating a complaint needs the first one.
  */
 export type CampaignRejection =
+  | 'global_cap_reached'
   | 'not_active'
   | 'not_started'
   | 'ended'
@@ -124,14 +125,40 @@ export type ResolutionInput = {
  * a qualifying event is on the hot path of a real user action.
  */
 async function capUsage(db: any, campaignIds: number[], referrerId: number) {
-  if (campaignIds.length === 0) return { perCampaign: new Map<number, number>(), perInviter: new Map<number, number>() };
+  if (campaignIds.length === 0) {
+    return { perCampaign: new Map<number, number>(), perInviter: new Map<number, number>(), globalForInviter: 0 };
+  }
 
+  /*
+   * RESTRICTED TO THE CANDIDATES. This grouped the WHOLE reward ledger and
+   * filtered the result in JavaScript, so every qualifying event - on the hot
+   * path of a real user action - scanned every reward the platform had ever
+   * written.
+   */
   const rows = await db.select({
     campaignId: referralRewards.campaignId,
     recipientUserId: referralRewards.recipientUserId,
     status: referralRewards.status,
     total: sql<number>`count(*)`,
-  }).from(referralRewards).groupBy(referralRewards.campaignId, referralRewards.recipientUserId, referralRewards.status);
+  }).from(referralRewards)
+    .where(inArray(referralRewards.campaignId, campaignIds))
+    .groupBy(referralRewards.campaignId, referralRewards.recipientUserId, referralRewards.status);
+
+  /*
+   * AND WHAT THIS ACCOUNT HAS TAKEN ACROSS EVERY CAMPAIGN, which the per-
+   * campaign numbers cannot see: each campaign's own cap can be intact while an
+   * account collects without limit through a rotation of them.
+   */
+  const globalRows = await db.select({
+    status: referralRewards.status,
+    total: sql<number>`count(*)`,
+  }).from(referralRewards)
+    .where(eq(referralRewards.recipientUserId, referrerId))
+    .groupBy(referralRewards.status);
+  let globalForInviter = 0;
+  for (const row of globalRows as any[]) {
+    if (COUNTS_TOWARD_CAP.has(String(row.status))) globalForInviter += Number(row.total ?? 0);
+  }
 
   const perCampaign = new Map<number, number>();
   const perInviter = new Map<number, number>();
@@ -153,7 +180,7 @@ async function capUsage(db: any, campaignIds: number[], referrerId: number) {
       perInviter.set(campaignId, (perInviter.get(campaignId) ?? 0) + count);
     }
   }
-  return { perCampaign, perInviter };
+  return { perCampaign, perInviter, globalForInviter };
 }
 
 /**
@@ -163,7 +190,7 @@ async function capUsage(db: any, campaignIds: number[], referrerId: number) {
 export function chooseCampaign(
   campaigns: readonly CampaignRow[],
   input: ResolutionInput,
-  usage: { perCampaign: Map<number, number>; perInviter: Map<number, number> },
+  usage: { perCampaign: Map<number, number>; perInviter: Map<number, number>; globalForInviter?: number },
 ): CampaignResolution {
   const now = input.eventAt.getTime();
   const rejections: { campaignId: number; name: string; reason: CampaignRejection }[] = [];
@@ -172,6 +199,25 @@ export function chooseCampaign(
     rejections.push({ campaignId: campaign.id, name: campaign.name, reason });
     return false;
   };
+
+  /*
+   * THE PLATFORM BRAKE, CHECKED FIRST AND FOR EVERY CANDIDATE.
+   *
+   * Campaign caps each bound one campaign, so an account working through a
+   * rotation of campaigns collected without limit while every campaign
+   * correctly reported its own cap intact. This is above what any legitimate
+   * inviter reaches; reaching it means something is wrong, and the rejection
+   * says which rule stopped it rather than reporting "no eligible campaign".
+   */
+  if ((usage.globalForInviter ?? 0) >= GLOBAL_REFERRAL_REWARD_CAP) {
+    return {
+      ok: false,
+      considered: campaigns.length,
+      rejections: campaigns.map(campaign => ({
+        campaignId: campaign.id, name: campaign.name, reason: 'global_cap_reached' as const,
+      })),
+    };
+  }
 
   const eligible = campaigns.filter(campaign => {
     if (campaign.status !== 'active') return reject(campaign, 'not_active');
