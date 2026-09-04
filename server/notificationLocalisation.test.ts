@@ -129,7 +129,10 @@ describe('every key the server can write has both languages', () => {
       // carries the reference and the subject and nothing a person typed, so a
       // `.bodyNote` for it would be a template for a case that never occurs.
       const CARRY_NOTE = ['notif.compliance.', 'notif.referral.reversed.', 'notif.dispute.'];
-      const NO_NOTE = ['notif.dispute.raised'];
+      // Neither carries a person's words: `raised` names the reference and the
+      // subject, `message` names the reference. A `.bodyNote` for either would
+      // be a template for a case that never occurs.
+      const NO_NOTE = ['notif.dispute.raised', 'notif.dispute.message'];
       const missing = expandedKeys()
         .filter(key => CARRY_NOTE.some(prefix => key.startsWith(prefix)))
         .filter(key => !NO_NOTE.includes(key))

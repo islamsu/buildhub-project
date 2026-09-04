@@ -579,7 +579,10 @@ describe('§3 uploads are checked against their bytes', () => {
     // the ninth site is genuinely byte-checked and this is a stale counter
     // rather than an unguarded endpoint. The equality below is the real
     // invariant; the count exists so a NEW path cannot arrive unnoticed.
-    expect(puts).toBe(9);
+    // TEN since dispute evidence became an upload path - a participant
+    // attaching a photograph or a specification to make their case. Verified
+    // the same way before the number moved: `asserted + validated` is 10 too.
+    expect(puts).toBe(10);
     expect(asserted + validated).toBe(puts);
   });
 

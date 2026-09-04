@@ -172,7 +172,8 @@ describe('§2 storage.ts keeps its contract', () => {
     // NINE since provider portfolio images became an upload path of their own,
     // and it goes through the same wrapper rather than touching a bucket
     // directly - which is the property this count protects.
-    expect(calls.length).toBe(9);
+    // TEN since dispute evidence joined them, through the same wrapper.
+    expect(calls.length).toBe(10);
     for (const prefix of [
       'registration/', 'project-documents/', 'message-attachments/', 'avatars/',
       // AI attachments get their own prefix so the proxy can classify them,
@@ -181,6 +182,10 @@ describe('§2 storage.ts keeps its contract', () => {
       // Product images likewise: a separate prefix is what lets the proxy
       // treat them as public-by-design without widening any other category.
       'product-images/',
+      // Dispute evidence: its own prefix so the proxy can resolve the file to
+      // its dispute and apply the dispute's own eligibility rule, rather than
+      // inheriting a category with a wider audience.
+      'dispute-evidence/',
     ]) {
       expect(ROUTERS_SOURCE).toContain(prefix);
     }

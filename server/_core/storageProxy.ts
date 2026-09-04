@@ -3,7 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { getObjectStorage, isObjectStorageConfigured } from "./objectStorage";
 import { sdk, type AuthenticatedUser } from "./sdk";
 import { getDb } from "../db";
-import { aiAttachments, documents, messages, projects, qualifiedEnquiries, quotations, registrationDocumentSubmissions, rfqs } from "../../drizzle/schema";
+import { aiAttachments, disputeEvidence, disputes, documents, messages, projects, qualifiedEnquiries, quotations, registrationDocumentSubmissions, rfqs } from "../../drizzle/schema";
+import { canReadDispute } from "../disputeEligibility";
 import { parseRfqAttachments } from "../../shared/rfqAttachments";
 
 async function authenticateStorageRequest(req: Request): Promise<AuthenticatedUser | null> {
@@ -215,6 +216,30 @@ export async function authorizeStorageKey(key: string, user: AuthenticatedUser |
       .from(messages)
       .where(eq(messages.fileUrl, url));
     return !!row && (row.senderId === user.id || row.receiverId === user.id);
+  }
+
+  /**
+   * Category F: DISPUTE EVIDENCE - only somebody entitled to read the dispute
+   * the file belongs to.
+   *
+   * The key is looked up in `disputeEvidence` and the DISPUTE it names is then
+   * put through the same eligibility service the dispute API uses, so a
+   * participant in dispute A cannot fetch dispute B's file by guessing a key,
+   * and a supplier who lost a bid cannot read the evidence in the dispute the
+   * winner is in. Unpredictability of the key is never the control.
+   *
+   * A WITHDRAWN FILE IS NOT DOWNLOADABLE. The row survives so the record shows
+   * it existed and who withdrew it; serving the bytes afterwards would make the
+   * withdrawal cosmetic.
+   */
+  if (key.startsWith('dispute-evidence/')) {
+    const [file] = await db.select({
+      disputeId: disputeEvidence.disputeId, removedAt: disputeEvidence.removedAt,
+    }).from(disputeEvidence).where(eq(disputeEvidence.storageKey, key));
+    if (!file || file.removedAt) return false;
+    const [dispute] = await db.select().from(disputes).where(eq(disputes.id, file.disputeId));
+    if (!dispute) return false;
+    return canReadDispute(db, dispute as never, user.id);
   }
 
   // Anything outside the classified categories above (e.g. unused/legacy prefixes) fails closed.

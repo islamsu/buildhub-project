@@ -173,7 +173,10 @@ describe('all upload paths behave the same way', () => {
     // specification, a certificate or a photograph to their quotation - the
     // eighth upload path, and the first that flows provider -> customer.
     // NINE since provider portfolio images became an upload path of their own.
-    expect(wrapped.length).toBe(9);
+    // TEN since dispute evidence joined them: a participant attaching a
+    // photograph or a specification to make their case gets the same honest
+    // 503 as everyone else when no storage backend is configured.
+    expect(wrapped.length).toBe(10);
   });
 
   it('anything that is NOT a configuration problem still propagates', () => {

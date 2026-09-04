@@ -49,7 +49,9 @@ import { explainEnquiryAllowance } from './billing/allowanceBreakdown';
 import { splitCampaignEdit, refuseCampaignEdit, refuseCampaignDates } from './referralCampaignEdit';
 import {
   DISPUTE_ADMIN_SETTABLE_STATUSES, DISPUTE_CATEGORIES, DISPUTE_SUBJECT_TYPES,
-  DISPUTE_RESOLUTION_TYPES, DISPUTE_PRIORITIES,
+  DISPUTE_RESOLUTION_TYPES, DISPUTE_PRIORITIES, DISPUTE_OPEN_STATUSES,
+  DISPUTE_EVIDENCE_CONTENT_TYPES, isAllowedDisputeEvidenceType,
+  MAX_DISPUTE_EVIDENCE_SIZE, MAX_DISPUTE_EVIDENCE_FILES, MAX_DISPUTE_MESSAGE_LENGTH,
 } from '@shared/disputes';
 import { applyTransition } from './disputeWorkflow';
 import { notifyDisputeParties } from './disputeNotifications';
@@ -87,7 +89,7 @@ import {
   projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals, referralCampaigns, referralRewards,
   disputeStatusHistory, disputeMessages, disputeEvidence,
 } from '../drizzle/schema';
-import { and, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, type ComplianceDocumentStatus } from '../shared/compliance';
@@ -4339,17 +4341,186 @@ const disputesRouter = router({
       const subject = hasSubject(dispute)
         ? await partiesForSubject(db, dispute.subjectType, Number(dispute.subjectId))
         : null;
-      const history = await db.select().from(disputeStatusHistory)
-        .where(eq(disputeStatusHistory.disputeId, input.disputeId))
-        .orderBy(desc(disputeStatusHistory.createdAt))
-        .limit(100);
+      const [history, messages, evidence] = await Promise.all([
+        db.select().from(disputeStatusHistory)
+          .where(eq(disputeStatusHistory.disputeId, input.disputeId))
+          .orderBy(desc(disputeStatusHistory.createdAt)).limit(100),
+        /*
+         * PARTICIPANT MESSAGES ONLY. Internal admin notes live in `adminNotes`
+         * with subjectType 'dispute' and are not in this table at all, so no
+         * query against it can leak one - the separation is a table rather than
+         * a visibility column precisely so a forgotten clause cannot show a
+         * reporter what an administrator wrote about them.
+         */
+        db.select({
+          id: disputeMessages.id, authorId: disputeMessages.authorId,
+          body: disputeMessages.body, createdAt: disputeMessages.createdAt,
+        }).from(disputeMessages)
+          .where(eq(disputeMessages.disputeId, input.disputeId))
+          .orderBy(asc(disputeMessages.createdAt)).limit(200),
+        db.select({
+          id: disputeEvidence.id, uploadedBy: disputeEvidence.uploadedBy,
+          fileName: disputeEvidence.fileName, contentType: disputeEvidence.contentType,
+          sizeBytes: disputeEvidence.sizeBytes, storageKey: disputeEvidence.storageKey,
+          removedAt: disputeEvidence.removedAt, createdAt: disputeEvidence.createdAt,
+        }).from(disputeEvidence)
+          .where(eq(disputeEvidence.disputeId, input.disputeId))
+          .orderBy(desc(disputeEvidence.createdAt)).limit(100),
+      ]);
       return {
         dispute,
         // The label only. The cast of the subject is not a participant's
         // business, and returning it here would leak who else bid on an RFQ.
         subjectLabel: subject?.label ?? null,
         history,
+        messages,
+        // A removed file keeps its row so the record shows it existed and who
+        // withdrew it, but the key is withheld: it is no longer downloadable.
+        evidence: evidence.map((row: any) => ({
+          ...row,
+          url: row.removedAt ? null : `/manus-storage/${row.storageKey}`,
+          storageKey: undefined,
+        })),
       };
+    }),
+
+  /**
+   * ── WHAT THE PARTICIPANTS SAY TO EACH OTHER ──────────────────────────────
+   *
+   * A dispute with no way to answer it is a complaint, not a process: the
+   * respondent could be named and had no means of replying anywhere the record
+   * would show it.
+   *
+   * Only while the dispute is LIVE. Adding to a concluded dispute would put
+   * unanswered words after a decision; reopening it is the route, and that has
+   * its own reason and its own record.
+   */
+  postMessage: protectedProcedure
+    .input(z.object({
+      disputeId: z.number().int().positive(),
+      body: z.string().trim().min(1).max(MAX_DISPUTE_MESSAGE_LENGTH),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const dispute = await requireDisputeAccess(db, input.disputeId, ctx.user.id);
+      if (!DISPUTE_OPEN_STATUSES.includes(dispute.status)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `This dispute is ${dispute.status} and is no longer open for messages. Reopen it if there is more to say.`,
+        });
+      }
+      const result = await db.insert(disputeMessages).values({
+        disputeId: input.disputeId, authorId: ctx.user.id, body: input.body,
+      });
+
+      // The OTHER side is told. A message nobody hears about is a note to self.
+      for (const userId of [dispute.reporterId, dispute.respondentId]) {
+        if (userId == null || Number(userId) === ctx.user.id) continue;
+        await notifyUser(db, {
+          userId: Number(userId),
+          title: 'New message on a dispute',
+          body: `${dispute.reference ?? dispute.id}`,
+          type: 'dispute',
+          link: `/disputes/${input.disputeId}`,
+          messageKey: 'notif.dispute.message',
+          messageParams: { reference: dispute.reference ?? String(dispute.id) },
+        });
+      }
+      return { id: Number(result[0].insertId) };
+    }),
+
+  /**
+   * ── EVIDENCE ─────────────────────────────────────────────────────────────
+   *
+   * Stored through the same `storagePut` every other upload uses, under a
+   * `dispute-evidence/` prefix that server/_core/storageProxy.ts checks against
+   * the dispute the file belongs to. A participant in dispute A cannot fetch
+   * dispute B's file by guessing a key: the proxy fails closed on anything it
+   * cannot classify, and this category is verified against the owning row.
+   */
+  addEvidence: protectedProcedure
+    .input(z.object({
+      disputeId: z.number().int().positive(),
+      fileName: z.string().trim().min(1).max(255),
+      contentType: z.string().refine(isAllowedDisputeEvidenceType, 'Evidence must be a PDF or an image'),
+      base64: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      enforceUploadRateLimit(ctx.user.id);
+      const db = await requireDb();
+      const dispute = await requireDisputeAccess(db, input.disputeId, ctx.user.id);
+      if (!DISPUTE_OPEN_STATUSES.includes(dispute.status)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `This dispute is ${dispute.status}. Evidence cannot be added after it has been concluded.`,
+        });
+      }
+
+      const [existing] = await db.select({ count: sql<number>`count(*)` })
+        .from(disputeEvidence)
+        .where(and(eq(disputeEvidence.disputeId, input.disputeId), isNull(disputeEvidence.removedAt)));
+      if (Number(existing?.count ?? 0) >= MAX_DISPUTE_EVIDENCE_FILES) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `A dispute may carry at most ${MAX_DISPUTE_EVIDENCE_FILES} files.`,
+        });
+      }
+
+      const bytes = Buffer.from(input.base64, 'base64');
+      if (bytes.length === 0 || bytes.length > MAX_DISPUTE_EVIDENCE_SIZE) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Evidence files must be between 1 byte and 10MB' });
+      }
+      // The declared type is a label the caller controls both sides of; this
+      // reads the bytes.
+      assertUploadedFileMatches(input.contentType, bytes, DISPUTE_EVIDENCE_CONTENT_TYPES);
+
+      const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const { key } = await storagePutOrUnavailable(
+        `dispute-evidence/${input.disputeId}/${Date.now()}-${safeName}`, bytes, input.contentType);
+
+      const result = await db.insert(disputeEvidence).values({
+        disputeId: input.disputeId, uploadedBy: ctx.user.id, storageKey: key,
+        fileName: input.fileName, contentType: input.contentType, sizeBytes: bytes.length,
+      });
+      await recordAccountEvent(db, {
+        userId: dispute.reporterId, actorId: ctx.user.id,
+        action: 'dispute_evidence_added', source: 'dispute',
+        note: `${dispute.reference ?? dispute.id}: ${input.fileName}`.slice(0, 500),
+      });
+      return { id: Number(result[0].insertId), url: `/manus-storage/${key}` };
+    }),
+
+  /**
+   * Withdraw a file you attached.
+   *
+   * SOFT, and only your own. The row stays so the record shows the file existed
+   * and who withdrew it - deleting it outright would let a party quietly
+   * retract evidence the other side had already answered - and only the person
+   * who uploaded it may withdraw it, because removing the other side's evidence
+   * is not a thing a party gets to do.
+   */
+  removeEvidence: protectedProcedure
+    .input(z.object({ evidenceId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [file] = await db.select().from(disputeEvidence).where(eq(disputeEvidence.id, input.evidenceId));
+      // NOT_FOUND before anything else, so an id cannot be probed.
+      if (!file) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evidence not found' });
+      const dispute = await requireDisputeAccess(db, Number(file.disputeId), ctx.user.id);
+      if (Number(file.uploadedBy) !== ctx.user.id) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Only the person who attached a file can withdraw it.' });
+      }
+      if (file.removedAt) return { success: true as const, changed: false };
+
+      await db.update(disputeEvidence)
+        .set({ removedAt: new Date(), removedBy: ctx.user.id })
+        .where(eq(disputeEvidence.id, input.evidenceId));
+      await recordAccountEvent(db, {
+        userId: dispute.reporterId, actorId: ctx.user.id,
+        action: 'dispute_evidence_removed', source: 'dispute',
+        note: `${dispute.reference ?? dispute.id}: ${file.fileName}`.slice(0, 500),
+      });
+      return { success: true as const, changed: true };
     }),
 });
 
@@ -7653,6 +7824,54 @@ const adminRouter = router({
     });
     return { success: true as const, from: moved.from, to: moved.to };
   }),
+
+  /**
+   * ── INTERNAL NOTES ON A DISPUTE ──────────────────────────────────────────
+   *
+   * `adminNotes.subjectType` has always allowed 'dispute' and NOTHING HAS EVER
+   * WRITTEN ONE. An administrator working a dispute had no private place to
+   * record what they had checked, so the only writable text on a dispute was
+   * the resolution notes - which the parties read.
+   *
+   * A SEPARATE TABLE from `disputeMessages`, not a visibility flag on it: a
+   * forgotten `where visibility='participants'` would show a reporter what an
+   * administrator wrote about them, and a rule that can be got wrong by
+   * omitting a clause eventually will be.
+   */
+  disputeNotes: adminWith('support.manage')
+    .input(z.object({ disputeId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return db.select({
+        id: adminNotes.id, note: adminNotes.note, createdAt: adminNotes.createdAt,
+        authorId: adminNotes.authorId, authorName: users.name,
+      }).from(adminNotes)
+        .innerJoin(users, eq(users.id, adminNotes.authorId))
+        .where(and(eq(adminNotes.subjectType, 'dispute'), eq(adminNotes.subjectId, input.disputeId)))
+        .orderBy(desc(adminNotes.createdAt))
+        .limit(100);
+    }),
+
+  addDisputeNote: adminWith('support.manage')
+    .input(z.object({
+      disputeId: z.number().int().positive(),
+      note: z.string().trim().min(1).max(2000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      // The dispute must exist. Writing a note against an id that does not
+      // resolve produces an orphan nobody will ever read.
+      const [dispute] = await db.select({ id: disputes.id }).from(disputes).where(eq(disputes.id, input.disputeId));
+      if (!dispute) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dispute not found' });
+      const result = await db.insert(adminNotes).values({
+        subjectType: 'dispute', subjectId: input.disputeId,
+        note: input.note, authorId: ctx.user.id,
+      });
+      // NOT audited against the reporter and NOT notified: this is the
+      // administrator's own working note, and telling a party it exists would
+      // defeat the point of it being internal.
+      return { id: Number(result[0].insertId) };
+    }),
 
   /**
    * ASSIGNMENT. `assignedTo` existed on no screen and in no procedure, while

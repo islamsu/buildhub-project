@@ -121,3 +121,39 @@ export function parseDisputeReference(raw: string): number | null {
   const id = Number(match[2]);
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
+
+/**
+ * ── EVIDENCE ───────────────────────────────────────────────────────────────
+ *
+ * The content types a participant may attach to make their case.
+ *
+ * NARROWED TO WHAT THE SERVER CAN ACTUALLY VERIFY, following the correction
+ * already made to project documents: that list once accepted `text/*` and any
+ * `image/*` while the byte sniffer immediately afterwards accepted only the
+ * formats with a magic number, so a .txt passed validation and came back
+ * rejected. A declared type nothing can verify is not a capability, and the
+ * refusal arriving after the user has picked the file is the worst moment for
+ * it. A test holds this against the sniffer's own list.
+ */
+export const DISPUTE_EVIDENCE_CONTENT_TYPES = [
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf',
+] as const;
+
+export function isAllowedDisputeEvidenceType(contentType: string): boolean {
+  return (DISPUTE_EVIDENCE_CONTENT_TYPES as readonly string[]).includes(contentType);
+}
+
+/**
+ * 10MB, matching registration documents.
+ *
+ * Evidence is a photograph of a delivery or a page of a specification, not a
+ * drawing set; a limit that invites a 100MB upload over a Cairo mobile
+ * connection is a limit that produces failed uploads rather than evidence.
+ */
+export const MAX_DISPUTE_EVIDENCE_SIZE = 10 * 1024 * 1024;
+
+/** How many files one dispute may carry, so it cannot be used as free storage. */
+export const MAX_DISPUTE_EVIDENCE_FILES = 20;
+
+/** How long a participant message may be. Long enough to explain, bounded. */
+export const MAX_DISPUTE_MESSAGE_LENGTH = 5000;

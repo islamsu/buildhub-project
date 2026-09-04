@@ -117,8 +117,11 @@ describe('the limiter is actually wired to the endpoints that needed it', () => 
     // bulk product import accepts a file without being named upload*, so it
     // takes a limit of its own. Portfolio image upload is the ninth endpoint,
     // added with provider portfolios.
+    // ELEVEN over TEN endpoints since dispute evidence became an upload path:
+    // an authenticated party can otherwise push 10MB per request in a loop, and
+    // the dispute they are pushing into is one they are entitled to write to.
     const wired = SOURCE.match(/enforceUploadRateLimit\(ctx\.user\.id\)/g) ?? [];
-    expect(wired).toHaveLength(10);
+    expect(wired).toHaveLength(11);
 
     const uploadEndpoints = SOURCE.match(/^\s+upload[A-Za-z]+:/gm) ?? [];
     expect(
