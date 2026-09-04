@@ -1051,6 +1051,90 @@ try {
     }
   }
 
+
+  // ── CAMPAIGN ADMINISTRATION: correctable, but not rewritable after payout ──
+  {
+    const fresh = campaign(`ZG Editable ${stamp}`, { priority: 950, rewardValue: '2', status: 'draft' });
+
+    // A campaign that has paid NOTHING can be corrected. Before this, terms
+    // could not be edited at all: the only remedy was to end the campaign and
+    // create another, losing its history and its identity.
+    const corrected = await admin.mutate('admin.updateReferralCampaign', {
+      campaignId: fresh, rewardValue: '4', eligibleInviterRoles: ['supplier', 'contractor'],
+      attributionWindowDays: 30,
+    });
+    check('CAMPAIGN: an unpaid campaign can have its TERMS corrected',
+      corrected.status === 200 && corrected.data?.changed === true,
+      `${corrected.status} ${corrected.error ?? ''}`);
+    check('CAMPAIGN: and the correction actually reached the database',
+      sql(`select concat(rewardValue,'|',attributionWindowDays) from referralCampaigns where id=${fresh}`) === '4|30',
+      sql(`select concat(rewardValue,'|',attributionWindowDays) from referralCampaigns where id=${fresh}`));
+
+    /*
+     * Now make it pay something, and the promise is fixed.
+     *
+     * The recipient is deliberately NOT the main inviter: the audit section
+     * below asserts one audit row per reward for that account, and a row this
+     * probe plants directly is by definition a grant BuildHub never made. The
+     * first version used the inviter and turned a correct audit assertion into
+     * a failure.
+     */
+    sql(`insert into referralRewards (referralId, campaignId, recipientUserId, rewardType, rewardValue, status)
+         values (${referralId}, ${fresh}, ${second.id}, 'EXTRA_QUALIFIED_ENQUIRIES', '4', 'GRANTED')`);
+    const refused = await admin.mutate('admin.updateReferralCampaign', {
+      campaignId: fresh, rewardValue: '99',
+    });
+    check('CAMPAIGN: once it has granted a reward its terms are FIXED',
+      refused.status !== 200 && /terms are fixed/i.test(refused.error ?? ''),
+      `${refused.status} ${refused.error ?? ''}`);
+    check('CAMPAIGN: and nothing was written by the refused edit',
+      sql(`select rewardValue from referralCampaigns where id=${fresh}`) === '4',
+      sql(`select rewardValue from referralCampaigns where id=${fresh}`));
+
+    /*
+     * THE FREEZE IS NOT A BLANKET LOCK. Pausing or ending a live campaign is
+     * exactly what an administrator needs to do in a hurry, and a freeze that
+     * caught those would be worse than the gap it closed.
+     */
+    const paused = await admin.mutate('admin.updateReferralCampaign', { campaignId: fresh, status: 'paused' });
+    check('CAMPAIGN: but it can still be PAUSED after paying out',
+      paused.status === 200 && sql(`select status from referralCampaigns where id=${fresh}`) === 'paused',
+      `${paused.status} ${sql(`select status from referralCampaigns where id=${fresh}`)}`);
+    const recapped = await admin.mutate('admin.updateReferralCampaign', { campaignId: fresh, perInviterCap: 9 });
+    check('CAMPAIGN: and its caps changed, because those govern what happens NEXT',
+      recapped.status === 200 && sql(`select perInviterCap from referralCampaigns where id=${fresh}`) === '9');
+
+    // Dates are re-checked AFTER an edit, not only at creation.
+    const backwards = await admin.mutate('admin.updateReferralCampaign', {
+      campaignId: fresh,
+      startsAt: new Date(Date.now() + 20 * 86400000).toISOString(),
+      endsAt: new Date(Date.now() + 5 * 86400000).toISOString(),
+    });
+    check('CAMPAIGN: an end date before the start is refused on EDIT, not only on create',
+      backwards.status !== 200 && /after its start date/i.test(backwards.error ?? ''),
+      `${backwards.status} ${backwards.error ?? ''}`);
+
+    // The attribution window is settable at creation now - every campaign ever
+    // made took the column default, so a short promotion could not say so.
+    const shortWindow = await admin.mutate('admin.createReferralCampaign', {
+      name: `ZG Window ${stamp}`, status: 'draft',
+      eligibleInviterRoles: ['supplier'], eligibleReferredRoles: ['homeowner'],
+      qualificationType: 'ACCOUNT_VERIFIED', rewardType: 'EXTRA_QUALIFIED_ENQUIRIES',
+      rewardValue: '1', perInviterCap: 1, attributionWindowDays: 7,
+    });
+    if (shortWindow.status === 200) made.campaigns.push(Number(shortWindow.data?.campaignId));
+    check('CAMPAIGN: the attribution window can be set at creation',
+      shortWindow.status === 200
+      && sql(`select attributionWindowDays from referralCampaigns where id=${shortWindow.data?.campaignId}`) === '7',
+      `${shortWindow.status} ${shortWindow.error ?? ''}`);
+
+    // RBAC: an ordinary account cannot administer campaigns.
+    const denied = await inviter.session.mutate('admin.updateReferralCampaign', { campaignId: fresh, status: 'ended' });
+    check('CAMPAIGN: an ordinary account cannot change a campaign',
+      denied.status !== 200 && sql(`select status from referralCampaigns where id=${fresh}`) === 'paused',
+      `${denied.status} ${denied.error ?? ''}`);
+  }
+
   // ── AUDIT AND NOTIFICATION ─────────────────────────────────────────────
   // ONE AUDIT ROW PER REWARD, not a hard-coded one: the second referral also
   // paid this inviter, from the next eligible campaign. Tying the count to the

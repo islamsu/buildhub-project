@@ -46,6 +46,10 @@ import {
   listAdminReferrals, listReferralRewards, listMyReferralRewards, myReferralCounts,
 } from './referralRewardView';
 import { explainEnquiryAllowance } from './billing/allowanceBreakdown';
+import { splitCampaignEdit, refuseCampaignEdit, refuseCampaignDates } from './referralCampaignEdit';
+import {
+  DEFAULT_ATTRIBUTION_WINDOW_DAYS, REFERRAL_QUALIFICATION_TYPES, REFERRAL_REWARD_TYPES,
+} from '@shared/referralRewards';
 import {
   assertSuperAdminSurvives, assertUserDirectoryMutationAllowed,
 } from './adminAuthority';
@@ -5203,10 +5207,17 @@ const adminRouter = router({
       rewardDurationDays: z.number().int().positive().optional(),
       perInviterCap: z.number().int().positive().default(1),
       campaignCap: z.number().int().positive().optional(),
+      /*
+       * THE ATTRIBUTION WINDOW WAS NOT SETTABLE AT ALL, so every campaign ever
+       * created took the column default and an administrator running a
+       * short-lived promotion could not say so. It is part of eligibility -
+       * "your invite was 100 days old and the window is 90" is a real answer a
+       * campaign owner needs to be able to configure.
+       */
+      attributionWindowDays: z.number().int().positive().max(3650).default(DEFAULT_ATTRIBUTION_WINDOW_DAYS),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const db = await requireDb();
       const startsAt = input.startsAt ? new Date(input.startsAt) : null;
       const endsAt = input.endsAt ? new Date(input.endsAt) : null;
       if (startsAt && endsAt && endsAt <= startsAt) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Campaign end date must be after its start date' });
@@ -5223,6 +5234,7 @@ const adminRouter = router({
         rewardDurationDays: input.rewardDurationDays ?? null,
         perInviterCap: input.perInviterCap,
         campaignCap: input.campaignCap ?? null,
+        attributionWindowDays: input.attributionWindowDays,
         createdBy: ctx.user.id,
       });
       await recordAccountEvent(db, {
@@ -5234,6 +5246,22 @@ const adminRouter = router({
       });
       return { success: true, campaignId: Number(result[0]?.insertId ?? 0) };
     }),
+  /**
+   * EDIT A CAMPAIGN - including the terms, which could not be edited at all.
+   *
+   * This accepted name, status, dates and caps only. A campaign owner who got
+   * the reward value or the eligible roles wrong had no way to correct them:
+   * the only remedy was to end the campaign and create another, which loses its
+   * history and its identity.
+   *
+   * TERMS ARE FROZEN ONCE SOMETHING HAS BEEN PAID OUT. The reward is snapshotted
+   * onto the ledger row when it is granted, so editing the campaign never
+   * changes what anybody already received - but an administrator investigating
+   * "why did this vendor get 5" would read the campaign and see 9, and the
+   * ledger would appear to disagree with the campaign it names. What was
+   * promised is not rewritten after it has been given; the schedule and the
+   * caps stay editable because those govern what happens NEXT.
+   */
   updateReferralCampaign: adminWith('marketplace.manage')
     .input(z.object({
       campaignId: z.number().int().positive(),
@@ -5243,18 +5271,58 @@ const adminRouter = router({
       endsAt: z.string().datetime().optional(),
       perInviterCap: z.number().int().positive().optional(),
       campaignCap: z.number().int().positive().optional(),
+      // ── The terms, editable only before the campaign has paid anything ──
+      eligibleInviterRoles: z.array(z.string()).min(1).optional(),
+      eligibleReferredRoles: z.array(z.string()).min(1).optional(),
+      qualificationType: z.enum(REFERRAL_QUALIFICATION_TYPES).optional(),
+      rewardType: z.enum(REFERRAL_REWARD_TYPES).optional(),
+      rewardValue: z.string().trim().min(1).max(100).optional(),
+      rewardDurationDays: z.number().int().positive().nullable().optional(),
+      attributionWindowDays: z.number().int().positive().max(3650).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const patch: Record<string, string | number | Date | null> = {};
-      if (input.name !== undefined) patch.name = input.name;
-      if (input.status !== undefined) patch.status = input.status;
-      if (input.startsAt !== undefined) patch.startsAt = input.startsAt ? new Date(input.startsAt) : null;
-      if (input.endsAt !== undefined) patch.endsAt = input.endsAt ? new Date(input.endsAt) : null;
-      if (input.perInviterCap !== undefined) patch.perInviterCap = input.perInviterCap;
-      if (input.campaignCap !== undefined) patch.campaignCap = input.campaignCap ?? null;
+      const db = await requireDb();
+      // Split by the rule in server/referralCampaignEdit.ts rather than here,
+      // so which half a field belongs to is one list and not a shape a reader
+      // has to reconstruct from a run of `if` statements.
+      const { schedule, terms } = splitCampaignEdit({
+        name: input.name,
+        status: input.status,
+        startsAt: input.startsAt === undefined ? undefined : (input.startsAt ? new Date(input.startsAt) : null),
+        endsAt: input.endsAt === undefined ? undefined : (input.endsAt ? new Date(input.endsAt) : null),
+        perInviterCap: input.perInviterCap,
+        campaignCap: input.campaignCap,
+        eligibleInviterRoles: input.eligibleInviterRoles === undefined
+          ? undefined : JSON.stringify(input.eligibleInviterRoles),
+        eligibleReferredRoles: input.eligibleReferredRoles === undefined
+          ? undefined : JSON.stringify(input.eligibleReferredRoles),
+        qualificationType: input.qualificationType,
+        rewardType: input.rewardType,
+        rewardValue: input.rewardValue,
+        rewardDurationDays: input.rewardDurationDays,
+        attributionWindowDays: input.attributionWindowDays,
+      });
+
+      // COUNTED, not assumed, and only when a term was actually asked for.
+      let grantedRewards = 0;
+      if (Object.keys(terms).length > 0) {
+        const [paid] = await db.select({ count: sql<number>`count(*)` })
+          .from(referralRewards).where(eq(referralRewards.campaignId, input.campaignId));
+        grantedRewards = Number(paid?.count ?? 0);
+      }
+      const refusal = refuseCampaignEdit(terms, grantedRewards);
+      if (refusal) throw new TRPCError({ code: 'BAD_REQUEST', message: refusal });
+
+      const patch = { ...schedule, ...terms } as Record<string, string | number | Date | null>;
       if (Object.keys(patch).length === 0) return { success: true as const, changed: false };
+
+      const [existing] = await db.select().from(referralCampaigns).where(eq(referralCampaigns.id, input.campaignId));
+      if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Campaign not found' });
+      const badDates = refuseCampaignDates(
+        (patch.startsAt ?? existing.startsAt) as Date | null,
+        (patch.endsAt ?? existing.endsAt) as Date | null,
+      );
+      if (badDates) throw new TRPCError({ code: 'BAD_REQUEST', message: badDates });
       await db.update(referralCampaigns).set(patch).where(eq(referralCampaigns.id, input.campaignId));
       await recordAccountEvent(db, {
         userId: ctx.user.id,

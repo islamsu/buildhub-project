@@ -8,6 +8,10 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { deriveRewardStatus, withDerivedStatus, liveRewards } from './referralRewardView';
+import {
+  splitCampaignEdit, refuseCampaignEdit, refuseCampaignDates,
+  CAMPAIGN_TERM_FIELDS, CAMPAIGN_SCHEDULE_FIELDS, TERMS_FIXED_MESSAGE,
+} from './referralCampaignEdit';
 
 const NOW = new Date('2026-06-01T12:00:00Z');
 const PAST = new Date('2026-05-01T00:00:00Z');
@@ -238,5 +242,148 @@ describe('the screens read the real reward, not the dead columns', () => {
     // Zero rewards is a real answer, stated plainly.
     expect(MINE).toContain('No referral reward has been granted to you yet.');
     expect(MINE).toContain('لم تُمنح لك أي مكافأة إحالة حتى الآن.');
+  });
+});
+
+// ── Campaign administration ────────────────────────────────────────────────
+
+describe('a campaign can be corrected, but not rewritten after it has paid', () => {
+  /*
+   * THESE WERE SOURCE ASSERTIONS AND THEY DID NOT HOLD.
+   *
+   * The first version checked that the update procedure's TEXT contained a
+   * count query and a message. Replacing the condition with `if (false)` -
+   * letting a paid-out campaign's terms be rewritten - left both strings in
+   * place and the tests passed. So did moving `status` into the frozen half,
+   * which would have stopped an administrator pausing a live campaign.
+   *
+   * The rule now lives in server/referralCampaignEdit.ts as code, and these
+   * exercise it. A mutation of the predicate or of either field list fails a
+   * real assertion rather than slipping past a grep.
+   */
+  const schedule = { name: 'New name', status: 'paused', perInviterCap: 3 };
+  const promise = { rewardValue: '9', qualificationType: 'FIRST_VALID_RFQ' };
+
+  it('splits an edit into the half that is always allowed and the half that is not', () => {
+    const split = splitCampaignEdit({ ...schedule, ...promise });
+    expect(Object.keys(split.schedule).sort()).toEqual(['name', 'perInviterCap', 'status']);
+    expect(Object.keys(split.terms).sort()).toEqual(['qualificationType', 'rewardValue']);
+  });
+
+  it('drops a field that is on neither list rather than writing it', () => {
+    // Passing an unlisted name through to `set()` would be a way to write
+    // columns this procedure never meant to expose.
+    const split = splitCampaignEdit({ name: 'ok', createdBy: 99, id: 1, totallyMadeUp: true });
+    expect(split.schedule).toEqual({ name: 'ok' });
+    expect(split.terms).toEqual({});
+  });
+
+  it('ignores fields the caller did not supply', () => {
+    expect(splitCampaignEdit({ name: undefined, rewardValue: undefined })).toEqual({ schedule: {}, terms: {} });
+  });
+
+  it('a campaign that has paid NOTHING can have its terms corrected', () => {
+    expect(refuseCampaignEdit(splitCampaignEdit(promise).terms, 0)).toBeNull();
+  });
+
+  it('a campaign that HAS paid cannot, and is told why', () => {
+    const refusal = refuseCampaignEdit(splitCampaignEdit(promise).terms, 1);
+    expect(refusal).toBe(TERMS_FIXED_MESSAGE);
+    expect(refusal).toMatch(/schedule and caps can still be changed/i);
+  });
+
+  it('ONE granted reward is enough - the freeze is not a threshold', () => {
+    expect(refuseCampaignEdit({ rewardValue: '9' }, 1)).not.toBeNull();
+  });
+
+  it('and the schedule stays editable on a campaign that has paid out', () => {
+    /*
+     * The freeze must not become a blanket lock. Pausing or ending a live
+     * campaign is exactly what an administrator needs to do in a hurry, and a
+     * freeze that caught those would be worse than the gap it closed.
+     */
+    const split = splitCampaignEdit(schedule);
+    expect(split.terms).toEqual({});
+    expect(refuseCampaignEdit(split.terms, 500)).toBeNull();
+    expect(split.schedule.status).toBe('paused');
+  });
+
+  it('every term field is actually frozen, one by one', () => {
+    for (const field of CAMPAIGN_TERM_FIELDS) {
+      const split = splitCampaignEdit({ [field]: 'x' });
+      expect(Object.keys(split.terms), `${field} is not treated as a term`).toEqual([field]);
+      expect(refuseCampaignEdit(split.terms, 1), `${field} is not frozen`).toBe(TERMS_FIXED_MESSAGE);
+    }
+  });
+
+  it('and every schedule field is actually free, one by one', () => {
+    for (const field of CAMPAIGN_SCHEDULE_FIELDS) {
+      const split = splitCampaignEdit({ [field]: 'x' });
+      expect(Object.keys(split.schedule), `${field} is not treated as schedule`).toEqual([field]);
+      expect(refuseCampaignEdit(split.terms, 999), `${field} was frozen`).toBeNull();
+    }
+  });
+
+  it('the two lists do not overlap', () => {
+    // A field on both would be silently frozen or silently free depending on
+    // which check ran first.
+    const overlap = (CAMPAIGN_TERM_FIELDS as readonly string[])
+      .filter(field => (CAMPAIGN_SCHEDULE_FIELDS as readonly string[]).includes(field));
+    expect(overlap).toEqual([]);
+  });
+
+  it('the dates are re-checked AFTER an edit, not only at creation', () => {
+    // Moving a start date past an existing end date produced a campaign that
+    // could never be eligible, silently.
+    expect(refuseCampaignDates(new Date('2026-06-01'), new Date('2026-05-01'))).toMatch(/after its start date/);
+    expect(refuseCampaignDates(new Date('2026-06-01'), new Date('2026-06-01'))).toMatch(/after its start date/);
+    expect(refuseCampaignDates(new Date('2026-06-01'), new Date('2026-07-01'))).toBeNull();
+    // An open-ended campaign is not a date error.
+    expect(refuseCampaignDates(new Date('2026-06-01'), null)).toBeNull();
+    expect(refuseCampaignDates(null, new Date('2026-07-01'))).toBeNull();
+  });
+
+  it('the router routes through the rule rather than restating it', () => {
+    // The one thing a behavioural test cannot see: that the procedure calls it.
+    const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    const update = ROUTERS.slice(
+      ROUTERS.indexOf('updateReferralCampaign: adminWith'),
+      ROUTERS.indexOf('referralRewards: adminWith'),
+    );
+    expect(update).toContain('splitCampaignEdit({');
+    expect(update).toContain('refuseCampaignEdit(terms, grantedRewards)');
+    expect(update).toContain('refuseCampaignDates(');
+    // And the count it passes is the campaign's own granted rewards.
+    expect(update).toContain('.from(referralRewards).where(eq(referralRewards.campaignId, input.campaignId))');
+  });
+
+  it('the attribution window is settable at creation, not only defaulted', () => {
+    // Every campaign ever created took the column default, so a short-lived
+    // promotion could not say so.
+    const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    const create = ROUTERS.slice(
+      ROUTERS.indexOf('createReferralCampaign: adminWith'),
+      ROUTERS.indexOf('updateReferralCampaign: adminWith'),
+    );
+    expect(create).toContain('attributionWindowDays: z.number()');
+    expect(create).toContain('attributionWindowDays: input.attributionWindowDays');
+  });
+
+  it('the campaign screen exists and can change a status', () => {
+    const ADMIN = readFileSync(new URL('../client/src/components/AdminReferrals.tsx', import.meta.url), 'utf8');
+    expect(ADMIN).toContain('trpc.admin.referralCampaigns.useQuery');
+    expect(ADMIN).toContain('trpc.admin.updateReferralCampaign.useMutation');
+    expect(ADMIN).toContain('tab-referral-campaigns');
+    // And it states the freeze rule, so an administrator learns it before
+    // trying rather than from an error.
+    expect(ADMIN).toContain('campaign-terms-note');
+    expect(ADMIN).toContain('fixed once it has granted its first reward');
+  });
+
+  it('with a truthful empty state that says WHY it matters', () => {
+    const ADMIN = readFileSync(new URL('../client/src/components/AdminReferrals.tsx', import.meta.url), 'utf8');
+    // No campaigns is not a neutral fact: it is the reason no reward can be
+    // granted, which is the state this whole subsystem was found in.
+    expect(ADMIN).toContain('No referral campaigns exist. No reward can be granted');
   });
 });

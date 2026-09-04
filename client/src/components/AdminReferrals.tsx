@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { Link } from 'wouter';
-import { Gift, Search, UsersRound } from 'lucide-react';
+import { Gift, Megaphone, Search, UsersRound } from 'lucide-react';
+import { DEFAULT_ATTRIBUTION_WINDOW_DAYS } from '@shared/referralRewards';
 
 /**
  * REFERRAL ADMINISTRATION, over the data that actually exists.
@@ -49,14 +50,17 @@ export default function AdminReferrals() {
     { retry: false },
   );
   const rewards = trpc.admin.referralRewards.useQuery({ page: rewardPage, pageSize: PAGE_SIZE }, { retry: false });
+  const campaigns = trpc.admin.referralCampaigns.useQuery(undefined, { retry: false });
 
   const utils = trpc.useUtils();
   const invalidate = () => {
     void utils.admin.referrals.invalidate();
     void utils.admin.referralRewards.invalidate();
+    void utils.admin.referralCampaigns.invalidate();
   };
   const qualify = trpc.admin.qualifyReferral.useMutation({ onSuccess: invalidate });
   const reverse = trpc.admin.reverseReferralReward.useMutation({ onSuccess: invalidate });
+  const updateCampaign = trpc.admin.updateReferralCampaign.useMutation({ onSuccess: invalidate });
 
   const statusLabel = (value: string) => {
     const labels: Record<string, string> = ar
@@ -129,6 +133,9 @@ export default function AdminReferrals() {
             <TabsTrigger value="referrals" data-testid="tab-referrals">{ar ? 'الإحالات' : 'Referrals'}</TabsTrigger>
             <TabsTrigger value="rewards" data-testid="tab-referral-rewards">
               <Gift className="me-1 h-4 w-4" />{ar ? 'المكافآت' : 'Rewards'}
+            </TabsTrigger>
+            <TabsTrigger value="campaigns" data-testid="tab-referral-campaigns">
+              <Megaphone className="me-1 h-4 w-4" />{ar ? 'الحملات' : 'Campaigns'}
             </TabsTrigger>
           </TabsList>
 
@@ -293,6 +300,89 @@ export default function AdminReferrals() {
               ar={ar} page={rewardPage} pageCount={pageCount(rewards.data?.total ?? 0)}
               total={rewards.data?.total ?? null} onChange={setRewardPage} testId="reward-pager"
             />
+          </TabsContent>
+
+          {/* ── CAMPAIGNS: six procedures that no client has ever called ──── */}
+          <TabsContent value="campaigns" className="space-y-3 pt-4">
+            {campaigns.isError ? (
+              <LoadFailed {...failedCopy} onRetry={() => void campaigns.refetch()} />
+            ) : (campaigns.data?.length ?? 0) === 0 ? (
+              <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
+                {ar
+                  ? 'لا توجد حملات إحالة. لن تُمنح أي مكافأة حتى تُنشأ حملة وتُفعَّل.'
+                  : 'No referral campaigns exist. No reward can be granted until one is created and made active.'}
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="w-full text-sm">
+                  <thead className="text-xs text-muted-foreground">
+                    <tr className="border-b">
+                      <th className="p-2 text-start">{ar ? 'الحملة' : 'Campaign'}</th>
+                      <th className="p-2 text-start">{ar ? 'يُؤهِّلها' : 'Qualifies on'}</th>
+                      <th className="p-2 text-start">{ar ? 'المكافأة' : 'Reward'}</th>
+                      <th className="p-2 text-start">{ar ? 'الحدود' : 'Caps'}</th>
+                      <th className="p-2 text-start">{ar ? 'الحالة' : 'Status'}</th>
+                      <th className="p-2 text-start">{ar ? 'إجراءات' : 'Actions'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(campaigns.data ?? []).map((row: any) => (
+                      <tr key={row.id} className="border-b last:border-0" data-testid={`campaign-row-${row.id}`}>
+                        <td className="p-2">
+                          <p className="font-medium">{row.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {ar ? 'نافذة الإسناد' : 'Attribution window'}: {row.attributionWindowDays ?? DEFAULT_ATTRIBUTION_WINDOW_DAYS}
+                            {ar ? ' يومًا' : ' days'}
+                          </p>
+                        </td>
+                        <td className="p-2 text-xs">{row.qualificationType}</td>
+                        <td className="p-2 text-xs">
+                          {row.rewardType}: {row.rewardValue}
+                          {row.rewardDurationDays ? ` · ${row.rewardDurationDays}d` : ''}
+                        </td>
+                        <td className="p-2 text-xs">
+                          {ar ? 'لكل داعٍ' : 'per inviter'} {row.perInviterCap}
+                          {row.campaignCap ? ` · ${ar ? 'إجمالي' : 'total'} ${row.campaignCap}` : ''}
+                        </td>
+                        <td className="p-2"><Badge variant="secondary">{row.status}</Badge></td>
+                        <td className="p-2">
+                          <div className="flex flex-wrap gap-1">
+                            {(['draft', 'active', 'paused', 'ended'] as const)
+                              .filter(next => next !== row.status)
+                              .map(next => (
+                                <Button
+                                  key={next} size="sm" variant="outline" className="h-7 text-xs"
+                                  data-testid={`campaign-${row.id}-${next}`}
+                                  disabled={updateCampaign.isPending}
+                                  onClick={() => updateCampaign.mutate({ campaignId: Number(row.id), status: next })}
+                                >
+                                  {next}
+                                </Button>
+                              ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {updateCampaign.isError && (
+              <p className="text-sm text-destructive" data-testid="campaign-error">{updateCampaign.error.message}</p>
+            )}
+
+            {/*
+              WHY THERE IS NO "EDIT TERMS" HERE ONCE A CAMPAIGN HAS PAID OUT.
+              The server refuses it and explains why; saying the same thing on
+              the screen means an administrator learns the rule before they try,
+              rather than from an error.
+            */}
+            <p className="text-xs text-muted-foreground" data-testid="campaign-terms-note">
+              {ar
+                ? 'يمكن تعديل جدولة الحملة وحدودها في أي وقت. أما شروط المكافأة والأهلية فتُثبَّت بمجرد منح أول مكافأة، حتى لا يتغيّر ما وُعد به بعد منحه.'
+                : "A campaign's schedule and caps can be changed at any time. Its reward terms and eligibility are fixed once it has granted its first reward, so that what was promised is not rewritten after it has been given."}
+            </p>
           </TabsContent>
         </Tabs>
       </CardContent>
