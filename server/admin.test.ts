@@ -167,13 +167,94 @@ describe('admin disputes and settings', () => {
     await expect(caller.admin.disputes()).resolves.toEqual([expect.objectContaining({ reporterName: 'Homeowner', respondentName: 'Contractor', status: 'open' })]);
   });
 
-  it('updates a dispute status and resolution notes', async () => {
-    const whereMock = vi.fn().mockResolvedValue([]);
-    const db = { update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: whereMock }) }) };
+  /**
+   * THIS TEST PINNED THE DEFECT.
+   *
+   * It asserted that `updateDispute` called `set({ status, resolutionNotes })`
+   * and returned success - which is exactly what was wrong with it: any status
+   * from any state, no check that the dispute existed, no record of who moved
+   * it or from what, and nothing told to the parties. A test that asserts a
+   * blind write is satisfied by a blind write.
+   *
+   * Restated against the behaviour that replaced it. Strictly stronger: it now
+   * fails if the transition is not checked, if the history is not written, or
+   * if a resolution is accepted without saying how it was resolved.
+   */
+  function disputeDb(dispute: Record<string, unknown> | null) {
+    const updates: Array<Record<string, unknown>> = [];
+    const inserts: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+    const tx: any = {
+      select: () => ({ from: () => ({ where: () => ({ for: async () => (dispute ? [dispute] : []) }) }) }),
+      update: () => ({ set: (values: Record<string, unknown>) => ({ where: async () => { updates.push(values); } }) }),
+      insert: (table: unknown) => ({ values: async (values: Record<string, unknown>) => { inserts.push({ table, values }); } }),
+    };
+    const db: any = {
+      transaction: (run: (tx: unknown) => Promise<unknown>) => run(tx),
+      // notifyDisputeParties and recordAccountEvent write through the outer db.
+      insert: (table: unknown) => ({ values: async (values: Record<string, unknown>) => { inserts.push({ table, values }); } }),
+    };
+    return { db, updates, inserts };
+  }
+
+  const OPEN_DISPUTE = {
+    id: 4, status: 'open', reporterId: 10, respondentId: 11,
+    reference: 'DSP-2026-000004', title: 'Late delivery',
+  };
+
+  it('resolves a dispute, recording HOW it was resolved and who did it', async () => {
+    const { db, updates, inserts } = disputeDb(OPEN_DISPUTE);
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
     const caller = appRouter.createCaller(makeAdminCtx());
-    await expect(caller.admin.updateDispute({ disputeId: 4, status: 'resolved', resolutionNotes: 'Refund confirmed.' })).resolves.toEqual({ success: true });
-    expect(db.update().set).toHaveBeenCalledWith({ status: 'resolved', resolutionNotes: 'Refund confirmed.' });
+
+    await expect(caller.admin.updateDispute({
+      disputeId: 4, status: 'resolved',
+      resolutionType: 'resolved_by_agreement',
+      resolutionNotes: 'The parties agreed a revised delivery date.',
+    })).resolves.toEqual({ success: true, from: 'open', to: 'resolved' });
+
+    // Never a bare status flip: the outcome TYPE, the summary, and the actor.
+    expect(updates[0]).toMatchObject({
+      status: 'resolved',
+      resolutionType: 'resolved_by_agreement',
+      resolutionNotes: 'The parties agreed a revised delivery date.',
+      resolvedBy: 1,
+    });
+    expect(updates[0].resolvedAt).toBeInstanceOf(Date);
+
+    // And the history says where it came from, which nothing recorded before.
+    const history = inserts.map(entry => entry.values).find(values => values.toStatus === 'resolved');
+    expect(history, 'no status-history row was written').toBeTruthy();
+    expect(history).toMatchObject({ disputeId: 4, fromStatus: 'open', toStatus: 'resolved', actorId: 1 });
+  });
+
+  it('refuses to resolve without saying how it was resolved', async () => {
+    // "How did this end" must be answerable across many disputes without
+    // reading prose, and the party on the losing side is entitled to grounds.
+    const { db, updates } = disputeDb(OPEN_DISPUTE);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+    await expect(caller.admin.updateDispute({ disputeId: 4, status: 'resolved', resolutionNotes: 'Sorted.' }))
+      .rejects.toThrow(/requires a resolution type/i);
+    expect(updates, 'a refused transition must write nothing').toEqual([]);
+  });
+
+  it('refuses an illegal transition instead of writing it', async () => {
+    const { db, updates } = disputeDb({ ...OPEN_DISPUTE, status: 'withdrawn' });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+    await expect(caller.admin.updateDispute({ disputeId: 4, status: 'investigating' }))
+      .rejects.toThrow(/withdrawn/i);
+    expect(updates).toEqual([]);
+  });
+
+  it('refuses a dispute that does not exist, rather than reporting success', async () => {
+    // The previous version ran an UPDATE matching no rows and returned
+    // { success: true }.
+    const { db } = disputeDb(null);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+    await expect(caller.admin.updateDispute({ disputeId: 999, status: 'investigating' }))
+      .rejects.toThrow(/not found/i);
   });
 
   it('persists a known admin setting and rejects unknown keys', async () => {

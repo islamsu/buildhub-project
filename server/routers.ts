@@ -47,7 +47,12 @@ import {
 } from './referralRewardView';
 import { explainEnquiryAllowance } from './billing/allowanceBreakdown';
 import { splitCampaignEdit, refuseCampaignEdit, refuseCampaignDates } from './referralCampaignEdit';
-import { DISPUTE_ADMIN_SETTABLE_STATUSES, DISPUTE_CATEGORIES, DISPUTE_SUBJECT_TYPES } from '@shared/disputes';
+import {
+  DISPUTE_ADMIN_SETTABLE_STATUSES, DISPUTE_CATEGORIES, DISPUTE_SUBJECT_TYPES,
+  DISPUTE_RESOLUTION_TYPES, DISPUTE_PRIORITIES,
+} from '@shared/disputes';
+import { applyTransition } from './disputeWorkflow';
+import { notifyDisputeParties } from './disputeNotifications';
 import { subjectColumns, assignDisputeReference, hasSubject } from './disputeSubject';
 import {
   requireSubjectParty, requireDisputeAccess, respondentCandidates, validateRespondent,
@@ -4253,6 +4258,74 @@ const disputesRouter = router({
     }),
 
   /**
+   * WITHDRAW YOUR OWN DISPUTE.
+   *
+   * The reporter's decision about their own filing, and not the same outcome as
+   * an administrator rejecting it - recording both as `rejected` would blame
+   * the platform for a choice the reporter made. Only the reporter, and only
+   * while it is still live.
+   */
+  withdraw: protectedProcedure
+    .input(z.object({
+      disputeId: z.number().int().positive(),
+      reason: z.string().trim().min(1).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const dispute = await requireDisputeAccess(db, input.disputeId, ctx.user.id);
+      if (Number(dispute.reporterId) !== ctx.user.id) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the person who raised a dispute can withdraw it.',
+        });
+      }
+      const moved = await applyTransition(db, {
+        disputeId: input.disputeId, to: 'withdrawn',
+        actor: 'reporter', actorId: ctx.user.id, reason: input.reason,
+      });
+      await notifyDisputeParties(db, moved.dispute, {
+        actorId: ctx.user.id, from: moved.from, to: moved.to, reason: input.reason,
+      });
+      return { success: true as const, from: moved.from, to: moved.to };
+    }),
+
+  /**
+   * REOPEN a concluded dispute. Either party may ask, and must say why.
+   *
+   * A withdrawn dispute is terminal: reopening it would let a party withdraw to
+   * stop an investigation and restart it when it suited them. The state machine
+   * refuses that and says to raise a new one instead.
+   */
+  reopen: protectedProcedure
+    .input(z.object({
+      disputeId: z.number().int().positive(),
+      reason: z.string().trim().min(1).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const dispute = await requireDisputeAccess(db, input.disputeId, ctx.user.id);
+      const actor = Number(dispute.reporterId) === ctx.user.id ? 'reporter' as const
+        : Number(dispute.respondentId) === ctx.user.id ? 'respondent' as const
+          // A party to the subject who is neither is not a party to the
+          // decision to reopen: they can read it, which is not the same thing.
+          : null;
+      if (!actor) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the people named in a dispute can reopen it.',
+        });
+      }
+      const moved = await applyTransition(db, {
+        disputeId: input.disputeId, to: 'open',
+        actor, actorId: ctx.user.id, reason: input.reason,
+      });
+      await notifyDisputeParties(db, moved.dispute, {
+        actorId: ctx.user.id, from: moved.from, to: moved.to, reason: input.reason,
+      });
+      return { success: true as const, from: moved.from, to: moved.to };
+    }),
+
+  /**
    * One dispute, for somebody entitled to see it.
    *
    * NOT_FOUND both for a dispute that does not exist and for one this account
@@ -7545,16 +7618,84 @@ const adminRouter = router({
       respondentName: row.respondentId ? names.get(row.respondentId) ?? null : null,
     }));
   }),
+  /**
+   * Move a dispute, THROUGH THE STATE MACHINE.
+   *
+   * This was `db.update(disputes).set({ status, resolutionNotes })`: any
+   * status, from any state, with no check that the dispute existed, no record
+   * of who did it or from what, and nothing told to the parties. A resolved
+   * dispute could be moved back to open and resolved again with different
+   * notes, and the record would show only the last write.
+   */
   updateDispute: adminWith('support.manage').input(z.object({
-    disputeId: z.number(),
+    disputeId: z.number().int().positive(),
     // The shared set, which excludes `withdrawn` - the reporter's own decision.
     status: z.enum(DISPUTE_ADMIN_SETTABLE_STATUSES),
-    resolutionNotes: z.string().max(2000).optional(),
-  })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    await db.update(disputes).set({ status: input.status, resolutionNotes: input.resolutionNotes }).where(eq(disputes.id, input.disputeId));
-    return { success: true };
+    /** Required to reject or to reopen. */
+    reason: z.string().trim().max(500).optional(),
+    /** Both required to resolve: a bare status change is not a resolution. */
+    resolutionType: z.enum(DISPUTE_RESOLUTION_TYPES).optional(),
+    resolutionNotes: z.string().trim().max(2000).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await requireDb();
+    const moved = await applyTransition(db, {
+      disputeId: input.disputeId,
+      to: input.status,
+      actor: 'admin',
+      actorId: ctx.user.id,
+      reason: input.reason ?? null,
+      resolutionType: input.resolutionType ?? null,
+      resolutionSummary: input.resolutionNotes ?? null,
+    });
+    await notifyDisputeParties(db, moved.dispute, {
+      actorId: ctx.user.id, from: moved.from, to: moved.to,
+      reason: input.reason ?? input.resolutionNotes ?? null,
+    });
+    return { success: true as const, from: moved.from, to: moved.to };
+  }),
+
+  /**
+   * ASSIGNMENT. `assignedTo` existed on no screen and in no procedure, while
+   * the admin list rendered a priority badge nothing could change.
+   */
+  assignDispute: adminWith('support.manage').input(z.object({
+    disputeId: z.number().int().positive(),
+    /** null hands it back to the queue rather than leaving a stale owner. */
+    assignedTo: z.number().int().positive().nullable(),
+    priority: z.enum(DISPUTE_PRIORITIES).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await requireDb();
+    const [dispute] = await db.select().from(disputes).where(eq(disputes.id, input.disputeId));
+    if (!dispute) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dispute not found' });
+
+    if (input.assignedTo != null) {
+      // ONLY somebody who can actually work it. Assigning a dispute to an
+      // account with no support permission produces a queue entry nobody can
+      // action and an owner who cannot see it.
+      const [assignee] = await db.select({ id: users.id, role: users.role, adminRole: users.adminRole })
+        .from(users).where(eq(users.id, input.assignedTo));
+      if (!assignee || assignee.role !== 'admin' || !hasAdminPermission(assignee.adminRole as any, 'support.manage')) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'A dispute can only be assigned to an administrator who can work on disputes.',
+        });
+      }
+    }
+
+    await db.update(disputes).set({
+      assignedTo: input.assignedTo,
+      assignedBy: input.assignedTo == null ? null : ctx.user.id,
+      assignedAt: input.assignedTo == null ? null : new Date(),
+      ...(input.priority ? { priority: input.priority } : {}),
+    }).where(eq(disputes.id, input.disputeId));
+
+    await recordAccountEvent(db, {
+      userId: dispute.reporterId, actorId: ctx.user.id,
+      action: 'dispute_assigned', source: 'dispute',
+      note: `${dispute.reference ?? dispute.id} -> ${input.assignedTo ?? 'unassigned'}`
+        + (input.priority ? ` (${input.priority})` : ''),
+    });
+    return { success: true as const };
   }),
   settings: adminWith('settings.manage').query(async () => {
     // Showing the DEFAULTS as though they were the stored settings invites an

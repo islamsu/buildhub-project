@@ -74,6 +74,10 @@ describe('every key the server can write has both languages', () => {
   // withdrawn" and "your subscription time stands" are different facts. Same
   // reason as the two lists above: an unexpanded template covers nothing.
   const REVERSAL_EFFECTS = ['bonus_revoked', 'placement_revoked', 'nothing_to_undo'];
+  // A dispute notice names the destination status, because "your dispute
+  // changed" is not something a party can act on. Same reason as the lists
+  // above: an unexpanded template covers nothing.
+  const DISPUTE_DESTINATIONS = ['open', 'investigating', 'resolved', 'rejected', 'withdrawn'];
 
   function expandedKeys(): string[] {
     const keys: string[] = [];
@@ -82,9 +86,11 @@ describe('every key the server can write has both languages', () => {
       const status = raw.match(/^(.*)\$\{input\.status\}$/);
       const direction = raw.match(/^(.*)\$\{direction\}$/);
       const effect = raw.match(/^(.*)\$\{outcome\.effect\}$/);
+      const dispute = raw.match(/^(.*)\$\{change\.to\}$/);
       if (status) keys.push(...COMPLIANCE_STATUSES.map(s => status[1] + s));
       else if (direction) keys.push(...PLAN_CHANGE_DIRECTIONS.map(d => direction[1] + d));
       else if (effect) keys.push(...REVERSAL_EFFECTS.map(e => effect[1] + e));
+      else if (dispute) keys.push(...DISPUTE_DESTINATIONS.map(d => dispute[1] + d));
       else keys.push(raw);
     }
     return [...new Set(keys)];
@@ -100,6 +106,8 @@ describe('every key the server can write has both languages', () => {
     expect(keys).toContain('notif.billing.plan.scheduled');
     expect(keys).toContain('notif.referral.reversed.bonus_revoked');
     expect(keys).toContain('notif.referral.reversed.nothing_to_undo');
+    expect(keys).toContain('notif.dispute.resolved');
+    expect(keys).toContain('notif.dispute.withdrawn');
     expect(keys.length).toBeGreaterThanOrEqual(10);
   });
 
@@ -116,9 +124,15 @@ describe('every key the server can write has both languages', () => {
       // reversal - the administrator's stated reason is their own words, and
       // the sentence around it has to read correctly with and without one.
       const table = lang === 'ar' ? AR : EN;
-      const CARRY_NOTE = ['notif.compliance.', 'notif.referral.reversed.'];
+      // A dispute TRANSITION carries the administrator's stated reason, or the
+      // reporter's, in their own words. `notif.dispute.raised` does not: it
+      // carries the reference and the subject and nothing a person typed, so a
+      // `.bodyNote` for it would be a template for a case that never occurs.
+      const CARRY_NOTE = ['notif.compliance.', 'notif.referral.reversed.', 'notif.dispute.'];
+      const NO_NOTE = ['notif.dispute.raised'];
       const missing = expandedKeys()
         .filter(key => CARRY_NOTE.some(prefix => key.startsWith(prefix)))
+        .filter(key => !NO_NOTE.includes(key))
         .filter(key => !table.has(key + '.bodyNote'));
       expect(missing, `no .bodyNote in ${lang}`).toEqual([]);
     });
