@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
+import { OpenDisputeDialog } from '@/components/OpenDisputeDialog';
 import { useState } from 'react';
 import ProjectDetailEnhancements from '@/components/ProjectDetailEnhancements';
 import ProjectDocuments from '@/components/ProjectDocuments';
@@ -75,15 +76,6 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
   const addMember = trpc.projects.addMember.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تمت إضافة العضو!' : 'Member added!'); setMemberForm({ userId: '', projectRole: 'viewer' }); refetchMembers(); }, onError: (e: { message: string }) => toast.error(e.message) });
   const removeMember = trpc.projects.removeMember.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تمت إزالة العضو!' : 'Member removed!'); refetchMembers(); }, onError: (e: { message: string }) => toast.error(e.message) });
   const [disputeOpen, setDisputeOpen] = useState(false);
-  const [disputeForm, setDisputeForm] = useState({ title: '', description: '', type: 'general' });
-  const openDispute = trpc.disputes.create.useMutation({
-    onSuccess: () => {
-      toast.success(lang === 'ar' ? 'تم فتح النزاع.' : 'Dispute opened.');
-      setDisputeOpen(false);
-      setDisputeForm({ title: '', description: '', type: 'general' });
-    },
-    onError: (e: { message: string }) => toast.error(e.message),
-  });
 
   if (loading) return null;
   if (!isAuthenticated) { window.location.href = '/auth?mode=login'; return null; }
@@ -464,54 +456,10 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
               </TabsContent>
             </Tabs>
 
-            <Dialog open={disputeOpen} onOpenChange={setDisputeOpen}>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>{lang === 'ar' ? 'فتح نزاع' : 'Open a dispute'}</DialogTitle>
-                </DialogHeader>
-                <p className="text-sm text-muted-foreground">
-                  {lang === 'ar'
-                    ? 'يرتبط النزاع بهذا المشروع. سيصل إلى فريق الدعم للمراجعة.'
-                    : 'The dispute is tied to this project and goes to the support team for review.'}
-                </p>
-                <Input
-                  data-testid="dispute-title"
-                  placeholder={lang === 'ar' ? 'الموضوع' : 'Subject'}
-                  value={disputeForm.title}
-                  onChange={e => setDisputeForm(f => ({ ...f, title: e.target.value }))}
-                />
-                <Textarea
-                  data-testid="dispute-description"
-                  rows={4}
-                  maxLength={5000}
-                  placeholder={lang === 'ar' ? 'وصف المشكلة' : 'Describe the issue'}
-                  value={disputeForm.description}
-                  onChange={e => setDisputeForm(f => ({ ...f, description: e.target.value }))}
-                />
-                <Input
-                  data-testid="dispute-type"
-                  maxLength={80}
-                  placeholder={lang === 'ar' ? 'النوع (اختياري)' : 'Type (optional)'}
-                  value={disputeForm.type}
-                  onChange={e => setDisputeForm(f => ({ ...f, type: e.target.value }))}
-                />
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setDisputeOpen(false)}>{lang === 'ar' ? 'إلغاء' : 'Cancel'}</Button>
-                  <Button
-                    data-testid="dispute-submit"
-                    disabled={!disputeForm.title.trim() || !disputeForm.description.trim() || openDispute.isPending}
-                    onClick={() => openDispute.mutate({
-                      projectId,
-                      title: disputeForm.title.trim(),
-                      description: disputeForm.description.trim(),
-                      type: disputeForm.type.trim() || undefined,
-                    })}
-                  >
-                    {openDispute.isPending ? (lang === 'ar' ? 'جاري الإرسال…' : 'Submitting…') : (lang === 'ar' ? 'إرسال' : 'Submit')}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <OpenDisputeDialog
+              subjectType="project" subjectId={projectId}
+              open={disputeOpen} onOpenChange={setDisputeOpen}
+            />
           </>
         )}
       </div>

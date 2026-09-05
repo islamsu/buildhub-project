@@ -338,8 +338,37 @@ describe('the router routes through the service rather than restating it', () =>
     expect(body).toContain('requireDisputeAccess(db, input.disputeId, ctx.user.id)');
   });
 
-  it('myDisputes is scoped to reporter or respondent', () => {
-    expect(body).toContain("or(eq(disputes.reporterId, ctx.user.id), eq(disputes.respondentId, ctx.user.id))");
+  /*
+   * RESTATED, NOT DROPPED.
+   *
+   * This asserted that a particular expression appeared in the router's text.
+   * The scope now lives in server/disputeMyView.ts - the procedure gained
+   * pagination and stopped resolving the subject label one dispute at a time -
+   * and the rule itself is asserted BEHAVIOURALLY there, by walking the
+   * condition the query actually carries and checking it names both
+   * `reporterId` and `respondentId` against the session's own id.
+   *
+   * That is strictly stronger than this was: a source match could not tell
+   * whether the expression was reached, and narrowing the scope to the reporter
+   * alone - which would hide from somebody the dispute that NAMES them - is
+   * caught there and was not catchable here.
+   *
+   * What remains here is the one thing behaviour cannot see: that the router
+   * delegates rather than restating the scope, and that the user id comes from
+   * the session rather than from the input.
+   */
+  it('myDisputes delegates its scope, and takes the user from the session', () => {
+    /*
+     * Scoped to THIS PROCEDURE's own text. Asserting over the whole router
+     * would have been satisfied - or broken - by any neighbouring procedure
+     * that legitimately takes a userId, which is a test that reports on
+     * something other than what it names.
+     */
+    const start = body.indexOf('myDisputes: protectedProcedure');
+    const procedure = body.slice(start, body.indexOf('\n    }),', start));
+    expect(procedure).toContain('listMyDisputes(db, ctx.user.id, input)');
+    // No userId in the input means there is nothing for a caller to tamper with.
+    expect(procedure).not.toContain('userId');
   });
 
   it('the detail view returns the subject LABEL, not its cast', () => {

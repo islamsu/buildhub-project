@@ -57,6 +57,7 @@ import { applyTransition } from './disputeWorkflow';
 import { notifyDisputeParties } from './disputeNotifications';
 import { subjectColumns, assignDisputeReference, hasSubject } from './disputeSubject';
 import { adminDisputeDetail, disputeStatusCounts, listAdminDisputes } from './disputeAdminView';
+import { listMyDisputes } from './disputeMyView';
 import {
   requireSubjectParty, requireDisputeAccess, respondentCandidates, validateRespondent,
   partiesForSubject,
@@ -4138,22 +4139,20 @@ const disputesRouter = router({
    * user can read, and a screen that has to fetch each subject separately would
    * either N+1 or show ids.
    */
-  myDisputes: protectedProcedure.query(async ({ ctx }) => {
-    const db = await requireDb();
-    const rows = await db.select().from(disputes)
-      .where(or(eq(disputes.reporterId, ctx.user.id), eq(disputes.respondentId, ctx.user.id)))
-      .orderBy(desc(disputes.createdAt))
-      .limit(200);
-    return Promise.all(rows.map(async (row: any) => ({
-      ...row,
-      // A pre-0046 row with no project had nothing to backfill a subject from.
-      // Reported as unknown rather than rendered as "project 0", which would be
-      // a fabricated relationship.
-      subject: hasSubject(row)
-        ? (await partiesForSubject(db, row.subjectType, Number(row.subjectId)))?.label ?? null
-        : null,
-    })));
-  }),
+  myDisputes: protectedProcedure
+    .input(z.object({
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(50).default(20),
+      /** 'open' | 'closed' | anything else means all. */
+      status: z.string().max(16).optional(),
+    }).default({ page: 0, pageSize: 20 }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      // Self-scoped by the CALL, not by the input: there is no userId to tamper
+      // with. See server/disputeMyView.ts for why this stopped resolving the
+      // subject label one dispute at a time.
+      return listMyDisputes(db, ctx.user.id, input);
+    }),
 
   /**
    * WHO CAN BE NAMED, for the "open a dispute" form.

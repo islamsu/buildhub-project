@@ -22,7 +22,7 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags, Megaphone, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags, Megaphone, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -60,6 +60,16 @@ const COMPLIANCE_MENU_ITEM = { icon: Shield, labelKey: 'platform.compliance', pa
 /* Settings is a real page now, not a workspace anchor. Every role gets it:
    the profile, the plan and the service categories all live there. */
 const SETTINGS_MENU_ITEM = { icon: Settings, labelKey: 'dash.settings', path: '/settings' } as const;
+/*
+ * EVERY ROLE GETS DISPUTES, because every role can be NAMED in one.
+ *
+ * `disputes.myDisputes` existed with no client caller and there was no
+ * `/disputes` route: a user could raise a dispute and then had nowhere to read
+ * it or answer it, and the notification the respondent receives links to
+ * `/disputes/:id`, which resolved to nothing. A menu entry is what makes the
+ * page findable by somebody who was not sent a link.
+ */
+const DISPUTES_MENU_ITEM = { icon: ShieldQuestion, labelKey: 'nav.disputes', path: '/disputes' } as const;
 
 function workspaceItem(role: WorkspaceRole, icon: typeof LayoutDashboard, labelKey: string, section: SectionId): MenuItem {
   return { icon, labelKey, path: workspaceHref(role, section), section };
@@ -83,6 +93,7 @@ const HOMEOWNER_MENU_KEYS: MenuItem[] = [
   { icon: FileText, labelKey: 'dash.get_quotes', path: '/rfq' },
   { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
   { icon: Bot, labelKey: 'dash.ai', path: '/ai' },
+  DISPUTES_MENU_ITEM,
   SETTINGS_MENU_ITEM,
 ];
 
@@ -97,6 +108,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     workspaceItem('contractor', FolderOpen, 'platform.projects', 'role-projects'),
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('contractor', BarChart3, 'platform.performance', 'role-performance'),
+    DISPUTES_MENU_ITEM,
     SETTINGS_MENU_ITEM,
   ],
   engineer: [
@@ -108,6 +120,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('engineer', BarChart3, 'platform.performance', 'role-performance'),
+    DISPUTES_MENU_ITEM,
     SETTINGS_MENU_ITEM,
   ],
   architect: [
@@ -119,6 +132,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('architect', BarChart3, 'platform.performance', 'role-performance'),
+    DISPUTES_MENU_ITEM,
     SETTINGS_MENU_ITEM,
   ],
   // THE SUPPLIER MENU ORDER IS SPECIFIED BY THE BRIEF, not chosen here:
@@ -139,6 +153,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: Inbox, labelKey: 'platform.enquiries', path: '/enquiries' },
     { icon: Tags, labelKey: 'settings.categories', path: '/service-categories' },
     workspaceItem('supplier', BarChart3, 'platform.performance', 'role-performance'),
+    DISPUTES_MENU_ITEM,
     SETTINGS_MENU_ITEM,
     COMPLIANCE_MENU_ITEM,
   ],
@@ -149,6 +164,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: Users, labelKey: 'platform.team', path: '/messages' },
     workspaceItem('project_manager', BarChart3, 'platform.performance', 'role-performance'),
+    DISPUTES_MENU_ITEM,
     SETTINGS_MENU_ITEM,
   ],
 };

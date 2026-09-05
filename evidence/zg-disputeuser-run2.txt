@@ -1,0 +1,126 @@
+PASS  the form is told what the dispute is about, in words  [ZG user project 12837492]
+PASS  and offers only the real cast of that subject as respondents  [["ZG Builder 12837492"]]
+PASS  an unrelated contractor cannot read the subject's cast  [404 NOT_FOUND]
+PASS  a dispute can be raised, and comes back with its reference  [DSP-2026-000040]
+PASS  the respondent is notified, and the link names the dispute  [/disputes/40]
+PASS  the reporter finds it in their own list, with a real total  [total=1]
+PASS  and is told which side of it they are on  [reporter]
+PASS  and what it is about, in words rather than an id  [ZG user project 12837492]
+PASS  the RESPONDENT finds it too - the dispute that names them is theirs to answer  [total=1 side=respondent]
+PASS  an unrelated contractor's list is empty, not everybody's  [total=0]
+PASS  the respondent can answer - a dispute is a process, not a complaint
+BLOCKED  evidence can be attached to a dispute  [no object store configured on this environment]
+BLOCKED  the evidence is downloadable through the storage proxy, not by raw key  [no object store configured on this environment]
+BLOCKED  a party to the dispute can fetch the file  [no object store configured on this environment]
+BLOCKED  an unrelated contractor cannot fetch it, even with the exact url  [no object store configured on this environment]
+BLOCKED  a signed-out caller cannot fetch it  [no object store configured on this environment]
+BLOCKED  the other party cannot withdraw somebody else's evidence  [no object store configured on this environment]
+PASS  the reporter reads the answer  [1 messages]
+PASS  withdrawing a file that does not exist is refused, not guessed at  [404 NOT_FOUND]
+PASS  a dispute can be raised about an RFQ, which had no subject before 0046
+PASS  somebody with no relationship to the RFQ cannot raise one about it  [404 NOT_FOUND]
+PASS  an administrator concludes it, saying how
+PASS  the parties read the OUTCOME, not just a changed badge  [resolved_by_agreement]
+PASS  a concluded dispute takes no more messages, and says why  [This dispute is resolved and is no longer open for messages.]
+PASS  either party can reopen it, with a reason
+PASS  reopening clears the outcome rather than leaving a stale one  [open / null]
+PASS  and the history records every move, oldest first in the record  [3 entries]
+PASS  the respondent cannot withdraw a dispute they did not raise  [403 FORBIDDEN]
+PASS  the reporter can withdraw their own
+PASS  a WITHDRAWN dispute is terminal - it cannot be reopened to restart an investigation  [400: This dispute was withdrawn by the person who raise]
+PASS  the open filter excludes the withdrawn one  [1 open]
+PASS  and the closed filter includes it  [1 closed]
+PASS  an unrelated contractor cannot read the dispute by id  [404 NOT_FOUND]
+PASS  375/en: the disputes page renders, with this person's dispute on it
+PASS  375/en: the disputes this person is in are listed  [2 rows]
+PASS  375/en: the row count is stated, not guessed  [2 records]
+PASS  375/en: the page does not scroll sideways  [0px]
+PASS  375/en: it is written in the site's language
+PASS  375/en: a dispute in the list opens its record  [clicked]
+PASS  375/en: the record the notification links to renders
+PASS  375/en: the record shows the subject in words  [ZG user project 12837492]
+PASS  375/en: the exchange is on the page  [1 messages]
+PASS  375/en: with nothing attached, the page says so  [stated=true]
+PASS  375/en: the history is shown  [4 entries]
+PASS  375/en: a concluded dispute offers no message box, and says why  [note=true box=false]
+PASS  375/en: the page never shows an administrator's internal note
+PASS  375/en: the record does not scroll sideways  [0px]
+PASS  375/ar: the disputes page renders, with this person's dispute on it
+PASS  375/ar: the disputes this person is in are listed  [2 rows]
+PASS  375/ar: the row count is stated, not guessed  [2 سجل]
+PASS  375/ar: the page does not scroll sideways  [0px]
+PASS  375/ar: it is written in the site's language
+PASS  375/ar: the page is laid out right to left  [rtl]
+PASS  375/ar: a dispute in the list opens its record  [clicked]
+PASS  375/ar: the record the notification links to renders
+PASS  375/ar: the record shows the subject in words  [ZG user project 12837492]
+PASS  375/ar: the exchange is on the page  [1 messages]
+PASS  375/ar: with nothing attached, the page says so  [stated=true]
+PASS  375/ar: the history is shown  [4 entries]
+PASS  375/ar: a concluded dispute offers no message box, and says why  [note=true box=false]
+PASS  375/ar: the page never shows an administrator's internal note
+PASS  375/ar: the record does not scroll sideways  [0px]
+PASS  768/en: the disputes page renders, with this person's dispute on it
+PASS  768/en: the disputes this person is in are listed  [2 rows]
+PASS  768/en: the row count is stated, not guessed  [2 records]
+PASS  768/en: the page does not scroll sideways  [-6px]
+PASS  768/en: it is written in the site's language
+PASS  768/en: a dispute in the list opens its record  [clicked]
+PASS  768/en: the record the notification links to renders
+PASS  768/en: the record shows the subject in words  [ZG user project 12837492]
+PASS  768/en: the exchange is on the page  [1 messages]
+PASS  768/en: with nothing attached, the page says so  [stated=true]
+PASS  768/en: the history is shown  [4 entries]
+PASS  768/en: a concluded dispute offers no message box, and says why  [note=true box=false]
+PASS  768/en: the page never shows an administrator's internal note
+PASS  768/en: the record does not scroll sideways  [-6px]
+PASS  768/ar: the disputes page renders, with this person's dispute on it
+PASS  768/ar: the disputes this person is in are listed  [2 rows]
+PASS  768/ar: the row count is stated, not guessed  [2 سجل]
+PASS  768/ar: the page does not scroll sideways  [-6px]
+PASS  768/ar: it is written in the site's language
+PASS  768/ar: the page is laid out right to left  [rtl]
+PASS  768/ar: a dispute in the list opens its record  [clicked]
+PASS  768/ar: the record the notification links to renders
+PASS  768/ar: the record shows the subject in words  [ZG user project 12837492]
+PASS  768/ar: the exchange is on the page  [1 messages]
+PASS  768/ar: with nothing attached, the page says so  [stated=true]
+PASS  768/ar: the history is shown  [4 entries]
+PASS  768/ar: a concluded dispute offers no message box, and says why  [note=true box=false]
+PASS  768/ar: the page never shows an administrator's internal note
+PASS  768/ar: the record does not scroll sideways  [-6px]
+PASS  1440/en: the disputes page renders, with this person's dispute on it
+PASS  1440/en: the disputes this person is in are listed  [2 rows]
+PASS  1440/en: the row count is stated, not guessed  [2 records]
+PASS  1440/en: the page does not scroll sideways  [-6px]
+PASS  1440/en: it is written in the site's language
+PASS  1440/en: a dispute in the list opens its record  [clicked]
+PASS  1440/en: the record the notification links to renders
+PASS  1440/en: the record shows the subject in words  [ZG user project 12837492]
+PASS  1440/en: the exchange is on the page  [1 messages]
+PASS  1440/en: with nothing attached, the page says so  [stated=true]
+PASS  1440/en: the history is shown  [4 entries]
+PASS  1440/en: a concluded dispute offers no message box, and says why  [note=true box=false]
+PASS  1440/en: the page never shows an administrator's internal note
+PASS  1440/en: the record does not scroll sideways  [-6px]
+PASS  1440/ar: the disputes page renders, with this person's dispute on it
+PASS  1440/ar: the disputes this person is in are listed  [2 rows]
+PASS  1440/ar: the row count is stated, not guessed  [2 سجل]
+PASS  1440/ar: the page does not scroll sideways  [-6px]
+PASS  1440/ar: it is written in the site's language
+PASS  1440/ar: the page is laid out right to left  [rtl]
+PASS  1440/ar: a dispute in the list opens its record  [clicked]
+PASS  1440/ar: the record the notification links to renders
+PASS  1440/ar: the record shows the subject in words  [ZG user project 12837492]
+PASS  1440/ar: the exchange is on the page  [1 messages]
+PASS  1440/ar: with nothing attached, the page says so  [stated=true]
+PASS  1440/ar: the history is shown  [4 entries]
+PASS  1440/ar: a concluded dispute offers no message box, and says why  [note=true box=false]
+PASS  1440/ar: the page never shows an administrator's internal note
+PASS  1440/ar: the record does not scroll sideways  [-6px]
+PASS  an unrelated contractor opening the url is refused in the browser too
+PASS  and none of the dispute's content reaches their page
+PASS  somebody with no disputes is told so, and told where to raise one  [You have raised no disputes and none names you. You can open one from ]
+PASS  CLEANUP: every row this probe planted is gone
+
+118/118 passed, 6 BLOCKED BY INFRASTRUCTURE (not counted either way)

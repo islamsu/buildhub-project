@@ -17,6 +17,10 @@ import {
   DISPUTE_RESOLUTION_TYPES, DISPUTE_STATUSES, DISPUTE_SUBJECT_TYPES,
   type DisputeAdminStatus, type DisputeResolutionType,
 } from '@shared/disputes';
+// The label maps are SHARED with the user-facing dispute screens: three copies
+// of a closed set's translation is how this codebase got four disagreeing
+// category vocabularies.
+import { disputeLabels, statusTone, type DisputeLabels } from '@/lib/disputeCopy';
 
 /**
  * DISPUTE ADMINISTRATION.
@@ -44,59 +48,11 @@ const NO_FILTERS: Filters = {
   status: 'all', priority: 'all', category: 'all', subjectType: 'all', assignment: 'all',
 };
 
-function useLabels(ar: boolean) {
-  const status = (value: string) => (ar
-    ? { open: 'مفتوحة', investigating: 'قيد التحقيق', resolved: 'تم الحل', rejected: 'مرفوضة', withdrawn: 'مسحوبة' }
-    : { open: 'Open', investigating: 'Investigating', resolved: 'Resolved', rejected: 'Rejected', withdrawn: 'Withdrawn' }
-  )[value] ?? value;
-
-  const priority = (value: string) => (ar
-    ? { low: 'منخفضة', medium: 'متوسطة', high: 'عالية' }
-    : { low: 'Low', medium: 'Medium', high: 'High' }
-  )[value] ?? value;
-
-  const category = (value: string) => (ar
-    ? {
-      quality: 'الجودة', delivery: 'التسليم', quantity: 'الكمية', specification: 'المواصفات',
-      communication: 'التواصل', conduct: 'السلوك', pricing: 'التسعير', other: 'أخرى',
-    }
-    : {
-      quality: 'Quality', delivery: 'Delivery', quantity: 'Quantity', specification: 'Specification',
-      communication: 'Communication', conduct: 'Conduct', pricing: 'Pricing', other: 'Other',
-    }
-  )[value] ?? value;
-
-  const subject = (value: string) => (ar
-    ? { project: 'مشروع', rfq: 'طلب عرض سعر', quotation: 'عرض سعر' }
-    : { project: 'Project', rfq: 'RFQ', quotation: 'Quotation' }
-  )[value] ?? value;
-
-  const resolution = (value: string) => (ar
-    ? {
-      resolved_by_agreement: 'اتفاق بين الطرفين', resolved_by_platform: 'قرار من المنصة',
-      no_action_required: 'لا يلزم إجراء', insufficient_evidence: 'أدلة غير كافية',
-      out_of_scope: 'خارج نطاق المنصة',
-    }
-    : {
-      resolved_by_agreement: 'Resolved by agreement', resolved_by_platform: 'Resolved by BuildHub',
-      no_action_required: 'No action required', insufficient_evidence: 'Insufficient evidence',
-      out_of_scope: 'Out of scope',
-    }
-  )[value] ?? value;
-
-  return { status, priority, category, subject, resolution };
-}
-
-const statusTone = (value: string) =>
-  value === 'open' ? 'destructive'
-    : value === 'investigating' ? 'default'
-      : 'secondary';
-
 export default function AdminDisputes() {
   const { lang } = useLanguage();
   const ar = lang === 'ar';
   const failedCopy = loadFailedCopy(ar);
-  const label = useLabels(ar);
+  const label = disputeLabels(ar);
 
   const [typed, setTyped] = useState('');
   const [search, setSearch] = useState('');
@@ -323,7 +279,7 @@ function FilterSelect({ testId, value, onChange, allLabel, options }: {
  */
 function DisputeDetailDialog({ disputeId, ar, label, onClose, onChanged }: {
   disputeId: number; ar: boolean;
-  label: ReturnType<typeof useLabels>;
+  label: DisputeLabels;
   onClose: () => void; onChanged: () => void;
 }) {
   const detail = trpc.admin.disputeDetail.useQuery({ disputeId }, { retry: false });
@@ -597,7 +553,7 @@ function Row({ ar, en, arLabel, value }: { ar: boolean; en: string; arLabel: str
 
 /** Every move this dispute has made, and who made it. */
 function Timeline({ ar, label, history }: {
-  ar: boolean; label: ReturnType<typeof useLabels>; history: any[];
+  ar: boolean; label: DisputeLabels; history: any[];
 }) {
   return (
     <section className="space-y-2">
