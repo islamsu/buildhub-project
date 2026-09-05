@@ -2368,11 +2368,14 @@ const marketplaceRouter = router({
    * with a view argument is the richer form for surfaces that need slugs and
    * Arabic names.
    */
-  categoryNames: publicProcedure.query(async () => {
-    const db = await requireDb();
-    const index = await loadCategoryIndex(db);
-    return publicCategories(index).map(category => category.nameEn);
-  }),
+  /*
+   * `categoryNames` WAS HERE: a bare array of English category names, from
+   * before the CAT milestone gave BuildHub one administrable taxonomy.
+   * `marketplace.categories({ view })` replaced it and is what all four
+   * client callers use - it carries the slug, both languages and the status,
+   * which a string array cannot, and it is the view the authorization rules
+   * are written against.
+   */
   questions: publicProcedure.input(z.object({ productId: z.number() })).query(async ({ input }) => {
     const db = await requireDb();
     // Slice 9: an explicit column allowlist. This is a PUBLIC endpoint and the
@@ -7870,7 +7873,7 @@ const adminRouter = router({
   /**
    * ── INTERNAL NOTES ON A DISPUTE ──────────────────────────────────────────
    *
-   * `adminNotes.subjectType` has always allowed 'dispute' and NOTHING HAS EVER
+   * `adminNotes.subjectType` has always allowed 'dispute' and NOTHING HAD EVER
    * WRITTEN ONE. An administrator working a dispute had no private place to
    * record what they had checked, so the only writable text on a dispute was
    * the resolution notes - which the parties read.
@@ -7879,21 +7882,12 @@ const adminRouter = router({
    * forgotten `where visibility='participants'` would show a reporter what an
    * administrator wrote about them, and a rule that can be got wrong by
    * omitting a clause eventually will be.
+   *
+   * THERE IS NO SEPARATE READER. `admin.disputeDetail` returns the notes with
+   * the rest of the record, because that is the only screen that shows them -
+   * a second procedure fetching the same rows for the same screen is a second
+   * place for the subjectType filter to be got wrong.
    */
-  disputeNotes: adminWith('support.manage')
-    .input(z.object({ disputeId: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      const db = await requireDb();
-      return db.select({
-        id: adminNotes.id, note: adminNotes.note, createdAt: adminNotes.createdAt,
-        authorId: adminNotes.authorId, authorName: users.name,
-      }).from(adminNotes)
-        .innerJoin(users, eq(users.id, adminNotes.authorId))
-        .where(and(eq(adminNotes.subjectType, 'dispute'), eq(adminNotes.subjectId, input.disputeId)))
-        .orderBy(desc(adminNotes.createdAt))
-        .limit(100);
-    }),
-
   addDisputeNote: adminWith('support.manage')
     .input(z.object({
       disputeId: z.number().int().positive(),
@@ -8933,16 +8927,15 @@ const billingRouter = router({
   // Phase 4B.2: the vendor's full effective entitlement set, resolved through
   // the one central engine. Self-scoped by construction - no input at all, so
   // no request shape can name another vendor.
-  myEntitlements: protectedProcedure.query(async ({ ctx }) => {
-    const resolution = await resolveVendorEntitlements(ctx.user.id);
-    return toVendorEntitlementResponse(resolution);
-  }),
-
-  // Just the effective plan id, for callers that need nothing else.
-  myPlan: protectedProcedure.query(async ({ ctx }) => {
-    const resolution = await resolveVendorEntitlements(ctx.user.id);
-    return { plan: resolution.effectivePlan, isPaid: resolution.isPaid };
-  }),
+  /*
+   * `myEntitlements` and `myPlan` WERE HERE, and neither had a client caller.
+   * `myBenefits` below returns `toVendorEntitlementResponse(resolution)` as its
+   * `plan` - which is exactly what myEntitlements returned - alongside the usage
+   * and the allowance breakdown the screen actually needs, and myPlan's
+   * `{ plan, isPaid }` is a strict subset of that object. Three readers of one
+   * resolution, two of them reaching no screen, is the shape that lets an
+   * answer drift depending on which one a caller happened to pick.
+   */
 
   // Phase 4B.3: the vendor's own qualified-enquiry consumption this month.
   // Self-scoped - no input, reads ctx.user.id only.

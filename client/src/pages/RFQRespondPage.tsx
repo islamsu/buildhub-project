@@ -77,6 +77,30 @@ export default function RFQRespondPage() {
     onError: error => toast.error(error.message),
   });
 
+  /**
+   * DECLINING AN INVITATION - the answer nothing could give.
+   *
+   * `rfq.declineInvitation` had NO CLIENT CALLER while the requester's own
+   * invitation list rendered a `declined` badge and BuildHub carried a
+   * translated notification for it. A state the UI shows, and the notification
+   * copy to announce it, and no way in the product to reach either: the
+   * requester waited on a supplier who had already decided not to bid, and had
+   * no way to know.
+   *
+   * Offered only to somebody who actually holds an open invitation - the server
+   * answers NOT_FOUND otherwise, so a stranger cannot probe which invitations
+   * exist, and a control that is always visible would put that refusal in front
+   * of every browsing supplier.
+   */
+  const decline = trpc.rfq.declineInvitation.useMutation({
+    onSuccess: async () => {
+      toast.success(ar ? 'تم إبلاغ صاحب الطلب باعتذارك.' : 'The requester has been told you are not quoting.');
+      await utils.rfq.responseAccess.invalidate({ rfqId });
+      navigate('/rfq');
+    },
+    onError: error => toast.error(error.message),
+  });
+
   const submit = trpc.rfq.submitQuotation.useMutation({
     onSuccess: result => {
       toast.success(ar ? 'تم تقديم عرض السعر' : 'Quotation submitted');
@@ -208,6 +232,32 @@ export default function RFQRespondPage() {
                 fileInput={fileInput} uploading={uploading} attachFiles={attachFiles}
                 validation={validation} onReview={() => setReviewing(true)}
               />
+            )}
+
+            {/*
+              Only for an invitation that is still open, and only before a
+              quotation exists: declining after quoting would contradict the bid
+              already on the record, and the server refuses it either way.
+            */}
+            {!closed && access.data.byInvitation && !access.data.hasExistingQuotation && (
+              <Card data-testid="respond-decline">
+                <CardContent className="space-y-2 pt-6">
+                  <p className="text-sm font-medium">{ar ? 'لن تقدّم عرضاً؟' : 'Not quoting for this one?'}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {ar
+                      ? 'أبلغ صاحب الطلب بدلاً من تركه ينتظر. لن يُخصم من رصيدك شيء، ويمكن دعوتك مجدداً لاحقاً.'
+                      : 'Tell the requester rather than leaving them waiting. Nothing is charged, and you can be invited again later.'}
+                  </p>
+                  <Button
+                    variant="outline" size="sm" className="w-full"
+                    data-testid="respond-decline-button"
+                    disabled={decline.isPending}
+                    onClick={() => decline.mutate({ rfqId })}
+                  >
+                    {decline.isPending ? '…' : (ar ? 'الاعتذار عن الدعوة' : 'Decline this invitation')}
+                  </Button>
+                </CardContent>
+              </Card>
             )}
           </div>
         </div>

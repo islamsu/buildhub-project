@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { Pager } from '@/components/Pager';
+import { NewReferralCampaign } from '@/components/NewReferralCampaign';
 import { Link } from 'wouter';
 import { Gift, Megaphone, Search, UsersRound } from 'lucide-react';
 import { DEFAULT_ATTRIBUTION_WINDOW_DAYS } from '@shared/referralRewards';
@@ -305,6 +306,15 @@ export default function AdminReferrals() {
 
           {/* ── CAMPAIGNS: six procedures that no client has ever called ──── */}
           <TabsContent value="campaigns" className="space-y-3 pt-4">
+            {/*
+              The empty state below says no reward can be granted until a
+              campaign exists - and until now there was no way to create one
+              from the product at all. `admin.createReferralCampaign` had no
+              caller; campaigns were insertable only with SQL.
+            */}
+            <div className="flex justify-end">
+              <NewReferralCampaign onCreated={invalidate} />
+            </div>
             {campaigns.isError ? (
               <LoadFailed {...failedCopy} onRetry={() => void campaigns.refetch()} />
             ) : (campaigns.data?.length ?? 0) === 0 ? (

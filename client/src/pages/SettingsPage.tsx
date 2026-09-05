@@ -43,6 +43,7 @@ import VendorCompanyProfile from '@/components/VendorCompanyProfile';
 import VendorNameChangeRequest from '@/components/VendorNameChangeRequest';
 import ReferralInviteEarn from '@/components/ReferralInviteEarn';
 import BenefitsAndLimits from '@/components/BenefitsAndLimits';
+import MyActivity from '@/components/MyActivity';
 import VendorServiceCategories from '@/components/VendorServiceCategories';
 import PortfolioManager from '@/components/PortfolioManager';
 import { Card, CardContent } from '@/components/ui/card';
@@ -150,6 +151,11 @@ export default function SettingsPage() {
           title={ar ? 'ادعُ واربح' : 'Invite & Earn'}
         >
           <Card><CardContent className="pt-6"><ReferralInviteEarn /></CardContent></Card>
+          {/*
+            `audit.mine` had no caller: BuildHub recorded a commercial trail
+            against every account and showed it to nobody.
+          */}
+          <Card><CardContent className="pt-6"><MyActivity /></CardContent></Card>
         </Section>
 
         {/* ── Plan & billing: providers only, and said so otherwise ──────── */}

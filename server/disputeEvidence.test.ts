@@ -188,12 +188,31 @@ describe('participant messages and internal notes are different things', () => {
     expect(get, 'the participant view reads admin notes').not.toContain('adminNotes');
   });
 
-  it('internal notes are written to adminNotes under a support permission', () => {
+  /*
+   * RESTATED: THE READER MOVED, THE RULE DID NOT.
+   *
+   * This read `admin.disputeNotes`, a query that fetched the notes for the same
+   * screen `admin.disputeDetail` already returns them on. Two procedures
+   * reading the same rows for one screen is a second place for the
+   * `subjectType = 'dispute'` filter to be got wrong - and getting it wrong
+   * there means showing an administrator notes written about a different kind
+   * of subject entirely. The duplicate is gone; the filter is asserted where it
+   * now lives.
+   */
+  it('internal notes are written and read under a support permission, filtered to disputes', () => {
     // The enum has always allowed 'dispute' and nothing had ever written one.
-    const admin = ROUTERS.slice(ROUTERS.indexOf('disputeNotes: adminWith'), ROUTERS.indexOf('assignDispute: adminWith'));
-    expect(admin).toContain("adminWith('support.manage')");
-    expect(admin).toContain("eq(adminNotes.subjectType, 'dispute')");
-    expect(admin).toContain("subjectType: 'dispute'");
+    const write = ROUTERS.slice(ROUTERS.indexOf('addDisputeNote: adminWith'), ROUTERS.indexOf('assignDispute: adminWith'));
+    expect(write).toContain("adminWith('support.manage')");
+    expect(write).toContain("subjectType: 'dispute'");
+
+    // The read, in the admin view service - and it is the ONLY one.
+    const view = readFileSync(new URL('./disputeAdminView.ts', import.meta.url), 'utf8');
+    expect(view).toContain("eq(adminNotes.subjectType, 'dispute')");
+    expect(view).toContain('eq(adminNotes.subjectId, disputeId)');
+    expect(ROUTERS, 'a second notes reader has come back').not.toContain('disputeNotes: adminWith');
+    // And the detail procedure is behind the same permission as the writer.
+    const detail = ROUTERS.slice(ROUTERS.indexOf('disputeDetail: adminWith'), ROUTERS.indexOf('disputeAssignees:'));
+    expect(detail).toContain("adminWith('support.manage')");
   });
 
   it('and writing one notifies nobody, which is the point of it being internal', () => {

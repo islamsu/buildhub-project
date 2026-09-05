@@ -395,6 +395,24 @@ try {
     attempt(`delete from projectMembers where userId in (${ids})`);
     attempt(`delete from fieldValueHistory where ownerId in (${ids}) or actorId in (${ids})`);
     attempt(`delete from registrationReviewEvents where userId in (${ids}) or actorId in (${ids})`);
+    /*
+     * THE COMMERCIAL AUDIT TRAIL THIS PROBE'S OWN ACTIVITY WROTE.
+     *
+     * `commercialAuditEvents.subjectId` is polymorphic and carries no foreign
+     * key - deliberately, because an audit trail must outlive the record it
+     * describes. That is right for the product and wrong for a probe: rows
+     * naming this run's deleted RFQs and quotations survived it, and turned up
+     * on the administrator's new audit screen as events about records that no
+     * longer exist. Scoped to the ids this run created, never to the table.
+     */
+    attempt(`delete from commercialAuditEvents where ownerId in (${ids}) or actorId in (${ids})`);
+    if (made.rfqs.length > 0) {
+      attempt(`delete from commercialAuditEvents where subjectType='rfq' and subjectId in (${made.rfqs.join(',')})`);
+      attempt(`delete from commercialAuditEvents where subjectType='enquiry' and subjectId in (${made.rfqs.join(',')})`);
+    }
+    if (made.quotations && made.quotations.length > 0) {
+      attempt(`delete from commercialAuditEvents where subjectType='quotation' and subjectId in (${made.quotations.join(',')})`);
+    }
     attempt(`delete from notifications where userId in (${ids})`);
     attempt(`delete from userAccountAuditEvents where userId in (${ids}) or actorId in (${ids})`);
     attempt(`delete from analyticsEvents where userId in (${ids})`);

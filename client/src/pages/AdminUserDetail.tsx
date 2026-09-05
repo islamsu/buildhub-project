@@ -2,6 +2,7 @@ import { useAuth } from '@/_core/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PROVIDER_ROLES } from '@shared/roleMatrix';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -90,6 +91,28 @@ export default function AdminUserDetail() {
   const { data: userNotes = [] } = trpc.admin.userNotes.useQuery(
     { userId },
     { enabled: validId && can('users.read') },
+  );
+  /*
+   * WHAT ACTUALLY CHANGED, old value -> new value. The account audit trail
+   * above records that a field was edited and deliberately carries field NAMES
+   * and never values, because it is read by a wider audience. This is the
+   * narrower disclosure - `audit.recordHistory` authorizes it separately, to
+   * the record's own owner and to any administrator - and it had no caller, so
+   * the values BuildHub was recording could not be read by anyone.
+   */
+  const { data: fieldHistory = [] } = trpc.audit.recordHistory.useQuery(
+    { subjectType: 'user', subjectId: userId, limit: 50 },
+    { enabled: validId && can('users.read'), retry: false },
+  );
+  /*
+   * WHY THIS VENDOR IS OR IS NOT BEING MATCHED to enquiries. The diagnostics
+   * existed and nothing rendered them, so "why am I getting no enquiries?" -
+   * the question a vendor actually asks support - had no answer on any screen.
+   */
+  const isProvider = Boolean(detail && (PROVIDER_ROLES as readonly string[]).includes(String((detail as any).userRole)));
+  const { data: targeting } = trpc.admin.vendorTargeting.useQuery(
+    { userId },
+    { enabled: validId && can('marketplace.manage') && isProvider, retry: false },
   );
 
   const [freezeOpen, setFreezeOpen] = useState(false);
@@ -373,6 +396,53 @@ export default function AdminUserDetail() {
                           {event.note && <p className="mt-1 text-xs text-muted-foreground">{event.note}</p>}
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {fieldHistory.length > 0 && (
+                    <div className="mt-4">
+                      <p className="mb-2 text-sm font-medium">
+                        {lang === 'ar' ? 'ما الذي تغيّر بالضبط' : 'What actually changed'}
+                      </p>
+                      <div className="space-y-1 rounded-xl border p-3" data-testid="user-field-history">
+                        {fieldHistory.map((row: any) => (
+                          <p key={row.id} className="text-xs">
+                            <span className="font-medium">{row.field}</span>
+                            {': '}
+                            <span className="text-muted-foreground">{row.oldValue ?? '—'}</span>
+                            {' → '}
+                            <span>{row.newValue ?? '—'}</span>
+                            <span className="ms-2 text-muted-foreground">
+                              {new Date(row.createdAt).toLocaleString()}
+                            </span>
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {targeting && (
+                    <div className="mt-4">
+                      <p className="mb-2 text-sm font-medium">
+                        {lang === 'ar' ? 'لماذا يظهر (أو لا يظهر) لهذا المورّد استفسارات' : 'Why this vendor is or is not matched'}
+                      </p>
+                      <div className="space-y-1 rounded-xl border p-3 text-xs" data-testid="vendor-targeting">
+                        <p>
+                          {lang === 'ar' ? 'الفئات المعلنة' : 'Declared categories'}:{' '}
+                          {(targeting as any).categories?.length
+                            ? (targeting as any).categories.join(', ')
+                            : <span className="text-muted-foreground">{lang === 'ar' ? 'لا توجد — لن يُطابَق بأي طلب' : 'none — nothing can match them'}</span>}
+                        </p>
+                        <p>
+                          {lang === 'ar' ? 'استهلاك الاستفسارات' : 'Enquiry usage'}:{' '}
+                          {(targeting as any).usage?.used ?? 0}
+                          {' / '}
+                          {(targeting as any).usage?.allowance ?? (lang === 'ar' ? 'بلا حد' : 'unlimited')}
+                          {(targeting as any).usage?.limitReached
+                            ? ` — ${lang === 'ar' ? 'بلغ الحد' : 'limit reached'}`
+                            : ''}
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
