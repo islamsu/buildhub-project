@@ -101,8 +101,13 @@ export default function RolePlatform() {
   const utils = trpc.useUtils();
   const copy = ROLE_PLATFORM_COPY[role];
   const { data: projects = [] } = trpc.projects.list.useQuery(undefined, { enabled: isAuthenticated && role === 'homeowner' });
-  const { data: projectDirectory = [] } = trpc.projects.directory.useQuery(undefined, { enabled: isAuthenticated && isProfessional });
-  const { data: rfqs = [] } = trpc.rfq.list.useQuery(undefined, { enabled: isAuthenticated });
+  const directoryQuery = trpc.projects.directory.useQuery(
+    { page: 0, pageSize: 50 },
+    { enabled: isAuthenticated && isProfessional },
+  );
+  const projectDirectory = (directoryQuery.data?.rows ?? []) as any[];
+  const rfqListQuery = trpc.rfq.list.useQuery({ page: 0, pageSize: 50 }, { enabled: isAuthenticated });
+  const rfqs = (rfqListQuery.data?.rows ?? []) as any[];
   const { data: myQuotations = [] } = trpc.rfq.myQuotations.useQuery(undefined, { enabled: isAuthenticated && isProfessional });
   const { data: products = [] } = trpc.marketplace.myProducts.useQuery(undefined, { enabled: isAuthenticated && isSupplier });
   // Own vendor profile, used only to pass this account's id to VendorReputation below -

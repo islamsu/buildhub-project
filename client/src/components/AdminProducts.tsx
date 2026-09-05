@@ -5,21 +5,33 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Link } from 'wouter';
 import { Package, Search, Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Pager } from '@/components/Pager';
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
+
+const PAGE_SIZE = 25;
 
 export default function AdminProducts() {
   const { lang } = useLanguage();
   const ar = lang === 'ar';
-  const [query, setQuery] = useState('');
-  const { data: products = [], isLoading } = trpc.admin.products.useQuery();
+  const [typed, setTyped] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
 
-  const filtered = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    if (!term) return products;
-    return products.filter(product =>
-      `${product.name ?? ''} ${product.brand ?? ''} ${product.category ?? ''} ${product.supplierName ?? ''}`.toLowerCase().includes(term),
-    );
-  }, [products, query]);
+  /*
+   * THE SEARCH RUNS IN THE QUERY, NOT IN THE BROWSER.
+   *
+   * This filtered a `.limit(250)` array, so a product on row 251 came back as
+   * "no matching products" - with exactly the confidence of a correct answer,
+   * and no total on the screen to hint otherwise.
+   */
+  const list = trpc.admin.products.useQuery(
+    { page, pageSize: PAGE_SIZE, search: search || undefined },
+    { retry: false, placeholderData: previous => previous },
+  );
+  const isLoading = list.isLoading;
+  const filtered = (list.data?.rows ?? []) as any[];
 
   return (
     <Card data-testid="admin-products">
@@ -28,25 +40,38 @@ export default function AdminProducts() {
           <Package className="h-5 w-5" />
           {ar ? 'إدارة المنتجات' : 'Product Management'}
         </CardTitle>
-        <div className="relative max-w-md">
-          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="ps-9"
-            value={query}
-            onChange={event => setQuery(event.target.value)}
-            placeholder={ar ? 'ابحث بالمنتج أو المورد أو الفئة…' : 'Search product, supplier or category…'}
-          />
-        </div>
+        <form
+          className="flex max-w-md gap-2"
+          onSubmit={event => { event.preventDefault(); setSearch(typed.trim()); setPage(0); }}
+        >
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="ps-9"
+              value={typed}
+              data-testid="admin-products-search"
+              onChange={event => setTyped(event.target.value)}
+              placeholder={ar ? 'ابحث بالمنتج أو المورد أو الفئة…' : 'Search product, supplier or category…'}
+            />
+          </div>
+          <Button type="submit" variant="outline" className="h-9">{ar ? 'بحث' : 'Search'}</Button>
+        </form>
       </CardHeader>
-      <CardContent>
-        {isLoading ? (
+      <CardContent className="space-y-3">
+        {list.isError ? (
+          <LoadFailed {...loadFailedCopy(ar)} onRetry={() => void list.refetch()} />
+        ) : isLoading ? (
           <p className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             {ar ? 'جارٍ التحميل…' : 'Loading…'}
           </p>
         ) : filtered.length === 0 ? (
-          <p className="py-12 text-center text-sm text-muted-foreground">
-            {ar ? 'لا توجد منتجات مطابقة.' : 'No matching products.'}
+          /* Two sentences, because "no products listed" and "none match this
+             search" are different facts and only one of them is about you. */
+          <p className="py-12 text-center text-sm text-muted-foreground" data-testid="admin-products-empty">
+            {search
+              ? (ar ? 'لا توجد منتجات مطابقة لهذا البحث.' : 'No products match this search.')
+              : (ar ? 'لم يُدرج أي منتج بعد.' : 'No product has been listed yet.')}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -89,6 +114,12 @@ export default function AdminProducts() {
             </table>
           </div>
         )}
+
+        <Pager
+          ar={ar} page={page} total={list.data?.total ?? null}
+          pageCount={Math.max(1, Math.ceil((list.data?.total ?? 0) / PAGE_SIZE))}
+          onChange={setPage} testId="admin-products-pager"
+        />
       </CardContent>
     </Card>
   );

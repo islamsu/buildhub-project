@@ -1,0 +1,35 @@
+PASS  the probe planted 32 products under one supplier  [32]
+PASS  a page is bounded by its size  [10]
+PASS  and the total counts every match, not the page  [total=30]
+PASS  the second page is different rows - nothing shown twice or skipped  [0 overlapping]
+PASS  a page past the end is empty rather than an error, and the total still stands  [total=30]
+PASS  a caller cannot ask for the whole table  [400]
+PASS  a product is findable by its SUPPLIER's name - the search reaches the join  [total=32]
+PASS  and the count agrees with the rows the page returned  [25 rows of 32]
+PASS  searching "100%" finds the product NAMED that, not every row  [total=1]
+PASS  and "under_score" does not match "underXscore"  [total=1]
+PASS  a search that matches nothing says zero rather than erroring
+PASS  projects answers with a page and a real total  [total=20 rows=10]
+PASS  projects runs its search in the query, and finds nothing for nonsense  [total=0]
+PASS  placements answers with a page and a real total  [total=0 rows=0]
+PASS  placements runs its search in the query, and finds nothing for nonsense  [total=0]
+PASS  name changes answers with a page and a real total  [total=0 rows=0]
+PASS  name changes runs its search in the query, and finds nothing for nonsense  [total=0]
+PASS  the featured catalogue answers with a page and a real total  [total=32 rows=10]
+PASS  the featured catalogue runs its search in the query, and finds nothing for nonsense  [total=0]
+PASS  referral campaigns answers with a page and a real total  [total=0 rows=0]
+PASS  referral campaigns runs its search in the query, and finds nothing for nonsense  [total=0]
+PASS  a product is reachable in the featured catalogue by search, not only by luck  [total=30]
+PASS  an unrecognised status filter shows everything rather than emptying the list  [20 vs 20]
+PASS  the probe supplier can sign in, approved
+PASS  the RFQ board answers a PROVIDER with a page and the real total  [total=7 of 7, rows=5]
+PASS  and its second page is different requests  [0 repeated]
+PASS  the board never carries the requester's attachments
+PASS  the project directory refuses an administrator, who is not an approved provider  [403 FORBIDDEN]
+PASS  a supplier cannot read admin.products  [403 FORBIDDEN]
+PASS  a supplier cannot read admin.projects  [403 FORBIDDEN]
+PASS  a supplier cannot read admin.placements  [403 FORBIDDEN]
+PASS  a supplier cannot read admin.vendorNameChanges  [403 FORBIDDEN]
+PASS  CLEANUP: every row this probe planted is gone
+
+33/33 passed

@@ -58,6 +58,7 @@ import { notifyDisputeParties } from './disputeNotifications';
 import { subjectColumns, assignDisputeReference, hasSubject } from './disputeSubject';
 import { adminDisputeDetail, disputeStatusCounts, listAdminDisputes } from './disputeAdminView';
 import { listMyDisputes } from './disputeMyView';
+import { adminPage, allOf, COUNT, enumFilter, ADMIN_PAGE_SIZE_DEFAULT, ADMIN_PAGE_SIZE_MAX } from './adminList';
 import {
   requireSubjectParty, requireDisputeAccess, respondentCandidates, validateRespondent,
   partiesForSubject,
@@ -1108,7 +1109,10 @@ const projectsRouter = router({
     if (ids.length === 0) return [];
     return db.select().from(projects).where(inArray(projects.id, ids)).orderBy(desc(projects.createdAt));
   }),
-  directory: approvedProviderProcedure.query(async ({ ctx }) => {
+  directory: approvedProviderProcedure.input(z.object({
+    page: z.number().int().min(0).default(0),
+    pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(ADMIN_PAGE_SIZE_DEFAULT),
+  }).default({ page: 0, pageSize: ADMIN_PAGE_SIZE_DEFAULT })).query(async ({ ctx, input }) => {
     if (!providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Provider access required' });
     }
@@ -1117,7 +1121,7 @@ const projectsRouter = router({
     // columns) here. Confirmed against every consumer of this query (RolePlatform.tsx's
     // provider/supplier/PM workspaces) that only id/title/type/status/location/progress
     // are ever rendered from directory results.
-    return db.select({
+    const columns = {
       id: projects.id,
       title: projects.title,
       type: projects.type,
@@ -1125,7 +1129,19 @@ const projectsRouter = router({
       location: projects.location,
       progress: projects.progress,
       updatedAt: projects.updatedAt,
-    }).from(projects).orderBy(desc(projects.updatedAt)).limit(50);
+    };
+    /*
+     * PAGED, with a real total. Was `.limit(50)` and a bare array: a provider
+     * browsing for leads saw the fifty most recently updated projects and had
+     * no way to learn there were more, or how many.
+     */
+    return adminPage({
+      countQuery: db.select(COUNT).from(projects),
+      rowsQuery: db.select(columns).from(projects),
+      orderBy: [desc(projects.updatedAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
@@ -2575,7 +2591,10 @@ const rfqRouter = router({
   // at all is a pricing question - openQualifiedEnquiry charges a credit for
   // "full detail" - and narrowing it would change what the product gives away.
   // That is a call for you, not something to infer from a table.
-  list: protectedProcedure.query(async ({ ctx }) => {
+  list: protectedProcedure.input(z.object({
+    page: z.number().int().min(0).default(0),
+    pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(ADMIN_PAGE_SIZE_DEFAULT),
+  }).default({ page: 0, pageSize: ADMIN_PAGE_SIZE_DEFAULT })).query(async ({ ctx, input }) => {
     const db = await requireDb();
     /**
      * WHO THE FEED IS FOR.
@@ -2592,7 +2611,7 @@ const rfqRouter = router({
      */
     const isProvider = providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])
       && (ctx.user as { onboardingStatus?: string }).onboardingStatus === 'approved';
-    return db.select({
+    const columns = {
       id: rfqs.id,
       requesterId: rfqs.requesterId,
       projectId: rfqs.projectId,
@@ -2605,9 +2624,29 @@ const rfqRouter = router({
       productReference: rfqs.productReference,
       status: rfqs.status,
       createdAt: rfqs.createdAt,
-    }).from(rfqs)
-      .where(isProvider ? undefined : eq(rfqs.requesterId, ctx.user.id))
-      .orderBy(desc(rfqs.createdAt)).limit(50);
+    };
+    /*
+     * PAGED, with a real total.
+     *
+     * A note two procedures below already named this limit "pagination, not an
+     * authorization boundary" and left it as the one honest asymmetry between
+     * the feed and `rfq.summary`. It was pagination with no second page: fifty
+     * newest, no total, and an RFQ that aged out of the feed was unreachable
+     * from the board a provider browses for work. Now it is actually
+     * pagination, and the asymmetry that note describes is gone rather than
+     * merely disclosed.
+     *
+     * The scope is UNCHANGED: a non-provider still sees only their own.
+     */
+    const scope = isProvider ? undefined : eq(rfqs.requesterId, ctx.user.id);
+    return adminPage({
+      countQuery: db.select(COUNT).from(rfqs),
+      rowsQuery: db.select(columns).from(rfqs),
+      where: scope,
+      orderBy: [desc(rfqs.createdAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
   myList: protectedProcedure.query(async ({ ctx }) => {
     const db = await requireDb();
@@ -5129,6 +5168,22 @@ const COMPLIANCE_APPLICANT_COLUMNS = {
   createdAt: users.createdAt,
 } as const;
 
+/**
+ * WHAT EVERY ADMINISTRATION LIST ACCEPTS.
+ *
+ * One schema, because five lists were each about to grow their own and the
+ * page-size bound is the thing that must not vary: a caller who can name their
+ * own page size can ask for the whole table, which is the read this milestone
+ * exists to stop.
+ */
+
+const ADMIN_LIST_INPUT = z.object({
+  page: z.number().int().min(0).default(0),
+  pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(ADMIN_PAGE_SIZE_DEFAULT),
+  search: z.string().trim().max(200).optional(),
+  status: z.string().trim().max(40).optional(),
+}).default({ page: 0, pageSize: ADMIN_PAGE_SIZE_DEFAULT });
+
 const adminRouter = router({
   /**
    * ── THE PRODUCT TAXONOMY, ADMINISTERED ──────────────────────────────────
@@ -5546,9 +5601,26 @@ const adminRouter = router({
       const { page, pageSize, search, status } = { page: 0, pageSize: 25, status: 'all' as const, ...(input ?? {}) };
       return listAdminReferrals(db, { page, pageSize, search, status });
     }),
-  referralCampaigns: adminWith('marketplace.manage').query(async () => {
+  /**
+   * Referral campaigns, paged. Was `.limit(100)` and a bare array - which was
+   * fine while campaigns could only be inserted with SQL and there were none.
+   * They are creatable from the product now, so the list will grow.
+   */
+  referralCampaigns: adminWith('marketplace.manage').input(ADMIN_LIST_INPUT).query(async ({ input }) => {
     const db = await requireDb();
-    return db.select().from(referralCampaigns).orderBy(desc(referralCampaigns.createdAt)).limit(100);
+    const term = (input.search ?? '').trim();
+    const where = allOf(and, [
+      term ? like(referralCampaigns.name, containsTerm(term)) : null,
+      enumFilter(referralCampaigns.status, input.status, eq),
+    ]);
+    return adminPage({
+      countQuery: db.select(COUNT).from(referralCampaigns),
+      rowsQuery: db.select().from(referralCampaigns),
+      where,
+      orderBy: [desc(referralCampaigns.createdAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
   createReferralCampaign: adminWith('marketplace.manage')
     .input(z.object({
@@ -5853,9 +5925,23 @@ const adminRouter = router({
         effect: outcome.effect, detail: outcome.detail,
       };
     }),
-  placements: adminWith('marketplace.manage').query(async () => {
+  /** Placements, paged and searched in the query. Was `.limit(250)` + a browser filter. */
+  placements: adminWith('marketplace.manage').input(ADMIN_LIST_INPUT).query(async ({ input }) => {
     const db = await requireDb();
-    return db.select({
+    const term = (input.search ?? '').trim();
+    const where = allOf(and, [term ? or(
+      like(users.name, containsTerm(term)),
+      like(products.name, containsTerm(term)),
+      like(vendorSponsorships.package, containsTerm(term)),
+      like(vendorSponsorships.surface, containsTerm(term)),
+      like(vendorSponsorships.category, containsTerm(term)),
+    ) : null]);
+    const joined = (builder: any) => builder
+      .leftJoin(users, eq(users.id, vendorSponsorships.vendorId))
+      .leftJoin(products, eq(products.id, vendorSponsorships.productId));
+    return adminPage({
+      countQuery: joined(db.select(COUNT).from(vendorSponsorships)),
+      rowsQuery: joined(db.select({
       id: vendorSponsorships.id,
       vendorId: vendorSponsorships.vendorId,
       productId: vendorSponsorships.productId,
@@ -5872,11 +5958,12 @@ const adminRouter = router({
       createdAt: vendorSponsorships.createdAt,
       vendorName: users.name,
       productName: products.name,
-    }).from(vendorSponsorships)
-      .leftJoin(users, eq(users.id, vendorSponsorships.vendorId))
-      .leftJoin(products, eq(products.id, vendorSponsorships.productId))
-      .orderBy(desc(vendorSponsorships.createdAt))
-      .limit(250);
+      }).from(vendorSponsorships)),
+      where,
+      orderBy: [desc(vendorSponsorships.createdAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
   /**
    * COMMERCIAL PLACEMENT PERFORMANCE, from real events only.
@@ -6838,47 +6925,89 @@ const adminRouter = router({
       }));
     }),
 
-  projects: adminWith('users.read').query(async () => {
+  /** Projects, paged and searched in the query. Was `.limit(250)` + a browser filter. */
+  projects: adminWith('users.read').input(ADMIN_LIST_INPUT).query(async ({ input }) => {
     const db = await requireDb();
-    const rows = await db.select({
-      id: projects.id,
-      title: projects.title,
-      type: projects.type,
-      status: projects.status,
-      location: projects.location,
-      progress: projects.progress,
-      ownerId: projects.ownerId,
-      createdAt: projects.createdAt,
-      updatedAt: projects.updatedAt,
-    }).from(projects).orderBy(desc(projects.updatedAt)).limit(250);
-    const ownerIds = Array.from(new Set(rows.map(row => row.ownerId).filter((id): id is number => Number.isInteger(id) && id > 0)));
-    const ownerRows = ownerIds.length
-      ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ownerIds))
-      : [];
-    const ownerNames = new Map(ownerRows.map(row => [row.id, row.name]));
-    return rows.map(row => ({ ...row, ownerName: ownerNames.get(row.ownerId) ?? null }));
+    const term = (input.search ?? '').trim();
+    const where = allOf(and, [
+      term ? or(
+        like(projects.title, containsTerm(term)),
+        like(projects.location, containsTerm(term)),
+        like(users.name, containsTerm(term)),
+      ) : null,
+      /*
+       * A CLOSED ENUM, and an unrecognised value is DROPPED rather than
+       * compared - see enumFilter. The allowed set is read from the column, so
+       * it cannot fall behind the schema the way a hand-written list does.
+       */
+      enumFilter(projects.status, input.status, eq),
+    ]);
+    const joined = (builder: any) => builder.leftJoin(users, eq(users.id, projects.ownerId));
+    return adminPage({
+      countQuery: joined(db.select(COUNT).from(projects)),
+      rowsQuery: joined(db.select({
+        id: projects.id,
+        title: projects.title,
+        type: projects.type,
+        status: projects.status,
+        location: projects.location,
+        progress: projects.progress,
+        ownerId: projects.ownerId,
+        createdAt: projects.createdAt,
+        updatedAt: projects.updatedAt,
+        ownerName: users.name,
+      }).from(projects)),
+      where,
+      orderBy: [desc(projects.updatedAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
 
-  products: adminWith('marketplace.manage').query(async () => {
+  /**
+   * The product catalogue, PAGED AND SEARCHED IN THE QUERY.
+   *
+   * Was `.limit(250)` returning a bare array, with the search running in the
+   * browser over whatever arrived - so a search for a product on row 251
+   * answered "no matching products" with exactly the confidence it answers
+   * correctly. See server/adminList.ts.
+   */
+  products: adminWith('marketplace.manage').input(ADMIN_LIST_INPUT).query(async ({ input }) => {
     const db = await requireDb();
-    const rows = await db.select({
-      id: products.id,
-      name: products.name,
-      brand: products.brand,
-      category: products.category,
-      active: products.active,
-      featured: products.featured,
-      price: products.price,
-      stock: products.stock,
-      supplierId: products.supplierId,
-      createdAt: products.createdAt,
-    }).from(products).orderBy(desc(products.createdAt)).limit(250);
-    const supplierIds = Array.from(new Set(rows.map(row => row.supplierId).filter((id): id is number => Number.isInteger(id) && id > 0)));
-    const supplierRows = supplierIds.length
-      ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, supplierIds))
-      : [];
-    const supplierNames = new Map(supplierRows.map(row => [row.id, row.name]));
-    return rows.map(row => ({ ...row, supplierName: supplierNames.get(row.supplierId) ?? null }));
+    const term = (input.search ?? '').trim();
+    // The supplier is JOINED rather than looked up afterwards, so the search can
+    // reach their name and the count can be filtered by it too.
+    const where = allOf(and, [
+      term ? or(
+        like(products.name, containsTerm(term)),
+        like(products.brand, containsTerm(term)),
+        like(products.category, containsTerm(term)),
+        like(users.name, containsTerm(term)),
+      ) : null,
+      input.status === 'active' ? eq(products.active, true) : null,
+      input.status === 'inactive' ? eq(products.active, false) : null,
+    ]);
+    const joined = (builder: any) => builder.leftJoin(users, eq(users.id, products.supplierId));
+    return adminPage({
+      countQuery: joined(db.select(COUNT).from(products)),
+      rowsQuery: joined(db.select({
+        id: products.id,
+        name: products.name,
+        brand: products.brand,
+        category: products.category,
+        active: products.active,
+        featured: products.featured,
+        price: products.price,
+        stock: products.stock,
+        supplierId: products.supplierId,
+        createdAt: products.createdAt,
+        supplierName: users.name,
+      }).from(products)),
+      where,
+      orderBy: [desc(products.createdAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
 
   projectDetail: adminWith('users.read').input(z.object({ projectId: z.number().int().positive() })).query(async ({ input }) => {
@@ -6935,9 +7064,26 @@ const adminRouter = router({
     };
   }),
 
-  vendorNameChanges: adminWith('marketplace.manage').query(async () => {
+  /** Name-change requests, paged and filtered in the query. Was `.limit(250)` + a browser filter. */
+  vendorNameChanges: adminWith('marketplace.manage').input(ADMIN_LIST_INPUT).query(async ({ input }) => {
     const db = await requireDb();
-    const rows = await db.select({
+    const term = (input.search ?? '').trim();
+    const where = allOf(and, [
+      term ? or(
+        like(users.name, containsTerm(term)),
+        like(users.email, containsTerm(term)),
+        like(vendorProfiles.companyName, containsTerm(term)),
+        like(vendorProfiles.tradingName, containsTerm(term)),
+        like(vendorNameChangeRequests.requestedValue, containsTerm(term)),
+      ) : null,
+      enumFilter(vendorNameChangeRequests.status, input.status, eq),
+    ]);
+    const joined = (builder: any) => builder
+      .innerJoin(users, eq(users.id, vendorNameChangeRequests.userId))
+      .leftJoin(vendorProfiles, eq(vendorProfiles.userId, vendorNameChangeRequests.userId));
+    return adminPage({
+      countQuery: joined(db.select(COUNT).from(vendorNameChangeRequests)),
+      rowsQuery: joined(db.select({
       id: vendorNameChangeRequests.id,
       userId: vendorNameChangeRequests.userId,
       field: vendorNameChangeRequests.field,
@@ -6954,12 +7100,12 @@ const adminRouter = router({
       userEmail: users.email,
       companyName: vendorProfiles.companyName,
       tradingName: vendorProfiles.tradingName,
-    }).from(vendorNameChangeRequests)
-      .innerJoin(users, eq(users.id, vendorNameChangeRequests.userId))
-      .leftJoin(vendorProfiles, eq(vendorProfiles.userId, vendorNameChangeRequests.userId))
-      .orderBy(desc(vendorNameChangeRequests.createdAt))
-      .limit(250);
-    return rows;
+      }).from(vendorNameChangeRequests)),
+      where,
+      orderBy: [desc(vendorNameChangeRequests.createdAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
 
   reviewVendorNameChange: adminWith('marketplace.manage')
@@ -7361,22 +7507,38 @@ const adminRouter = router({
    * data. Featured first, so the list is ordered the same way the public
    * marketplace shows them.
    */
-  marketplaceProducts: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    return db.select({
-      id: products.id,
-      name: products.name,
-      nameAr: products.nameAr,
-      category: products.category,
-      active: products.active,
-      featured: products.featured,
-      supplierId: products.supplierId,
-      supplierName: users.name,
-    }).from(products)
-      .leftJoin(users, eq(products.supplierId, users.id))
-      .orderBy(desc(products.featured), desc(products.createdAt))
-      .limit(200);
+  /**
+   * The catalogue, for choosing what to feature. Was `.limit(200)` with the
+   * featured ones first - so a product outside the first 200 could not be
+   * featured from this screen at all, and nothing said so.
+   */
+  marketplaceProducts: adminWith('marketplace.manage').input(ADMIN_LIST_INPUT).query(async ({ input }) => {
+    const db = await requireDb();
+    const term = (input.search ?? '').trim();
+    const where = allOf(and, [term ? or(
+      like(products.name, containsTerm(term)),
+      like(products.nameAr, containsTerm(term)),
+      like(products.category, containsTerm(term)),
+      like(users.name, containsTerm(term)),
+    ) : null]);
+    const joined = (builder: any) => builder.leftJoin(users, eq(products.supplierId, users.id));
+    return adminPage({
+      countQuery: joined(db.select(COUNT).from(products)),
+      rowsQuery: joined(db.select({
+        id: products.id,
+        name: products.name,
+        nameAr: products.nameAr,
+        category: products.category,
+        active: products.active,
+        featured: products.featured,
+        supplierId: products.supplierId,
+        supplierName: users.name,
+      }).from(products)),
+      where,
+      orderBy: [desc(products.featured), desc(products.createdAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
 
   setVendorPlanManually: adminWith('billing.manage')

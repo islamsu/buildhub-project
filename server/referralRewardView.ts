@@ -19,6 +19,7 @@
  * turn a withdrawn reward into a lapsed one.
  */
 import { and, desc, eq, inArray, like, or, sql } from 'drizzle-orm';
+import { containsTerm } from './_core/searchTerms';
 import { referralCampaigns, referralRewards, referrals, users } from '../drizzle/schema';
 
 export type DerivedRewardStatus = 'PENDING' | 'GRANTED' | 'EXPIRED' | 'REVERSED' | 'REJECTED';
@@ -202,9 +203,9 @@ export async function listAdminReferrals(
   const filters = [
     query.status && query.status !== 'all' ? eq(referrals.status, query.status as any) : null,
     term ? or(
-      like(users.name, `%${term}%`),
-      like(users.email, `%${term}%`),
-      like(referrals.code, `%${term}%`),
+      like(users.name, containsTerm(term)),
+      like(users.email, containsTerm(term)),
+      like(referrals.code, containsTerm(term)),
     ) : null,
   ].filter(Boolean) as any[];
   const where = filters.length > 0 ? and(...filters) : undefined;

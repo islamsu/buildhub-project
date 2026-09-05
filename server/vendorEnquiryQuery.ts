@@ -32,6 +32,7 @@
  * two renderings and no way to update one without the other.
  */
 import { sql, type SQL } from 'drizzle-orm';
+import { containsTerm } from './_core/searchTerms';
 import {
   DEFAULT_ENQUIRY_STATE,
   ENQUIRY_STATE_RULES,
@@ -324,7 +325,15 @@ export async function enquiryList(
       : sql`enq.assigneeId = ${filters.assigneeId}`);
   }
   if (filters.search) {
-    const term = `%${filters.search.trim()}%`;
+    /*
+     * ESCAPED, through the canonical helper.
+     *
+     * This built its own `%...%` and so did not neutralise the user's own
+     * wildcards: an administrator searching the enquiry list for "%" matched
+     * every row, and "50_" matched "500". The guard that catches this read only
+     * two named files when this one was written, which is why it stood.
+     */
+    const term = containsTerm(filters.search.trim());
     // A pasted ENQ-501-10 or "RFQ #501" should find the thing it names rather
     // than nothing: the reference is parsed first, and the free-text match is
     // the fallback.

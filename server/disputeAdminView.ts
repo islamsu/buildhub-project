@@ -24,6 +24,7 @@
  * the page actually needs.
  */
 import { and, asc, desc, eq, inArray, isNull, isNotNull, like, or, sql } from 'drizzle-orm';
+import { containsTerm } from './_core/searchTerms';
 import { alias } from 'drizzle-orm/mysql-core';
 import {
   adminNotes, disputeEvidence, disputeMessages, disputeStatusHistory, disputes, users,
@@ -131,12 +132,12 @@ export function disputeQueueFilters(query: AdminDisputeQuery): unknown[] {
   if (referenceId !== null) filters.push(eq(disputes.id, referenceId));
   else if (text) {
     filters.push(or(
-      like(disputes.title, `%${text}%`),
-      like(disputes.reference, `%${text}%`),
-      like(reporter.name, `%${text}%`),
-      like(reporter.email, `%${text}%`),
-      like(respondent.name, `%${text}%`),
-      like(respondent.email, `%${text}%`),
+      like(disputes.title, containsTerm(text)),
+      like(disputes.reference, containsTerm(text)),
+      like(reporter.name, containsTerm(text)),
+      like(reporter.email, containsTerm(text)),
+      like(respondent.name, containsTerm(text)),
+      like(respondent.email, containsTerm(text)),
     ));
   }
   return filters;

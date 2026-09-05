@@ -52,7 +52,12 @@ export default function AdminReferrals() {
     { retry: false },
   );
   const rewards = trpc.admin.referralRewards.useQuery({ page: rewardPage, pageSize: PAGE_SIZE }, { retry: false });
-  const campaigns = trpc.admin.referralCampaigns.useQuery(undefined, { retry: false });
+  const [campaignPage, setCampaignPage] = useState(0);
+  const campaigns = trpc.admin.referralCampaigns.useQuery(
+    { page: campaignPage, pageSize: PAGE_SIZE },
+    { retry: false, placeholderData: previous => previous },
+  );
+  const campaignRows = (campaigns.data?.rows ?? []) as any[];
 
   const utils = trpc.useUtils();
   const invalidate = () => {
@@ -317,7 +322,7 @@ export default function AdminReferrals() {
             </div>
             {campaigns.isError ? (
               <LoadFailed {...failedCopy} onRetry={() => void campaigns.refetch()} />
-            ) : (campaigns.data?.length ?? 0) === 0 ? (
+            ) : campaignRows.length === 0 ? (
               <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
                 {ar
                   ? 'لا توجد حملات إحالة. لن تُمنح أي مكافأة حتى تُنشأ حملة وتُفعَّل.'
@@ -337,7 +342,7 @@ export default function AdminReferrals() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(campaigns.data ?? []).map((row: any) => (
+                    {campaignRows.map((row: any) => (
                       <tr key={row.id} className="border-b last:border-0" data-testid={`campaign-row-${row.id}`}>
                         <td className="p-2">
                           <p className="font-medium">{row.name}</p>
@@ -394,6 +399,11 @@ export default function AdminReferrals() {
                 ? 'يمكن تعديل جدولة الحملة وحدودها في أي وقت. أما شروط المكافأة والأهلية فتُثبَّت بمجرد منح أول مكافأة، حتى لا يتغيّر ما وُعد به بعد منحه.'
                 : "A campaign's schedule and caps can be changed at any time. Its reward terms and eligibility are fixed once it has granted its first reward, so that what was promised is not rewritten after it has been given."}
             </p>
+            <Pager
+              ar={ar} page={campaignPage} total={campaigns.data?.total ?? null}
+              pageCount={Math.max(1, Math.ceil((campaigns.data?.total ?? 0) / PAGE_SIZE))}
+              onChange={setCampaignPage} testId="campaign-pager"
+            />
           </TabsContent>
         </Tabs>
       </CardContent>
