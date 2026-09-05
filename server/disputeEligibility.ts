@@ -137,6 +137,21 @@ async function rfqParties(db: any, rfqId: number): Promise<SubjectParties | null
  * rivals, and a dispute about one bid is none of their business - this is the
  * narrowest of the three subjects on purpose.
  */
+/**
+ * HOW A QUOTATION IS NAMED, IN ONE PLACE.
+ *
+ * A quotation has no title of its own - it is a bid ON a request - so it is
+ * named by the request it answers, with its own number so two bids on the same
+ * request are told apart. Exported because server/disputeMyView.ts labels a
+ * whole page of disputes without loading each subject's cast, and a live probe
+ * caught the two writing different sentences for the same record.
+ */
+export function quotationSubjectLabel(
+  quotationId: number, rfqTitle: string | null, rfqId: number,
+): string {
+  return `Quotation #${quotationId} on ${String(rfqTitle ?? `RFQ #${rfqId}`)}`;
+}
+
 async function quotationParties(db: any, quotationId: number): Promise<SubjectParties | null> {
   const [quotation] = await db.select({
     id: quotations.id, rfqId: quotations.rfqId, providerId: quotations.providerId,
@@ -151,7 +166,7 @@ async function quotationParties(db: any, quotationId: number): Promise<SubjectPa
     subjectType: 'quotation',
     subjectId: quotationId,
     principalId: Number(rfq.requesterId),
-    label: `Quotation #${quotationId} on ${String(rfq.title ?? `RFQ #${quotation.rfqId}`)}`,
+    label: quotationSubjectLabel(quotationId, rfq.title ?? null, Number(quotation.rfqId)),
     parties: dedupe([
       { userId: Number(quotation.providerId), relation: 'quotation_supplier' },
       { userId: Number(rfq.requesterId), relation: 'quotation_requester' },

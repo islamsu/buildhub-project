@@ -22,6 +22,7 @@
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { disputes, projects, quotations, rfqs } from '../drizzle/schema';
 import type { DisputeSubjectType } from '../shared/disputes';
+import { quotationSubjectLabel } from './disputeEligibility';
 
 export type MyDisputeQuery = { page: number; pageSize: number; status?: string };
 
@@ -71,6 +72,13 @@ export async function subjectLabels(
      * A quotation has no title of its own - it is a bid ON an RFQ - so it is
      * labelled by the RFQ it answers. Reading `quotations.id` alone would give
      * the screen "quotation 30", which is the id problem with extra steps.
+     *
+     * THE WORDING IS quotationSubjectLabel's, NOT ITS OWN. A live probe caught
+     * this reading "Quotation on X" here while the administrator's screen -
+     * which goes through server/disputeEligibility.ts - read "Quotation #71 on
+     * X" for the same dispute. Two wordings for one thing is how a support
+     * conversation ends up about which record each side is looking at, so the
+     * sentence is written once and both callers use it.
      */
     load('quotation', async ids => {
       const bids = await db.select({ id: quotations.id, rfqId: quotations.rfqId })
@@ -78,10 +86,10 @@ export async function subjectLabels(
       if (bids.length === 0) return [];
       const rfqRows = await db.select({ id: rfqs.id, title: rfqs.title })
         .from(rfqs).where(inArray(rfqs.id, bids.map((bid: any) => Number(bid.rfqId))));
-      const byRfq = new Map(rfqRows.map((row: any) => [Number(row.id), row.title]));
+      const byRfq = new Map<number, string | null>(rfqRows.map((row: any) => [Number(row.id), row.title ?? null]));
       return bids.map((bid: any) => ({
         id: Number(bid.id),
-        title: byRfq.get(Number(bid.rfqId)) ? `Quotation on ${byRfq.get(Number(bid.rfqId))}` : null,
+        title: quotationSubjectLabel(Number(bid.id), byRfq.get(Number(bid.rfqId)) ?? null, Number(bid.rfqId)),
       }));
     }),
   ]);

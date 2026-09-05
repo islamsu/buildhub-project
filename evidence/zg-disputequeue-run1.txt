@@ -1,8 +1,8 @@
 PASS  the queue answers at all, against real MariaDB  [total=0]
-PASS  every dispute got a human reference  [DSP-2026-000019]
+PASS  every dispute got a human reference  [DSP-2026-000044]
 PASS  the total counts the whole table, not the page  [0 -> 3]
 PASS  the status summary counts the whole table too  [open 0 -> 3]
-PASS  the reporter and the respondent are both named, from the joins  [ZG Owner 31067020 -> ZG Builder 31067020]
+PASS  the reporter and the respondent are both named, from the joins  [ZG Owner 13520780 -> ZG Builder 13520780]
 PASS  and their emails come with the row, for the support screen
 PASS  a page is bounded by its size  [2]
 PASS  the total is the table, not the page  [3]
@@ -24,14 +24,14 @@ PASS  "mine" now finds exactly the one I took  [total=1]
 PASS  and unassigned drops to the other two
 PASS  the priority the assignment set is the priority the filter finds
 PASS  a dispute can be resolved, with a recorded outcome
-PASS  the resolved one sinks below the open ones - a queue, not a diary  [20,21,19]
+PASS  the resolved one sinks below the open ones - a queue, not a diary  [45,46,44]
 PASS  and the status summary followed it  [open=2 resolved=1]
 PASS  an internal note can be recorded
-PASS  the detail resolves every id on the record to a name  [ZG Owner 31067020 / ZG Builder 31067020]
+PASS  the detail resolves every id on the record to a name  [ZG Owner 13520780 / ZG Builder 13520780]
 PASS  the history is there, opening with the dispute being raised
 PASS  the participant's message is shown, attributed
 PASS  the internal note is shown to the administrator
-PASS  the subject is named in words, not as an id  [ZG queue project 31067020]
+PASS  the subject is named in words, not as an id  [ZG queue project 13520780]
 PASS  a PARTY to the dispute never sees the internal note
 PASS  and sees no `notes` collection at all
 PASS  the reporter cannot read the admin queue  [403 FORBIDDEN]

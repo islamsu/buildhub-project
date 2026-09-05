@@ -116,7 +116,10 @@ describe('the labels for a whole page of disputes', () => {
       rfqs: [{ id: 20, title: 'Roof waterproofing' }],
     });
     const labels = await subjectLabels(db, [{ subjectType: 'quotation', subjectId: 30 }]);
-    expect(labels.get('quotation:30')).toBe('Quotation on Roof waterproofing');
+    // THE SAME SENTENCE the administrator's screen shows. Written once, in
+    // server/disputeEligibility.ts - a live probe caught these two wording the
+    // same record differently.
+    expect(labels.get('quotation:30')).toBe('Quotation #30 on Roof waterproofing');
   });
 
   /*
@@ -124,6 +127,23 @@ describe('the labels for a whole page of disputes', () => {
    * honest answer; "project 0" would be a relationship the record does not
    * contain.
    */
+  /*
+   * AND ONE WRITER FOR IT. Behaviour above proves the sentence is right in this
+   * service; only the source can say the OTHER service is not writing its own.
+   * That divergence is exactly what a live probe found - the user's list and
+   * the administrator's screen naming one quotation two different ways.
+   */
+  it('both dispute screens get that sentence from the same function', () => {
+    const eligibility = readFileSync(new URL('./disputeEligibility.ts', import.meta.url), 'utf8');
+    const mine = readFileSync(new URL('./disputeMyView.ts', import.meta.url), 'utf8');
+    expect(eligibility).toContain('export function quotationSubjectLabel(');
+    expect(eligibility).toContain('label: quotationSubjectLabel(');
+    expect(mine).toContain('quotationSubjectLabel(Number(bid.id)');
+    // Neither may hand-roll it beside the shared one.
+    expect(mine).not.toContain('`Quotation on ');
+    expect((eligibility.match(/`Quotation #/g) ?? []).length).toBe(1);
+  });
+
   it('invents nothing for a row with no subject', async () => {
     const { db, asked } = fakeDb({});
     const labels = await subjectLabels(db, [
