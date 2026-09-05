@@ -10,6 +10,7 @@
 // which it is doing.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ADMIN_PASSWORD_MIN_LENGTH } from '@shared/adminRoles';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { appRouter } from './routers';
@@ -220,7 +221,21 @@ describe('redeeming an invitation', () => {
     stubDb([live]);
     await expect(appRouter.createCaller(anonCtx()).auth.completeAdminInvitation({ token: 'g'.repeat(43), password: 'short' }))
       .rejects.toBeDefined();
-    expect(ROUTERS).toContain('const ADMIN_PASSWORD_MIN_LENGTH = 12');
+    // The minimum moved from a server-local const into shared/adminRoles.ts,
+    // because two client screens needed it and one already carried a hand-kept
+    // copy. This check follows it and gets stronger in the move: it now asserts
+    // the VALUE and its relationship to the ordinary account minimum, where the
+    // old text match would have passed on a `12` that nothing enforced and
+    // failed on a reformat that changed nothing.
+    // (The relationship to the ordinary account minimum is asserted in
+    // server/adminBootstrap.test.ts, which owns both numbers.)
+    expect(ADMIN_PASSWORD_MIN_LENGTH).toBe(12);
+    // And a password at exactly the minimum is accepted, so the rule is a
+    // boundary rather than a number nobody reaches.
+    stubDb([live]);
+    await expect(appRouter.createCaller(anonCtx()).auth.completeAdminInvitation({
+      token: 'g'.repeat(43), password: 'a'.repeat(ADMIN_PASSWORD_MIN_LENGTH - 1),
+    })).rejects.toBeDefined();
   });
 });
 

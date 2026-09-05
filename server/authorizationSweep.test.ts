@@ -144,6 +144,19 @@ describe('§1 every procedure is pinned to a tier', () => {
       // The plan catalogue: prices a signed-out visitor must be able to read.
       'billing.plans',
       // The public marketplace: product catalogue and vendor directory.
+      // Both category readers are public because BROWSING IS PUBLIC - the
+      // marketplace filter renders before anyone signs in. They return the
+      // taxonomy and nothing else: slug, English and Arabic name, scope,
+      // status, ordering and icon. No usage counts, no vendor, no product, no
+      // administrator identity, no audit. Its 'listable'/'public' views are
+      // BOTH public filters over active rows - the administrator's view of
+      // hidden and archived categories is a separate, permissioned procedure
+      // and is not reachable from here.
+      //
+      // `categoryNames`, the bare string-array form, WAS BESIDE IT AND IS GONE:
+      // it had no client caller, and every one of `categories`' four callers
+      // needs the slug and both languages a string array cannot carry. One
+      // public reader of the taxonomy, not two.
       'marketplace.categories',
       // ADMIN-CURATED FEATURED PROVIDERS, the editorial counterpart to the
       // paid strip below. Public for the same reason and on the same terms:
@@ -565,7 +578,10 @@ describe('§3 uploads are checked against their bytes', () => {
     // the ninth site is genuinely byte-checked and this is a stale counter
     // rather than an unguarded endpoint. The equality below is the real
     // invariant; the count exists so a NEW path cannot arrive unnoticed.
-    expect(puts).toBe(9);
+    // TEN since dispute evidence became an upload path - a participant
+    // attaching a photograph or a specification to make their case. Verified
+    // the same way before the number moved: `asserted + validated` is 10 too.
+    expect(puts).toBe(10);
     expect(asserted + validated).toBe(puts);
   });
 

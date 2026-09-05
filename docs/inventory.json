@@ -73,6 +73,14 @@
       "deadParamRoute": false
     },
     {
+      "path": "/admin/categories",
+      "component": "AdminCategories",
+      "source": "client/src/pages/AdminCategories.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
       "path": "/admin/users/:id",
       "component": "AdminUserDetail",
       "source": "client/src/pages/AdminUserDetail.tsx",
@@ -292,6 +300,22 @@
       "path": "/enquiries",
       "component": "EnquiriesPage",
       "source": "client/src/pages/EnquiriesPage.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/disputes/:id",
+      "component": "DisputeDetail",
+      "source": "client/src/pages/DisputeDetail.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/disputes",
+      "component": "MyDisputes",
+      "source": "client/src/pages/MyDisputes.tsx",
       "declaresParam": false,
       "readsParam": false,
       "deadParamRoute": false
@@ -596,6 +620,11 @@
       "indent": 2
     },
     {
+      "name": "categories",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
       "name": "importTemplate",
       "tier": "publicProcedure",
       "indent": 2
@@ -619,11 +648,6 @@
       "name": "setProductImages",
       "tier": "approvedProviderProcedure",
       "indent": 2
-    },
-    {
-      "name": "categories",
-      "tier": "publicProcedure",
-      "indent": 3
     },
     {
       "name": "questions",
@@ -816,9 +840,44 @@
       "indent": 2
     },
     {
+      "name": "subjectParties",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "create",
       "tier": "protectedProcedure",
-      "indent": 3
+      "indent": 2
+    },
+    {
+      "name": "withdraw",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "reopen",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "get",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "postMessage",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "addEvidence",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "removeEvidence",
+      "tier": "protectedProcedure",
+      "indent": 2
     },
     {
       "name": "list",
@@ -873,7 +932,7 @@
     {
       "name": "myReferral",
       "tier": "protectedProcedure",
-      "indent": 3
+      "indent": 2
     },
     {
       "name": "saveMyCompanyProfile",
@@ -911,9 +970,39 @@
       "indent": 2
     },
     {
+      "name": "categories",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "createCategory",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "updateCategory",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "setCategoryStatus",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "addCategoryAlias",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "removeCategoryAlias",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
       "name": "stats",
       "tier": "adminWith:users.read",
-      "indent": 2
+      "indent": 3
     },
     {
       "name": "users",
@@ -1128,12 +1217,12 @@
     {
       "name": "projects",
       "tier": "adminWith:users.read",
-      "indent": 3
+      "indent": 2
     },
     {
       "name": "products",
       "tier": "adminWith:marketplace.manage",
-      "indent": 3
+      "indent": 2
     },
     {
       "name": "projectDetail",
@@ -1143,7 +1232,7 @@
     {
       "name": "vendorNameChanges",
       "tier": "adminWith:marketplace.manage",
-      "indent": 3
+      "indent": 2
     },
     {
       "name": "reviewVendorNameChange",
@@ -1311,7 +1400,27 @@
       "indent": 2
     },
     {
+      "name": "disputeDetail",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "disputeAssignees",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
       "name": "updateDispute",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "addDisputeNote",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "assignDispute",
       "tier": "adminWith:support.manage",
       "indent": 2
     },
@@ -1416,17 +1525,12 @@
       "indent": 2
     },
     {
-      "name": "myEntitlements",
-      "tier": "protectedProcedure",
-      "indent": 2
-    },
-    {
-      "name": "myPlan",
-      "tier": "protectedProcedure",
-      "indent": 2
-    },
-    {
       "name": "myEnquiryUsage",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myBenefits",
       "tier": "protectedProcedure",
       "indent": 2
     },
@@ -1448,19 +1552,19 @@
   ],
   "procedureTiers": {
     "publicProcedure": 33,
-    "protectedProcedure": 65,
+    "protectedProcedure": 71,
     "complianceProcedure": 2,
     "approvedProviderProcedure": 29,
+    "adminWith:marketplace.manage": 44,
     "adminWith:users.read": 7,
     "adminWith:users.manage": 6,
     "adminWith:audit.read": 5,
     "adminWith:qa.manage": 7,
-    "adminWith:marketplace.manage": 38,
     "adminWith:billing.read": 4,
     "superAdminProcedure": 10,
     "adminProcedure": 4,
     "adminWith:billing.manage": 8,
-    "adminWith:support.manage": 2,
+    "adminWith:support.manage": 6,
     "adminWith:settings.manage": 2,
     "aiChatProcedure": 1
   },
@@ -1572,8 +1676,8 @@
     {
       "ident": "products",
       "name": "products",
-      "columns": 25,
-      "references": 1,
+      "columns": 26,
+      "references": 2,
       "notNull": 5,
       "unique": 0
     },
@@ -1644,9 +1748,33 @@
     {
       "ident": "disputes",
       "name": "disputes",
-      "columns": 15,
+      "columns": 35,
+      "references": 7,
+      "notNull": 11,
+      "unique": 0
+    },
+    {
+      "ident": "disputeEvidence",
+      "name": "disputeEvidence",
+      "columns": 12,
       "references": 3,
-      "notNull": 8,
+      "notNull": 7,
+      "unique": 0
+    },
+    {
+      "ident": "disputeMessages",
+      "name": "disputeMessages",
+      "columns": 7,
+      "references": 2,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "disputeStatusHistory",
+      "name": "disputeStatusHistory",
+      "columns": 8,
+      "references": 2,
+      "notNull": 4,
       "unique": 0
     },
     {
@@ -1696,6 +1824,22 @@
       "references": 3,
       "notNull": 2,
       "unique": 0
+    },
+    {
+      "ident": "productCategories",
+      "name": "productCategories",
+      "columns": 16,
+      "references": 2,
+      "notNull": 8,
+      "unique": 1
+    },
+    {
+      "ident": "productCategoryAliases",
+      "name": "productCategoryAliases",
+      "columns": 7,
+      "references": 2,
+      "notNull": 4,
+      "unique": 1
     },
     {
       "ident": "vendorCategories",
@@ -1796,15 +1940,15 @@
     {
       "ident": "referralCampaigns",
       "name": "referralCampaigns",
-      "columns": 18,
+      "columns": 21,
       "references": 1,
-      "notNull": 11,
+      "notNull": 13,
       "unique": 0
     },
     {
       "ident": "referralRewards",
       "name": "referralRewards",
-      "columns": 17,
+      "columns": 18,
       "references": 3,
       "notNull": 8,
       "unique": 0
@@ -1829,82 +1973,97 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 1266,
+      "line": 1360,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2221,
+      "line": 2440,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2301,
+      "line": 2520,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3029,
+      "line": 3282,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3086,
+      "line": 3339,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3493,
+      "line": 3746,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3740,
+      "line": 4004,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3880,
+      "line": 4142,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5297,
+      "line": 4291,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5375,
+      "line": 4461,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6149,
+      "line": 5910,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6220,
+      "line": 6243,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6608,
+      "line": 6321,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6809,
+      "line": 7152,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6834,
+      "line": 7223,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6859,
+      "line": 7627,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 7825,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 7855,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 7888,
       "via": "notifyUser"
     },
     {

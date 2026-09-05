@@ -7,7 +7,7 @@
 // explicit column allowlist - never `select().from(users)` - so a future
 // column added to the schema can never appear in a public directory response
 // by accident. Same discipline as PUBLIC_PROFILE_COLUMNS (Phase 4A.6.1) and
-// ADMIN_USER_LIST_COLUMNS (Phase 4A.6.7).
+// ADMIN_DIRECTORY_COLUMNS in server/adminUserDirectory.ts (Phase 4A.6.7).
 //
 // Ranking here is ORGANIC ONLY. Nothing in this file reads a billing plan,
 // subscription, or entitlement: a paying vendor is not ranked above a free one.

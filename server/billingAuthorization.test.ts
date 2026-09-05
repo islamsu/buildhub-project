@@ -51,15 +51,31 @@ const billingRouterBlock = routersSource.slice(
 );
 
 /** Mocks a single vendorSubscriptions row lookup plus an empty events list. */
+/**
+ * The subscription row, and NOTHING ELSE FOUND.
+ *
+ * `myBenefits` reads more than the subscription - the entitlement overrides and
+ * the allowance bonuses too - and the first version of this fake answered those
+ * with an object rather than a list, which surfaced as "bonusRows.map is not a
+ * function" instead of as an entitlement result. An unrecognised read now
+ * returns an EMPTY LIST, which is the truthful answer for a vendor who has
+ * nothing: the assertions below are about a vendor with no billing record, and
+ * every extra read they trigger genuinely has no rows.
+ */
 function mockDbWithSubscription(row: Record<string, unknown> | null) {
-  const select = vi.fn().mockImplementation(() => ({
-    from: () => ({
-      where: () => ({
-        limit: () => Promise.resolve(row ? [row] : []),
-        orderBy: () => ({ limit: () => Promise.resolve([]) }),
-      }),
-    }),
-  }));
+  const select = vi.fn().mockImplementation(() => {
+    const chain: any = {
+      from: () => chain,
+      innerJoin: () => chain,
+      leftJoin: () => chain,
+      orderBy: () => chain,
+      groupBy: () => chain,
+      limit: () => Promise.resolve(row ? [row] : []),
+      where: () => chain,
+      then: (resolve: any, reject: any) => Promise.resolve([]).then(resolve, reject),
+    };
+    return chain;
+  });
   return { select };
 }
 
@@ -238,26 +254,38 @@ describe('admin billing visibility (Phase 4B.1)', () => {
 describe('entitlement API - server authority (Phase 4B.2)', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('billing.myEntitlements rejects an unauthenticated caller', async () => {
+  it('billing.myBenefits rejects an unauthenticated caller', async () => {
     const caller = appRouter.createCaller(makeAnonCtx());
-    await expect(caller.billing.myEntitlements()).rejects.toThrow();
+    await expect(caller.billing.myBenefits()).rejects.toThrow();
   });
 
-  it('billing.myPlan rejects an unauthenticated caller', async () => {
+  it('billing.myEnquiryUsage rejects an unauthenticated caller', async () => {
     const caller = appRouter.createCaller(makeAnonCtx());
-    await expect(caller.billing.myPlan()).rejects.toThrow();
+    await expect(caller.billing.myEnquiryUsage()).rejects.toThrow();
   });
 
+  /*
+   * RESTATED AGAINST THE READER THAT SURVIVES, not weakened.
+   *
+   * `billing.myEntitlements` and `billing.myPlan` were removed: neither had a
+   * client caller, and `myBenefits` returns `toVendorEntitlementResponse` as
+   * its `plan` - the same object myEntitlements returned - with the usage and
+   * the allowance breakdown the screen needs. Three readers of one resolution,
+   * two reaching no screen, is how one of them drifts.
+   *
+   * Every property asserted below is the property that was asserted before, on
+   * the endpoint a vendor can actually reach.
+   */
   it('resolves FREE for a vendor with no billing record', async () => {
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(mockDbWithSubscription(null));
     const caller = appRouter.createCaller(makeCtx(10));
-    const result = await caller.billing.myEntitlements();
-    expect(result.plan).toBe('free');
-    expect(result.qualifiedEnquiryAllowance).toBe(5);
+    const result = await caller.billing.myBenefits();
+    expect(result.plan.plan).toBe('free');
+    expect(result.plan.qualifiedEnquiryAllowance).toBe(5);
   });
 
-  it('CROSS-VENDOR: neither entitlement endpoint accepts a userId, so none can target another vendor', () => {
-    for (const name of ['myEntitlements:', 'myPlan:']) {
+  it('CROSS-VENDOR: no entitlement endpoint accepts a userId, so none can target another vendor', () => {
+    for (const name of ['myBenefits:', 'myEnquiryUsage:', 'myLifecycle:']) {
       const start = billingRouterBlock.indexOf(name);
       const proc = billingRouterBlock.slice(start, billingRouterBlock.indexOf('}),', start));
       expect(proc, name).not.toMatch(/\.input\(/);
@@ -269,10 +297,10 @@ describe('entitlement API - server authority (Phase 4B.2)', () => {
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(mockDbWithSubscription(null));
     const caller = appRouter.createCaller(makeCtx(10));
     const forged = { plan: 'premium', entitlements: { qualifiedEnquiriesPerMonth: 9999 }, isPaid: true, founderPriceActive: true };
-    const result = await (caller.billing.myEntitlements as unknown as (a: unknown) => Promise<{ plan: string; qualifiedEnquiryAllowance: number | null; isPaid: boolean }>)(forged);
-    expect(result.plan).toBe('free');
-    expect(result.qualifiedEnquiryAllowance).toBe(5);
-    expect(result.isPaid).toBe(false);
+    const result = await (caller.billing.myBenefits as unknown as (a: unknown) => Promise<{ plan: { plan: string; qualifiedEnquiryAllowance: number | null; isPaid: boolean } }>)(forged);
+    expect(result.plan.plan).toBe('free');
+    expect(result.plan.qualifiedEnquiryAllowance).toBe(5);
+    expect(result.plan.isPaid).toBe(false);
   });
 
   it('a vendor cannot upgrade themselves: no billing-router mutation can raise a plan', () => {

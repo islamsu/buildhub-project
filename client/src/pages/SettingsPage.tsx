@@ -42,6 +42,8 @@ import VendorBilling from '@/components/VendorBilling';
 import VendorCompanyProfile from '@/components/VendorCompanyProfile';
 import VendorNameChangeRequest from '@/components/VendorNameChangeRequest';
 import ReferralInviteEarn from '@/components/ReferralInviteEarn';
+import BenefitsAndLimits from '@/components/BenefitsAndLimits';
+import MyActivity from '@/components/MyActivity';
 import VendorServiceCategories from '@/components/VendorServiceCategories';
 import PortfolioManager from '@/components/PortfolioManager';
 import { Card, CardContent } from '@/components/ui/card';
@@ -149,6 +151,11 @@ export default function SettingsPage() {
           title={ar ? 'ادعُ واربح' : 'Invite & Earn'}
         >
           <Card><CardContent className="pt-6"><ReferralInviteEarn /></CardContent></Card>
+          {/*
+            `audit.mine` had no caller: BuildHub recorded a commercial trail
+            against every account and showed it to nobody.
+          */}
+          <Card><CardContent className="pt-6"><MyActivity /></CardContent></Card>
         </Section>
 
         {/* ── Plan & billing: providers only, and said so otherwise ──────── */}
@@ -158,7 +165,16 @@ export default function SettingsPage() {
           title={ar ? 'الباقة والفوترة' : 'Plan & billing'}
         >
           {isProvider
-            ? <VendorBilling />
+            ? <div className="space-y-4">
+                {/*
+                  BENEFITS AND LIMITS, above the billing controls.
+                  `billing.myEntitlements` and `billing.myPlan` had no screen at
+                  all, so a vendor could not find out what they were entitled to
+                  or why it had changed.
+                */}
+                <BenefitsAndLimits />
+                <VendorBilling />
+              </div>
             : <NotForThisAccount
                 ar={ar}
                 en="Plans apply to provider accounts — suppliers, contractors, engineers, architects and project managers. Posting requests is free."

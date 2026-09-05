@@ -1,30 +1,26 @@
 import { and, eq, sql } from 'drizzle-orm';
 import {
-  referrals, referralCampaigns, referralRewards, userAccountAuditEvents, users,
+  referrals, referralCampaigns, referralRewards, users,
 } from '../drizzle/schema';
-import { setEnquiryAllowance } from './billing/overrides';
+import { resolveReferralCampaign, type CampaignRejection } from './referralCampaignResolution';
+import { GLOBAL_PLACEMENT_SCOPE } from '../shared/placement';
+import { grantEnquiryBonus } from './billing/overrides';
+import { extendSubscriptionPeriod } from './billing/lifecycle';
 import { resolveVendorEntitlements } from './billing/entitlements';
 import { notifyUser } from './notifications';
 import { bookPlacement } from './placementBooking';
+import { recordAccountEvent } from './_core/accountAudit';
 
 type Db = any;
 
 type QualifyResult =
   | { outcome: 'no_referral' }
-  | { outcome: 'campaign_ineligible'; reason: string }
+  | { outcome: 'campaign_ineligible'; reason: string; rejections?: { campaignId: number; name: string; reason: CampaignRejection }[] }
   | { outcome: 'cap_reached' }
   | { outcome: 'already_qualified'; referralId: number }
   | { outcome: 'granted'; referralId: number; rewardId: number; rewardType: string; rewardValue: string }
   | { outcome: 'reward_pending'; referralId: number; rewardId: number; rewardType: string; rewardValue: string };
 
-function rolesFrom(raw: string): string[] {
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
 
 export async function qualifyReferralEvent(
   db: Db,
@@ -37,105 +33,347 @@ export async function qualifyReferralEvent(
   if (!referral) return { outcome: 'no_referral' };
   if (referral.status === 'rewarded' && referral.qualificationEventKey) return { outcome: 'already_qualified', referralId: referral.id };
 
-  const campaignId = referral.campaignId;
-  if (!campaignId) return { outcome: 'campaign_ineligible', reason: 'no campaign' };
-  const [campaign] = await db.select().from(referralCampaigns).where(eq(referralCampaigns.id, campaignId)).limit(1);
-  if (!campaign || campaign.status !== 'active') return { outcome: 'campaign_ineligible', reason: 'campaign inactive' };
-  if (campaign.startsAt && new Date(campaign.startsAt).getTime() > now.getTime()) return { outcome: 'campaign_ineligible', reason: 'campaign not started' };
-  if (campaign.endsAt && new Date(campaign.endsAt).getTime() < now.getTime()) return { outcome: 'campaign_ineligible', reason: 'campaign ended' };
-  if (campaign.qualificationType !== eventType) return { outcome: 'campaign_ineligible', reason: 'qualification mismatch' };
-
   if (eventKey && referral.qualificationEventKey === eventKey) return { outcome: 'already_qualified', referralId: referral.id };
 
-  const eligibleInviterRoles = rolesFrom(campaign.eligibleInviterRoles);
-  const eligibleReferredRoles = rolesFrom(campaign.eligibleReferredRoles);
-  const [referrerRow, referredRow] = await Promise.all([
-    db.select({ userRole: users.userRole }).from(users).where(eq(users.id, referral.referrerId)).limit(1),
-    db.select({ userRole: users.userRole }).from(users).where(eq(users.id, referral.referredId)).limit(1),
-  ]);
-  if (!referrerRow || !eligibleInviterRoles.includes(referrerRow.userRole ?? '')) return { outcome: 'campaign_ineligible', reason: 'inviter role' };
-  if (!referredRow || !eligibleReferredRoles.includes(referredRow.userRole ?? '')) return { outcome: 'campaign_ineligible', reason: 'referred role' };
-
+  // A referral that already holds a reward is finished, whatever fires next.
+  // ONE REFERRAL, ONE CAMPAIGN, ONE REWARD.
   const [rewardCount] = await db.select({ count: sql<number>`count(*)` }).from(referralRewards).where(eq(referralRewards.referralId, referral.id));
   if (Number(rewardCount?.count ?? 0) > 0) return { outcome: 'already_qualified', referralId: referral.id };
 
-  const [inviterRewards] = await db.select({ count: sql<number>`count(*)` }).from(referralRewards)
-    .where(and(eq(referralRewards.campaignId, campaign.id), eq(referralRewards.recipientUserId, referral.referrerId)));
-  if (Number(inviterRewards?.count ?? 0) >= campaign.perInviterCap) return { outcome: 'cap_reached' };
-  if (campaign.campaignCap) {
-    const [campaignRewards] = await db.select({ count: sql<number>`count(*)` }).from(referralRewards).where(eq(referralRewards.campaignId, campaign.id));
-    if (Number(campaignRewards?.count ?? 0) >= campaign.campaignCap) return { outcome: 'cap_reached' };
-  }
+  /**
+   * NOTE THE DOUBLE DESTRUCTURE.
+   *
+   * `Promise.all` of two queries yields an array of RESULT ARRAYS, so the
+   * previous `const [referrerRow, referredRow] = await Promise.all([...])`
+   * bound each name to a one-element array and every `referrerRow.userRole`
+   * read `undefined`. Both role checks below therefore compared against '' and
+   * would have refused every campaign.
+   *
+   * It never showed, because the function returned at 'no campaign' several
+   * lines earlier - on every referral, always. Fixing the binding is what made
+   * this reachable, and a live probe caught it on the first run.
+   */
+  const [[referrerRow], [referredRow]] = await Promise.all([
+    db.select({ userRole: users.userRole }).from(users).where(eq(users.id, referral.referrerId)).limit(1),
+    db.select({ userRole: users.userRole }).from(users).where(eq(users.id, referral.referredId)).limit(1),
+  ]);
 
-  await db.update(referrals).set({
-    status: 'qualified',
-    qualificationType: eventType,
-    qualificationEventKey: eventKey,
-    qualifiedAt: now,
-    qualificationNote: null,
-  }).where(eq(referrals.id, referral.id));
-
-  const rewardValues = {
-    referralId: referral.id,
-    campaignId: campaign.id,
-    recipientUserId: referral.referrerId,
-    rewardType: campaign.rewardType,
-    rewardValue: campaign.rewardValue,
-    source: 'REFERRAL_REWARD',
-    status: 'GRANTED' as const,
-    effectiveFrom: now,
-    expiresAt: campaign.rewardDurationDays ? new Date(now.getTime() + campaign.rewardDurationDays * 24 * 60 * 60 * 1000) : null,
-    grantedAt: now,
-  };
-
-  let rewardId = 0;
-  try {
-    const inserted = await db.insert(referralRewards).values(rewardValues);
-    rewardId = Number(inserted?.[0]?.insertId ?? 0);
-  } catch (error) {
-    const code = (error as { cause?: { code?: string }; code?: string })?.cause?.code
-      ?? (error as { code?: string })?.code;
-    if (code === 'ER_DUP_ENTRY') {
-      return { outcome: 'already_qualified', referralId: referral.id };
+  /**
+   * THE CAMPAIGN IS CHOSEN HERE, NOW - not at signup.
+   *
+   * `referrals.campaignId` was read on this line and NOTHING HAS EVER WRITTEN
+   * IT: the signup insert omits it and no other writer exists, so every
+   * referral in the product's history short-circuited at 'no campaign' and the
+   * engine has never granted a reward.
+   *
+   * The owner's decision is late binding, so the campaign is resolved from
+   * whatever is eligible at THIS moment. An id already on the row - a
+   * historical binding, or any future path that binds deliberately - is
+   * honoured rather than overridden.
+   */
+  async function resolveUnderLock(tx: any): Promise<
+    | { refusal: QualifyResult }
+    | { campaign: any; rewardId: number; expiresAt: Date | null }
+  > {
+    let campaign: any = null;
+    if (referral.campaignId) {
+      const [bound] = await tx.select().from(referralCampaigns).where(eq(referralCampaigns.id, referral.campaignId)).limit(1);
+      if (!bound) return { refusal: { outcome: 'campaign_ineligible', reason: 'bound campaign missing' } };
+      if (bound.status !== 'active') return { refusal: { outcome: 'campaign_ineligible', reason: 'campaign inactive' } };
+      if (bound.qualificationType !== eventType) return { refusal: { outcome: 'campaign_ineligible', reason: 'qualification mismatch' } };
+      campaign = bound;
+    } else {
+      const resolution = await resolveReferralCampaign(tx, {
+        qualificationType: eventType,
+        referredAt: new Date(referral.createdAt),
+        inviterRole: referrerRow?.userRole ?? null,
+        referredRole: referredRow?.userRole ?? null,
+        referrerId: referral.referrerId,
+        eventAt: now,
+      });
+      if (!resolution.ok) {
+        // The per-candidate reasons travel with the refusal. "Your invite was 100
+        // days old and the window is 90" and "no campaign is running for that
+        // event" are different answers, and an administrator investigating a
+        // complaint needs the first one.
+        return {
+          refusal: {
+            outcome: 'campaign_ineligible',
+            reason: resolution.considered === 0 ? 'no campaign' : 'no eligible campaign',
+            rejections: resolution.rejections,
+          },
+        };
+      }
+      campaign = resolution.campaign;
     }
-    throw error;
+
+    await tx.update(referrals).set({
+      status: 'qualified',
+      // BOUND, and bound once. The row now names the campaign it qualified
+      // under, and nothing above will re-resolve it: the reward-count check at
+      // the top of this function returns `already_qualified` on every later
+      // event, so a better campaign appearing tomorrow cannot move it.
+      campaignId: campaign.id,
+      qualificationType: eventType,
+      qualificationEventKey: eventKey,
+      qualifiedAt: now,
+      qualificationNote: null,
+    }).where(eq(referrals.id, referral.id));
+
+    /**
+     * THE REWARD IS WRITTEN PENDING, AND BECOMES GRANTED ONLY WHEN ITS EFFECT
+     * COMMITS.
+     *
+     * It used to be inserted as GRANTED before anything was applied, and the two
+     * calls that apply it - setEnquiryAllowance and bookPlacement - both RETURN
+     * A REFUSAL, and both return values were discarded. So a reward could read
+     * GRANTED in the ledger while the allowance it promises was refused and the
+     * placement it promises was never booked.
+     *
+     * That row is the one an administrator quotes back to a vendor. PENDING,
+     * GRANTED, REJECTED are all already in the schema and nothing wrote anything
+     * but GRANTED; this is what those states are for.
+     */
+    const expiresAt = campaign.rewardDurationDays
+      ? new Date(now.getTime() + campaign.rewardDurationDays * 24 * 60 * 60 * 1000)
+      : null;
+
+    let rewardId = 0;
+    try {
+      const inserted = await tx.insert(referralRewards).values({
+        referralId: referral.id,
+        campaignId: campaign.id,
+        recipientUserId: referral.referrerId,
+        // SNAPSHOT. A later edit to the campaign must not change what this
+        // referral was promised.
+        rewardType: campaign.rewardType,
+        rewardValue: campaign.rewardValue,
+        source: 'REFERRAL_REWARD',
+        status: 'PENDING' as const,
+        effectiveFrom: now,
+        expiresAt,
+        grantedAt: null,
+      });
+      rewardId = Number(inserted?.[0]?.insertId ?? 0);
+    } catch (error) {
+      const code = (error as { cause?: { code?: string }; code?: string })?.cause?.code
+        ?? (error as { code?: string })?.code;
+      if (code === 'ER_DUP_ENTRY') {
+        return { refusal: { outcome: 'already_qualified', referralId: referral.id } };
+      }
+      throw error;
+    }
+
+    // The claim is made. Everything past this point applies it, outside the lock.
+    return { campaign, rewardId, expiresAt };
   }
 
-  if (campaign.rewardType === 'EXTRA_QUALIFIED_ENQUIRIES') {
-    const bonus = Number(campaign.rewardValue);
-    if (Number.isFinite(bonus) && bonus > 0) {
+  /*
+   * ── THE CAP IS CHECKED AND CLAIMED UNDER ONE LOCK ────────────────────────
+   *
+   * Resolution counts how many rewards an inviter already holds, and the insert
+   * that consumes the cap happened afterwards, on a separate statement. Two
+   * qualifying events for the same inviter arriving together - two invitees
+   * verifying their email in the same second, which is exactly what a
+   * coordinated abuse attempt looks like - both read "0 used, cap 1" and both
+   * inserted. The `referralRewards` unique index does not help: it is per
+   * REFERRAL and campaign, and these are two different referrals.
+   *
+   * The inviter's own row is locked for the whole check-and-claim, which is the
+   * granularity `perInviterCap` and the global cap are defined at. The second
+   * event waits, re-counts, and sees the first one's PENDING row - PENDING
+   * counts toward a cap for precisely this reason.
+   *
+   * ONLY the decision is in here. Applying the effect touches the billing
+   * engine, the placement engine and the subscription lifecycle, and holding a
+   * row lock across all of that would serialise unrelated work on one inviter's
+   * row for as long as those take.
+   */
+  const claim = await db.transaction(async (tx: any) => {
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, referral.referrerId)).for('update');
+
+    // Re-read under the lock. A concurrent event may have claimed the reward
+    // for this very referral while this one was waiting.
+    const [claimed] = await tx.select({ count: sql<number>`count(*)` })
+      .from(referralRewards).where(eq(referralRewards.referralId, referral.id));
+    if (Number(claimed?.count ?? 0) > 0) return { taken: true as const };
+
+    return { taken: false as const, resolved: await resolveUnderLock(tx) };
+  });
+  if (claim.taken) return { outcome: 'already_qualified', referralId: referral.id };
+  if ('refusal' in claim.resolved) return claim.resolved.refusal;
+  const { campaign, rewardId, expiresAt } = claim.resolved;
+
+
+  /**
+   * APPLY IT, AND BELIEVE WHAT THE APPLICATION SAYS.
+   *
+   * Returns the refusal rather than throwing: a referral that cannot be paid is
+   * a business outcome to record, not a crash in the middle of somebody's
+   * account verification.
+   */
+  /**
+   * WHAT THIS REWARD ACTUALLY CREATED.
+   *
+   * Recorded so a reversal can undo THIS grant and not somebody else's - see
+   * REF-6. Matching on the reason text would work until two campaigns shared a
+   * name.
+   */
+  let effectRef: string | null = null;
+
+  const applied: { ok: true } | { ok: false; reason: string } = await (async () => {
+    if (campaign.rewardType === 'EXTRA_QUALIFIED_ENQUIRIES') {
+      const bonus = Number(campaign.rewardValue);
+      if (!Number.isFinite(bonus) || bonus <= 0) {
+        return { ok: false as const, reason: `Campaign reward value "${campaign.rewardValue}" is not a positive number of enquiries.` };
+      }
       const resolution = await resolveVendorEntitlements(referral.referrerId, now);
-      const current = resolution.qualifiedEnquiryAllowance;
-      const next = current === null ? null : current + bonus;
-      await setEnquiryAllowance({
+      if (resolution.qualifiedEnquiryAllowance === null) {
+        // An unlimited allowance cannot be increased, and pretending otherwise
+        // would leave a GRANTED row promising something already true.
+        return { ok: false as const, reason: 'This account already has an unlimited qualified-enquiry allowance.' };
+      }
+      /**
+       * AN ADDITIVE BONUS, not a new absolute allowance.
+       *
+       * This called setEnquiryAllowance with `current + bonus`, which REVOKES
+       * whatever override was there. So a referral reward silently destroyed an
+       * administrator's grant, and when the reward expired the vendor fell back
+       * to the PLAN value rather than to the administrator's - a temporary
+       * bonus permanently deleting a permanent decision. Bonuses now live in
+       * their own slot, stack with each other, and lapse without touching
+       * anything else.
+       */
+      const result = await grantEnquiryBonus({
         db: db as never,
         userId: referral.referrerId,
-        limit: next,
+        amount: bonus,
         reason: `Referral reward from ${campaign.name}`,
-        actorId: referral.referrerId,
-        endsAt: rewardValues.expiresAt,
+        // The PLATFORM granted this. Recording the referrer as the actor made a
+        // vendor the author of his own entitlement.
+        actorId: null,
+        endsAt: expiresAt,
+        now,
       });
+      if (!result.ok) return { ok: false as const, reason: `Allowance refused: ${result.reason}` };
+      effectRef = `OVERRIDE:${result.overrideId}`;
+      return { ok: true as const };
     }
+
+    if (campaign.rewardType === 'TEMPORARY_FEATURED') {
+      const booking = await bookPlacement(db, {
+        entityType: 'PROVIDER',
+        entityId: referral.referrerId,
+        /*
+         * A SURFACE THAT CAN ACTUALLY BE READ AT THIS SCOPE.
+         *
+         * Two things were wrong here, and fixing the first exposed the second.
+         * The scope was the string 'General', which is neither
+         * GLOBAL_PLACEMENT_SCOPE nor a taxonomy value, and publicPlacement.ts
+         * matches scope EXACTLY. Correcting it to GLOBAL was still invisible:
+         * `spotlightProviders` returns [] for GLOBAL BY DESIGN, because
+         * Spotlight is the block shown AFTER a type or category is chosen and
+         * asking for it at the root is a category error, not a wider query.
+         * TYPE_CATEGORY_SPOTLIGHT + GLOBAL is a combination no reader queries.
+         *
+         * BOOST at the root taxonomy is the one that renders: the unfiltered
+         * vendor directory calls boostCandidates with no category, so a
+         * root-scoped boost re-ranks the provider there, labelled FEATURED
+         * rather than Sponsored because no money bought it.
+         *
+         * NOT the Master slot, which was the other candidate. Master is ONE
+         * exclusive slot an advertiser buys; handing it out as a referral
+         * reward would give away inventory that is sold.
+         */
+        package: 'BOOST',
+        surface: 'SEARCH_RESULTS_BOOST',
+        source: 'REFERRAL_REWARD',
+        category: GLOBAL_PLACEMENT_SCOPE,
+        startsAt: now,
+        endsAt: expiresAt,
+        priority: 0,
+        // Nullable, and null is the truth: no administrator granted this.
+        grantedBy: null,
+        reason: `Referral reward from ${campaign.name}`,
+      });
+      if (booking.outcome !== 'granted') {
+        return { ok: false as const, reason: `Placement refused: ${booking.reason}` };
+      }
+      effectRef = `PLACEMENT:${booking.placementId}`;
+      return { ok: true as const };
+    }
+
+    if (campaign.rewardType === 'SUBSCRIPTION_EXTENSION') {
+      /*
+       * A REAL PERIOD EXTENSION, AND NOTHING THAT LOOKS LIKE A PAYMENT.
+       *
+       * The owner's decision: this may extend a legitimate existing
+       * subscription period, and must never fabricate a payment, an invoice, a
+       * transaction, revenue, commission, a card charge or a paid renewal.
+       * extendSubscriptionPeriod touches only the end date, and refuses when
+       * there is no finite period to extend rather than manufacturing one -
+       * which would be granting paid access nobody decided to give.
+       *
+       * The reward value is a NUMBER OF DAYS. rewardDurationDays is a different
+       * thing entirely: it is how long the reward itself remains in force, and
+       * for an extension the effect is permanent once applied.
+       */
+      const days = Number(campaign.rewardValue);
+      if (!Number.isInteger(days) || days <= 0) {
+        return { ok: false as const, reason: `Campaign reward value "${campaign.rewardValue}" is not a whole number of days.` };
+      }
+      const extension = await extendSubscriptionPeriod({
+        userId: referral.referrerId,
+        days,
+        reason: `Referral reward from ${campaign.name}`,
+        source: 'system',
+        actorId: null,
+        now,
+      });
+      if (extension.outcome !== 'applied') {
+        const why = extension.outcome === 'rejected' || extension.outcome === 'noop' ? extension.reason : 'unknown';
+        return { ok: false as const, reason: `Subscription extension refused: ${why}` };
+      }
+      // No effectRef: the effect is a moved date on the subscription itself,
+      // not a row that could be deleted. Reversal shortens it back, which
+      // REF-6 must do carefully - see the note there about never taking away
+      // time the vendor paid for or an administrator granted.
+      return { ok: true as const };
+    }
+
+    // A reward type with no implementation must not silently read as granted.
+    return { ok: false as const, reason: `${campaign.rewardType} is not applied by BuildHub.` };
+  })();
+
+  if (!applied.ok) {
+    await db.update(referralRewards)
+      .set({ status: 'REJECTED', reversalReason: applied.reason.slice(0, 500) })
+      .where(eq(referralRewards.id, rewardId));
+    // The referral STAYS qualified. It genuinely qualified; what failed is the
+    // payout, and marking it 'rewarded' would say otherwise.
+    await recordAccountEvent(db, {
+      userId: referral.referrerId,
+      actorId: null,
+      action: 'referral_reward_granted',
+      source: 'referral',
+      note: `REJECTED - ${campaign.name}: ${applied.reason}`,
+    });
+    return {
+      outcome: 'reward_pending',
+      referralId: referral.id,
+      rewardId,
+      rewardType: campaign.rewardType,
+      rewardValue: campaign.rewardValue,
+    };
   }
 
-  if (campaign.rewardType === 'TEMPORARY_FEATURED') {
-    await bookPlacement(db, {
-      entityType: 'PROVIDER',
-      entityId: referral.referrerId,
-      package: 'SPOTLIGHT',
-      surface: 'TYPE_CATEGORY_SPOTLIGHT',
-      source: 'REFERRAL_REWARD',
-      category: 'General',
-      startsAt: now,
-      endsAt: rewardValues.expiresAt,
-      priority: 0,
-      grantedBy: referral.referrerId,
-      reason: `Referral reward from ${campaign.name}`,
-    });
-  }
+  // ONLY NOW. The effect is committed, so the ledger may say so.
+  await db.update(referralRewards)
+    .set({ status: 'GRANTED', grantedAt: now, effectRef })
+    .where(eq(referralRewards.id, rewardId));
 
   await db.update(referrals).set({ status: 'rewarded' }).where(eq(referrals.id, referral.id));
-  await db.insert(userAccountAuditEvents).values({
+  await recordAccountEvent(db, {
     userId: referral.referrerId,
     actorId: null,
     action: 'referral_reward_granted',

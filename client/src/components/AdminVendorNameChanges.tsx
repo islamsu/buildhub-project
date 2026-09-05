@@ -9,6 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import VendorIdentitySelect from '@/components/VendorIdentitySelect';
 import { Link } from 'wouter';
 import { Search, UserRound } from 'lucide-react';
+import { Pager } from '@/components/Pager';
+
+const NAME_CHANGE_PAGE_SIZE = 25;
 
 export default function AdminVendorNameChanges() {
   const { lang } = useLanguage();
@@ -24,7 +27,13 @@ export default function AdminVendorNameChanges() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
-  const { data: requests = [] } = trpc.admin.vendorNameChanges.useQuery(undefined, { retry: false });
+  const [page, setPage] = useState(0);
+  /* Both filters run in the query now: they filtered a `.limit(250)` array. */
+  const list = trpc.admin.vendorNameChanges.useQuery(
+    { page, pageSize: NAME_CHANGE_PAGE_SIZE, search: query || undefined, status: statusFilter },
+    { retry: false, placeholderData: previous => previous },
+  );
+  const requests = (list.data?.rows ?? []) as any[];
   const review = trpc.admin.reviewVendorNameChange.useMutation({
     onSuccess: () => {
       setError(''); setNotice(ar ? 'تم تحديث الطلب.' : 'Request updated.');
@@ -42,14 +51,8 @@ export default function AdminVendorNameChanges() {
     onError: mutationError => { setNotice(''); setError(mutationError.message); },
   });
 
-  const filtered = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    return requests.filter(request => {
-      const statusMatches = statusFilter === 'all' || request.status === statusFilter;
-      const searchMatches = !term || `${request.userName ?? ''} ${request.userEmail ?? ''} ${request.companyName ?? ''} ${request.tradingName ?? ''} ${request.requestedValue ?? ''}`.toLowerCase().includes(term);
-      return statusMatches && searchMatches;
-    });
-  }, [requests, query, statusFilter]);
+  // The server filters now; this is the page it returned.
+  const filtered = requests;
 
   const status = (value: string) => {
     const labels: Record<string, string> = ar
@@ -104,8 +107,8 @@ export default function AdminVendorNameChanges() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2 sm:grid-cols-[1fr_170px_260px]">
-            <Input value={query} onChange={event => setQuery(event.target.value)} placeholder={ar ? 'ابحث بالمورّد أو الاسم…' : 'Search vendor or name…'} />
-            <Select value={statusFilter} onValueChange={value => setStatusFilter(value as typeof statusFilter)}>
+            <Input value={query} onChange={event => { setQuery(event.target.value); setPage(0); }} placeholder={ar ? 'ابحث بالمورّد أو الاسم…' : 'Search vendor or name…'} />
+            <Select value={statusFilter} onValueChange={value => { setStatusFilter(value as typeof statusFilter); setPage(0); }}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{ar ? 'كل الحالات' : 'All statuses'}</SelectItem>
@@ -169,7 +172,13 @@ export default function AdminVendorNameChanges() {
               </table>
             </div>
           )}
-        </CardContent>
+  
+        <Pager
+          ar={ar} page={page} total={list.data?.total ?? null}
+          pageCount={Math.max(1, Math.ceil((list.data?.total ?? 0) / NAME_CHANGE_PAGE_SIZE))}
+          onChange={setPage} testId="admin-name-changes-pager"
+        />
+      </CardContent>
       </Card>
     </div>
   );

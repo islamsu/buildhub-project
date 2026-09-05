@@ -7,6 +7,7 @@ import {
   ADMIN_PASSWORD_MIN_LENGTH,
   APP_PASSWORD_MIN_LENGTH,
 } from '../scripts/create-admin.mjs';
+import { ADMIN_PASSWORD_MIN_LENGTH as SHARED_ADMIN_PASSWORD_MIN_LENGTH } from '@shared/adminRoles';
 
 /**
  * The first administrator.
@@ -112,5 +113,25 @@ describe('it stays out of the running application', () => {
     for (const backdoor of ['ADMIN_EMAIL', 'BOOTSTRAP_ADMIN', 'SEED_ADMIN', 'INITIAL_ADMIN']) {
       expect(routers).not.toContain(backdoor);
     }
+  });
+});
+
+
+/**
+ * THE ONE COPY THAT CANNOT BE REMOVED, GUARDED INSTEAD.
+ *
+ * The administrator password minimum now has a single definition in
+ * shared/adminRoles.ts, imported by the router and by both client screens that
+ * enforce it. scripts/create-admin.mjs cannot join them: it is a plain .mjs
+ * bootstrap script run by node before anything is built, so it cannot import a
+ * TypeScript module.
+ *
+ * Its copy therefore stays - and this asserts the two agree. A silent drift
+ * here would let the bootstrap script accept a password the product would
+ * later refuse, on the one account that matters most.
+ */
+describe('the bootstrap script agrees with the shared password rule', () => {
+  it('uses the same administrator minimum as the rest of the product', () => {
+    expect(ADMIN_PASSWORD_MIN_LENGTH).toBe(SHARED_ADMIN_PASSWORD_MIN_LENGTH);
   });
 });

@@ -373,6 +373,406 @@
 - [x] Resolve count semantics and make Platform Healthy / Live labels reflect verified runtime state
 - [ ] Vendor/business name clickable to Vendor Management across all remaining admin tables
 
+## Staging Gate Correction after the PR #41 Merge
+
+The merge of PR #41 into `main` deployed cleanly to staging - `/version` served the
+authorized SHA - and the gate then reported 696/704 with eight failures. All eight were
+STALE GATE ASSERTIONS, not product defects: each named a rule the merged work had
+deliberately changed, and each was corrected to assert the rule that now exists rather
+than relaxed to pass. Diagnosed against a live server and a real browser, not from source.
+
+- [x] Section 33 x5 — `PROJECT_CREATOR_ROLES` was widened from `homeowner` alone to every
+      professional role that delivers a job; supplier stays excluded. The loop that
+      asserted four refusals was INVERTED, not deleted, and each role's project id is now
+      asserted to exist. The refusal-message regex follows the message that replaced it.
+- [x] Section 33 — corrected the stale doc comment above `projects.create`, which still
+      described the narrower rule the code had stopped enforcing.
+- [x] Section 14 — `submitQuotation` gained TWO requirements the gate routed around: a
+      required `validUntil`, and response authority (an opened qualified enquiry, a live
+      invitation, or an existing quotation). The old single-POST check had been asserting
+      that a provider could quote WITHOUT consuming the entitlement that pays for access.
+      The gate now walks the real journey (declare category -> open enquiry -> quote) and
+      asserts the guard it used to bypass.
+- [x] Section 14 — the `post` helper learned superjson's `meta` tags, without which a
+      `z.date()` input can never be exercised over the wire.
+- [x] Section 14 — the unapproved-provider, nonexistent-RFQ and negative-price controls
+      now send fully-formed quotations, so each fails for the reason it names rather than
+      for a missing field.
+- [x] Section 26 x2 — the in-page admin tab strip was removed in favour of the single
+      sidebar, and the full user table moved from `/admin` to `/admin/users`. Substring
+      checks over the dashboard's innerText could not tell a missing surface from a
+      renamed label - six of seven passed on incidental sidebar words. Navigation is now
+      asserted BY NAVIGATING: each of the seven admin sections must render the surface
+      only it renders, and `/admin` must show the compact summary WITHOUT duplicating the
+      full table.
+- [x] Mutation-tested the one new invariant that matters: disabling the response-authority
+      guard turns the corrected section 14 red (2 checks fail). The old gate had no
+      assertion that could have caught it.
+- [x] 35/35 corrected assertions verified live before commit — 23 over HTTP against a real
+      server, 12 in a real browser against the real bundle.
+- [ ] Re-run `staging-qa.yml` against the deployed SHA with the corrected gate and confirm
+      704/704 minus the five standing infrastructure SKIPs (SMTP_HOST, S3_* x3, paid AI).
+
+## Central Category Management + Bulk Upload Reconciliation (HIGH PRIORITY)
+
+Reported from real use: Bulk Product Upload rejects legitimate BuildHub categories -
+"Waterproofing is not a BuildHub category", "Pools is not a BuildHub category" - across
+dozens of rows. The fix is NOT to add two strings to an array.
+
+ROOT CAUSE, established by inspection before any change. There are THREE unrelated
+product-category vocabularies, none of them administrable:
+
+1. `shared/productCategories.ts` - 19 flat English strings. This is the write-path
+   validator for BOTH single product creation (`z.enum(PRODUCT_CATEGORIES)` at
+   routers.ts:1778) and bulk import (`parseProductImport(csv, PRODUCT_CATEGORIES)` at
+   routers.ts:1871). Single and bulk DO already share it, so the reported failure is not
+   a parity bug - it is that the taxonomy is a frozen code constant. Neither Waterproofing
+   nor Pools is in it, so single product listing rejects them too.
+2. `client/src/lib/marketplaceData.ts` - a SECOND, completely different list of 20+
+   categories with ids, EN/AR names and icons, used by the Marketplace Discovery Hub
+   browse chips. Its values ("Cement & Concrete", "Steel & Reinforcement") match NONE of
+   list 1, so a shopper browsing a hub chip can never find a product: no product can be
+   listed under that name. This is a larger latent defect than the reported one.
+3. `shared/rfqCategories.ts` - 9 SERVICE categories for RFQ-to-vendor matching, persisted
+   in `rfqs.category` and `vendorCategories.category`. A separate and legitimate concern
+   that must NOT be merged into the product taxonomy.
+
+`products.category` is `varchar(100)` - free text in the database, constrained only at
+write time by list 1.
+
+- [x] CAT-1: forward-only migration for a canonical `productCategories` table - id, slug,
+      nameEn, nameAr, type/scope (PRODUCT | SERVICE | BOTH), status (active | hidden |
+      archived), parentId, sortOrder - plus a controlled alias table. Seed from the real
+      current vocabulary; reconcile the three lists WITHOUT silently merging categories
+      whose meaning differs. Verify the migration against seeded products/RFQs/placements,
+      never only an empty database.
+- [x] CAT-2: one canonical server category service. Authorized views over the SAME
+      taxonomy - public active, vendor-listable, admin-all. Every UI reads it; no screen
+      queries the table its own way.
+- [x] CAT-3: category resolver used by BOTH single product and bulk upload, so the two
+      can never diverge again. Case/whitespace/Unicode normalisation, canonical EN and AR
+      names, slug, and Admin-controlled aliases. No fuzzy matching that could silently
+      assign the wrong category. Ambiguous input is rejected with an actionable error.
+- [x] CAT-4: error quality - distinguish UNKNOWN from KNOWN-BUT-INACTIVE from
+      NOT-ALLOWED-FOR-THIS-VENDOR from SERVICE-ONLY from AMBIGUOUS-ALIAS. A hidden
+      category must not report "is not a BuildHub category".
+- [x] CAT-5: bulk upload UX - grouped error summary by offending value with row ranges,
+      row detail retained, preview showing RESOLVED canonical categories before commit,
+      and a valid-category reference reachable from the upload page rather than a stale
+      help article.
+- [x] CAT-6: Super Admin category management page - create, edit, activate, hide,
+      archive, reactivate, reorder, EN/AR names, slug, type, parent, real usage counts,
+      search/filter/sort/pagination. Dependency warning with the real count before hiding.
+      Human-readable identities, not raw ids.
+- [x] CAT-7: propagation without deployment - a new active PRODUCT category appears in
+      Add Product, Edit Product, Bulk Upload, marketplace filters, admin forms and
+      applicable RFQ/placement selectors. Cache invalidated on change; no restart.
+- [x] CAT-8: lifecycle safety - hiding a category never corrupts or recategorises existing
+      products; used categories are not hard-deleted; renaming does not break product
+      relationships, import history, RFQs, URLs or placements (stable id/slug identity).
+- [x] CAT-9: vendor eligibility preserved - adding a global category must not make every
+      vendor eligible to list in it where BuildHub's catalogue rules restrict that.
+- [x] CAT-10: RBAC (narrow admin permission) + audit of every category mutation with
+      actor, timestamp, old and new value.
+- [x] CAT-11: integration tests that exercise the real resolver, not source text -
+      the reported Waterproofing/Pools case; Super Admin adds a category and a vendor
+      bulk-uploads it successfully; Super Admin hides a category with existing products
+      and they survive while new listings are refused with the INACTIVE message, then
+      reactivation restores it. Plus single-vs-bulk parity as a standing invariant.
+- [x] CAT-12: 375/768/1440 in EN and AR/RTL for the category management surface and every
+      category selector; semantic controls, keyboard access, focus management.
+
+CAT-1 through CAT-4 and CAT-11 are proven live, not merely unit-tested:
+`evidence/zg-categoryupload.mjs` (39/39, run twice) drives the real HTTP server and a
+real MariaDB - it uploads Waterproofing and Pools through the actual bulk parser and
+asserts the stored `categoryId`, checks single-vs-bulk parity as a standing invariant,
+plants and removes a genuine name collision to prove AMBIGUOUS is refused rather than
+guessed, hides and reactivates a category to prove propagation with no deployment, and
+confirms every name the browse filter offers is one a supplier may list against - the
+latent defect that was larger than the reported one.
+
+It also caught the THIRD write path. Add and Bulk were reconciled onto one resolver,
+but `updateProduct` still took `category` as free text and never touched `categoryId`,
+so a product created as Waterproofing could be edited to any string while its link
+still pointed at Waterproofing - the reported defect reached through Edit instead of
+Add. All three paths now resolve through `resolveCategory`, and the link moves with
+the name.
+
+That probe also found a second defect the unit suite could not: `suggestionsFor` used
+substring containment and offered "Roofing" for the typo "Watrproofing", because
+"watrproofing" ends in "roofing". Nothing was auto-applied, but a supplier accepting
+that suggestion files a bitumen membrane under Roofing. Replaced with a bounded edit
+distance plus prefix/whole-word narrowing over every key including aliases, so "Poolz"
+now reaches "Swimming Pool Equipment" and nothing unrelated is proposed.
+
+CAT-5 is proven in a real browser by `evidence/zg-categoryui.mjs` (44/44, run twice):
+Chromium uploads real files through the real file input and reads what the screen
+renders. Thirty identical category mistakes render as ONE grouped issue reading
+"rows 2-31" with the near match offered; the per-row detail is retained behind a
+collapsed disclosure and asserted to actually hold the thirty rows; the clean preview
+shows "Pools -> Swimming Pool Equipment" before anything is written; and the acceptable
+categories are listed on the upload page itself, read live from the taxonomy - the
+screen's count is asserted equal to the database's. Covered at 375/768/1440 in EN and
+AR with no sideways scroll at any size and the category NAMES in Arabic, not just the
+heading, which discharges CAT-12 for this surface.
+
+CAT-6, CAT-8, CAT-9, CAT-10 and CAT-12 land together in `/admin/categories`, gated on
+`marketplace.manage` - the existing permission the roles table already describes as
+"vendor directory, products, compliance review, marketplace content", rather than an
+eleventh permission for one table.
+
+Migration 0043 adds `category` to the `fieldValueHistory` and `commercialAuditEvents`
+subject enums, appended at the END so existing rows keep their meaning: renames, scope
+and status changes record OLD -> NEW with the actor, while creation and alias changes
+record the action. Verified against the dev database's 50 fieldValueHistory and 19
+commercialAuditEvents rows - every one kept its exact value - and the whole 44-migration
+chain applies cleanly from empty.
+
+The invariants are enforced in `server/categoryAdmin.ts` and checked by observing the
+writes, not by reading the source: nothing there writes to `products`, so hiding or
+renaming can never recategorise anything; the slug is immutable and has no input at all;
+there is no delete endpoint; a name or alias another category already answers to is
+refused at the point of choosing it, rather than becoming an AMBIGUOUS refusal a
+supplier can do nothing about; and a status change echoes the count the screen showed,
+so a stale confirmation is refused rather than applied to a situation nobody saw. All
+four guards were mutation-tested.
+
+Proven live by `evidence/zg-categoryadmin.mjs` (37/37, twice): real sessions walk
+create -> supplier uploads into it with no restart -> rename -> hide -> refuse a new
+listing as INACTIVE while existing products stay byte-identical -> reactivate, with a
+SUPPORT_ADMIN and an ordinary supplier both genuinely signed in and both refused. And by
+`evidence/zg-categoryadminui.mjs` (53/53, twice): the page is reached by CLICKING the
+menu entry, the row count equals the database's, the product count equals the products
+table's, there is no Delete control anywhere, the dependency warning names a real
+non-zero count before anything changes, searching an alias finds the category that
+answers to it, and the wrong administrator is told plainly rather than shown an empty
+table - at 375/768/1440 in EN and AR, with the page never scrolling sideways and the
+wide table scrolling inside its own container.
+
+CAT-7 closes the loop. Every surface that offers a category now reads
+`marketplace.categories`, and the compiled-in lists are DELETED rather than left
+unused: `shared/productCategories.ts` is gone, `marketplaceData.PRODUCT_CATEGORIES` is
+gone, and so are Marketplace.tsx's own `CATEGORY_AR` and `CATEGORY_ICONS` maps - a
+fifth and sixth vocabulary, keyed on the retired 27-name list, which had already fallen
+behind: the canonical "Cement & Concrete" appeared in neither, so an Arabic-reading
+shopper saw an English chip with no icon.
+
+Two further defects were fixed on the way. The Add Product form rendered the frozen 19
+strings and client-validated against them, so a supplier could not pick Waterproofing
+there either - it now reads the taxonomy, keeps a product's own category selectable when
+an administrator has since hidden it (so hiding never makes existing products
+unsaveable), and leaves the decision about which categories are acceptable to the
+server. And the Marketplace Hub linked its chips with `?cat=<slug from a third
+vocabulary>` while the marketplace ignored the parameter entirely - every chip landed on
+the unfiltered marketplace. The link now carries the canonical name and the marketplace
+honours it.
+
+`server/categorySingleSource.test.ts` is the standing guard: it sweeps client, shared
+and server for any file listing three or more canonical category names (comments
+stripped, so the files that DOCUMENT the fix do not fail it), asserts every category
+surface queries the one procedure, verifies the detector can still see a planted
+violation, and pins the two words the product and RFQ vocabularies have always shared -
+"Materials" and "Furniture" - so a third would be a deliberate decision rather than a
+discovery. Proven live by `evidence/zg-categorysurfaces.mjs` (17/17, twice): the form
+offers exactly the database's listable set, the Arabic chip renders in Arabic, a `?cat=`
+link actually filters, and a category created in the database appears in the form, the
+filter and the upload reference - then disappears from all of them when hidden - with no
+restart.
+
+## Truthful Error vs Empty States (P0-5)
+
+- [x] P0-5: an outage must never render as an empty state. `const db = await getDb();
+      if (!db) return [];` appeared 45 times in routers.ts, plus 8 more returning a
+      zeroed shape - "No disputes have been filed", "0 registered users", "0 unread",
+      "no subscription". Every one is a confident claim about the user's data, and
+      every one is false when the database is unreachable. Replaced by ONE canonical
+      `requireDb()` (server/_core/requireDb.ts) that throws with a message saying in
+      words that this is not an empty result.
+
+      It lives in `_core` rather than in db.ts for two reasons: db.ts is the connection
+      module and should not import the transport layer to describe a failure, and every
+      test that drives a procedure mocks './db' with a factory - a helper added there
+      would have broken all of them at once for no benefit.
+
+      What still degrades quietly does so deliberately and says so at its own
+      definition: the analytics recorder and the commercial audit helper are
+      side-channels, and failing a supplier's listing because a metric could not be
+      written is the worse outcome. The ACCOUNT audit trail still THROWS, and
+      `isSessionRevoked` still fails closed. Three policies, one decision: reads fail,
+      side-channels swallow, privileged writes throw.
+
+      The client half: AdminDashboard rendered `loading ? spinner : rows.length === 0 ?
+      <EmptyState/>` for disputes, compliance and the user directory, so a failed fetch
+      fell through to the middle branch. `usersFailed` was already destructured there
+      and rendered nowhere - the observation existed, the honesty did not. All three
+      now render a failure with Retry, in both languages.
+
+      Proven live by `evidence/zg-outage.mjs` (22/22, run twice), which BREAKS THE
+      DATABASE FOR REAL: it revokes the application account's SELECT, kills the pool's
+      connections so the privilege change actually takes effect, verifies with a real
+      table read that the account genuinely cannot read, then asserts every endpoint
+      returns 500 or 401 rather than an empty list - and that all of them recover.
+      Positive controls run first against a working database, so the outage half cannot
+      pass against an endpoint that was broken all along.
+
+      `marketplace.platformStats` is the one deliberate exception and is asserted
+      separately: it memoises, so during an outage it serves the LAST REAL figures.
+      Stale is not fabricated. What it must never do is report zero, which is exactly
+      what its old `if (!db)` branch did.
+
+      Recorded while investigating: a connection that survives an ACL change keeps the
+      old privileges for its whole life, so restoring the grant alone leaves a pooled
+      connection denied. That is MySQL's privilege semantics, reproduced in isolation
+      with a bare drizzle+mysql2 pool outside this application - not a BuildHub defect.
+      A real outage closes the sockets and mysql2 reconnects on its own.
+
+## Referral Lifecycle (P1-REF)
+
+- [x] REF-1: THE ENGINE HAS NEVER FIRED. `server/referralEngine.ts` read
+      `referrals.campaignId` on every qualification attempt and NOTHING HAS EVER
+      WRITTEN IT - the signup insert omits it and no other writer exists. Every
+      referral in the product's history short-circuited at 'no campaign'. No reward
+      has ever been granted by BuildHub, and none could have been.
+
+      Implemented per the owner's decision, LATE BINDING AT QUALIFICATION:
+      `server/referralCampaignResolution.ts` chooses the campaign when a real
+      qualifying event fires, from what is eligible at that moment. Five rules make
+      that safe rather than arbitrary - a TOTAL order (priority, then id) so the same
+      input always selects the same campaign; eligibility BEFORE priority, with caps
+      participating in eligibility so an exhausted campaign can never win and then
+      fail to pay; one referral, one campaign, one reward; an already-set campaignId
+      honoured rather than overridden; and the attribution window measured from the
+      referral, so a two-year-old signup does not earn a reward because somebody
+      finally verified their email. The refusal carries a reason PER CANDIDATE,
+      because "your invite was 100 days old and the window is 90" and "no campaign is
+      running for that event" are different answers to the same complaint.
+
+      `shared/referralRewards.ts` retires the third copy of each closed set (the
+      schema enum, the ledger enum, and a z.enum in the router), and migration 0044
+      adds the two columns late binding needs - `priority` and
+      `attributionWindowDays`, both defaulted so every existing campaign keeps
+      working. Verified from empty across all 45 migrations, and against seeded
+      campaign rows which kept every value.
+
+      A SECOND, OLDER DEFECT surfaced the moment the first was fixed:
+      `const [referrerRow, referredRow] = await Promise.all([...])` bound each name to
+      a one-element ARRAY, so every `referrerRow.userRole` read `undefined` and both
+      role checks compared against ''. It had never shown, because the function
+      returned at 'no campaign' several lines earlier - on every referral, always.
+
+      Proven live by `evidence/zg-referral.mjs` (24/24, run twice): a real inviter's
+      real code, a real signup carrying it, a real administrator verifying the
+      account, a campaign RESOLVED and BOUND, one reward row snapshotting its terms,
+      and the ACTUAL ENTITLEMENT read back through the billing engine (5 -> 12
+      qualified enquiries, with a real override row behind it). Plus the negative
+      half: re-verifying grants nothing more, a higher-priority campaign arriving
+      LATER does not re-bind a qualified referral, a second referral finds the
+      exhausted campaign ineligible and takes the next one, and a signup aged past
+      the window earns nothing at all.
+
+- [x] REF-2: the ledger no longer claims more than the effect delivered. The reward was
+      inserted as GRANTED before anything was applied, and BOTH calls that apply it
+      return a refusal that was discarded - so a row could read GRANTED while the
+      allowance was refused and the placement was never booked. It is now written
+      PENDING, applied, and promoted to GRANTED only once the effect commits;
+      otherwise REJECTED with the reason, the referral stays `qualified` (it did
+      qualify - the payout is what failed), and the inviter is NOT told they received
+      something they did not. PENDING/GRANTED/REJECTED were all already in the schema
+      and nothing wrote anything but GRANTED.
+- [x] REF-3 (placement half): the Spotlight is bookable where it can be seen.
+      `category: 'General'` is neither GLOBAL_PLACEMENT_SCOPE nor a taxonomy value and
+      publicPlacement matches scope EXACTLY, so every referral Spotlight ever booked
+      was invisible on every surface. Now GLOBAL. `grantedBy` recorded the beneficiary
+      as the grantor of his own placement; it is null - the platform - and both
+      `setEnquiryAllowance.actorId` and `bookPlacement.grantedBy` were widened to
+      `number | null` to match columns that were always nullable.
+- [x] REF-3 (stacking half): entitlement rewards ADD instead of clobbering.
+      `setEnquiryAllowance` writes an ABSOLUTE number and revokes the previous
+      override - right for an administrator, wrong for "+5 on top of what they have".
+      Routing the reward through it destroyed the administrator's grant, and when the
+      reward's own expiry passed the vendor fell back to the PLAN value rather than to
+      the administrator's number: a temporary bonus permanently deleting a permanent
+      decision. Bonuses now live in their own key (`qualifiedEnquiryBonus`), are never
+      revoked by each other, and SUM; an unlimited allowance stays unlimited. Migration
+      0045 adds `referralRewards.effectRef` (`OVERRIDE:123` / `PLACEMENT:45`) so a
+      reversal can undo exactly what a reward created rather than matching on a reason
+      string that two campaigns could share.
+- [x] REF-4: SUBSCRIPTION_EXTENSION is a real period extension, per the owner's
+      decision. `extendSubscriptionPeriod` in server/billing/lifecycle.ts moves the
+      END DATE and nothing else - a test sweeps every other vendorSubscriptions column
+      and fails if any is written, and another refuses any money-shaped field. It
+      extends FROM THE EXISTING END DATE (extending from `now` would confiscate a
+      vendor's unused time and call it a reward), prefers the TRIAL end date while a
+      trial is running, cannot move a period backwards however it is called, and
+      REFUSES when there is no finite period rather than manufacturing one - which
+      would be granting paid access nobody decided to give. Proven live: 21 days left
+      plus 30 is 51, a free account is refused with that reason, and no payment,
+      invoice or renewal event is written.
+
+      A REAL DEFECT the probe exposed while proving this: a REJECTED reward was
+      consuming the campaign cap. A misconfigured campaign - a reward value that is
+      not a number, an extension for an account with no period - silently burned the
+      inviter's one slot, and they could never be paid by that campaign. Only rewards
+      that HAPPENED count now (PENDING, GRANTED, EXPIRED, REVERSED); REJECTED never
+      did. REVERSED still counts deliberately, or reversal becomes a way to farm
+      rewards.
+- [x] REF-5: all five qualification events fire from real product actions, and the
+      manual path grants. Only ACCOUNT_VERIFIED was hooked - the other four campaign
+      types existed in the schema, in the admin form and in the resolver, and NOTHING
+      in the product could ever fire them, so four of the five campaign types a
+      marketplace administrator can create were decorative. Now:
+      PROFILE_COMPLETED at the same line the product already treats a profile as
+      complete; PROVIDER_APPROVED at BOTH the single and the bulk compliance review,
+      so the reward does not depend on which button an administrator used;
+      FIRST_VALID_RFQ and FIRST_VALID_QUOTATION_RESPONSE counted so the name is true
+      (a quotation revision is not a new response - counted DISTINCT by RFQ).
+
+      `admin.qualifyReferral` wrote `status: 'qualified'` and granted nothing - no
+      reward, no notification, no entitlement. A permanent dead end that looked like
+      it had worked. It runs the same engine now, preserves the administrator's note,
+      and REFUSES with the reason when no campaign is eligible rather than returning
+      success over a dead end.
+- [x] REF-6: REVERSAL THAT REVERSES. `admin.reverseReferralReward` set
+      `status: 'REVERSED'` on the ledger row and stopped: the entitlement stayed
+      granted, the Spotlight kept running, the subscription kept its extra days.
+      `server/referralReversal.ts` undoes the EFFECT, found through the
+      `effectRef` the grant wrote rather than by matching a reason string. The
+      target row must belong to the reward's recipient, so a tampered reference
+      cannot revoke somebody else's entitlement; `parseEffectRef` matches one
+      canonical shape whole (it accepted `OVERRIDE:1e3` as row 1000). Effect,
+      ledger, referral status and audit run in one transaction with the reward
+      row locked. SUBSCRIPTION_EXTENSION is deliberately NOT reversed and says
+      so: the owner's decision forbids shortening legitimate time. Also fixed:
+      the placement reward was still invisible - `spotlightProviders` returns []
+      for GLOBAL by design, so TYPE_CATEGORY_SPOTLIGHT + GLOBAL is a combination
+      no reader queries. It is a root-scope BOOST now, which the unfiltered
+      vendor directory does read.
+- [x] REF-7: EXPIRY AS DERIVED STATE, and the ledger gets screens. Nothing had
+      ever written `EXPIRED`, so a lapsed bonus still read GRANTED. It is derived
+      at read time from `expiresAt`, exactly as entitlement overrides and
+      placements already are, with the stored value kept beside it. Two more
+      silent `.limit(250)` truncations paged with real totals, and the browser
+      filtering that answered "no matches" for a row it never loaded moved into
+      the query. The Reward column read two columns nothing has ever written and
+      showed "-" on every row; it reads the real ledger now. A user-facing
+      reward history that names nobody they invited.
+- [x] REF-8: ANTI-ABUSE. The cap was checked and consumed in separate
+      statements, so two simultaneous qualifying events for one inviter both
+      read "cap intact" and both paid; the inviter's row is locked for the whole
+      check-and-claim now. `GLOBAL_REFERRAL_REWARD_CAP` bounds an account across
+      ALL campaigns, which nothing did. A referral code matching no account, or
+      the signer's own, was dropped in silence - audited now, without telling the
+      user, which would make signup an oracle for which codes exist.
+- [x] REF-9: BENEFITS AND LIMITS. `billing.myEntitlements` and `billing.myPlan`
+      had no screen at all. Plan + administrator grant + bonuses, adding to the
+      number the platform enforces, with usage, remaining and reset beside it -
+      and when the parts do not add up, it says so. Fixed on the way: the
+      ADMINISTRATOR's own allowance view ignored bonus rows and showed a number
+      lower than the one being enforced.
+- [x] REF-10: CAMPAIGN ADMINISTRATION. Reward terms and eligibility could not be
+      edited at all; they can be corrected until the campaign grants its first
+      reward and are fixed after, while the schedule and caps stay editable. The
+      attribution window is settable at creation. Campaigns have a screen.
 ## Master Reconciliation Remaining Scope
 
 - [ ] Referral / Invitation Reward system: secure code/link, attribution, campaigns, qualification, caps, non-cash rewards, expiry, reversal, notifications, audit, Admin management
@@ -393,7 +793,7 @@
 - [ ] Support Tickets: user create/category/description/attachment/updates, Support Admin search/filter/assign/respond/request-info/resolve/close
 - [ ] Reviews / Reputation: relationship eligibility, self-review prevention, duplicate prevention, provider response policy, reporting, moderation, restore/hide, audit
 - [ ] Full Vendor Management command centre with real applicable modules and cross-links from Admin surfaces
-- [ ] Benefits, Limits & Privileges: central entitlement view showing base, campaign/referral, individual overrides, effective, used, remaining, reset/expiry
+- [x] Benefits, Limits & Privileges: central entitlement view showing base, campaign/referral, individual overrides, effective, used, remaining, reset/expiry (REF-9)
 - [ ] Admin Notes: internal-only, permission-controlled, authored/timestamped, never public
 - [ ] Admin Audit UX: search/filter/sort/pagination and humanized actor/target identities
 - [ ] Product image management: upload, primary, additional, replace, remove, reorder, persistence, ownership

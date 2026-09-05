@@ -151,29 +151,139 @@ describe('deleteDummyUser (Phase 3C: FK-constraint aware deletion)', () => {
 describe('admin disputes and settings', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('returns disputes with reporter and respondent names', async () => {
-    let selectCount = 0;
+  /**
+   * RESTATED, NOT WEAKENED.
+   *
+   * This asserted that `admin.disputes` returned a bare ARRAY whose rows
+   * carried resolved names - which was satisfied by the implementation's two
+   * defects: no pagination, and every user on the platform read into memory to
+   * map two names per row. A test that asserts an array cannot see that the
+   * array is unbounded.
+   *
+   * It now asserts the same thing it always meant - the names are resolved and
+   * the row is real - over the paged envelope, PLUS the total and the page
+   * bounds it could not see before. Strictly stronger: it fails if the queue
+   * stops paging, and server/disputeAdminView.test.ts fails if it goes back to
+   * scanning the user table.
+   */
+  it('returns a page of disputes, with a real total and resolved names', async () => {
+    const row = {
+      id: 3, reference: 'DSP-2026-000003', reporterId: 10, respondentId: 11,
+      title: 'Late delivery', description: 'Arrived short', status: 'open', priority: 'high',
+      reporterName: 'Homeowner', respondentName: 'Contractor', createdAt: new Date(),
+    };
     const db = {
-      select: vi.fn(() => {
-        selectCount += 1;
-        if (selectCount === 1) {
-          return { from: () => ({ orderBy: () => Promise.resolve([{ id: 3, reporterId: 10, respondentId: 11, title: 'Payment issue', description: 'Late payment', type: 'payment', priority: 'high', status: 'open', resolutionNotes: null, createdAt: new Date(), updatedAt: new Date() }]) }) };
-        }
-        return { from: () => Promise.resolve([{ id: 10, name: 'Homeowner' }, { id: 11, name: 'Contractor' }]) };
+      select: vi.fn((projection?: Record<string, unknown>) => {
+        const keys = Object.keys(projection ?? {});
+        const data = keys.includes('count') && keys.includes('status') ? [{ status: 'open', count: 1 }]
+          : keys.includes('count') ? [{ count: 1 }]
+            : [row];
+        const chain: any = new Proxy({}, {
+          get: (_target, key) => (key === 'then'
+            ? (resolve: any, reject: any) => Promise.resolve(data).then(resolve, reject)
+            : () => chain),
+        });
+        return chain;
       }),
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
     const caller = appRouter.createCaller(makeAdminCtx());
-    await expect(caller.admin.disputes()).resolves.toEqual([expect.objectContaining({ reporterName: 'Homeowner', respondentName: 'Contractor', status: 'open' })]);
+    const page = await caller.admin.disputes({ page: 0, pageSize: 25 });
+    expect(page.rows).toEqual([expect.objectContaining({
+      reporterName: 'Homeowner', respondentName: 'Contractor', status: 'open',
+    })]);
+    expect(page).toMatchObject({ total: 1, page: 0, pageSize: 25 });
+    expect(page.counts.open).toBe(1);
   });
 
-  it('updates a dispute status and resolution notes', async () => {
-    const whereMock = vi.fn().mockResolvedValue([]);
-    const db = { update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: whereMock }) }) };
+  /**
+   * THIS TEST PINNED THE DEFECT.
+   *
+   * It asserted that `updateDispute` called `set({ status, resolutionNotes })`
+   * and returned success - which is exactly what was wrong with it: any status
+   * from any state, no check that the dispute existed, no record of who moved
+   * it or from what, and nothing told to the parties. A test that asserts a
+   * blind write is satisfied by a blind write.
+   *
+   * Restated against the behaviour that replaced it. Strictly stronger: it now
+   * fails if the transition is not checked, if the history is not written, or
+   * if a resolution is accepted without saying how it was resolved.
+   */
+  function disputeDb(dispute: Record<string, unknown> | null) {
+    const updates: Array<Record<string, unknown>> = [];
+    const inserts: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+    const tx: any = {
+      select: () => ({ from: () => ({ where: () => ({ for: async () => (dispute ? [dispute] : []) }) }) }),
+      update: () => ({ set: (values: Record<string, unknown>) => ({ where: async () => { updates.push(values); } }) }),
+      insert: (table: unknown) => ({ values: async (values: Record<string, unknown>) => { inserts.push({ table, values }); } }),
+    };
+    const db: any = {
+      transaction: (run: (tx: unknown) => Promise<unknown>) => run(tx),
+      // notifyDisputeParties and recordAccountEvent write through the outer db.
+      insert: (table: unknown) => ({ values: async (values: Record<string, unknown>) => { inserts.push({ table, values }); } }),
+    };
+    return { db, updates, inserts };
+  }
+
+  const OPEN_DISPUTE = {
+    id: 4, status: 'open', reporterId: 10, respondentId: 11,
+    reference: 'DSP-2026-000004', title: 'Late delivery',
+  };
+
+  it('resolves a dispute, recording HOW it was resolved and who did it', async () => {
+    const { db, updates, inserts } = disputeDb(OPEN_DISPUTE);
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
     const caller = appRouter.createCaller(makeAdminCtx());
-    await expect(caller.admin.updateDispute({ disputeId: 4, status: 'resolved', resolutionNotes: 'Refund confirmed.' })).resolves.toEqual({ success: true });
-    expect(db.update().set).toHaveBeenCalledWith({ status: 'resolved', resolutionNotes: 'Refund confirmed.' });
+
+    await expect(caller.admin.updateDispute({
+      disputeId: 4, status: 'resolved',
+      resolutionType: 'resolved_by_agreement',
+      resolutionNotes: 'The parties agreed a revised delivery date.',
+    })).resolves.toEqual({ success: true, from: 'open', to: 'resolved' });
+
+    // Never a bare status flip: the outcome TYPE, the summary, and the actor.
+    expect(updates[0]).toMatchObject({
+      status: 'resolved',
+      resolutionType: 'resolved_by_agreement',
+      resolutionNotes: 'The parties agreed a revised delivery date.',
+      resolvedBy: 1,
+    });
+    expect(updates[0].resolvedAt).toBeInstanceOf(Date);
+
+    // And the history says where it came from, which nothing recorded before.
+    const history = inserts.map(entry => entry.values).find(values => values.toStatus === 'resolved');
+    expect(history, 'no status-history row was written').toBeTruthy();
+    expect(history).toMatchObject({ disputeId: 4, fromStatus: 'open', toStatus: 'resolved', actorId: 1 });
+  });
+
+  it('refuses to resolve without saying how it was resolved', async () => {
+    // "How did this end" must be answerable across many disputes without
+    // reading prose, and the party on the losing side is entitled to grounds.
+    const { db, updates } = disputeDb(OPEN_DISPUTE);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+    await expect(caller.admin.updateDispute({ disputeId: 4, status: 'resolved', resolutionNotes: 'Sorted.' }))
+      .rejects.toThrow(/requires a resolution type/i);
+    expect(updates, 'a refused transition must write nothing').toEqual([]);
+  });
+
+  it('refuses an illegal transition instead of writing it', async () => {
+    const { db, updates } = disputeDb({ ...OPEN_DISPUTE, status: 'withdrawn' });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+    await expect(caller.admin.updateDispute({ disputeId: 4, status: 'investigating' }))
+      .rejects.toThrow(/withdrawn/i);
+    expect(updates).toEqual([]);
+  });
+
+  it('refuses a dispute that does not exist, rather than reporting success', async () => {
+    // The previous version ran an UPDATE matching no rows and returned
+    // { success: true }.
+    const { db } = disputeDb(null);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+    await expect(caller.admin.updateDispute({ disputeId: 999, status: 'investigating' }))
+      .rejects.toThrow(/not found/i);
   });
 
   it('persists a known admin setting and rejects unknown keys', async () => {
@@ -240,13 +350,21 @@ it('keeps AdminDashboard hooks unconditional before loading and access returns',
 
 it('wires admin sidebar items to distinct dashboard sections', async () => {
   const { readFileSync } = await import('node:fs');
-  const layout = readFileSync(new URL('../client/src/components/DashboardLayout.tsx', import.meta.url), 'utf8');
   const dashboard = readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
-  expect(layout).toContain("path: '/admin/users'");
-  expect(layout).toContain("path: '/admin/compliance'");
-  expect(layout).toContain("path: '/admin/disputes'");
-  expect(layout).toContain("path: '/admin/analytics'");
-  expect(layout).toContain("path: '/admin/settings'");
+  // The destinations moved out of DashboardLayout.tsx into a plain data module
+  // so they could be asserted rather than grepped. This check follows them
+  // instead of being deleted, and gets STRONGER in the move: reading the real
+  // list catches a wrong path, where `layout.toContain("path: '/admin/users'")`
+  // only ever caught the string's absence and would have passed on a menu
+  // entry pointing at a route that does not exist.
+  const { ADMIN_NAV } = await import('../client/src/lib/adminNavigation');
+  const paths = ADMIN_NAV.map(entry => entry.path);
+  for (const section of ['/admin/users', '/admin/compliance', '/admin/disputes', '/admin/analytics', '/admin/settings']) {
+    expect(paths).toContain(section);
+  }
+  // Distinct, which is what "distinct dashboard sections" claims: two entries
+  // sharing a path render as active together and one of them is unreachable.
+  expect(new Set(paths).size).toBe(paths.length);
   expect(dashboard).toContain('<Tabs value={adminSection} onValueChange={handleAdminSectionChange}>');
 });
 

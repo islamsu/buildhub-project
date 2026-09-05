@@ -27,6 +27,7 @@ const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const AdminLogin = lazy(() => import("./pages/AdminLogin"));
 const AdminAcceptInvitation = lazy(() => import("./pages/AdminAcceptInvitation"));
 const AdminAdmins = lazy(() => import("./pages/AdminAdmins"));
+const AdminCategories = lazy(() => import("./pages/AdminCategories"));
 const AdminUserDetail = lazy(() => import("./pages/AdminUserDetail"));
 const AdminProjectDetail = lazy(() => import("./pages/AdminProjectDetail"));
 const Marketplace = lazy(() => import("./pages/Marketplace"));
@@ -37,6 +38,8 @@ const RFQDetail = lazy(() => import("./pages/RFQDetail"));
 const QuotationDetail = lazy(() => import("./pages/QuotationDetail"));
 const MessagesPage = lazy(() => import("./pages/MessagesPage"));
 const EnquiriesPage = lazy(() => import("./pages/EnquiriesPage"));
+const MyDisputes = lazy(() => import("./pages/MyDisputes"));
+const DisputeDetail = lazy(() => import("./pages/DisputeDetail"));
 const ServiceCategoriesPage = lazy(() => import("./pages/ServiceCategoriesPage"));
 const CataloguePage = lazy(() => import("./pages/CataloguePage"));
 const AIAssistantPage = lazy(() => import("./pages/AIAssistantPage"));
@@ -113,6 +116,7 @@ function Router() {
       <Route path={"/admin/login"} component={AdminLogin} />
       <Route path={"/admin/accept-invitation"} component={AdminAcceptInvitation} />
       <Route path={"/admin/admins"} component={AdminAdmins} />
+      <Route path={"/admin/categories"} component={AdminCategories} />
       <Route path={"/admin/users/:id"} component={AdminUserDetail} />
       <Route path={"/admin/projects/:id"} component={AdminProjectDetail} />
       {/* A section may address ONE RECORD. `/admin/enquiries/ENQ-7-3` is what a
@@ -156,6 +160,15 @@ function Router() {
           for a summary on the dashboard with a dedicated page behind it, and
           the enquiries page is where a notification's `?rfq=` deep link lands. */}
       <Route path={"/enquiries"} component={EnquiriesPage} />
+      {/* ORDER MATTERS: "/disputes/:id" before "/disputes" is not required by
+          wouter's first-match, but keeping the specific one first matches the
+          rest of this table and survives a later "/disputes/new".
+
+          `/disputes/:id` is what the dispute notification links to, and it
+          resolved to NotFound until this existed - so being named in a dispute
+          meant being told about a page that was not there. */}
+      <Route path={"/disputes/:id"} component={DisputeDetail} />
+      <Route path={"/disputes"} component={MyDisputes} />
       <Route path={"/service-categories"} component={ServiceCategoriesPage} />
       <Route path={"/catalogue"} component={CataloguePage} />
       <Route path={"/ai"} component={AIAssistantPage} />

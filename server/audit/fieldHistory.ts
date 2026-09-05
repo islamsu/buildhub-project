@@ -36,7 +36,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { fieldValueHistory } from '../../drizzle/schema';
 
-export type FieldSubjectType = 'rfq' | 'quotation' | 'product' | 'user' | 'subscription';
+export type FieldSubjectType = 'rfq' | 'quotation' | 'product' | 'user' | 'subscription' | 'category';
 
 /**
  * Fields that must never reach this table, matched case-insensitively against
@@ -188,6 +188,13 @@ export const HISTORY_FIELDS = {
   product: ['price', 'stock', 'description', 'active', 'name', 'unit', 'category'],
   user: ['onboardingStatus', 'verified', 'accountStatus', 'userRole', 'qualifiedEnquiriesPerMonth'],
   subscription: ['plan', 'status'],
+  // The product taxonomy. A rename is the reason this subject exists: an
+  // administrator who renames "Pools" leaves every product's stored category
+  // reading the old name until the next read resolves it, and whoever asks
+  // "what was this called before" needs an answer that is not a guess.
+  // `slug` is here although it is immutable, so an attempt to change it -
+  // through a future path or a mistake - would be visible rather than silent.
+  category: ['nameEn', 'nameAr', 'slug', 'scope', 'status', 'parentId', 'sortOrder', 'icon'],
 } as const satisfies Record<FieldSubjectType, readonly string[]>;
 
 export type HistoryEntry = {

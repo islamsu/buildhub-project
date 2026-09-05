@@ -9,6 +9,8 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { onError } from "./trpcErrorLog";
 import { runAdminBootstrap } from "../adminBootstrap";
+import { seedProductCategories, backfillProductCategoryIds } from "../categorySeed";
+import { getDb } from "../db";
 import { ENV, assertEnvOrExit } from "./env";
 import { buildCommit, registerHealthRoutes } from "./health";
 import { registerRequestLogging } from "./httpLogging";
@@ -116,6 +118,39 @@ async function startServer() {
   // boot loop that takes the whole site down. runAdminBootstrap swallows and
   // reports its own failures for exactly that reason.
   await runAdminBootstrap();
+
+  /**
+   * THE CATEGORY TAXONOMY, SEEDED IF IT IS NOT THERE.
+   *
+   * Idempotent and additive: it inserts what is missing by slug and never
+   * overwrites. An administrator who renames or hides a category must not find
+   * their change reverted by the next deployment - the taxonomy is theirs from
+   * the first boot onward, and this only supplies the starting set.
+   *
+   * Swallowed like the admin bootstrap for the same reason: a taxonomy that
+   * failed to seed is a degraded marketplace, not a reason to refuse to serve.
+   */
+  try {
+    const db = await getDb();
+    if (db) {
+      const seeded = await seedProductCategories(db);
+      if (seeded.categoriesInserted > 0 || seeded.aliasesInserted > 0) {
+        console.log(`[taxonomy] Seeded ${seeded.categoriesInserted} categories and ${seeded.aliasesInserted} aliases.`);
+      }
+      const backfilled = await backfillProductCategoryIds(db);
+      if (backfilled.linked > 0) {
+        console.log(`[taxonomy] Linked ${backfilled.linked} existing products to canonical categories.`);
+      }
+      if (backfilled.unresolved.length > 0) {
+        // Named, not guessed at. A product whose stored category matches
+        // nothing needs a decision, and silently attaching it to the nearest
+        // category would make that decision invisibly and probably wrongly.
+        console.warn(`[taxonomy] ${backfilled.unresolved.length} stored category value(s) resolve to no canonical category and were left unlinked: ${backfilled.unresolved.join(', ')}`);
+      }
+    }
+  } catch (error) {
+    console.error('[taxonomy] Category seed failed:', (error as Error)?.message ?? error);
+  }
 
   // Order matters. Security headers and compression wrap every response
   // below, and the request log has to be installed before the routes it

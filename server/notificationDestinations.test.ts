@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { readSourceForAssertions } from './_testing/sourceText';
 import { qualifiedEnquiries, rfqSuppliers, rfqs, quotations } from '../drizzle/schema';
 
@@ -197,8 +197,19 @@ describe('winning and losing both land on the request that was bid on', () => {
 
 // ══ 3. NO NOTIFICATION MAY POINT AT A LIST WHEN A RECORD EXISTS ════════════
 
-const SERVER = ['./routers.ts', './quotationWorkflow.ts']
-  .map(f => readSourceForAssertions(readFileSync(new URL(f, import.meta.url), 'utf8')))
+/**
+ * EVERY server source, not a list of two.
+ *
+ * This read routers.ts and quotationWorkflow.ts, so `referralEngine.ts` sent
+ * its reward notification to a destination no rule had ever looked at. A sweep
+ * that chooses where to look reports a clean pass over the files it did not
+ * choose - the same defect the localisation guard found in itself, fixed the
+ * same way.
+ */
+const SERVER_FILES = readdirSync(new URL('./', import.meta.url))
+  .filter(name => name.endsWith('.ts') && !name.endsWith('.test.ts'));
+const SERVER = SERVER_FILES
+  .map(f => readSourceForAssertions(readFileSync(new URL(`./${f}`, import.meta.url), 'utf8')))
   .join('\n');
 
 /**
@@ -224,6 +235,13 @@ const DESTINATIONS_THAT_ARE_A_RECORD: Record<string, string> = {
   // page and left them to find what an administrator had just decided.
   '/settings#settings-name-change': 'the reader\'s own name-change request, a singleton with no id-addressed route',
   '/settings#settings-company': 'the reader\'s own company record, which is where a correction is visible',
+  // A user has ONE referral programme - their code, who they invited, and what
+  // each invitation earned - and this anchor is where SettingsPage renders it.
+  // There is no /referrals/:id for a user to be sent to; the rewards are a
+  // list belonging to the reader, so the reader's own referral section IS the
+  // record. Both the grant and the reversal land here, which is what makes
+  // "my reward was withdrawn" checkable against what is actually shown.
+  '/settings#settings-referral': 'the reader\'s own referral programme and reward history, with no id-addressed route',
 };
 
 describe('no notification is sent to a list when a record exists', () => {

@@ -5,25 +5,33 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Link, useSearch } from 'wouter';
 import { FolderOpen, Search, Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
+import { Pager } from '@/components/Pager';
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
+
+const PAGE_SIZE = 25;
 
 export default function AdminProjects() {
   const { lang } = useLanguage();
   const ar = lang === 'ar';
   const search = useSearch();
   const initialStatus = new URLSearchParams(search).get('status') === 'active' ? 'active' : 'all';
+  const [typed, setTyped] = useState('');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState(initialStatus);
-  const { data: projects = [], isLoading } = trpc.admin.projects.useQuery();
+  const [page, setPage] = useState(0);
 
-  const filtered = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    return projects.filter(project => {
-      const statusMatches = status === 'all' || project.status === status;
-      const searchMatches = !term || `${project.title ?? ''} ${project.type ?? ''} ${project.location ?? ''} ${project.ownerName ?? ''}`.toLowerCase().includes(term);
-      return statusMatches && searchMatches;
-    });
-  }, [projects, query, status]);
+  /*
+   * BOTH THE SEARCH AND THE STATUS FILTER RUN IN THE QUERY. They filtered a
+   * `.limit(250)` array, so either could answer "no matching projects" about a
+   * project the response never carried.
+   */
+  const list = trpc.admin.projects.useQuery(
+    { page, pageSize: PAGE_SIZE, search: query || undefined, status },
+    { retry: false, placeholderData: previous => previous },
+  );
+  const isLoading = list.isLoading;
+  const filtered = (list.data?.rows ?? []) as any[];
 
   return (
     <Card data-testid="admin-projects">
@@ -37,15 +45,20 @@ export default function AdminProjects() {
             <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="ps-9"
-              value={query}
-              onChange={event => setQuery(event.target.value)}
+              value={typed}
+              data-testid="admin-projects-search"
+              onChange={event => setTyped(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter') { setQuery(typed.trim()); setPage(0); }
+              }}
+              onBlur={() => { setQuery(typed.trim()); setPage(0); }}
               placeholder={ar ? 'ابحث بالمشروع أو الموقع أو المالك…' : 'Search project, location or owner…'}
             />
           </div>
           <select
             className="h-9 rounded-md border bg-background px-3 text-sm"
             value={status}
-            onChange={event => setStatus(event.target.value)}
+            onChange={event => { setStatus(event.target.value); setPage(0); }}
             aria-label={ar ? 'تصفية حسب الحالة' : 'Filter by status'}
           >
             <option value="all">{ar ? 'كل الحالات' : 'All statuses'}</option>
@@ -55,15 +68,19 @@ export default function AdminProjects() {
           </select>
         </div>
       </CardHeader>
-      <CardContent>
-        {isLoading ? (
+      <CardContent className="space-y-3">
+        {list.isError ? (
+          <LoadFailed {...loadFailedCopy(ar)} onRetry={() => void list.refetch()} />
+        ) : isLoading ? (
           <p className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             {ar ? 'جارٍ التحميل…' : 'Loading…'}
           </p>
         ) : filtered.length === 0 ? (
-          <p className="py-12 text-center text-sm text-muted-foreground">
-            {ar ? 'لا توجد مشاريع مطابقة.' : 'No matching projects.'}
+          <p className="py-12 text-center text-sm text-muted-foreground" data-testid="admin-projects-empty">
+            {query || status !== 'all'
+              ? (ar ? 'لا توجد مشاريع مطابقة لهذا البحث.' : 'No projects match this search.')
+              : (ar ? 'لم يُنشأ أي مشروع بعد.' : 'No project has been created yet.')}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -102,6 +119,12 @@ export default function AdminProjects() {
             </table>
           </div>
         )}
+
+        <Pager
+          ar={ar} page={page} total={list.data?.total ?? null}
+          pageCount={Math.max(1, Math.ceil((list.data?.total ?? 0) / PAGE_SIZE))}
+          onChange={setPage} testId="admin-projects-pager"
+        />
       </CardContent>
     </Card>
   );

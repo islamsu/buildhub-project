@@ -8,6 +8,7 @@ import { appRouter } from './routers';
 import type { TrpcContext } from './_core/context';
 import { getDb } from './db';
 import { withTransaction } from './testSupport/txDouble';
+import { projects, projectMembers, rfqs } from '../drizzle/schema';
 
 function makeCtx(userId: number, userRole: string = 'homeowner'): TrpcContext {
   return {
@@ -246,17 +247,42 @@ describe('rfq.create - optional project link', () => {
     expect(values).not.toHaveBeenCalled();
   });
 
-  it('creating an RFQ without a projectId still works (link remains optional)', async () => {
+  it('creating an RFQ without a projectId still works, and consults no PROJECT', async () => {
+    /*
+     * THE INVARIANT IS "no project membership check", not "no query at all".
+     *
+     * This asserted `db.select` was never called, which was a precise proxy
+     * while the only read on this path was the membership lookup. RFQ creation
+     * now also counts the requester's own RFQs, because the referral engine's
+     * FIRST_VALID_RFQ campaign type has to be able to tell a first RFQ from a
+     * tenth - and that count is on `rfqs`, not on `projects`.
+     *
+     * Restated to the rule it always meant: the SELECT that happens must not
+     * touch projects or projectMembers. An unlinked RFQ still asks nobody's
+     * permission.
+     */
     const values = vi.fn().mockResolvedValue([{ insertId: 100 }]);
     const insert = vi.fn().mockReturnValue({ values });
+    const selectedTables: unknown[] = [];
     const db = {
-      select: vi.fn(),
+      select: vi.fn().mockReturnValue({
+        from: (table: unknown) => {
+          selectedTables.push(table);
+          // The count of the requester's own RFQs, and then the referral
+          // lookup the engine makes - which finds nothing here, so it returns
+          // immediately. Both are awaitable AND chainable, like a real builder.
+          const rows = table === rfqs ? [{ count: 1 }] : [];
+          const result = { limit: () => Promise.resolve(rows), then: (r: (v: unknown) => unknown) => r(rows) };
+          return { where: () => result };
+        },
+      }),
       insert,
       transaction: async (cb: (t: unknown) => Promise<unknown>) => cb({ insert }),
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction(db));
     const caller = appRouter.createCaller(makeCtx(1));
     await expect(caller.rfq.create({ category: 'Materials', title: 'Standalone RFQ' })).resolves.toEqual({ id: 100 });
-    expect(db.select).not.toHaveBeenCalled();
+    expect(selectedTables, 'an unlinked RFQ must not read the projects table').not.toContain(projects);
+    expect(selectedTables, 'nor project membership').not.toContain(projectMembers);
   });
 });

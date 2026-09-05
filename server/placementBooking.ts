@@ -17,7 +17,12 @@ export type PlacementBooking = {
   startsAt: Date;
   endsAt: Date | null;
   priority?: number;
-  grantedBy: number;
+  /**
+   * The administrator who granted it, or NULL for the platform. The column is
+   * nullable and always has been; typing this as `number` forced a referral
+   * reward to name its own beneficiary as the grantor.
+   */
+  grantedBy: number | null;
   reason?: string;
 };
 

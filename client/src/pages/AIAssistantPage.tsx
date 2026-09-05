@@ -73,7 +73,11 @@ export default function AIAssistantPage() {
   // is vague, the assistant ASKS which rather than guessing.
   const isProvider = PROVIDER_ROLES.includes((me?.userRole ?? '') as typeof PROVIDER_ROLES[number]);
   const { data: ownProjects = [] } = trpc.projects.list.useQuery(undefined, { enabled: Boolean(me) && !isProvider });
-  const { data: directoryProjects = [] } = trpc.projects.directory.useQuery(undefined, { enabled: Boolean(me) && isProvider });
+  const directoryQuery = trpc.projects.directory.useQuery(
+    { page: 0, pageSize: 50 },
+    { enabled: Boolean(me) && isProvider },
+  );
+  const directoryProjects = (directoryQuery.data?.rows ?? []) as any[];
   const selectableProjects: { id: number; title: string }[] =
     (isProvider ? directoryProjects : ownProjects).map((project: { id: number; title: string }) =>
       ({ id: project.id, title: project.title }));

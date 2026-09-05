@@ -45,8 +45,12 @@ function emptyDb() {
   const chain: Record<string, unknown> = {};
   const self = () => chain;
   Object.assign(chain, {
-    from: self, where: self, orderBy: self, limit: self, innerJoin: self, leftJoin: self,
-    groupBy: self, then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
+    // `offset` was missing, so every paged read threw and reported as
+    // INTERNAL_SERVER_ERROR - a reachability test cannot tell that apart from a
+    // refusal, so the fake has to answer the whole chain.
+    from: self, where: self, orderBy: self, limit: self, offset: self,
+    innerJoin: self, leftJoin: self, groupBy: self,
+    then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
   });
   return { select: vi.fn(() => chain), insert: vi.fn(() => ({ values: () => Promise.resolve({ insertId: 1 }) })) };
 }
@@ -258,34 +262,49 @@ describe('rfq.list is a PROVIDER lead pool, and that is a DECISION with limits',
    */
   it('every role can still CALL it - the narrowing is in what comes back', async () => {
     for (const role of BUILDHUB_ROLES) {
-      expect(await attempt(() => appRouter.createCaller(ctxFor(role)).rfq.list()), role).toBe('ok');
+      expect(await attempt(() => appRouter.createCaller(ctxFor(role)).rfq.list({ page: 0, pageSize: 25 })), role).toBe('ok');
     }
   });
 
-  it('a non-provider is scoped to their OWN requests', () => {
+  /**
+   * The procedure's OWN text, bounded by where it ends rather than by a
+   * character count. The count had to grow when the feed gained pagination, and
+   * a longer slice then reached the NEXT procedure - which mentions
+   * `attachments` legitimately - and failed the allowlist assertion below on
+   * code that is not being asserted. A slice measured in characters is a slice
+   * that reports on whatever happens to be nearby.
+   */
+  function rfqListSource(): string {
     const source = readRouters();
     const rfqList = source.slice(source.indexOf('const rfqRouter = router({'));
     const start = rfqList.indexOf('list: protectedProcedure');
-    const listQuery = rfqList.slice(start, start + 2200);
+    const end = rfqList.indexOf('\n  myList:', start);
+    expect(end, 'rfq.list body not found').toBeGreaterThan(start);
+    return rfqList.slice(start, end);
+  }
+
+  it('a non-provider is scoped to their OWN requests', () => {
+    const listQuery = rfqListSource();
     expect(listQuery, 'the feed must be gated on provider status').toContain('isProvider');
     expect(listQuery).toContain('eq(rfqs.requesterId, ctx.user.id)');
+    // And the scope reaches the query rather than being computed and dropped.
+    expect(listQuery).toContain('where: scope');
   });
 
   it('and still returns a COLUMN ALLOWLIST that omits the requester\'s private files', () => {
     // The distinction that makes the pool safe: a provider sees that a job
     // exists; nobody sees the drawings attached to it without paying for the
     // enquiry. A `select()` with no column list would leak them silently.
-    const source = readRouters();
-    const rfqList = source.slice(source.indexOf('const rfqRouter = router({'));
-    const start = rfqList.indexOf('list: protectedProcedure');
-    const listQuery = rfqList.slice(start, start + 2200);
-    expect(listQuery).toContain('db.select({');
+    const listQuery = rfqListSource();
+    // The allowlist is now a named object handed to the pager, which is the
+    // same guarantee: an explicit column list, and `attachments` not in it.
+    expect(listQuery).toContain('const columns = {');
     expect(listQuery).not.toContain('attachments');
   });
 
   it('anonymous callers get nothing', async () => {
     const anon = { ...ctxFor('homeowner'), user: null } as unknown as TrpcContext;
-    expect(await attempt(() => appRouter.createCaller(anon).rfq.list())).toBe('UNAUTHORIZED');
+    expect(await attempt(() => appRouter.createCaller(anon).rfq.list({ page: 0, pageSize: 25 }))).toBe('UNAUTHORIZED');
   });
 });
 

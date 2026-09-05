@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { useLocation } from 'wouter';
 import { useMemo, useState } from 'react';
 import { Search, Package, Store, PenTool, HardHat, ArrowRight, ArrowLeft, Star, BadgeCheck, TrendingUp, Sparkles } from 'lucide-react';
-import { PRODUCT_CATEGORIES, DESIGN_CATEGORIES, FINISHING_CATEGORIES } from '@/lib/marketplaceData';
+import { DESIGN_CATEGORIES, FINISHING_CATEGORIES } from '@/lib/marketplaceData';
 import { trpc } from '@/lib/trpc';
 
 /**
@@ -21,8 +21,14 @@ import { trpc } from '@/lib/trpc';
  * the compliance decision, categories declared by the vendor. The counts are
  * counts of real accounts, so an empty marketplace shows an empty marketplace.
  *
- * PRODUCT_CATEGORIES, DESIGN_CATEGORIES and FINISHING_CATEGORIES stay: they are
- * browse vocabulary, not claims about anybody.
+ * DESIGN_CATEGORIES and FINISHING_CATEGORIES stay: they are browse vocabulary
+ * for the two provider directories, not claims about anybody.
+ *
+ * PRODUCT_CATEGORIES DID NOT. It was a third product-category list - 33 browse
+ * chips sharing NO values with the 19 the write path accepted - so a shopper
+ * clicking any chip here could never find a product: nothing could be listed
+ * under those names. The chips now come from the same taxonomy a supplier
+ * lists against, and carry the canonical name the marketplace filter uses.
  */
 export default function MarketplaceHub() {
   const { lang, t } = useLanguage();
@@ -35,6 +41,9 @@ export default function MarketplaceHub() {
   // unverified accounts, so nothing here can show a provider the marketplace
   // itself would not list.
   const { data: directory = [] } = trpc.marketplace.vendors.useQuery({ limit: 100 });
+  /** The one taxonomy, in its public view. Not a copy compiled into this page. */
+  const { data: taxonomy } = trpc.marketplace.categories.useQuery({ view: 'public' });
+  const productCategories = taxonomy?.categories ?? [];
   const designers = directory.filter(v => v.categories?.includes('Design'));
   const finishing = directory.filter(v => v.categories?.includes('Renovation'));
 
@@ -43,8 +52,17 @@ export default function MarketplaceHub() {
     if (!search.trim() || search.trim().length < 2) return [];
     const q = search.trim().toLowerCase();
     const out: { type: string; label: string; href: string }[] = [];
-    PRODUCT_CATEGORIES.filter(c => c.en.toLowerCase().includes(q) || c.ar.includes(q)).slice(0, 4).forEach(c =>
-      out.push({ type: t('marketHub.suggestionProductCategory'), label: ar ? c.ar : c.en, href: `/marketplace/products?cat=${c.id}` }));
+    // The link carries the CANONICAL English name, which is what the
+    // marketplace filter and products.category both hold. It used to carry a
+    // slug from a different vocabulary, which matched no filter at all.
+    productCategories
+      .filter(c => c.nameEn.toLowerCase().includes(q) || c.nameAr.includes(q))
+      .slice(0, 4)
+      .forEach(c => out.push({
+        type: t('marketHub.suggestionProductCategory'),
+        label: ar ? c.nameAr : c.nameEn,
+        href: `/marketplace/products?cat=${encodeURIComponent(c.nameEn)}`,
+      }));
     // Suggestions are drawn from the SAME authorized directory rows that the
     // strips below render - never a second, looser source.
     // /vendor/:id, not /marketplace/vendors/:id. The latter renders the whole
@@ -59,7 +77,7 @@ export default function MarketplaceHub() {
     finishing.filter(f => (f.name ?? '').toLowerCase().includes(q)).slice(0, 3).forEach(f =>
       out.push({ type: t('marketHub.suggestionFinishingCompany'), label: f.name ?? `#${f.id}`, href: `/vendor/${f.id}` }));
     return out.slice(0, 8);
-  }, [search, ar, t]);
+  }, [search, ar, t, directory, designers, finishing, productCategories]);
 
   const sections = [
     {
@@ -69,9 +87,9 @@ export default function MarketplaceHub() {
       gradient: 'from-blue-600 to-cyan-500',
       title: t('marketHub.sectionProductsTitle'),
       desc: t('marketHub.sectionProductsDesc'),
-      stat: `${PRODUCT_CATEGORIES.length}+`,
+      stat: `${productCategories.length}`,
       statLabel: t('marketHub.categoriesLabel'),
-      chips: PRODUCT_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
+      chips: productCategories.slice(0, 4).map(c => (ar ? c.nameAr : c.nameEn)),
     },
     {
       id: 'vendors',

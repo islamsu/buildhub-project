@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useParams, Link } from 'wouter';
+import { OpenDisputeDialog } from '@/components/OpenDisputeDialog';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/_core/hooks/useAuth';
@@ -10,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import QuotationComparison from '@/components/QuotationComparison';
 import {
-  ArrowLeft, Clock, DollarSign, FileText, MapPin, Lock, Package,
+  ArrowLeft, Clock, DollarSign, FileText, Flag, MapPin, Lock, Package,
 } from 'lucide-react';
 
 /**
@@ -61,6 +63,7 @@ export default function RFQDetail() {
   const ar = lang === 'ar';
   const { user, isAuthenticated } = useAuth();
   const valid = Number.isFinite(rfqId) && rfqId > 0;
+  const [disputeOpen, setDisputeOpen] = useState(false);
 
   // The summary is what ANY authenticated caller may see - the same column
   // allowlist the open feed returns. It is the only read a provider gets.
@@ -305,6 +308,33 @@ export default function RFQDetail() {
               </div>
             )}
 
+            {/*
+              ── RAISING A DISPUTE ABOUT THIS REQUEST ──────────────────────
+              Offered to the two relationships this page can PROVE from what it
+              already holds: the requester, and a supplier who has actually
+              quoted. An invited or enquiring supplier is eligible too, and the
+              eligibility service decides that server-side - but showing the
+              control to every authenticated reader of a public board would put
+              a refusal in front of people who were only browsing.
+            */}
+            {(isOwner || Boolean(myQuotation)) && (
+              <div className="rounded-lg border border-dashed p-4" data-testid="rfq-dispute-panel">
+                <p className="text-sm font-medium">{ar ? 'مشكلة بشأن هذا الطلب؟' : 'A problem with this request?'}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {ar
+                    ? 'يصل النزاع إلى فريق الدعم، ويُبلَّغ الطرف الذي تسمّيه.'
+                    : 'Support reviews the dispute, and the party you name is told.'}
+                </p>
+                <Button
+                  variant="outline" size="sm" className="mt-3 gap-2"
+                  data-testid="rfq-open-dispute"
+                  onClick={() => setDisputeOpen(true)}
+                >
+                  <Flag className="h-4 w-4" />{ar ? 'فتح نزاع' : 'Open a dispute'}
+                </Button>
+              </div>
+            )}
+
             {/* Attachments are the OWNER's view only. For a provider they are
                 behind the qualified enquiry, which is what the credit buys. */}
             {isOwner && attachments.length > 0 && (
@@ -436,6 +466,11 @@ export default function RFQDetail() {
           </div>
         )}
       </div>
+
+      <OpenDisputeDialog
+        subjectType="rfq" subjectId={rfqId}
+        open={disputeOpen} onOpenChange={setDisputeOpen}
+      />
     </div>
   );
 }

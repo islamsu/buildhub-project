@@ -9,6 +9,22 @@ import { appRouter } from './routers';
 import type { TrpcContext } from './_core/context';
 import { getDb } from './db';
 
+import { ADMIN_DIRECTORY_COLUMNS } from './adminUserDirectory';
+
+/**
+ * A db that answers the directory's three parallel reads: the page of rows,
+ * its total, and the grouped counts. Every one returns nothing, because these
+ * tests are about authorization and shape, not about data.
+ */
+function directoryDb() {
+  const chain: any = {
+    from: () => chain, where: () => chain, orderBy: () => chain, groupBy: () => chain,
+    limit: () => chain, offset: () => chain,
+    then: (resolve: (v: any) => void) => resolve([]),
+  };
+  return { select: () => chain };
+}
+
 /**
  * Where `name:` is declared in the router source, whatever tier follows it.
  *
@@ -96,68 +112,62 @@ const FULL_ROW = {
   lastSignedIn: new Date('2025-01-01'),
 };
 
+/**
+ * THE ALLOWLIST MOVED, SO THESE CHECKS FOLLOW IT - AND GET STRONGER.
+ *
+ * Phase 4A.6.7 introduced ADMIN_USER_LIST_COLUMNS inside routers.ts and these
+ * tests read it back out of the file as TEXT. The directory has since been
+ * extracted to server/adminUserDirectory.ts so that filtering, sorting, paging
+ * and counting happen in the database rather than in the browser over a
+ * truncated 250-row page, and the allowlist went with it as
+ * ADMIN_DIRECTORY_COLUMNS.
+ *
+ * Asserting the exported OBJECT rather than the file's text is not a
+ * relaxation. A text search for 'passwordHash' passes if the column is spelled
+ * differently, passes if it arrives through a spread, and fails on a reformat
+ * that changes nothing. Reading the real object catches all three.
+ */
 describe('admin.users - response shape (Phase 4A.6.7)', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('returns only the approved allowlist of fields', async () => {
-    const orderByMock = vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([FULL_ROW]) });
-    const selectMock = vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ orderBy: orderByMock }) });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select: selectMock });
-    const caller = appRouter.createCaller(makeCtx(1, 'admin'));
-
-    const [result] = await caller.admin.users();
-
-    // select() itself is called with an explicit column object, not select()
-    // with no arguments (which would mean "every column").
-    expect(selectMock).toHaveBeenCalledTimes(1);
-    const columnArg = selectMock.mock.calls[0][0];
-    expect(columnArg).toBeTruthy();
-    expect(Object.keys(columnArg as object).sort()).toEqual(
+  it('returns only the approved allowlist of fields', () => {
+    expect(Object.keys(ADMIN_DIRECTORY_COLUMNS).sort()).toEqual(
       ['accountSource', 'accountStatus', 'createdAt', 'email', 'frozenReason', 'id', 'invitationStatus', 'isDummy', 'name', 'role', 'userRole', 'username', 'verified'].sort()
     );
   });
 
-  it('passwordHash is absent from the response, even though the mock db is fully capable of returning it', async () => {
-    const orderByMock = vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([FULL_ROW]) });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ orderBy: orderByMock }) }) });
-    const caller = appRouter.createCaller(makeCtx(1, 'admin'));
-
-    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-    const block = source.slice(source.indexOf('const ADMIN_USER_LIST_COLUMNS'), source.indexOf('const DEFAULT_ADMIN_SETTINGS'));
-    expect(block).not.toContain('passwordHash');
+  it('passwordHash is absent from the allowlist', () => {
+    expect(ADMIN_DIRECTORY_COLUMNS).not.toHaveProperty('passwordHash');
   });
 
   it('invitationToken is absent from the allowlist', () => {
-    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-    const block = source.slice(source.indexOf('const ADMIN_USER_LIST_COLUMNS'), source.indexOf('const DEFAULT_ADMIN_SETTINGS'));
-    expect(block).not.toContain('invitationToken:');
+    expect(ADMIN_DIRECTORY_COLUMNS).not.toHaveProperty('invitationToken');
   });
 
-  it('other unnecessary internal/credential fields are absent from the allowlist (invitationExpiresAt, invitationSentAt, passwordSetAt, onboardingReviewNotes, creationNote, createdBy, onboardingReviewedBy, deactivatedAt, frozenAt, phone, bio, location, avatar, openId, rating, reviewCount)', () => {
-    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-    const block = source.slice(source.indexOf('const ADMIN_USER_LIST_COLUMNS'), source.indexOf('const DEFAULT_ADMIN_SETTINGS'));
-    for (const forbidden of ['invitationExpiresAt', 'invitationSentAt', 'passwordSetAt', 'onboardingReviewNotes', 'creationNote', 'createdBy:', 'onboardingReviewedBy', 'deactivatedAt', 'frozenAt', 'phone:', 'bio:', 'location:', 'avatar:', 'openId:', 'rating:', 'reviewCount:', 'loginMethod', 'onboardingStatus', 'updatedAt', 'lastSignedIn']) {
-      expect(block).not.toContain(forbidden);
+  it('other unnecessary internal/credential fields are absent from the allowlist', () => {
+    for (const forbidden of ['invitationExpiresAt', 'invitationSentAt', 'passwordSetAt', 'onboardingReviewNotes',
+      'creationNote', 'createdBy', 'onboardingReviewedBy', 'deactivatedAt', 'frozenAt', 'phone', 'bio', 'location',
+      'avatar', 'openId', 'rating', 'reviewCount', 'loginMethod', 'onboardingStatus', 'updatedAt', 'lastSignedIn']) {
+      expect(ADMIN_DIRECTORY_COLUMNS, `${forbidden} reached the admin user list`).not.toHaveProperty(forbidden);
     }
   });
 
   it('never uses select().from(users) with no column list for the admin user list query', () => {
-    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-    const usersProcBlock = source.slice(declarationOf(source, 'users'), declarationOf(source, 'createUser'));
-    expect(usersProcBlock).toContain('ADMIN_USER_LIST_COLUMNS');
+    // The rule Phase 4A.6.7 wrote next to the allowlist, following it to the
+    // module that now owns the query.
+    const source = readFileSync(new URL('./adminUserDirectory.ts', import.meta.url), 'utf8');
+    expect(source).toContain('ADMIN_DIRECTORY_COLUMNS');
+    expect(source).not.toMatch(/select\(\)\.from\(users\)/);
+    // And routers.ts no longer runs its own unlisted read of the table.
+    const routers = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
+    const usersProcBlock = routers.slice(declarationOf(routers, 'users'), declarationOf(routers, 'createUser'));
     expect(usersProcBlock).not.toMatch(/select\(\)\.from\(users\)/);
   });
 
-  it('every field genuinely required by the Admin User Management UI remains available: id, name, email, username, role, userRole, accountStatus, frozenReason, verified, isDummy, accountSource, invitationStatus, createdAt', async () => {
-    const orderByMock = vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([FULL_ROW]) });
-    const selectMock = vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ orderBy: orderByMock }) });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select: selectMock });
-    const caller = appRouter.createCaller(makeCtx(1, 'admin'));
-
-    await caller.admin.users();
-    const columnArg = selectMock.mock.calls[0][0] as Record<string, unknown>;
-    for (const required of ['id', 'name', 'email', 'username', 'role', 'userRole', 'accountStatus', 'frozenReason', 'verified', 'isDummy', 'accountSource', 'invitationStatus', 'createdAt']) {
-      expect(columnArg).toHaveProperty(required);
+  it('every field genuinely required by the Admin User Management UI remains available', () => {
+    for (const required of ['id', 'name', 'email', 'username', 'role', 'userRole', 'accountStatus',
+      'frozenReason', 'verified', 'isDummy', 'accountSource', 'invitationStatus', 'createdAt']) {
+      expect(ADMIN_DIRECTORY_COLUMNS).toHaveProperty(required);
     }
   });
 });
@@ -180,17 +190,38 @@ describe('admin.users - authorization (Phase 4A.6.7)', () => {
     await expect(caller.admin.users()).rejects.toThrow();
   });
 
-  it('takes no input parameter - there is no way to target or filter by another id, so this cannot become an IDOR', () => {
+  /**
+   * THE RULE IS "NO WAY TO TARGET ANOTHER ID", AND IT STILL HOLDS.
+   *
+   * This used to be enforced as "takes no input at all", which was a proxy for
+   * the rule rather than the rule. The directory now accepts search, group,
+   * sort, page and pageSize so that filtering and paging happen in the
+   * database instead of the browser over a truncated page - none of which
+   * names an account.
+   *
+   * The invariant is asserted directly now: no id-shaped parameter, so there
+   * is still nothing to point at somebody else. Note what did NOT change - the
+   * procedure is still gated on `users.read`, and it still returns only the
+   * allowlisted columns for accounts that permission already covers. Paging
+   * reaches rows that used to be unreachable past the 250th; it does not
+   * reach rows the caller was not entitled to.
+   */
+  it('takes no id-shaped parameter, so it cannot become an IDOR', () => {
     const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
     const usersProcBlock = source.slice(declarationOf(source, 'users'), declarationOf(source, 'createUser'));
-    expect(usersProcBlock).not.toMatch(/\.input\(/);
+    for (const idShaped of ['userId', 'targetId', 'accountId', 'ownerId', 'id:']) {
+      expect(usersProcBlock, `${idShaped} appeared in the directory input`).not.toContain(idShaped);
+    }
   });
 
   it('an admin session succeeds', async () => {
-    const orderByMock = vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) });
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ orderBy: orderByMock }) }) });
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(directoryDb());
     const caller = appRouter.createCaller(makeCtx(1, 'admin'));
-    await expect(caller.admin.users()).resolves.toEqual([]);
+    const page = await caller.admin.users();
+    expect(page.rows).toEqual([]);
+    expect(page.total).toBe(0);
+    // A real empty directory reports zero, not an absent count.
+    expect(page.counts.all).toBe(0);
   });
 });
 
