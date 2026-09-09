@@ -174,7 +174,11 @@ describe('§2 storage.ts keeps its contract', () => {
     // directly - which is the property this count protects.
     // TEN since dispute evidence joined them, through the same wrapper.
     // ELEVEN since support ticket attachments arrived, likewise.
-    expect(calls.length).toBe(11);
+    // TWELVE since a project document can be REPLACED - a second write into
+    // the same `project-documents/` prefix, and the property this count
+    // protects is precisely that a new path went through the wrapper rather
+    // than reaching a bucket directly.
+    expect(calls.length).toBe(12);
     for (const prefix of [
       'registration/', 'project-documents/', 'message-attachments/', 'avatars/',
       // AI attachments get their own prefix so the proxy can classify them,

@@ -536,6 +536,21 @@
       "indent": 2
     },
     {
+      "name": "replaceDocument",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "archiveDocument",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "restoreDocument",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "uploadDocument",
       "tier": "protectedProcedure",
       "indent": 2
@@ -1648,7 +1663,7 @@
   ],
   "procedureTiers": {
     "publicProcedure": 32,
-    "protectedProcedure": 78,
+    "protectedProcedure": 81,
     "complianceProcedure": 2,
     "approvedProviderProcedure": 29,
     "adminWith:marketplace.manage": 44,
@@ -1732,8 +1747,8 @@
     {
       "ident": "documents",
       "name": "documents",
-      "columns": 11,
-      "references": 2,
+      "columns": 16,
+      "references": 4,
       "notNull": 5,
       "unique": 0
     },
@@ -2117,122 +2132,122 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 630,
+      "line": 634,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 1409,
+      "line": 1413,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2508,
+      "line": 2614,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2588,
+      "line": 2694,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3357,
+      "line": 3463,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3414,
+      "line": 3520,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3821,
+      "line": 3927,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4079,
+      "line": 4185,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4229,
+      "line": 4335,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4463,
+      "line": 4577,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4655,
+      "line": 4769,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4825,
+      "line": 4939,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6274,
+      "line": 6388,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6607,
+      "line": 6721,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6685,
+      "line": 6799,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7520,
+      "line": 7634,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7591,
+      "line": 7705,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7995,
+      "line": 8109,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8193,
+      "line": 8307,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8223,
+      "line": 8337,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8256,
+      "line": 8370,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8463,
+      "line": 8577,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8545,
+      "line": 8659,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8639,
+      "line": 8753,
       "via": "notifyUser"
     },
     {
@@ -2260,6 +2275,18 @@
     {
       "name": "uploadDocument",
       "tier": "complianceProcedure"
+    },
+    {
+      "name": "replaceDocument",
+      "tier": "protectedProcedure"
+    },
+    {
+      "name": "archiveDocument",
+      "tier": "protectedProcedure"
+    },
+    {
+      "name": "restoreDocument",
+      "tier": "protectedProcedure"
     },
     {
       "name": "uploadDocument",

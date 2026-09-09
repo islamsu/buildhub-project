@@ -4,6 +4,7 @@ import { getObjectStorage, isObjectStorageConfigured } from "./objectStorage";
 import { sdk, type AuthenticatedUser } from "./sdk";
 import { getDb } from "../db";
 import { aiAttachments, disputeEvidence, disputes, documents, messages, projects, qualifiedEnquiries, quotations, registrationDocumentSubmissions, rfqs, supportTicketAttachments } from "../../drizzle/schema";
+import { canAccessProject } from '../projectMembership';
 import { canReadDispute } from "../disputeEligibility";
 import { requireTicketAccess } from "../supportTickets";
 import { parseRfqAttachments } from "../../shared/rfqAttachments";
@@ -195,17 +196,25 @@ export async function authorizeStorageKey(key: string, user: AuthenticatedUser |
     return !!row && row.userId === user.id;
   }
 
-  // Category C: private project files - project owner only, matching the ownership rule
-  // already used for every other project sub-resource (see projectsRouter).
+  // Category C: private project files - EVERY MEMBER WHO MAY READ THE PROJECT,
+  // through the same rule `projects.documents` lists them by.
+  //
+  // This used to resolve the project OWNER only. Since PM-A2 the list has
+  // returned documents to every live member, so a contractor on the team saw a
+  // drawing in the list and got a refusal on the file: the list and the file
+  // disagreed, which reads as a broken product rather than a boundary. A
+  // second copy of an access rule is what produced it, so there is now one -
+  // `canAccessProject`, the non-throwing form of `requireProjectAccess`.
+  //
+  // 'read' is the right capability: it is what listing the document required,
+  // and downloading is reading. A removed member is not a live member, so the
+  // same call also revokes their access to the files.
   if (key.startsWith('project-documents/')) {
     const [row] = await db.select({ projectId: documents.projectId })
       .from(documents)
       .where(eq(documents.fileKey, key));
     if (!row) return false;
-    const [project] = await db.select({ id: projects.id })
-      .from(projects)
-      .where(and(eq(projects.id, row.projectId), eq(projects.ownerId, user.id)));
-    return !!project;
+    return canAccessProject(db, row.projectId, user.id, 'read');
   }
 
   // Category E: message attachments - only the sender or receiver of the message that

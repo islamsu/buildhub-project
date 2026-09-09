@@ -351,6 +351,13 @@
       "when": 1789100000000,
       "tag": "0049_product_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "5",
+      "when": 1789200000000,
+      "tag": "0050_document_lifecycle",
+      "breakpoints": true
     }
   ]
 }

@@ -465,7 +465,11 @@ describe('§2c messages', () => {
     // or certificate with a bid.
     // SIX since provider portfolio images gained their own upload endpoint,
     // which sanitises its filename with the same corrected pattern.
-    expect((ROUTERS_CODE.match(/\[\^\\w\.-\]\+/g) ?? []).length).toBe(6);
+    // SEVEN since a project document can be REPLACED with a corrected
+    // revision - a second upload path into `project-documents/`, which must
+    // sanitise its filename exactly as the first one does or the two write
+    // keys of different shapes into the same prefix.
+    expect((ROUTERS_CODE.match(/\[\^\\w\.-\]\+/g) ?? []).length).toBe(7);
   });
 });
 
@@ -594,7 +598,12 @@ describe('§3 uploads are checked against their bytes', () => {
     // to 11 while `asserted + validated` stayed at 10, which is exactly the
     // unguarded-endpoint case the equality below exists to catch. The number
     // was moved only after the check was added, never to make the red go away.
-    expect(puts).toBe(11);
+    // TWELVE since a project document can be replaced with a corrected
+    // revision. Verified the same way before the number moved: `puts` and
+    // `asserted + validated` BOTH went to 12, so the new path is genuinely
+    // byte-checked. Had only `puts` moved, the equality below would have
+    // caught it, which is exactly what happened to support attachments.
+    expect(puts).toBe(12);
     // THE REAL INVARIANT. Every byte that reaches storage was checked against
     // its declared type first; the count above only ensures a NEW path cannot
     // arrive unnoticed.

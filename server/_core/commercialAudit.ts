@@ -53,6 +53,10 @@ export type CommercialAction =
   | 'product_images_changed' | 'product_question_answered'
   // Files
   | 'document_uploaded' | 'document_deleted' | 'attachment_added' | 'attachment_removed'
+  // The document lifecycle. `document_deleted` predates it and is kept in the
+  // union because historical rows carry it; nothing writes it any more, because
+  // a project document is archived rather than destroyed.
+  | 'document_archived' | 'document_restored' | 'document_replaced'
   // The product taxonomy. Creating a category and pointing an alias at one have
   // no prior value to contrast, so they belong here rather than in
   // fieldValueHistory - a rename or a status change, which do, go there.

@@ -284,10 +284,27 @@ export const documents = mysqlTable('documents', {
   url:       text('url').notNull(),
   fileKey:   varchar('fileKey', { length: 255 }),
   size:      int('size'),
+  /**
+   * ARCHIVED, NEVER DELETED. A contract, a BOQ or a drawing is evidence of
+   * what was agreed at a moment in time, and a dispute six months later is
+   * exactly when somebody needs the superseded revision. An archived document
+   * leaves the working list and stays downloadable to everyone who could
+   * already read the project.
+   */
+  archivedAt:    timestamp('archivedAt'),
+  archivedBy:    int('archivedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  archiveReason: varchar('archiveReason', { length: 500 }),
+  /**
+   * REPLACING IS A LINK, NOT AN OVERWRITE. The new file is a new row; this one
+   * points forward to it, so "which revision was current in March" has an
+   * answer rather than being lost the moment somebody corrects a drawing.
+   */
+  supersededById: int('supersededById').references((): any => documents.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
 }, table => ({
   projectIdIdx: index('documents_projectId_idx').on(table.projectId),
   uploaderIdIdx: index('documents_uploaderId_idx').on(table.uploaderId),
+  projectArchivedIdx: index('documents_project_archived_idx').on(table.projectId, table.archivedAt),
 }));
 
 // ── Registration Compliance Documents ────────────────────────────────────────

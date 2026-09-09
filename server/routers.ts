@@ -154,6 +154,10 @@ import {
   publicProductFilter, transitionProduct, ProductLifecycleError,
 } from './productLifecycle';
 import {
+  listProjectDocuments, requireDocumentAccess, canRetireDocument,
+  archiveDocument, restoreDocument, markSuperseded, ProjectDocumentError,
+} from './projectDocuments';
+import {
   PRODUCT_STATUSES, PRODUCT_CREATABLE_STATUSES, PRODUCT_PUBLIC_STATUS, activeFromStatus,
 } from '../shared/productLifecycle';
 import {
@@ -1556,12 +1560,114 @@ const projectsRouter = router({
       await db.insert(dailyLogs).values({ ...input, authorId: ctx.user.id });
       return { success: true };
     }),
-  documents: protectedProcedure.input(z.object({ projectId: z.number(), type: z.enum(['drawing', 'boq', 'photo', 'contract', 'invoice', 'other']).optional() })).query(async ({ ctx, input }) => {
-    const db = await requireDb();
-    await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
-    const filters = input.type ? and(eq(documents.projectId, input.projectId), eq(documents.type, input.type)) : eq(documents.projectId, input.projectId);
-    return db.select().from(documents).where(filters).orderBy(desc(documents.createdAt));
-  }),
+  /**
+   * The project's documents.
+   *
+   * ARCHIVED ONES ARE OUT OF THE WORKING LIST but not out of the record:
+   * `includeArchived` is what a dispute needs six months later, and it is
+   * still gated on the same read capability, because a superseded drawing is
+   * no less confidential than the current one.
+   */
+  documents: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      type: z.enum(['drawing', 'boq', 'photo', 'contract', 'invoice', 'other']).optional(),
+      includeArchived: z.boolean().default(false),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
+      return listProjectDocuments(db, {
+        projectId: input.projectId, type: input.type, includeArchived: input.includeArchived,
+      });
+    }),
+
+  /**
+   * REPLACE a document with a corrected revision.
+   *
+   * The new file is a NEW ROW and the old one is archived pointing forward to
+   * it, so the superseded revision survives and "which drawing was current in
+   * March" has an answer. Overwriting the row would have destroyed exactly the
+   * thing a dispute needs.
+   *
+   * The order matters: the new row is written FIRST. Archiving the old one
+   * before the upload succeeded would leave a project with neither revision in
+   * its working list.
+   */
+  replaceDocument: protectedProcedure
+    .input(z.object({
+      documentId: z.number().int().positive(),
+      name: z.string().min(1).max(255).optional(),
+      contentType: z.string().refine(isAllowedProjectDocumentType, { message: 'Unsupported project document type' }),
+      base64: z.string().max(11_000_000, 'File too large (max ~8MB)'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      enforceUploadRateLimit(ctx.user.id);
+      const db = await requireDb();
+      let access;
+      try {
+        access = await requireDocumentAccess(db, {
+          documentId: input.documentId, userId: ctx.user.id, capability: 'report',
+        });
+      } catch (error) { throw asDocumentTrpcError(error); }
+      const { document, role } = access;
+
+      if (document.archivedAt) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That document has already been archived. Upload a new one instead.' });
+      }
+      if (!canRetireDocument(role, document.uploaderId, ctx.user.id)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the person who uploaded this document, or someone who manages the project, can replace it.',
+        });
+      }
+
+      const buffer = Buffer.from(input.base64, 'base64');
+      if (buffer.length > 8 * 1024 * 1024) throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
+      assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
+
+      const name = input.name ?? document.name;
+      const safeName = name.replace(/[^\w.-]+/g, '_');
+      const { key, url } = await storagePutOrUnavailable(
+        `project-documents/user-${ctx.user.id}/project-${document.projectId}/${safeName}`,
+        buffer, input.contentType,
+      );
+      const result = await db.insert(documents).values({
+        projectId: document.projectId, uploaderId: ctx.user.id, name,
+        type: document.type, url, fileKey: key, size: buffer.length,
+      });
+      const newId = Number(result?.[0]?.insertId ?? 0);
+      await markSuperseded(db, {
+        oldDocumentId: input.documentId, newDocumentId: newId,
+        userId: ctx.user.id, uploaderId: document.uploaderId,
+      });
+      return { id: newId, replaced: input.documentId, key, url, name, size: buffer.length };
+    }),
+
+  /** Retire a document. The bytes and the row both survive - see the module. */
+  archiveDocument: protectedProcedure
+    .input(z.object({
+      documentId: z.number().int().positive(),
+      reason: z.string().trim().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await archiveDocument(db, {
+          documentId: input.documentId, userId: ctx.user.id, reason: input.reason ?? null,
+        });
+      } catch (error) { throw asDocumentTrpcError(error); }
+    }),
+
+  /** Undo a retirement somebody made by mistake. */
+  restoreDocument: protectedProcedure
+    .input(z.object({ documentId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await restoreDocument(db, { documentId: input.documentId, userId: ctx.user.id });
+      } catch (error) { throw asDocumentTrpcError(error); }
+    }),
   uploadDocument: protectedProcedure
     .input(z.object({
       projectId: z.number(),
@@ -4274,6 +4380,14 @@ const reviewsRouter = router({
       } catch (error) { throw asReviewTrpcError(error); }
     }),
 });
+
+/** Map the document vocabulary onto tRPC without losing the reason. */
+function asDocumentTrpcError(error: unknown): TRPCError {
+  if (error instanceof ProjectDocumentError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Document operation failed' });
+}
 
 /** Map the lifecycle vocabulary onto tRPC without losing the reason. */
 function asProductTrpcError(error: unknown): TRPCError {

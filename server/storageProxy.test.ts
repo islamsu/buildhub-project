@@ -87,20 +87,76 @@ describe('authorizeStorageKey (unit — the exact function the live route calls)
     await expect(authorizeStorageKey('registration/5/does-not-exist_zz', makeUser(5))).resolves.toBe(false);
   });
 
-  it('project-documents/: the project owner is authorized', async () => {
+  /**
+   * PROJECT DOCUMENTS: THE FILE AND THE LIST MUST AGREE.
+   *
+   * This used to resolve the project OWNER only, with its own
+   * `eq(projects.ownerId, user.id)` predicate. Since PM-A2 the list -
+   * `projects.documents` - has returned documents to every LIVE MEMBER who can
+   * read the project, so a contractor on the team saw a drawing in the list and
+   * got a refusal on the file. Two copies of one access rule, drifting apart:
+   * the proxy now calls `canAccessProject`, the non-throwing form of the same
+   * `requireProjectAccess` every procedure uses.
+   *
+   * The queries in order are: the document row (by fileKey), the project row,
+   * then - only when the caller is not the owner - the live membership row.
+   */
+  const documentDb = (answers: unknown[][]) => {
     let call = 0;
-    const results = [[{ projectId: 10 }], [{ id: 10 }]];
-    const where = vi.fn(() => Promise.resolve(results[call++] ?? []));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select: () => ({ from: () => ({ where }) }) });
-    await expect(authorizeStorageKey('project-documents/user-1/project-10/plan.pdf_ab12cd34', makeUser(1))).resolves.toBe(true);
+    const answer = () => Promise.resolve(answers[call++] ?? []);
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+      select: () => ({
+        from: () => ({
+          // `.limit()` and a bare await both consume ONE answer. An eager
+          // promise here charged two to every limited query and every
+          // assertion below would have read the next query's rows.
+          where: () => {
+            let pending: Promise<unknown> | null = null;
+            const take = () => (pending ??= answer());
+            return Object.assign(take(), { limit: () => take() });
+          },
+        }),
+      }),
+    });
+  };
+  const DOC_KEY = 'project-documents/user-1/project-10/plan.pdf_ab12cd34';
+
+  it('project-documents/: the project owner is authorized', async () => {
+    documentDb([[{ projectId: 10 }], [{ id: 10, ownerId: 1 }]]);
+    await expect(authorizeStorageKey(DOC_KEY, makeUser(1))).resolves.toBe(true);
   });
 
-  it('project-documents/: a non-owner (e.g. a competing vendor) is denied', async () => {
-    let call = 0;
-    const results = [[{ projectId: 10 }], []]; // document exists, but caller doesn't own project 10
-    const where = vi.fn(() => Promise.resolve(results[call++] ?? []));
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select: () => ({ from: () => ({ where }) }) });
-    await expect(authorizeStorageKey('project-documents/user-1/project-10/plan.pdf_ab12cd34', makeUser(99))).resolves.toBe(false);
+  it('project-documents/: A LIVE MEMBER WHO CAN READ THE PROJECT IS AUTHORIZED', async () => {
+    // The defect this replaced: the list showed them the document and the file
+    // refused them. A supplier's project role carries 'read', which is exactly
+    // what listing the document required.
+    documentDb([[{ projectId: 10 }], [{ id: 10, ownerId: 1 }], [{ projectRole: 'supplier' }]]);
+    await expect(authorizeStorageKey(DOC_KEY, makeUser(7))).resolves.toBe(true);
+  });
+
+  it('project-documents/: a REMOVED member is denied', async () => {
+    // liveMembership filters on `removedAt IS NULL`, so a removed member
+    // resolves to no membership at all - and losing the project must mean
+    // losing its files in the same moment.
+    documentDb([[{ projectId: 10 }], [{ id: 10, ownerId: 1 }], []]);
+    await expect(authorizeStorageKey(DOC_KEY, makeUser(7))).resolves.toBe(false);
+  });
+
+  it('project-documents/: a stranger (e.g. a competing vendor) is denied', async () => {
+    documentDb([[{ projectId: 10 }], [{ id: 10, ownerId: 1 }], []]);
+    await expect(authorizeStorageKey(DOC_KEY, makeUser(99))).resolves.toBe(false);
+  });
+
+  it('project-documents/: a key with no document row is denied', async () => {
+    // The row is what ties a key to a project. Without it there is nothing to
+    // authorize against, and guessing would be the whole vulnerability.
+    documentDb([[]]);
+    await expect(authorizeStorageKey(DOC_KEY, makeUser(1))).resolves.toBe(false);
+  });
+
+  it('project-documents/: a document pointing at a project that no longer exists is denied', async () => {
+    documentDb([[{ projectId: 10 }], []]);
+    await expect(authorizeStorageKey(DOC_KEY, makeUser(1))).resolves.toBe(false);
   });
 
   it('message-attachments/: the sender is authorized', async () => {
