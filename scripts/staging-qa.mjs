@@ -245,7 +245,12 @@ try {
   const dirAll = await get('marketplace.vendors', {});
   const prodAll = await get('marketplace.list', { limit: 48 });
   const catsAll = await get('marketplace.vendorCategories', {});
-  const featAll = await get('marketplace.featuredVendors', {});
+  // THE TWO PUBLIC PLACEMENT READERS, per the owner's placement decision:
+  // featuredProviders is editorial curation, sponsoredVendors is commercial.
+  // The third reader (marketplace.featuredVendors) was retired; probing it here
+  // would now assert a 200 from a procedure that must not exist.
+  const editorialAll = await get('marketplace.featuredProviders', {});
+  const sponsoredAll = await get('marketplace.sponsoredVendors', {});
   const combined = dirAll.t + prodAll.t;
 
   // THE STATUS CODE, ASSERTED. Everything downstream parses these bodies with
@@ -258,7 +263,8 @@ try {
     ['marketplace.list', prodAll],
     ['marketplace.vendors', dirAll],
     ['marketplace.vendorCategories', catsAll],
-    ['marketplace.featuredVendors', featAll],
+    ['marketplace.featuredProviders', editorialAll],
+    ['marketplace.sponsoredVendors', sponsoredAll],
   ]) {
     check(r.s === 200, `11. ${name} responds without a server error`, `http ${r.s}`);
     check(!/\"error\"/.test(r.t.slice(0, 200)), `11. ${name} returns data, not a tRPC error`, r.t.slice(0, 120));

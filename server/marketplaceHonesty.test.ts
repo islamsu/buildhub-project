@@ -138,10 +138,19 @@ describe('an absent rating is shown as absent, not as a number', () => {
     expect(HUB).toContain('featuredCompanies.length === 0');
   });
 
-  it('the hub does not conflate organic order with PAID placement', () => {
-    // marketplace.featuredVendors is the paid, labelled surface. The hub's
-    // strips are the top of the organic list and must not call that endpoint
-    // without the sponsored labelling the vendors page carries.
+  it('the hub does not conflate organic order with COMMERCIAL placement', () => {
+    // This asserted the hub never called `marketplace.featuredVendors`. That
+    // procedure has since been retired, so the assertion became true of a
+    // procedure that no longer exists - a guard that can never fail again.
+    //
+    // The real rule is unchanged and is now stated against what actually
+    // exists: the hub's strips are the top of the ORGANIC list, and a
+    // commercial reader may not feed them without carrying the Sponsored
+    // labelling the vendors directory renders. `featuredProviders` is fine -
+    // editorial curation is not a paid slot - and the hub does read it.
+    expect(HUB).not.toContain('sponsoredVendors.useQuery');
     expect(HUB).not.toContain('featuredVendors.useQuery');
+    // ...and the strip it does read is the editorial one.
+    expect(HUB).toContain('featuredProviders.useQuery');
   });
 });

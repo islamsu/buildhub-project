@@ -36,20 +36,6 @@ export const UNCALLED_BY_DESIGN: readonly UncalledReason[] = [
       + 'probes, not by a visitor - which is the point.',
   },
 
-  {
-    procedure: 'marketplace.featuredVendors',
-    reason:
-      'The older public reader of the paid vendor strip, which labels its rows '
-      + '`sponsored: true`. The live directory reads marketplace.sponsoredVendors '
-      + '(the CP-1 canonical resolver) and the hub reads marketplace.featuredProviders, '
-      + 'so nothing calls this one - but featuredPlacement.test.ts §5 pins its shape as '
-      + 'part of the paid-placement design, and listFeaturedVendors is a different '
-      + 'function from listSponsoredVendors rather than an alias. Deciding which of the '
-      + 'three public placement readers survives is placement work with its own '
-      + 'commercial consequences, not a tidy-up to fold into a reachability sweep. It '
-      + 'is named here so the decision is visible rather than lost among the others.',
-  },
-
   // ── THE PAYMENT PROVIDER IS NOT CONNECTED, AND PAYMENT IS OWNER-DEFERRED ──
   //
   // These are not screens somebody forgot to build. They are the writes a

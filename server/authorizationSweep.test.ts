@@ -158,8 +158,9 @@ describe('§1 every procedure is pinned to a tier', () => {
       // needs the slug and both languages a string array cannot carry. One
       // public reader of the taxonomy, not two.
       'marketplace.categories',
-      // ADMIN-CURATED FEATURED PROVIDERS, the editorial counterpart to the
-      // paid strip below. Public for the same reason and on the same terms:
+      // ADMIN-CURATED FEATURED PROVIDERS - the canonical EDITORIAL reader,
+      // and the counterpart to the commercial strip (sponsoredVendors) below.
+      // Public for the same reason and on the same terms:
       // it returns the directory's own column allowlist plus the category the
       // pick was made in, resolved through the directory's own visibility
       // filter. It carries no granter, no period, no reason and no billing
@@ -167,7 +168,6 @@ describe('§1 every procedure is pinned to a tier', () => {
       // surface without being written down here, which is exactly the drift
       // this list exists to catch.
       'marketplace.featuredProviders',
-      'marketplace.featuredVendors',
       'marketplace.get',
       'marketplace.importTemplate',
       'marketplace.list',

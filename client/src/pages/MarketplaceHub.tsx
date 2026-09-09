@@ -126,9 +126,14 @@ export default function MarketplaceHub() {
     },
   ];
 
-  // EDITORIAL FEATURED is now a real admin-curated state, not the top of the
+  // EDITORIAL FEATURED is a real admin-curated state, not the top of the
   // organic ranking. Each row carries its `featuredCategory`, so the hub maps
   // one source onto Featured Vendors, Featured Designers and Featured Finishing.
+  //
+  // ONE READER, AND IT IS THE EDITORIAL ONE. The hub calls no commercial
+  // reader: these strips carry BuildHub's own word, so a paid slot must not
+  // reach them. Commercial placement is rendered on the vendors directory,
+  // in its own section, under the Sponsored label.
   const { data: featured = [] } = trpc.marketplace.featuredProviders.useQuery();
   const featuredVendors = featured
     .filter(v => !['Design', 'Renovation'].includes(v.featuredCategory)).slice(0, 4);

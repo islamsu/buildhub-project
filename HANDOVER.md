@@ -67,14 +67,25 @@ reason and what would change it. Both guards fail if a declaration goes stale.
 
 ---
 
-## One decision left open deliberately
+## The placement decision, now settled
 
-`marketplace.featuredVendors`, `marketplace.sponsoredVendors` and
-`marketplace.featuredProviders` are three public readers of the placement strip. The live
-pages use the latter two. The first is pinned by `featuredPlacement.test.ts §5` and is
-backed by a genuinely different function, not an alias. Deciding which survives has
-commercial consequences, so it is declared in `server/reachability.ts` with that reasoning
-rather than folded into a sweep. **This is yours to decide.**
+There were three public readers of the placement strip. The owner has settled the model:
+
+| Concept | Reader | Meaning |
+|---|---|---|
+| **Featured** | `marketplace.featuredProviders` | Editorial. BuildHub curated it. It cannot be bought. |
+| **Sponsored** | `marketplace.sponsoredVendors` | Commercial. A plan entitlement or an administrator's grant. |
+
+`marketplace.featuredVendors` is **retired**. It returned the Premium entitlement rotation
+under BuildHub's editorial word, which is the confusion the decision exists to end. The
+commercial logic underneath it was not deleted — it survives as the internal helper
+`listEntitlementSponsoredVendors`, which `listSponsoredVendors` still calls for the
+entitlement half of its answer.
+
+Placement order on the directory is **Featured → Sponsored → Organic**; Featured is never
+buried below organic results. `server/publicPlacementReaders.test.ts` holds the whole
+shape, and `server/reachability.test.ts` enforces that the retired reader does not return
+by being allowlisted.
 
 ---
 

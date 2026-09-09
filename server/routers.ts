@@ -139,8 +139,8 @@ import {
   getEnquiryUsage, getRfqResponseAccess, getVendorCategories, listEligibleRfqs, openQualifiedEnquiry,
 } from './billing/enquiries';
 import {
-  FEATURED_PLACEMENT_SLOTS, getVendorTargetingDiagnostics, listDirectoryCategories,
-  listDirectoryVendors, listFeaturedProviders, listFeaturedVendors, listSponsoredVendors,
+  getVendorTargetingDiagnostics, listDirectoryCategories,
+  listDirectoryVendors, listFeaturedProviders, listSponsoredVendors,
 } from './vendorDirectory';
 import { getPlatformStats } from './platformStats';
 import {
@@ -1615,28 +1615,35 @@ const marketplaceRouter = router({
     return getPlatformStats(db);
   }),
 
-  // Featured placement (Slice 8). A SEPARATE endpoint from `vendors` above, on
-  // purpose: the organic list and the sponsored strip are two different things
-  // and merging them into one response is how a client ends up rendering a paid
-  // slot as an organic result. `sponsored: true` on every row makes the
-  // labelling obligation impossible to overlook on the client side.
-  featuredVendors: publicProcedure
-    .input(z.object({
-      category: z.string().max(MAX_SEARCH_LENGTH).optional(),
-      location: z.string().max(MAX_SEARCH_LENGTH).optional(),
-    }).optional())
-    .query(async ({ input }) => {
-      const vendors = await listFeaturedVendors(input ?? {});
-      return {
-        vendors: vendors.map(vendor => ({ ...vendor, sponsored: true as const })),
-        slots: FEATURED_PLACEMENT_SLOTS,
-      };
-    }),
+  // ── THE RETIRED PUBLIC READER ────────────────────────────────────────────
+  //
+  // `marketplace.featuredVendors` used to be a third public placement reader.
+  // It returned the Premium-entitlement rotation and labelled every row
+  // `sponsored: true` - a COMMERCIAL surface wearing the word "Featured".
+  //
+  // The owner has settled the vocabulary: FEATURED means editorial curation by
+  // BuildHub, SPONSORED means commercial placement. Two public concepts, not
+  // three competing strips. So this reader is retired rather than renamed:
+  // `sponsoredVendors` below already returns the entitlement rotation, merged
+  // with admin grants and labelled by `sponsorshipSource`, and it is what the
+  // directory actually calls. `listEntitlementSponsoredVendors` survives as the
+  // INTERNAL helper that computes the entitlement half of that answer - the
+  // commercial logic was never the problem, only the public architecture and
+  // the word attached to it.
+  //
+  // server/publicPlacementReaders.test.ts asserts no procedure of this name
+  // comes back, and that it is gone because it was REMOVED rather than parked
+  // on reachability.ts's declared-uncalled list. So the decision cannot
+  // quietly reverse, in either direction.
+
   /**
-   * EDITORIAL FEATURED PROVIDERS. A separate endpoint from `featuredVendors`
-   * (the Premium entitlement rotation) and `sponsoredVendors` (paid placement):
-   * this is the admin-curated selection, and it must not be confused with
-   * either. Each row carries its `featuredCategory` so a directory can render
+   * EDITORIAL FEATURED PROVIDERS - the canonical public reader for the
+   * curated half of discovery. BuildHub chooses these; they are not bought.
+   *
+   * Deliberately separate from `sponsoredVendors` (commercial placement, both
+   * the entitlement rotation and admin grants) and never merged with it: one
+   * label for a deliberate editorial pick and a paid slot would misrepresent
+   * both. Each row carries its `featuredCategory` so a directory can render
    * Featured Designers, Featured Finishing and the rest from one source.
    */
   featuredProviders: publicProcedure

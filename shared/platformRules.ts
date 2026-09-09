@@ -79,10 +79,10 @@ export const PLATFORM_RULES: readonly PlatformRule[] = [
   {
     id: 'vendor.ranking.not_for_sale',
     topic: 'Marketplace',
-    en: 'A paid plan does NOT buy a higher position in the organic vendor directory. Featured placement is a separate, clearly labelled sponsored strip; featured vendors also still appear in the organic list in their organic position, with the same reputation data from the same source.',
-    ar: 'الاشتراك المدفوع لا يشتري ترتيبًا أعلى في دليل المورّدين الطبيعي. الظهور المميّز هو شريط إعلاني منفصل وموسوم بوضوح؛ والمورّدون المميّزون يظهرون أيضًا في القائمة الطبيعية في مواضعهم الطبيعية، وبالبيانات التقييمية نفسها ومن المصدر نفسه.',
+    en: 'A paid plan does NOT buy a higher position in the organic vendor directory. Commercial placement appears only in a separate, clearly labelled Sponsored strip; sponsored vendors also still appear in the organic list in their organic position, with the same reputation data from the same source. Featured is a different thing entirely: it is editorial placement curated by BuildHub and cannot be bought.',
+    ar: 'الاشتراك المدفوع لا يشتري ترتيبًا أعلى في دليل المورّدين الطبيعي. الظهور التجاري يقتصر على شريط «برعاية» منفصل وموسوم بوضوح؛ والمورّدون المدعومون يظهرون أيضًا في القائمة الطبيعية في مواضعهم الطبيعية، وبالبيانات التقييمية نفسها ومن المصدر نفسه. أما «مميّز» فهو أمر مختلف تمامًا: اختيار تحريري تنتقيه BuildHub ولا يمكن شراؤه.',
     enforcedBy: 'server/vendorDirectory.ts',
-    enforcementAnchor: 'listFeaturedVendors',
+    enforcementAnchor: 'listEntitlementSponsoredVendors',
   },
   {
     id: 'billing.no_self_upgrade',
