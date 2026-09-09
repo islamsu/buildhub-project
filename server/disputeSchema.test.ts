@@ -204,7 +204,22 @@ describe('internal notes are separated by TABLE, not by a column', () => {
   });
 
   it('and adminNotes already accepts a dispute subject', () => {
-    // The enum has always allowed it and nothing has ever written one.
-    expect(SCHEMA).toContain("subjectType: mysqlEnum('subjectType', ['user', 'vendor', 'project', 'rfq', 'quotation', 'dispute'])");
+    // THE CLAIM IS THE SUBJECT, NOT THE WHOLE LIST. This pinned the enum's
+    // exact contents, so adding a seventh legitimate subject
+    // ('support_ticket') read as a regression in the dispute lifecycle, which
+    // it is not. What this file actually cares about is that a dispute has an
+    // internal-notes home in the SHARED table rather than a second one of its
+    // own; other subjects joining that table is the design working.
+    // SCOPED TO adminNotes. Several tables declare a `subjectType` enum, and
+    // taking the first match in the file read commercialAuditEvents' column
+    // instead - an assertion that looked precise while examining the wrong
+    // table entirely.
+    const start = SCHEMA.indexOf('export const adminNotes = mysqlTable');
+    expect(start, 'adminNotes not found in the schema').toBeGreaterThan(-1);
+    const column = SCHEMA.slice(start, SCHEMA.indexOf('}, table => ({', start));
+    expect(column, 'adminNotes must still accept a dispute subject').toContain("'dispute'");
+    // And it is still ONE table serving every subject, not a per-subject copy.
+    expect(SCHEMA.match(/export const adminNotes = mysqlTable/g) ?? []).toHaveLength(1);
+    expect(SCHEMA).not.toContain('disputeAdminNotes');
   });
 });

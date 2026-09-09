@@ -64,6 +64,10 @@ const BOUNDED_BY_NATURE: Record<string, string> = {
     + 'read while looking at that person, not browsed.',
   'admin.userNotes':
     'The notes on ONE user, capped at 100. Written by administrators by hand, one at a time.',
+  'admin.supportTicketNotes':
+    'The INTERNAL notes on ONE support ticket, capped at 100. Written by support staff by '
+    + 'hand while working that single ticket, and read in its own panel rather than browsed. '
+    + 'The customer-visible conversation is a different table and is not read through here.',
   'admin.testLoginLinks':
     'QA login links. They exist only in non-production environments, are issued by hand one '
     + 'at a time, and are revoked rather than accumulated.',

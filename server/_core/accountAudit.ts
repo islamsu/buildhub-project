@@ -122,6 +122,16 @@ export const ACCOUNT_AUDIT_ACTIONS = [
   'vendor_name_change_approved',
   'vendor_name_change_rejected',
   'vendor_name_direct_correction',
+
+  // ── SUPPORT TICKETS ─────────────────────────────────────────────────────
+  // A support conversation is account history: "when did they contact us, and
+  // what happened" belongs beside the sign-ins and the plan changes rather
+  // than only inside the ticket.
+  'support_ticket_opened',
+  'support_ticket_assigned',
+  'support_ticket_status_changed',
+  'support_ticket_resolved',
+  'support_ticket_closed',
 ] as const;
 
 export type AccountAuditAction = (typeof ACCOUNT_AUDIT_ACTIONS)[number];

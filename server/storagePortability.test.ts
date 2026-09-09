@@ -173,7 +173,8 @@ describe('§2 storage.ts keeps its contract', () => {
     // and it goes through the same wrapper rather than touching a bucket
     // directly - which is the property this count protects.
     // TEN since dispute evidence joined them, through the same wrapper.
-    expect(calls.length).toBe(10);
+    // ELEVEN since support ticket attachments arrived, likewise.
+    expect(calls.length).toBe(11);
     for (const prefix of [
       'registration/', 'project-documents/', 'message-attachments/', 'avatars/',
       // AI attachments get their own prefix so the proxy can classify them,
@@ -186,6 +187,10 @@ describe('§2 storage.ts keeps its contract', () => {
       // its dispute and apply the dispute's own eligibility rule, rather than
       // inheriting a category with a wider audience.
       'dispute-evidence/',
+      // Support ticket attachments: same reasoning again. The proxy resolves
+      // the key to its TICKET and applies that ticket's one access door, so a
+      // customer cannot read another customer's attachment by guessing a key.
+      'support-ticket/',
     ]) {
       expect(ROUTERS_SOURCE).toContain(prefix);
     }

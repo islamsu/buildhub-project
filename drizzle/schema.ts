@@ -761,6 +761,121 @@ export type DisputeMessage = typeof disputeMessages.$inferSelect;
 export type DisputeStatusChange = typeof disputeStatusHistory.$inferSelect;
 
 // ── Admin Settings ──────────────────────────────────────────────────────────
+/**
+ * ── SUPPORT TICKETS ───────────────────────────────────────────────────────
+ *
+ * A conversation between ONE USER and BUILDHUB. See shared/supportTickets.ts
+ * for why this is not the dispute table with nullable columns: a dispute has a
+ * respondent and a commercial subject, a support ticket has neither, and one
+ * table meaning both is one table whose rules cannot be stated.
+ *
+ * NO RESPONDENT COLUMN EXISTS, deliberately. The counterparty is BuildHub, and
+ * a nullable respondent would invite code that half-treats a ticket as a
+ * dispute.
+ */
+export const supportTickets = mysqlTable('supportTickets', {
+  id:          int('id').autoincrement().primaryKey(),
+  /** The account that asked. Every signed-in account may; there is no eligibility to derive. */
+  requesterId: int('requesterId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /**
+   * `SUP-2026-000123`, derived from id and createdAt and stored so it survives
+   * a change to the format. An id is not something a person reads out on a
+   * call, and support is exactly where somebody has to.
+   */
+  reference:   varchar('reference', { length: 32 }),
+  category:    mysqlEnum('category', ['account', 'billing', 'technical', 'marketplace', 'rfq', 'project', 'compliance', 'other']).default('other').notNull(),
+  subject:     varchar('subject', { length: 255 }).notNull(),
+  description: text('description').notNull(),
+  /**
+   * STAFF-ONLY. A requester who sets their own priority sets `urgent` every
+   * time and the column stops carrying information - see
+   * SUPPORT_PRIORITY_IS_STAFF_ONLY. The create input does not accept it.
+   */
+  priority:    mysqlEnum('priority', ['low', 'medium', 'high', 'urgent']).default('medium').notNull(),
+  status:      mysqlEnum('status', ['open', 'in_progress', 'awaiting_user', 'resolved', 'closed']).default('open').notNull(),
+
+  assignedTo:  int('assignedTo').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  assignedBy:  int('assignedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  assignedAt:  timestamp('assignedAt'),
+
+  /** A resolution is a record, never a bare status flip. */
+  resolutionNotes: text('resolutionNotes'),
+  resolvedBy:  int('resolvedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  resolvedAt:  timestamp('resolvedAt'),
+  closedBy:    int('closedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  closedAt:    timestamp('closedAt'),
+
+  /**
+   * When the requester last said something. The support queue's real ordering
+   * question is "who has been waiting longest for us", and that cannot be
+   * answered from createdAt once a ticket has been going back and forth.
+   */
+  lastUserReplyAt: timestamp('lastUserReplyAt'),
+  lastStaffReplyAt: timestamp('lastStaffReplyAt'),
+
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+  updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  requesterIdx: index('supportTickets_requester_idx').on(table.requesterId),
+  /** The queue's own ordering: open work, oldest first. */
+  statusIdx:    index('supportTickets_status_idx').on(table.status, table.createdAt),
+  assignedIdx:  index('supportTickets_assigned_idx').on(table.assignedTo),
+  referenceIdx: index('supportTickets_reference_idx').on(table.reference),
+}));
+
+/**
+ * The conversation the REQUESTER can see. Internal staff discussion belongs in
+ * `adminNotes` with subjectType 'support_ticket', which the requester cannot
+ * read - the same separation the dispute lifecycle draws, and for the same
+ * reason: a support agent must have somewhere to think out loud.
+ */
+export const supportTicketMessages = mysqlTable('supportTicketMessages', {
+  id:       int('id').autoincrement().primaryKey(),
+  ticketId: int('ticketId').notNull().references(() => supportTickets.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  authorId: int('authorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /**
+   * Which side of the conversation, recorded at write time rather than
+   * re-derived later from the author's current role. An agent who stops being
+   * an administrator must not retroactively turn their past replies into
+   * customer messages.
+   */
+  authorSide: mysqlEnum('authorSide', ['user', 'support']).notNull(),
+  body:     text('body').notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  ticketIdx: index('supportTicketMessages_ticket_idx').on(table.ticketId, table.createdAt),
+  authorIdx: index('supportTicketMessages_author_idx').on(table.authorId),
+}));
+
+/** Attachments, behind the storage proxy's `support-ticket/` prefix. */
+export const supportTicketAttachments = mysqlTable('supportTicketAttachments', {
+  id:          int('id').autoincrement().primaryKey(),
+  ticketId:    int('ticketId').notNull().references(() => supportTickets.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  uploadedBy:  int('uploadedBy').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  storageKey:  varchar('storageKey', { length: 500 }).notNull(),
+  fileName:    varchar('fileName', { length: 255 }).notNull(),
+  contentType: varchar('contentType', { length: 120 }).notNull(),
+  sizeBytes:   int('sizeBytes').notNull(),
+  removedAt:   timestamp('removedAt'),
+  removedBy:   int('removedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  ticketIdx: index('supportTicketAttachments_ticket_idx').on(table.ticketId),
+}));
+
+/** Append-only. Every status change, with who and why. */
+export const supportTicketStatusHistory = mysqlTable('supportTicketStatusHistory', {
+  id:         int('id').autoincrement().primaryKey(),
+  ticketId:   int('ticketId').notNull().references(() => supportTickets.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  fromStatus: varchar('fromStatus', { length: 20 }).notNull(),
+  toStatus:   varchar('toStatus', { length: 20 }).notNull(),
+  actorId:    int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  reason:     varchar('reason', { length: 500 }),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  ticketIdx: index('supportTicketStatusHistory_ticket_idx').on(table.ticketId, table.createdAt),
+}));
+
 export const adminSettings = mysqlTable('adminSettings', {
   id:        int('id').autoincrement().primaryKey(),
   settingKey:varchar('settingKey', { length: 120 }).notNull().unique(),
@@ -1438,7 +1553,7 @@ export const vendorNameChangeRequests = mysqlTable('vendorNameChangeRequests', {
 // ── Internal Admin Notes (migration 0036) ─────────────────────────────────
 export const adminNotes = mysqlTable('adminNotes', {
   id:          int('id').autoincrement().primaryKey(),
-  subjectType: mysqlEnum('subjectType', ['user', 'vendor', 'project', 'rfq', 'quotation', 'dispute']).notNull(),
+  subjectType: mysqlEnum('subjectType', ['user', 'vendor', 'project', 'rfq', 'quotation', 'dispute', 'support_ticket']).notNull(),
   subjectId:   int('subjectId').notNull(),
   note:        text('note').notNull(),
   authorId:    int('authorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),

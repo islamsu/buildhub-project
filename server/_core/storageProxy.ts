@@ -3,8 +3,9 @@ import { and, eq } from "drizzle-orm";
 import { getObjectStorage, isObjectStorageConfigured } from "./objectStorage";
 import { sdk, type AuthenticatedUser } from "./sdk";
 import { getDb } from "../db";
-import { aiAttachments, disputeEvidence, disputes, documents, messages, projects, qualifiedEnquiries, quotations, registrationDocumentSubmissions, rfqs } from "../../drizzle/schema";
+import { aiAttachments, disputeEvidence, disputes, documents, messages, projects, qualifiedEnquiries, quotations, registrationDocumentSubmissions, rfqs, supportTicketAttachments } from "../../drizzle/schema";
 import { canReadDispute } from "../disputeEligibility";
+import { requireTicketAccess } from "../supportTickets";
 import { parseRfqAttachments } from "../../shared/rfqAttachments";
 
 async function authenticateStorageRequest(req: Request): Promise<AuthenticatedUser | null> {
@@ -240,6 +241,37 @@ export async function authorizeStorageKey(key: string, user: AuthenticatedUser |
     const [dispute] = await db.select().from(disputes).where(eq(disputes.id, file.disputeId));
     if (!dispute) return false;
     return canReadDispute(db, dispute as never, user.id);
+  }
+
+  /**
+   * ── SUPPORT TICKET ATTACHMENTS ──────────────────────────────────────────
+   *
+   * The key is looked up in `supportTicketAttachments` and the TICKET it names
+   * goes through the same one door the ticket API uses. So a customer cannot
+   * fetch another customer's attachment by guessing a key, and only support
+   * staff see anyone else's. Unpredictability of the key is never the control.
+   *
+   * A WITHDRAWN FILE IS NOT DOWNLOADABLE, for the same reason as dispute
+   * evidence: the row survives so the record shows it existed, but serving the
+   * bytes afterwards would make the withdrawal cosmetic.
+   */
+  if (key.startsWith('support-ticket/')) {
+    const [file] = await db.select({
+      ticketId: supportTicketAttachments.ticketId,
+      removedAt: supportTicketAttachments.removedAt,
+    }).from(supportTicketAttachments).where(eq(supportTicketAttachments.storageKey, key));
+    if (!file || file.removedAt) return false;
+    //
+    // `isSupportStaff` is FALSE here, and that is correct rather than a
+    // limitation: an administrator already returned true at the top of this
+    // function, so the only readers who reach this line are ordinary accounts.
+    // Passing a staff flag would be dead code pretending to be a control.
+    try {
+      await requireTicketAccess(db, file.ticketId, user.id, false);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // Anything outside the classified categories above (e.g. unused/legacy prefixes) fails closed.

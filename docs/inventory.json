@@ -830,6 +830,31 @@
       "indent": 2
     },
     {
+      "name": "myTickets",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "createTicket",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "ticket",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "reply",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "attach",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "myDisputes",
       "tier": "protectedProcedure",
       "indent": 2
@@ -1400,9 +1425,44 @@
       "indent": 2
     },
     {
-      "name": "disputeAssignees",
+      "name": "supportTickets",
       "tier": "adminWith:support.manage",
       "indent": 2
+    },
+    {
+      "name": "supportAssignees",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "assignSupportTicket",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "setSupportTicketPriority",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "transitionSupportTicket",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "supportTicketNotes",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "addSupportTicketNote",
+      "tier": "adminWith:support.manage",
+      "indent": 3
+    },
+    {
+      "name": "disputeAssignees",
+      "tier": "adminWith:support.manage",
+      "indent": 3
     },
     {
       "name": "updateDispute",
@@ -1547,7 +1607,7 @@
   ],
   "procedureTiers": {
     "publicProcedure": 32,
-    "protectedProcedure": 71,
+    "protectedProcedure": 76,
     "complianceProcedure": 2,
     "approvedProviderProcedure": 29,
     "adminWith:marketplace.manage": 44,
@@ -1559,7 +1619,7 @@
     "superAdminProcedure": 10,
     "adminProcedure": 4,
     "adminWith:billing.manage": 8,
-    "adminWith:support.manage": 6,
+    "adminWith:support.manage": 13,
     "adminWith:settings.manage": 2,
     "aiChatProcedure": 1
   },
@@ -1773,6 +1833,38 @@
       "unique": 0
     },
     {
+      "ident": "supportTickets",
+      "name": "supportTickets",
+      "columns": 24,
+      "references": 5,
+      "notNull": 8,
+      "unique": 0
+    },
+    {
+      "ident": "supportTicketMessages",
+      "name": "supportTicketMessages",
+      "columns": 8,
+      "references": 2,
+      "notNull": 5,
+      "unique": 0
+    },
+    {
+      "ident": "supportTicketAttachments",
+      "name": "supportTicketAttachments",
+      "columns": 11,
+      "references": 3,
+      "notNull": 7,
+      "unique": 0
+    },
+    {
+      "ident": "supportTicketStatusHistory",
+      "name": "supportTicketStatusHistory",
+      "columns": 8,
+      "references": 2,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
       "ident": "adminSettings",
       "name": "adminSettings",
       "columns": 6,
@@ -1968,97 +2060,112 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 1360,
+      "line": 1369,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2447,
+      "line": 2456,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2527,
+      "line": 2536,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3289,
+      "line": 3298,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3346,
+      "line": 3355,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3753,
+      "line": 3762,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4011,
+      "line": 4020,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4149,
+      "line": 4158,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4298,
+      "line": 4332,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4468,
+      "line": 4524,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5917,
+      "line": 4694,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6250,
+      "line": 6143,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6328,
+      "line": 6476,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7159,
+      "line": 6554,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7230,
+      "line": 7385,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7634,
+      "line": 7456,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7832,
+      "line": 7860,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7862,
+      "line": 8058,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7895,
+      "line": 8088,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 8121,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 8299,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 8393,
       "via": "notifyUser"
     },
     {

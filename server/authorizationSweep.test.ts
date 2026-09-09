@@ -581,7 +581,15 @@ describe('§3 uploads are checked against their bytes', () => {
     // TEN since dispute evidence became an upload path - a participant
     // attaching a photograph or a specification to make their case. Verified
     // the same way before the number moved: `asserted + validated` is 10 too.
-    expect(puts).toBe(10);
+    // ELEVEN since support ticket attachments arrived. That endpoint SHIPPED
+    // WITHOUT the byte check and this assertion is what found it: `puts` went
+    // to 11 while `asserted + validated` stayed at 10, which is exactly the
+    // unguarded-endpoint case the equality below exists to catch. The number
+    // was moved only after the check was added, never to make the red go away.
+    expect(puts).toBe(11);
+    // THE REAL INVARIANT. Every byte that reaches storage was checked against
+    // its declared type first; the count above only ensures a NEW path cannot
+    // arrive unnoticed.
     expect(asserted + validated).toBe(puts);
   });
 

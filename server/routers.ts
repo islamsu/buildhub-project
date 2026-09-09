@@ -90,6 +90,7 @@ import {
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems, qualifiedEnquiries,
   projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals, referralCampaigns, referralRewards,
+  supportTickets, supportTicketMessages, supportTicketAttachments,
   disputeStatusHistory, disputeMessages, disputeEvidence,
 } from '../drizzle/schema';
 import { and, asc, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
@@ -156,6 +157,14 @@ import {
 } from './categoryAdmin';
 import { normaliseUnit, PRODUCT_UNITS } from '../shared/productUnits';
 import { canCreateProject, creatorProjectRole, PROJECT_ROLES, capabilitiesFor } from '../shared/projectAccess';
+import {
+  SUPPORT_CATEGORIES, SUPPORT_PRIORITIES, SUPPORT_STATUSES,
+  SUPPORT_ATTACHMENT_CONTENT_TYPES, supportReference, type SupportStatus,
+} from '../shared/supportTickets';
+import {
+  requireTicketAccess, transitionTicket, listSupportTickets, listMyTickets,
+  ticketThread, statusAfterUserReply, SupportTicketError,
+} from './supportTickets';
 import { requireProjectAccess, readableProjectIds, liveMembership } from './projectMembership';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSponsorships, vendorSubscriptions } from '../drizzle/schema';
@@ -4179,6 +4188,223 @@ async function completedProjectCount(db: NonNullable<Awaited<ReturnType<typeof g
 // ── Disputes (user-facing) ─────────────────────────────────────────────────
 // A customer or provider can open a dispute against a real project relationship.
 // The admin side (list/update) already exists; this is the missing user half.
+/**
+ * ── SUPPORT, THE USER'S SIDE ──────────────────────────────────────────────
+ *
+ * Every procedure here is self-scoped by the CALL rather than by the input.
+ * There is no `userId` parameter anywhere, so there is nothing to tamper with:
+ * `requireTicketAccess` reads the session and the ticket, and a ticket that is
+ * neither yours nor visible to you reads as NOT FOUND rather than FORBIDDEN,
+ * so a stranger cannot enumerate ids by watching which ones refuse differently.
+ */
+const supportRouter = router({
+  /** The caller's own tickets. Small list, no pager needed; the queue has one. */
+  myTickets: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return listMyTickets(db, ctx.user.id);
+  }),
+
+  /**
+   * Raise a ticket. ANY signed-in account may - support is not a paid feature
+   * and not gated on a relationship, which is the whole difference from a
+   * dispute.
+   *
+   * `priority` is deliberately absent from this input. A requester who can set
+   * their own priority sets `urgent` every time and the field stops carrying
+   * information; triage is BuildHub's judgement about its own queue. The
+   * constant SUPPORT_PRIORITY_IS_STAFF_ONLY says so where somebody adding a
+   * field would read it.
+   */
+  createTicket: protectedProcedure
+    .input(z.object({
+      category: z.enum(SUPPORT_CATEGORIES),
+      subject: z.string().trim().min(4).max(255),
+      description: z.string().trim().min(10).max(5000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [inserted] = await db.insert(supportTickets).values({
+        requesterId: ctx.user.id,
+        category: input.category,
+        subject: input.subject,
+        description: input.description,
+        status: 'open',
+        lastUserReplyAt: new Date(),
+      });
+      const id = Number((inserted as any).insertId);
+
+      // The reference is derived and then STORED, so it survives a change to
+      // the format: a customer who quoted SUP-2026-000123 on a call must still
+      // find it later.
+      const [row] = await db.select({ createdAt: supportTickets.createdAt })
+        .from(supportTickets).where(eq(supportTickets.id, id)).limit(1);
+      const reference = supportReference(id, row?.createdAt ?? new Date());
+      await db.update(supportTickets).set({ reference }).where(eq(supportTickets.id, id));
+
+      await recordAccountEvent(db, {
+        userId: ctx.user.id, actorId: ctx.user.id,
+        action: 'support_ticket_opened', source: 'support',
+        note: `${reference} (${input.category})`,
+      });
+      return { id, reference };
+    }),
+
+  /** One ticket the caller may see, with its conversation. Never internal notes. */
+  ticket: protectedProcedure
+    .input(z.object({ ticketId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const isStaff = hasAdminPermission(ctx.user.adminRole, 'support.manage');
+      let access;
+      try {
+        access = await requireTicketAccess(db, input.ticketId, ctx.user.id, isStaff);
+      } catch (error) {
+        throw asTicketTrpcError(error);
+      }
+      const [full] = await db.select().from(supportTickets)
+        .where(eq(supportTickets.id, access.ticket.id)).limit(1);
+      const thread = await ticketThread(db, access.ticket.id);
+      return {
+        ticket: {
+          ...full,
+          reference: full.reference ?? supportReference(full.id, full.createdAt),
+        },
+        ...thread,
+        via: access.via,
+      };
+    }),
+
+  /**
+   * Reply to your own ticket.
+   *
+   * REPLYING MOVES THE TICKET, and the rule lives in the service rather than
+   * here: answering a ticket that was waiting on you puts it back in the
+   * queue, and replying to a resolved one reopens it. Nobody should have to
+   * remember to change a status for their answer to be seen, and a queue whose
+   * "waiting on the customer" list is stale is worse than no queue.
+   *
+   * A CLOSED TICKET REFUSES. Closed is terminal; a reply that silently
+   * resurrected it would make the terminal state a lie.
+   */
+  reply: protectedProcedure
+    .input(z.object({
+      ticketId: z.number().int().positive(),
+      body: z.string().trim().min(1).max(5000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const isStaff = hasAdminPermission(ctx.user.adminRole, 'support.manage');
+      let access;
+      try {
+        access = await requireTicketAccess(db, input.ticketId, ctx.user.id, isStaff);
+      } catch (error) {
+        throw asTicketTrpcError(error);
+      }
+      if (access.ticket.status === 'closed') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This ticket is closed. Please open a new one and reference ' +
+            (access.ticket.reference ?? `#${access.ticket.id}`) + '.',
+        });
+      }
+
+      const side = access.via === 'support' ? 'support' : 'user';
+      await db.insert(supportTicketMessages).values({
+        ticketId: access.ticket.id, authorId: ctx.user.id,
+        authorSide: side, body: input.body,
+      });
+      await db.update(supportTickets).set(
+        side === 'user' ? { lastUserReplyAt: new Date() } : { lastStaffReplyAt: new Date() },
+      ).where(eq(supportTickets.id, access.ticket.id));
+
+      if (side === 'user') {
+        const next = statusAfterUserReply(access.ticket.status);
+        if (next) {
+          await transitionTicket(db, {
+            ticketId: access.ticket.id, from: access.ticket.status, to: next,
+            actorId: ctx.user.id, reason: 'The customer replied',
+          });
+        }
+      } else {
+        // Staff replied: tell the requester, with a link that exists.
+        const [owner] = await db.select({ requesterId: supportTickets.requesterId })
+          .from(supportTickets).where(eq(supportTickets.id, access.ticket.id)).limit(1);
+        await notifyUser(db, {
+          userId: owner.requesterId,
+          title: 'BuildHub support replied',
+          body: access.ticket.reference ?? `Ticket #${access.ticket.id}`,
+          type: 'info',
+          link: `/support/${access.ticket.id}`,
+          // The KEY carries the meaning; the prose above is the English
+          // fallback. Without this an Arabic customer is told in English that
+          // they have an Arabic-speaking support reply waiting.
+          messageKey: 'notif.support.replied',
+          messageParams: { reference: access.ticket.reference ?? `#${access.ticket.id}` },
+        });
+      }
+      return { ok: true };
+    }),
+
+  /**
+   * Attach a file to your own ticket.
+   *
+   * BLOCKED BY INFRASTRUCTURE where no object store is configured, and it says
+   * so rather than pretending: `storagePut` is the same path dispute evidence
+   * uses, and the `support-ticket/` prefix is authorized in the storage proxy
+   * through this module's own one door.
+   */
+  attach: protectedProcedure
+    .input(z.object({
+      ticketId: z.number().int().positive(),
+      fileName: z.string().trim().min(1).max(255),
+      contentType: z.string().trim().min(1).max(120),
+      dataBase64: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const isStaff = hasAdminPermission(ctx.user.adminRole, 'support.manage');
+      let access;
+      try {
+        access = await requireTicketAccess(db, input.ticketId, ctx.user.id, isStaff);
+      } catch (error) {
+        throw asTicketTrpcError(error);
+      }
+      const bytes = Buffer.from(input.dataBase64, 'base64');
+      if (bytes.length === 0 || bytes.length > 10 * 1024 * 1024) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Attach a file up to 10 MB.' });
+      }
+      // THE BYTES, NOT THE CLAIM. `contentType` is whatever the uploader said;
+      // the shared gate reads the file's own signature and refuses a mismatch.
+      // This endpoint shipped without it for exactly as long as it took the
+      // authorization sweep to notice - which is the whole point of that sweep
+      // asserting EVERY upload site rather than the risky-looking one.
+      assertUploadedFileMatches(input.contentType, bytes, SUPPORT_ATTACHMENT_CONTENT_TYPES);
+      const key = `support-ticket/${access.ticket.id}/${Date.now()}-${input.fileName.replace(/[^\w.-]/g, '_')}`;
+
+      // THE SHARED WRAPPER, not a hand-rolled try/catch. It turns an
+      // unconfigured object store into the same honest refusal every other
+      // upload path gives, AND logs the diagnosis for the operator - which a
+      // local catch here would have silently dropped. The row is written only
+      // after the bytes land, so a deployment without storage never produces
+      // an attachment record pointing at nothing.
+      const stored = await storagePutOrUnavailable(key, bytes, input.contentType);
+      await db.insert(supportTicketAttachments).values({
+        ticketId: access.ticket.id, uploadedBy: ctx.user.id,
+        storageKey: stored.key, fileName: input.fileName,
+        contentType: input.contentType, sizeBytes: bytes.length,
+      });
+      return { ok: true };
+    }),
+});
+
+/** Map the service's own error vocabulary onto tRPC without losing the reason. */
+function asTicketTrpcError(error: unknown): TRPCError {
+  if (error instanceof SupportTicketError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Ticket lookup failed' });
+}
+
 const disputesRouter = router({
   /**
    * The caller's own disputes - raised by them, or against them.
@@ -7998,6 +8224,234 @@ const adminRouter = router({
    * `assignDispute` then refuses. This returns exactly the set that mutation
    * accepts, and a test holds the two together.
    */
+  /**
+   * ── THE SUPPORT QUEUE ───────────────────────────────────────────────────
+   *
+   * Paged, filtered and ordered by WHO IS WAITING ON US - see
+   * listSupportTickets. Behind `support.manage`, the same permission that
+   * gates disputes, because they are the same job.
+   */
+  supportTickets: adminWith('support.manage')
+    .input(z.object({
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(20),
+      status: z.string().max(24).optional(),
+      category: z.string().max(24).optional(),
+      priority: z.string().max(16).optional(),
+      assignee: z.enum(['all', 'mine', 'unassigned']).default('all'),
+      search: z.string().max(MAX_SEARCH_LENGTH).optional(),
+    }).default({ page: 0, pageSize: 20, assignee: 'all' }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      return listSupportTickets(db, { ...input, actorId: ctx.user.id });
+    }),
+
+  /** Support agents who can be assigned work, filtered to the permission. */
+  supportAssignees: adminWith('support.manage').query(async () => {
+    const db = await requireDb();
+    const admins = await assignableAdmins(db);
+    return admins.filter(admin => hasAdminPermission(admin.adminRole as any, 'support.manage'));
+  }),
+
+  /**
+   * Assign a ticket. Append-only in effect: the previous assignee is replaced
+   * on the row, and the account audit records who did it and when, so "who was
+   * looking at this last week" is answerable.
+   */
+  assignSupportTicket: adminWith('support.manage')
+    .input(z.object({
+      ticketId: z.number().int().positive(),
+      /** null hands it back to the unassigned pool rather than deleting the record. */
+      assigneeId: z.number().int().positive().nullable(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [ticket] = await db.select().from(supportTickets)
+        .where(eq(supportTickets.id, input.ticketId)).limit(1);
+      if (!ticket) throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found' });
+
+      if (input.assigneeId !== null) {
+        // A ticket assigned to someone who cannot work it is a ticket nobody
+        // works. The assignee is re-checked here rather than trusted from the
+        // request: an id is a number, not a permission.
+        const [candidate] = await db.select({ adminRole: users.adminRole })
+          .from(users).where(eq(users.id, input.assigneeId)).limit(1);
+        if (!candidate || !hasAdminPermission(candidate.adminRole as any, 'support.manage')) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'That administrator cannot be assigned support work.',
+          });
+        }
+      }
+
+      await db.update(supportTickets).set({
+        assignedTo: input.assigneeId,
+        assignedBy: input.assigneeId === null ? null : ctx.user.id,
+        assignedAt: input.assigneeId === null ? null : new Date(),
+      }).where(eq(supportTickets.id, input.ticketId));
+
+      await recordAccountEvent(db, {
+        userId: ticket.requesterId, actorId: ctx.user.id,
+        action: 'support_ticket_assigned', source: 'admin',
+        note: `${ticket.reference ?? `#${ticket.id}`} -> ${input.assigneeId ?? 'unassigned'}`,
+      });
+      if (input.assigneeId) {
+        await notifyUser(db, {
+          userId: input.assigneeId,
+          title: 'A support ticket was assigned to you',
+          body: ticket.reference ?? `Ticket #${ticket.id}`,
+          type: 'info', link: `/admin/support/${ticket.id}`,
+          messageKey: 'notif.support.assigned',
+          messageParams: { reference: ticket.reference ?? `#${ticket.id}` },
+        });
+      }
+      return { ok: true };
+    }),
+
+  /** Triage. Staff-only by design - see SUPPORT_PRIORITY_IS_STAFF_ONLY. */
+  setSupportTicketPriority: adminWith('support.manage')
+    .input(z.object({
+      ticketId: z.number().int().positive(),
+      priority: z.enum(SUPPORT_PRIORITIES),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      const result = await db.update(supportTickets).set({ priority: input.priority })
+        .where(eq(supportTickets.id, input.ticketId));
+      if (!Number((result as any)?.[0]?.affectedRows ?? 1)) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found' });
+      }
+      return { ok: true };
+    }),
+
+  /**
+   * Move a ticket THROUGH THE STATE MACHINE, never by setting a column.
+   *
+   * This is `request-info` (-> awaiting_user), `resolve`, `close` and the
+   * reopen, in one procedure, because they are one operation with different
+   * destinations. The generic "accept any status from any state" mutation this
+   * project deleted from disputes is deliberately not recreated: an undeclared
+   * move is refused and the refusal names both states.
+   *
+   * Resolving REQUIRES a resolution note. A resolution is a record of what was
+   * done, not a bare status flip - the same rule the dispute lifecycle holds.
+   */
+  transitionSupportTicket: adminWith('support.manage')
+    .input(z.object({
+      ticketId: z.number().int().positive(),
+      to: z.enum(SUPPORT_STATUSES),
+      reason: z.string().trim().max(500).optional(),
+      resolutionNotes: z.string().trim().max(5000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [ticket] = await db.select().from(supportTickets)
+        .where(eq(supportTickets.id, input.ticketId)).limit(1);
+      if (!ticket) throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found' });
+
+      if (input.to === 'resolved' && !input.resolutionNotes) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Say what was done. A resolution with no record is a status change, not a resolution.',
+        });
+      }
+
+      const patch: Record<string, unknown> = {};
+      if (input.to === 'resolved') {
+        patch.resolutionNotes = input.resolutionNotes;
+        patch.resolvedBy = ctx.user.id;
+        patch.resolvedAt = new Date();
+      }
+      if (input.to === 'closed') {
+        patch.closedBy = ctx.user.id;
+        patch.closedAt = new Date();
+      }
+
+      try {
+        await transitionTicket(db, {
+          ticketId: ticket.id,
+          from: ticket.status as SupportStatus,
+          to: input.to,
+          actorId: ctx.user.id,
+          reason: input.reason ?? null,
+          patch,
+        });
+      } catch (error) {
+        throw asTicketTrpcError(error);
+      }
+
+      await recordAccountEvent(db, {
+        userId: ticket.requesterId, actorId: ctx.user.id,
+        action: input.to === 'resolved' ? 'support_ticket_resolved'
+          : input.to === 'closed' ? 'support_ticket_closed'
+          : 'support_ticket_status_changed',
+        source: 'admin',
+        note: `${ticket.reference ?? `#${ticket.id}`}: ${ticket.status} -> ${input.to}`,
+      });
+
+      // The requester is told, with a link to a route that exists.
+      await notifyUser(db, {
+        userId: ticket.requesterId,
+        title: input.to === 'awaiting_user'
+          ? 'BuildHub support needs more information'
+          : `Your support ticket is now ${input.to.replace('_', ' ')}`,
+        body: ticket.reference ?? `Ticket #${ticket.id}`,
+        type: 'info',
+        link: `/support/${ticket.id}`,
+        // Two keys rather than one interpolated status: `resolveKeyParams`
+        // cannot translate a status word smuggled into a param, which is the
+        // exact defect the referral engine had.
+        messageKey: input.to === 'awaiting_user'
+          ? 'notif.support.infoRequested'
+          : 'notif.support.statusChanged',
+        messageParams: {
+          reference: ticket.reference ?? `#${ticket.id}`,
+          statusKey: `support.status.${input.to}`,
+        },
+      });
+      return { ok: true };
+    }),
+
+  /**
+   * INTERNAL notes on a ticket. Reuses `adminNotes` - which already serves six
+   * other subject types - rather than inventing a second internal-notes system.
+   * There is no procedure by which a requester can read these.
+   */
+  supportTicketNotes: adminWith('support.manage')
+    .input(z.object({ ticketId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return db.select({
+        id: adminNotes.id,
+        note: adminNotes.note,
+        createdAt: adminNotes.createdAt,
+        authorName: users.name,
+      }).from(adminNotes)
+        .innerJoin(users, eq(users.id, adminNotes.authorId))
+        .where(and(
+          eq(adminNotes.subjectType, 'support_ticket'),
+          eq(adminNotes.subjectId, input.ticketId),
+        ))
+        .orderBy(desc(adminNotes.createdAt))
+        .limit(100);
+    }),
+
+  addSupportTicketNote: adminWith('support.manage')
+    .input(z.object({
+      ticketId: z.number().int().positive(),
+      note: z.string().trim().min(1).max(5000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      await db.insert(adminNotes).values({
+        subjectType: 'support_ticket',
+        subjectId: input.ticketId,
+        note: input.note,
+        authorId: ctx.user.id,
+      });
+      return { ok: true };
+    }),
+
   disputeAssignees: adminWith('support.manage').query(async () => {
     const db = await requireDb();
     const admins = await assignableAdmins(db);
@@ -9187,6 +9641,7 @@ export const appRouter = router({
   profile: profileRouter,
   portfolio: portfolioRouter,
   disputes: disputesRouter,
+  support: supportRouter,
   analytics: analyticsRouter,
   admin: adminRouter,
   compliance: registrationRouter,

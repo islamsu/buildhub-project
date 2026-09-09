@@ -165,18 +165,40 @@ describe('all upload paths behave the same way', () => {
     expect(direct, 'every call site must go through storagePutOrUnavailable').toHaveLength(0);
   });
 
-  it('and there are still as many upload sites as before', () => {
+  it('and every upload path is still there, NAMED rather than counted', () => {
     // Guards the other direction: satisfying the check above by deleting
     // uploads would be worse than the defect.
+    //
+    // THIS WAS A MAGIC NUMBER, and it was the weak kind of census this
+    // codebase has already replaced once - see featuredPlacement.test.ts, "a
+    // count says nothing about WHICH functions use the helper". `toBe(10)`
+    // failed the day an eleventh legitimate upload arrived and said only that
+    // a number had moved; it would equally have passed if one path were
+    // deleted and another added in the same change.
+    //
+    // Naming them makes the assertion mean what the title claims: each of
+    // these storage prefixes must still be written through the wrapper, and a
+    // new one does not have to edit a number to be allowed.
+    const prefixes = [
+      'registration/',          // compliance documents
+      'project-documents/',     // a project's own files
+      'message-attachments/',   // conversation attachments
+      'avatars/',               // profile pictures
+      'rfq-attachments/',       // what a customer attaches to a request
+      'quotation-attachments/', // the supplier's reply - provider -> customer
+      'portfolio-images/',      // provider portfolio images
+      'product-images/',        // catalogue imagery
+      'dispute-evidence/',      // a participant making their case
+      'support-ticket/',        // a customer asking BuildHub for help
+      'ai-attachments/',        // a file handed to the assistant
+    ];
+    const missing = prefixes.filter(prefix => !ROUTERS.includes(prefix));
+    expect(missing, `upload paths that disappeared: ${missing.join(', ')}`).toEqual([]);
+
+    // And nothing may reach storage outside the wrapper - restated here as a
+    // floor so that deleting every call site cannot make this file pass.
     const wrapped = [...ROUTERS.matchAll(/await storagePutOrUnavailable\(/g)];
-    // EIGHT since a supplier gained the ability to attach a proposal, a
-    // specification, a certificate or a photograph to their quotation - the
-    // eighth upload path, and the first that flows provider -> customer.
-    // NINE since provider portfolio images became an upload path of their own.
-    // TEN since dispute evidence joined them: a participant attaching a
-    // photograph or a specification to make their case gets the same honest
-    // 503 as everyone else when no storage backend is configured.
-    expect(wrapped.length).toBe(10);
+    expect(wrapped.length).toBeGreaterThanOrEqual(prefixes.length);
   });
 
   it('anything that is NOT a configuration problem still propagates', () => {
