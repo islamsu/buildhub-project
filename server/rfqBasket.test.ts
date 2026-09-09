@@ -171,7 +171,7 @@ describe('a basket read back out of storage is not trusted', () => {
 
 // ══ 4. THE SERVER DOES NOT TRUST THE BASKET EITHER ═════════════════════════
 
-function stubDb(catalogue: { id: number; name: string; unit: string | null; price: string | null; active: boolean }[]) {
+function stubDb(catalogue: { id: number; name: string; unit: string | null; price: string | null; status: string }[]) {
   const inserted: { table: string; rows: unknown }[] = [];
   const tx = {
     insert: (table: unknown) => ({
@@ -188,7 +188,7 @@ function stubDb(catalogue: { id: number; name: string; unit: string | null; pric
   }));
   return inserted;
 }
-const PRODUCT = { id: 1, name: 'Rebar 12mm', unit: 'tonne', price: '1200.00', active: true };
+const PRODUCT = { id: 1, name: 'Rebar 12mm', unit: 'tonne', price: '1200.00', status: 'active' };
 
 describe('a catalogue line is re-read from the catalogue', () => {
   it('stores the CATALOGUE name, not the name the client sent', async () => {
@@ -214,9 +214,12 @@ describe('a catalogue line is re-read from the catalogue', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('refuses an item whose product has been WITHDRAWN', async () => {
+  it.each(['draft', 'inactive', 'archived'])('refuses an item whose product is %s rather than live', async status => {
     // A customer who thinks they asked for three things must not get two.
-    stubDb([{ ...PRODUCT, active: false }]);
+    // All three non-live states mean "not for sale today" - under the old
+    // boolean only one of them was expressible, and a draft was indistinguishable
+    // from a discontinued line.
+    stubDb([{ ...PRODUCT, status }]);
     await expect(
       freshCaller().rfq.create({
         title: 'X', category: 'Materials',

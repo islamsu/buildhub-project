@@ -1,5 +1,6 @@
 import { and, eq, gt, isNull, lte, or } from 'drizzle-orm';
 import { products, users, vendorSponsorships } from '../drizzle/schema';
+import { PRODUCT_PUBLIC_STATUS } from '../shared/productLifecycle';
 
 type Db = any;
 
@@ -62,8 +63,12 @@ export async function bookPlacement(db: Db, booking: PlacementBooking, now: Date
       return { outcome: 'rejected', reason: 'Only an approved, active provider can be placed.' };
     }
   } else {
-    const [product] = await db.select({ id: products.id, active: products.active }).from(products).where(eq(products.id, booking.entityId)).limit(1);
-    if (!product || !product.active) return { outcome: 'rejected', reason: 'Only an active product can be placed.' };
+    // The LIFECYCLE, not the legacy boolean: a draft has never been published
+    // and an archived product is retired, so neither may be sold a slot.
+    const [product] = await db.select({ id: products.id, status: products.status }).from(products).where(eq(products.id, booking.entityId)).limit(1);
+    if (!product || product.status !== PRODUCT_PUBLIC_STATUS) {
+      return { outcome: 'rejected', reason: 'Only a live product can be placed.' };
+    }
   }
 
   if (booking.package === 'PREMIER' && booking.surface === 'MASTER_DISCOVERY') {

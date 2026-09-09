@@ -41,8 +41,14 @@ function ctxFor(id: number, over: Partial<TrpcContext['user']> = {}): TrpcContex
  * is what is under test, and a stub that pre-filtered would do the procedure's
  * job and let every refusal pass for free.
  */
-function stubDb(ownedRow: Record<string, unknown> | null) {
+function stubDb(ownedRow: Record<string, unknown> | null, laterRows: unknown[][] = []) {
   const setCalls: Record<string, unknown>[] = [];
+  // The FIRST select is the ownership row every procedure here reads. Anything
+  // after it - the live-placement lookup the archive guard makes - is answered
+  // from `laterRows`, which defaults to empty. Returning the ownership row to
+  // every query made the placement guard fire on a product with no placement,
+  // which is a harness artefact wearing the costume of a product rule.
+  let call = 0;
   const set = vi.fn((patch: Record<string, unknown>) => {
     setCalls.push(patch);
     return { where: vi.fn().mockResolvedValue(undefined) };
@@ -51,7 +57,18 @@ function stubDb(ownedRow: Record<string, unknown> | null) {
   (getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
     select: vi.fn(() => ({
       from: () => ({
-        where: () => Promise.resolve(ownedRow ? [ownedRow] : []),
+        // `.limit()` as well as a bare await: the lifecycle service reads its
+        // row with `.limit(1)`, and a stub missing that would fail the
+        // procedure for a harness reason rather than a product one.
+        where: () => {
+          const answer = () => {
+            const first = call++ === 0;
+            return Promise.resolve(first ? (ownedRow ? [ownedRow] : []) : (laterRows.shift() ?? []));
+          };
+          let pending: Promise<unknown> | null = null;
+          const take = () => (pending ??= answer());
+          return Object.assign(take(), { limit: () => take() });
+        },
         innerJoin: () => ({ where: () => Promise.resolve(ownedRow ? [ownedRow] : []) }),
       }),
     })),
@@ -150,33 +167,92 @@ describe('updateProduct', () => {
 
 // ══ 2. PUBLISH / DELIST ════════════════════════════════════════════════════
 
-describe('setProductActive', () => {
-  it('the owner can delist and relist', async () => {
-    const { setCalls } = stubDb(mine);
-    const off = await appRouter.createCaller(ctxFor(OWNER)).marketplace
-      .setProductActive({ id: 3, active: false });
-    expect(off).toEqual({ id: 3, active: false });
-    expect(setCalls[0]).toEqual({ active: false });
+describe('setProductStatus', () => {
+  /**
+   * This replaced `setProductActive(active: boolean)`. The three claims the old
+   * tests made are all still made below - the owner can move a product, cannot
+   * touch anybody else's, and taking one down UPDATES rather than deletes - but
+   * a boolean could only say two things, so the questions "is this a draft" and
+   * "was this discontinued" had no answer at all. The transition table itself
+   * is pinned in productLifecycle.test.ts; these are the procedure's claims.
+   */
+  const live = { id: 3, supplierId: OWNER, status: 'active' as const };
+  const off = { id: 3, supplierId: OWNER, status: 'inactive' as const };
 
-    const { setCalls: on } = stubDb(mine);
-    await appRouter.createCaller(ctxFor(OWNER)).marketplace.setProductActive({ id: 3, active: true });
-    expect(on[0]).toEqual({ active: true });
+  it('the owner can take a live product off sale, and put it back', async () => {
+    const { setCalls } = stubDb(live);
+    const result = await appRouter.createCaller(ctxFor(OWNER)).marketplace
+      .setProductStatus({ id: 3, status: 'inactive' });
+    expect(result).toMatchObject({ ok: true, from: 'active', to: 'inactive' });
+    expect(setCalls[0]).toMatchObject({ status: 'inactive', active: false });
+
+    const { setCalls: back } = stubDb(off);
+    await appRouter.createCaller(ctxFor(OWNER)).marketplace.setProductStatus({ id: 3, status: 'active' });
+    expect(back[0]).toMatchObject({ status: 'active', active: true });
   });
 
-  it('cannot delist somebody else\'s product', async () => {
-    const { update } = stubDb(null);
+  it('THE LEGACY BOOLEAN IS DERIVED, never sent by the caller', async () => {
+    // `products.active` is kept for one migration so the 0049 backfill stays
+    // reversible by inspection. If it could be set independently of the status
+    // the two would disagree, which is the exact shape this codebase has been
+    // burned by before.
+    const { setCalls } = stubDb(live);
+    await appRouter.createCaller(ctxFor(OWNER)).marketplace.setProductStatus({ id: 3, status: 'archived' });
+    expect(setCalls[0]).toMatchObject({ status: 'archived', active: false });
+  });
+
+  it('cannot move somebody else\'s product, and is told NOT FOUND rather than FORBIDDEN', async () => {
+    const { update } = stubDb({ id: 3, supplierId: OWNER + 1, status: 'active' });
     await expect(
-      appRouter.createCaller(ctxFor(OWNER)).marketplace.setProductActive({ id: 3, active: false }),
+      appRouter.createCaller(ctxFor(OWNER)).marketplace.setProductStatus({ id: 3, status: 'inactive' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(update).not.toHaveBeenCalled();
   });
 
-  it('delisting UPDATES rather than deletes', async () => {
-    // Questions, quotations and history reference the row. Destroying it to
-    // hide it would take the history with it.
-    const { update } = stubDb(mine);
-    await appRouter.createCaller(ctxFor(OWNER)).marketplace.setProductActive({ id: 3, active: false });
+  it('a product that does not exist answers the same way', async () => {
+    const { update } = stubDb(null);
+    await expect(
+      appRouter.createCaller(ctxFor(OWNER)).marketplace.setProductStatus({ id: 3, status: 'inactive' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('taking a product down UPDATES rather than deletes', async () => {
+    // Questions, quotations, placements and history reference the row.
+    // Destroying it to hide it would take the history with it - which is why
+    // there is no delete in this vocabulary at all.
+    const { update } = stubDb(live);
+    await appRouter.createCaller(ctxFor(OWNER)).marketplace.setProductStatus({ id: 3, status: 'archived' });
     expect(update).toHaveBeenCalled();
+  });
+
+  it('ARCHIVING A PRODUCT WITH A LIVE PLACEMENT IS REFUSED, not silently accepted', async () => {
+    // A paid slot points at this row and publicPlacement filters on the same
+    // status, so archiving would leave the placement rendering nothing while
+    // the vendor's entitlement went on being consumed. Telling the supplier to
+    // end the placement first is a real answer; quietly breaking it is not.
+    const { update } = stubDb(live, [[{ id: 77 }]]);
+    await expect(
+      appRouter.createCaller(ctxFor(OWNER)).marketplace.setProductStatus({ id: 3, status: 'archived' }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('an UNDECLARED move is refused, and the refusal names both states', async () => {
+    const { update } = stubDb({ id: 3, supplierId: OWNER, status: 'archived' });
+    await expect(
+      appRouter.createCaller(ctxFor(OWNER)).marketplace.setProductStatus({ id: 3, status: 'active' }),
+    ).rejects.toThrow(/Archived.*Live/);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('a non-supplier provider is refused even though the tier lets them in', async () => {
+    const { update } = stubDb(live);
+    await expect(
+      appRouter.createCaller(ctxFor(OWNER, { userRole: 'contractor' })).marketplace
+        .setProductStatus({ id: 3, status: 'inactive' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(update).not.toHaveBeenCalled();
   });
 });
 

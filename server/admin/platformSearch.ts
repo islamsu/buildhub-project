@@ -187,7 +187,7 @@ export async function runPlatformSearch(
       name: products.name,
       nameAr: products.nameAr,
       category: products.category,
-      active: products.active,
+      status: products.status,
     }).from(products)
       .where(numeric !== null
         ? eq(products.id, numeric)
@@ -200,7 +200,10 @@ export async function runPlatformSearch(
         id: row.id,
         label: row.name,
         detail: row.category,
-        status: row.active ? 'active' : 'inactive',
+        // The real lifecycle state, not a boolean flattening of it: a
+        // searching administrator needs to see 'draft' and 'archived' as
+        // themselves rather than as a second kind of 'inactive'.
+        status: row.status,
       })),
     });
   } else omitted.push('products');

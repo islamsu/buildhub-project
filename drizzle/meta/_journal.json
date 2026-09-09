@@ -344,6 +344,13 @@
       "when": 1789000000000,
       "tag": "0048_review_moderation",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "5",
+      "when": 1789100000000,
+      "tag": "0049_product_lifecycle",
+      "breakpoints": true
     }
   ]
 }

@@ -119,7 +119,10 @@ const DELIBERATELY_SHARED: Record<string, string> = {
 const PUBLIC_BY_OWNER: Record<string, { reason: string; mustAlsoConstrain: RegExp }> = {
   'marketplace.vendorProducts': {
     reason: 'One vendor\'s shop window. Every row it returns is already returned by marketplace.list to anyone at all; withholding it would only mean a vendor page that cannot show what the vendor sells.',
-    mustAlsoConstrain: /eq\(products\.active,\s*true\)/,
+    // The one shared visibility filter, not an inline literal: "publicly
+    // visible" is now four lifecycle states rather than one boolean, and a
+    // reader that spelled the rule out itself would be free to serve drafts.
+    mustAlsoConstrain: /publicProductFilter\(\)/,
   },
 };
 
@@ -153,8 +156,8 @@ describe('the census found the surface it is meant to police', () => {
 
   it('an owner-column exception only holds if the procedure re-filters to the public rows', () => {
     // The exception is earned, not declared. If marketplace.vendorProducts
-    // ever stops filtering on `active`, this fails and the procedure goes back
-    // to being an offender.
+    // ever stops applying the public visibility filter, this fails and the
+    // procedure goes back to being an offender.
     for (const [name, entry] of Object.entries(PUBLIC_BY_OWNER)) {
       const procedure = ALL_PROCEDURES.find(p => p.qualified === name);
       expect(procedure, `${name} is excepted but no longer exists`).toBeDefined();

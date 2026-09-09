@@ -183,6 +183,21 @@ describe('the events that matter are recorded', () => {
     // described the trail without writing to it.
     ;
 
+  /**
+   * EVERY FILE THAT WRITES THE TRAIL, not just routers.ts.
+   *
+   * The product publish/delist events moved into server/productLifecycle.ts
+   * when the boolean became a four-state lifecycle - one writer for all four
+   * moves rather than each call site remembering to record. A census that
+   * still read only routers.ts would have reported those events as missing
+   * while they were being written correctly, and - the direction that matters
+   * - would stop policing the subjectId invariant for them entirely.
+   */
+  const INSTRUMENTED = [
+    ROUTERS,
+    readSourceForAssertions(readFileSync(new URL('./productLifecycle.ts', import.meta.url), 'utf8')),
+  ].join('\n');
+
   it.each([
     'rfq_created',
     'quotation_submitted',
@@ -197,7 +212,7 @@ describe('the events that matter are recorded', () => {
     'product_images_changed',
     'product_question_answered',
   ])('%s is written from a real call site', action => {
-    expect(ROUTERS).toContain(`'${action}'`);
+    expect(INSTRUMENTED).toContain(`'${action}'`);
   });
 
   it('the award is recorded - the single event most worth keeping', () => {
@@ -240,7 +255,7 @@ describe('the events that matter are recorded', () => {
    * at the moment somebody would otherwise not ask it.
    */
   it('every call site records an id from the table its subjectType names', () => {
-    const sites = [...ROUTERS.matchAll(
+    const sites = [...INSTRUMENTED.matchAll(
       /recordCommercialEvent\([\s\S]{0,600}?\}\);/g,
     )].map(match => {
       const body = match[0];
@@ -256,7 +271,7 @@ describe('the events that matter are recorded', () => {
     // The id expression each subjectType is allowed to carry. `input.rfqId` is
     // absent from 'quotation' and 'enquiry' deliberately - that was the defect.
     const ALLOWED: Record<string, string[]> = {
-      product:   ['id', 'input.id', 'input.productId', 'row.productId'],
+      product:   ['id', 'input.id', 'input.productId', 'row.productId', 'params.productId'],
       rfq:       ['rfqId'],
       quotation: ['quotationId', 'input.quotationId'],
       enquiry:   ['result.enquiryId ?? 0'],

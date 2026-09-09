@@ -151,6 +151,12 @@ import {
 } from './reviewModeration';
 import { REVIEW_REPORT_REASONS, REVIEW_RESPONSE_MAX_LENGTH } from '../shared/reviews';
 import {
+  publicProductFilter, transitionProduct, ProductLifecycleError,
+} from './productLifecycle';
+import {
+  PRODUCT_STATUSES, PRODUCT_CREATABLE_STATUSES, PRODUCT_PUBLIC_STATUS, activeFromStatus,
+} from '../shared/productLifecycle';
+import {
   MAX_BASKET_ITEMS, MAX_ITEM_NAME, MAX_ITEM_SPECIFICATIONS, MAX_ITEM_UNIT,
   MAX_ITEM_VARIANT, MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY,
 } from '../shared/rfqBasket';
@@ -1801,7 +1807,7 @@ const marketplaceRouter = router({
       // went unnoticed because the products page filtered a hardcoded array on
       // the client instead of calling this endpoint at all, so the parameters
       // had no consumer to be wrong for.
-      const conditions = [eq(products.active, true)];
+      const conditions = [publicProductFilter()];
       if (input.category && input.category !== 'All') {
         conditions.push(eq(products.category, input.category));
       }
@@ -1847,7 +1853,7 @@ const marketplaceRouter = router({
     .query(async ({ input }) => {
       const db = await requireDb();
       return db.select().from(products)
-        .where(and(eq(products.supplierId, input.vendorId), eq(products.active, true)))
+        .where(and(eq(products.supplierId, input.vendorId), publicProductFilter()))
         .orderBy(desc(products.createdAt))
         .limit(input.limit);
     }),
@@ -1860,7 +1866,7 @@ const marketplaceRouter = router({
     // knew or guessed the number. Absent and withdrawn are the same answer to a
     // buyer, so both are NOT_FOUND.
     const [product] = await db.select().from(products)
-      .where(and(eq(products.id, input.id), eq(products.active, true)));
+      .where(and(eq(products.id, input.id), publicProductFilter()));
     if (!product) throw new TRPCError({ code: 'NOT_FOUND' });
     // WHO SELLS THIS.
     //
@@ -1925,6 +1931,17 @@ const marketplaceRouter = router({
       warranty: z.string().max(100).optional(),
       descriptionAr: z.string().max(5000).optional(),
       specs: z.string().max(5000).optional(),
+      /**
+       * PUBLISH NOW OR KEEP IT AS A DRAFT.
+       *
+       * Defaults to `active`, which is exactly what create did before the
+       * lifecycle existed, so no supplier's habits change by surprise. Draft
+       * is the new option: a product being written up over several sittings no
+       * longer has to be live in the marketplace while it is half finished.
+       * Only these two are creatable - inactive and archived describe things
+       * that were published once, which a brand-new row never was.
+       */
+      status: z.enum(PRODUCT_CREATABLE_STATUSES).default('active'),
     }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.userRole !== 'supplier') {
@@ -1973,8 +1990,12 @@ const marketplaceRouter = router({
         unit: unit.value ?? undefined,
         supplierId: ctx.user.id,
         price: input.price != null ? String(input.price) : undefined,
+        // The legacy boolean, derived from the status it was created in - the
+        // one exception to "written only in transitionProduct" is the insert
+        // that creates the row, which has no prior state to move from.
+        active: activeFromStatus(input.status),
       });
-      return { id: Number(result[0].insertId) };
+      return { id: Number(result[0].insertId), status: input.status };
     }),
   /**
    * SUPPLIER CATALOGUE MANAGEMENT.
@@ -2113,6 +2134,12 @@ const marketplaceRouter = router({
           price: row.price != null ? String(row.price) : undefined,
           stock: row.stock,
           deliveryDays: row.deliveryDays,
+          // Written together, not left to two column defaults agreeing.
+          // Bulk-imported rows go live exactly as they did before the
+          // lifecycle existed - the import is how a supplier moves a
+          // catalogue they already sell, not a drafting tool.
+          status: 'active' as const,
+          active: true,
         })));
       });
 
@@ -2272,42 +2299,33 @@ const marketplaceRouter = router({
     }),
 
   /**
-   * Publish or delist. `active` already governs whether a product is visible to
-   * buyers - marketplace.get and askQuestion both check it - but nothing could
-   * ever set it, so a supplier who listed something by mistake had no way to
-   * withdraw it.
+   * MOVE A PRODUCT THROUGH ITS LIFECYCLE.
    *
-   * Delisting is reversible and does NOT delete: questions, quotations and
-   * order history reference the row, and destroying it to hide it would take
-   * the history with it.
+   * This replaces `setProductActive(active: boolean)`, which could only say
+   * two things. A half-written draft, a line temporarily off sale and a
+   * product discontinued last year all read as `active = 0`, so a supplier's
+   * catalogue gave one undifferentiated pile of "not live" rows.
+   *
+   * The move is checked against the declared transition table in
+   * shared/productLifecycle.ts, and the refusal names BOTH states. There is no
+   * delete: questions, quotations, placements and audit events reference the
+   * row, so retiring a product archives it.
    */
-  setProductActive: approvedProviderProcedure
-    .input(z.object({ id: z.number().int().positive(), active: z.boolean() }))
+  setProductStatus: approvedProviderProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      status: z.enum(PRODUCT_STATUSES),
+    }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.userRole !== 'supplier') {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
       }
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const [owned] = await db.select({ id: products.id, active: products.active })
-        .from(products)
-        .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
-      if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
-      await db.update(products).set({ active: input.active })
-        .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
-      // Part 44: publishing and delisting is a status change, and a status
-      // change without its previous value cannot answer "was this live when
-      // the customer says they saw it".
-      await recordFieldChange(db, {
-        subjectType: 'product', subjectId: input.id, ownerId: ctx.user.id, actorId: ctx.user.id,
-        field: 'active', oldValue: String(owned.active), newValue: String(input.active),
-      });
-      await recordCommercialEvent(db, {
-        actorId: ctx.user.id, ownerId: ctx.user.id,
-        subjectType: 'product', subjectId: input.id,
-        action: input.active ? 'product_published' : 'product_delisted',
-      });
-      return { id: input.id, active: input.active };
+      const db = await requireDb();
+      try {
+        return await transitionProduct(db, {
+          productId: input.id, supplierId: ctx.user.id, to: input.status,
+        });
+      } catch (error) { throw asProductTrpcError(error); }
     }),
 
   /**
@@ -2476,7 +2494,7 @@ const marketplaceRouter = router({
     // contradicted that, and had nowhere to be displayed.
     const [product] = await db.select({ id: products.id, name: products.name, supplierId: products.supplierId })
       .from(products)
-      .where(and(eq(products.id, input.productId), eq(products.active, true)));
+      .where(and(eq(products.id, input.productId), publicProductFilter()));
     if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
     const result = await db.insert(productQuestions).values({ productId: input.productId, askerId: ctx.user.id, question: input.question });
     // The supplier is the only person who can answer, and nothing told them a
@@ -2535,7 +2553,7 @@ const marketplaceRouter = router({
           answer: productQuestions.answer,
           productName: products.name,
           supplierId: products.supplierId,
-          active: products.active,
+          status: products.status,
         })
         .from(productQuestions)
         .innerJoin(products, eq(productQuestions.productId, products.id))
@@ -2544,7 +2562,7 @@ const marketplaceRouter = router({
       // One refusal for "no such question", "not your product" and "delisted".
       // Distinguishing them would tell a caller which question ids exist and
       // which products are theirs to guess at.
-      if (!row || row.supplierId !== ctx.user.id || !row.active) {
+      if (!row || row.supplierId !== ctx.user.id || row.status !== PRODUCT_PUBLIC_STATUS) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Question not found' });
       }
       if (row.answer) {
@@ -2598,7 +2616,7 @@ const marketplaceRouter = router({
       })
       .from(productQuestions)
       .innerJoin(products, eq(productQuestions.productId, products.id))
-      .where(and(eq(products.supplierId, ctx.user.id), eq(products.active, true)))
+      .where(and(eq(products.supplierId, ctx.user.id), publicProductFilter()))
       .orderBy(desc(productQuestions.createdAt));
   }),
 });
@@ -3004,7 +3022,7 @@ const rfqRouter = router({
         const catalogue = catalogueIds.length > 0
           ? await db.select({
               id: products.id, name: products.name, unit: products.unit,
-              price: products.price, active: products.active,
+              price: products.price, status: products.status,
             }).from(products).where(inArray(products.id, catalogueIds))
           : [];
         const byId = new Map(catalogue.map(row => [row.id, row]));
@@ -3022,7 +3040,10 @@ const rfqRouter = router({
           if (!product) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: 'One of the requested products is no longer available' });
           }
-          if (!product.active) {
+          if (product.status !== PRODUCT_PUBLIC_STATUS) {
+            // Draft, off sale or archived - all three mean "not for sale
+            // today", and the buyer's basket must not carry any of them into
+            // an RFQ the supplier cannot honour.
             throw new TRPCError({ code: 'BAD_REQUEST', message: `"${product.name}" has been withdrawn by its supplier and cannot be quoted` });
           }
           resolvedItems.push({
@@ -4253,6 +4274,14 @@ const reviewsRouter = router({
       } catch (error) { throw asReviewTrpcError(error); }
     }),
 });
+
+/** Map the lifecycle vocabulary onto tRPC without losing the reason. */
+function asProductTrpcError(error: unknown): TRPCError {
+  if (error instanceof ProductLifecycleError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Product status change failed' });
+}
 
 /** Map the moderation vocabulary onto tRPC without losing the reason. */
 function asReviewTrpcError(error: unknown): TRPCError {
@@ -7319,8 +7348,12 @@ const adminRouter = router({
         like(products.category, containsTerm(term)),
         like(users.name, containsTerm(term)),
       ) : null,
-      input.status === 'active' ? eq(products.active, true) : null,
-      input.status === 'inactive' ? eq(products.active, false) : null,
+      // The admin filter reads the authoritative lifecycle, so 'draft' and
+      // 'archived' are answerable at all - under the boolean all three
+      // non-live states collapsed into one 'inactive' bucket. `enumFilter`
+      // validates the value against the column rather than casting it, so an
+      // invented status is ignored instead of reaching MySQL.
+      enumFilter(products.status, input.status, eq),
     ]);
     const joined = (builder: any) => builder.leftJoin(users, eq(users.id, products.supplierId));
     return adminPage({
@@ -7330,7 +7363,7 @@ const adminRouter = router({
         name: products.name,
         brand: products.brand,
         category: products.category,
-        active: products.active,
+        status: products.status,
         featured: products.featured,
         price: products.price,
         stock: products.stock,
@@ -7864,7 +7897,7 @@ const adminRouter = router({
         name: products.name,
         nameAr: products.nameAr,
         category: products.category,
-        active: products.active,
+        status: products.status,
         featured: products.featured,
         supplierId: products.supplierId,
         supplierName: users.name,

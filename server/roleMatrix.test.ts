@@ -55,7 +55,15 @@ function procedureBody(qualified: string): string {
   const block = ROUTERS.slice(routerStart, routerEnd);
   const start = block.indexOf(`\n  ${procedure}: `);
   expect(start, `${qualified} not found in ${routerName}Router`).toBeGreaterThan(-1);
-  return block.slice(start, start + 2500);
+
+  // TO THE NEXT PROCEDURE, not a fixed number of characters. This used to be
+  // `start + 2500`, and a doc comment added inside marketplace.create pushed
+  // its `userRole !== 'supplier'` guard past the window - so the test failed
+  // for a comment, and would equally have PASSED a procedure whose guard was
+  // deleted and replaced by 2500 characters of anything else.
+  const rest = block.slice(start + 1);
+  const next = /\n  [a-zA-Z_$][\w$]*: (?:publicProcedure|protectedProcedure|approvedProviderProcedure|adminProcedure|adminWith\()/.exec(rest);
+  return block.slice(start, next ? start + 1 + next.index : block.length);
 }
 
 const cells = (): { resource: MatrixResource; verb: MatrixVerb }[] =>

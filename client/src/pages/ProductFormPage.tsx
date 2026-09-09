@@ -21,6 +21,7 @@
  * had already produced sixteen products per "tonne" and three per "ton".
  */
 
+import { productStatusHelp } from '@shared/productLifecycle';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useSearch } from 'wouter';
 import { trpc } from '@/lib/trpc';
@@ -154,7 +155,7 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
     && categories.length > 0 && !categories.some(c => c.nameEn === form.category)
     ? form.category : null;
 
-  const submit = () => {
+  const submit = (status: 'draft' | 'active') => {
     // A shape check only. WHICH categories are acceptable is the server's
     // decision, made by the same resolver bulk upload uses - a second opinion
     // computed here is exactly how the two paths came to disagree.
@@ -175,8 +176,11 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
       descriptionAr: form.descriptionAr.trim() || undefined,
       specs: form.specs.trim() || undefined,
     };
+    // `status` is only meaningful on creation - editing never moves a
+    // product between states, which is what the catalogue's transition
+    // controls are for.
     if (editing && productId) update.mutate({ id: productId, name: form.name, category: form.category, ...common });
-    else create.mutate({ name: form.name, category: form.category, ...common });
+    else create.mutate({ name: form.name, category: form.category, status, ...common });
   };
 
   if (!validId) {
@@ -352,17 +356,50 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
             </Field>
           </div>
 
-          <div className="sm:col-span-2">
-            <Button
-              className="w-full gap-2"
-              data-testid="product-save"
-              disabled={pending || !form.name || !form.category}
-              onClick={submit}
-            >
-              {editing ? <Save className="h-4 w-4" /> : <PackagePlus className="h-4 w-4" />}
-              {pending ? '…' : editing ? (ar ? 'حفظ التغييرات' : 'Save changes') : (ar ? 'أضف المنتج' : 'List product')}
-            </Button>
-          </div>
+          {/* PUBLISH NOW, OR KEEP IT AS A DRAFT.
+              Only on creation: a published product moves through its lifecycle
+              from the catalogue, where the declared transitions are, and
+              nothing returns to draft once it has been seen. */}
+          {!editing && (
+            <div className="sm:col-span-2 space-y-2">
+              <Button
+                className="w-full gap-2"
+                data-testid="product-save"
+                disabled={pending || !form.name || !form.category}
+                onClick={() => submit('active')}
+              >
+                <PackagePlus className="h-4 w-4" />
+                {pending ? '…' : (ar ? 'أضف المنتج وانشره' : 'List product and publish')}
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                data-testid="product-save-draft"
+                disabled={pending || !form.name || !form.category}
+                onClick={() => submit('draft')}
+              >
+                <PackagePlus className="h-4 w-4" />
+                {pending ? '…' : (ar ? 'حفظ كمسودة' : 'Save as a draft')}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                {productStatusHelp('draft', lang)}
+              </p>
+            </div>
+          )}
+
+          {editing && (
+            <div className="sm:col-span-2">
+              <Button
+                className="w-full gap-2"
+                data-testid="product-save"
+                disabled={pending || !form.name || !form.category}
+                onClick={() => submit('active')}
+              >
+                <Save className="h-4 w-4" />
+                {pending ? '…' : (ar ? 'حفظ التغييرات' : 'Save changes')}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
       )}

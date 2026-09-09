@@ -1,4 +1,5 @@
 import { useLanguage } from '@/contexts/LanguageContext';
+import { productStatusLabel } from '@shared/productLifecycle';
 import { trpc } from '@/lib/trpc';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -107,7 +108,11 @@ export default function AdminFeaturedProducts() {
                     <td className="px-3 py-2">{p.category}</td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
-                        {!p.active && <Badge variant="outline" className="text-[10px]">{ar ? 'مخفي' : 'Delisted'}</Badge>}
+                        {p.status !== 'active' && (
+                          <Badge variant="outline" className="text-[10px]">
+                            {productStatusLabel(p.status ?? 'active', lang)}
+                          </Badge>
+                        )}
                         {p.featured && <Badge className="text-[10px]">{ar ? 'مميز' : 'Featured'}</Badge>}
                       </div>
                     </td>

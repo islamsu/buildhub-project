@@ -362,11 +362,17 @@ describe('§2 rfq.list — the one that mattered', () => {
 });
 
 describe('§2b marketplace', () => {
-  it('REGRESSION: marketplace.get does not serve a deactivated product', () => {
+  it('REGRESSION: marketplace.get does not serve a product the supplier has withdrawn', () => {
     // `list` filtered active=true; `get` did not, so a product the supplier had
     // withdrawn stayed fully readable by id.
+    //
+    // The predicate is now `publicProductFilter()` rather than an inline
+    // `eq(products.active, true)`: "withdrawn" grew from one boolean into four
+    // states (draft, live, off sale, archived), and an inline literal at each
+    // reader is what would let one of them keep serving drafts. The class-level
+    // census over every products reader lives in productLifecycle.test.ts.
     const body = procedureBody('marketplace.get');
-    expect(body).toContain('eq(products.active, true)');
+    expect(body).toContain('publicProductFilter()');
   });
 
   it('REGRESSION: marketplace.questions does not expose askerId', () => {
@@ -401,7 +407,9 @@ describe('§2b marketplace', () => {
     // codeOnly, because the comment that replaced the defect quotes it.
     const body = codeOnly(procedureBody('marketplace.askQuestion'));
     expect(body).not.toMatch(/productId > \d/);
-    expect(body).toContain('eq(products.active, true)');
+    // THE SAME predicate as marketplace.get, and that is now literally true
+    // rather than true by matching spelling: both call the one filter.
+    expect(body).toContain('publicProductFilter()');
     expect(body).toContain("code: 'NOT_FOUND'");
   });
 

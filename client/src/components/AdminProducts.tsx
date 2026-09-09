@@ -1,4 +1,8 @@
 import { useLanguage } from '@/contexts/LanguageContext';
+import { PRODUCT_STATUSES, productStatusLabel, productStatusHelp } from '@shared/productLifecycle';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +21,7 @@ export default function AdminProducts() {
   const ar = lang === 'ar';
   const [typed, setTyped] = useState('');
   const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('all');
   const [page, setPage] = useState(0);
 
   /*
@@ -27,7 +32,7 @@ export default function AdminProducts() {
    * and no total on the screen to hint otherwise.
    */
   const list = trpc.admin.products.useQuery(
-    { page, pageSize: PAGE_SIZE, search: search || undefined },
+    { page, pageSize: PAGE_SIZE, search: search || undefined, status },
     { retry: false, placeholderData: previous => previous },
   );
   const isLoading = list.isLoading;
@@ -40,8 +45,11 @@ export default function AdminProducts() {
           <Package className="h-5 w-5" />
           {ar ? 'إدارة المنتجات' : 'Product Management'}
         </CardTitle>
+        {/* THE FILTER THE SERVER CAN NOW ANSWER. Under the old boolean an
+            administrator could ask for "inactive" and get drafts, withdrawn
+            products and discontinued lines in one undifferentiated list. */}
         <form
-          className="flex max-w-md gap-2"
+          className="flex max-w-2xl flex-wrap gap-2"
           onSubmit={event => { event.preventDefault(); setSearch(typed.trim()); setPage(0); }}
         >
           <div className="relative flex-1">
@@ -54,6 +62,17 @@ export default function AdminProducts() {
               placeholder={ar ? 'ابحث بالمنتج أو المورد أو الفئة…' : 'Search product, supplier or category…'}
             />
           </div>
+          <Select value={status} onValueChange={value => { setStatus(value); setPage(0); }}>
+            <SelectTrigger className="h-9 w-44" aria-label={ar ? 'الحالة' : 'Status'} data-testid="admin-products-status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{ar ? 'كل الحالات' : 'All statuses'}</SelectItem>
+              {PRODUCT_STATUSES.map(value => (
+                <SelectItem key={value} value={value}>{productStatusLabel(value, lang)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button type="submit" variant="outline" className="h-9">{ar ? 'بحث' : 'Search'}</Button>
         </form>
       </CardHeader>
@@ -104,8 +123,8 @@ export default function AdminProducts() {
                     <td className="p-2 text-muted-foreground">{product.category || '—'}</td>
                     <td className="p-2 text-muted-foreground">{product.price ?? '—'}</td>
                     <td className="p-2">
-                      <Badge variant={product.active ? 'default' : 'secondary'}>
-                        {ar ? (product.active ? 'منشور' : 'مخفي') : (product.active ? 'Active' : 'Hidden')}
+                      <Badge variant={product.status === 'active' ? 'default' : 'secondary'} title={productStatusHelp(product.status ?? 'active', lang)}>
+                        {productStatusLabel(product.status ?? 'active', lang)}
                       </Badge>
                     </td>
                   </tr>

@@ -22,6 +22,7 @@
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { productCategories, productCategoryAliases, products } from '../drizzle/schema';
+import { PRODUCT_PUBLIC_STATUS } from '../shared/productLifecycle';
 import { normalizeCategoryKey, type CategoryScope, type CategoryStatus } from '../shared/categoryTaxonomy';
 
 export type CanonicalCategory = {
@@ -281,7 +282,9 @@ export async function categoryUsage(db: any): Promise<Map<number, { products: nu
   const rows = await db.select({
     categoryId: products.categoryId,
     total: sql<number>`count(*)`,
-    active: sql<number>`sum(case when ${products.active} = 1 then 1 else 0 end)`,
+    // "Active" here means LIVE IN THE MARKETPLACE, counted from the
+    // authoritative status rather than the legacy boolean beside it.
+    active: sql<number>`sum(case when ${products.status} = ${PRODUCT_PUBLIC_STATUS} then 1 else 0 end)`,
   }).from(products).groupBy(products.categoryId);
 
   const usage = new Map<number, { products: number; activeProducts: number }>();

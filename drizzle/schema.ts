@@ -396,11 +396,33 @@ export const products = mysqlTable('products', {
   rating:      decimal('rating', { precision: 3, scale: 2 }).default('0.00'),
   reviewCount: int('reviewCount').default(0),
   featured:    boolean('featured').default(false),
+  /**
+   * THE AUTHORITATIVE LIFECYCLE. A boolean could only say two things, so a
+   * half-written draft, a line that is temporarily off sale and a product
+   * discontinued last year were all the same row to a supplier's catalogue.
+   * See shared/productLifecycle.ts for the states and the declared moves.
+   *
+   * There is no 'deleted': a product id appears in questions, quotations,
+   * placements and audit events, so retiring one archives it.
+   */
+  status:      mysqlEnum('status', ['draft', 'active', 'inactive', 'archived']).default('active').notNull(),
+  statusChangedAt: timestamp('statusChangedAt'),
+  archivedAt:  timestamp('archivedAt'),
+  /**
+   * LEGACY, and derived. Kept for one migration so the 0049 backfill stays
+   * reversible by inspection, exactly as `disputes.projectId` was kept after
+   * the subject became polymorphic. Written in exactly ONE place -
+   * server/productLifecycle.ts - from `status`, never independently, and
+   * server/productLifecycle.test.ts holds the two in agreement. Deliberately
+   * NOT a second authoritative field.
+   */
   active:      boolean('active').default(true),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
   updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
 }, table => ({
   supplierIdIdx: index('products_supplierId_idx').on(table.supplierId),
+  statusIdx: index('products_status_idx').on(table.status),
+  supplierStatusIdx: index('products_supplier_status_idx').on(table.supplierId, table.status),
 }));
 
 // ── Provider Portfolio ─────────────────────────────────────────────────────
