@@ -36,6 +36,7 @@ import AdminVendorNameChanges from '@/components/AdminVendorNameChanges';
 import AdminReferrals from '@/components/AdminReferrals';
 import AdminDisputes from '@/components/AdminDisputes';
 import AdminSupportTickets from '@/components/AdminSupportTickets';
+import AdminReviewModeration from '@/components/AdminReviewModeration';
 import AdminAuditTrail from '@/components/AdminAuditTrail';
 import { LoadFailed } from '@/components/LoadFailed';
 import AdminPlacements from '@/components/AdminPlacements';
@@ -128,7 +129,7 @@ export default function AdminDashboard() {
   const adminSection = useMemo(() => {
     if (location === '/admin' || location === '/admin/') return 'overview';
     const section = location.split('/')[2];
-    return ['users', 'projects', 'products', 'name-changes', 'referrals', 'placements', 'enquiries', 'compliance', 'analytics', 'billing', 'disputes', 'support', 'operations', 'settings'].includes(section ?? '') ? section! : 'overview';
+    return ['users', 'projects', 'products', 'name-changes', 'referrals', 'placements', 'enquiries', 'compliance', 'analytics', 'billing', 'disputes', 'support', 'reviews', 'operations', 'settings'].includes(section ?? '') ? section! : 'overview';
   }, [location]);
   // The record a section is showing, when it has one. `/admin/enquiries/ENQ-7-3`
   // makes an enquiry addressable without giving it a table: the reference is
@@ -813,6 +814,7 @@ export default function AdminDashboard() {
 
           <TabsContent value="disputes"><div className="space-y-6"><AdminPlatformSearch /><AdminRfqInvestigation /><AdminDisputes /></div></TabsContent>
           <TabsContent value="support"><AdminSupportTickets /></TabsContent>
+          <TabsContent value="reviews"><AdminReviewModeration /></TabsContent>
 
           {/* Operations. The tab this replaces was "Fraud Detection", which
               rendered a permanent empty state - there is no detector and no

@@ -132,6 +132,14 @@ export const ACCOUNT_AUDIT_ACTIONS = [
   'support_ticket_status_changed',
   'support_ticket_resolved',
   'support_ticket_closed',
+
+  // ── REVIEWS ─────────────────────────────────────────────────────────────
+  // Reputation is account history: who reported what, and what a moderator
+  // decided, has to be answerable months later beside the rest of the record.
+  'review_reported',
+  'review_hidden',
+  'review_restored',
+  'review_report_resolved',
 ] as const;
 
 export type AccountAuditAction = (typeof ACCOUNT_AUDIT_ACTIONS)[number];

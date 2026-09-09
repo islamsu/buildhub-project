@@ -793,7 +793,7 @@ restart.
 - [x] Support Tickets: user create/category/description/attachment/updates, Support Admin search/filter/assign/respond/request-info/resolve/close
       (shared/supportTickets.ts, server/supportTickets.ts, migration 0047, /support + /support/:id +
       /admin/support; 38 unit tests, 33 live checks in evidence/zg-support.mjs, 13 mutations killed)
-- [ ] Reviews / Reputation: relationship eligibility, self-review prevention, duplicate prevention, provider response policy, reporting, moderation, restore/hide, audit
+- [x] Reviews / Reputation: relationship eligibility, self-review prevention, duplicate prevention, provider response policy, reporting, moderation, restore/hide, audit — `shared/reviews.ts` (vocabulary), `server/reviewModeration.ts` (respond / report / hide / restore / resolve, one `visibleReviewFilter()`), migration `drizzle/0048_review_moderation.sql`, admin queue `client/src/components/AdminReviewModeration.tsx` at `/admin/reviews`, reply + report controls in `VendorReputation.tsx`. Evidence: `server/reviewModeration.test.ts` (27, 8 mutations killed), the reader census in `server/vendorReputation.test.ts` (7 mutations killed, and it caught `rfq.quotations` still counting hidden reviews through its own inline predicate), `evidence/zg-reviews-run1.txt` / `-run2.txt` (38/38 twice, clean-up asserted).
 - [ ] Full Vendor Management command centre with real applicable modules and cross-links from Admin surfaces
 - [x] Benefits, Limits & Privileges: central entitlement view showing base, campaign/referral, individual overrides, effective, used, remaining, reset/expiry (REF-9)
 - [ ] Admin Notes: internal-only, permission-controlled, authored/timestamped, never public

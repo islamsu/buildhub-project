@@ -44,6 +44,7 @@ export const ADMIN_NAV: readonly AdminNavEntry[] = [
   { path: '/admin/compliance', labelKey: 'admin.pending_verifications', permission: 'marketplace.manage' },
   { path: '/admin/disputes', labelKey: 'admin.disputes', permission: 'support.manage' },
   { path: '/admin/support', labelKey: 'admin.support', permission: 'support.manage' },
+  { path: '/admin/reviews', labelKey: 'admin.reviews', permission: 'support.manage' },
   { path: '/admin/analytics', labelKey: 'admin.analytics', permission: 'audit.read' },
   { path: '/admin/billing', labelKey: 'adminBilling.title', permission: 'billing.read' },
   { path: '/admin/operations', labelKey: 'admin.operations', permission: 'audit.read' },

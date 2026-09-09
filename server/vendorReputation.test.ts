@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 
 vi.mock('./db', () => ({
   getDb: vi.fn(),
@@ -78,10 +79,144 @@ describe('reviews.statsForUser (dynamic/computed rating - Phase 4A.4 decision)',
     expect(block).not.toMatch(/users\.rating|users\.reviewCount/);
   });
 
-  it('filters to verified reviews only, matching reviews.forUser\'s existing public contract exactly (no competing definition of "public review")', () => {
-    const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-    const block = source.slice(source.indexOf('statsForUser:'), source.indexOf('eligibleReviewees:'));
-    expect(block).toContain("reviews.verified, true");
+  /**
+   * The original form of this test asserted the literal `reviews.verified, true`
+   * inside statsForUser. That was the right claim expressed the wrong way: what
+   * it was defending is that there is exactly ONE definition of "a review the
+   * public may see", not that a particular reader spells it out inline. Once
+   * moderation shipped, "public" became `verified AND NOT hidden`, and an
+   * inline literal is precisely the thing that lets a reader drift.
+   *
+   * So the assertion is now a census over EVERY read of the reviews table,
+   * which is strictly stronger: it caught a real defect the literal form could
+   * not have caught - `rfq.quotationsForComparison` was aggregating ratings
+   * with its own inline `eq(reviews.verified, true)` and would have kept
+   * counting reviews a moderator had hidden.
+   */
+  /**
+   * Exemptions are keyed by the ENCLOSING UNIT (tRPC procedure, or exported
+   * function in reviewModeration.ts) and by an exact count, not by the shape
+   * of the select. A shape-keyed exemption absolves any future reader that
+   * happens to look similar - mutation M3 (a brand-new unfiltered
+   * `db.select({ id: reviews.id })` inside statsForUser) survived the first
+   * version of this guard for exactly that reason. The census covers BOTH
+   * files that read the table, because M5 (visibleReviewsFor quietly inlining
+   * its own predicate) survived a routers.ts-only census.
+   */
+  const NOT_PUBLIC_READERS: Readonly<Record<string, { readonly reads: number; readonly why: string }>> = {
+    eligibleReviewees: {
+      reads: 1,
+      why: '"have I already reviewed this provider?" A hidden review still blocks a second one - '
+         + 'filtering it out would hand the reviewer a fresh attempt every time moderation hid '
+         + 'their last one.',
+    },
+    submit: {
+      reads: 1,
+      why: 'the duplicate guard on reviews.submit - same reasoning, and it must see hidden rows or '
+         + 'the business rule (one review per reviewer per reviewee per project) is bypassable by '
+         + 'getting your first review hidden.',
+    },
+    moderateReview: {
+      reads: 2,
+      why: 'the admin procedure loads the row it is about to hide or restore, and the service '
+         + 'function behind it re-reads under the same rule - by definition both must be able to '
+         + 'load rows that are already hidden.',
+    },
+    resolveReviewReport: {
+      reads: 1,
+      why: 'admin loads the reported review, which is very often already hidden.',
+    },
+    respondToReview: {
+      reads: 1,
+      why: 'a provider replying to a review addressed to them - the reply path is keyed by review '
+         + 'id and enforces its own eligibility (reviewee only, one reply).',
+    },
+    reportReview: {
+      reads: 1,
+      why: 'reporting a review is by id; a report on an already-hidden review is still a valid '
+         + 'signal for the moderation queue.',
+    },
+    listReviewReports: {
+      reads: 1,
+      why: 'the admin moderation queue joins reviews deliberately - a queue that hid hidden '
+         + 'reviews would hide exactly the rows a moderator needs to review.',
+    },
+  };
+
+  it('has exactly one definition of a publicly visible review: every public reader of the reviews table goes through visibleReviewFilter()', () => {
+    // Two different shapes of "enclosing unit", one per file.
+    const files: { source: string; unit: RegExp }[] = [
+      {
+        source: readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8')),
+        unit: /(\w+):\s*(?:publicProcedure|protectedProcedure|adminProcedure|adminWith\()/g,
+      },
+      {
+        source: readSourceForAssertions(readFileSync(new URL('./reviewModeration.ts', import.meta.url), 'utf8')),
+        unit: /export (?:async )?function (\w+)/g,
+      },
+    ];
+
+    // Selecting from the table and joining to it are both reads.
+    const READ_TOKENS = ['.from(reviews)', 'innerJoin(reviews', 'leftJoin(reviews'];
+
+    const reads: { unit: string; statement: string }[] = [];
+    for (const file of files) {
+      for (const token of READ_TOKENS) {
+        for (let cursor = 0; ; ) {
+          const at = file.source.indexOf(token, cursor);
+          if (at === -1) break;
+          cursor = at + 1;
+
+          const end = file.source.indexOf(';', at);
+          const start = Math.max(0, file.source.lastIndexOf('db.select', at));
+          const statement = file.source.slice(start, end === -1 ? file.source.length : end);
+          // A join and its own .from() belong to one statement, counted once.
+          if (reads.some(read => read.statement === statement)) continue;
+
+          file.unit.lastIndex = 0;
+          let unit = '(top level)';
+          for (let m = file.unit.exec(file.source); m !== null && m.index < at; m = file.unit.exec(file.source)) {
+            unit = m[1];
+          }
+          reads.push({ unit, statement });
+        }
+      }
+    }
+
+    // If this drops the census has stopped measuring anything.
+    expect(reads.length).toBeGreaterThanOrEqual(10);
+
+    const unfiltered = reads.filter(read => !read.statement.includes('visibleReviewFilter()'));
+
+    // Every unfiltered read must be a declared one, and each declaring unit
+    // must have exactly as many as it declared - so a new unfiltered read
+    // added inside an already-exempt unit fails too.
+    const countByUnit: Record<string, number> = {};
+    for (const read of unfiltered) {
+      countByUnit[read.unit] = (countByUnit[read.unit] ?? 0) + 1;
+    }
+    expect(countByUnit).toEqual(
+      Object.fromEntries(Object.entries(NOT_PUBLIC_READERS).map(([name, spec]) => [name, spec.reads])));
+  });
+
+  it('never inlines the visibility predicate: reviews.verified / reviews.hiddenAt appear in no read filter outside reviewModeration.ts', () => {
+    const routers = readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'));
+
+    // reviews.create writes `verified: true` on insert, which is a write, not a
+    // filter. Any *comparison* against the column is a competing definition.
+    expect(routers).not.toMatch(/eq\(\s*reviews\.verified/);
+    expect(routers).not.toMatch(/reviews\.hiddenAt/);
+  });
+
+  it('the one shared definition covers both halves of "public": verified AND not hidden', () => {
+    const moderation = readSourceForAssertions(
+      readFileSync(new URL('./reviewModeration.ts', import.meta.url), 'utf8'));
+    const body = moderation.slice(
+      moderation.indexOf('export function visibleReviewFilter'),
+      moderation.indexOf('export', moderation.indexOf('export function visibleReviewFilter') + 10));
+
+    expect(body).toContain('eq(reviews.verified, true)');
+    expect(body).toContain('isNull(reviews.hiddenAt)');
   });
 });
 

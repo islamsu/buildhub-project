@@ -582,12 +582,75 @@ export const reviews = mysqlTable('reviews', {
   rating:     int('rating').notNull(),
   comment:    text('comment'),
   verified:   boolean('verified').default(false),
+  /**
+   * ── MODERATION: HIDDEN, NEVER DELETED ───────────────────────────────────
+   *
+   * A hidden review is excluded from the public list AND from the average, so
+   * hiding is a real remedy rather than a cosmetic one. The ROW survives
+   * because the reviewer wrote something real, because an administrator's
+   * decision has to be reviewable afterwards, and because a deleted review is
+   * a rating that changes with no explanation - the exact drift this system
+   * already refuses to allow for stored aggregates.
+   */
+  hiddenAt:     timestamp('hiddenAt'),
+  hiddenBy:     int('hiddenBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  hiddenReason: varchar('hiddenReason', { length: 500 }),
   createdAt:  timestamp('createdAt').defaultNow().notNull(),
 }, table => ({
   projectIdIdx: index('reviews_projectId_idx').on(table.projectId),
   reviewerIdIdx: index('reviews_reviewerId_idx').on(table.reviewerId),
   revieweeIdIdx: index('reviews_revieweeId_idx').on(table.revieweeId),
 }));
+
+/**
+ * THE REVIEWED PROVIDER'S RIGHT OF REPLY.
+ *
+ * ONE response per review, by the REVIEWEE only - enforced by the unique key
+ * below rather than by a check somebody can forget. Not a thread: a review
+ * that becomes an argument helps nobody reading it, and the reviewer already
+ * had their say.
+ */
+export const reviewResponses = mysqlTable('reviewResponses', {
+  id:        int('id').autoincrement().primaryKey(),
+  reviewId:  int('reviewId').notNull().references(() => reviews.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /** Always the review's own reviewee. Stored so the row stands on its own. */
+  authorId:  int('authorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  body:      text('body').notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  /** ONE reply per review, in the database rather than in a procedure. */
+  reviewUnique: uniqueIndex('reviewResponses_review_unique').on(table.reviewId),
+  authorIdx:    index('reviewResponses_author_idx').on(table.authorId),
+}));
+
+/**
+ * A REPORT AGAINST A REVIEW.
+ *
+ * Anyone who can see a review may report it, but the reasons are a closed set
+ * (shared/reviews.ts) and none of them is "I disagree" - a negative review
+ * that is accurate is the system working.
+ */
+export const reviewReports = mysqlTable('reviewReports', {
+  id:         int('id').autoincrement().primaryKey(),
+  reviewId:   int('reviewId').notNull().references(() => reviews.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  reporterId: int('reporterId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  reason:     mysqlEnum('reason', ['abusive', 'off_topic', 'personal_data', 'not_a_customer', 'spam', 'other']).notNull(),
+  detail:     varchar('detail', { length: 1000 }),
+  status:     mysqlEnum('status', ['open', 'upheld', 'rejected']).default('open').notNull(),
+  /** What the moderator decided and why - never a bare status flip. */
+  resolutionNote: varchar('resolutionNote', { length: 1000 }),
+  resolvedBy: int('resolvedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  resolvedAt: timestamp('resolvedAt'),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  /** One report per person per review. Repeat-reporting is not a louder vote. */
+  reporterUnique: uniqueIndex('reviewReports_review_reporter_unique').on(table.reviewId, table.reporterId),
+  /** The moderation queue's own ordering: open work, oldest first. */
+  statusIdx:      index('reviewReports_status_idx').on(table.status, table.createdAt),
+  reviewIdx:      index('reviewReports_review_idx').on(table.reviewId),
+}));
+
 
 // ── Progress Reports ────────────────────────────────────────────────────────
 export const progressReports = mysqlTable('progressReports', {

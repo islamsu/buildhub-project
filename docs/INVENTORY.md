@@ -56,13 +56,13 @@
 
 Dead param routes: **0**
 
-## Server procedures (250)
+## Server procedures (255)
 
-- `protectedProcedure` — 76
+- `protectedProcedure` — 78
 - `adminWith:marketplace.manage` — 44
 - `publicProcedure` — 32
 - `approvedProviderProcedure` — 29
-- `adminWith:support.manage` — 13
+- `adminWith:support.manage` — 16
 - `superAdminProcedure` — 10
 - `adminWith:billing.manage` — 8
 - `adminWith:users.read` — 7
@@ -75,7 +75,7 @@ Dead param routes: **0**
 - `adminWith:settings.manage` — 2
 - `aiChatProcedure` — 1
 
-## Tables (54)
+## Tables (56)
 
 | Table | Columns | FK refs | NOT NULL | UNIQUE |
 |---|---|---|---|---|
@@ -99,7 +99,9 @@ Dead param routes: **0**
 | `quotations` | 18 | 2 | 5 | 0 |
 | `messages` | 14 | 4 | 4 | 0 |
 | `notifications` | 11 | 1 | 3 | 0 |
-| `reviews` | 11 | 3 | 5 | 0 |
+| `reviews` | 14 | 4 | 5 | 0 |
+| `reviewResponses` | 8 | 2 | 5 | 0 |
+| `reviewReports` | 13 | 3 | 5 | 0 |
 | `progressReports` | 9 | 2 | 6 | 0 |
 | `disputes` | 35 | 7 | 11 | 0 |
 | `disputeEvidence` | 12 | 3 | 7 | 0 |
@@ -134,31 +136,32 @@ Dead param routes: **0**
 | `vendorSponsorships` | 22 | 4 | 7 | 0 |
 | `enquiryAssignments` | 9 | 4 | 3 | 0 |
 
-## Notification write sites (27)
+## Notification write sites (28)
 
-- server/routers.ts:618 — notifyUser
-- server/routers.ts:1397 — notifyUser
-- server/routers.ts:2484 — notifyUser
-- server/routers.ts:2564 — notifyUser
-- server/routers.ts:3326 — notifyUser
-- server/routers.ts:3383 — notifyUser
-- server/routers.ts:3790 — notifyUser
-- server/routers.ts:4048 — notifyUser
-- server/routers.ts:4186 — notifyUser
-- server/routers.ts:4360 — notifyUser
-- server/routers.ts:4552 — notifyUser
-- server/routers.ts:4722 — notifyUser
-- server/routers.ts:6171 — notifyUser
-- server/routers.ts:6504 — notifyUser
-- server/routers.ts:6582 — notifyUser
-- server/routers.ts:7413 — notifyUser
-- server/routers.ts:7484 — notifyUser
-- server/routers.ts:7888 — notifyUser
-- server/routers.ts:8086 — notifyUser
-- server/routers.ts:8116 — notifyUser
-- server/routers.ts:8149 — notifyUser
-- server/routers.ts:8327 — notifyUser
-- server/routers.ts:8421 — notifyUser
+- server/routers.ts:624 — notifyUser
+- server/routers.ts:1403 — notifyUser
+- server/routers.ts:2490 — notifyUser
+- server/routers.ts:2570 — notifyUser
+- server/routers.ts:3336 — notifyUser
+- server/routers.ts:3393 — notifyUser
+- server/routers.ts:3800 — notifyUser
+- server/routers.ts:4058 — notifyUser
+- server/routers.ts:4208 — notifyUser
+- server/routers.ts:4434 — notifyUser
+- server/routers.ts:4626 — notifyUser
+- server/routers.ts:4796 — notifyUser
+- server/routers.ts:6245 — notifyUser
+- server/routers.ts:6578 — notifyUser
+- server/routers.ts:6656 — notifyUser
+- server/routers.ts:7487 — notifyUser
+- server/routers.ts:7558 — notifyUser
+- server/routers.ts:7962 — notifyUser
+- server/routers.ts:8160 — notifyUser
+- server/routers.ts:8190 — notifyUser
+- server/routers.ts:8223 — notifyUser
+- server/routers.ts:8430 — notifyUser
+- server/routers.ts:8512 — notifyUser
+- server/routers.ts:8606 — notifyUser
 - server/notifications.ts:40 — notifyUser
 - server/notifications.ts:43 — helper implementation
 - server/notifications.ts:57 — notifyUser

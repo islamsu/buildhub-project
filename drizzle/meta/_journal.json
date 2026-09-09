@@ -337,6 +337,13 @@
       "when": 1788900000000,
       "tag": "0047_support_tickets",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "5",
+      "when": 1789000000000,
+      "tag": "0048_review_moderation",
+      "breakpoints": true
     }
   ]
 }

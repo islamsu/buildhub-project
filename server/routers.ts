@@ -90,6 +90,7 @@ import {
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems, qualifiedEnquiries,
   projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals, referralCampaigns, referralRewards,
+  reviewResponses, reviewReports,
   supportTickets, supportTicketMessages, supportTicketAttachments,
   disputeStatusHistory, disputeMessages, disputeEvidence,
 } from '../drizzle/schema';
@@ -144,6 +145,11 @@ import {
   listDirectoryVendors, listFeaturedProviders, listSponsoredVendors,
 } from './vendorDirectory';
 import { getPlatformStats } from './platformStats';
+import {
+  respondToReview, reportReview, moderateReview, resolveReviewReport,
+  listReviewReports, visibleReviewsFor, visibleReviewFilter, ReviewModerationError,
+} from './reviewModeration';
+import { REVIEW_REPORT_REASONS, REVIEW_RESPONSE_MAX_LENGTH } from '../shared/reviews';
 import {
   MAX_BASKET_ITEMS, MAX_ITEM_NAME, MAX_ITEM_SPECIFICATIONS, MAX_ITEM_UNIT,
   MAX_ITEM_VARIANT, MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY,
@@ -3233,6 +3239,10 @@ const rfqRouter = router({
     // the codebase writes to and which would always show 0 here regardless
     // of a vendor's real reviews. This keeps the homeowner's quote-comparison
     // view consistent with the same vendor's profile/dashboard reputation.
+    // The visibility predicate itself is `visibleReviewFilter()` and nothing
+    // else: an inline `eq(reviews.verified, true)` here would have kept
+    // counting reviews a moderator has hidden, so this reader would have
+    // drifted from the profile the moment moderation shipped.
     const providerIds = Array.from(new Set(rows.map(row => row.providerId).filter((id): id is number => id != null)));
     const reputationByProvider = new Map<number, { averageRating: number | null; reviewCount: number }>();
     if (providerIds.length > 0) {
@@ -3240,7 +3250,7 @@ const rfqRouter = router({
         revieweeId: reviews.revieweeId,
         avg: sql<string | null>`avg(${reviews.rating})`,
         count: sql<number>`count(*)`,
-      }).from(reviews).where(and(inArray(reviews.revieweeId, providerIds), eq(reviews.verified, true))).groupBy(reviews.revieweeId);
+      }).from(reviews).where(and(inArray(reviews.revieweeId, providerIds), visibleReviewFilter())).groupBy(reviews.revieweeId);
       for (const row of aggregateRows) {
         const reviewCount = Number(row.count ?? 0);
         reputationByProvider.set(row.revieweeId, {
@@ -4094,9 +4104,17 @@ const notificationsRouter = router({
 
 // ── Reviews Router ─────────────────────────────────────────────────────────
 const reviewsRouter = router({
+  /**
+   * A provider's public reviews, WITH the provider's replies attached.
+   *
+   * Reads through `visibleReviewsFor`, which applies the one visibility rule -
+   * verified AND not hidden - and left-joins the reply. Left, because most
+   * reviews have none and an inner join would publish only the ones the
+   * subject chose to answer.
+   */
   forUser: publicProcedure.input(z.object({ userId: z.number() })).query(async ({ input }) => {
     const db = await requireDb();
-    return db.select().from(reviews).where(and(eq(reviews.revieweeId, input.userId), eq(reviews.verified, true))).orderBy(desc(reviews.createdAt));
+    return visibleReviewsFor(db, input.userId);
   }),
   // Dynamic/computed rating (Phase 4A.4 decision): always derived live from the
   // reviews table, never a stored aggregate - so it can never drift out of sync
@@ -4107,10 +4125,14 @@ const reviewsRouter = router({
     // "No reviews" about a vendor who has them is a reputational statement,
     // not a degraded read.
     const db = await requireDb();
+    // A HIDDEN REVIEW LEAVES THE AVERAGE. Hiding one that still counts is a
+    // remedy in appearance only - the provider carries the same score damage
+    // with the evidence removed, which is worse than leaving it visible. The
+    // filter is the SHARED one so this can never disagree with the list.
     const [row] = await db.select({
       avg: sql<string | null>`avg(${reviews.rating})`,
       count: sql<number>`count(*)`,
-    }).from(reviews).where(and(eq(reviews.revieweeId, input.userId), eq(reviews.verified, true)));
+    }).from(reviews).where(and(eq(reviews.revieweeId, input.userId), visibleReviewFilter()));
     const reviewCount = Number(row?.count ?? 0);
     const averageRating = reviewCount > 0 && row?.avg != null ? Math.round(Number(row.avg) * 10) / 10 : null;
     return { averageRating, reviewCount };
@@ -4186,7 +4208,59 @@ const reviewsRouter = router({
       await notifyUser(db, { userId: input.revieweeId, title: 'New review received', body: `You received a new ${input.rating}-star review.`, type: 'review', link: `/vendor/${input.revieweeId}`, messageKey: 'notif.review.received', messageParams: { rating: input.rating } });
       return { success: true };
     }),
+
+  /**
+   * THE REVIEWED PROVIDER'S RIGHT OF REPLY.
+   *
+   * Only the reviewee, one response, editable while the review stands. A
+   * reputation system where the subject cannot answer is a publishing channel
+   * pointed at one party.
+   */
+  respond: protectedProcedure
+    .input(z.object({
+      reviewId: z.number().int().positive(),
+      body: z.string().trim().min(1).max(REVIEW_RESPONSE_MAX_LENGTH),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await respondToReview(db, {
+          reviewId: input.reviewId, authorId: ctx.user.id, body: input.body,
+        });
+      } catch (error) { throw asReviewTrpcError(error); }
+    }),
+
+  /** Report a review. The reasons are a closed set and none is "I disagree". */
+  report: protectedProcedure
+    .input(z.object({
+      reviewId: z.number().int().positive(),
+      reason: z.enum(REVIEW_REPORT_REASONS),
+      detail: z.string().trim().max(1000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        const result = await reportReview(db, {
+          reviewId: input.reviewId, reporterId: ctx.user.id,
+          reason: input.reason, detail: input.detail ?? null,
+        });
+        await recordAccountEvent(db, {
+          userId: ctx.user.id, actorId: ctx.user.id,
+          action: 'review_reported', source: 'self_registered',
+          note: `review ${input.reviewId} (${input.reason})`,
+        });
+        return result;
+      } catch (error) { throw asReviewTrpcError(error); }
+    }),
 });
+
+/** Map the moderation vocabulary onto tRPC without losing the reason. */
+function asReviewTrpcError(error: unknown): TRPCError {
+  if (error instanceof ReviewModerationError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Review operation failed' });
+}
 
 // ── Vendor Profile Router ─────────────────────────────────────────────────
 // SECURITY: `users` also holds passwordHash, invitationToken, email, phone,
@@ -8259,6 +8333,117 @@ const adminRouter = router({
    * listSupportTickets. Behind `support.manage`, the same permission that
    * gates disputes, because they are the same job.
    */
+  /**
+   * ── THE REVIEW MODERATION QUEUE ─────────────────────────────────────────
+   *
+   * Behind `support.manage`, beside disputes and tickets, because it is the
+   * same job: somebody complained and a human has to decide.
+   */
+  reviewReports: adminWith('support.manage')
+    .input(z.object({
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(20),
+      status: z.string().max(16).optional(),
+    }).default({ page: 0, pageSize: 20 }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return listReviewReports(db, input);
+    }),
+
+  /**
+   * Hide or restore a review.
+   *
+   * HIDING REQUIRES A REASON, and hiding removes the review from the average
+   * as well as from the page - a hidden review that still counts is a remedy
+   * in appearance only. Both are enforced in the service, not here.
+   */
+  moderateReview: adminWith('support.manage')
+    .input(z.object({
+      reviewId: z.number().int().positive(),
+      action: z.enum(['hide', 'restore']),
+      reason: z.string().trim().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [review] = await db.select({ revieweeId: reviews.revieweeId, reviewerId: reviews.reviewerId })
+        .from(reviews).where(eq(reviews.id, input.reviewId)).limit(1);
+      if (!review) throw new TRPCError({ code: 'NOT_FOUND', message: 'Review not found' });
+
+      let result;
+      try {
+        result = await moderateReview(db, {
+          reviewId: input.reviewId, actorId: ctx.user.id,
+          action: input.action, reason: input.reason ?? null,
+        });
+      } catch (error) { throw asReviewTrpcError(error); }
+
+      // BOTH PARTIES ARE IN THE RECORD. A hidden review changes the provider's
+      // score and removes the reviewer's words; an audit naming only one of
+      // them answers half the question later.
+      for (const userId of [review.revieweeId, review.reviewerId]) {
+        await recordAccountEvent(db, {
+          userId, actorId: ctx.user.id,
+          action: input.action === 'hide' ? 'review_hidden' : 'review_restored',
+          source: 'admin',
+          note: `review ${input.reviewId}${input.reason ? `: ${input.reason}` : ''}`,
+        });
+      }
+      return result;
+    }),
+
+  /**
+   * Resolve a report.
+   *
+   * UPHOLDING A REPORT DOES NOT HIDE THE REVIEW. They are two decisions: a
+   * report can be well-founded and the review still stand (a single rude word
+   * in an otherwise accurate account), and a review can be hidden with no
+   * report at all. Coupling them would remove the moderator's judgement from
+   * the one place it belongs.
+   */
+  resolveReviewReport: adminWith('support.manage')
+    .input(z.object({
+      reportId: z.number().int().positive(),
+      status: z.enum(['upheld', 'rejected']),
+      note: z.string().trim().max(1000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [report] = await db.select({ reporterId: reviewReports.reporterId, reviewId: reviewReports.reviewId })
+        .from(reviewReports).where(eq(reviewReports.id, input.reportId)).limit(1);
+      if (!report) throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
+      const [review] = await db.select({ revieweeId: reviews.revieweeId })
+        .from(reviews).where(eq(reviews.id, report.reviewId)).limit(1);
+      if (!review) throw new TRPCError({ code: 'NOT_FOUND', message: 'Review not found' });
+
+      try {
+        await resolveReviewReport(db, {
+          reportId: input.reportId, actorId: ctx.user.id,
+          status: input.status, note: input.note ?? null,
+        });
+      } catch (error) { throw asReviewTrpcError(error); }
+
+      await recordAccountEvent(db, {
+        userId: report.reporterId, actorId: ctx.user.id,
+        action: 'review_report_resolved', source: 'admin',
+        note: `report ${input.reportId} on review ${report.reviewId}: ${input.status}`,
+      });
+      await notifyUser(db, {
+        userId: report.reporterId,
+        title: 'Your report about a review was reviewed',
+        body: `The report was ${input.status}.`,
+        type: 'info',
+        // THE REVIEW ITSELF, on the provider's page. A bare '/settings' drops
+        // the reporter at the top of a long page with nothing about the thing
+        // they reported - the notification-destination guard is right to
+        // refuse it. `/vendor/:id` is where the review either still stands or
+        // visibly no longer does, which is the whole question they asked.
+        link: `/vendor/${review.revieweeId}`,
+        messageKey: 'notif.review.reportResolved',
+        messageParams: { statusKey: `reviewReport.status.${input.status}` },
+      });
+      return { ok: true };
+    }),
+
   supportTickets: adminWith('support.manage')
     .input(z.object({
       page: z.number().int().min(0).default(0),
