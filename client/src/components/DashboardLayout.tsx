@@ -22,7 +22,7 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags, Megaphone, ShieldCheck, ShieldQuestion } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags, Megaphone, ShieldCheck, ShieldQuestion, LifeBuoy } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -70,6 +70,15 @@ const SETTINGS_MENU_ITEM = { icon: Settings, labelKey: 'dash.settings', path: '/
  * page findable by somebody who was not sent a link.
  */
 const DISPUTES_MENU_ITEM = { icon: ShieldQuestion, labelKey: 'nav.disputes', path: '/disputes' } as const;
+/**
+ * SUPPORT, IN EVERY ROLE'S MENU.
+ *
+ * Anyone may ask BuildHub for help - that is the difference between a support
+ * ticket and a dispute, which needs a relationship first. So this item is not
+ * gated on a role, and it sits beside Settings where a person looks when
+ * something has gone wrong.
+ */
+const SUPPORT_MENU_ITEM = { icon: LifeBuoy, labelKey: 'nav.support', path: '/support' } as const;
 
 function workspaceItem(role: WorkspaceRole, icon: typeof LayoutDashboard, labelKey: string, section: SectionId): MenuItem {
   return { icon, labelKey, path: workspaceHref(role, section), section };
@@ -109,6 +118,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('contractor', BarChart3, 'platform.performance', 'role-performance'),
     DISPUTES_MENU_ITEM,
+    SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
   ],
   engineer: [
@@ -121,6 +131,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('engineer', BarChart3, 'platform.performance', 'role-performance'),
     DISPUTES_MENU_ITEM,
+    SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
   ],
   architect: [
@@ -133,6 +144,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('architect', BarChart3, 'platform.performance', 'role-performance'),
     DISPUTES_MENU_ITEM,
+    SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
   ],
   // THE SUPPLIER MENU ORDER IS SPECIFIED BY THE BRIEF, not chosen here:
@@ -154,6 +166,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: Tags, labelKey: 'settings.categories', path: '/service-categories' },
     workspaceItem('supplier', BarChart3, 'platform.performance', 'role-performance'),
     DISPUTES_MENU_ITEM,
+    SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
     COMPLIANCE_MENU_ITEM,
   ],
@@ -165,6 +178,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: Users, labelKey: 'platform.team', path: '/messages' },
     workspaceItem('project_manager', BarChart3, 'platform.performance', 'role-performance'),
     DISPUTES_MENU_ITEM,
+    SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
   ],
 };
@@ -190,6 +204,7 @@ const ADMIN_ICONS: Record<string, typeof LayoutDashboard> = {
   '/admin/enquiries': Inbox,
   '/admin/compliance': Shield,
   '/admin/disputes': FileText,
+  '/admin/support': LifeBuoy,
   '/admin/analytics': BarChart3,
   '/admin/billing': CreditCard,
   '/admin/operations': Activity,

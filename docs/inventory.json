@@ -321,6 +321,22 @@
       "deadParamRoute": false
     },
     {
+      "path": "/support/:id",
+      "component": "SupportTicketDetail",
+      "source": "client/src/pages/SupportTicketDetail.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/support",
+      "component": "MySupport",
+      "source": "client/src/pages/MySupport.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
       "path": "/service-categories",
       "component": "ServiceCategoriesPage",
       "source": "client/src/pages/ServiceCategoriesPage.tsx",

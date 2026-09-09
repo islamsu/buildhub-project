@@ -39,6 +39,8 @@ const QuotationDetail = lazy(() => import("./pages/QuotationDetail"));
 const MessagesPage = lazy(() => import("./pages/MessagesPage"));
 const EnquiriesPage = lazy(() => import("./pages/EnquiriesPage"));
 const MyDisputes = lazy(() => import("./pages/MyDisputes"));
+const MySupport = lazy(() => import("./pages/MySupport"));
+const SupportTicketDetail = lazy(() => import("./pages/SupportTicketDetail"));
 const DisputeDetail = lazy(() => import("./pages/DisputeDetail"));
 const ServiceCategoriesPage = lazy(() => import("./pages/ServiceCategoriesPage"));
 const CataloguePage = lazy(() => import("./pages/CataloguePage"));
@@ -169,6 +171,11 @@ function Router() {
           meant being told about a page that was not there. */}
       <Route path={"/disputes/:id"} component={DisputeDetail} />
       <Route path={"/disputes"} component={MyDisputes} />
+      {/* Same ordering rule, same reason: `/support/:id` is what every support
+          notification links to, and a notification pointing at a route that
+          does not resolve is worse than no notification. */}
+      <Route path={"/support/:id"} component={SupportTicketDetail} />
+      <Route path={"/support"} component={MySupport} />
       <Route path={"/service-categories"} component={ServiceCategoriesPage} />
       <Route path={"/catalogue"} component={CataloguePage} />
       <Route path={"/ai"} component={AIAssistantPage} />

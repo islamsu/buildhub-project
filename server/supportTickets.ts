@@ -278,7 +278,7 @@ export async function ticketThread(db: Db, ticketId: number) {
     .where(eq(supportTicketMessages.ticketId, ticketId))
     .orderBy(supportTicketMessages.createdAt);
 
-  const attachments = await db.select({
+  const attachmentRows = await db.select({
     id: supportTicketAttachments.id,
     fileName: supportTicketAttachments.fileName,
     contentType: supportTicketAttachments.contentType,
@@ -292,6 +292,18 @@ export async function ticketThread(db: Db, ticketId: number) {
       isNull(supportTicketAttachments.removedAt),
     ))
     .orderBy(supportTicketAttachments.createdAt);
+
+  /**
+   * THE URL IS BUILT HERE, not in the component. Every other attachment
+   * surface in this codebase returns a server-built `url` and the client just
+   * follows it; a page that assembles `/manus-storage/...` itself duplicates
+   * the proxy's addressing scheme in a second place, and the route-integrity
+   * guard is right to call that a link the client invented.
+   */
+  const attachments = (attachmentRows as any[]).map(file => ({
+    ...file,
+    url: `/manus-storage/${file.storageKey}`,
+  }));
 
   const history = await db.select({
     id: supportTicketStatusHistory.id,
