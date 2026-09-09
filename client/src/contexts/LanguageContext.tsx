@@ -255,6 +255,8 @@ const translations: Record<Language, Record<string, string>> = {
     'notif.vendorName.approved.body': 'Your {field} has been updated to "{value}".',
     'notif.vendorName.corrected.title': 'Vendor name corrected',
     'notif.vendorName.corrected.body': 'An administrator corrected your {field} to "{value}".',
+    'notif.referral.attributed.title': 'Somebody used your invite code',
+    'notif.referral.attributed.body': 'They have registered. A reward is decided if and when they qualify.',
     'notif.referral.reward.title': 'Referral reward granted',
     'notif.referral.reward.body': 'Your reward from {campaign} is now active: {reward}.',
     // A reversal is per effect, because "your bonus was withdrawn" and "your
@@ -1348,6 +1350,8 @@ const translations: Record<Language, Record<string, string>> = {
     'notif.vendorName.approved.body': 'تم تحديث {field} إلى "{value}".',
     'notif.vendorName.corrected.title': 'تم تصحيح اسم المورّد',
     'notif.vendorName.corrected.body': 'قام أحد المسؤولين بتصحيح {field} إلى "{value}".',
+    'notif.referral.attributed.title': 'استخدم أحدهم رمز دعوتك',
+    'notif.referral.attributed.body': 'لقد سجّل حسابًا. تُحدَّد المكافأة إذا استوفى شروط التأهل ووقتها.',
     'notif.referral.reward.title': 'تم منح مكافأة الإحالة',
     'notif.referral.reward.body': 'أصبحت مكافأتك من {campaign} فعّالة الآن: {reward}.',
     'notif.referral.reversed.bonus_revoked.title': 'تم عكس مكافأة الإحالة',

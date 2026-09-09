@@ -600,6 +600,34 @@ const authRouter = router({
           code: input.referralCode,
           status: 'registered',
         });
+
+        /*
+         * ATTRIBUTION, TOLD TO THE PERSON WHO EARNED IT.
+         *
+         * The referral lifecycle notified on the grant and on the reversal and
+         * said nothing here - so the one moment an inviter would most want to
+         * hear about, somebody actually using their code, passed in silence.
+         *
+         * WHAT IT DELIBERATELY DOES NOT SAY. Not the new account's name or
+         * email: the inviter shared a code, which does not entitle them to
+         * know who took it up until that person becomes a customer in their
+         * own right. And no promise of a reward - late binding (owner decision
+         * 2) means the campaign is chosen at QUALIFICATION, so a reward
+         * promised now could be a reward BuildHub cannot honour.
+         */
+        await notifyUser(db, {
+          userId: referrer.id,
+          title: 'Somebody used your invite code',
+          body: 'They have registered. A reward is decided if and when they qualify.',
+          type: 'info',
+          // THE SAME DESTINATION the grant and the reversal use. `/referrals`
+          // was not even a registered route - the notification-destination
+          // guard caught it - and a third address for one subject is how a
+          // reader ends up somewhere that does not show what they were told
+          // about.
+          link: '/settings#settings-referral',
+          messageKey: 'notif.referral.attributed',
+        });
       } else {
         /*
          * A CODE THAT WENT NOWHERE, RECORDED.

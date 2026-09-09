@@ -186,6 +186,7 @@ export default function AdminReferrals() {
                       <th className="p-2 text-start">{ar ? 'المُحال' : 'Referred'}</th>
                       <th className="p-2 text-start">{ar ? 'الرمز' : 'Code'}</th>
                       <th className="p-2 text-start">{ar ? 'الحالة' : 'Status'}</th>
+                      <th className="p-2 text-start">{ar ? 'الحملة' : 'Campaign'}</th>
                       <th className="p-2 text-start">{ar ? 'المكافأة' : 'Reward'}</th>
                       <th className="p-2 text-start">{ar ? 'التاريخ' : 'Date'}</th>
                       <th className="p-2 text-start">{ar ? 'إجراءات' : 'Actions'}</th>
@@ -207,6 +208,18 @@ export default function AdminReferrals() {
                         </td>
                         <td className="p-2 font-mono text-xs">{row.code}</td>
                         <td className="p-2"><Badge variant="secondary">{statusLabel(row.status)}</Badge></td>
+                        {/* LATE BINDING, SHOWN AS THE DESIGN RATHER THAN AS A
+                            GAP. A referral has no campaign until it qualifies -
+                            that is owner decision 2, and it is why the engine
+                            can pick the campaign that is actually eligible at
+                            the moment the qualifying event happens. Rendering
+                            nothing left an administrator unable to tell "not
+                            bound yet" from "we lost the campaign". */}
+                        <td className="p-2 text-muted-foreground" data-testid={`referral-campaign-${row.id}`}>
+                          {row.campaignId
+                            ? (row.campaignName ?? `#${row.campaignId}`)
+                            : <span className="text-xs italic">{ar ? 'تُحدَّد عند التأهل' : 'Determined on qualification'}</span>}
+                        </td>
                         <td className="p-2">{rewardSummary(row)}</td>
                         <td className="p-2 text-muted-foreground">{new Date(row.createdAt).toLocaleDateString()}</td>
                         <td className="p-2">

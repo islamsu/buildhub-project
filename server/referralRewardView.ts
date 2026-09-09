@@ -221,13 +221,22 @@ export async function listAdminReferrals(
     code: referrals.code,
     status: referrals.status,
     campaignId: referrals.campaignId,
+    /*
+     * THE CAMPAIGN'S NAME, not just its id - the admin human-first rule this
+     * project applies everywhere else. LEFT joined on purpose: a referral has
+     * NO campaign until it qualifies (owner decision 2, late binding), so an
+     * inner join would silently drop every referral still waiting, which is
+     * most of them.
+     */
+    campaignName: referralCampaigns.name,
     qualificationType: referrals.qualificationType,
     qualifiedAt: referrals.qualifiedAt,
     createdAt: referrals.createdAt,
     referrerName: users.name,
     referrerEmail: users.email,
   }).from(referrals)
-    .innerJoin(users, eq(users.id, referrals.referrerId));
+    .innerJoin(users, eq(users.id, referrals.referrerId))
+    .leftJoin(referralCampaigns, eq(referralCampaigns.id, referrals.campaignId));
   const rows = await (where ? baseRows.where(where) : baseRows)
     .orderBy(desc(referrals.createdAt))
     .limit(query.pageSize)

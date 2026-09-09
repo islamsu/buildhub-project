@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 import { deriveRewardStatus, withDerivedStatus, liveRewards } from './referralRewardView';
 import {
   splitCampaignEdit, refuseCampaignEdit, refuseCampaignDates,
@@ -393,5 +394,81 @@ describe('a campaign can be corrected, but not rewritten after it has paid', () 
     // No campaigns is not a neutral fact: it is the reason no reward can be
     // granted, which is the state this whole subsystem was found in.
     expect(ADMIN).toContain('No referral campaigns exist. No reward can be granted');
+  });
+});
+
+/**
+ * ── REF-2: THE TWO REFERRAL ITEMS THAT WERE NOT FINISHED ──────────────────
+ *
+ * Reported by the owner ("you didn't build the entire referral system") and
+ * confirmed against source. A third reported gap - the Central Benefits/Limits
+ * view - turned out to EXIST under a different name than the plan used, and
+ * that correction is recorded in the plan rather than quietly dropped.
+ */
+describe('REF-2.2 attribution: the inviter is told their code was used', () => {
+  const ROUTERS = readSourceForAssertions(
+    readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'),
+  );
+
+  it('signup notifies the REFERRER when a code resolves to them', () => {
+    const branch = ROUTERS.slice(
+      ROUTERS.indexOf('if (referrer && referrer.id !== userId) {'),
+      ROUTERS.indexOf("action: 'referral_code_unusable'"),
+    );
+    expect(branch, 'the one moment an inviter cares about passed in silence')
+      .toContain("messageKey: 'notif.referral.attributed'");
+    expect(branch).toContain('userId: referrer.id');
+  });
+
+  it('and it promises NOTHING, because the campaign is not chosen yet', () => {
+    // Late binding is owner decision 2: the campaign is resolved at
+    // QUALIFICATION. A reward named here could be one BuildHub cannot honour.
+    const branch = ROUTERS.slice(
+      ROUTERS.indexOf("messageKey: 'notif.referral.attributed'") - 700,
+      ROUTERS.indexOf("messageKey: 'notif.referral.attributed'") + 200,
+    );
+    expect(branch.toLowerCase()).not.toMatch(/you (will|have) (earn|receiv)/);
+    expect(branch).toContain('if and when they qualify');
+  });
+
+  it('it does not leak who the new account is', () => {
+    // The inviter shared a code. That does not entitle them to a name or an
+    // email until that person is a customer in their own right.
+    const branch = ROUTERS.slice(
+      ROUTERS.indexOf("messageKey: 'notif.referral.attributed'") - 700,
+      ROUTERS.indexOf("messageKey: 'notif.referral.attributed'") + 200,
+    );
+    expect(branch).not.toContain('input.name');
+    expect(branch).not.toContain('input.email');
+  });
+});
+
+describe('REF-2.3 a referral names its campaign, or says none is bound yet', () => {
+  const VIEW = readSourceForAssertions(
+    readFileSync(new URL('./referralRewardView.ts', import.meta.url), 'utf8'),
+  );
+  const ADMIN = readSourceForAssertions(
+    readFileSync(new URL('../client/src/components/AdminReferrals.tsx', import.meta.url), 'utf8'),
+  );
+
+  it('the query returns the campaign NAME, not only an id', () => {
+    const fn = VIEW.slice(VIEW.indexOf('const baseRows = db.select({'));
+    expect(fn.slice(0, 1200)).toContain('campaignName: referralCampaigns.name');
+  });
+
+  it('and joins it LEFT, so unqualified referrals are not dropped', () => {
+    // An inner join would hide every referral still waiting to qualify -
+    // which, before any of them qualify, is all of them.
+    const fn = VIEW.slice(VIEW.indexOf('const baseRows = db.select({'));
+    expect(fn.slice(0, 1600)).toContain('.leftJoin(referralCampaigns');
+  });
+
+  it('the screen renders the late-binding state in BOTH languages', () => {
+    expect(ADMIN).toContain('Determined on qualification');
+    expect(ADMIN).toContain('تُحدَّد عند التأهل');
+  });
+
+  it('a bound campaign shows its name rather than a raw id', () => {
+    expect(ADMIN).toContain('row.campaignName');
   });
 });

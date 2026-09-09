@@ -134,30 +134,31 @@ Dead param routes: **0**
 | `vendorSponsorships` | 22 | 4 | 7 | 0 |
 | `enquiryAssignments` | 9 | 4 | 3 | 0 |
 
-## Notification write sites (26)
+## Notification write sites (27)
 
-- server/routers.ts:1369 — notifyUser
-- server/routers.ts:2456 — notifyUser
-- server/routers.ts:2536 — notifyUser
-- server/routers.ts:3298 — notifyUser
-- server/routers.ts:3355 — notifyUser
-- server/routers.ts:3762 — notifyUser
-- server/routers.ts:4020 — notifyUser
-- server/routers.ts:4158 — notifyUser
-- server/routers.ts:4332 — notifyUser
-- server/routers.ts:4524 — notifyUser
-- server/routers.ts:4694 — notifyUser
-- server/routers.ts:6143 — notifyUser
-- server/routers.ts:6476 — notifyUser
-- server/routers.ts:6554 — notifyUser
-- server/routers.ts:7385 — notifyUser
-- server/routers.ts:7456 — notifyUser
-- server/routers.ts:7860 — notifyUser
-- server/routers.ts:8058 — notifyUser
-- server/routers.ts:8088 — notifyUser
-- server/routers.ts:8121 — notifyUser
-- server/routers.ts:8299 — notifyUser
-- server/routers.ts:8393 — notifyUser
+- server/routers.ts:618 — notifyUser
+- server/routers.ts:1397 — notifyUser
+- server/routers.ts:2484 — notifyUser
+- server/routers.ts:2564 — notifyUser
+- server/routers.ts:3326 — notifyUser
+- server/routers.ts:3383 — notifyUser
+- server/routers.ts:3790 — notifyUser
+- server/routers.ts:4048 — notifyUser
+- server/routers.ts:4186 — notifyUser
+- server/routers.ts:4360 — notifyUser
+- server/routers.ts:4552 — notifyUser
+- server/routers.ts:4722 — notifyUser
+- server/routers.ts:6171 — notifyUser
+- server/routers.ts:6504 — notifyUser
+- server/routers.ts:6582 — notifyUser
+- server/routers.ts:7413 — notifyUser
+- server/routers.ts:7484 — notifyUser
+- server/routers.ts:7888 — notifyUser
+- server/routers.ts:8086 — notifyUser
+- server/routers.ts:8116 — notifyUser
+- server/routers.ts:8149 — notifyUser
+- server/routers.ts:8327 — notifyUser
+- server/routers.ts:8421 — notifyUser
 - server/notifications.ts:40 — notifyUser
 - server/notifications.ts:43 — helper implementation
 - server/notifications.ts:57 — notifyUser
