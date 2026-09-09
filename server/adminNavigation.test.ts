@@ -27,6 +27,9 @@ import { ADMIN_PERMISSIONS, ADMIN_ROLE_PERMISSIONS, permissionsForAdminRole } fr
 const APP = readSourceForAssertions(
   readFileSync(new URL('../client/src/App.tsx', import.meta.url), 'utf8'),
 );
+const DASHBOARD = readSourceForAssertions(
+  readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8'),
+);
 
 /** Every `path={...}` App.tsx registers under `/admin`. */
 function registeredAdminRoutes(): string[] {
@@ -130,5 +133,60 @@ describe('adminMenuFor filters on the viewer, not on the fact that they are an a
     // The moment before `admin.me` resolves. Showing fewer destinations for an
     // instant is honest; showing one the viewer does not have is not.
     expect(adminMenuFor([])).toEqual([]);
+  });
+});
+
+/**
+ * ── ARRIVING SOMEWHERE HAS TO LOOK LIKE ARRIVING SOMEWHERE ────────────────
+ *
+ * The sibling defect to an unreachable screen, and it was reported from real
+ * use: clicking Analytics in the sidebar "is not taking me any where".
+ *
+ * It was taking you there. The URL changed, the sidebar highlighted, and the
+ * right tab panel became active. What did not change was the SCREEN. The
+ * console rendered, above the tabs and therefore on every section alike:
+ *
+ *   - a heading hard-coded to `t('admin.title')` - "Admin Control Panel"
+ *   - four KPI cards
+ *   - the whole "Professional registration summary" applicant queue
+ *
+ * So Analytics opened on a first viewport byte-identical to the one you left,
+ * with its own content pushed below the fold. A person cannot tell that from a
+ * dead link, and they should not have to.
+ *
+ * Both halves are held here. The heading must be derived from ADMIN_NAV - the
+ * same list the menu is built from, so the sidebar and the page cannot name
+ * the section differently - and the overview's own content must live inside
+ * the overview tab rather than above all of them.
+ */
+describe('a section you navigate to looks different from the one you left', () => {
+  it('the heading is derived from the nav list, not hard-coded to one title', () => {
+    expect(DASHBOARD).toContain('ADMIN_NAV.find(item => item.path === `/admin/${adminSection}`)');
+    expect(DASHBOARD).toContain('data-testid="admin-section-heading"');
+    expect(DASHBOARD).toContain('{t(adminSectionLabelKey)}');
+  });
+
+  it('every menu destination has a label the heading can actually resolve', () => {
+    // A section whose labelKey is missing would silently fall back to the
+    // console title and reintroduce the defect for that one screen.
+    for (const entry of ADMIN_NAV) {
+      expect(entry.labelKey, `${entry.path} has no labelKey`).toBeTruthy();
+    }
+    // ...and the labels must be distinct, or two sections would render the
+    // same heading and be indistinguishable again.
+    const labels = ADMIN_NAV.map(entry => entry.labelKey);
+    expect(new Set(labels).size, `duplicate heading labels: ${labels.join(', ')}`).toBe(labels.length);
+  });
+
+  it("the overview's own content is inside the overview tab, not above every tab", () => {
+    // The KPI grid and the applicant-registration queue are overview content.
+    // Rendered above <Tabs> they appear on Analytics, Billing and Disputes too.
+    const tabsAt = DASHBOARD.indexOf('<Tabs value={adminSection}');
+    expect(tabsAt, 'the Tabs root moved - review this guard').toBeGreaterThan(-1);
+    const aboveTheTabs = DASHBOARD.slice(0, tabsAt);
+    expect(aboveTheTabs, 'the KPI cards render above every section again')
+      .not.toContain('admin-kpi-');
+    expect(aboveTheTabs, 'the applicant registration queue renders above every section again')
+      .not.toContain('Professional registration summary');
   });
 });
