@@ -816,6 +816,16 @@
       "indent": 2
     },
     {
+      "name": "markThreadRead",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "unreadCount",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "send",
       "tier": "protectedProcedure",
       "indent": 2
@@ -1703,7 +1713,7 @@
   ],
   "procedureTiers": {
     "publicProcedure": 34,
-    "protectedProcedure": 83,
+    "protectedProcedure": 85,
     "complianceProcedure": 6,
     "approvedProviderProcedure": 29,
     "adminWith:marketplace.manage": 44,
@@ -2188,122 +2198,122 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 643,
+      "line": 646,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 1422,
+      "line": 1425,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2623,
+      "line": 2626,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2703,
+      "line": 2706,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3472,
+      "line": 3475,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3529,
+      "line": 3532,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3994,
+      "line": 3997,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4280,
+      "line": 4324,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4669,
+      "line": 4713,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4911,
+      "line": 4955,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5103,
+      "line": 5147,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5273,
+      "line": 5317,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6722,
+      "line": 6766,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7055,
+      "line": 7099,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7133,
+      "line": 7177,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7968,
+      "line": 8012,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8039,
+      "line": 8083,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8443,
+      "line": 8487,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8641,
+      "line": 8685,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8671,
+      "line": 8715,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8704,
+      "line": 8748,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8911,
+      "line": 8955,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8993,
+      "line": 9037,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9087,
+      "line": 9131,
       "via": "notifyUser"
     },
     {

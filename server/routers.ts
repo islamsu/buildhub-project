@@ -34,6 +34,9 @@ import { getChurn, getCommercialKpis } from './analytics/kpis';
 import { ENV, isTestLoginEnabled } from './_core/env';
 import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
+import {
+  listConversations, listThread, markThreadRead, unreadMessageCount, THREAD_PAGE_SIZE_MAX,
+} from './messaging';
 import { NotificationPreferenceError, notificationPreferencesFor, setNotificationPreference } from './notificationPreferences';
 import {
   ServiceCatalogueError, assertCategoryAcceptsServices, validatePricing, validateCommitments,
@@ -4124,27 +4127,21 @@ const rfqRouter = router({
 
 // ── Messages Router ─────────────────────────────────────────────────────────
 const messagesRouter = router({
+  /**
+   * THE SIDEBAR. Bounded, aggregated by the database, and capped.
+   *
+   * This used to SELECT every message the account had ever exchanged and
+   * reduce it in JavaScript - the whole of somebody's correspondence pulled
+   * across the wire to draw a list of names. The shape returned is unchanged
+   * apart from `lastMessageAt`, which is now a Date: the old field was a string
+   * built with `toLocaleDateString()` ON THE SERVER, which pinned every reader
+   * to the server's locale and handed an Arabic reader an English date.
+   */
   conversations: protectedProcedure.query(async ({ ctx }) => {
     const db = await requireDb();
-    const rows = await db.select({ senderId: messages.senderId, receiverId: messages.receiverId, content: messages.content, createdAt: messages.createdAt, read: messages.read }).from(messages).where(sql`${messages.senderId} = ${ctx.user.id} OR ${messages.receiverId} = ${ctx.user.id}`).orderBy(desc(messages.createdAt));
-    const otherIds = Array.from(new Set(rows.map(row => row.senderId === ctx.user.id ? row.receiverId : row.senderId)));
-    if (!otherIds.length) return [];
-    const people = await db.select({ id: users.id, name: users.name, userRole: users.userRole }).from(users).where(inArray(users.id, otherIds));
-    return people.map(person => {
-      const latest = rows.find(row => row.senderId === person.id || row.receiverId === person.id);
-      const name = person.name || 'BuildHub user';
-      // `unread` was hard-coded to 0 and `online` to false, while the UI
-      // rendered a live-presence dot and an unread badge from them. A counter
-      // that is always zero is not a conservative default, it is a broken
-      // counter that hides real messages; and BuildHub has no presence system
-      // at all, so `online` could only ever have been decoration. The count is
-      // now computed from the rows already loaded, and `online` is gone rather
-      // than shipped as a permanently-false field the UI can misread.
-      const unread = rows.filter(row =>
-        row.senderId === person.id && row.receiverId === ctx.user.id && !row.read).length;
-      return { id: person.id, name, initials: name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase(), lastMessage: latest?.content ?? '', time: latest?.createdAt ? new Date(latest.createdAt).toLocaleDateString() : '', unread, role: person.userRole || 'Member' };
-    });
+    return listConversations(db, ctx.user.id);
   }),
+
   /**
    * WHO AM I ABOUT TO WRITE TO.
    *
@@ -4179,12 +4176,59 @@ const messagesRouter = router({
       role: person.userRole || 'Member',
     };
   }),
-  list: protectedProcedure.input(z.object({ otherUserId: z.number().optional() })).query(async ({ ctx, input }) => {
+  /**
+   * ONE THREAD, ONE PAGE.
+   *
+   * `otherUserId` IS NOW REQUIRED. It was optional, and omitting it returned
+   * the account's ENTIRE inbox across every thread in one unpaginated
+   * response. Nothing ever called that - the single caller is a thread view
+   * that is gated on having selected somebody - so requiring it removes a
+   * payload risk rather than a capability.
+   *
+   * `before` is a message ID, not an offset: an offset skips or repeats a line
+   * every time the other person replies while somebody is scrolling back.
+   */
+  list: protectedProcedure
+    .input(z.object({
+      otherUserId: z.number().int().positive(),
+      limit: z.number().int().positive().max(THREAD_PAGE_SIZE_MAX).optional(),
+      before: z.number().int().positive().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      return listThread(db, {
+        userId: ctx.user.id,
+        otherUserId: input.otherUserId,
+        limit: input.limit,
+        before: input.before,
+      });
+    }),
+
+  /**
+   * MARK A THREAD READ - the writer `messages.read` never had.
+   *
+   * Nothing in BuildHub set this column to true, and no control offered to, so
+   * a conversation's unread badge could only ever grow: opening a thread,
+   * reading it and replying left the count untouched. The "Mark all read"
+   * button on the Messages page belongs to its Notifications tab and correctly
+   * marks notifications - messages simply had no equivalent.
+   *
+   * A READ RECEIPT IS THE RECEIVER'S TO GIVE. This takes no message ids - only
+   * a correspondent - and `markThreadRead` constrains on `receiverId = caller`,
+   * so it cannot mark the caller's own sent messages read on the other party's
+   * behalf. That would be forging a receipt.
+   */
+  markThreadRead: protectedProcedure
+    .input(z.object({ otherUserId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      return markThreadRead(db, { userId: ctx.user.id, otherUserId: input.otherUserId });
+    }),
+
+  /** Unread across every thread, for the badge the navigation renders. */
+  unreadCount: protectedProcedure.query(async ({ ctx }) => {
     const db = await requireDb();
-    const filter = input.otherUserId
-      ? and(sql`(${messages.senderId} = ${ctx.user.id} AND ${messages.receiverId} = ${input.otherUserId}) OR (${messages.senderId} = ${input.otherUserId} AND ${messages.receiverId} = ${ctx.user.id})`)
-      : sql`${messages.senderId} = ${ctx.user.id} OR ${messages.receiverId} = ${ctx.user.id}`;
-    return db.select().from(messages).where(filter).orderBy(messages.createdAt);
+    return { count: await unreadMessageCount(db, ctx.user.id) };
   }),
   // `fileUrl` WAS `z.string().url()`, and two things followed from that.
   //

@@ -273,24 +273,48 @@ describe('the Messages page shows only real data', () => {
 // ══ 3. THE UNREAD COUNT IS REAL ════════════════════════════════════════════
 
 describe('conversation metadata is computed, not hard-coded', () => {
-  const ROUTERS = readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'))
-    ;
+  const ROUTERS = readSourceForAssertions(readFileSync(new URL('./routers.ts', import.meta.url), 'utf8'));
+  /**
+   * The sidebar moved out of routers.ts into its own module when it stopped
+   * loading every message in the account to draw itself. The RULE this suite
+   * exists for is unchanged and is asserted at the new address; only the
+   * expressions that used to spell it out in JavaScript are gone.
+   */
+  const MESSAGING = readSourceForAssertions(readFileSync(new URL('./messaging.ts', import.meta.url), 'utf8'));
 
   it('unread is derived from the messages, not pinned to zero', () => {
     expect(ROUTERS).not.toMatch(/unread: 0, online: false/);
-    expect(ROUTERS).toMatch(/const unread = rows\.filter/);
-    // It must count only messages TO this user, FROM that person, unread.
-    expect(ROUTERS).toMatch(/row\.senderId === person\.id/);
-    expect(ROUTERS).toMatch(/row\.receiverId === ctx\.user\.id/);
-    expect(ROUTERS).toMatch(/!row\.read/);
+    expect(MESSAGING).not.toMatch(/unread: 0\b/);
+    const unread = MESSAGING.slice(MESSAGING.indexOf('unread: sql'), MESSAGING.indexOf('.from(messages)'));
+    expect(unread, 'the unread aggregate is gone').not.toBe('');
+    // The same three clauses the JavaScript version spelled out, now in SQL:
+    // only messages TO this user, only unread, and - through the GROUP BY -
+    // only from the peer the row is about.
+    expect(unread).toMatch(/messages\.receiverId.*userId/s);
+    expect(unread).toMatch(/messages\.read.*FALSE/s);
+    expect(MESSAGING).toContain('.groupBy(peerExpression)');
+  });
+
+  it('AND THE DATABASE COUNTS IT, rather than the whole history being loaded', () => {
+    // The new property, worth pinning because the old implementation was
+    // correct and unbounded: it SELECTed every message the account had ever
+    // exchanged and reduced it in JavaScript.
+    expect(MESSAGING).toContain('.limit(limit)');
+    const sidebar = MESSAGING.slice(
+      MESSAGING.indexOf('export async function listConversations'),
+      MESSAGING.indexOf('export async function listThread'),
+    );
+    expect(sidebar).not.toMatch(/\.filter\(/);
   });
 
   it('the `online` field is gone rather than shipped permanently false', () => {
-    const conversations = ROUTERS.slice(
+    // BuildHub has no presence system, so `online` could only ever have been
+    // decoration. Asserted across both files now that the shape is built in
+    // one and returned by the other.
+    expect(ROUTERS.slice(
       ROUTERS.indexOf('conversations: protectedProcedure'),
-      ROUTERS.indexOf('list: protectedProcedure.input(z.object({ otherUserId'),
-    );
-    expect(conversations.length).toBeGreaterThan(0);
-    expect(conversations).not.toMatch(/online:/);
+      ROUTERS.indexOf('markThreadRead: protectedProcedure'),
+    )).not.toMatch(/online:/);
+    expect(MESSAGING).not.toMatch(/online:/);
   });
 });
