@@ -152,6 +152,7 @@ import {
 import { isPaymentProviderConfigured } from './billing/provider';
 import {
   getEnquiryUsage, getRfqResponseAccess, getVendorCategories, listEligibleRfqs, openQualifiedEnquiry,
+  previewQualifiedEnquiry,
 } from './billing/enquiries';
 import {
   getVendorTargetingDiagnostics, listDirectoryCategories,
@@ -3015,6 +3016,29 @@ const rfqRouter = router({
       if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
 
       const access = await getRfqResponseAccess(db, ctx.user.id, input.rfqId);
+      /**
+       * AND WHETHER OPENING WOULD BE GRANTED, so the screen can stop offering
+       * an action the server is certain to refuse.
+       *
+       * `getRfqResponseAccess` answers "do you already have access". It cannot
+       * answer "would opening succeed", because that decision lived only inside
+       * `openQualifiedEnquiry` - which spends a credit, and so cannot be called
+       * to find out. Reported from real use: a provider clicked an enabled
+       * button and was told afterwards that the request was not their trade.
+       *
+       * ALWAYS COMPUTED, including for a caller who can already respond.
+       *
+       * It was once skipped when `canRespond` was true, on the reasoning that
+       * there is nothing left to offer. That reasoning was wrong, and a live
+       * probe proved it: an open INVITATION is itself `canRespond`, so the
+       * invitation branch of the preview could never run from here, and the
+       * payload answered `canOpen: false` for a provider whose `openEnquiry`
+       * call succeeds. Whether the screen chooses to show an offer is the
+       * screen's business; whether opening would be granted is a fact, and this
+       * field states it truthfully in every case. The two must never disagree -
+       * that disagreement is the entire defect this preview exists to prevent.
+       */
+      const preview = await previewQualifiedEnquiry(db, ctx.user.id, input.rfqId);
       let projectTitle: string | null = null;
       if (access.canRespond && rfq.projectId !== null) {
         const [project] = await db.select({ title: projects.title })
@@ -3026,6 +3050,12 @@ const rfqRouter = router({
         status: rfq.status,
         projectTitle,
         attachments: access.canRespond ? rfq.attachments : null,
+        canOpen: preview.canOpen,
+        // The reason is a KEY, not a sentence: the screen is bilingual and the
+        // copy belongs with every other string, not built at the server in
+        // whichever language the server happens to think in.
+        openBlockedReason: preview.canOpen ? null : preview.reason,
+        openIsFree: preview.free,
       };
     }),
   // The requester's own RFQ, in full. Scoped by requesterId in the WHERE clause.

@@ -206,6 +206,84 @@ export type OpenEnquiryResult =
  *     Locking is scoped to one vendor's own month, so vendors never contend
  *     with each other.
  */
+/**
+ * ── WOULD OPENING THIS SUCCEED? ───────────────────────────────────────────
+ *
+ * Reported from real use: a provider was shown an enabled "Open the enquiry"
+ * button, clicked it, and was told the request does not match their declared
+ * service categories. The refusal was correct. Offering the action was not.
+ *
+ * `getRfqResponseAccess` answers a different question - "do you ALREADY have
+ * access", by invitation, a previously opened enquiry, or an existing quotation.
+ * Nothing could answer "would opening it be granted", because that decision
+ * lived only inside `openQualifiedEnquiry`, which SPENDS A CREDIT and so
+ * obviously cannot be called to find out.
+ *
+ * THIS SHARES THE HELPERS, IT DOES NOT RESTATE THE RULE. The same
+ * `hasOpenInvitation`, `isClassifiableRfqCategory`, `getVendorCategories`,
+ * `isVendorEligibleForCategory` and `getEnquiryUsage`, IN THE SAME ORDER as the
+ * act - invitation first, then category, then allowance. A second copy of an
+ * eligibility rule is how a preview starts promising what the act refuses, and
+ * `enquiryPreview.test.ts` pins the two to the same order and the same reasons.
+ *
+ * READ-ONLY, ALWAYS. It writes nothing, marks no invitation viewed, and spends
+ * no allowance. It is safe to call on render, which is the whole point.
+ */
+export type EnquiryOpenPreview = {
+  canOpen: boolean;
+  /** Why not - the same vocabulary `openQualifiedEnquiry` refuses with. */
+  reason: 'ok' | 'not_found' | 'rfq_closed' | 'unclassified_rfq'
+    | 'category_mismatch' | 'limit_reached' | 'already_open';
+  /** True when it costs nothing: an invitation, or a lead already paid for. */
+  free: boolean;
+};
+
+export async function previewQualifiedEnquiry(
+  db: any,
+  userId: number,
+  rfqId: number,
+  now: Date = new Date(),
+): Promise<EnquiryOpenPreview> {
+  const [rfq] = await db.select({ id: rfqs.id, category: rfqs.category, status: rfqs.status })
+    .from(rfqs).where(eq(rfqs.id, rfqId)).limit(1);
+  if (!rfq) return { canOpen: false, reason: 'not_found', free: false };
+
+  // AN INVITATION SHORT-CIRCUITS BOTH GATES, exactly as it does in the act: the
+  // requester naming this firm outranks a taxonomy the customer never saw, and
+  // the owner's decision is that an invitation is exempt from the allowance.
+  if (await hasOpenInvitation(db, rfqId, userId)) {
+    return { canOpen: true, reason: 'ok', free: true };
+  }
+
+  // A lead already paid for re-opens for nothing.
+  const [existing] = await db
+    .select({ id: qualifiedEnquiries.id })
+    .from(qualifiedEnquiries)
+    .where(and(eq(qualifiedEnquiries.userId, userId), eq(qualifiedEnquiries.rfqId, rfqId)))
+    .limit(1);
+  if (existing) return { canOpen: true, reason: 'already_open', free: true };
+
+  // A CLOSED REQUEST IS NOT WORTH A CREDIT. The act does not check this - it
+  // would grant, and the supplier would spend a lead on a request nobody can
+  // answer - so the preview refuses to OFFER it. Stated as its own reason
+  // rather than folded into eligibility, because "you cannot quote on this"
+  // and "this is not your trade" are different things to tell somebody.
+  if (rfq.status !== 'open') return { canOpen: false, reason: 'rfq_closed', free: false };
+
+  if (!isClassifiableRfqCategory(rfq.category)) {
+    return { canOpen: false, reason: 'unclassified_rfq', free: false };
+  }
+  const declared = await getVendorCategories(userId);
+  if (!isVendorEligibleForCategory(declared, rfq.category)) {
+    return { canOpen: false, reason: 'category_mismatch', free: false };
+  }
+
+  const usage = await getEnquiryUsage(userId, now);
+  if (usage.limitReached) return { canOpen: false, reason: 'limit_reached', free: false };
+
+  return { canOpen: true, reason: 'ok', free: false };
+}
+
 export async function openQualifiedEnquiry(
   userId: number,
   rfqId: number,

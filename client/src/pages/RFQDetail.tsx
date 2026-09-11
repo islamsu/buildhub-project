@@ -83,6 +83,25 @@ export default function RFQDetail() {
   // filters on quotations.providerId = ctx.user.id, so no id from this page
   // can widen what comes back.
   const { data: myQuotations = [] } = trpc.rfq.myQuotations.useQuery(undefined, { enabled: isProvider, retry: false });
+  /**
+   * THE SAME ONE RULE THE RESPOND PAGE ASKS.
+   *
+   * This page offered "Continue to respond" for any open request to any
+   * provider, and the refusal - "this request does not match any of your
+   * declared service categories" - arrived two screens later, after a click.
+   * Reported from real use.
+   *
+   * Asked here rather than judged here: a second copy of the eligibility rule
+   * in the client is how the button and the server start disagreeing. The
+   * server answers, and this renders the answer.
+   */
+  const responseAccess = trpc.rfq.responseAccess.useQuery(
+    { rfqId },
+    { enabled: isProvider && valid, retry: false },
+  );
+  const mayProceed = responseAccess.data
+    ? responseAccess.data.canRespond || responseAccess.data.canOpen
+    : null;
   const myQuotation = myQuotations.find(quote => quote.rfqId === rfqId);
   /**
    * A provider whose verification is not approved yet.
@@ -412,6 +431,37 @@ export default function RFQDetail() {
                         {ar ? 'أكمل التوثيق' : 'Complete verification'}
                       </Button>
                     </Link>
+                  </div>
+                ) : isOpen && mayProceed === false ? (
+                  /*
+                   * THE REASON, INSTEAD OF A BUTTON THAT LEADS TO IT.
+                   * `mayProceed === false` and not `!mayProceed`: while the
+                   * answer is still loading it is null, and treating "not yet
+                   * known" as "refused" would flash a refusal at every
+                   * eligible provider before the query returned.
+                   */
+                  <div className="mt-3" data-testid="rfq-detail-not-eligible">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      {responseAccess.data?.openBlockedReason === 'category_mismatch'
+                        ? (ar
+                            ? 'هذا الطلب خارج فئات الخدمة التي أعلنتها.'
+                            : 'This request is outside the service categories you have declared.')
+                        : responseAccess.data?.openBlockedReason === 'limit_reached'
+                        ? (ar
+                            ? 'لقد استهلكت رصيد الاستفسارات المؤهلة لهذا الشهر.'
+                            : 'You have used all of your qualified enquiries for this month.')
+                        : (ar
+                            ? 'هذا الطلب غير متاح لك للرد عليه.'
+                            : 'This request is not available for you to respond to.')}
+                    </p>
+                    {responseAccess.data?.openBlockedReason === 'category_mismatch' && (
+                      <Link href="/settings#settings-categories">
+                        <Button variant="outline" className="mt-3 gap-2" data-testid="rfq-detail-declare-categories">
+                          <Package className="h-4 w-4" />
+                          {ar ? 'إدارة فئات الخدمة' : 'Manage service categories'}
+                        </Button>
+                      </Link>
+                    )}
                   </div>
                 ) : isOpen ? (
                   // The id travels with them. This used to be a bare
