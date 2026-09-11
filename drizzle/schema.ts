@@ -639,6 +639,51 @@ export const notificationPreferences = mysqlTable('notificationPreferences', {
   userCategoryIdx: uniqueIndex('notificationPreferences_user_category_idx').on(table.userId, table.category),
 }));
 
+/**
+ * A SERVICE A PROVIDER OFFERS. The counterpart of `products`, for the four
+ * provider roles that sell work rather than goods - and for a supplier who also
+ * installs what they sell.
+ *
+ * NOT A SECOND PRODUCT TABLE, and the differences are the reason it is its own
+ * table rather than a flag on `products`:
+ *
+ *   A product has ONE price and ONE unit. A service has a PRICING BASIS, and
+ *   its most common honest value is "quote on request" - no figure at all.
+ *   Forcing a service through a NOT NULL price column is how invented prices
+ *   get published.
+ *
+ *   A service carries lead time and warranty, which is what a customer actually
+ *   asks a contractor. A product carries stock and origin, which is what they
+ *   ask a supplier.
+ *
+ * WHAT IT REUSES rather than forks: `categoryId` points at the one canonical
+ * administrable taxonomy (scope SERVICE or BOTH), and `status` carries the same
+ * four values and the same declared transitions as a product. See
+ * shared/serviceCatalogue.ts for why each.
+ */
+export const serviceOfferings = mysqlTable('serviceOfferings', {
+  id:          int('id').autoincrement().primaryKey(),
+  providerId:  int('providerId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /** Scope SERVICE or BOTH. Enforced in server/serviceCatalogue.ts, not here. */
+  categoryId:  int('categoryId').notNull().references(() => productCategories.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  title:       varchar('title', { length: 120 }).notNull(),
+  description: text('description'),
+  pricingBasis: mysqlEnum('pricingBasis', ['quote_on_request', 'per_square_metre', 'per_linear_metre', 'per_unit', 'per_day', 'fixed_project']).default('quote_on_request').notNull(),
+  /** Both NULL when the basis is quote_on_request - refused, not merely ignored. */
+  priceMin:    decimal('priceMin', { precision: 12, scale: 2 }),
+  priceMax:    decimal('priceMax', { precision: 12, scale: 2 }),
+  leadTimeDays:   int('leadTimeDays'),
+  warrantyMonths: int('warrantyMonths'),
+  status:      mysqlEnum('status', ['draft', 'active', 'inactive', 'archived']).default('draft').notNull(),
+  statusChangedAt: timestamp('statusChangedAt'),
+  archivedAt:  timestamp('archivedAt'),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+  updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  providerStatusIdx: index('serviceOfferings_provider_status_idx').on(table.providerId, table.status),
+  categoryStatusIdx: index('serviceOfferings_category_status_idx').on(table.categoryId, table.status),
+}));
+
 // ── Reviews ────────────────────────────────────────────────────────────────
 export const reviews = mysqlTable('reviews', {
   id:         int('id').autoincrement().primaryKey(),
@@ -1375,7 +1420,7 @@ export const commercialAuditEvents = mysqlTable('commercialAuditEvents', {
   actorId:     int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   // Who the subject record belonged to when the event happened.
   ownerId:     int('ownerId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
-  subjectType: mysqlEnum('subjectType', ['rfq', 'quotation', 'product', 'document', 'enquiry', 'message', 'category']).notNull(),
+  subjectType: mysqlEnum('subjectType', ['rfq', 'quotation', 'product', 'document', 'enquiry', 'message', 'category', 'service']).notNull(),
   // Deliberately NOT a foreign key. An audit row must survive its subject being
   // deleted - that deletion is often the very thing worth auditing - and a FK
   // would either block it or cascade the evidence away.

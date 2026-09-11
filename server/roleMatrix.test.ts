@@ -128,9 +128,12 @@ describe('every implemented cell names something real', () => {
 describe('the N/A claims that can be falsified are checked', () => {
   it('"no update exists" is true - the whole router has exactly two', () => {
     // If someone adds marketplace.update or rfq.update, the matrix's edit
-    // cells become lies and this fails first.
+    // cells become lies and this fails first. `services.update` joined the
+    // list when the service catalogue landed, and the matrix's `service.edit`
+    // cell was corrected to cite it in the same change - which is exactly the
+    // sequence this test exists to force.
     const updates = [...TIERS.keys()].filter(name => /\.update$/.test(name)).sort();
-    expect(updates).toEqual(['portfolio.update', 'profile.update', 'projects.update']);
+    expect(updates).toEqual(['portfolio.update', 'profile.update', 'projects.update', 'services.update']);
   });
 
   it('"no delete exists" is true - nothing user-facing deletes but AI attachments', () => {

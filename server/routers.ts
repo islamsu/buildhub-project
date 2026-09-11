@@ -35,6 +35,14 @@ import { ENV, isTestLoginEnabled } from './_core/env';
 import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
 import { NotificationPreferenceError, notificationPreferencesFor, setNotificationPreference } from './notificationPreferences';
+import {
+  ServiceCatalogueError, assertCategoryAcceptsServices, validatePricing, validateCommitments,
+  requireOwnedService, transitionService, visibleServicesFor,
+} from './serviceCatalogue';
+import {
+  SERVICE_PRICING_BASES, SERVICE_STATUSES, SERVICE_TITLE_MAX, SERVICE_DESCRIPTION_MAX,
+  DEFAULT_PRICING_BASIS,
+} from '@shared/serviceCatalogue';
 import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
 import { recordAccountEvent } from './_core/accountAudit';
 import { listAdminUsers, type AdminDirectoryPage } from './adminUserDirectory';
@@ -93,7 +101,7 @@ import {
   projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals, referralCampaigns, referralRewards,
   reviewResponses, reviewReports,
   supportTickets, supportTicketMessages, supportTicketAttachments,
-  disputeStatusHistory, disputeMessages, disputeEvidence,
+  disputeStatusHistory, disputeMessages, disputeEvidence, productCategories, serviceOfferings,
 } from '../drizzle/schema';
 import { and, asc, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -4275,6 +4283,198 @@ function asNotificationPreferenceTrpcError(error: unknown): TRPCError {
     });
   }
   return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Notification preference update failed' });
+}
+
+
+// ── Services Router ────────────────────────────────────────────────────────
+/**
+ * A provider's catalogue of WORK, the counterpart of `marketplace` for goods.
+ *
+ * THE TIER IS `complianceProcedure`, NOT `approvedProviderProcedure`, and that
+ * is deliberate: a provider still being vetted may WRITE their catalogue, and
+ * `transitionService` refuses to PUBLISH it until the account is approved.
+ * Making them wait for approval before they could even draft would mean a
+ * newly approved provider arrives at an empty profile on their first day.
+ */
+const servicesRouter = router({
+  /**
+   * The categories a service may be filed under: the canonical taxonomy,
+   * scoped to SERVICE or BOTH, active only. Public, because the customer-facing
+   * browse needs the same list the provider picked from.
+   */
+  categories: publicProcedure.query(async () => {
+    const db = await requireDb();
+    return db.select({
+      id: productCategories.id,
+      slug: productCategories.slug,
+      nameEn: productCategories.nameEn,
+      nameAr: productCategories.nameAr,
+    })
+      .from(productCategories)
+      .where(and(
+        inArray(productCategories.scope, ['SERVICE', 'BOTH']),
+        eq(productCategories.status, 'active'),
+      ))
+      .orderBy(productCategories.sortOrder, productCategories.nameEn);
+  }),
+
+  /** THE PROVIDER'S OWN catalogue - every status, including drafts. */
+  mine: complianceProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return db.select({
+      id: serviceOfferings.id,
+      title: serviceOfferings.title,
+      description: serviceOfferings.description,
+      categoryId: serviceOfferings.categoryId,
+      categorySlug: productCategories.slug,
+      categoryNameEn: productCategories.nameEn,
+      categoryNameAr: productCategories.nameAr,
+      pricingBasis: serviceOfferings.pricingBasis,
+      priceMin: serviceOfferings.priceMin,
+      priceMax: serviceOfferings.priceMax,
+      leadTimeDays: serviceOfferings.leadTimeDays,
+      warrantyMonths: serviceOfferings.warrantyMonths,
+      status: serviceOfferings.status,
+      updatedAt: serviceOfferings.updatedAt,
+    })
+      .from(serviceOfferings)
+      .innerJoin(productCategories, eq(serviceOfferings.categoryId, productCategories.id))
+      .where(eq(serviceOfferings.providerId, ctx.user.id))
+      .orderBy(desc(serviceOfferings.updatedAt));
+  }),
+
+  /**
+   * ONE PROVIDER'S PUBLIC CATALOGUE. Live offerings from an approved account
+   * only - both clauses applied inside `visibleServicesFor`, so this reader
+   * cannot accidentally apply one of them.
+   */
+  forProvider: publicProcedure
+    .input(z.object({ providerId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return visibleServicesFor(db, input.providerId);
+    }),
+
+  create: complianceProcedure
+    .input(z.object({
+      title: z.string().min(1).max(SERVICE_TITLE_MAX),
+      description: z.string().max(SERVICE_DESCRIPTION_MAX).optional(),
+      categoryId: z.number().int().positive(),
+      pricingBasis: z.enum(SERVICE_PRICING_BASES).default(DEFAULT_PRICING_BASIS),
+      priceMin: z.number().nonnegative().optional(),
+      priceMax: z.number().nonnegative().optional(),
+      leadTimeDays: z.number().int().nonnegative().optional(),
+      warrantyMonths: z.number().int().nonnegative().optional(),
+      /**
+       * DRAFT BY DEFAULT. Publishing is a separate, deliberate act - the same
+       * choice the product form makes, for the same reason: a half-written
+       * listing should not go live because somebody pressed Save.
+       */
+      status: z.enum(['draft', 'active']).default('draft'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        await assertCategoryAcceptsServices(db, input.categoryId);
+        const pricing = validatePricing(input);
+        validateCommitments(input);
+        const result = await db.insert(serviceOfferings).values({
+          providerId: ctx.user.id,
+          categoryId: input.categoryId,
+          title: input.title.trim(),
+          description: input.description?.trim() || null,
+          pricingBasis: input.pricingBasis,
+          priceMin: pricing.priceMin === null ? null : String(pricing.priceMin),
+          priceMax: pricing.priceMax === null ? null : String(pricing.priceMax),
+          leadTimeDays: input.leadTimeDays ?? null,
+          warrantyMonths: input.warrantyMonths ?? null,
+          status: 'draft',
+        });
+        const serviceId = Number((result as any)[0].insertId);
+        await recordCommercialEvent(db, {
+          actorId: ctx.user.id, ownerId: ctx.user.id,
+          action: 'service_created', subjectType: 'service', subjectId: serviceId,
+          detail: input.title.trim().slice(0, 120),
+        });
+        // Publishing goes through the ONE transition function even here, so the
+        // approval check cannot be skipped by creating a service already active.
+        if (input.status === 'active') {
+          await transitionService(db, { serviceId, providerId: ctx.user.id, to: 'active' });
+        }
+        return { id: serviceId, status: input.status };
+      } catch (error) {
+        throw asServiceTrpcError(error);
+      }
+    }),
+
+  update: complianceProcedure
+    .input(z.object({
+      serviceId: z.number().int().positive(),
+      title: z.string().min(1).max(SERVICE_TITLE_MAX),
+      description: z.string().max(SERVICE_DESCRIPTION_MAX).optional(),
+      categoryId: z.number().int().positive(),
+      pricingBasis: z.enum(SERVICE_PRICING_BASES),
+      priceMin: z.number().nonnegative().optional(),
+      priceMax: z.number().nonnegative().optional(),
+      leadTimeDays: z.number().int().nonnegative().optional(),
+      warrantyMonths: z.number().int().nonnegative().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        const existing = await requireOwnedService(db, input.serviceId, ctx.user.id);
+        // A CHANGED CATEGORY IS RE-CHECKED; an unchanged one is not, so a
+        // category an administrator has since hidden does not make an existing
+        // listing uneditable.
+        if (input.categoryId !== existing.categoryId) {
+          await assertCategoryAcceptsServices(db, input.categoryId);
+        }
+        const pricing = validatePricing(input);
+        validateCommitments(input);
+        await db.update(serviceOfferings).set({
+          categoryId: input.categoryId,
+          title: input.title.trim(),
+          description: input.description?.trim() || null,
+          pricingBasis: input.pricingBasis,
+          priceMin: pricing.priceMin === null ? null : String(pricing.priceMin),
+          priceMax: pricing.priceMax === null ? null : String(pricing.priceMax),
+          leadTimeDays: input.leadTimeDays ?? null,
+          warrantyMonths: input.warrantyMonths ?? null,
+        }).where(eq(serviceOfferings.id, input.serviceId));
+        await recordCommercialEvent(db, {
+          actorId: ctx.user.id, ownerId: ctx.user.id,
+          action: 'service_updated', subjectType: 'service', subjectId: input.serviceId,
+          detail: input.title.trim().slice(0, 120),
+        });
+        return { id: input.serviceId };
+      } catch (error) {
+        throw asServiceTrpcError(error);
+      }
+    }),
+
+  setStatus: complianceProcedure
+    .input(z.object({
+      serviceId: z.number().int().positive(),
+      status: z.enum(SERVICE_STATUSES),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await transitionService(db, {
+          serviceId: input.serviceId, providerId: ctx.user.id, to: input.status,
+        });
+      } catch (error) {
+        throw asServiceTrpcError(error);
+      }
+    }),
+});
+
+/** Map the catalogue vocabulary onto tRPC without losing the reason. */
+function asServiceTrpcError(error: unknown): TRPCError {
+  if (error instanceof ServiceCatalogueError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Service catalogue operation failed' });
 }
 
 // ── Reviews Router ─────────────────────────────────────────────────────────
@@ -10045,6 +10245,7 @@ export const appRouter = router({
   rfq: rfqRouter,
   messages: messagesRouter,
   notifications: notificationsRouter,
+  services: servicesRouter,
   reviews: reviewsRouter,
   profile: profileRouter,
   portfolio: portfolioRouter,

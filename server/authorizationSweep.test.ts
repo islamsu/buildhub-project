@@ -216,6 +216,17 @@ describe('§1 every procedure is pinned to a tier', () => {
       // A vendor's public reputation, shown on their profile.
       'reviews.forUser',
       'reviews.statsForUser',
+      // The service categories a provider may list under - the same list the
+      // customer-facing browse needs, containing nothing but names an
+      // administrator published on purpose.
+      'services.categories',
+      // One provider's PUBLISHED catalogue, addressed by providerId. Public for
+      // the reason reviews.forUser is: a catalogue only its owner could read
+      // would not be a shop window. It applies BOTH visibility clauses - live
+      // offering AND approved account - so it returns strictly less than the
+      // provider's own `services.mine`, and nothing at all from an account
+      // BuildHub has not finished vetting.
+      'services.forProvider',
     ]);
   });
 

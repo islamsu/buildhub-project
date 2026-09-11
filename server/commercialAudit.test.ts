@@ -266,12 +266,16 @@ describe('the events that matter are recorded', () => {
     }).filter(site => site.subjectType);
 
     // Instrumented events. If this number moves, the list below must too.
-    expect(sites).toHaveLength(10);
+    // 10 -> 12 when the service catalogue landed: created and updated in the
+    // router, plus the three transitions, which share one call site.
+    expect(sites).toHaveLength(12);
 
     // The id expression each subjectType is allowed to carry. `input.rfqId` is
     // absent from 'quotation' and 'enquiry' deliberately - that was the defect.
     const ALLOWED: Record<string, string[]> = {
       product:   ['id', 'input.id', 'input.productId', 'row.productId', 'params.productId'],
+      // A service event names the service, never its category or its provider.
+      service:   ['serviceId', 'input.serviceId', 'params.serviceId'],
       rfq:       ['rfqId'],
       quotation: ['quotationId', 'input.quotationId'],
       enquiry:   ['result.enquiryId ?? 0'],
