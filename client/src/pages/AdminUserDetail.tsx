@@ -84,10 +84,14 @@ export default function AdminUserDetail() {
     { userId },
     { enabled: validId && can('users.read') },
   );
-  const { data: auditEvents = [] } = trpc.admin.accountAudit.useQuery(
-    { userId },
+  // Paged: this used to receive the most recent 100 events and no total, so a
+  // long-lived account's early history was silently absent.
+  const { data: auditPageData } = trpc.admin.accountAudit.useQuery(
+    { userId, pageSize: 50 },
     { enabled: validId && can('users.read') },
   );
+  const auditEvents = auditPageData?.rows ?? [];
+  const auditEventsTotal = auditPageData?.total ?? 0;
   const { data: userNotes = [] } = trpc.admin.userNotes.useQuery(
     { userId },
     { enabled: validId && can('users.read') },

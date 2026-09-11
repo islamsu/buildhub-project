@@ -49,6 +49,7 @@ import {
 import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
 import { recordAccountEvent } from './_core/accountAudit';
 import { listAdminUsers, type AdminDirectoryPage } from './adminUserDirectory';
+import { listAccountAudit, auditFilterOptions } from './accountAuditView';
 import { runDataQualityChecks } from './admin/dataQuality';
 import { readOperationalHealth } from './admin/operationalHealth';
 import { runPlatformSearch } from './admin/platformSearch';
@@ -6263,45 +6264,43 @@ const adminRouter = router({
     await recordAccountEvent(db, { userId: target.id, actorId: target.id, action: 'password_set_via_invitation', source: 'admin_created', note: 'Password successfully configured by user' });
     return { success: true, username: target.username };
   }),
-  fullAuditReport: adminWith('audit.read').query(async ({ ctx }) => {
+  /**
+   * THE PLATFORM-WIDE ACCOUNT TRAIL, PAGED AND FILTERABLE.
+   *
+   * This took the most recent 1,000 events and returned a bare array, and it
+   * built its identity columns from a map over EVERY user row in the database -
+   * every column of every account, passwordHash and invitationToken included,
+   * pulled into process memory to decorate an export.
+   *
+   * An audit report is the one screen whose entire value is that it is
+   * COMPLETE. One that quietly stops at a thousand and does not say so is worse
+   * than none, because it will be relied on. It now reports the real total, and
+   * `server/adminList.ts` guarantees the count and the rows are filtered
+   * identically by construction.
+   */
+  fullAuditReport: adminWith('audit.read')
+    .input(z.object({
+      action: z.string().max(80).optional(),
+      source: z.string().max(40).optional(),
+      actorId: z.number().int().positive().optional(),
+      userId: z.number().int().positive().optional(),
+      from: z.date().optional(),
+      to: z.date().optional(),
+      search: z.string().max(120).optional(),
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(ADMIN_PAGE_SIZE_DEFAULT),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return listAccountAudit(db, input ?? {});
+    }),
+
+  /** The distinct actions and sources present, for the filter controls. */
+  auditFilterOptions: adminWith('audit.read').query(async () => {
     const db = await requireDb();
-    const events = await db.select().from(userAccountAuditEvents).orderBy(desc(userAccountAuditEvents.createdAt)).limit(1000);
-    // COLUMN LIST, not `select().from(users)`.
-    //
-    // Nothing leaked: the projection below is already an explicit allowlist, so
-    // no private column ever reached the response. But this pulled EVERY column
-    // of EVERY user - passwordHash, invitationToken, openId - into process
-    // memory to build an audit export, and it is the precise pattern
-    // ADMIN_DIRECTORY_COLUMNS exists to forbid, one endpoint over. The next
-    // person to add `...targetUser` to the mapped object would have shipped the
-    // leak without touching this line.
-    const allUsersList = await db.select({
-      id: users.id, name: users.name, email: users.email, isDummy: users.isDummy,
-      accountSource: users.accountSource, userRole: users.userRole, role: users.role,
-      accountStatus: users.accountStatus, invitationStatus: users.invitationStatus,
-    }).from(users);
-    const userMap = new Map(allUsersList.map(u => [u.id, u]));
-    const adminMap = new Map(allUsersList.map(u => [u.id, u.name || u.email || `#${u.id}`]));
-    return events.map(event => {
-      const targetUser = event.userId != null ? userMap.get(event.userId) : undefined;
-      const actorName = event.actorId ? (adminMap.get(event.actorId) ?? `Admin #${event.actorId}`) : 'System';
-      return {
-        id: event.id,
-        userId: event.userId,
-        userName: targetUser?.name || targetUser?.email || (event.userId != null ? `#${event.userId}` : 'Deleted user'),
-        userEmail: targetUser?.email || '—',
-        accountType: targetUser?.isDummy ? 'Dummy / Test' : targetUser?.accountSource === 'admin_created' ? 'Admin Created' : 'Self Registered',
-        role: targetUser?.userRole || targetUser?.role || 'user',
-        actorName,
-        action: event.action,
-        source: event.source || 'system',
-        note: event.note || '—',
-        createdAt: event.createdAt,
-        accountStatus: targetUser?.accountStatus || 'active',
-        invitationStatus: targetUser?.invitationStatus || 'none',
-      };
-    });
+    return auditFilterOptions(db);
   }),
+
   createDummyUser: adminWith('qa.manage').input(z.object({
     name: z.string().trim().min(1).max(255).optional(),
     username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/).optional(),
@@ -8542,10 +8541,29 @@ const adminRouter = router({
     ]);
     return { ...diagnostics, usage };
   }),
-  accountAudit: adminWith('users.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
-    const db = await requireDb();
-    return db.select().from(userAccountAuditEvents).where(eq(userAccountAuditEvents.userId, input.userId)).orderBy(desc(userAccountAuditEvents.createdAt)).limit(100);
-  }),
+  /**
+   * ONE ACCOUNT'S HISTORY, PAGED.
+   *
+   * This took the most recent 100 and returned a bare array. A long-lived
+   * vendor's EARLY history - the approval, the first freeze, the name
+   * correction - is what falls off the end of that, and it is exactly what
+   * somebody opens this screen to find.
+   *
+   * Same reader as the platform-wide report, narrowed by `userId`, so the two
+   * screens cannot disagree about what an event says.
+   */
+  accountAudit: adminWith('users.read')
+    .input(z.object({
+      userId: z.number().int().positive(),
+      search: z.string().max(120).optional(),
+      action: z.string().max(80).optional(),
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(ADMIN_PAGE_SIZE_DEFAULT),
+    }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return listAccountAudit(db, input);
+    }),
   analyticsSummary: adminWith('audit.read').input(z.object({ includeDummy: z.boolean().default(false) }).optional()).query(async ({ input }) => {
     const db = await requireDb();
     const dummyRows = await db.select({ id: users.id }).from(users).where(eq(users.isDummy, true));

@@ -1,6 +1,9 @@
+import { useEffect, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -28,7 +31,35 @@ export default function AdminAuditTrail() {
   const failedCopy = loadFailedCopy(ar);
 
   const commercial = trpc.audit.all.useQuery({ limit: 100 }, { retry: false });
-  const accounts = trpc.admin.fullAuditReport.useQuery(undefined, { retry: false });
+  /**
+   * PAGED, SEARCHED AND FILTERED ON THE SERVER.
+   *
+   * This screen used to receive the most recent 1,000 events as a bare array.
+   * A search over a truncated set does not fail - it answers "no such event"
+   * when the event is on row 1,001, with exactly the same confidence it answers
+   * correctly, and the number that would have told an administrator otherwise
+   * was never sent.
+   */
+  const [auditPage, setAuditPage] = useState(0);
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditAction, setAuditAction] = useState('');
+  // Debounced so a search is one request per pause, not one per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => { setDebouncedSearch(auditSearch.trim()); setAuditPage(0); }, 300);
+    return () => clearTimeout(timer);
+  }, [auditSearch]);
+
+  const accounts = trpc.admin.fullAuditReport.useQuery({
+    page: auditPage,
+    search: debouncedSearch || undefined,
+    action: auditAction || undefined,
+  }, { retry: false });
+  const filterOptions = trpc.admin.auditFilterOptions.useQuery(undefined, { retry: false });
+  const auditRows = accounts.data?.rows ?? [];
+  const auditTotal = accounts.data?.total ?? 0;
+  const auditPageSize = accounts.data?.pageSize ?? 25;
+  const auditPages = Math.max(1, Math.ceil(auditTotal / auditPageSize));
 
   const when = (value: unknown) => (value ? new Date(String(value)).toLocaleString() : '—');
 
@@ -85,16 +116,65 @@ export default function AdminAuditTrail() {
                 </table>
               </div>
             )}
+            {auditTotal > auditPageSize && (
+              <div className="mt-3 flex items-center justify-between gap-2" data-testid="audit-pager">
+                <Button
+                  variant="outline" size="sm"
+                  disabled={auditPage === 0}
+                  onClick={() => setAuditPage(current => Math.max(0, current - 1))}
+                  data-testid="audit-prev"
+                >{ar ? 'السابق' : 'Previous'}</Button>
+                <span className="text-xs text-muted-foreground" data-testid="audit-page-label">
+                  {ar ? `صفحة ${auditPage + 1} من ${auditPages}` : `Page ${auditPage + 1} of ${auditPages}`}
+                </span>
+                <Button
+                  variant="outline" size="sm"
+                  disabled={auditPage + 1 >= auditPages}
+                  onClick={() => setAuditPage(current => current + 1)}
+                  data-testid="audit-next"
+                >{ar ? 'التالي' : 'Next'}</Button>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="accounts" className="pt-4">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <Input
+                value={auditSearch}
+                onChange={event => setAuditSearch(event.target.value)}
+                placeholder={ar ? 'ابحث في الأحداث والأسماء والملاحظات…' : 'Search events, people and notes…'}
+                className="h-9 max-w-xs"
+                data-testid="audit-search"
+              />
+              <select
+                className="h-9 rounded-md border bg-background px-3 text-sm"
+                value={auditAction}
+                onChange={event => { setAuditAction(event.target.value); setAuditPage(0); }}
+                data-testid="audit-action-filter"
+              >
+                <option value="">{ar ? 'كل الإجراءات' : 'All actions'}</option>
+                {(filterOptions.data?.actions ?? []).map(action => (
+                  <option key={action} value={action}>{action}</option>
+                ))}
+              </select>
+              {/* THE REAL TOTAL, which is the number that tells an administrator
+                  whether their search found everything. */}
+              <span className="text-xs text-muted-foreground" data-testid="audit-total">
+                {ar ? `${auditTotal} حدثًا` : `${auditTotal} event${auditTotal === 1 ? '' : 's'}`}
+              </span>
+            </div>
             {accounts.isError ? (
               <LoadFailed {...failedCopy} onRetry={() => void accounts.refetch()} />
-            ) : (accounts.data?.length ?? 0) === 0 ? (
+            ) : auditRows.length === 0 ? (
               <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground" data-testid="audit-accounts-empty">
                 {accounts.isLoading
                   ? (ar ? 'جارٍ التحميل…' : 'Loading…')
-                  : (ar ? 'لم يُسجَّل أي حدث على أي حساب بعد.' : 'No account event has been recorded yet.')}
+                  : (debouncedSearch || auditAction)
+                    /* "Nothing matches your search" and "nothing has happened"
+                       are different facts, and an administrator who cannot tell
+                       them apart will read a bad filter as a quiet platform. */
+                    ? (ar ? 'لا نتائج مطابقة لهذا البحث.' : 'No event matches this search.')
+                    : (ar ? 'لم يُسجَّل أي حدث على أي حساب بعد.' : 'No account event has been recorded yet.')}
               </p>
             ) : (
               <div className="overflow-x-auto rounded-lg border">
@@ -109,7 +189,7 @@ export default function AdminAuditTrail() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(accounts.data ?? []).map((row: any) => (
+                    {auditRows.map((row) => (
                       <tr key={row.id} className="border-b last:border-0">
                         {/* A name, then the id - never the id alone. */}
                         <td className="p-2 text-xs">{row.userName ?? row.userEmail ?? (row.userId ? `#${row.userId}` : '—')}</td>

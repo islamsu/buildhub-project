@@ -237,7 +237,15 @@ export default function AdminDashboard() {
   const { data: settings } = trpc.admin.settings.useQuery(undefined, { enabled: can('settings.manage') });
   const { data: complianceQueue = [], isLoading: complianceLoading, isError: complianceFailed, refetch: refetchCompliance } =
     trpc.admin.complianceQueue.useQuery(complianceQueueInput, { enabled: can('marketplace.manage') });
-  const { data: auditEvents = [] } = trpc.admin.accountAudit.useQuery({ userId: auditTarget?.id }, { enabled: can('users.read') && Boolean(auditTarget?.id) });
+  // Paged now: this dialog used to receive the most recent 100 events for the
+  // account and nothing else - and a long-lived vendor's EARLY history is
+  // exactly what fell off the end of that.
+  const { data: auditPageData } = trpc.admin.accountAudit.useQuery(
+    { userId: auditTarget?.id ?? 0, pageSize: 50 },
+    { enabled: can('users.read') && Boolean(auditTarget?.id) },
+  );
+  const auditEvents = auditPageData?.rows ?? [];
+  const auditEventsTotal = auditPageData?.total ?? 0;
   const { data: dynamicAnalytics = [] } = trpc.admin.analyticsSummary.useQuery(complianceQueueInput, { enabled: can('audit.read') });
   const analyticsData = dynamicAnalytics;
 
@@ -433,7 +441,25 @@ export default function AdminDashboard() {
     const toastId = `audit-export-${Date.now()}`;
     toast.loading(lang === 'ar' ? 'جاري إعداد تقرير تدقيق الحسابات بصيغة PDF…' : 'Generating audit log PDF report…', { id: toastId, duration: Infinity, closeButton: true });
     try {
-      const auditRows = await utilsTrpc.admin.fullAuditReport.fetch();
+      /**
+       * EVERY PAGE, NOT THE FIRST ONE.
+       *
+       * The report is now paged, and an export that fetched one page would
+       * have replaced a silent truncation at 1,000 with a silent one at 25.
+       * It walks until it has the total the server reported, and states in the
+       * document how many events it covers - so a reader can tell a complete
+       * report from an interrupted one.
+       */
+      const auditRows: any[] = [];
+      let auditCursor = 0;
+      let auditTotal = 0;
+      for (let guard = 0; guard < 400; guard++) {
+        const page = await utilsTrpc.admin.fullAuditReport.fetch({ page: auditCursor, pageSize: 100 });
+        auditTotal = page.total;
+        auditRows.push(...page.rows);
+        if (auditRows.length >= page.total || page.rows.length === 0) break;
+        auditCursor += 1;
+      }
       const printWindow = window.open('', '_blank');
       if (!printWindow) {
         toast.error(lang === 'ar' ? 'يرجى السماح بالنوافذ المنبثقة لتنزيل ملف PDF' : 'Please allow popups to download the PDF report', { id: toastId, duration: 5000, closeButton: true });

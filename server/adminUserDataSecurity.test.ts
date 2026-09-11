@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 
 vi.mock('./db', () => ({
   getDb: vi.fn(),
@@ -313,7 +314,26 @@ describe('the full users row is read only where it is genuinely needed', () => {
     const body = ROUTERS_SOURCE.slice(start, end)
       .split('\n').filter(line => !line.trim().startsWith('//')).join('\n');
     expect(body).not.toContain('db.select().from(users)');
-    expect(body).toContain('accountStatus: users.accountStatus');
+    /**
+     * THE RULE MOVED ADDRESS, AND GOT STRONGER.
+     *
+     * This used to require the column list to appear in the PROCEDURE, which
+     * proved it was not doing `select().from(users)`. The procedure no longer
+     * reads the users table at all: it delegates to `listAccountAudit`, which
+     * LEFT JOINs the six columns it needs instead of building a map over every
+     * account in the database - which is what the old code did, pulling
+     * passwordHash and invitationToken into memory to decorate an export.
+     *
+     * So the assertion is now: this procedure does not touch `users` directly,
+     * and the module it delegates to names its columns explicitly.
+     */
+    expect(body).not.toMatch(/from\(users\)/);
+    const view = readSourceForAssertions(
+      readFileSync(new URL('./accountAuditView.ts', import.meta.url), 'utf8'),
+    );
+    expect(view).not.toContain('db.select().from(users)');
+    expect(view).toContain('subjectAccountStatus: subject.accountStatus');
+    expect(view).not.toContain('passwordHash');
     expect(body).not.toContain('passwordHash');
   });
 

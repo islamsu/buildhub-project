@@ -59,9 +59,6 @@ const BOUNDED_BY_NATURE: Record<string, string> = {
   'admin.enquiryNotes':
     'The notes on ONE enquiry, capped at 100. Written by administrators by hand, one at a '
     + 'time, on a single enquiry that is worked and closed.',
-  'admin.accountAudit':
-    'The audit trail of ONE account, capped at 100, inside that account\'s own dialog. It is '
-    + 'read while looking at that person, not browsed.',
   'admin.userNotes':
     'The notes on ONE user, capped at 100. Written by administrators by hand, one at a time.',
   'admin.supportTicketNotes':
@@ -71,10 +68,12 @@ const BOUNDED_BY_NATURE: Record<string, string> = {
   'admin.testLoginLinks':
     'QA login links. They exist only in non-production environments, are issued by hand one '
     + 'at a time, and are revoked rather than accumulated.',
-  'admin.fullAuditReport':
-    'The 1000 most recent account events, presented as a recent-activity feed on the '
-    + 'operations screen. It is explicitly the latest N; the per-account trail is the view '
-    + 'that answers a question about one person.',
+  // `admin.accountAudit` and `admin.fullAuditReport` were BOTH here, exempted
+  // as feeds. They are now genuinely paged through `adminPage`, so the
+  // exemptions are stale and this test is what noticed: an allowlist entry that
+  // stops being needed is as much a lie as a missing one. An audit report is
+  // the one screen whose entire value is completeness, and "the latest N" was
+  // never a good answer for it.
   'notifications.list':
     'The 50 most recent notifications, which is what a notification bell shows. It is a '
     + 'feed, not an index. This becomes a truncation the day BuildHub gains a notifications '
