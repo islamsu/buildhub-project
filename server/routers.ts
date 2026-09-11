@@ -3814,12 +3814,17 @@ const rfqRouter = router({
           message: 'Open this qualified enquiry, or accept its invitation, before submitting a quotation.',
         });
       }
-      // KNOWN GAP, deliberately not decided here: nothing stops the same
-      // provider submitting several quotations on one RFQ, and each one
-      // notifies the requester again. Whether a second submission should be
-      // refused, or should REPLACE the first as a revision, is a product
-      // decision about how bidding works on BuildHub - not something to infer
-      // from the schema. Recorded in the Phase 1B handoff for the owner.
+      // THE REVISION MODEL, SETTLED. This was a KNOWN GAP for a long time -
+      // nothing stopped a supplier submitting several quotations on one RFQ,
+      // and each one notified the requester again. The comment outlived the
+      // decision by several changes, which is its own defect: a marker saying
+      // "not decided" tells the next reader to go and decide something that
+      // was decided and built.
+      //
+      // ONE CURRENT QUOTATION PER SUPPLIER PER RFQ. A later bid SUPERSEDES the
+      // previous version rather than accumulating beside it; the older row
+      // stays as immutable history. See the transaction below, and
+      // `recordFieldChanges` at the end for what a revision changed.
       // EVERY KEY MUST BE THIS SUPPLIER'S OWN.
       //
       // The array is client-supplied. Without this check a supplier could name
@@ -3863,10 +3868,11 @@ const rfqRouter = router({
        * Phase 1B handoff, and it is untouched here. A bid with a DIFFERENT price
        * or timeline still goes through exactly as before.
        *
-       * What is caught is the same provider sending the same RFQ the same price
-       * and the same timeline within seconds. That is not a revision under any
-       * answer to the open question - nobody revises a bid to the number it
-       * already was - so refusing it costs the undecided policy nothing.
+       * What is caught is the same provider sending the same RFQ the SAME
+       * OFFER within seconds - every commercial term identical. Nobody revises
+       * a bid to the terms it already had, so collapsing that costs nothing.
+       * If any term moved it is a revision, however fast it arrived: correcting
+       * a mistake is the likeliest reason to resubmit within seconds.
        *
        * Idempotent, not an error: the second click returns the bid the first one
        * made, so the supplier sees the submission they believe they made.
@@ -3878,25 +3884,70 @@ const rfqRouter = router({
         // measured at two rows, three runs out of three.
         await tx.select({ id: users.id }).from(users).where(eq(users.id, ctx.user.id)).for('update');
 
-        const [recentIdentical] = await tx
-          .select({ id: quotations.id })
+        /**
+         * THE WHOLE OFFER, NOT JUST THE PRICE.
+         *
+         * This matched on `price` alone while the comment above described "the
+         * same price and the same timeline" - the code did not do what its own
+         * comment said. The consequence was commercial, not cosmetic: a
+         * supplier who submitted 145,000 over 45 days, noticed the timeline was
+         * wrong and immediately resubmitted 145,000 over 60 days was told
+         * `success: true` and handed back the FIRST quotation. The corrected
+         * timeline was silently discarded and the customer never saw it.
+         *
+         * A duplicate is the same OFFER: every commercial term identical. If
+         * any of them moved, it is a revision, however fast it arrived -
+         * correcting a mistake is the most likely reason to resubmit quickly,
+         * which is exactly when this rule used to swallow the correction.
+         */
+        const [recent] = await tx
+          .select()
           .from(quotations)
           .where(and(
             eq(quotations.rfqId, input.rfqId),
             eq(quotations.providerId, ctx.user.id),
-            eq(quotations.price, String(input.price)),
             gte(quotations.createdAt, new Date(Date.now() - DUPLICATE_SUBMIT_WINDOW_MS)),
           ))
           .orderBy(desc(quotations.id))
           .limit(1);
-        if (recentIdentical) return { id: recentIdentical.id, deduplicated: true };
+        /** MySQL timestamps carry no milliseconds; a Date from the client does. */
+        const seconds = (value: Date | null | undefined) =>
+          value == null ? null : Math.floor(value.getTime() / 1000);
+        // Compared in JS rather than as a SQL predicate so that NULL means
+        // "absent on both sides" rather than making the whole comparison null,
+        // which is how a SQL `=` treats it and why five of these terms could
+        // not have been added to the WHERE clause above.
+        const sameOffer = recent !== undefined
+          // The column is a decimal string and the input a number.
+          && Number(recent.price) === input.price
+          // THE EFFECTIVE CURRENCY, not the submitted one. The column defaults
+          // to EGP, so a bid sent without a currency reads back as 'EGP' and
+          // never equalled its own input - which made every such resubmission
+          // look like a revision.
+          && (recent.currency ?? null) === (input.currency ?? 'EGP')
+          && (recent.timeline ?? null) === (input.timeline ?? null)
+          && (recent.warranty ?? null) === (input.warranty ?? null)
+          && (recent.commercialTerms ?? null) === (input.commercialTerms ?? null)
+          && (recent.paymentTerms ?? null) === (input.paymentTerms ?? null)
+          && (recent.notes ?? null) === (input.notes ?? null)
+          // TO THE SECOND. MySQL's timestamp has no milliseconds, so the value
+          // read back is never byte-identical to the ISO string that produced
+          // it, and comparing raw made every offer differ from itself.
+          && seconds(recent.validUntil) === seconds(input.validUntil)
+          && ((JSON.parse(String(recent.attachments ?? '[]')) as unknown[]).length
+              === (attachments?.length ?? 0));
+        if (sameOffer) return { id: recent.id, deduplicated: true, previous: null, revisionNumber: recent.revisionNumber };
 
         // ONE CURRENT QUOTATION PER SUPPLIER PER RFQ, WITH REVISION HISTORY.
         // A later bid supersedes the previous version rather than accumulating
         // unrelated quotations from the same supplier; the older version stays
         // as immutable history.
+        // THE WHOLE ROW, not just its id and version. The field-change trail
+        // below contrasts the new bid against this one, and it cannot do that
+        // from an id - which is why every revision used to be recorded as a
+        // change FROM NOTHING.
         const [current] = await tx
-          .select({ id: quotations.id, revisionNumber: quotations.revisionNumber })
+          .select()
           .from(quotations)
           .where(and(
             eq(quotations.rfqId, input.rfqId),
@@ -3920,7 +3971,14 @@ const rfqRouter = router({
         });
         // The QUOTATION's own id, because that is what the audit trail records.
         // See the note beside recordCommercialEvent below.
-        return { id: Number(inserted?.[0]?.insertId ?? 0), deduplicated: false };
+        return {
+          id: Number(inserted?.[0]?.insertId ?? 0),
+          deduplicated: false,
+          // The version this one supersedes, or null for a first bid. Carried
+          // out of the transaction so the change trail can name what moved.
+          previous: current ?? null,
+          revisionNumber: current ? current.revisionNumber + 1 : 1,
+        };
       });
 
       // A de-duplicated submission is not a new bid: the customer must not be
@@ -3974,20 +4032,48 @@ const rfqRouter = router({
         await qualifyReferralEvent(db, ctx.user.id, 'FIRST_VALID_QUOTATION_RESPONSE', `firstquote:${ctx.user.id}`, new Date());
       }
 
+      /**
+       * WHAT THIS REVISION ACTUALLY CHANGED.
+       *
+       * Every field used to be recorded with `oldValue: null`, including on a
+       * revision - so the trail said "price was nothing, now 145,000" when the
+       * truth was "was 125,000, now 145,000". That is the one question a
+       * revised bid raises, and it was the one question the change trail could
+       * not answer.
+       *
+       * A first bid still contrasts against null, because there genuinely was
+       * nothing before it. `recordFieldChanges` writes only the fields that
+       * actually moved, so an unchanged warranty on revision 3 produces no row
+       * rather than a row saying it stayed the same.
+       */
+      const previous = submission.previous as Record<string, unknown> | null;
+      const was = (field: string) => (previous ? previous[field] ?? null : null);
       await recordFieldChanges(db, {
         subjectType: 'quotation', subjectId: quotationId,
         ownerId: ctx.user.id, actorId: ctx.user.id,
-        reason: 'quotation submitted',
+        reason: previous
+          ? `quotation revised to revision ${submission.revisionNumber}`
+          : 'quotation submitted',
       }, [
-        { field: 'price', oldValue: null, newValue: input.price },
-        { field: 'currency', oldValue: null, newValue: input.currency },
-        { field: 'timeline', oldValue: null, newValue: input.timeline },
-        { field: 'warranty', oldValue: null, newValue: input.warranty },
-        { field: 'validUntil', oldValue: null, newValue: input.validUntil },
-        { field: 'commercialTerms', oldValue: null, newValue: input.commercialTerms },
-        { field: 'paymentTerms', oldValue: null, newValue: input.paymentTerms },
-        { field: 'attachments', oldValue: null, newValue: attachments?.length ? `${attachments.length} file(s)` : null },
-        { field: 'status', oldValue: null, newValue: 'pending' },
+        // The stored price is a decimal string; the input is a number. Compared
+        // as numbers so "125000.00" and 125000 are not reported as a change.
+        { field: 'price', oldValue: previous ? Number(previous.price) : null, newValue: input.price },
+        { field: 'currency', oldValue: was('currency'), newValue: input.currency },
+        { field: 'timeline', oldValue: was('timeline'), newValue: input.timeline },
+        { field: 'warranty', oldValue: was('warranty'), newValue: input.warranty },
+        { field: 'validUntil', oldValue: was('validUntil'), newValue: input.validUntil },
+        { field: 'commercialTerms', oldValue: was('commercialTerms'), newValue: input.commercialTerms },
+        { field: 'paymentTerms', oldValue: was('paymentTerms'), newValue: input.paymentTerms },
+        {
+          field: 'attachments',
+          oldValue: previous
+            ? `${(JSON.parse(String(previous.attachments ?? '[]')) as unknown[]).length} file(s)`
+            : null,
+          newValue: attachments?.length ? `${attachments.length} file(s)` : null,
+        },
+        // A revision starts pending again, and saying so is the point: an
+        // earlier version that had been rejected is not still rejected.
+        { field: 'status', oldValue: was('status'), newValue: 'pending' },
       ]);
       return { success: true, quotationId };
     }),
