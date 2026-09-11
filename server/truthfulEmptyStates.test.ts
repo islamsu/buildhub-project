@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { adminRegistrationSurface } from './_testing/adminSurface';
 import { readFileSync, readdirSync } from 'node:fs';
 import { stripComments } from './_testing/sourceText';
 
@@ -137,7 +138,11 @@ describe('the client can tell the difference', () => {
     ['compliance', 'complianceFailed'],
     ['the user directory', 'usersFailed'],
   ])('AdminDashboard renders a FAILURE for %s, not its empty state', (_section, flag) => {
-    const text = readFileSync(new URL('pages/AdminDashboard.tsx', CLIENT), 'utf8');
+    // The WHOLE admin surface, not one filename: the compliance failure state
+    // moved with its query into AdminRegistrations when the management
+    // interface left the dashboard. A filename-bound census reports the guard
+    // missing while it is rendered correctly next door.
+    const text = adminRegistrationSurface();
     // Observed AND rendered. `usersFailed` was already destructured here and
     // used nowhere - the observation existed, the honesty did not, and a test
     // that only looked for the word would have passed on that.
@@ -171,14 +176,22 @@ describe('the client can tell the difference', () => {
   });
 
   it('and the failure says plainly that it is not an empty result', () => {
-    const text = readFileSync(new URL('pages/AdminDashboard.tsx', CLIENT), 'utf8');
+    // The WHOLE admin surface, not one filename: the compliance failure state
+    // moved with its query into AdminRegistrations when the management
+    // interface left the dashboard. A filename-bound census reports the guard
+    // missing while it is rendered correctly next door.
+    const text = adminRegistrationSurface();
     expect(text).toContain('This is not an empty result');
     // Both languages. An Arabic-reading administrator needs the same sentence.
     expect(text).toContain('ليست نتيجة فارغة');
   });
 
   it('the failure offers Retry rather than forcing a reload that loses the filters', () => {
-    const text = readFileSync(new URL('pages/AdminDashboard.tsx', CLIENT), 'utf8');
+    // The WHOLE admin surface, not one filename: the compliance failure state
+    // moved with its query into AdminRegistrations when the management
+    // interface left the dashboard. A filename-bound census reports the guard
+    // missing while it is rendered correctly next door.
+    const text = adminRegistrationSurface();
     expect(text).toContain('onRetry={() => void refetchCompliance()}');
     expect(text).toContain('onRetry={() => void refetchUsers()}');
     // The dispute queue's own retry, where it now lives.

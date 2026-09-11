@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { adminRegistrationSurface } from './_testing/adminSurface';
 import { appRouter } from './routers';
 import type { TrpcContext } from './_core/context';
 
@@ -339,7 +340,7 @@ describe('bulk registration decisions', () => {
 
 it('keeps AdminDashboard hooks unconditional before loading and access returns', async () => {
   const { readFileSync } = await import('node:fs');
-  const dashboard = readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
+  const dashboard = adminRegistrationSurface();
   const utilsHookIndex = dashboard.indexOf('const utilsTrpc = trpc.useUtils();');
   const loadingReturnIndex = dashboard.indexOf('if (loading) return null;');
   const deniedReturnIndex = dashboard.indexOf('if (!isAdmin) {');
@@ -350,7 +351,7 @@ it('keeps AdminDashboard hooks unconditional before loading and access returns',
 
 it('wires admin sidebar items to distinct dashboard sections', async () => {
   const { readFileSync } = await import('node:fs');
-  const dashboard = readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
+  const dashboard = adminRegistrationSurface();
   // The destinations moved out of DashboardLayout.tsx into a plain data module
   // so they could be asserted rather than grepped. This check follows them
   // instead of being deleted, and gets STRONGER in the move: reading the real
@@ -359,8 +360,19 @@ it('wires admin sidebar items to distinct dashboard sections', async () => {
   // entry pointing at a route that does not exist.
   const { ADMIN_NAV } = await import('../client/src/lib/adminNavigation');
   const paths = ADMIN_NAV.map(entry => entry.path);
-  for (const section of ['/admin/users', '/admin/compliance', '/admin/disputes', '/admin/analytics', '/admin/settings']) {
+  for (const section of ['/admin/users', '/admin/registrations', '/admin/disputes', '/admin/analytics', '/admin/settings']) {
     expect(paths).toContain(section);
+  }
+  // `/admin/compliance` was Pending Verifications. It is NOT a nav entry any
+  // more - it and the Professional Registration Summary were two views of one
+  // query, consolidated into /admin/registrations - but it must still RESOLVE,
+  // because administrators have the old path bookmarked. Declared as an alias,
+  // and the route-coverage test holds the declaration against App.tsx.
+  const { ADMIN_ROUTES_NOT_IN_MENU } = await import('../client/src/lib/adminNavigation');
+  for (const retired of ['/admin/compliance', '/admin/name-changes']) {
+    expect(paths, `${retired} must not be a second entry point`).not.toContain(retired);
+    expect(Object.keys(ADMIN_ROUTES_NOT_IN_MENU), `${retired} needs a recorded reason`).toContain(retired);
+    expect(ADMIN_ROUTES_NOT_IN_MENU[retired].length).toBeGreaterThan(60);
   }
   // Distinct, which is what "distinct dashboard sections" claims: two entries
   // sharing a path render as active together and one of them is unreachable.
@@ -370,7 +382,7 @@ it('wires admin sidebar items to distinct dashboard sections', async () => {
 
 it('provides a required bilingual freeze-reason dropdown in the admin UI', async () => {
   const { readFileSync } = await import('node:fs');
-  const dashboard = readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
+  const dashboard = adminRegistrationSurface();
   expect(dashboard).toContain('FREEZE_REASONS');
   expect(dashboard).toContain('Freeze reason');
   expect(dashboard).toContain('سبب التجميد');
@@ -381,7 +393,7 @@ it('provides a required bilingual freeze-reason dropdown in the admin UI', async
 
 it('shows a stored freeze reason next to the Frozen status badge', async () => {
   const { readFileSync } = await import('node:fs');
-  const dashboard = readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
+  const dashboard = adminRegistrationSurface();
   expect(dashboard).toContain('function formatFreezeReason');
   expect(dashboard).toContain('(userRow as any).frozenReason');
   expect(dashboard).toContain("formatStatus(status, lang)}{isFrozen ?");

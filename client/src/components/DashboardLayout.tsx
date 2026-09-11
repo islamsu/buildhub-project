@@ -22,7 +22,7 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags, Megaphone, ShieldCheck, ShieldQuestion, LifeBuoy, Flag } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags, Megaphone, ShieldCheck, ShieldQuestion, LifeBuoy, Flag, FileSearch } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -198,14 +198,13 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
 const ADMIN_ICONS: Record<string, typeof LayoutDashboard> = {
   '/admin': LayoutDashboard,
   '/admin/users': Users,
-  '/admin/name-changes': UserRound,
   '/admin/referrals': UsersRound,
   '/admin/placements': Megaphone,
   '/admin/enquiries': Inbox,
-  '/admin/compliance': Shield,
   '/admin/disputes': FileText,
   '/admin/support': LifeBuoy,
   '/admin/reviews': Flag,
+  '/admin/registrations': FileSearch,
   '/admin/analytics': BarChart3,
   '/admin/billing': CreditCard,
   '/admin/operations': Activity,
