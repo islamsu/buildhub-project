@@ -612,6 +612,33 @@ export const notifications = mysqlTable('notifications', {
   userIdReadIdx: index('notifications_userId_read_idx').on(table.userId, table.read),
 }));
 
+/**
+ * Per-user notification preferences. ONLY OVERRIDES LIVE HERE: the absence of a
+ * row means the category is on, so every existing user keeps receiving exactly
+ * what they received before this table existed, and a category added later is
+ * on for everybody without touching a single row.
+ *
+ * MANDATORY CATEGORIES ARE NOT WRITABLE HERE. `shared/notificationPreferences.ts`
+ * names them (account, compliance, billing, disputes, moderation);
+ * `server/notificationPreferences.ts` refuses to store a suppression for one,
+ * and the delivery gate ignores such a row if it ever arrives by another route.
+ *
+ * `category` is a varchar rather than a mysqlEnum because the vocabulary is
+ * declared once in shared/ and validated there. An enum would put a second
+ * authority in the database that has to be migrated in lockstep with the first.
+ */
+export const notificationPreferences = mysqlTable('notificationPreferences', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  category:  varchar('category', { length: 40 }).notNull(),
+  /** False suppresses the category. True is an explicit re-enable, kept rather than deleted so the choice is a fact. */
+  enabled:   boolean('enabled').notNull().default(false),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull().onUpdateNow(),
+}, table => ({
+  userCategoryIdx: uniqueIndex('notificationPreferences_user_category_idx').on(table.userId, table.category),
+}));
+
 // ── Reviews ────────────────────────────────────────────────────────────────
 export const reviews = mysqlTable('reviews', {
   id:         int('id').autoincrement().primaryKey(),

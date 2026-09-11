@@ -38,6 +38,7 @@ import { useAuth } from '@/_core/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import DashboardLayout from '@/components/DashboardLayout';
 import VendorProfileCard from '@/components/VendorProfileCard';
+import NotificationPreferences from '@/components/NotificationPreferences';
 import VendorBilling from '@/components/VendorBilling';
 import VendorCompanyProfile from '@/components/VendorCompanyProfile';
 import VendorNameChangeRequest from '@/components/VendorNameChangeRequest';
@@ -48,7 +49,7 @@ import VendorServiceCategories from '@/components/VendorServiceCategories';
 import PortfolioManager from '@/components/PortfolioManager';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { UserRound, CreditCard, Tags, ClipboardCheck, ArrowRight } from 'lucide-react';
+import { UserRound, CreditCard, Tags, ClipboardCheck, ArrowRight, Bell } from 'lucide-react';
 
 /** The roles that carry a vendor plan and declare service categories. */
 const PROVIDER_ROLES = ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'];
@@ -108,6 +109,25 @@ export default function SettingsPage() {
           title={ar ? 'الملف الشخصي' : 'Profile'}
         >
           <Card><CardContent className="pt-6"><VendorProfileCard /></CardContent></Card>
+        </Section>
+
+        {/* ── Notifications: every role, and nothing role-specific ──────── */}
+        {/*
+          Directly below Profile because it is about the person, not the
+          company - and it applies to every account, so unlike the sections
+          below it there is no "not for this account" branch.
+
+          The component renders its own Card: it has a loading state and a
+          failure state of its own, and wrapping it in a second Card here would
+          put a card inside a card for the two thirds of its life when it is
+          not showing the list.
+        */}
+        <Section
+          id="settings-notifications"
+          icon={<Bell className="h-5 w-5" />}
+          title={ar ? 'الإشعارات' : 'Notifications'}
+        >
+          <NotificationPreferences />
         </Section>
 
         {/* ── The company record: providers only ─────────────────────────── */}

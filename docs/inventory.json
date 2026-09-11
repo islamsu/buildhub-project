@@ -841,6 +841,16 @@
       "indent": 2
     },
     {
+      "name": "preferences",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "setPreference",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "forUser",
       "tier": "publicProcedure",
       "indent": 2
@@ -1663,7 +1673,7 @@
   ],
   "procedureTiers": {
     "publicProcedure": 32,
-    "protectedProcedure": 81,
+    "protectedProcedure": 83,
     "complianceProcedure": 2,
     "approvedProviderProcedure": 29,
     "adminWith:marketplace.manage": 44,
@@ -1838,6 +1848,14 @@
       "columns": 11,
       "references": 1,
       "notNull": 3,
+      "unique": 0
+    },
+    {
+      "ident": "notificationPreferences",
+      "name": "notificationPreferences",
+      "columns": 7,
+      "references": 1,
+      "notNull": 5,
       "unique": 0
     },
     {
@@ -2132,142 +2150,142 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 634,
+      "line": 635,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 1413,
+      "line": 1414,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2614,
+      "line": 2615,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2694,
+      "line": 2695,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3463,
+      "line": 3464,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3520,
+      "line": 3521,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3927,
+      "line": 3928,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4185,
+      "line": 4186,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4335,
+      "line": 4383,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4577,
+      "line": 4625,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4769,
+      "line": 4817,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4939,
+      "line": 4987,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6388,
+      "line": 6436,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6721,
+      "line": 6769,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6799,
+      "line": 6847,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7634,
+      "line": 7682,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7705,
+      "line": 7753,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8109,
+      "line": 8157,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8307,
+      "line": 8355,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8337,
+      "line": 8385,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8370,
+      "line": 8418,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8577,
+      "line": 8625,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8659,
+      "line": 8707,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8753,
+      "line": 8801,
       "via": "notifyUser"
     },
     {
       "file": "server/notifications.ts",
-      "line": 40,
+      "line": 41,
       "via": "notifyUser"
     },
     {
       "file": "server/notifications.ts",
-      "line": 43,
+      "line": 51,
       "via": "helper implementation"
     },
     {
       "file": "server/notifications.ts",
-      "line": 57,
+      "line": 65,
       "via": "notifyUser"
     },
     {
       "file": "server/notifications.ts",
-      "line": 60,
+      "line": 78,
       "via": "helper implementation"
     }
   ],

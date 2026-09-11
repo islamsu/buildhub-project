@@ -34,6 +34,7 @@ import { getChurn, getCommercialKpis } from './analytics/kpis';
 import { ENV, isTestLoginEnabled } from './_core/env';
 import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
+import { NotificationPreferenceError, notificationPreferencesFor, setNotificationPreference } from './notificationPreferences';
 import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
 import { recordAccountEvent } from './_core/accountAudit';
 import { listAdminUsers, type AdminDirectoryPage } from './adminUserDirectory';
@@ -4227,7 +4228,54 @@ const notificationsRouter = router({
     await db.update(notifications).set({ read: true }).where(eq(notifications.userId, ctx.user.id));
     return { success: true };
   }),
+
+  /**
+   * Every category, its mandatory flag, and whether it is currently on.
+   *
+   * The whole vocabulary rather than the stored rows: only overrides are
+   * stored, so a user who has never opened this screen has no rows at all and
+   * must still be shown the complete list with everything on.
+   */
+  preferences: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return notificationPreferencesFor(db, ctx.user.id);
+  }),
+
+  /**
+   * Record one choice, for the CALLER and nobody else - `ctx.user.id`, never an
+   * id from the input, so there is no userId to tamper with.
+   *
+   * Refusing a mandatory category happens in `setNotificationPreference`, on
+   * the server, and not by omitting the switch from the screen. A request that
+   * names `compliance` is refused whether it came from a rendered control or
+   * from curl.
+   */
+  setPreference: protectedProcedure
+    .input(z.object({ category: z.string().min(1).max(40), enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await setNotificationPreference(db, {
+          userId: ctx.user.id,
+          category: input.category,
+          enabled: input.enabled,
+        });
+      } catch (error) {
+        throw asNotificationPreferenceTrpcError(error);
+      }
+    }),
 });
+
+/** Map the preference vocabulary onto tRPC without losing the reason. */
+function asNotificationPreferenceTrpcError(error: unknown): TRPCError {
+  if (error instanceof NotificationPreferenceError) {
+    return new TRPCError({
+      code: error.code === 'UNKNOWN_CATEGORY' ? 'BAD_REQUEST' : 'FORBIDDEN',
+      message: error.message,
+    });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Notification preference update failed' });
+}
 
 // ── Reviews Router ─────────────────────────────────────────────────────────
 const reviewsRouter = router({
