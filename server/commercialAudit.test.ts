@@ -268,7 +268,11 @@ describe('the events that matter are recorded', () => {
     // Instrumented events. If this number moves, the list below must too.
     // 10 -> 12 when the service catalogue landed: created and updated in the
     // router, plus the three transitions, which share one call site.
-    expect(sites).toHaveLength(12);
+    // 12 -> 15 when project membership became auditable: added, role changed,
+    // removed. Putting somebody on a project, changing their capacity on it or
+    // taking them off it decides WHO CAN READ the customer's documents, RFQs
+    // and quotations, and none of it was recorded anywhere.
+    expect(sites).toHaveLength(15);
 
     // The id expression each subjectType is allowed to carry. `input.rfqId` is
     // absent from 'quotation' and 'enquiry' deliberately - that was the defect.
@@ -279,6 +283,13 @@ describe('the events that matter are recorded', () => {
       rfq:       ['rfqId'],
       quotation: ['quotationId', 'input.quotationId'],
       enquiry:   ['result.enquiryId ?? 0'],
+      // A membership event names the PROJECT. The person it is about lives in
+      // `detail`, deliberately: `subjectId` is the handle the trail is queried
+      // by, and "everything that happened to project 12" is the question a
+      // dispute asks. Recording the userId here would answer it with another
+      // project's history whenever the two numbers happened to coincide -
+      // exactly the defect this test was written for.
+      project:   ['input.projectId'],
     };
 
     for (const site of sites) {

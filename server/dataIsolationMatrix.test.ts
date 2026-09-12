@@ -232,6 +232,12 @@ describe('every id-taking procedure is owner-scoped, admin-gated, or named', () 
 const TARGETS_ANOTHER_USER: Record<string, RegExp> = {
   'projects.addMember':    /requireProjectAccess\(db, input\.projectId, ctx\.user\.id, 'manage'\)/,
   'projects.removeMember': /requireProjectAccess\(db, input\.projectId, ctx\.user\.id, 'manage'\)/,
+  // Changing somebody's CAPACITY on a project is the same shape as putting
+  // them on it: the request names who, the session decides whether the caller
+  // may. It governs what that person can do on the job, so it needs the same
+  // 'manage' capability and the same proof-carrying entry rather than a
+  // weaker one.
+  'projects.changeMemberRole': /requireProjectAccess\(db, input\.projectId, ctx\.user\.id, 'manage'\)/,
   // Inviting a supplier names that supplier - a TARGET of the invitation, not
   // a claim about who the caller is. `invitedBy`, the column that records
   // WHOSE act this was, comes from ctx.user.id and never from the request.

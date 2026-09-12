@@ -35,6 +35,7 @@
  * no message ids at all - there is no id to point at the wrong row.
  */
 import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { affectedRows } from './_core/writeResult';
 import { messages, users } from '../drizzle/schema';
 
 type Db = any;
@@ -193,7 +194,7 @@ export async function markThreadRead(
     eq(messages.receiverId, params.userId),
     eq(messages.read, false),
   ));
-  return { marked: Number(result?.[0]?.affectedRows ?? result?.affectedRows ?? 0) };
+  return { marked: affectedRows(result) };
 }
 
 /** Unread across every thread, for the one badge the navigation renders. */

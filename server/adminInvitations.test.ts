@@ -203,7 +203,14 @@ describe('redeeming an invitation', () => {
   it('burns the invitation CONDITIONALLY on it still being unused', () => {
     const block = ROUTERS.slice(ROUTERS.indexOf('completeAdminInvitation: publicProcedure'), ROUTERS.indexOf('requestPasswordReset:'));
     expect(block).toContain('isNull(adminInvitations.usedAt)');
-    expect(block).toContain('affected === 0');
+    // THE SPELLING MOVED, THE RULE DID NOT. BuildHub had three different reads
+    // of "how many rows did that write touch", and one of them - `rowsAffected`,
+    // which mysql2 never returns - made `projects.removeMember` report a
+    // removal that happened as `removed: false`. There is one reader now, so
+    // this asserts the CONDITIONAL BURN rather than the arithmetic that used to
+    // express it: the update is refused unless it actually changed a row.
+    expect(block).toContain('changedSomething(burn)');
+    expect(block).toMatch(/if \(!changedSomething\(burn\)\) throw reject\(\);/);
   });
 
   it('gives ONE message for unknown, expired, spent and revoked alike', () => {

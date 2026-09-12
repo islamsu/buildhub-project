@@ -47,6 +47,7 @@ import {
   DEFAULT_PRICING_BASIS,
 } from '@shared/serviceCatalogue';
 import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
+import { changedSomething } from './_core/writeResult';
 import { recordAccountEvent } from './_core/accountAudit';
 import { listAdminUsers, type AdminDirectoryPage } from './adminUserDirectory';
 import { listAccountAudit, auditFilterOptions } from './accountAuditView';
@@ -522,9 +523,7 @@ const authRouter = router({
     const burn = await db.update(testLoginTokens)
       .set({ usedAt: new Date() })
       .where(and(eq(testLoginTokens.id, row.id), isNull(testLoginTokens.usedAt)));
-    const affected = (burn as unknown as { rowsAffected?: number })?.rowsAffected
-      ?? (Array.isArray(burn) ? (burn[0] as { affectedRows?: number })?.affectedRows : undefined);
-    if (affected === 0) throw reject();
+    if (!changedSomething(burn)) throw reject();
 
     const sessionToken = await sdk.createSessionToken(target.openId, { name: target.name || target.username || 'QA user' });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
@@ -854,9 +853,7 @@ const authRouter = router({
     const burn = await db.update(adminInvitations)
       .set({ usedAt: new Date() })
       .where(and(eq(adminInvitations.id, row.id), isNull(adminInvitations.usedAt)));
-    const affected = (burn as unknown as { affectedRows?: number }[])[0]?.affectedRows
-      ?? (burn as unknown as { affectedRows?: number }).affectedRows ?? 0;
-    if (affected === 0) throw reject();
+    if (!changedSomething(burn)) throw reject();
 
     const passwordHash = await hashPassword(input.password);
     await db.update(users).set({
@@ -1426,7 +1423,7 @@ const projectsRouter = router({
         });
       }
 
-      const [project] = await db.select({ title: projects.title })
+      const [project] = await db.select({ title: projects.title, ownerId: projects.ownerId })
         .from(projects).where(eq(projects.id, input.projectId)).limit(1);
       await notifyUser(db, {
         userId: input.userId,
@@ -1440,7 +1437,101 @@ const projectsRouter = router({
         messageParams: { title: project?.title ?? '', role: input.projectRole },
       });
 
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id,
+        ownerId: project?.ownerId ?? null,
+        subjectType: 'project',
+        subjectId: input.projectId,
+        action: 'project_member_added',
+        detail: `user ${input.userId} added as ${input.projectRole}`,
+      });
+
       return { success: true, projectRole: input.projectRole };
+    }),
+
+  /**
+   * CHANGE SOMEBODY'S CAPACITY ON A PROJECT, without pretending they left.
+   *
+   * There was no way to do this at all. `addMember` refuses a live member with
+   * CONFLICT, so promoting the site engineer to manager meant REMOVING them and
+   * ADDING them back - which resets `assignedAt`, wipes the `removedAt` and
+   * `removedBy` that record they were ever taken off, and sends them a "You
+   * were added to a project" notification for a project they never left. The
+   * project role governs what they can do, so this is not a cosmetic field.
+   */
+  changeMemberRole: protectedProcedure
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      userId: z.number().int().positive(),
+      projectRole: z.enum(PROJECT_ROLES),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const access = await requireProjectAccess(db, input.projectId, ctx.user.id, 'manage');
+
+      // The same two rules `addMember` holds, for the same two reasons:
+      // ownership is derived from projects.ownerId and cannot be handed out,
+      // and the owner's own capacity is not somebody else's to change.
+      if (input.projectRole === 'owner') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Ownership belongs to the customer the project is for and cannot be assigned. Use "manager" for someone who runs the project.',
+        });
+      }
+      if (input.userId === access.ownerId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'The project owner\'s role on their own project cannot be changed.',
+        });
+      }
+
+      const [existing] = await db.select({
+        id: projectMembers.id,
+        projectRole: projectMembers.projectRole,
+        removedAt: projectMembers.removedAt,
+      }).from(projectMembers)
+        .where(and(eq(projectMembers.projectId, input.projectId), eq(projectMembers.userId, input.userId)))
+        .limit(1);
+
+      // A REMOVED MEMBER IS NOT PROMOTED BACK IN. Changing the role of somebody
+      // who is off the project would quietly restore their access, which is the
+      // opposite of what removing them meant.
+      if (!existing || existing.removedAt) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'That person is not on this project.' });
+      }
+      const previous = existing.projectRole;
+      if (previous === input.projectRole) {
+        // Not an error, and not a change. Saying "done" either way would make
+        // the two indistinguishable to the screen and to the trail.
+        return { success: true, changed: false, from: previous, to: input.projectRole };
+      }
+
+      await db.update(projectMembers)
+        .set({ projectRole: input.projectRole, assignedBy: ctx.user.id })
+        .where(eq(projectMembers.id, existing.id));
+
+      const [project] = await db.select({ title: projects.title, ownerId: projects.ownerId })
+        .from(projects).where(eq(projects.id, input.projectId)).limit(1);
+      await notifyUser(db, {
+        userId: input.userId,
+        title: 'Your role on a project changed',
+        body: `${project?.title ?? 'A project'} - your role is now ${input.projectRole}`,
+        type: 'info',
+        link: `/projects/${input.projectId}`,
+        messageKey: 'notif.project.member.roleChanged',
+        messageParams: { title: project?.title ?? '', role: input.projectRole, from: previous },
+      });
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id,
+        ownerId: project?.ownerId ?? null,
+        subjectType: 'project',
+        subjectId: input.projectId,
+        action: 'project_member_role_changed',
+        detail: `user ${input.userId}: ${previous} -> ${input.projectRole}`,
+      });
+
+      return { success: true, changed: true, from: previous, to: input.projectRole };
     }),
 
   /** Take someone off a project. A soft end - the history keeps them. */
@@ -1476,8 +1567,29 @@ const projectsRouter = router({
       // Reported honestly: removing somebody who is not on the project is not
       // an error, but it is also not a removal, and saying "success" either
       // way would make the two indistinguishable.
-      const affected = Number((result as { rowsAffected?: number })?.rowsAffected ?? 0);
-      return { success: true, removed: affected > 0 };
+      //
+      // THIS READ WAS WRONG AND THE FLAG WAS ALWAYS FALSE. mysql2 answers with
+      // `[ResultSetHeader]`, so the count is at `result[0].affectedRows`; there
+      // is no `rowsAffected` in it. A removal that genuinely happened - with
+      // `removedAt` set in the database - reported `removed: false`, which is
+      // exactly what this flag exists to distinguish it from. One reader now,
+      // in `_core/writeResult.ts`, because three spellings of the same question
+      // is how one of them ends up asking it wrongly.
+      const removed = changedSomething(result);
+      // AUDITED ONLY WHEN IT HAPPENED. Writing a removal event for a no-op
+      // would put a removal in the trail that did not occur, which is worse
+      // than not recording it at all.
+      if (removed) {
+        await recordCommercialEvent(db, {
+          actorId: ctx.user.id,
+          ownerId: access.ownerId,
+          subjectType: 'project',
+          subjectId: input.projectId,
+          action: 'project_member_removed',
+          detail: `user ${input.userId} removed`,
+        });
+      }
+      return { success: true, removed };
     }),
   update: protectedProcedure
     .input(z.object({
@@ -9185,7 +9297,7 @@ const adminRouter = router({
       const db = await requireDb();
       const result = await db.update(supportTickets).set({ priority: input.priority })
         .where(eq(supportTickets.id, input.ticketId));
-      if (!Number((result as any)?.[0]?.affectedRows ?? 1)) {
+      if (!changedSomething(result)) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found' });
       }
       return { ok: true };

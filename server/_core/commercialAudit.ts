@@ -33,7 +33,7 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
  *    never happened, and nobody reading it later could tell which.
  */
 
-export type CommercialSubject = 'rfq' | 'quotation' | 'product' | 'document' | 'enquiry' | 'message' | 'category' | 'service';
+export type CommercialSubject = 'rfq' | 'quotation' | 'product' | 'document' | 'enquiry' | 'message' | 'category' | 'service' | 'project';
 
 /**
  * The vocabulary. A closed set rather than free text, so the trail can be
@@ -66,7 +66,14 @@ export type CommercialAction =
   // product" are different commercial acts and an operator filtering the trail
   // for one should not be handed the other.
   | 'service_created' | 'service_updated' | 'service_published'
-  | 'service_delisted' | 'service_archived';
+  | 'service_delisted' | 'service_archived'
+  // PROJECT MEMBERSHIP. Adding somebody to a project, changing their capacity
+  // on it, or taking them off it changes WHO CAN READ the customer's documents,
+  // RFQs and quotations - so it is a commercial act, not a settings change, and
+  // "who let the other contractor see our drawings, and when" needs an answer.
+  // The role change is its own verb rather than a remove followed by an add:
+  // conflating them would lose the fact that the person never left.
+  | 'project_member_added' | 'project_member_role_changed' | 'project_member_removed';
 
 export type CommercialEvent = {
   actorId: number | null;

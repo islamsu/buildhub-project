@@ -232,6 +232,8 @@ const translations: Record<Language, Record<string, string>> = {
     'notif.enquiry.assigned.body': '{reference} - {request}',
     'notif.project.member.added.title': 'You were added to a project',
     'notif.project.member.added.body': 'You are now on {title} as {role}.',
+    'notif.project.member.roleChanged.title': 'Your role on a project changed',
+    'notif.project.member.roleChanged.body': 'On {title} you are now {role}, previously {from}.',
     // {planKey}/{fromPlanKey} are TRANSLATION KEYS resolved by the reader's own
     // client (see notificationText.ts) - never a plan name written by the
     // server, which cannot know what language the reader uses.
@@ -1434,6 +1436,8 @@ const translations: Record<Language, Record<string, string>> = {
     'notif.enquiry.assigned.body': '{reference} - {request}',
     'notif.project.member.added.title': 'تمت إضافتك إلى مشروع',
     'notif.project.member.added.body': 'أنت الآن ضمن {title} بصفة {role}.',
+    'notif.project.member.roleChanged.title': 'تغيّرت صفتك في مشروع',
+    'notif.project.member.roleChanged.body': 'في {title} أصبحت {role} بعد أن كنت {from}.',
     'notif.billing.plan.upgraded.title': 'تمت ترقية باقتك',
     'notif.billing.plan.upgraded.body': 'قام أحد المسؤولين بنقلك من باقة {fromPlanKey} إلى باقة {planKey}. المزايا الجديدة متاحة الآن.',
     'notif.billing.plan.downgraded.title': 'تم تغيير باقتك',
