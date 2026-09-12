@@ -211,6 +211,107 @@ describe('no administration list stops without saying so', () => {
   });
 });
 
+/**
+ * ── THE BLIND SPOT THIS CENSUS HAD ────────────────────────────────────────
+ *
+ * Everything above reads `routers.ts`. A truncation that moves one function
+ * out of the router into a helper module leaves the census reporting nothing,
+ * which is worse than never having had one - and that is not hypothetical:
+ * `listEligibleRfqs(userId, limit = 50)` in `server/billing/enquiries.ts`
+ * returned a bare array with no total and served a PROVIDER'S COMMERCIAL WORK
+ * QUEUE, invisible here for as long as it existed. It was found by reading the
+ * product, not by this file.
+ *
+ * So the same rule is applied to the helper modules the routers delegate their
+ * list reads to. A DEFAULT PARAMETER counts too - `limit = 50` is the same
+ * truncation as `.limit(50)` and reads as configuration, which is how it
+ * escapes notice.
+ */
+const HELPER_MODULES = [
+  'billing/enquiries.ts', 'enquiryQueue.ts', 'accountAuditView.ts', 'adminUserDirectory.ts',
+  'disputeMyView.ts', 'disputeAdminView.ts', 'referralRewardView.ts', 'vendorDirectory.ts',
+  'messaging.ts', 'serviceCatalogue.ts', 'projectDocuments.ts',
+];
+
+/** Reads whose size a single subject bounds, with the reason stated. */
+const HELPERS_BOUNDED_BY_NATURE: Record<string, string> = {
+  'disputeAdminView.ts':
+    'The messages, evidence, status history and internal notes of ONE dispute, capped at 200 '
+    + 'and 100. A dispute is a conversation between named people about one thing, and the '
+    + 'whole of it is what the screen exists to show - there is no page 2 of an argument.',
+  'referralRewardView.ts':
+    'The rewards attached to ONE referral, capped at 100. A referral qualifies once and is '
+    + 'rewarded once per campaign; the number is bounded by the lifecycle, not by a guess.',
+  'vendorDirectory.ts':
+    'The public directory page, capped at 100 and ordered by placement then reputation. It is '
+    + 'a shop window rather than an index, and it states no total because it is not claiming '
+    + 'to be complete.',
+  'accountAuditView.ts':
+    'The distinct ACTIONS and SOURCES present in the audit trail, capped at 200 - the options '
+    + 'offered in a filter control, not the events themselves. The set is bounded by the '
+    + 'closed vocabulary the writers use, and the events are paged through adminPage.',
+};
+
+function helperTruncations(): string[] {
+  const offenders: string[] = [];
+  for (const relative of HELPER_MODULES) {
+    const raw = readFileSync(new URL(`./${relative}`, import.meta.url), 'utf8');
+    const source = raw
+      .replace(/\/\*[\s\S]*?\*\//g, comment => comment.replace(/[^\n]/g, ' '))
+      .replace(/(^|[^:])\/\/[^\n]*/g, (all, lead) => lead + ' '.repeat(all.length - lead.length));
+    // PER CHAIN, NOT PER FILE. A file-level `.offset(` test excuses a
+    // truncation because something ELSE in the same module happens to be
+    // paged - which is how a module with one paged reader and one truncating
+    // one passes. Each `.limit(N)` is judged by what immediately follows it.
+    const literal = [...source.matchAll(/\.limit\((\d+)\)/g)].some(match => {
+      if (Number(match[1]) < TRUNCATION_THRESHOLD) return false;
+      const after = source.slice(match.index + match[0].length, match.index + match[0].length + 40);
+      return !/^\s*\.offset\(/.test(after);
+    });
+    // `limit = 50` in a signature is the same truncation wearing a default.
+    const defaulted = /\blimit\s*(?::\s*number\s*)?=\s*(\d+)/.exec(source);
+    const defaultTooLarge = defaulted !== null && Number(defaulted[1]) >= TRUNCATION_THRESHOLD;
+    if (literal || defaultTooLarge) offenders.push(relative);
+  }
+  return offenders.sort();
+}
+
+describe('and the census follows the read out of the router', () => {
+  it('no helper module truncates a list without saying so', () => {
+    const undeclared = helperTruncations().filter(name => !(name in HELPERS_BOUNDED_BY_NATURE));
+    expect(
+      undeclared,
+      'These read a large fixed number of rows with no offset, in a module the router-level '
+      + 'census cannot see. Page them with adminPage, or declare in HELPERS_BOUNDED_BY_NATURE '
+      + 'why the size cannot exceed the limit:\n  ' + undeclared.join('\n  '),
+    ).toEqual([]);
+  });
+
+  it('and nothing is declared that is not actually doing it', () => {
+    const actual = new Set(helperTruncations());
+    const stale = Object.keys(HELPERS_BOUNDED_BY_NATURE).filter(name => !actual.has(name));
+    expect(
+      stale,
+      'Declared as bounded-by-nature but no longer reads that way - remove them:\n  ' + stale.join('\n  '),
+    ).toEqual([]);
+  });
+
+  it('every declaration gives a reason, not a shrug', () => {
+    for (const [name, reason] of Object.entries(HELPERS_BOUNDED_BY_NATURE)) {
+      expect(reason.length, `${name} has no real reason`).toBeGreaterThan(60);
+    }
+  });
+
+  it('and the module list is real, so the census cannot pass over files that are gone', () => {
+    for (const relative of HELPER_MODULES) {
+      expect(
+        () => readFileSync(new URL(`./${relative}`, import.meta.url), 'utf8'),
+        `${relative} is listed in the census but does not exist`,
+      ).not.toThrow();
+    }
+  });
+});
+
 describe('the pager makes the count and the rows agree by construction', () => {
   it('a caller supplies the filter once, and cannot apply it to only one of them', () => {
     const helper = readFileSync(new URL('./adminList.ts', import.meta.url), 'utf8');

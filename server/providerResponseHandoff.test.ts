@@ -251,6 +251,27 @@ describe('a request that is not eligible says so', () => {
     expect(ENQUIRIES).toMatch(/!items\.some\(item => item\.id === highlightRfqId\)/);
   });
 
+  it('AND ONLY WHEN THE SERVER HAS NOT ALREADY ANSWERED', () => {
+    // The premise of the notice below - "only the server knows which applies,
+    // and it is not asked here" - stopped being true when `responseAccess`
+    // began reporting whether this provider already HAS access. A request they
+    // opened and PAID FOR is in their record while absent from this card, which
+    // lists open requests still available to open; announcing "not in your
+    // qualified enquiries" over a bought lead would be this card contradicting
+    // the work queue on the same page. So the notice is now conditional on the
+    // server's answer, and the other case gets its own honest line.
+    expect(ENQUIRIES).toContain('trpc.rfq.responseAccess.useQuery');
+    expect(ENQUIRIES).toContain("linkedAccess.data?.canRespond !== true");
+    expect(ENQUIRIES).toContain('data-testid="enquiry-already-yours"');
+  });
+
+  it('and offers the way to the authoritative reason, rather than ending at a guess', () => {
+    // Two reasons is the honest summary of what can be known from here. The
+    // request's own page asks the server which one actually applies.
+    expect(ENQUIRIES).toContain('data-testid="enquiry-not-eligible-open"');
+    expect(ENQUIRIES).toMatch(/href=\{`\/rfq\/\$\{highlightRfqId\}`\}/);
+  });
+
   it('states both possible reasons rather than asserting one', () => {
     // Only the server knows which applies, and it is not asked here. Naming
     // one as fact would be inventing a reason.

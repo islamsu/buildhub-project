@@ -151,9 +151,13 @@ import {
 } from './audit/fieldHistory';
 import { isPaymentProviderConfigured } from './billing/provider';
 import {
-  getEnquiryUsage, getRfqResponseAccess, getVendorCategories, listEligibleRfqs, openQualifiedEnquiry,
+  getEnquiryUsage, getRfqResponseAccess, getVendorCategories, openQualifiedEnquiry,
   previewQualifiedEnquiry,
 } from './billing/enquiries';
+import {
+  ENQUIRY_PAGE_SIZE_DEFAULT, ENQUIRY_RESPONSE_STATES, ENQUIRY_RFQ_STATUSES, ENQUIRY_SOURCES,
+  enquiryQueueCategories, enquiryQueueSummary, listEnquiryQueue,
+} from './enquiryQueue';
 import {
   getVendorTargetingDiagnostics, listDirectoryCategories,
   listDirectoryVendors, listFeaturedProviders, listSponsoredVendors,
@@ -3573,13 +3577,90 @@ const rfqRouter = router({
       return { success: true as const };
     }),
 
+  /**
+   * THE DASHBOARD SUMMARY: the open requests this provider can act on now.
+   *
+   * Served from the SAME queue the full page reads, filtered to open requests,
+   * rather than from a second list with its own rule. It used to call
+   * `listEligibleRfqs`, which truncated at 50 and returned a bare array - so a
+   * provider with a busy board saw an arbitrary 50 and was told nothing, and
+   * `total` is here precisely so the card can say how many there really are
+   * and send them to the queue for the rest.
+   */
   eligible: approvedProviderProcedure.query(async ({ ctx }) => {
-    const [items, usage] = await Promise.all([
-      listEligibleRfqs(ctx.user.id),
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const declaredCategories = await getVendorCategories(ctx.user.id);
+    const [page, usage] = await Promise.all([
+      listEnquiryQueue(db, {
+        userId: ctx.user.id,
+        declaredCategories,
+        filters: { rfqStatus: 'open' },
+      }),
       getEnquiryUsage(ctx.user.id),
     ]);
-    return { items, usage };
+    return {
+      items: page.rows.map(row => ({
+        id: row.rfqId,
+        title: row.title,
+        category: row.category,
+        location: row.location,
+        budget: row.budget,
+        deadline: row.deadline,
+        status: row.rfqStatus,
+        createdAt: row.createdAt,
+        alreadyOpened: row.openedAt !== null,
+        invited: row.invitedAt !== null,
+      })),
+      usage,
+      /** The real number of open requests reaching this provider, not the number shown. */
+      total: page.total,
+      shown: page.rows.length,
+    };
   }),
+
+  /**
+   * THE WORK QUEUE ITSELF: everything that has reached this provider, at any
+   * status, including the leads they have already paid for.
+   *
+   * Filters are applied by the server over the whole set - never in the browser
+   * over one page, which answers "nothing matches" when the match is on the
+   * next page with exactly the confidence it answers correctly.
+   */
+  queue: approvedProviderProcedure
+    .input(z.object({
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(100).default(ENQUIRY_PAGE_SIZE_DEFAULT),
+      rfqStatus: z.enum(ENQUIRY_RFQ_STATUSES).nullish(),
+      source: z.enum(ENQUIRY_SOURCES).nullish(),
+      responseState: z.enum(ENQUIRY_RESPONSE_STATES).nullish(),
+      category: z.string().max(100).nullish(),
+      search: z.string().max(200).nullish(),
+    }).default({ page: 0, pageSize: ENQUIRY_PAGE_SIZE_DEFAULT }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const declaredCategories = await getVendorCategories(ctx.user.id);
+      const [page, summary, categories, usage] = await Promise.all([
+        listEnquiryQueue(db, {
+          userId: ctx.user.id,
+          declaredCategories,
+          page: input.page,
+          pageSize: input.pageSize,
+          filters: {
+            rfqStatus: input.rfqStatus ?? null,
+            source: input.source ?? null,
+            responseState: input.responseState ?? null,
+            category: input.category ?? null,
+            search: input.search ?? null,
+          },
+        }),
+        enquiryQueueSummary(db, { userId: ctx.user.id, declaredCategories }),
+        enquiryQueueCategories(db, { userId: ctx.user.id, declaredCategories }),
+        getEnquiryUsage(ctx.user.id),
+      ]);
+      return { ...page, summary, categories, usage };
+    }),
 
   // Open an eligible RFQ's full detail, consuming one qualified-enquiry credit
   // the first time. Every decision - identity, declared categories, RFQ
