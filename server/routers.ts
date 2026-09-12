@@ -4607,6 +4607,32 @@ const notificationsRouter = router({
     const result = await db.select({ count: sql<number>`count(*)` }).from(notifications).where(and(eq(notifications.userId, ctx.user.id), eq(notifications.read, false)));
     return { count: Number(result[0]?.count ?? 0) };
   }),
+  /**
+   * MARK ONE NOTIFICATION READ — the reader's own, and nobody else's.
+   *
+   * `markAllRead` was the ONLY writer of `read: true`. That made the badge a
+   * blunt instrument: somebody with forty unread who opens one had to clear
+   * every one of them or keep a number that no longer described what they had
+   * seen. It is the same defect messaging had before MSG - a count that could
+   * only ever be wrong in one direction.
+   *
+   * Constrained on `userId = caller` in the WHERE, not checked beforehand: a
+   * read receipt can only be given by the person the notification is addressed
+   * to, and an id belonging to somebody else matches no row rather than
+   * reaching a different check. `changed` reports whether it actually did
+   * anything, so "I marked it" and "that was not mine" stay distinguishable.
+   */
+  markRead: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const result = await db.update(notifications).set({ read: true }).where(and(
+        eq(notifications.id, input.id),
+        eq(notifications.userId, ctx.user.id),
+        eq(notifications.read, false),
+      ));
+      return { success: true, changed: changedSomething(result) };
+    }),
   markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
@@ -7424,7 +7450,18 @@ const adminRouter = router({
           title: 'Enquiries were assigned to you',
           body: `${assigned} ${assigned === 1 ? 'enquiry' : 'enquiries'}`,
           type: 'info',
-          link: `/admin/enquiries/assignee/${input.assigneeId}`,
+          /**
+           * THE QUEUE, FILTERED TO THEM - as a QUERY, not a path segment.
+           *
+           * This was `/admin/enquiries/assignee/${input.assigneeId}`, which
+           * matches no route: `/admin/:section/:record` is three segments and
+           * that is four, so every admin assigned a batch of enquiries was
+           * notified and sent to "404 Page Not Found". Verified in a browser,
+           * not inferred from the route table. `?assignee=` is the right shape
+           * anyway - the destination is a FILTERED LIST, and the path segment
+           * on this screen already means "one enquiry, by reference".
+           */
+          link: `/admin/enquiries?assignee=${input.assigneeId}`,
           messageKey: 'notif.enquiry.assigned.bulk',
           messageParams: { count: assigned },
         });

@@ -128,8 +128,13 @@ describe('a notification belongs to exactly one person', () => {
     }
     // And the roster is pinned, so a procedure added to this router has to be
     // acknowledged here rather than merely inheriting the loop above.
+    // `markRead` joined the roster when per-notification reading was added:
+    // `markAllRead` was the only writer of `read: true`, so the badge was
+    // all-or-nothing. It takes an `id` and NO userId - the subject is still the
+    // session, and the id is constrained in the same WHERE rather than checked
+    // beforehand, so an id belonging to somebody else matches no row.
     expect(procedures.map(procedure => procedure.name).sort()).toEqual(
-      ['list', 'markAllRead', 'preferences', 'setPreference', 'unreadCount'],
+      ['list', 'markAllRead', 'markRead', 'preferences', 'setPreference', 'unreadCount'],
     );
   });
 

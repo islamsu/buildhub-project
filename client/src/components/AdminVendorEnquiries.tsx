@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Link, useLocation } from 'wouter';
+import { Link, useLocation, useSearch } from 'wouter';
 import {
   Inbox, Search, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft,
   Clock, Gauge, FileText, Building2, RefreshCw, StickyNote, UserCheck, Download,
@@ -83,6 +83,22 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
   const [, navigate] = useLocation();
   const ar = lang === 'ar';
 
+  /**
+   * `?assignee=` IS A REAL DESTINATION, because a notification points at it.
+   *
+   * An admin handed a batch of enquiries is told so and linked here. The link
+   * used to be `/admin/enquiries/assignee/<id>`, which matches no route -
+   * `/admin/:section/:record` is three segments and that is four - so every
+   * one of those notifications landed on "404 Page Not Found". Verified in a
+   * browser rather than reasoned about from the route table.
+   *
+   * Read from the URL rather than held in state alone, so the link, a reload
+   * and the back button all agree about what is being shown.
+   */
+  const queryString = useSearch();
+  const assigneeParam = new URLSearchParams(queryString).get('assignee');
+  const assigneeFilter = assigneeParam && /^\d+$/.test(assigneeParam) ? Number(assigneeParam) : null;
+
   const [search, setSearch] = useState('');
   const [state, setState] = useState('all');
   const [sort, setSort] = useState<'activity' | 'rfq' | 'vendor' | 'state'>('activity');
@@ -106,6 +122,9 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
   const list = trpc.admin.enquiryList.useQuery({
     ...(state === 'all' ? {} : { state: state as any }),
     ...(search.trim() ? { search: search.trim() } : {}),
+    // The server has taken `assigneeId` as a filter since VE-6; nothing was
+    // sending it.
+    ...(assigneeFilter !== null ? { assigneeId: assigneeFilter } : {}),
     sort, limit: PAGE_SIZE, offset: page * PAGE_SIZE,
   }, { enabled: openReference === null });
   const detail = trpc.admin.enquiryDetail.useQuery(
@@ -549,6 +568,30 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
                 />
               </div>
             </div>
+            {/* A FILTER THE READER CAN SEE, and turn off.
+                A list silently narrowed by a query parameter looks like a
+                quiet queue - the admin reads "4 enquiries" as the whole
+                board rather than as their own share of it. */}
+            {assigneeFilter !== null && (
+              <div className="flex items-end">
+                <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2" data-testid="enquiry-assignee-chip">
+                  <span className="text-xs">
+                    {ar ? 'المُسندة إلى: ' : 'Assigned to: '}
+                    <span className="font-medium">
+                      {(admins.data ?? []).find(person => person.id === assigneeFilter)?.name
+                        ?? `#${assigneeFilter}`}
+                    </span>
+                  </span>
+                  <Button
+                    variant="ghost" size="sm" className="h-6 px-2 text-xs"
+                    data-testid="enquiry-assignee-clear"
+                    onClick={() => { setPage(0); navigate('/admin/enquiries'); }}
+                  >
+                    {ar ? 'إزالة' : 'Clear'}
+                  </Button>
+                </div>
+              </div>
+            )}
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
                 {ar ? 'الحالة' : 'State'}

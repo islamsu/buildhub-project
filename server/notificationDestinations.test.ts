@@ -291,7 +291,17 @@ describe('the notification list follows the link it was given', () => {
   it('a notification with no destination still renders', () => {
     // Some events are genuinely informational. Inventing a destination for
     // them would be worse than having none, and dropping them worse still.
-    expect(MESSAGES).toMatch(/:\s*<div key=\{n\.id\}>\{card\}<\/div>/);
+    //
+    // ASSERTED AS THE RULE, not as one spelling of it. This pinned the exact
+    // markup `<div key={n.id}>{card}</div>`, and broke when the card gained an
+    // onClick that gives the read receipt - a change that does not touch the
+    // property at all. What matters is that the un-linked branch still renders
+    // the same card.
+    const unlinked = MESSAGES.slice(MESSAGES.indexOf('return n.link'));
+    expect(unlinked.length, 'the branch is gone').toBeGreaterThan(60);
+    expect(unlinked).toMatch(/<div key=\{n\.id\}[^>]*>\{card\}<\/div>/);
+    expect(unlinked, 'an un-linked notification is no longer rendered at all')
+      .not.toMatch(/return n\.link\s*\?\s*<Link[^>]*>\{card\}<\/Link>\s*:\s*null/);
   });
 
   it('a linked card is visibly clickable and distinguishable in a test', () => {

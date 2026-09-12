@@ -48,7 +48,28 @@ export default function MessagesPage() {
   const { user, isAuthenticated } = useAuth();
   const { data: notifications } = trpc.notifications.list.useQuery(undefined, { enabled: isAuthenticated });
   const { data: persistedConversations = [] } = trpc.messages.conversations.useQuery(undefined, { enabled: isAuthenticated });
-  const markRead = trpc.notifications.markAllRead.useMutation({ onSuccess: () => toast.success(lang === 'ar' ? 'تم تحديد الكل كمقروء' : 'All marked as read') });
+  const markRead = trpc.notifications.markAllRead.useMutation({
+    onSuccess: () => {
+      toast.success(lang === 'ar' ? 'تم تحديد الكل كمقروء' : 'All marked as read');
+      void utils.notifications.list.invalidate();
+      void utils.notifications.unreadCount.invalidate();
+    },
+  });
+  /**
+   * OPENING ONE NOTIFICATION READS IT.
+   *
+   * `markAllRead` was the only writer of `read: true`, so the badge was
+   * all-or-nothing: somebody with forty unread who opened one had to clear
+   * every one of them or keep a number that no longer described what they had
+   * seen. Reading a thing is what marks it read - the same rule messaging got
+   * in MSG - and the count is refreshed so the badge in the navbar follows.
+   */
+  const markOneRead = trpc.notifications.markRead.useMutation({
+    onSuccess: () => {
+      void utils.notifications.list.invalidate();
+      void utils.notifications.unreadCount.invalidate();
+    },
+  });
 
   // Was `useState(1)`. A default of 1 is a real user id, and combined with the
   // fabricated conversation list it aimed the composer at that account.
@@ -417,9 +438,13 @@ export default function MessagesPage() {
                 // A notification with no link still renders - some events are
                 // genuinely informational and inventing a destination for them
                 // would be worse than having none.
+                // The read receipt is given on OPENING, whether or not the
+                // notification has somewhere to go: an informational one is
+                // just as read once somebody has clicked it.
+                const open = () => { if (!n.read) markOneRead.mutate({ id: n.id }); };
                 return n.link
-                  ? <Link key={n.id} href={n.link} className="block">{card}</Link>
-                  : <div key={n.id}>{card}</div>;
+                  ? <Link key={n.id} href={n.link} className="block" onClick={open}>{card}</Link>
+                  : <div key={n.id} onClick={open} className={n.read ? undefined : 'cursor-pointer'}>{card}</div>;
               })}
             </div>
           </TabsContent>
