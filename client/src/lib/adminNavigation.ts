@@ -61,7 +61,7 @@ export const ADMIN_NAV: readonly AdminNavEntry[] = [
 
   // USER & IDENTITY. Professional Registrations sits IMMEDIATELY after User
   // Management by explicit owner decision, and the adjacency is asserted in
-  // client/src/lib/adminNavigation.test.ts so a later edit cannot drift it.
+  // server/adminInformationArchitecture.test.ts so a later edit cannot drift it.
   { path: '/admin/users', labelKey: 'admin.users', permission: 'users.read', group: 'identity' },
   { path: '/admin/registrations', labelKey: 'admin.registrations', permission: 'marketplace.manage', group: 'identity' },
 

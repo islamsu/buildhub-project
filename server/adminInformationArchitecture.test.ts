@@ -20,7 +20,7 @@
  * EXACTLY ONCE, and nothing legitimate stops being discoverable at all.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readSourceForAssertions } from './_testing/sourceText';
 import { adminRegistrationSurface } from './_testing/adminSurface';
 import {
@@ -308,5 +308,41 @@ describe('a section may not hold a capability its own permission cannot reach', 
     expect(menu).toContain('/admin/placements');
     // The proof the move mattered: they still cannot see Operations.
     expect(menu).not.toContain('/admin/operations');
+  });
+});
+
+/**
+ * ── A COMMENT THAT NAMES A TEST FILE MUST NAME ONE THAT EXISTS ────────────
+ *
+ * `adminNavigation.ts` carried, for some time, a comment stating that the
+ * Professional Registrations adjacency "is asserted in
+ * client/src/lib/adminNavigation.test.ts". No such file has ever existed. The
+ * adjacency WAS asserted - above, in this file - so nothing was unguarded; but
+ * a reader auditing the IA would have gone looking for the guarantee at an
+ * address with nothing at it, and a reader trusting the comment would have
+ * concluded the rule was covered without checking.
+ *
+ * A comment that cites a test is making a verifiable claim, so verify it. This
+ * reads the RAW file deliberately: `readSourceForAssertions` strips comments,
+ * which is exactly the text under audit here.
+ */
+describe('the admin navigation module cites only tests that exist', () => {
+  const RAW_NAV = readFileSync(
+    new URL('../client/src/lib/adminNavigation.ts', import.meta.url), 'utf8');
+
+  const cited = [...RAW_NAV.matchAll(/(?:client|server|shared)\/[\w./-]*\.test\.tsx?/g)]
+    .map(match => match[0]);
+
+  it('cites at least one, or this guard is watching nothing', () => {
+    expect(cited.length).toBeGreaterThan(0);
+  });
+
+  it('and every cited test file is really on disk', () => {
+    for (const path of new Set(cited)) {
+      expect(
+        existsSync(new URL(`../${path}`, import.meta.url)),
+        `adminNavigation.ts cites ${path}, which does not exist`,
+      ).toBe(true);
+    }
   });
 });
