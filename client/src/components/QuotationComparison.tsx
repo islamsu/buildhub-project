@@ -33,6 +33,10 @@ type QuotationRow = {
   timeline: number | null;
   warranty: string | null;
   validUntil: Date | null;
+  /** Derived by the server at read time, never stored: has this price stopped holding? */
+  expired?: boolean;
+  /** The same question the ACT asks, so the button cannot disagree with the server. */
+  canAccept?: boolean;
   commercialTerms: string | null;
   paymentTerms: string | null;
   notes: string | null;
@@ -176,7 +180,15 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
     return sortAsc ? diff : -diff;
   });
 
-  const bestScore = Math.max(...scored.map(q => q.score), 0);
+  /**
+   * BEST VALUE IS ONLY OFFERED AMONG BIDS THAT CAN STILL BE ACCEPTED.
+   *
+   * A "Best value" ribbon on a quotation whose validity has passed recommends
+   * an action the server refuses - it points the customer at the one card whose
+   * accept button is not there. An expired bid still appears, still shows its
+   * price, and can still be rejected; it is simply not held up as the answer.
+   */
+  const bestScore = Math.max(...scored.filter(q => q.expired !== true).map(q => q.score), 0);
   const lowestPrice = Math.min(...quotes.map(q => parseFloat(q.price)), Infinity);
   const fastestTimeline = Math.min(...quotes.map(q => q.timeline ?? 9999), 9999);
 
@@ -253,6 +265,9 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
             const isFastest = q.timeline === fastestTimeline && fastestTimeline < 9999;
             const isAccepted = q.status === 'accepted';
             const isRejected = q.status === 'rejected';
+            // The server decides, and says so in the same response - the
+            // screen renders that answer rather than recomputing the rule.
+            const isExpired = q.expired === true;
 
             return (
               <Card
@@ -264,6 +279,13 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                 `}
               >
                 {/* Best value ribbon */}
+                {isExpired && !isAccepted && (
+                  <div className="absolute -top-3 right-3 z-10">
+                    <span className="bg-amber-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow flex items-center gap-1" data-testid={`quotation-expired-${q.id}`}>
+                      <Clock className="w-3 h-3" /> {t('quotation.expired')}
+                    </span>
+                  </div>
+                )}
                 {isBest && !rfqAwarded && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
                     <span className="bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full shadow flex items-center gap-1">
@@ -452,14 +474,21 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                   {/* Action buttons */}
                   {isOwner && !rfqAwarded && !isRejected && !isAccepted && (
                     <div className="flex gap-2 pt-2">
+                      {/* THE OFFER IS WITHHELD WHEN THE SERVER WOULD REFUSE IT.
+                          An expired price can still be REJECTED - clearing a
+                          stale bid off the board is a reasonable thing to do -
+                          so only the accept half goes. */}
+                      {!isExpired && (
                       <Button
                         size="sm"
                         className="flex-1 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
                         onClick={() => setConfirmAccept(q)}
                         disabled={acceptMutation.isPending}
+                        data-testid={`quotation-accept-${q.id}`}
                       >
                         <ThumbsUp className="w-3.5 h-3.5" /> {t('rfq.accept')}
                       </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
@@ -470,6 +499,11 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                         <ThumbsDown className="w-3.5 h-3.5" /> {t('rfq.reject')}
                       </Button>
                     </div>
+                  )}
+                  {isOwner && !rfqAwarded && !isRejected && !isAccepted && isExpired && (
+                    <p className="pt-2 text-xs text-amber-700" data-testid={`quotation-expired-reason-${q.id}`}>
+                      {t('quotation.expiredReason')}
+                    </p>
                   )}
                   {isOwner && rfqAwarded && isAccepted && (
                     <div className="flex items-center justify-center gap-1.5 text-xs text-emerald-600 font-semibold pt-2">

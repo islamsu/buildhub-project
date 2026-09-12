@@ -47,6 +47,7 @@ import {
   DEFAULT_PRICING_BASIS,
 } from '@shared/serviceCatalogue';
 import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
+import { canAcceptQuotation, isQuotationExpired } from '../shared/quotationValidity';
 import { changedSomething } from './_core/writeResult';
 import { recordAccountEvent } from './_core/accountAudit';
 import { listAdminUsers, type AdminDirectoryPage } from './adminUserDirectory';
@@ -3471,7 +3472,12 @@ const rfqRouter = router({
       rfqStatus: rfqs.status,
     }).from(quotations).leftJoin(rfqs, eq(quotations.rfqId, rfqs.id))
       .where(and(eq(quotations.providerId, ctx.user.id), isNull(quotations.supersededAt)))
-      .orderBy(desc(quotations.createdAt));
+      .orderBy(desc(quotations.createdAt))
+      // THE SUPPLIER SEES IT TOO. Their bid is no longer acceptable and they
+      // are the only person who can do anything about it - re-confirming the
+      // price - so telling only the customer would leave the one party who can
+      // act on it looking at a live-seeming quotation.
+      .then(rows => rows.map(row => ({ ...row, expired: isQuotationExpired(row.validUntil) })));
   }),
   // SECURITY (Phase 4A final gate): quotations on an RFQ include each bidding
   // vendor's email, exact price, timeline, and notes - competitive-intelligence
@@ -3552,6 +3558,19 @@ const rfqRouter = router({
         ...row,
         providerRating: reputation?.averageRating ?? null,
         providerReviews: reputation?.reviewCount ?? 0,
+        /**
+         * DERIVED AT READ TIME, never stored.
+         *
+         * BuildHub has no job runner, so a stored `expired` column would be a
+         * lie between the moment it stopped holding and the moment something
+         * got round to writing it - and the same derived-state discipline
+         * already governs entitlement overrides and placements.
+         *
+         * `canAccept` is the same question the ACT asks, from the same module,
+         * so the screen cannot offer a button the server is certain to refuse.
+         */
+        expired: isQuotationExpired(row.validUntil),
+        canAccept: canAcceptQuotation(row),
       };
     });
   }),
@@ -3965,6 +3984,10 @@ const rfqRouter = router({
     return {
       ...quotation,
       viewerRole: isRequester ? ('requester' as const) : ('author' as const),
+      // The same derived pair the list carries, so the detail page and the
+      // comparison screen cannot disagree about whether a price still holds.
+      expired: isQuotationExpired(quotation.validUntil),
+      canAccept: canAcceptQuotation(quotation),
       provider: provider
         ? {
             id: provider.id,
