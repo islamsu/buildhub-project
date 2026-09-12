@@ -1106,6 +1106,10 @@ const translations: Record<Language, Record<string, string>> = {
     'marketHub.sectionDesignersTitle': 'Design Services',
     'marketHub.sectionDesignersDesc': 'Professional design firms and independent designers across 14 disciplines',
     'marketHub.disciplinesLabel': 'Disciplines',
+    /* The count beside a section card names REAL ACCOUNTS, like the vendors
+       card it sits next to. 'Disciplines' and 'Services' labelled a constant
+       compiled into the page and are kept only for the browse copy. */
+    'marketHub.providersLabel': 'Providers',
     'marketHub.sectionFinishingTitle': 'Finishing Companies',
     'marketHub.sectionFinishingDesc': 'Companies specializing in construction, fit-out, renovation, and finishing',
     'marketHub.servicesLabel': 'Services',
@@ -2279,6 +2283,7 @@ const translations: Record<Language, Record<string, string>> = {
     'marketHub.sectionDesignersTitle': 'خدمات التصميم',
     'marketHub.sectionDesignersDesc': 'مكاتب تصميم محترفة ومصممون مستقلون في 14 تخصصاً',
     'marketHub.disciplinesLabel': 'تخصص',
+    'marketHub.providersLabel': 'مزوّد',
     'marketHub.sectionFinishingTitle': 'شركات التشطيبات',
     'marketHub.sectionFinishingDesc': 'شركات متخصصة في الإنشاءات والتجهيز والتجديد والتشطيبات',
     'marketHub.servicesLabel': 'خدمة',

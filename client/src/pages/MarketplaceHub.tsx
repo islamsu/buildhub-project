@@ -109,8 +109,19 @@ export default function MarketplaceHub() {
       gradient: 'from-violet-600 to-purple-500',
       title: t('marketHub.sectionDesignersTitle'),
       desc: t('marketHub.sectionDesignersDesc'),
-      stat: `${DESIGN_CATEGORIES.length}`,
-      statLabel: t('marketHub.disciplinesLabel'),
+      /**
+       * A REAL COUNT, like the card beside it.
+       *
+       * This was `DESIGN_CATEGORIES.length` - a constant compiled into the
+       * page - sitting in the same slot as the vendors card's count of real
+       * accounts. With no designer on the platform the card still read "14
+       * disciplines", which is a number that cannot move, presented as one
+       * that can. `designers` is already computed above from the authorized
+       * directory; it was used for the suggestions and the featured strip and
+       * not for the headline figure.
+       */
+      stat: `${designers.length}`,
+      statLabel: t('marketHub.providersLabel'),
       chips: DESIGN_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
     },
     {
@@ -120,8 +131,9 @@ export default function MarketplaceHub() {
       gradient: 'from-orange-600 to-amber-500',
       title: t('marketHub.sectionFinishingTitle'),
       desc: t('marketHub.sectionFinishingDesc'),
-      stat: `${FINISHING_CATEGORIES.length}`,
-      statLabel: t('marketHub.servicesLabel'),
+      // The same correction, for the same reason.
+      stat: `${finishing.length}`,
+      statLabel: t('marketHub.providersLabel'),
       chips: FINISHING_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
     },
   ];
@@ -273,13 +285,18 @@ export default function MarketplaceHub() {
                       <s.icon className="w-7 h-7" />
                     </div>
                     <div className="text-end">
-                      <div className="text-2xl font-bold">{s.stat}</div>
-                      <div className="text-xs text-muted-foreground">{s.statLabel}</div>
+                      <div className="text-2xl font-bold" data-testid={`hub-stat-${s.id}`}>{s.stat}</div>
+                      <div className="text-xs text-muted-foreground" data-testid={`hub-statlabel-${s.id}`}>{s.statLabel}</div>
                     </div>
                   </div>
                   <h2 className="text-xl font-bold mb-2 group-hover:text-primary transition-colors">{s.title}</h2>
                   <p className="text-sm text-muted-foreground mb-4">{s.desc}</p>
-                  <div className="flex flex-wrap gap-1.5 mb-4">
+                  {/* The chips DESCRIBE the section - they are not filters,
+                      and the card as a whole is what navigates. On the two
+                      provider sections they are browse vocabulary rather than
+                      a claim about anybody, which is why they are allowed to
+                      be a constant while the count beside them is not. */}
+                  <div className="flex flex-wrap gap-1.5 mb-4" data-testid={`hub-chips-${s.id}`}>
                     {s.chips.map((c, i) => (
                       <Badge key={i} variant="secondary" className="text-xs font-normal">{c}</Badge>
                     ))}
