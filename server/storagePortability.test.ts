@@ -172,7 +172,13 @@ describe('§2 storage.ts keeps its contract', () => {
     // NINE since provider portfolio images became an upload path of their own,
     // and it goes through the same wrapper rather than touching a bucket
     // directly - which is the property this count protects.
-    expect(calls.length).toBe(9);
+    // TEN since dispute evidence joined them, through the same wrapper.
+    // ELEVEN since support ticket attachments arrived, likewise.
+    // TWELVE since a project document can be REPLACED - a second write into
+    // the same `project-documents/` prefix, and the property this count
+    // protects is precisely that a new path went through the wrapper rather
+    // than reaching a bucket directly.
+    expect(calls.length).toBe(12);
     for (const prefix of [
       'registration/', 'project-documents/', 'message-attachments/', 'avatars/',
       // AI attachments get their own prefix so the proxy can classify them,
@@ -181,6 +187,14 @@ describe('§2 storage.ts keeps its contract', () => {
       // Product images likewise: a separate prefix is what lets the proxy
       // treat them as public-by-design without widening any other category.
       'product-images/',
+      // Dispute evidence: its own prefix so the proxy can resolve the file to
+      // its dispute and apply the dispute's own eligibility rule, rather than
+      // inheriting a category with a wider audience.
+      'dispute-evidence/',
+      // Support ticket attachments: same reasoning again. The proxy resolves
+      // the key to its TICKET and applies that ticket's one access door, so a
+      // customer cannot read another customer's attachment by guessing a key.
+      'support-ticket/',
     ]) {
       expect(ROUTERS_SOURCE).toContain(prefix);
     }

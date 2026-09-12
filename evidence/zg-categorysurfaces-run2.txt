@@ -1,0 +1,19 @@
+PASS  the Add Product form offers the LIVE taxonomy, not a compiled-in list  [form 35, database 35]
+PASS  REPORTED CASE: Waterproofing is selectable in the single-product form  [Materials, Cement & Concrete, Steel & Reinforcement]
+PASS  and the alias resolves to its canonical name, so the option is the stored value
+PASS  EN: the marketplace filter renders the taxonomy
+PASS  EN: the canonical category name renders in English
+PASS  AR: the marketplace filter renders the taxonomy
+PASS  AR: the canonical category name renders in ARABIC, from the taxonomy  [arabic present]
+PASS  AR: and Waterproofing too - not only the categories the old map knew
+PASS  a ?cat= link from the hub actually selects that category
+PASS  the hub chips are canonical taxonomy names
+PASS  and the hub states the REAL number of categories, not a "+" estimate  [hub 35, database 35]
+PASS  PROPAGATION: the new category appears in the Add Product form, no deployment
+PASS  PROPAGATION: and in the marketplace filter
+PASS  PROPAGATION: and in the bulk upload reference
+PASS  PROPAGATION: hiding removes it from the form on the next load
+PASS  CLEANUP: every row this probe planted is gone
+PASS  CLEANUP: the taxonomy is back exactly as it was found
+
+17/17 passed

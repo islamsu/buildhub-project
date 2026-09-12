@@ -91,6 +91,16 @@ async function connectPage(port) {
     send,
     setCookies: async (cookies) => { await send('Network.setCookies', { cookies }); },
     /**
+     * Responsive checks need a real viewport, not a resized window: the CDP
+     * override is what makes the page's own media queries fire, which is the
+     * thing a 375px assertion is actually about.
+     */
+    setViewport: async ({ width, height = 900 }) => {
+      await send('Emulation.setDeviceMetricsOverride', {
+        width, height, deviceScaleFactor: 1, mobile: width < 768,
+      });
+    },
+    /**
      * Navigate and WAIT FOR THE APP, not for the document.
      *
      * This is a single-page app: load fires while the root div is still empty,

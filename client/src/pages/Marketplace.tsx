@@ -8,40 +8,48 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { trpc } from '@/lib/trpc';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Search, SlidersHorizontal, Star, Package, ShoppingCart, Zap, ArrowLeft, ArrowRight, Heart, Scale, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
 import { MasterProductSlot, PlacementBadge, ProductSpotlight } from '@/components/MasterPlacement';
 
-const CATEGORY_ICONS: Record<string, string> = {
-  'Materials': '🧱', 'Furniture': '🛋️', 'Lighting': '💡', 'Electrical': '⚡',
-  'Plumbing': '🔧', 'HVAC': '❄️', 'Paint': '🎨', 'Ceramics': '🏺',
-  'Granite': '🪨', 'Marble': '🪨', 'Wood': '🪵', 'Doors': '🚪',
-  'Windows': '🪟', 'Roofing': '🏠', 'Glass': '🔮', 'Steel': '⚙️',
-  'Concrete': '🏗️', 'Waterproofing': '💧', 'Solar': '☀️', 'Smart Home': '🏡',
-  'Pools': '🏊', 'Landscaping': '🌿', 'Security': '🔒', 'Fire Fighting': '🔥',
-  'Cleaning': '🧹', 'Maintenance': '🔨', 'Moving': '📦',
-};
-
-
-const CATEGORY_AR: Record<string, string> = {
-  'All': 'الكل', 'Materials': 'مواد البناء', 'Furniture': 'أثاث', 'Lighting': 'إضاءة',
-  'Electrical': 'كهرباء', 'Plumbing': 'سباكة', 'HVAC': 'تكييف وتهوية', 'Paint': 'دهانات',
-  'Ceramics': 'سيراميك', 'Granite': 'جرانيت', 'Marble': 'رخام', 'Wood': 'خشب',
-  'Doors': 'أبواب', 'Windows': 'نوافذ', 'Roofing': 'أسقف', 'Glass': 'زجاج',
-  'Steel': 'حديد', 'Concrete': 'خرسانة', 'Waterproofing': 'عزل مائي', 'Solar': 'طاقة شمسية',
-  'Smart Home': 'المنزل الذكي', 'Pools': 'مسابح', 'Landscaping': 'تنسيق حدائق',
-  'Security': 'أمن وحماية', 'Fire Fighting': 'إطفاء حريق', 'Cleaning': 'نظافة',
-  'Maintenance': 'صيانة', 'Moving': 'نقل عفش',
-};
+/**
+ * THIS FILE USED TO HOLD TWO HAND-KEPT CATEGORY MAPS.
+ *
+ * CATEGORY_ICONS and CATEGORY_AR, both keyed on English labels from the retired
+ * 27-name list - a separately-maintained Arabic vocabulary and a separately-
+ * maintained icon set. They had already fallen behind: the taxonomy's canonical
+ * "Cement & Concrete" appeared in neither, so an Arabic-reading shopper saw an
+ * English chip and no icon.
+ *
+ * Both are gone. The name, the Arabic name and the icon all come from the one
+ * taxonomy, which is the only place a category is described. Adding a third map
+ * back here - for icons, for translations, for anything - would recreate exactly
+ * the drift this work removed.
+ */
 
 export default function Marketplace() {
   const { t, lang } = useLanguage();
   const basket = useRfqBasket();
   const [, navigate] = useLocation();
   const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  /**
+   * ?cat= FROM THE HUB, HONOURED.
+   *
+   * The Marketplace Hub has always linked its category chips here with a `cat`
+   * parameter, and this page has always ignored it: every chip landed on the
+   * unfiltered marketplace. Read once, as the initial selection - the chips
+   * below stay the authority afterwards, so a shopper who then picks another
+   * category is not fighting the URL.
+   */
+  const initialCategory = (() => {
+    try {
+      const requested = new URLSearchParams(window.location.search).get('cat');
+      return requested && requested.trim() ? requested.trim() : 'All';
+    } catch { return 'All'; }
+  })();
+  const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [sortBy, setSortBy] = useState('featured');
   const [wishlist, setWishlist] = useState<number[]>(() => {
     try { return JSON.parse(localStorage.getItem('bh-wishlist') || '[]'); } catch { return []; }
@@ -71,9 +79,32 @@ export default function Marketplace() {
   };
   const BackIcon = lang === 'ar' ? ArrowRight : ArrowLeft;
 
-  const { data: categories } = trpc.marketplace.categories.useQuery();
-
-  const allCategories = ['All', ...(categories ?? [])];
+  /**
+   * The RICH view, not the string array. The names, the Arabic names and the
+   * icons all come from the one taxonomy, so nothing on this page can name a
+   * category differently from the form a supplier lists through.
+   */
+  const { data: taxonomy } = trpc.marketplace.categories.useQuery({ view: 'public' });
+  const categories = taxonomy?.categories ?? [];
+  const allCategories = ['All', ...categories.map(category => category.nameEn)];
+  /** Canonical English name -> how to show it. Built once, used everywhere below. */
+  const display = useMemo(() => {
+    const map = new Map<string, { label: string; emoji: string }>();
+    for (const category of categories) {
+      map.set(category.nameEn, {
+        label: lang === 'ar' ? category.nameAr : category.nameEn,
+        emoji: category.icon || '📦',
+      });
+    }
+    return map;
+  }, [categories, lang]);
+  /**
+   * A product's stored category may name a category that has since been
+   * archived, or one stored before the taxonomy existed. Showing the stored
+   * value is truthful; inventing a translation for it would not be.
+   */
+  const categoryLabel = (name: string) =>
+    name === 'All' ? (lang === 'ar' ? 'الكل' : 'All') : display.get(name)?.label ?? name;
 
   // Real products from the database, filtered server-side.
   //
@@ -147,8 +178,8 @@ export default function Marketplace() {
                         : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                     }`}
                   >
-                    <span>{CATEGORY_ICONS[cat] ?? '📦'}</span>
-                    {lang === 'ar' ? (CATEGORY_AR[cat] ?? cat) : cat}
+                    <span>{cat === 'All' ? '🗂️' : display.get(cat)?.emoji ?? '📦'}</span>
+                    {categoryLabel(cat)}
                   </button>
                 ))}
               </div>
@@ -166,7 +197,7 @@ export default function Marketplace() {
                       selectedCategory === cat ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                     }`}
                   >
-                    {lang === 'ar' ? (CATEGORY_AR[cat] ?? cat) : cat}
+                    {categoryLabel(cat)}
                   </button>
                 ))}
               </div>
@@ -216,7 +247,7 @@ export default function Marketplace() {
                         </Badge>
                       ) : null}
                       <Badge variant="secondary" className="absolute top-2 right-2 text-xs">
-                        {lang === 'ar' ? (CATEGORY_AR[product.category] ?? product.category) : product.category}
+                        {categoryLabel(product.category)}
                       </Badge>
                       <div className="absolute bottom-2 right-2 flex gap-1.5">
                         <button
@@ -340,7 +371,7 @@ export default function Marketplace() {
                   { key: 'rating', label: lang === 'ar' ? 'التقييم' : 'Rating', render: (p: any) => p.reviewCount > 0 ? `${p.rating} ★ (${p.reviewCount})` : (lang === 'ar' ? 'لا تقييمات' : 'No ratings') },
                   { key: 'brand', label: lang === 'ar' ? 'العلامة التجارية' : 'Brand', render: (p: any) => p.brand },
                   { key: 'origin', label: lang === 'ar' ? 'بلد المنشأ' : 'Origin', render: (p: any) => p.origin },
-                  { key: 'category', label: lang === 'ar' ? 'الفئة' : 'Category', render: (p: any) => lang === 'ar' ? (CATEGORY_AR[p.category] ?? p.category) : p.category },
+                  { key: 'category', label: lang === 'ar' ? 'الفئة' : 'Category', render: (p: any) => categoryLabel(p.category) },
                   { key: 'delivery', label: lang === 'ar' ? 'التوصيل' : 'Delivery', render: (p: any) => `${p.deliveryDays}${lang === 'ar' ? 'ي' : 'd'}` },
                 ]).map(row => (
                   <tr key={row.key} className="border-t">

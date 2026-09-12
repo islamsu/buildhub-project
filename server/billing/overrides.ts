@@ -183,13 +183,37 @@ export const MAX_ENQUIRY_ALLOWANCE = 100_000;
 
 export const ENQUIRY_ALLOWANCE_KEY = 'qualifiedEnquiriesPerMonth';
 
+/**
+ * THE ADDITIVE SLOT, AND WHY IT IS A DIFFERENT KEY.
+ *
+ * `setEnquiryAllowance` writes an ABSOLUTE number and REVOKES the previous
+ * override, which is right for an administrator: "this vendor's allowance is
+ * 40" supersedes "this vendor's allowance is 25", and the trail records both.
+ *
+ * A referral reward is not that. It is "+5 on top of whatever they have", and
+ * routing it through the same slot did two wrong things at once: it destroyed
+ * an unrelated administrative grant, and when the reward's own expiry passed
+ * the vendor fell back to the PLAN value rather than to the administrator's -
+ * so a temporary bonus permanently deleted a permanent decision.
+ *
+ * Bonuses live in their own key, are never revoked by each other, and SUM. Two
+ * referral rewards running at once are worth both. Each expires on its own
+ * `endsAt` with no sweep, exactly as the absolute overrides already do.
+ */
+export const ENQUIRY_BONUS_KEY = 'qualifiedEnquiryBonus';
+
 export type EnquiryAllowanceView = {
   userId: number;
   planId: PlanId;
   /** What the vendor's plan alone would grant. null = unlimited. */
   planAllowance: number | null;
-  /** What is actually in force - the override if there is one, otherwise the plan. */
+  /**
+   * What is actually in force: the override if there is one, otherwise the
+   * plan, PLUS every bonus row in force. null = unlimited.
+   */
   effectiveAllowance: number | null;
+  /** The part of the above that came from additive bonuses - referral rewards. */
+  bonusAllowance: number;
   overridden: boolean;
   used: number;
   /** null = unlimited. NEVER NEGATIVE - see the clamp below. */
@@ -243,12 +267,32 @@ export async function readEnquiryAllowance(
     && (!row.endsAt || new Date(row.endsAt).getTime() > now.getTime())
     && (!row.startsAt || new Date(row.startsAt).getTime() <= now.getTime()));
 
-  const effectiveAllowance = active ? asAllowance(active.value) : planAllowance;
+  /*
+   * THE BONUSES COUNT HERE TOO.
+   *
+   * This read only ENQUIRY_ALLOWANCE_KEY rows, which was complete until
+   * additive bonuses were introduced for referral rewards. After that an
+   * administrator looking at a vendor holding a bonus saw a number LOWER than
+   * the one the platform was enforcing - and this is the screen they use to
+   * decide whether to grant more.
+   */
+  const bonusRows = await anyDb.select().from(vendorEntitlementOverrides).where(
+    sqlAnd(
+      sqlEq(vendorEntitlementOverrides.userId, userId),
+      sqlEq(vendorEntitlementOverrides.entitlementKey, ENQUIRY_BONUS_KEY),
+    ),
+  ).orderBy(sqlDesc(vendorEntitlementOverrides.id));
+  const bonus = sumActiveBonuses(bonusRows, now);
+
+  const base = active ? asAllowance(active.value) : planAllowance;
+  // Unlimited stays unlimited: null plus anything is still no limit.
+  const effectiveAllowance = base === null ? null : base + bonus;
   return {
     userId,
     planId,
     planAllowance,
     effectiveAllowance,
+    bonusAllowance: bonus,
     overridden: Boolean(active),
     used,
     // CLAMPED AT ZERO, deliberately. A vendor whose limit was lowered after
@@ -257,7 +301,9 @@ export async function readEnquiryAllowance(
     // happened and are never rewritten to make an arithmetic result tidy.
     remaining: effectiveAllowance === null ? null : Math.max(0, effectiveAllowance - used),
     periodKey,
-    history: rows.map(row => ({
+    // The bonus rows belong in the history too: "who changed it" is not
+    // answerable if a whole class of change is missing from the list.
+    history: [...rows, ...bonusRows].sort((a, b) => b.id - a.id).map(row => ({
       id: row.id,
       value: asAllowance(row.value),
       previousValue: asAllowance(row.previousValue),
@@ -303,7 +349,13 @@ export async function setEnquiryAllowance(args: {
   /** null = unlimited. */
   limit: number | null;
   reason: string | null;
-  actorId: number;
+  /**
+   * Who granted it. NULL means the platform itself - a referral reward has no
+   * administrator behind it, and recording the beneficiary as the actor made a
+   * vendor the author of his own entitlement. The column has always been
+   * nullable; only this parameter was not.
+   */
+  actorId: number | null;
   endsAt?: Date | null;
   now?: Date;
 }): Promise<SetAllowanceResult> {
@@ -372,6 +424,78 @@ export async function setEnquiryAllowance(args: {
     const overrideId = Number((Array.isArray(inserted) ? inserted[0] : inserted)?.insertId ?? 0);
     return { ok: true, overrideId, previous };
   });
+}
+
+/**
+ * Add a bonus to a vendor's qualified-enquiry allowance, WITHOUT touching
+ * anything that is already there.
+ *
+ * Deliberately not a transaction with a lock, unlike setEnquiryAllowance: that
+ * one has to read current usage and refuse a limit below it, and it supersedes
+ * a row. This only ever INSERTS, and two concurrent bonuses summing to more
+ * than either is the correct answer, so there is nothing to serialise.
+ *
+ * Returns the row's id so the caller can record exactly what it created - a
+ * reversal has to be able to undo THIS bonus and not somebody else's.
+ */
+export async function grantEnquiryBonus(args: {
+  db: never;
+  userId: number;
+  /** A positive whole number of extra enquiries. */
+  amount: number;
+  reason: string | null;
+  /** Null means it never lapses; a referral reward always sets one. */
+  endsAt?: Date | null;
+  /** Null = the platform. A referral reward has no administrator behind it. */
+  actorId?: number | null;
+  now?: Date;
+}): Promise<{ ok: true; overrideId: number } | { ok: false; reason: string }> {
+  const { userId, amount, reason } = args;
+  const now = args.now ?? new Date();
+  if (!Number.isInteger(amount) || amount <= 0) {
+    return { ok: false, reason: 'A bonus must be a positive whole number of enquiries.' };
+  }
+  if (amount > MAX_ENQUIRY_ALLOWANCE) {
+    return { ok: false, reason: `A bonus above ${MAX_ENQUIRY_ALLOWANCE} is refused.` };
+  }
+
+  const db = args.db as unknown as {
+    insert: (t: unknown) => { values: (v: unknown) => Promise<{ insertId: number }[] | { insertId: number }> };
+  };
+  const inserted = await db.insert(vendorEntitlementOverrides).values({
+    userId,
+    entitlementKey: ENQUIRY_BONUS_KEY,
+    value: encodeEntitlementValue(amount),
+    // Nothing was superseded, so there is no previous value to record.
+    previousValue: null,
+    reason,
+    actorId: args.actorId ?? null,
+    startsAt: now,
+    endsAt: args.endsAt ?? null,
+  });
+  return { ok: true, overrideId: Number((Array.isArray(inserted) ? inserted[0] : inserted)?.insertId ?? 0) };
+}
+
+/**
+ * Every bonus in force right now, SUMMED.
+ *
+ * A separate read from activeOverridesFor because that one deliberately keeps
+ * only the highest-id row per key - correct for supersession, and exactly wrong
+ * for a slot whose whole point is that the rows add up.
+ */
+export function sumActiveBonuses(rows: readonly OverrideRow[], now: Date = new Date()): number {
+  let total = 0;
+  for (const row of rows) {
+    if (row.entitlementKey !== ENQUIRY_BONUS_KEY) continue;
+    if (row.revokedAt) continue;
+    if (row.endsAt && new Date(row.endsAt).getTime() <= now.getTime()) continue;
+    const value = decodeEntitlementValue(row.value);
+    // A malformed bonus is ignored, never guessed at. FAILS CLOSED, like every
+    // other override read: a bad row must not be the reason someone gets more.
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) continue;
+    total += value;
+  }
+  return total;
 }
 
 /** 'YYYY-MM' in UTC - the same period key qualifiedEnquiries.yearMonth carries. */

@@ -1,0 +1,22 @@
+PASS  1. SETUP: an open Renovation request and three approved providers  [rfq=184]
+PASS  2. THE BUTTON IS GONE — not disabled, ABSENT, on the respond page  [offer=false]
+PASS  3. and so is the gate card that used to carry it  [gate=false form=false]
+PASS  4. THE REASON IS THERE INSTEAD, before the click  [This request is outside the service categories you have declar]
+PASS  5. with the one thing they can actually do about it
+PASS  6. AND THE SAME ON THE DETAIL PAGE — no offer, the reason in its place  [respond=false]
+PASS  7. with the same reason and the same way out  [This request is outside the service categories you have de]
+PASS  8. THE BUTTON IS STILL THERE for the provider who can use it  [offer=true blocked=false]
+PASS  9. and it says what the click will COST before they make it  [Open the enquiry before preparing a quote Opening this request]
+PASS  10. with no "this is free" claim on a lead that is not  [free=false]
+PASS  11. AN INVITED PROVIDER GOES STRAIGHT TO THE FORM, despite the category mismatch  [blocked=false form=true]
+PASS  12. and is told the lead costs them nothing  [You were invited to this request, so responding does not use y]
+PASS  13. LOOKING AT THE PAGE SPENT NOTHING — no enquiry row was written
+PASS  14. THE ARABIC SCREEN IS NOT HANDED ENGLISH  [لا يمكنك فتح هذا الطلب هذا الطلب خارج فئات الخدمة ال]
+PASS  15. and no raw reason key leaks through as copy  [chars=118 raw=]
+PASS  16. RTL, and still no button  [dir=rtl offer=false]
+PASS  17a. readable at 375px with no horizontal overflow  [scroll=375 client=375]
+PASS  17b. readable at 768px with no horizontal overflow  [scroll=762 client=768]
+PASS  17c. readable at 1440px with no horizontal overflow  [scroll=1434 client=1440]
+PASS  18. CLEANUP: every account and request this probe created is gone  [users=0]
+
+20/20 checks passed

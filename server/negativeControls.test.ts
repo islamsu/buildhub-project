@@ -74,6 +74,22 @@ describe('a notification belongs to exactly one person', () => {
     return where;
   }
 
+  /**
+   * Each procedure in the notifications router, sliced to the NEXT procedure
+   * rather than to a fixed window - a doc comment that grows by a paragraph
+   * must not push a guard out of what is being read.
+   */
+  function notificationsProcedures(): { name: string; body: string }[] {
+    const source = read('./routers.ts');
+    const start = source.indexOf('const notificationsRouter = router({');
+    const block = source.slice(start, source.indexOf('\n});', start));
+    const heads = [...block.matchAll(/^ {2}(\w+): protectedProcedure/gm)];
+    return heads.map((head, index) => ({
+      name: head[1],
+      body: block.slice(head.index!, index + 1 < heads.length ? heads[index + 1].index! : undefined),
+    }));
+  }
+
   it('list takes NO user id from the caller - there is nothing to manipulate', async () => {
     // The strongest form of the control: the endpoint has no input at all, so
     // "read someone else's notifications" is not a request that can be made.
@@ -82,21 +98,44 @@ describe('a notification belongs to exactly one person', () => {
     await expect(caller.notifications.list({ userId: 9 } as never)).resolves.toBeDefined();
     // ...and zod strips the unknown key rather than honouring it, which is why
     // the source assertion below matters as much as this call.
-    const source = read('./routers.ts');
-    const start = source.indexOf('const notificationsRouter = router({');
-    const block = source.slice(start, source.indexOf('\n});', start));
-    expect(block).not.toMatch(/input\(/);
-    expect(block).toContain('eq(notifications.userId, ctx.user.id)');
+    //
+    // Scoped to `list` rather than to the whole router. It read the entire
+    // block and required that NO procedure anywhere took an input at all,
+    // which held only while every procedure happened to be input-less;
+    // `setPreference` has to name a category. The rule worth keeping is the
+    // one this test is actually about - `list` has nothing to point at another
+    // account - and the router-wide rule below is the general form of it.
+    const listBody = notificationsProcedures().find(procedure => procedure.name === 'list')!.body;
+    expect(listBody).not.toMatch(/input\(/);
+    expect(listBody).toContain('eq(notifications.userId, ctx.user.id)');
   });
 
   it('every read and write in the router is scoped to the session', async () => {
-    const source = read('./routers.ts');
-    const start = source.indexOf('const notificationsRouter = router({');
-    const block = source.slice(start, source.indexOf('\n});', start));
-    const scoped = [...block.matchAll(/eq\(notifications\.userId, ctx\.user\.id\)/g)].length;
-    const procedures = [...block.matchAll(/^ {2}\w+: protectedProcedure/gm)].length;
-    expect(procedures).toBe(3);
-    expect(scoped, 'a notifications procedure is not scoped to the caller').toBe(procedures);
+    // Counting `eq(notifications.userId, ctx.user.id)` was the old test, and it
+    // could only see procedures that query the notifications table directly. A
+    // procedure reading a DIFFERENT table on the caller's behalf - preferences
+    // - satisfied the rule and failed the count, so the count was measuring
+    // the shape of the router rather than the property.
+    //
+    // The property, stated once: every procedure takes its subject from the
+    // session and from nowhere else.
+    const procedures = notificationsProcedures();
+    expect(procedures.length, 'the procedure scanner found nothing').toBeGreaterThanOrEqual(5);
+    for (const { name, body } of procedures) {
+      expect(body, `${name} is not scoped to the caller`).toContain('ctx.user.id');
+      expect(body, `${name} takes a subject from its input`).not.toMatch(/input\.userId/);
+      expect(body, `${name} accepts a userId from the caller`).not.toMatch(/userId: z\./);
+    }
+    // And the roster is pinned, so a procedure added to this router has to be
+    // acknowledged here rather than merely inheriting the loop above.
+    // `markRead` joined the roster when per-notification reading was added:
+    // `markAllRead` was the only writer of `read: true`, so the badge was
+    // all-or-nothing. It takes an `id` and NO userId - the subject is still the
+    // session, and the id is constrained in the same WHERE rather than checked
+    // beforehand, so an id belonging to somebody else matches no row.
+    expect(procedures.map(procedure => procedure.name).sort()).toEqual(
+      ['list', 'markAllRead', 'markRead', 'preferences', 'setPreference', 'unreadCount'],
+    );
   });
 
   it('markAllRead cannot be pointed at another account', async () => {

@@ -1,0 +1,28 @@
+PASS  1. SETUP: a homeowner has a project  [id=112]
+PASS  2. the owner puts a contractor on it  [http=200]
+PASS  3. AND THE MEMBER CAN NOW READ IT — membership is access  [http=200]
+PASS  4. and the trail records who let them in  [project_member_added]
+PASS  5. A CAPACITY CAN BE CHANGED AT ALL — this had no procedure before  [http=200 contractor->manager]
+PASS  6. and it is NOT a departure and a return — the assignment date stands  [manager	2026-09-12 00:23:32	1]
+PASS  7. the trail records what it changed FROM, not only to  [project_member_role_changed	user 2148: contractor -> manager]
+PASS  8. and the person is told, with a translatable key rather than a sentence  [notifications=1]
+PASS  9. setting the role they already hold is reported as NO CHANGE  [changed=false]
+PASS  10. and writes no second event for a change that did not happen
+PASS  11. OWNERSHIP CANNOT BE HANDED OUT  [code=BAD_REQUEST]
+PASS  12. nor can the owner be demoted on their own project  [code=BAD_REQUEST]
+PASS  13. AND AN UNRELATED ACCOUNT CANNOT TOUCH THE TEAM  [code=NOT_FOUND]
+PASS  14. their attempt changed nothing
+PASS  15. nor read the project at all  [code=NOT_FOUND]
+PASS  16. A REMOVAL THAT HAPPENED IS REPORTED AS ONE — the flag that was always false  [removed=true]
+PASS  17. and the database agrees
+PASS  18. THE REMOVED MEMBER LOSES ACCESS IMMEDIATELY, on the same session  [code=NOT_FOUND]
+PASS  19. and the documents with it  [code=NOT_FOUND]
+PASS  20. and the team list, which would otherwise name everyone on the job  [code=NOT_FOUND]
+PASS  21. the trail records the removal too  [project_member_removed]
+PASS  22. REMOVING SOMEBODY ALREADY OFF IT IS NOT A REMOVAL, and says so  [removed=false]
+PASS  23. and writes no second removal into the trail
+PASS  24. A REMOVED MEMBER IS NOT PROMOTED BACK IN — that would restore access quietly  [code=NOT_FOUND]
+PASS  25. and they are still out  [code=NOT_FOUND]
+PASS  26. CLEANUP: every account and project this probe created is gone  [users=0]
+
+26/26 checks passed

@@ -1,0 +1,24 @@
+PASS  1. SETUP: an ordinary account signs up and holds a session  [http=200]
+PASS  2. the Notifications section renders inside /settings for an ordinary account  [{"section":true,"card":true}]
+PASS  3. all fourteen categories render  [n=14]
+PASS  4. and exactly the five mandatory ones carry a lock  [account,billing,compliance,disputes,moderation]
+PASS  5. every category has a switch  [n=14]
+PASS  6. and exactly the five locked ones are not operable  [disabled=5]
+PASS  7. THE SCREEN SAYS SO: email and SMS are named as unavailable rather than offered  [BuildHub delivers notifications in the app. Email and SMS are not yet ]
+PASS  8. A REAL CLICK PERSISTS: the row appears in the database, switched off  [before=0 after="messages\t0"]
+PASS  9. and a RELOADED page shows it off - the state came from the server  [unchecked]
+PASS  10. clicking it again switches it back on, updating the same row  [1 row(s)]
+PASS  11. clicking the locked Compliance switch writes nothing  [messages]
+PASS  12a. the EN screen has real content to check  [chars=1879]
+PASS  13a. no raw translation key is rendered in EN
+PASS  14a. the document direction is ltr  [ltr]
+PASS  12b. the AR screen has real content to check  [chars=1435]
+PASS  13b. no raw translation key is rendered in AR
+PASS  14b. the document direction is rtl  [rtl]
+PASS  15. and the Arabic copy is genuinely Arabic, not the English string  [يرسل BuildHub الإشعارات داخل التطبيق. ال]
+PASS  16. at 375px the section renders with no horizontal overflow  [scroll=375 client=375]
+PASS  16. at 768px the section renders with no horizontal overflow  [scroll=762 client=762]
+PASS  16. at 1440px the section renders with no horizontal overflow  [scroll=1434 client=1434]
+PASS  17. CLEANUP: the probe account and its preference rows are gone
+
+22/22 checks passed

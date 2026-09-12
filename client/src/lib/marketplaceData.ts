@@ -11,56 +11,35 @@
 // compliance decision. What remains here is taxonomy: labels for browsing,
 // which assert nothing about anybody.
 
-export interface ProductCategory {
+/**
+ * PRODUCT_CATEGORIES USED TO LIVE HERE, AND IT WAS THE LATENT DEFECT.
+ *
+ * Thirty-three product browse chips that shared NO values with the nineteen the
+ * write path accepted - so a shopper clicking any of them could never find a
+ * product, because nothing could be listed under those names. The reported
+ * "Waterproofing is not a BuildHub category" was the same disagreement seen
+ * from the supplier's side.
+ *
+ * The product taxonomy is now a database table with one canonical name, one
+ * Arabic name and one icon per category, served by marketplace.categories and
+ * administered at /admin/categories. Nothing about products belongs in this
+ * file any more.
+ *
+ * DESIGN_CATEGORIES and FINISHING_CATEGORIES below are a different vocabulary:
+ * they label the two PROVIDER directories, not products, and no write path
+ * validates against them. They stay until those directories get the same
+ * treatment.
+ */
+
+/** The shape those two lists share. Renamed from ProductCategory, which it no longer is. */
+export interface BrowseCategory {
   id: string;
   en: string;
   ar: string;
   icon: string;
 }
 
-export const PRODUCT_CATEGORIES: ProductCategory[] = [
-  { id: 'cement', en: 'Cement & Concrete', ar: 'أسمنت وخرسانة', icon: '🏗️' },
-  { id: 'steel', en: 'Steel & Reinforcement', ar: 'حديد وتسليح', icon: '⚙️' },
-  { id: 'bricks', en: 'Bricks & Blocks', ar: 'طوب وبلوكات', icon: '🧱' },
-  { id: 'sand', en: 'Sand & Aggregates', ar: 'رمل وركام', icon: '⛰️' },
-  { id: 'paints', en: 'Paints & Coatings', ar: 'دهانات وطلاءات', icon: '🎨' },
-  { id: 'ceramics', en: 'Ceramics & Porcelain', ar: 'سيراميك وبورسلين', icon: '🏺' },
-  { id: 'marble', en: 'Marble & Granite', ar: 'رخام وجرانيت', icon: '🪨' },
-  { id: 'flooring', en: 'Flooring', ar: 'أرضيات', icon: '🟫' },
-  { id: 'doors', en: 'Doors', ar: 'أبواب', icon: '🚪' },
-  { id: 'windows', en: 'Windows', ar: 'نوافذ', icon: '🪟' },
-  { id: 'aluminum', en: 'Aluminum Systems', ar: 'أنظمة ألوميتال', icon: '🔩' },
-  { id: 'glass', en: 'Glass', ar: 'زجاج', icon: '🔮' },
-  { id: 'wood', en: 'Wood & Timber', ar: 'خشب وأخشاب', icon: '🪵' },
-  { id: 'kitchens', en: 'Kitchens', ar: 'مطابخ', icon: '🍳' },
-  { id: 'wardrobes', en: 'Wardrobes', ar: 'دواليب', icon: '🚪' },
-  { id: 'furniture', en: 'Furniture', ar: 'أثاث', icon: '🛋️' },
-  { id: 'lighting', en: 'Lighting', ar: 'إضاءة', icon: '💡' },
-  { id: 'electrical', en: 'Electrical Supplies', ar: 'مستلزمات كهربائية', icon: '⚡' },
-  { id: 'plumbing', en: 'Plumbing Supplies', ar: 'مستلزمات سباكة', icon: '🔧' },
-  { id: 'hvac', en: 'HVAC Systems', ar: 'أنظمة تكييف وتهوية', icon: '❄️' },
-  { id: 'gypsum', en: 'Gypsum & Ceilings', ar: 'جبس وأسقف', icon: '🏛️' },
-  { id: 'waterproofing', en: 'Waterproofing', ar: 'عزل مائي', icon: '💧' },
-  { id: 'roofing', en: 'Roofing', ar: 'أسقف وتغطيات', icon: '🏠' },
-  { id: 'firefighting', en: 'Fire Fighting Systems', ar: 'أنظمة إطفاء حريق', icon: '🧯' },
-  { id: 'firealarm', en: 'Fire Alarm Systems', ar: 'أنظمة إنذار حريق', icon: '🚨' },
-  { id: 'smarthome', en: 'Smart Home Solutions', ar: 'حلول المنزل الذكي', icon: '🏡' },
-  { id: 'solar', en: 'Solar Energy Systems', ar: 'أنظمة طاقة شمسية', icon: '☀️' },
-  { id: 'elevators', en: 'Elevators', ar: 'مصاعد', icon: '🛗' },
-  { id: 'landscaping', en: 'Landscaping Materials', ar: 'مواد تنسيق حدائق', icon: '🌿' },
-  { id: 'pools', en: 'Swimming Pool Equipment', ar: 'معدات حمامات سباحة', icon: '🏊' },
-  { id: 'decorative', en: 'Decorative Materials', ar: 'مواد ديكور', icon: '🖼️' },
-  { id: 'hardware', en: 'Hardware & Tools', ar: 'عدد وأدوات', icon: '🔨' },
-  { id: 'safety', en: 'Safety Equipment', ar: 'معدات سلامة', icon: '🦺' },
-];
-
-
-
-
-
-
-
-export const DESIGN_CATEGORIES: ProductCategory[] = [
+export const DESIGN_CATEGORIES: BrowseCategory[] = [
   { id: 'architecture', en: 'Architecture', ar: 'عمارة', icon: '🏛️' },
   { id: 'interior', en: 'Interior Design', ar: 'تصميم داخلي', icon: '🛋️' },
   { id: 'landscape', en: 'Landscape Design', ar: 'تصميم لاندسكيب', icon: '🌳' },
@@ -81,7 +60,7 @@ export const DESIGN_CATEGORIES: ProductCategory[] = [
 
 
 
-export const FINISHING_CATEGORIES: ProductCategory[] = [
+export const FINISHING_CATEGORIES: BrowseCategory[] = [
   { id: 'turnkey', en: 'Complete Turnkey Solutions', ar: 'حلول تسليم مفتاح', icon: '🔑' },
   { id: 'coreshell', en: 'Core & Shell', ar: 'هيكل خرساني', icon: '🏗️' },
   { id: 'semifinished', en: 'Semi-Finished', ar: 'نصف تشطيب', icon: '🔨' },

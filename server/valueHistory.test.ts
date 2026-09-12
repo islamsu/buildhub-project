@@ -291,11 +291,19 @@ describe('the mutations that change these fields actually record them', () => {
     expect(body).toContain('eq(products.supplierId, ctx.user.id)');
   });
 
-  it('publishing and delisting is recorded as a status change', () => {
-    const at = ROUTERS.indexOf('  setProductActive: approvedProviderProcedure');
-    const body = ROUTERS.slice(at, at + 2000);
-    expect(body).toContain("field: 'active'");
-    expect(body).toContain('oldValue: String(owned.active)');
+  it('every lifecycle move is recorded with the state it came FROM', () => {
+    // This used to read `setProductActive` in routers.ts and assert
+    // `field: 'active'`. The claim is unchanged - a status change with no
+    // previous value cannot answer "was this live when the customer says they
+    // saw it" - but the boolean became a four-state lifecycle, and the writer
+    // moved into server/productLifecycle.ts so all four moves record the same
+    // way rather than each call site remembering to.
+    const lifecycle = readSourceForAssertions(
+      readFileSync(new URL('./productLifecycle.ts', import.meta.url), 'utf8'));
+    expect(lifecycle).toContain("field: 'status'");
+    // `from` is read off the row BEFORE the update, which is the whole point.
+    expect(lifecycle).toContain('oldValue: from');
+    expect(lifecycle.indexOf('const from =')).toBeLessThan(lifecycle.indexOf('db.update(products)'));
   });
 
   it('supplier approval records the status it moved from', () => {

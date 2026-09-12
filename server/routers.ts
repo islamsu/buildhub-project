@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { COOKIE_NAME, NOT_ADMIN_ERR_MSG } from '@shared/const';
 import {
-  ADMIN_ROLES, isAdminRole, hasAdminPermission, permissionsForAdminRole,
+  ADMIN_ROLES, ADMIN_PASSWORD_MIN_LENGTH, isAdminRole, hasAdminPermission, permissionsForAdminRole,
   type AdminPermission, type AdminRole,
 } from '@shared/adminRoles';
 import { getSessionCookieOptions } from './_core/cookies';
@@ -10,6 +10,7 @@ import { publicProcedure, protectedProcedure, router } from './_core/trpc';
 import type { TrpcContext } from './_core/context';
 import { TRPCError } from '@trpc/server';
 import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername, revokeSession } from './db';
+import { requireDb } from './_core/requireDb';
 import { hashPassword, verifyPassword, NO_SUCH_ACCOUNT_HASH } from './passwords';
 import { generateAIResponse, isAiConfigured, AiError, type AiFailureCategory } from './_core/ai';
 import { buildSystemPrompt, type KnowledgeLanguage } from './_core/buildhubKnowledge';
@@ -33,11 +34,53 @@ import { getChurn, getCommercialKpis } from './analytics/kpis';
 import { ENV, isTestLoginEnabled } from './_core/env';
 import { getMailer, isMailerConfigured } from './_core/mailer';
 import { notifyUser, notifyUsers } from './notifications';
+import {
+  listConversations, listThread, markThreadRead, unreadMessageCount, THREAD_PAGE_SIZE_MAX,
+} from './messaging';
+import { NotificationPreferenceError, notificationPreferencesFor, setNotificationPreference } from './notificationPreferences';
+import {
+  ServiceCatalogueError, assertCategoryAcceptsServices, validatePricing, validateCommitments,
+  requireOwnedService, transitionService, visibleServicesFor,
+} from './serviceCatalogue';
+import {
+  SERVICE_PRICING_BASES, SERVICE_STATUSES, SERVICE_TITLE_MAX, SERVICE_DESCRIPTION_MAX,
+  DEFAULT_PRICING_BASIS,
+} from '@shared/serviceCatalogue';
 import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
+import { canAcceptQuotation, isQuotationExpired } from '../shared/quotationValidity';
+import { changedSomething } from './_core/writeResult';
+import { recordAccountEvent } from './_core/accountAudit';
+import { listAdminUsers, type AdminDirectoryPage } from './adminUserDirectory';
+import { listAccountAudit, auditFilterOptions } from './accountAuditView';
 import { runDataQualityChecks } from './admin/dataQuality';
 import { readOperationalHealth } from './admin/operationalHealth';
 import { runPlatformSearch } from './admin/platformSearch';
 import { qualifyReferralEvent } from './referralEngine';
+import { reverseRewardEffect, markRewardReversed, markReferralAfterReversal } from './referralReversal';
+import {
+  listAdminReferrals, listReferralRewards, listMyReferralRewards, myReferralCounts,
+} from './referralRewardView';
+import { explainEnquiryAllowance } from './billing/allowanceBreakdown';
+import { splitCampaignEdit, refuseCampaignEdit, refuseCampaignDates } from './referralCampaignEdit';
+import {
+  DISPUTE_ADMIN_SETTABLE_STATUSES, DISPUTE_CATEGORIES, DISPUTE_SUBJECT_TYPES,
+  DISPUTE_RESOLUTION_TYPES, DISPUTE_PRIORITIES, DISPUTE_OPEN_STATUSES,
+  DISPUTE_EVIDENCE_CONTENT_TYPES, isAllowedDisputeEvidenceType,
+  MAX_DISPUTE_EVIDENCE_SIZE, MAX_DISPUTE_EVIDENCE_FILES, MAX_DISPUTE_MESSAGE_LENGTH,
+} from '@shared/disputes';
+import { applyTransition } from './disputeWorkflow';
+import { notifyDisputeParties } from './disputeNotifications';
+import { subjectColumns, assignDisputeReference, hasSubject } from './disputeSubject';
+import { adminDisputeDetail, disputeStatusCounts, listAdminDisputes } from './disputeAdminView';
+import { listMyDisputes } from './disputeMyView';
+import { adminPage, allOf, COUNT, enumFilter, ADMIN_PAGE_SIZE_DEFAULT, ADMIN_PAGE_SIZE_MAX } from './adminList';
+import {
+  requireSubjectParty, requireDisputeAccess, respondentCandidates, validateRespondent,
+  partiesForSubject,
+} from './disputeEligibility';
+import {
+  DEFAULT_ATTRIBUTION_WINDOW_DAYS, REFERRAL_QUALIFICATION_TYPES, REFERRAL_REWARD_TYPES,
+} from '@shared/referralRewards';
 import {
   assertSuperAdminSurvives, assertUserDirectoryMutationAllowed,
 } from './adminAuthority';
@@ -62,8 +105,11 @@ import {
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems, qualifiedEnquiries,
   projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals, referralCampaigns, referralRewards,
+  reviewResponses, reviewReports,
+  supportTickets, supportTicketMessages, supportTicketAttachments,
+  disputeStatusHistory, disputeMessages, disputeEvidence, productCategories, serviceOfferings,
 } from '../drizzle/schema';
-import { and, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { getComplianceRequirements, isComplianceRole, type ComplianceStatus, type ComplianceDocumentStatus } from '../shared/compliance';
@@ -107,21 +153,54 @@ import {
 } from './audit/fieldHistory';
 import { isPaymentProviderConfigured } from './billing/provider';
 import {
-  getEnquiryUsage, getRfqResponseAccess, getVendorCategories, listEligibleRfqs, openQualifiedEnquiry,
+  getEnquiryUsage, getRfqResponseAccess, getVendorCategories, openQualifiedEnquiry,
+  previewQualifiedEnquiry,
 } from './billing/enquiries';
 import {
-  FEATURED_PLACEMENT_SLOTS, getVendorTargetingDiagnostics, listDirectoryCategories,
-  listDirectoryVendors, listFeaturedProviders, listFeaturedVendors, listSponsoredVendors,
+  ENQUIRY_PAGE_SIZE_DEFAULT, ENQUIRY_RESPONSE_STATES, ENQUIRY_RFQ_STATUSES, ENQUIRY_SOURCES,
+  enquiryQueueCategories, enquiryQueueSummary, listEnquiryQueue,
+} from './enquiryQueue';
+import {
+  getVendorTargetingDiagnostics, listDirectoryCategories,
+  listDirectoryVendors, listFeaturedProviders, listSponsoredVendors,
 } from './vendorDirectory';
 import { getPlatformStats } from './platformStats';
+import {
+  respondToReview, reportReview, moderateReview, resolveReviewReport,
+  listReviewReports, visibleReviewsFor, visibleReviewFilter, ReviewModerationError,
+} from './reviewModeration';
+import { REVIEW_REPORT_REASONS, REVIEW_RESPONSE_MAX_LENGTH } from '../shared/reviews';
+import {
+  publicProductFilter, transitionProduct, ProductLifecycleError,
+} from './productLifecycle';
+import {
+  listProjectDocuments, requireDocumentAccess, canRetireDocument,
+  archiveDocument, restoreDocument, markSuperseded, ProjectDocumentError,
+} from './projectDocuments';
+import {
+  PRODUCT_STATUSES, PRODUCT_CREATABLE_STATUSES, PRODUCT_PUBLIC_STATUS, activeFromStatus,
+} from '../shared/productLifecycle';
 import {
   MAX_BASKET_ITEMS, MAX_ITEM_NAME, MAX_ITEM_SPECIFICATIONS, MAX_ITEM_UNIT,
   MAX_ITEM_VARIANT, MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY,
 } from '../shared/rfqBasket';
 import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shared/productImport';
-import { PRODUCT_CATEGORIES } from '../shared/productCategories';
+import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories } from './categoryService';
+import {
+  listCategoriesForAdmin, createCategory, updateCategory, setCategoryStatus,
+  addCategoryAlias, removeCategoryAlias, CategoryAdminError,
+  CATEGORY_SCOPES, CATEGORY_STATUSES,
+} from './categoryAdmin';
 import { normaliseUnit, PRODUCT_UNITS } from '../shared/productUnits';
 import { canCreateProject, creatorProjectRole, PROJECT_ROLES, capabilitiesFor } from '../shared/projectAccess';
+import {
+  SUPPORT_CATEGORIES, SUPPORT_PRIORITIES, SUPPORT_STATUSES,
+  SUPPORT_ATTACHMENT_CONTENT_TYPES, supportReference, type SupportStatus,
+} from '../shared/supportTickets';
+import {
+  requireTicketAccess, transitionTicket, listSupportTickets, listMyTickets,
+  ticketThread, statusAfterUserReply, SupportTicketError,
+} from './supportTickets';
 import { requireProjectAccess, readableProjectIds, liveMembership } from './projectMembership';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSponsorships, vendorSubscriptions } from '../drizzle/schema';
@@ -201,7 +280,7 @@ const hashPasswordResetToken = (raw: string) => createHash('sha256').update(raw)
 const ADMIN_TOKEN_BYTES = 32;
 const ADMIN_INVITE_TTL_HOURS = 48;
 /** Longer than a customer's 8. One of these reaches the whole admin surface. */
-const ADMIN_PASSWORD_MIN_LENGTH = 12;
+// ADMIN_PASSWORD_MIN_LENGTH now lives in shared/adminRoles.ts - see there.
 const hashAdminToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
 /**
@@ -376,7 +455,7 @@ const authRouter = router({
     const cookieOptions = getSessionCookieOptions(ctx.req);
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions });
     await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, target.id));
-    await db.insert(userAccountAuditEvents).values({ userId: target.id, actorId: target.id, action: 'dummy_user_signed_in', source: 'dummy', note: 'Dummy user signed in with a locally managed password' });
+    await recordAccountEvent(db, { userId: target.id, actorId: target.id, action: 'dummy_user_signed_in', source: 'dummy', note: 'Dummy user signed in with a locally managed password' });
     return { success: true, userRole: target.userRole, onboardingStatus: target.onboardingStatus } as const;
   }),
   // ── First-party password authentication (Slice 3) ───────────────────────
@@ -445,14 +524,12 @@ const authRouter = router({
     const burn = await db.update(testLoginTokens)
       .set({ usedAt: new Date() })
       .where(and(eq(testLoginTokens.id, row.id), isNull(testLoginTokens.usedAt)));
-    const affected = (burn as unknown as { rowsAffected?: number })?.rowsAffected
-      ?? (Array.isArray(burn) ? (burn[0] as { affectedRows?: number })?.affectedRows : undefined);
-    if (affected === 0) throw reject();
+    if (!changedSomething(burn)) throw reject();
 
     const sessionToken = await sdk.createSessionToken(target.openId, { name: target.name || target.username || 'QA user' });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
     await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, target.id));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: target.id, actorId: row.issuedBy, action: 'test_login_link_redeemed', source: 'admin',
       note: 'QA persona signed in through an admin-issued link',
     });
@@ -557,13 +634,69 @@ const authRouter = router({
           code: input.referralCode,
           status: 'registered',
         });
+
+        /*
+         * ATTRIBUTION, TOLD TO THE PERSON WHO EARNED IT.
+         *
+         * The referral lifecycle notified on the grant and on the reversal and
+         * said nothing here - so the one moment an inviter would most want to
+         * hear about, somebody actually using their code, passed in silence.
+         *
+         * WHAT IT DELIBERATELY DOES NOT SAY. Not the new account's name or
+         * email: the inviter shared a code, which does not entitle them to
+         * know who took it up until that person becomes a customer in their
+         * own right. And no promise of a reward - late binding (owner decision
+         * 2) means the campaign is chosen at QUALIFICATION, so a reward
+         * promised now could be a reward BuildHub cannot honour.
+         */
+        await notifyUser(db, {
+          userId: referrer.id,
+          title: 'Somebody used your invite code',
+          body: 'They have registered. A reward is decided if and when they qualify.',
+          type: 'info',
+          // THE SAME DESTINATION the grant and the reversal use. `/referrals`
+          // was not even a registered route - the notification-destination
+          // guard caught it - and a third address for one subject is how a
+          // reader ends up somewhere that does not show what they were told
+          // about.
+          link: '/settings#settings-referral',
+          messageKey: 'notif.referral.attributed',
+        });
+      } else {
+        /*
+         * A CODE THAT WENT NOWHERE, RECORDED.
+         *
+         * This branch did not exist: a code matching no account, or matching
+         * the signer themselves, was dropped in silence. So somebody walking
+         * the code space to find valid ones left no trace at all, and a real
+         * user who mistyped a friend's code had no record of why they were
+         * never credited.
+         *
+         * THE SIGNUP STILL SUCCEEDS, and the user is NOT told the code was
+         * bad. Refusing would block a real registration over a typo in an
+         * optional field, and reporting it would turn signup into an oracle
+         * that confirms which codes exist - which is the thing being walked.
+         * The record is server-side, for the administrator investigating.
+         */
+        await recordAccountEvent(db, {
+          userId,
+          actorId: userId,
+          action: 'referral_code_unusable',
+          source: 'self_registered',
+          // The code itself, because "somebody tried 400 codes" is only
+          // answerable if the attempts name what was tried. It is not a
+          // credential: it is a public invitation token its owner shares.
+          note: referrer
+            ? `Self-referral attempted with own code ${input.referralCode}`
+            : `No account holds referral code ${input.referralCode}`,
+        });
       }
     }
 
     const [created] = await db.select({ openId: users.openId }).from(users).where(eq(users.id, userId));
     const sessionToken = await sdk.createSessionToken(created.openId, { name: input.name });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId, actorId: userId, action: 'password_account_created', source: 'self_registered',
       note: 'Account created with an email address and password',
     });
@@ -613,7 +746,7 @@ const authRouter = router({
     });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
     await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, candidate.id));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: candidate.id, actorId: candidate.id, action: 'password_signed_in', source: 'password',
       note: identifier.includes('@') ? 'Signed in with email and password' : 'Signed in with username and password',
     });
@@ -676,7 +809,7 @@ const authRouter = router({
     });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
     await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, candidate.id));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: candidate.id, actorId: candidate.id, action: 'admin_signed_in', source: 'admin_login',
       note: `Administrator sign-in as ${candidate.adminRole}`,
     });
@@ -721,9 +854,7 @@ const authRouter = router({
     const burn = await db.update(adminInvitations)
       .set({ usedAt: new Date() })
       .where(and(eq(adminInvitations.id, row.id), isNull(adminInvitations.usedAt)));
-    const affected = (burn as unknown as { affectedRows?: number }[])[0]?.affectedRows
-      ?? (burn as unknown as { affectedRows?: number }).affectedRows ?? 0;
-    if (affected === 0) throw reject();
+    if (!changedSomething(burn)) throw reject();
 
     const passwordHash = await hashPassword(input.password);
     await db.update(users).set({
@@ -738,7 +869,7 @@ const authRouter = router({
       invitationStatus: 'password_set',
     }).where(eq(users.id, row.userId));
 
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: row.userId, actorId: row.userId, action: 'admin_invitation_redeemed', source: 'admin_invite',
       note: `Administrator account activated as ${row.adminRole}`,
     });
@@ -788,7 +919,7 @@ const authRouter = router({
         // an account-existence oracle.
         console.error('[auth] Password reset email failed to send', error);
       }
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: target.id, actorId: target.id, action: 'password_reset_requested', source: 'password',
         note: 'A password reset link was issued',
       });
@@ -831,7 +962,7 @@ const authRouter = router({
       sessionsInvalidBefore: now,
     }).where(eq(users.id, target.id));
 
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: target.id, actorId: target.id, action: 'password_reset_completed', source: 'password',
       note: 'Password changed via reset link; all existing sessions invalidated',
     });
@@ -876,12 +1007,18 @@ const authRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       await db.update(users).set({ username: input.username ? normalizeUsername(input.username) : undefined, userRole: input.userRole, name: input.name, phone: input.phone, location: input.location, onboardingStatus: isComplianceRole(input.userRole) ? 'not_started' : 'approved', verified: isComplianceRole(input.userRole) ? false : true }).where(eq(users.id, ctx.user.id));
-      await db.insert(userAccountAuditEvents).values({ userId: ctx.user.id, actorId: ctx.user.id, action: 'profile_role_completed', source: 'self_registered', note: `Role selected: ${input.userRole}` });
+      await recordAccountEvent(db, { userId: ctx.user.id, actorId: ctx.user.id, action: 'profile_role_completed', source: 'self_registered', note: `Role selected: ${input.userRole}` });
       recordEventAsync({
         type: ANALYTICS_EVENTS.VENDOR_PROFILE_COMPLETED,
         userId: ctx.user.id,
         metadata: { role: input.userRole, professional: isComplianceRole(input.userRole) },
       });
+      // PROFILE_COMPLETED, at the moment the product ALREADY treats a profile
+      // as complete - the same line that emits the analytics event and writes
+      // `profile_role_completed`. Inventing a separate definition of "complete"
+      // for the referral engine would make the reward fire at a moment nothing
+      // else on the platform recognises.
+      await qualifyReferralEvent(db, ctx.user.id, 'PROFILE_COMPLETED', `profile:${ctx.user.id}`, new Date());
       return { success: true };
     }),
 });
@@ -1033,8 +1170,7 @@ const approvedProviderProcedure = protectedProcedure.use(({ ctx, next }) => {
 
 const projectsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     // Owned OR joined. Before the project team model this was ownership alone,
     // which is why a contractor put on a job could not see it: there was no
     // membership to see it through.
@@ -1042,17 +1178,19 @@ const projectsRouter = router({
     if (ids.length === 0) return [];
     return db.select().from(projects).where(inArray(projects.id, ids)).orderBy(desc(projects.createdAt));
   }),
-  directory: approvedProviderProcedure.query(async ({ ctx }) => {
+  directory: approvedProviderProcedure.input(z.object({
+    page: z.number().int().min(0).default(0),
+    pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(ADMIN_PAGE_SIZE_DEFAULT),
+  }).default({ page: 0, pageSize: ADMIN_PAGE_SIZE_DEFAULT })).query(async ({ ctx, input }) => {
     if (!providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Provider access required' });
     }
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     // Lead-directory listing only - never select budget/spent (or other owner-private
     // columns) here. Confirmed against every consumer of this query (RolePlatform.tsx's
     // provider/supplier/PM workspaces) that only id/title/type/status/location/progress
     // are ever rendered from directory results.
-    return db.select({
+    const columns = {
       id: projects.id,
       title: projects.title,
       type: projects.type,
@@ -1060,7 +1198,19 @@ const projectsRouter = router({
       location: projects.location,
       progress: projects.progress,
       updatedAt: projects.updatedAt,
-    }).from(projects).orderBy(desc(projects.updatedAt)).limit(50);
+    };
+    /*
+     * PAGED, with a real total. Was `.limit(50)` and a bare array: a provider
+     * browsing for leads saw the fifty most recently updated projects and had
+     * no way to learn there were more, or how many.
+     */
+    return adminPage({
+      countQuery: db.select(COUNT).from(projects),
+      rowsQuery: db.select(columns).from(projects),
+      orderBy: [desc(projects.updatedAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
@@ -1090,10 +1240,23 @@ const projectsRouter = router({
    * `directory`, a lead list, not ownership. A provider-owned project has no
    * meaning in any of those paths.
    *
-   * VERIFIED BEFORE RESTRICTING, not assumed: every project in the database is
+   * VERIFIED BEFORE RESTRICTING, not assumed: every project in the database was
    * owned by a homeowner (32 of 32 at the time of the change; group by userRole
-   * returned that single row). So this takes no capability away from anyone who
-   * had it - it closes a door nobody had walked through.
+   * returned that single row).
+   *
+   * THAT OBSERVATION WAS THEN USED AS A RULE, AND IT SHOULD NOT HAVE BEEN. The
+   * restriction was drawn at `homeowner` because homeowners were the only
+   * accounts that had ever created a project - but the only reason no
+   * contractor had created one is that the UI never offered it. A restriction
+   * cannot be evidence for itself.
+   *
+   * The rule the code enforces now is the one the business actually has, and it
+   * lives in `PROJECT_CREATOR_ROLES`: every professional role that participates
+   * in delivering a job may commission one, because a main contractor
+   * subcontracting a package and a project manager commissioning on a client's
+   * behalf are ordinary construction practice. SUPPLIER STAYS EXCLUDED, and
+   * that exclusion is the whole security content of this guard - a supplier
+   * answers a request for work rather than commissioning one.
    */
   create: protectedProcedure
     .input(z.object({
@@ -1261,7 +1424,7 @@ const projectsRouter = router({
         });
       }
 
-      const [project] = await db.select({ title: projects.title })
+      const [project] = await db.select({ title: projects.title, ownerId: projects.ownerId })
         .from(projects).where(eq(projects.id, input.projectId)).limit(1);
       await notifyUser(db, {
         userId: input.userId,
@@ -1275,7 +1438,101 @@ const projectsRouter = router({
         messageParams: { title: project?.title ?? '', role: input.projectRole },
       });
 
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id,
+        ownerId: project?.ownerId ?? null,
+        subjectType: 'project',
+        subjectId: input.projectId,
+        action: 'project_member_added',
+        detail: `user ${input.userId} added as ${input.projectRole}`,
+      });
+
       return { success: true, projectRole: input.projectRole };
+    }),
+
+  /**
+   * CHANGE SOMEBODY'S CAPACITY ON A PROJECT, without pretending they left.
+   *
+   * There was no way to do this at all. `addMember` refuses a live member with
+   * CONFLICT, so promoting the site engineer to manager meant REMOVING them and
+   * ADDING them back - which resets `assignedAt`, wipes the `removedAt` and
+   * `removedBy` that record they were ever taken off, and sends them a "You
+   * were added to a project" notification for a project they never left. The
+   * project role governs what they can do, so this is not a cosmetic field.
+   */
+  changeMemberRole: protectedProcedure
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      userId: z.number().int().positive(),
+      projectRole: z.enum(PROJECT_ROLES),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const access = await requireProjectAccess(db, input.projectId, ctx.user.id, 'manage');
+
+      // The same two rules `addMember` holds, for the same two reasons:
+      // ownership is derived from projects.ownerId and cannot be handed out,
+      // and the owner's own capacity is not somebody else's to change.
+      if (input.projectRole === 'owner') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Ownership belongs to the customer the project is for and cannot be assigned. Use "manager" for someone who runs the project.',
+        });
+      }
+      if (input.userId === access.ownerId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'The project owner\'s role on their own project cannot be changed.',
+        });
+      }
+
+      const [existing] = await db.select({
+        id: projectMembers.id,
+        projectRole: projectMembers.projectRole,
+        removedAt: projectMembers.removedAt,
+      }).from(projectMembers)
+        .where(and(eq(projectMembers.projectId, input.projectId), eq(projectMembers.userId, input.userId)))
+        .limit(1);
+
+      // A REMOVED MEMBER IS NOT PROMOTED BACK IN. Changing the role of somebody
+      // who is off the project would quietly restore their access, which is the
+      // opposite of what removing them meant.
+      if (!existing || existing.removedAt) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'That person is not on this project.' });
+      }
+      const previous = existing.projectRole;
+      if (previous === input.projectRole) {
+        // Not an error, and not a change. Saying "done" either way would make
+        // the two indistinguishable to the screen and to the trail.
+        return { success: true, changed: false, from: previous, to: input.projectRole };
+      }
+
+      await db.update(projectMembers)
+        .set({ projectRole: input.projectRole, assignedBy: ctx.user.id })
+        .where(eq(projectMembers.id, existing.id));
+
+      const [project] = await db.select({ title: projects.title, ownerId: projects.ownerId })
+        .from(projects).where(eq(projects.id, input.projectId)).limit(1);
+      await notifyUser(db, {
+        userId: input.userId,
+        title: 'Your role on a project changed',
+        body: `${project?.title ?? 'A project'} - your role is now ${input.projectRole}`,
+        type: 'info',
+        link: `/projects/${input.projectId}`,
+        messageKey: 'notif.project.member.roleChanged',
+        messageParams: { title: project?.title ?? '', role: input.projectRole, from: previous },
+      });
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id,
+        ownerId: project?.ownerId ?? null,
+        subjectType: 'project',
+        subjectId: input.projectId,
+        action: 'project_member_role_changed',
+        detail: `user ${input.userId}: ${previous} -> ${input.projectRole}`,
+      });
+
+      return { success: true, changed: true, from: previous, to: input.projectRole };
     }),
 
   /** Take someone off a project. A soft end - the history keeps them. */
@@ -1311,8 +1568,29 @@ const projectsRouter = router({
       // Reported honestly: removing somebody who is not on the project is not
       // an error, but it is also not a removal, and saying "success" either
       // way would make the two indistinguishable.
-      const affected = Number((result as { rowsAffected?: number })?.rowsAffected ?? 0);
-      return { success: true, removed: affected > 0 };
+      //
+      // THIS READ WAS WRONG AND THE FLAG WAS ALWAYS FALSE. mysql2 answers with
+      // `[ResultSetHeader]`, so the count is at `result[0].affectedRows`; there
+      // is no `rowsAffected` in it. A removal that genuinely happened - with
+      // `removedAt` set in the database - reported `removed: false`, which is
+      // exactly what this flag exists to distinguish it from. One reader now,
+      // in `_core/writeResult.ts`, because three spellings of the same question
+      // is how one of them ends up asking it wrongly.
+      const removed = changedSomething(result);
+      // AUDITED ONLY WHEN IT HAPPENED. Writing a removal event for a no-op
+      // would put a removal in the trail that did not occur, which is worse
+      // than not recording it at all.
+      if (removed) {
+        await recordCommercialEvent(db, {
+          actorId: ctx.user.id,
+          ownerId: access.ownerId,
+          subjectType: 'project',
+          subjectId: input.projectId,
+          action: 'project_member_removed',
+          detail: `user ${input.userId} removed`,
+        });
+      }
+      return { success: true, removed };
     }),
   update: protectedProcedure
     .input(z.object({
@@ -1342,8 +1620,7 @@ const projectsRouter = router({
       return { success: true };
     }),
   milestones: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     return db.select().from(milestones).where(eq(milestones.projectId, input.projectId)).orderBy(milestones.dueDate);
   }),
@@ -1357,8 +1634,7 @@ const projectsRouter = router({
       return { success: true };
     }),
   tasks: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     return db.select().from(tasks).where(eq(tasks.projectId, input.projectId)).orderBy(desc(tasks.createdAt));
   }),
@@ -1388,8 +1664,7 @@ const projectsRouter = router({
       return { success: true };
     }),
   expenses: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     await requireProjectAccess(db, input.projectId, ctx.user.id, 'finance');
     return db.select().from(expenses).where(eq(expenses.projectId, input.projectId)).orderBy(desc(expenses.date));
   }),
@@ -1403,8 +1678,7 @@ const projectsRouter = router({
       return { success: true };
     }),
   dailyLogs: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     return db.select().from(dailyLogs).where(eq(dailyLogs.projectId, input.projectId)).orderBy(desc(dailyLogs.date));
   }),
@@ -1417,13 +1691,114 @@ const projectsRouter = router({
       await db.insert(dailyLogs).values({ ...input, authorId: ctx.user.id });
       return { success: true };
     }),
-  documents: protectedProcedure.input(z.object({ projectId: z.number(), type: z.enum(['drawing', 'boq', 'photo', 'contract', 'invoice', 'other']).optional() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
-    await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
-    const filters = input.type ? and(eq(documents.projectId, input.projectId), eq(documents.type, input.type)) : eq(documents.projectId, input.projectId);
-    return db.select().from(documents).where(filters).orderBy(desc(documents.createdAt));
-  }),
+  /**
+   * The project's documents.
+   *
+   * ARCHIVED ONES ARE OUT OF THE WORKING LIST but not out of the record:
+   * `includeArchived` is what a dispute needs six months later, and it is
+   * still gated on the same read capability, because a superseded drawing is
+   * no less confidential than the current one.
+   */
+  documents: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      type: z.enum(['drawing', 'boq', 'photo', 'contract', 'invoice', 'other']).optional(),
+      includeArchived: z.boolean().default(false),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
+      return listProjectDocuments(db, {
+        projectId: input.projectId, type: input.type, includeArchived: input.includeArchived,
+      });
+    }),
+
+  /**
+   * REPLACE a document with a corrected revision.
+   *
+   * The new file is a NEW ROW and the old one is archived pointing forward to
+   * it, so the superseded revision survives and "which drawing was current in
+   * March" has an answer. Overwriting the row would have destroyed exactly the
+   * thing a dispute needs.
+   *
+   * The order matters: the new row is written FIRST. Archiving the old one
+   * before the upload succeeded would leave a project with neither revision in
+   * its working list.
+   */
+  replaceDocument: protectedProcedure
+    .input(z.object({
+      documentId: z.number().int().positive(),
+      name: z.string().min(1).max(255).optional(),
+      contentType: z.string().refine(isAllowedProjectDocumentType, { message: 'Unsupported project document type' }),
+      base64: z.string().max(11_000_000, 'File too large (max ~8MB)'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      enforceUploadRateLimit(ctx.user.id);
+      const db = await requireDb();
+      let access;
+      try {
+        access = await requireDocumentAccess(db, {
+          documentId: input.documentId, userId: ctx.user.id, capability: 'report',
+        });
+      } catch (error) { throw asDocumentTrpcError(error); }
+      const { document, role } = access;
+
+      if (document.archivedAt) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That document has already been archived. Upload a new one instead.' });
+      }
+      if (!canRetireDocument(role, document.uploaderId, ctx.user.id)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the person who uploaded this document, or someone who manages the project, can replace it.',
+        });
+      }
+
+      const buffer = Buffer.from(input.base64, 'base64');
+      if (buffer.length > 8 * 1024 * 1024) throw new TRPCError({ code: 'BAD_REQUEST', message: 'File too large (max 8MB)' });
+      assertUploadedFileMatches(input.contentType, buffer, DOCUMENT_TYPES);
+
+      const name = input.name ?? document.name;
+      const safeName = name.replace(/[^\w.-]+/g, '_');
+      const { key, url } = await storagePutOrUnavailable(
+        `project-documents/user-${ctx.user.id}/project-${document.projectId}/${safeName}`,
+        buffer, input.contentType,
+      );
+      const result = await db.insert(documents).values({
+        projectId: document.projectId, uploaderId: ctx.user.id, name,
+        type: document.type, url, fileKey: key, size: buffer.length,
+      });
+      const newId = Number(result?.[0]?.insertId ?? 0);
+      await markSuperseded(db, {
+        oldDocumentId: input.documentId, newDocumentId: newId,
+        userId: ctx.user.id, uploaderId: document.uploaderId,
+      });
+      return { id: newId, replaced: input.documentId, key, url, name, size: buffer.length };
+    }),
+
+  /** Retire a document. The bytes and the row both survive - see the module. */
+  archiveDocument: protectedProcedure
+    .input(z.object({
+      documentId: z.number().int().positive(),
+      reason: z.string().trim().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await archiveDocument(db, {
+          documentId: input.documentId, userId: ctx.user.id, reason: input.reason ?? null,
+        });
+      } catch (error) { throw asDocumentTrpcError(error); }
+    }),
+
+  /** Undo a retirement somebody made by mistake. */
+  restoreDocument: protectedProcedure
+    .input(z.object({ documentId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await restoreDocument(db, { documentId: input.documentId, userId: ctx.user.id });
+      } catch (error) { throw asDocumentTrpcError(error); }
+    }),
   uploadDocument: protectedProcedure
     .input(z.object({
       projectId: z.number(),
@@ -1449,8 +1824,7 @@ const projectsRouter = router({
       return { id: Number(result?.[0]?.insertId ?? 0), key, url, name: input.name, type: input.type, size: buffer.length };
     }),
   progressReports: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
     return db.select().from(progressReports).where(eq(progressReports.projectId, input.projectId)).orderBy(desc(progressReports.createdAt));
   }),
@@ -1520,35 +1894,42 @@ const marketplaceRouter = router({
    * number.
    */
   platformStats: publicProcedure.query(async () => {
-    const db = await getDb();
-    // No database is not an excuse to invent figures. Zeroes with a null
-    // satisfaction render as "no figure yet", which is accurate.
-    if (!db) return { registeredUsers: 0, activeProjects: 0, verifiedProviders: 0, satisfaction: null };
+    // No database is not an excuse to invent figures - and ZEROES ARE A
+    // FIGURE. "0 registered users" on the public homepage is a claim about
+    // BuildHub, made confidently, and false. It fails instead.
+    const db = await requireDb();
     return getPlatformStats(db);
   }),
 
-  // Featured placement (Slice 8). A SEPARATE endpoint from `vendors` above, on
-  // purpose: the organic list and the sponsored strip are two different things
-  // and merging them into one response is how a client ends up rendering a paid
-  // slot as an organic result. `sponsored: true` on every row makes the
-  // labelling obligation impossible to overlook on the client side.
-  featuredVendors: publicProcedure
-    .input(z.object({
-      category: z.string().max(MAX_SEARCH_LENGTH).optional(),
-      location: z.string().max(MAX_SEARCH_LENGTH).optional(),
-    }).optional())
-    .query(async ({ input }) => {
-      const vendors = await listFeaturedVendors(input ?? {});
-      return {
-        vendors: vendors.map(vendor => ({ ...vendor, sponsored: true as const })),
-        slots: FEATURED_PLACEMENT_SLOTS,
-      };
-    }),
+  // ── THE RETIRED PUBLIC READER ────────────────────────────────────────────
+  //
+  // `marketplace.featuredVendors` used to be a third public placement reader.
+  // It returned the Premium-entitlement rotation and labelled every row
+  // `sponsored: true` - a COMMERCIAL surface wearing the word "Featured".
+  //
+  // The owner has settled the vocabulary: FEATURED means editorial curation by
+  // BuildHub, SPONSORED means commercial placement. Two public concepts, not
+  // three competing strips. So this reader is retired rather than renamed:
+  // `sponsoredVendors` below already returns the entitlement rotation, merged
+  // with admin grants and labelled by `sponsorshipSource`, and it is what the
+  // directory actually calls. `listEntitlementSponsoredVendors` survives as the
+  // INTERNAL helper that computes the entitlement half of that answer - the
+  // commercial logic was never the problem, only the public architecture and
+  // the word attached to it.
+  //
+  // server/publicPlacementReaders.test.ts asserts no procedure of this name
+  // comes back, and that it is gone because it was REMOVED rather than parked
+  // on reachability.ts's declared-uncalled list. So the decision cannot
+  // quietly reverse, in either direction.
+
   /**
-   * EDITORIAL FEATURED PROVIDERS. A separate endpoint from `featuredVendors`
-   * (the Premium entitlement rotation) and `sponsoredVendors` (paid placement):
-   * this is the admin-curated selection, and it must not be confused with
-   * either. Each row carries its `featuredCategory` so a directory can render
+   * EDITORIAL FEATURED PROVIDERS - the canonical public reader for the
+   * curated half of discovery. BuildHub chooses these; they are not bought.
+   *
+   * Deliberately separate from `sponsoredVendors` (commercial placement, both
+   * the entitlement rotation and admin grants) and never merged with it: one
+   * label for a deliberate editorial pick and a paid slot would misrepresent
+   * both. Each row carries its `featuredCategory` so a directory can render
    * Featured Designers, Featured Finishing and the rest from one source.
    */
   featuredProviders: publicProcedure
@@ -1657,14 +2038,13 @@ const marketplaceRouter = router({
       limit: z.number().int().positive().max(100).default(24),
     }))
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return [];
+      const db = await requireDb();
       // Slice 10: `category` and `search` were accepted and then silently
       // ignored - the query built the filter variable and never used it. It
       // went unnoticed because the products page filtered a hardcoded array on
       // the client instead of calling this endpoint at all, so the parameters
       // had no consumer to be wrong for.
-      const conditions = [eq(products.active, true)];
+      const conditions = [publicProductFilter()];
       if (input.category && input.category !== 'All') {
         conditions.push(eq(products.category, input.category));
       }
@@ -1708,10 +2088,9 @@ const marketplaceRouter = router({
   vendorProducts: publicProcedure
     .input(z.object({ vendorId: z.number().int().positive(), limit: z.number().int().positive().max(60).default(24) }))
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return [];
+      const db = await requireDb();
       return db.select().from(products)
-        .where(and(eq(products.supplierId, input.vendorId), eq(products.active, true)))
+        .where(and(eq(products.supplierId, input.vendorId), publicProductFilter()))
         .orderBy(desc(products.createdAt))
         .limit(input.limit);
     }),
@@ -1724,7 +2103,7 @@ const marketplaceRouter = router({
     // knew or guessed the number. Absent and withdrawn are the same answer to a
     // buyer, so both are NOT_FOUND.
     const [product] = await db.select().from(products)
-      .where(and(eq(products.id, input.id), eq(products.active, true)));
+      .where(and(eq(products.id, input.id), publicProductFilter()));
     if (!product) throw new TRPCError({ code: 'NOT_FOUND' });
     // WHO SELLS THIS.
     //
@@ -1748,8 +2127,7 @@ const marketplaceRouter = router({
     if (ctx.user.userRole !== 'supplier') {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
     }
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(products).where(eq(products.supplierId, ctx.user.id)).orderBy(desc(products.createdAt));
   }),
   create: approvedProviderProcedure
@@ -1757,10 +2135,19 @@ const marketplaceRouter = router({
       name: z.string().min(1),
       nameAr: z.string().optional(),
       description: z.string().optional(),
-      // Was `z.string().min(1)`: any string at all. A category outside the
-      // taxonomy matches no marketplace filter, so the product becomes
-      // unfindable the moment it is listed. Bulk import enforces the same list.
-      category: z.enum(PRODUCT_CATEGORIES),
+      /**
+       * VALIDATED AGAINST THE DATABASE, NOT A COMPILED-IN LIST.
+       *
+       * This was `z.enum(PRODUCT_CATEGORIES)` - nineteen strings frozen into
+       * the bundle. An administrator could not add a category without a
+       * deployment, and the same list was the reason bulk upload refused
+       * "Waterproofing" for a category BuildHub already had.
+       *
+       * The shape check stays here; WHICH categories are acceptable is decided
+       * below by the same resolver bulk import uses, so the two paths cannot
+       * disagree again.
+       */
+      category: z.string().min(1).max(120),
       brand: z.string().optional(),
       /**
        * WHERE IT COMES FROM. The column has existed all along and
@@ -1781,6 +2168,17 @@ const marketplaceRouter = router({
       warranty: z.string().max(100).optional(),
       descriptionAr: z.string().max(5000).optional(),
       specs: z.string().max(5000).optional(),
+      /**
+       * PUBLISH NOW OR KEEP IT AS A DRAFT.
+       *
+       * Defaults to `active`, which is exactly what create did before the
+       * lifecycle existed, so no supplier's habits change by surprise. Draft
+       * is the new option: a product being written up over several sittings no
+       * longer has to be live in the marketplace while it is half finished.
+       * Only these two are creatable - inactive and archived describe things
+       * that were published once, which a brand-new row never was.
+       */
+      status: z.enum(PRODUCT_CREATABLE_STATUSES).default('active'),
     }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.userRole !== 'supplier') {
@@ -1797,13 +2195,44 @@ const marketplaceRouter = router({
       }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      /**
+       * THE CATEGORY IS RESOLVED SERVER-SIDE, against the live taxonomy.
+       *
+       * The same call bulk import makes, so the two paths cannot disagree - and
+       * the refusal names WHICH problem it is. A category that exists but is
+       * hidden is not an unknown one, and telling a supplier otherwise sends
+       * them looking for a typo that is not there.
+       */
+      const categoryIndex = await loadCategoryIndex(db);
+      const resolved = resolveProductCategory(categoryIndex, input.category);
+      if (!resolved.ok) {
+        const rejection = resolved.rejection;
+        const message = rejection.reason === 'INACTIVE'
+          ? `"${rejection.category.nameEn}" is not currently available for new listings.`
+          : rejection.reason === 'SERVICE_ONLY'
+            ? `"${rejection.category.nameEn}" is a service category and cannot be used for a product.`
+            : rejection.reason === 'AMBIGUOUS'
+              ? `"${rejection.supplied}" matches more than one category. Use the exact category name.`
+              : `"${input.category}" is not a BuildHub category.`;
+        throw new TRPCError({ code: 'BAD_REQUEST', message });
+      }
+
       const result = await db.insert(products).values({
         ...input,
+        // The canonical name and its id, so a product created here is
+        // indistinguishable from one created by bulk import.
+        category: resolved.category.nameEn,
+        categoryId: resolved.category.id,
         unit: unit.value ?? undefined,
         supplierId: ctx.user.id,
         price: input.price != null ? String(input.price) : undefined,
+        // The legacy boolean, derived from the status it was created in - the
+        // one exception to "written only in transitionProduct" is the insert
+        // that creates the row, which has no prior state to move from.
+        active: activeFromStatus(input.status),
       });
-      return { id: Number(result[0].insertId) };
+      return { id: Number(result[0].insertId), status: input.status };
     }),
   /**
    * SUPPLIER CATALOGUE MANAGEMENT.
@@ -1853,7 +2282,14 @@ const marketplaceRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
-      const parsed = parseProductImport(input.csv, PRODUCT_CATEGORIES);
+      /**
+       * THE SAME RESOLVER THE SINGLE-PRODUCT PATH USES.
+       *
+       * Passing a resolver rather than a list of strings is the whole point:
+       * there is no second copy of "which categories are acceptable" to drift.
+       */
+      const categoryIndex = await loadCategoryIndex(db);
+      const parsed = parseProductImport(input.csv, importCategoryResolver(categoryIndex));
 
       // Names this supplier already lists. Scoped to them: another supplier
       // selling "Rebar 12mm" is not this supplier's problem, and telling them
@@ -1898,6 +2334,20 @@ const marketplaceRouter = router({
         errors,
         errorCount: [...parsed.errors, ...conflicts, ...unitErrors].length,
         duplicatesInFile: parsed.duplicatesInFile,
+        /**
+         * Grouped by the offending value, so fifty Waterproofing rows read as
+         * one problem affecting fifty rows rather than fifty problems. The
+         * per-row errors above are unchanged - an error export needs them.
+         */
+        categoryIssues: parsed.categoryIssues,
+        /**
+         * What each row WILL be filed under, shown before anything is written.
+         * A supplier who typed "Pools" sees "Swimming Pool Equipment" here
+         * rather than discovering the mapping afterwards.
+         */
+        resolvedCategories: Array.from(new Map(parsed.rows
+          .filter(row => row.resolvedCategory)
+          .map(row => [row.category, { supplied: row.category, resolved: row.resolvedCategory! }])).values()),
         imported: 0,
         dryRun: input.dryRun,
       };
@@ -1909,13 +2359,24 @@ const marketplaceRouter = router({
           supplierId: ctx.user.id,          // never from the file
           name: row.name,
           nameAr: row.nameAr,
-          category: row.category,
+          // The CANONICAL name and its id - not the raw cell. A supplier who
+          // typed "Pools" gets the same stored result as one who picked
+          // "Swimming Pool Equipment" from the dropdown, which is what makes
+          // bulk and single product genuinely the same operation.
+          category: row.resolvedCategory ?? row.category,
+          categoryId: row.categoryId,
           brand: row.brand,
           description: row.description,
           unit: row.unit,
           price: row.price != null ? String(row.price) : undefined,
           stock: row.stock,
           deliveryDays: row.deliveryDays,
+          // Written together, not left to two column defaults agreeing.
+          // Bulk-imported rows go live exactly as they did before the
+          // lifecycle existed - the import is how a supplier moves a
+          // catalogue they already sell, not a drafting tool.
+          status: 'active' as const,
+          active: true,
         })));
       });
 
@@ -1923,6 +2384,27 @@ const marketplaceRouter = router({
       // inventing one that nothing aggregates would be a metric that looks
       // real and measures nothing.
       return { ...summary, imported: parsed.rows.length };
+    }),
+
+  /**
+   * THE LIVE TAXONOMY, for every surface that offers a category.
+   *
+   * Public because browsing is public, and because the alternative - each
+   * screen shipping its own compiled-in copy - is precisely the architecture
+   * that produced three disagreeing category lists.
+   *
+   * `scope` chooses the view: 'listable' is what a vendor may list against,
+   * 'public' is what may be browsed. Both are filters over the same rows.
+   */
+  categories: publicProcedure
+    .input(z.object({ view: z.enum(['listable', 'public']).default('listable') }).optional())
+    .query(async ({ input }) => {
+      // An empty taxonomy would empty every category dropdown on the platform
+      // and read as "BuildHub has no categories".
+      const db = await requireDb();
+      const index = await loadCategoryIndex(db);
+      const view = input?.view ?? 'listable';
+      return { categories: view === 'public' ? publicCategories(index) : listableCategories(index) };
     }),
 
   /** The file a supplier fills in. Static, so it needs no authorization. */
@@ -1937,7 +2419,12 @@ const marketplaceRouter = router({
       nameAr: z.string().max(255).optional(),
       description: z.string().max(5000).optional(),
       descriptionAr: z.string().max(5000).optional(),
-      category: z.string().min(1).max(100).optional(),
+      /**
+       * Shape only. WHICH categories are acceptable is decided below by the
+       * same resolver create and bulk import use - see the block that sets
+       * `patch.categoryId`.
+       */
+      category: z.string().min(1).max(120).optional(),
       brand: z.string().max(100).optional(),
       origin: z.string().max(100).optional(),
       // Bounds match decimal(12,2). A negative price is not a discount.
@@ -1993,6 +2480,40 @@ const marketplaceRouter = router({
         if (value !== undefined) patch[key] = value;
       }
       if (price !== undefined) patch.price = String(price);
+
+      /**
+       * EDITING A CATEGORY GOES THROUGH THE SAME RESOLVER, and moves the LINK
+       * with the name.
+       *
+       * This is the third write path, and it was the remaining way for the two
+       * to drift apart: `category` was free text here and `categoryId` was
+       * never touched, so a product created as Waterproofing could be edited to
+       * any string at all while its link still pointed at Waterproofing. The
+       * row would then say two different things about itself - which is the
+       * exact shape of the reported defect, reached through Edit instead of
+       * through Add.
+       *
+       * A supplier who does not touch the category is unaffected: `patch` only
+       * carries what the PATCH actually sent.
+       */
+      if (typeof patch.category === 'string') {
+        const categoryIndex = await loadCategoryIndex(db);
+        const resolved = resolveProductCategory(categoryIndex, patch.category);
+        if (!resolved.ok) {
+          const rejection = resolved.rejection;
+          const message = rejection.reason === 'INACTIVE'
+            ? `"${rejection.category.nameEn}" is not currently available for new listings.`
+            : rejection.reason === 'SERVICE_ONLY'
+              ? `"${rejection.category.nameEn}" is a service category and cannot be used for a product.`
+              : rejection.reason === 'AMBIGUOUS'
+                ? `"${rejection.supplied}" matches more than one category. Use the exact category name.`
+                : `"${patch.category}" is not a BuildHub category.`;
+          throw new TRPCError({ code: 'BAD_REQUEST', message });
+        }
+        patch.category = resolved.category.nameEn;
+        patch.categoryId = resolved.category.id;
+      }
+
       if (Object.keys(patch).length === 0) return { id };
 
       await db.update(products).set(patch)
@@ -2015,42 +2536,33 @@ const marketplaceRouter = router({
     }),
 
   /**
-   * Publish or delist. `active` already governs whether a product is visible to
-   * buyers - marketplace.get and askQuestion both check it - but nothing could
-   * ever set it, so a supplier who listed something by mistake had no way to
-   * withdraw it.
+   * MOVE A PRODUCT THROUGH ITS LIFECYCLE.
    *
-   * Delisting is reversible and does NOT delete: questions, quotations and
-   * order history reference the row, and destroying it to hide it would take
-   * the history with it.
+   * This replaces `setProductActive(active: boolean)`, which could only say
+   * two things. A half-written draft, a line temporarily off sale and a
+   * product discontinued last year all read as `active = 0`, so a supplier's
+   * catalogue gave one undifferentiated pile of "not live" rows.
+   *
+   * The move is checked against the declared transition table in
+   * shared/productLifecycle.ts, and the refusal names BOTH states. There is no
+   * delete: questions, quotations, placements and audit events reference the
+   * row, so retiring a product archives it.
    */
-  setProductActive: approvedProviderProcedure
-    .input(z.object({ id: z.number().int().positive(), active: z.boolean() }))
+  setProductStatus: approvedProviderProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      status: z.enum(PRODUCT_STATUSES),
+    }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.userRole !== 'supplier') {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Supplier access required' });
       }
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const [owned] = await db.select({ id: products.id, active: products.active })
-        .from(products)
-        .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
-      if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
-      await db.update(products).set({ active: input.active })
-        .where(and(eq(products.id, input.id), eq(products.supplierId, ctx.user.id)));
-      // Part 44: publishing and delisting is a status change, and a status
-      // change without its previous value cannot answer "was this live when
-      // the customer says they saw it".
-      await recordFieldChange(db, {
-        subjectType: 'product', subjectId: input.id, ownerId: ctx.user.id, actorId: ctx.user.id,
-        field: 'active', oldValue: String(owned.active), newValue: String(input.active),
-      });
-      await recordCommercialEvent(db, {
-        actorId: ctx.user.id, ownerId: ctx.user.id,
-        subjectType: 'product', subjectId: input.id,
-        action: input.active ? 'product_published' : 'product_delisted',
-      });
-      return { id: input.id, active: input.active };
+      const db = await requireDb();
+      try {
+        return await transitionProduct(db, {
+          productId: input.id, supplierId: ctx.user.id, to: input.status,
+        });
+      } catch (error) { throw asProductTrpcError(error); }
     }),
 
   /**
@@ -2163,18 +2675,30 @@ const marketplaceRouter = router({
       return { id: input.id, images: input.images };
     }),
 
-  categories: publicProcedure.query(async () => {
-    return [
-      'Materials', 'Furniture', 'Lighting', 'Electrical', 'Plumbing',
-      'HVAC', 'Paint', 'Ceramics', 'Granite', 'Marble', 'Wood',
-      'Doors', 'Windows', 'Roofing', 'Glass', 'Steel', 'Concrete',
-      'Waterproofing', 'Solar', 'Smart Home', 'Pools', 'Landscaping',
-      'Security', 'Fire Fighting', 'Cleaning', 'Maintenance', 'Moving',
-    ];
-  }),
+  /**
+   * THE FOURTH LIST, AND THE ONE THAT EXPLAINS THE REPORTED FAILURE.
+   *
+   * This returned a hard-coded array of 27 names that INCLUDED "Waterproofing"
+   * and "Pools" - while the write path validated against a different list of
+   * 19 that did not. The marketplace filter offered a category, a supplier
+   * chose it, and listing it was then refused as "not a BuildHub category".
+   * The product was telling the user two different things about itself.
+   *
+   * It now serves the same taxonomy as everything else. The shape stays a
+   * string array so Marketplace.tsx keeps working; `marketplace.categories`
+   * with a view argument is the richer form for surfaces that need slugs and
+   * Arabic names.
+   */
+  /*
+   * `categoryNames` WAS HERE: a bare array of English category names, from
+   * before the CAT milestone gave BuildHub one administrable taxonomy.
+   * `marketplace.categories({ view })` replaced it and is what all four
+   * client callers use - it carries the slug, both languages and the status,
+   * which a string array cannot, and it is the view the authorization rules
+   * are written against.
+   */
   questions: publicProcedure.input(z.object({ productId: z.number() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     // Slice 9: an explicit column allowlist. This is a PUBLIC endpoint and the
     // bare select returned `askerId`, so anyone could walk the product
     // catalogue and collect the user id of every buyer who had asked about
@@ -2207,7 +2731,7 @@ const marketplaceRouter = router({
     // contradicted that, and had nowhere to be displayed.
     const [product] = await db.select({ id: products.id, name: products.name, supplierId: products.supplierId })
       .from(products)
-      .where(and(eq(products.id, input.productId), eq(products.active, true)));
+      .where(and(eq(products.id, input.productId), publicProductFilter()));
     if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
     const result = await db.insert(productQuestions).values({ productId: input.productId, askerId: ctx.user.id, question: input.question });
     // The supplier is the only person who can answer, and nothing told them a
@@ -2266,7 +2790,7 @@ const marketplaceRouter = router({
           answer: productQuestions.answer,
           productName: products.name,
           supplierId: products.supplierId,
-          active: products.active,
+          status: products.status,
         })
         .from(productQuestions)
         .innerJoin(products, eq(productQuestions.productId, products.id))
@@ -2275,7 +2799,7 @@ const marketplaceRouter = router({
       // One refusal for "no such question", "not your product" and "delisted".
       // Distinguishing them would tell a caller which question ids exist and
       // which products are theirs to guess at.
-      if (!row || row.supplierId !== ctx.user.id || !row.active) {
+      if (!row || row.supplierId !== ctx.user.id || row.status !== PRODUCT_PUBLIC_STATUS) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Question not found' });
       }
       if (row.answer) {
@@ -2316,8 +2840,7 @@ const marketplaceRouter = router({
    * threads and no one else's.
    */
   myProductQuestions: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db
       .select({
         id: productQuestions.id,
@@ -2330,7 +2853,7 @@ const marketplaceRouter = router({
       })
       .from(productQuestions)
       .innerJoin(products, eq(productQuestions.productId, products.id))
-      .where(and(eq(products.supplierId, ctx.user.id), eq(products.active, true)))
+      .where(and(eq(products.supplierId, ctx.user.id), publicProductFilter()))
       .orderBy(desc(productQuestions.createdAt));
   }),
 });
@@ -2373,9 +2896,11 @@ const rfqRouter = router({
   // at all is a pricing question - openQualifiedEnquiry charges a credit for
   // "full detail" - and narrowing it would change what the product gives away.
   // That is a call for you, not something to infer from a table.
-  list: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+  list: protectedProcedure.input(z.object({
+    page: z.number().int().min(0).default(0),
+    pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(ADMIN_PAGE_SIZE_DEFAULT),
+  }).default({ page: 0, pageSize: ADMIN_PAGE_SIZE_DEFAULT })).query(async ({ ctx, input }) => {
+    const db = await requireDb();
     /**
      * WHO THE FEED IS FOR.
      *
@@ -2391,7 +2916,7 @@ const rfqRouter = router({
      */
     const isProvider = providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])
       && (ctx.user as { onboardingStatus?: string }).onboardingStatus === 'approved';
-    return db.select({
+    const columns = {
       id: rfqs.id,
       requesterId: rfqs.requesterId,
       projectId: rfqs.projectId,
@@ -2404,13 +2929,32 @@ const rfqRouter = router({
       productReference: rfqs.productReference,
       status: rfqs.status,
       createdAt: rfqs.createdAt,
-    }).from(rfqs)
-      .where(isProvider ? undefined : eq(rfqs.requesterId, ctx.user.id))
-      .orderBy(desc(rfqs.createdAt)).limit(50);
+    };
+    /*
+     * PAGED, with a real total.
+     *
+     * A note two procedures below already named this limit "pagination, not an
+     * authorization boundary" and left it as the one honest asymmetry between
+     * the feed and `rfq.summary`. It was pagination with no second page: fifty
+     * newest, no total, and an RFQ that aged out of the feed was unreachable
+     * from the board a provider browses for work. Now it is actually
+     * pagination, and the asymmetry that note describes is gone rather than
+     * merely disclosed.
+     *
+     * The scope is UNCHANGED: a non-provider still sees only their own.
+     */
+    const scope = isProvider ? undefined : eq(rfqs.requesterId, ctx.user.id);
+    return adminPage({
+      countQuery: db.select(COUNT).from(rfqs),
+      rowsQuery: db.select(columns).from(rfqs),
+      where: scope,
+      orderBy: [desc(rfqs.createdAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
   myList: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(rfqs).where(eq(rfqs.requesterId, ctx.user.id)).orderBy(desc(rfqs.createdAt));
   }),
   /**
@@ -2589,6 +3133,29 @@ const rfqRouter = router({
       if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
 
       const access = await getRfqResponseAccess(db, ctx.user.id, input.rfqId);
+      /**
+       * AND WHETHER OPENING WOULD BE GRANTED, so the screen can stop offering
+       * an action the server is certain to refuse.
+       *
+       * `getRfqResponseAccess` answers "do you already have access". It cannot
+       * answer "would opening succeed", because that decision lived only inside
+       * `openQualifiedEnquiry` - which spends a credit, and so cannot be called
+       * to find out. Reported from real use: a provider clicked an enabled
+       * button and was told afterwards that the request was not their trade.
+       *
+       * ALWAYS COMPUTED, including for a caller who can already respond.
+       *
+       * It was once skipped when `canRespond` was true, on the reasoning that
+       * there is nothing left to offer. That reasoning was wrong, and a live
+       * probe proved it: an open INVITATION is itself `canRespond`, so the
+       * invitation branch of the preview could never run from here, and the
+       * payload answered `canOpen: false` for a provider whose `openEnquiry`
+       * call succeeds. Whether the screen chooses to show an offer is the
+       * screen's business; whether opening would be granted is a fact, and this
+       * field states it truthfully in every case. The two must never disagree -
+       * that disagreement is the entire defect this preview exists to prevent.
+       */
+      const preview = await previewQualifiedEnquiry(db, ctx.user.id, input.rfqId);
       let projectTitle: string | null = null;
       if (access.canRespond && rfq.projectId !== null) {
         const [project] = await db.select({ title: projects.title })
@@ -2600,6 +3167,12 @@ const rfqRouter = router({
         status: rfq.status,
         projectTitle,
         attachments: access.canRespond ? rfq.attachments : null,
+        canOpen: preview.canOpen,
+        // The reason is a KEY, not a sentence: the screen is bilingual and the
+        // copy belongs with every other string, not built at the server in
+        // whichever language the server happens to think in.
+        openBlockedReason: preview.canOpen ? null : preview.reason,
+        openIsFree: preview.free,
       };
     }),
   // The requester's own RFQ, in full. Scoped by requesterId in the WHERE clause.
@@ -2715,7 +3288,7 @@ const rfqRouter = router({
         const catalogue = catalogueIds.length > 0
           ? await db.select({
               id: products.id, name: products.name, unit: products.unit,
-              price: products.price, active: products.active,
+              price: products.price, status: products.status,
             }).from(products).where(inArray(products.id, catalogueIds))
           : [];
         const byId = new Map(catalogue.map(row => [row.id, row]));
@@ -2733,7 +3306,10 @@ const rfqRouter = router({
           if (!product) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: 'One of the requested products is no longer available' });
           }
-          if (!product.active) {
+          if (product.status !== PRODUCT_PUBLIC_STATUS) {
+            // Draft, off sale or archived - all three mean "not for sale
+            // today", and the buyer's basket must not carry any of them into
+            // an RFQ the supplier cannot honour.
             throw new TRPCError({ code: 'BAD_REQUEST', message: `"${product.name}" has been withdrawn by its supplier and cannot be quoted` });
           }
           resolvedItems.push({
@@ -2830,6 +3406,22 @@ const rfqRouter = router({
           + `${resolvedItems.length ? `, ${resolvedItems.length} item(s)` : ''}`
           + `${attachments?.length ? `, ${attachments.length} attachment(s)` : ''}`,
       });
+
+      /**
+       * FIRST_VALID_RFQ - and it checks that it IS the first.
+       *
+       * The engine is idempotent on its own, so firing on every RFQ would
+       * record the qualification only once anyway. But the campaign type is
+       * named FIRST_VALID_RFQ, and a referral qualifying on somebody's tenth
+       * RFQ - because that is when a campaign finally became eligible - is not
+       * what an administrator budgeting that campaign agreed to. The count is
+       * the cheap way to make the name true.
+       */
+      const [rfqCount] = await db.select({ count: sql<number>`count(*)` })
+        .from(rfqs).where(eq(rfqs.requesterId, ctx.user.id));
+      if (Number(rfqCount?.count ?? 0) === 1) {
+        await qualifyReferralEvent(db, ctx.user.id, 'FIRST_VALID_RFQ', `firstrfq:${ctx.user.id}`, new Date());
+      }
       return { id: rfqId };
     }),
   uploadAttachment: protectedProcedure
@@ -2860,8 +3452,7 @@ const rfqRouter = router({
     if (!providerRoles.includes(ctx.user.userRole as typeof providerRoles[number])) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Provider access required' });
     }
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select({
       id: quotations.id,
       rfqId: quotations.rfqId,
@@ -2881,7 +3472,12 @@ const rfqRouter = router({
       rfqStatus: rfqs.status,
     }).from(quotations).leftJoin(rfqs, eq(quotations.rfqId, rfqs.id))
       .where(and(eq(quotations.providerId, ctx.user.id), isNull(quotations.supersededAt)))
-      .orderBy(desc(quotations.createdAt));
+      .orderBy(desc(quotations.createdAt))
+      // THE SUPPLIER SEES IT TOO. Their bid is no longer acceptable and they
+      // are the only person who can do anything about it - re-confirming the
+      // price - so telling only the customer would leave the one party who can
+      // act on it looking at a live-seeming quotation.
+      .then(rows => rows.map(row => ({ ...row, expired: isQuotationExpired(row.validUntil) })));
   }),
   // SECURITY (Phase 4A final gate): quotations on an RFQ include each bidding
   // vendor's email, exact price, timeline, and notes - competitive-intelligence
@@ -2891,8 +3487,7 @@ const rfqRouter = router({
   // matches the same pattern already used by every other project/RFQ-scoped
   // query in this file (projects.get, projects.expenses, projects.dailyLogs).
   quotations: protectedProcedure.input(z.object({ rfqId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const [rfq] = await db.select({ requesterId: rfqs.requesterId }).from(rfqs).where(eq(rfqs.id, input.rfqId));
     if (!rfq || rfq.requesterId !== ctx.user.id) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this RFQ' });
@@ -2936,6 +3531,10 @@ const rfqRouter = router({
     // the codebase writes to and which would always show 0 here regardless
     // of a vendor's real reviews. This keeps the homeowner's quote-comparison
     // view consistent with the same vendor's profile/dashboard reputation.
+    // The visibility predicate itself is `visibleReviewFilter()` and nothing
+    // else: an inline `eq(reviews.verified, true)` here would have kept
+    // counting reviews a moderator has hidden, so this reader would have
+    // drifted from the profile the moment moderation shipped.
     const providerIds = Array.from(new Set(rows.map(row => row.providerId).filter((id): id is number => id != null)));
     const reputationByProvider = new Map<number, { averageRating: number | null; reviewCount: number }>();
     if (providerIds.length > 0) {
@@ -2943,7 +3542,7 @@ const rfqRouter = router({
         revieweeId: reviews.revieweeId,
         avg: sql<string | null>`avg(${reviews.rating})`,
         count: sql<number>`count(*)`,
-      }).from(reviews).where(and(inArray(reviews.revieweeId, providerIds), eq(reviews.verified, true))).groupBy(reviews.revieweeId);
+      }).from(reviews).where(and(inArray(reviews.revieweeId, providerIds), visibleReviewFilter())).groupBy(reviews.revieweeId);
       for (const row of aggregateRows) {
         const reviewCount = Number(row.count ?? 0);
         reputationByProvider.set(row.revieweeId, {
@@ -2959,6 +3558,19 @@ const rfqRouter = router({
         ...row,
         providerRating: reputation?.averageRating ?? null,
         providerReviews: reputation?.reviewCount ?? 0,
+        /**
+         * DERIVED AT READ TIME, never stored.
+         *
+         * BuildHub has no job runner, so a stored `expired` column would be a
+         * lie between the moment it stopped holding and the moment something
+         * got round to writing it - and the same derived-state discipline
+         * already governs entitlement overrides and placements.
+         *
+         * `canAccept` is the same question the ACT asks, from the same module,
+         * so the screen cannot offer a button the server is certain to refuse.
+         */
+        expired: isQuotationExpired(row.validUntil),
+        canAccept: canAcceptQuotation(row),
       };
     });
   }),
@@ -3096,13 +3708,90 @@ const rfqRouter = router({
       return { success: true as const };
     }),
 
+  /**
+   * THE DASHBOARD SUMMARY: the open requests this provider can act on now.
+   *
+   * Served from the SAME queue the full page reads, filtered to open requests,
+   * rather than from a second list with its own rule. It used to call
+   * `listEligibleRfqs`, which truncated at 50 and returned a bare array - so a
+   * provider with a busy board saw an arbitrary 50 and was told nothing, and
+   * `total` is here precisely so the card can say how many there really are
+   * and send them to the queue for the rest.
+   */
   eligible: approvedProviderProcedure.query(async ({ ctx }) => {
-    const [items, usage] = await Promise.all([
-      listEligibleRfqs(ctx.user.id),
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const declaredCategories = await getVendorCategories(ctx.user.id);
+    const [page, usage] = await Promise.all([
+      listEnquiryQueue(db, {
+        userId: ctx.user.id,
+        declaredCategories,
+        filters: { rfqStatus: 'open' },
+      }),
       getEnquiryUsage(ctx.user.id),
     ]);
-    return { items, usage };
+    return {
+      items: page.rows.map(row => ({
+        id: row.rfqId,
+        title: row.title,
+        category: row.category,
+        location: row.location,
+        budget: row.budget,
+        deadline: row.deadline,
+        status: row.rfqStatus,
+        createdAt: row.createdAt,
+        alreadyOpened: row.openedAt !== null,
+        invited: row.invitedAt !== null,
+      })),
+      usage,
+      /** The real number of open requests reaching this provider, not the number shown. */
+      total: page.total,
+      shown: page.rows.length,
+    };
   }),
+
+  /**
+   * THE WORK QUEUE ITSELF: everything that has reached this provider, at any
+   * status, including the leads they have already paid for.
+   *
+   * Filters are applied by the server over the whole set - never in the browser
+   * over one page, which answers "nothing matches" when the match is on the
+   * next page with exactly the confidence it answers correctly.
+   */
+  queue: approvedProviderProcedure
+    .input(z.object({
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(100).default(ENQUIRY_PAGE_SIZE_DEFAULT),
+      rfqStatus: z.enum(ENQUIRY_RFQ_STATUSES).nullish(),
+      source: z.enum(ENQUIRY_SOURCES).nullish(),
+      responseState: z.enum(ENQUIRY_RESPONSE_STATES).nullish(),
+      category: z.string().max(100).nullish(),
+      search: z.string().max(200).nullish(),
+    }).default({ page: 0, pageSize: ENQUIRY_PAGE_SIZE_DEFAULT }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const declaredCategories = await getVendorCategories(ctx.user.id);
+      const [page, summary, categories, usage] = await Promise.all([
+        listEnquiryQueue(db, {
+          userId: ctx.user.id,
+          declaredCategories,
+          page: input.page,
+          pageSize: input.pageSize,
+          filters: {
+            rfqStatus: input.rfqStatus ?? null,
+            source: input.source ?? null,
+            responseState: input.responseState ?? null,
+            category: input.category ?? null,
+            search: input.search ?? null,
+          },
+        }),
+        enquiryQueueSummary(db, { userId: ctx.user.id, declaredCategories }),
+        enquiryQueueCategories(db, { userId: ctx.user.id, declaredCategories }),
+        getEnquiryUsage(ctx.user.id),
+      ]);
+      return { ...page, summary, categories, usage };
+    }),
 
   // Open an eligible RFQ's full detail, consuming one qualified-enquiry credit
   // the first time. Every decision - identity, declared categories, RFQ
@@ -3295,6 +3984,10 @@ const rfqRouter = router({
     return {
       ...quotation,
       viewerRole: isRequester ? ('requester' as const) : ('author' as const),
+      // The same derived pair the list carries, so the detail page and the
+      // comparison screen cannot disagree about whether a price still holds.
+      expired: isQuotationExpired(quotation.validUntil),
+      canAccept: canAcceptQuotation(quotation),
       provider: provider
         ? {
             id: provider.id,
@@ -3371,12 +4064,17 @@ const rfqRouter = router({
           message: 'Open this qualified enquiry, or accept its invitation, before submitting a quotation.',
         });
       }
-      // KNOWN GAP, deliberately not decided here: nothing stops the same
-      // provider submitting several quotations on one RFQ, and each one
-      // notifies the requester again. Whether a second submission should be
-      // refused, or should REPLACE the first as a revision, is a product
-      // decision about how bidding works on BuildHub - not something to infer
-      // from the schema. Recorded in the Phase 1B handoff for the owner.
+      // THE REVISION MODEL, SETTLED. This was a KNOWN GAP for a long time -
+      // nothing stopped a supplier submitting several quotations on one RFQ,
+      // and each one notified the requester again. The comment outlived the
+      // decision by several changes, which is its own defect: a marker saying
+      // "not decided" tells the next reader to go and decide something that
+      // was decided and built.
+      //
+      // ONE CURRENT QUOTATION PER SUPPLIER PER RFQ. A later bid SUPERSEDES the
+      // previous version rather than accumulating beside it; the older row
+      // stays as immutable history. See the transaction below, and
+      // `recordFieldChanges` at the end for what a revision changed.
       // EVERY KEY MUST BE THIS SUPPLIER'S OWN.
       //
       // The array is client-supplied. Without this check a supplier could name
@@ -3420,10 +4118,11 @@ const rfqRouter = router({
        * Phase 1B handoff, and it is untouched here. A bid with a DIFFERENT price
        * or timeline still goes through exactly as before.
        *
-       * What is caught is the same provider sending the same RFQ the same price
-       * and the same timeline within seconds. That is not a revision under any
-       * answer to the open question - nobody revises a bid to the number it
-       * already was - so refusing it costs the undecided policy nothing.
+       * What is caught is the same provider sending the same RFQ the SAME
+       * OFFER within seconds - every commercial term identical. Nobody revises
+       * a bid to the terms it already had, so collapsing that costs nothing.
+       * If any term moved it is a revision, however fast it arrived: correcting
+       * a mistake is the likeliest reason to resubmit within seconds.
        *
        * Idempotent, not an error: the second click returns the bid the first one
        * made, so the supplier sees the submission they believe they made.
@@ -3435,25 +4134,70 @@ const rfqRouter = router({
         // measured at two rows, three runs out of three.
         await tx.select({ id: users.id }).from(users).where(eq(users.id, ctx.user.id)).for('update');
 
-        const [recentIdentical] = await tx
-          .select({ id: quotations.id })
+        /**
+         * THE WHOLE OFFER, NOT JUST THE PRICE.
+         *
+         * This matched on `price` alone while the comment above described "the
+         * same price and the same timeline" - the code did not do what its own
+         * comment said. The consequence was commercial, not cosmetic: a
+         * supplier who submitted 145,000 over 45 days, noticed the timeline was
+         * wrong and immediately resubmitted 145,000 over 60 days was told
+         * `success: true` and handed back the FIRST quotation. The corrected
+         * timeline was silently discarded and the customer never saw it.
+         *
+         * A duplicate is the same OFFER: every commercial term identical. If
+         * any of them moved, it is a revision, however fast it arrived -
+         * correcting a mistake is the most likely reason to resubmit quickly,
+         * which is exactly when this rule used to swallow the correction.
+         */
+        const [recent] = await tx
+          .select()
           .from(quotations)
           .where(and(
             eq(quotations.rfqId, input.rfqId),
             eq(quotations.providerId, ctx.user.id),
-            eq(quotations.price, String(input.price)),
             gte(quotations.createdAt, new Date(Date.now() - DUPLICATE_SUBMIT_WINDOW_MS)),
           ))
           .orderBy(desc(quotations.id))
           .limit(1);
-        if (recentIdentical) return { id: recentIdentical.id, deduplicated: true };
+        /** MySQL timestamps carry no milliseconds; a Date from the client does. */
+        const seconds = (value: Date | null | undefined) =>
+          value == null ? null : Math.floor(value.getTime() / 1000);
+        // Compared in JS rather than as a SQL predicate so that NULL means
+        // "absent on both sides" rather than making the whole comparison null,
+        // which is how a SQL `=` treats it and why five of these terms could
+        // not have been added to the WHERE clause above.
+        const sameOffer = recent !== undefined
+          // The column is a decimal string and the input a number.
+          && Number(recent.price) === input.price
+          // THE EFFECTIVE CURRENCY, not the submitted one. The column defaults
+          // to EGP, so a bid sent without a currency reads back as 'EGP' and
+          // never equalled its own input - which made every such resubmission
+          // look like a revision.
+          && (recent.currency ?? null) === (input.currency ?? 'EGP')
+          && (recent.timeline ?? null) === (input.timeline ?? null)
+          && (recent.warranty ?? null) === (input.warranty ?? null)
+          && (recent.commercialTerms ?? null) === (input.commercialTerms ?? null)
+          && (recent.paymentTerms ?? null) === (input.paymentTerms ?? null)
+          && (recent.notes ?? null) === (input.notes ?? null)
+          // TO THE SECOND. MySQL's timestamp has no milliseconds, so the value
+          // read back is never byte-identical to the ISO string that produced
+          // it, and comparing raw made every offer differ from itself.
+          && seconds(recent.validUntil) === seconds(input.validUntil)
+          && ((JSON.parse(String(recent.attachments ?? '[]')) as unknown[]).length
+              === (attachments?.length ?? 0));
+        if (sameOffer) return { id: recent.id, deduplicated: true, previous: null, revisionNumber: recent.revisionNumber };
 
         // ONE CURRENT QUOTATION PER SUPPLIER PER RFQ, WITH REVISION HISTORY.
         // A later bid supersedes the previous version rather than accumulating
         // unrelated quotations from the same supplier; the older version stays
         // as immutable history.
+        // THE WHOLE ROW, not just its id and version. The field-change trail
+        // below contrasts the new bid against this one, and it cannot do that
+        // from an id - which is why every revision used to be recorded as a
+        // change FROM NOTHING.
         const [current] = await tx
-          .select({ id: quotations.id, revisionNumber: quotations.revisionNumber })
+          .select()
           .from(quotations)
           .where(and(
             eq(quotations.rfqId, input.rfqId),
@@ -3477,7 +4221,14 @@ const rfqRouter = router({
         });
         // The QUOTATION's own id, because that is what the audit trail records.
         // See the note beside recordCommercialEvent below.
-        return { id: Number(inserted?.[0]?.insertId ?? 0), deduplicated: false };
+        return {
+          id: Number(inserted?.[0]?.insertId ?? 0),
+          deduplicated: false,
+          // The version this one supersedes, or null for a first bid. Carried
+          // out of the transaction so the change trail can name what moved.
+          previous: current ?? null,
+          revisionNumber: current ? current.revisionNumber + 1 : 1,
+        };
       });
 
       // A de-duplicated submission is not a new bid: the customer must not be
@@ -3518,20 +4269,61 @@ const rfqRouter = router({
           + `${input.timeline ? `, ${input.timeline} days` : ''}`
           + `${attachments?.length ? `, ${attachments.length} attachment(s)` : ''}`,
       });
+      /**
+       * FIRST_VALID_QUOTATION_RESPONSE - counted the same way as the RFQ event.
+       *
+       * A REVISION is not a new response: `revisionNumber` increments on the
+       * same RFQ, and counting rows would make a supplier who revised twice
+       * look like a supplier who answered three RFQs. Counted DISTINCT by RFQ.
+       */
+      const [quoteCount] = await db.select({ count: sql<number>`count(distinct ${quotations.rfqId})` })
+        .from(quotations).where(eq(quotations.providerId, ctx.user.id));
+      if (Number(quoteCount?.count ?? 0) === 1) {
+        await qualifyReferralEvent(db, ctx.user.id, 'FIRST_VALID_QUOTATION_RESPONSE', `firstquote:${ctx.user.id}`, new Date());
+      }
+
+      /**
+       * WHAT THIS REVISION ACTUALLY CHANGED.
+       *
+       * Every field used to be recorded with `oldValue: null`, including on a
+       * revision - so the trail said "price was nothing, now 145,000" when the
+       * truth was "was 125,000, now 145,000". That is the one question a
+       * revised bid raises, and it was the one question the change trail could
+       * not answer.
+       *
+       * A first bid still contrasts against null, because there genuinely was
+       * nothing before it. `recordFieldChanges` writes only the fields that
+       * actually moved, so an unchanged warranty on revision 3 produces no row
+       * rather than a row saying it stayed the same.
+       */
+      const previous = submission.previous as Record<string, unknown> | null;
+      const was = (field: string) => (previous ? previous[field] ?? null : null);
       await recordFieldChanges(db, {
         subjectType: 'quotation', subjectId: quotationId,
         ownerId: ctx.user.id, actorId: ctx.user.id,
-        reason: 'quotation submitted',
+        reason: previous
+          ? `quotation revised to revision ${submission.revisionNumber}`
+          : 'quotation submitted',
       }, [
-        { field: 'price', oldValue: null, newValue: input.price },
-        { field: 'currency', oldValue: null, newValue: input.currency },
-        { field: 'timeline', oldValue: null, newValue: input.timeline },
-        { field: 'warranty', oldValue: null, newValue: input.warranty },
-        { field: 'validUntil', oldValue: null, newValue: input.validUntil },
-        { field: 'commercialTerms', oldValue: null, newValue: input.commercialTerms },
-        { field: 'paymentTerms', oldValue: null, newValue: input.paymentTerms },
-        { field: 'attachments', oldValue: null, newValue: attachments?.length ? `${attachments.length} file(s)` : null },
-        { field: 'status', oldValue: null, newValue: 'pending' },
+        // The stored price is a decimal string; the input is a number. Compared
+        // as numbers so "125000.00" and 125000 are not reported as a change.
+        { field: 'price', oldValue: previous ? Number(previous.price) : null, newValue: input.price },
+        { field: 'currency', oldValue: was('currency'), newValue: input.currency },
+        { field: 'timeline', oldValue: was('timeline'), newValue: input.timeline },
+        { field: 'warranty', oldValue: was('warranty'), newValue: input.warranty },
+        { field: 'validUntil', oldValue: was('validUntil'), newValue: input.validUntil },
+        { field: 'commercialTerms', oldValue: was('commercialTerms'), newValue: input.commercialTerms },
+        { field: 'paymentTerms', oldValue: was('paymentTerms'), newValue: input.paymentTerms },
+        {
+          field: 'attachments',
+          oldValue: previous
+            ? `${(JSON.parse(String(previous.attachments ?? '[]')) as unknown[]).length} file(s)`
+            : null,
+          newValue: attachments?.length ? `${attachments.length} file(s)` : null,
+        },
+        // A revision starts pending again, and saying so is the point: an
+        // earlier version that had been rejected is not still rejected.
+        { field: 'status', oldValue: was('status'), newValue: 'pending' },
       ]);
       return { success: true, quotationId };
     }),
@@ -3582,28 +4374,21 @@ const rfqRouter = router({
 
 // ── Messages Router ─────────────────────────────────────────────────────────
 const messagesRouter = router({
+  /**
+   * THE SIDEBAR. Bounded, aggregated by the database, and capped.
+   *
+   * This used to SELECT every message the account had ever exchanged and
+   * reduce it in JavaScript - the whole of somebody's correspondence pulled
+   * across the wire to draw a list of names. The shape returned is unchanged
+   * apart from `lastMessageAt`, which is now a Date: the old field was a string
+   * built with `toLocaleDateString()` ON THE SERVER, which pinned every reader
+   * to the server's locale and handed an Arabic reader an English date.
+   */
   conversations: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
-    const rows = await db.select({ senderId: messages.senderId, receiverId: messages.receiverId, content: messages.content, createdAt: messages.createdAt, read: messages.read }).from(messages).where(sql`${messages.senderId} = ${ctx.user.id} OR ${messages.receiverId} = ${ctx.user.id}`).orderBy(desc(messages.createdAt));
-    const otherIds = Array.from(new Set(rows.map(row => row.senderId === ctx.user.id ? row.receiverId : row.senderId)));
-    if (!otherIds.length) return [];
-    const people = await db.select({ id: users.id, name: users.name, userRole: users.userRole }).from(users).where(inArray(users.id, otherIds));
-    return people.map(person => {
-      const latest = rows.find(row => row.senderId === person.id || row.receiverId === person.id);
-      const name = person.name || 'BuildHub user';
-      // `unread` was hard-coded to 0 and `online` to false, while the UI
-      // rendered a live-presence dot and an unread badge from them. A counter
-      // that is always zero is not a conservative default, it is a broken
-      // counter that hides real messages; and BuildHub has no presence system
-      // at all, so `online` could only ever have been decoration. The count is
-      // now computed from the rows already loaded, and `online` is gone rather
-      // than shipped as a permanently-false field the UI can misread.
-      const unread = rows.filter(row =>
-        row.senderId === person.id && row.receiverId === ctx.user.id && !row.read).length;
-      return { id: person.id, name, initials: name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase(), lastMessage: latest?.content ?? '', time: latest?.createdAt ? new Date(latest.createdAt).toLocaleDateString() : '', unread, role: person.userRole || 'Member' };
-    });
+    const db = await requireDb();
+    return listConversations(db, ctx.user.id);
   }),
+
   /**
    * WHO AM I ABOUT TO WRITE TO.
    *
@@ -3638,13 +4423,59 @@ const messagesRouter = router({
       role: person.userRole || 'Member',
     };
   }),
-  list: protectedProcedure.input(z.object({ otherUserId: z.number().optional() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
-    const filter = input.otherUserId
-      ? and(sql`(${messages.senderId} = ${ctx.user.id} AND ${messages.receiverId} = ${input.otherUserId}) OR (${messages.senderId} = ${input.otherUserId} AND ${messages.receiverId} = ${ctx.user.id})`)
-      : sql`${messages.senderId} = ${ctx.user.id} OR ${messages.receiverId} = ${ctx.user.id}`;
-    return db.select().from(messages).where(filter).orderBy(messages.createdAt);
+  /**
+   * ONE THREAD, ONE PAGE.
+   *
+   * `otherUserId` IS NOW REQUIRED. It was optional, and omitting it returned
+   * the account's ENTIRE inbox across every thread in one unpaginated
+   * response. Nothing ever called that - the single caller is a thread view
+   * that is gated on having selected somebody - so requiring it removes a
+   * payload risk rather than a capability.
+   *
+   * `before` is a message ID, not an offset: an offset skips or repeats a line
+   * every time the other person replies while somebody is scrolling back.
+   */
+  list: protectedProcedure
+    .input(z.object({
+      otherUserId: z.number().int().positive(),
+      limit: z.number().int().positive().max(THREAD_PAGE_SIZE_MAX).optional(),
+      before: z.number().int().positive().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      return listThread(db, {
+        userId: ctx.user.id,
+        otherUserId: input.otherUserId,
+        limit: input.limit,
+        before: input.before,
+      });
+    }),
+
+  /**
+   * MARK A THREAD READ - the writer `messages.read` never had.
+   *
+   * Nothing in BuildHub set this column to true, and no control offered to, so
+   * a conversation's unread badge could only ever grow: opening a thread,
+   * reading it and replying left the count untouched. The "Mark all read"
+   * button on the Messages page belongs to its Notifications tab and correctly
+   * marks notifications - messages simply had no equivalent.
+   *
+   * A READ RECEIPT IS THE RECEIVER'S TO GIVE. This takes no message ids - only
+   * a correspondent - and `markThreadRead` constrains on `receiverId = caller`,
+   * so it cannot mark the caller's own sent messages read on the other party's
+   * behalf. That would be forging a receipt.
+   */
+  markThreadRead: protectedProcedure
+    .input(z.object({ otherUserId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      return markThreadRead(db, { userId: ctx.user.id, otherUserId: input.otherUserId });
+    }),
+
+  /** Unread across every thread, for the badge the navigation renders. */
+  unreadCount: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return { count: await unreadMessageCount(db, ctx.user.id) };
   }),
   // `fileUrl` WAS `z.string().url()`, and two things followed from that.
   //
@@ -3767,30 +4598,301 @@ const messagesRouter = router({
 // ── Notifications Router ───────────────────────────────────────────────────
 const notificationsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(notifications).where(eq(notifications.userId, ctx.user.id)).orderBy(desc(notifications.createdAt)).limit(50);
   }),
   unreadCount: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return { count: 0 };
+    // "0 unread" hides real notifications behind a number the user trusts.
+    const db = await requireDb();
     const result = await db.select({ count: sql<number>`count(*)` }).from(notifications).where(and(eq(notifications.userId, ctx.user.id), eq(notifications.read, false)));
     return { count: Number(result[0]?.count ?? 0) };
   }),
+  /**
+   * MARK ONE NOTIFICATION READ — the reader's own, and nobody else's.
+   *
+   * `markAllRead` was the ONLY writer of `read: true`. That made the badge a
+   * blunt instrument: somebody with forty unread who opens one had to clear
+   * every one of them or keep a number that no longer described what they had
+   * seen. It is the same defect messaging had before MSG - a count that could
+   * only ever be wrong in one direction.
+   *
+   * Constrained on `userId = caller` in the WHERE, not checked beforehand: a
+   * read receipt can only be given by the person the notification is addressed
+   * to, and an id belonging to somebody else matches no row rather than
+   * reaching a different check. `changed` reports whether it actually did
+   * anything, so "I marked it" and "that was not mine" stay distinguishable.
+   */
+  markRead: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const result = await db.update(notifications).set({ read: true }).where(and(
+        eq(notifications.id, input.id),
+        eq(notifications.userId, ctx.user.id),
+        eq(notifications.read, false),
+      ));
+      return { success: true, changed: changedSomething(result) };
+    }),
   markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     await db.update(notifications).set({ read: true }).where(eq(notifications.userId, ctx.user.id));
     return { success: true };
   }),
+
+  /**
+   * Every category, its mandatory flag, and whether it is currently on.
+   *
+   * The whole vocabulary rather than the stored rows: only overrides are
+   * stored, so a user who has never opened this screen has no rows at all and
+   * must still be shown the complete list with everything on.
+   */
+  preferences: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return notificationPreferencesFor(db, ctx.user.id);
+  }),
+
+  /**
+   * Record one choice, for the CALLER and nobody else - `ctx.user.id`, never an
+   * id from the input, so there is no userId to tamper with.
+   *
+   * Refusing a mandatory category happens in `setNotificationPreference`, on
+   * the server, and not by omitting the switch from the screen. A request that
+   * names `compliance` is refused whether it came from a rendered control or
+   * from curl.
+   */
+  setPreference: protectedProcedure
+    .input(z.object({ category: z.string().min(1).max(40), enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await setNotificationPreference(db, {
+          userId: ctx.user.id,
+          category: input.category,
+          enabled: input.enabled,
+        });
+      } catch (error) {
+        throw asNotificationPreferenceTrpcError(error);
+      }
+    }),
 });
+
+/** Map the preference vocabulary onto tRPC without losing the reason. */
+function asNotificationPreferenceTrpcError(error: unknown): TRPCError {
+  if (error instanceof NotificationPreferenceError) {
+    return new TRPCError({
+      code: error.code === 'UNKNOWN_CATEGORY' ? 'BAD_REQUEST' : 'FORBIDDEN',
+      message: error.message,
+    });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Notification preference update failed' });
+}
+
+
+// ── Services Router ────────────────────────────────────────────────────────
+/**
+ * A provider's catalogue of WORK, the counterpart of `marketplace` for goods.
+ *
+ * THE TIER IS `complianceProcedure`, NOT `approvedProviderProcedure`, and that
+ * is deliberate: a provider still being vetted may WRITE their catalogue, and
+ * `transitionService` refuses to PUBLISH it until the account is approved.
+ * Making them wait for approval before they could even draft would mean a
+ * newly approved provider arrives at an empty profile on their first day.
+ */
+const servicesRouter = router({
+  /**
+   * The categories a service may be filed under: the canonical taxonomy,
+   * scoped to SERVICE or BOTH, active only. Public, because the customer-facing
+   * browse needs the same list the provider picked from.
+   */
+  categories: publicProcedure.query(async () => {
+    const db = await requireDb();
+    return db.select({
+      id: productCategories.id,
+      slug: productCategories.slug,
+      nameEn: productCategories.nameEn,
+      nameAr: productCategories.nameAr,
+    })
+      .from(productCategories)
+      .where(and(
+        inArray(productCategories.scope, ['SERVICE', 'BOTH']),
+        eq(productCategories.status, 'active'),
+      ))
+      .orderBy(productCategories.sortOrder, productCategories.nameEn);
+  }),
+
+  /** THE PROVIDER'S OWN catalogue - every status, including drafts. */
+  mine: complianceProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return db.select({
+      id: serviceOfferings.id,
+      title: serviceOfferings.title,
+      description: serviceOfferings.description,
+      categoryId: serviceOfferings.categoryId,
+      categorySlug: productCategories.slug,
+      categoryNameEn: productCategories.nameEn,
+      categoryNameAr: productCategories.nameAr,
+      pricingBasis: serviceOfferings.pricingBasis,
+      priceMin: serviceOfferings.priceMin,
+      priceMax: serviceOfferings.priceMax,
+      leadTimeDays: serviceOfferings.leadTimeDays,
+      warrantyMonths: serviceOfferings.warrantyMonths,
+      status: serviceOfferings.status,
+      updatedAt: serviceOfferings.updatedAt,
+    })
+      .from(serviceOfferings)
+      .innerJoin(productCategories, eq(serviceOfferings.categoryId, productCategories.id))
+      .where(eq(serviceOfferings.providerId, ctx.user.id))
+      .orderBy(desc(serviceOfferings.updatedAt));
+  }),
+
+  /**
+   * ONE PROVIDER'S PUBLIC CATALOGUE. Live offerings from an approved account
+   * only - both clauses applied inside `visibleServicesFor`, so this reader
+   * cannot accidentally apply one of them.
+   */
+  forProvider: publicProcedure
+    .input(z.object({ providerId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return visibleServicesFor(db, input.providerId);
+    }),
+
+  create: complianceProcedure
+    .input(z.object({
+      title: z.string().min(1).max(SERVICE_TITLE_MAX),
+      description: z.string().max(SERVICE_DESCRIPTION_MAX).optional(),
+      categoryId: z.number().int().positive(),
+      pricingBasis: z.enum(SERVICE_PRICING_BASES).default(DEFAULT_PRICING_BASIS),
+      priceMin: z.number().nonnegative().optional(),
+      priceMax: z.number().nonnegative().optional(),
+      leadTimeDays: z.number().int().nonnegative().optional(),
+      warrantyMonths: z.number().int().nonnegative().optional(),
+      /**
+       * DRAFT BY DEFAULT. Publishing is a separate, deliberate act - the same
+       * choice the product form makes, for the same reason: a half-written
+       * listing should not go live because somebody pressed Save.
+       */
+      status: z.enum(['draft', 'active']).default('draft'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        await assertCategoryAcceptsServices(db, input.categoryId);
+        const pricing = validatePricing(input);
+        validateCommitments(input);
+        const result = await db.insert(serviceOfferings).values({
+          providerId: ctx.user.id,
+          categoryId: input.categoryId,
+          title: input.title.trim(),
+          description: input.description?.trim() || null,
+          pricingBasis: input.pricingBasis,
+          priceMin: pricing.priceMin === null ? null : String(pricing.priceMin),
+          priceMax: pricing.priceMax === null ? null : String(pricing.priceMax),
+          leadTimeDays: input.leadTimeDays ?? null,
+          warrantyMonths: input.warrantyMonths ?? null,
+          status: 'draft',
+        });
+        const serviceId = Number((result as any)[0].insertId);
+        await recordCommercialEvent(db, {
+          actorId: ctx.user.id, ownerId: ctx.user.id,
+          action: 'service_created', subjectType: 'service', subjectId: serviceId,
+          detail: input.title.trim().slice(0, 120),
+        });
+        // Publishing goes through the ONE transition function even here, so the
+        // approval check cannot be skipped by creating a service already active.
+        if (input.status === 'active') {
+          await transitionService(db, { serviceId, providerId: ctx.user.id, to: 'active' });
+        }
+        return { id: serviceId, status: input.status };
+      } catch (error) {
+        throw asServiceTrpcError(error);
+      }
+    }),
+
+  update: complianceProcedure
+    .input(z.object({
+      serviceId: z.number().int().positive(),
+      title: z.string().min(1).max(SERVICE_TITLE_MAX),
+      description: z.string().max(SERVICE_DESCRIPTION_MAX).optional(),
+      categoryId: z.number().int().positive(),
+      pricingBasis: z.enum(SERVICE_PRICING_BASES),
+      priceMin: z.number().nonnegative().optional(),
+      priceMax: z.number().nonnegative().optional(),
+      leadTimeDays: z.number().int().nonnegative().optional(),
+      warrantyMonths: z.number().int().nonnegative().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        const existing = await requireOwnedService(db, input.serviceId, ctx.user.id);
+        // A CHANGED CATEGORY IS RE-CHECKED; an unchanged one is not, so a
+        // category an administrator has since hidden does not make an existing
+        // listing uneditable.
+        if (input.categoryId !== existing.categoryId) {
+          await assertCategoryAcceptsServices(db, input.categoryId);
+        }
+        const pricing = validatePricing(input);
+        validateCommitments(input);
+        await db.update(serviceOfferings).set({
+          categoryId: input.categoryId,
+          title: input.title.trim(),
+          description: input.description?.trim() || null,
+          pricingBasis: input.pricingBasis,
+          priceMin: pricing.priceMin === null ? null : String(pricing.priceMin),
+          priceMax: pricing.priceMax === null ? null : String(pricing.priceMax),
+          leadTimeDays: input.leadTimeDays ?? null,
+          warrantyMonths: input.warrantyMonths ?? null,
+        }).where(eq(serviceOfferings.id, input.serviceId));
+        await recordCommercialEvent(db, {
+          actorId: ctx.user.id, ownerId: ctx.user.id,
+          action: 'service_updated', subjectType: 'service', subjectId: input.serviceId,
+          detail: input.title.trim().slice(0, 120),
+        });
+        return { id: input.serviceId };
+      } catch (error) {
+        throw asServiceTrpcError(error);
+      }
+    }),
+
+  setStatus: complianceProcedure
+    .input(z.object({
+      serviceId: z.number().int().positive(),
+      status: z.enum(SERVICE_STATUSES),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await transitionService(db, {
+          serviceId: input.serviceId, providerId: ctx.user.id, to: input.status,
+        });
+      } catch (error) {
+        throw asServiceTrpcError(error);
+      }
+    }),
+});
+
+/** Map the catalogue vocabulary onto tRPC without losing the reason. */
+function asServiceTrpcError(error: unknown): TRPCError {
+  if (error instanceof ServiceCatalogueError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Service catalogue operation failed' });
+}
 
 // ── Reviews Router ─────────────────────────────────────────────────────────
 const reviewsRouter = router({
+  /**
+   * A provider's public reviews, WITH the provider's replies attached.
+   *
+   * Reads through `visibleReviewsFor`, which applies the one visibility rule -
+   * verified AND not hidden - and left-joins the reply. Left, because most
+   * reviews have none and an inner join would publish only the ones the
+   * subject chose to answer.
+   */
   forUser: publicProcedure.input(z.object({ userId: z.number() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
-    return db.select().from(reviews).where(and(eq(reviews.revieweeId, input.userId), eq(reviews.verified, true))).orderBy(desc(reviews.createdAt));
+    const db = await requireDb();
+    return visibleReviewsFor(db, input.userId);
   }),
   // Dynamic/computed rating (Phase 4A.4 decision): always derived live from the
   // reviews table, never a stored aggregate - so it can never drift out of sync
@@ -3798,12 +4900,17 @@ const reviewsRouter = router({
   // `verified: true` filter as `forUser` above, since this is an aggregate over
   // exactly the same public-by-design data, not a new/competing calculation.
   statsForUser: publicProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return { averageRating: null as number | null, reviewCount: 0 };
+    // "No reviews" about a vendor who has them is a reputational statement,
+    // not a degraded read.
+    const db = await requireDb();
+    // A HIDDEN REVIEW LEAVES THE AVERAGE. Hiding one that still counts is a
+    // remedy in appearance only - the provider carries the same score damage
+    // with the evidence removed, which is worse than leaving it visible. The
+    // filter is the SHARED one so this can never disagree with the list.
     const [row] = await db.select({
       avg: sql<string | null>`avg(${reviews.rating})`,
       count: sql<number>`count(*)`,
-    }).from(reviews).where(and(eq(reviews.revieweeId, input.userId), eq(reviews.verified, true)));
+    }).from(reviews).where(and(eq(reviews.revieweeId, input.userId), visibleReviewFilter()));
     const reviewCount = Number(row?.count ?? 0);
     const averageRating = reviewCount > 0 && row?.avg != null ? Math.round(Number(row.avg) * 10) / 10 : null;
     return { averageRating, reviewCount };
@@ -3816,8 +4923,7 @@ const reviewsRouter = router({
   // fallback, since that fallback has no well-defined, enumerable participant
   // list to safely offer as UI choices.
   eligibleReviewees: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const [project] = await db.select().from(projects).where(and(eq(projects.id, input.projectId), eq(projects.status, 'completed')));
     if (!project || project.ownerId !== ctx.user.id) return [];
     const awardedProviders = await db.select({ providerId: quotations.providerId, name: users.name })
@@ -3880,7 +4986,75 @@ const reviewsRouter = router({
       await notifyUser(db, { userId: input.revieweeId, title: 'New review received', body: `You received a new ${input.rating}-star review.`, type: 'review', link: `/vendor/${input.revieweeId}`, messageKey: 'notif.review.received', messageParams: { rating: input.rating } });
       return { success: true };
     }),
+
+  /**
+   * THE REVIEWED PROVIDER'S RIGHT OF REPLY.
+   *
+   * Only the reviewee, one response, editable while the review stands. A
+   * reputation system where the subject cannot answer is a publishing channel
+   * pointed at one party.
+   */
+  respond: protectedProcedure
+    .input(z.object({
+      reviewId: z.number().int().positive(),
+      body: z.string().trim().min(1).max(REVIEW_RESPONSE_MAX_LENGTH),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await respondToReview(db, {
+          reviewId: input.reviewId, authorId: ctx.user.id, body: input.body,
+        });
+      } catch (error) { throw asReviewTrpcError(error); }
+    }),
+
+  /** Report a review. The reasons are a closed set and none is "I disagree". */
+  report: protectedProcedure
+    .input(z.object({
+      reviewId: z.number().int().positive(),
+      reason: z.enum(REVIEW_REPORT_REASONS),
+      detail: z.string().trim().max(1000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        const result = await reportReview(db, {
+          reviewId: input.reviewId, reporterId: ctx.user.id,
+          reason: input.reason, detail: input.detail ?? null,
+        });
+        await recordAccountEvent(db, {
+          userId: ctx.user.id, actorId: ctx.user.id,
+          action: 'review_reported', source: 'self_registered',
+          note: `review ${input.reviewId} (${input.reason})`,
+        });
+        return result;
+      } catch (error) { throw asReviewTrpcError(error); }
+    }),
 });
+
+/** Map the document vocabulary onto tRPC without losing the reason. */
+function asDocumentTrpcError(error: unknown): TRPCError {
+  if (error instanceof ProjectDocumentError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Document operation failed' });
+}
+
+/** Map the lifecycle vocabulary onto tRPC without losing the reason. */
+function asProductTrpcError(error: unknown): TRPCError {
+  if (error instanceof ProductLifecycleError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Product status change failed' });
+}
+
+/** Map the moderation vocabulary onto tRPC without losing the reason. */
+function asReviewTrpcError(error: unknown): TRPCError {
+  if (error instanceof ReviewModerationError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Review operation failed' });
+}
 
 // ── Vendor Profile Router ─────────────────────────────────────────────────
 // SECURITY: `users` also holds passwordHash, invitationToken, email, phone,
@@ -3910,60 +5084,614 @@ async function completedProjectCount(db: NonNullable<Awaited<ReturnType<typeof g
 // ── Disputes (user-facing) ─────────────────────────────────────────────────
 // A customer or provider can open a dispute against a real project relationship.
 // The admin side (list/update) already exists; this is the missing user half.
-const disputesRouter = router({
-  myDisputes: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
-    return db.select().from(disputes)
-      .where(or(eq(disputes.reporterId, ctx.user.id), eq(disputes.respondentId, ctx.user.id)))
-      .orderBy(desc(disputes.createdAt));
+/**
+ * ── SUPPORT, THE USER'S SIDE ──────────────────────────────────────────────
+ *
+ * Every procedure here is self-scoped by the CALL rather than by the input.
+ * There is no `userId` parameter anywhere, so there is nothing to tamper with:
+ * `requireTicketAccess` reads the session and the ticket, and a ticket that is
+ * neither yours nor visible to you reads as NOT FOUND rather than FORBIDDEN,
+ * so a stranger cannot enumerate ids by watching which ones refuse differently.
+ */
+const supportRouter = router({
+  /** The caller's own tickets. Small list, no pager needed; the queue has one. */
+  myTickets: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return listMyTickets(db, ctx.user.id);
   }),
 
+  /**
+   * Raise a ticket. ANY signed-in account may - support is not a paid feature
+   * and not gated on a relationship, which is the whole difference from a
+   * dispute.
+   *
+   * `priority` is deliberately absent from this input. A requester who can set
+   * their own priority sets `urgent` every time and the field stops carrying
+   * information; triage is BuildHub's judgement about its own queue. The
+   * constant SUPPORT_PRIORITY_IS_STAFF_ONLY says so where somebody adding a
+   * field would read it.
+   */
+  createTicket: protectedProcedure
+    .input(z.object({
+      category: z.enum(SUPPORT_CATEGORIES),
+      subject: z.string().trim().min(4).max(255),
+      description: z.string().trim().min(10).max(5000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [inserted] = await db.insert(supportTickets).values({
+        requesterId: ctx.user.id,
+        category: input.category,
+        subject: input.subject,
+        description: input.description,
+        status: 'open',
+        lastUserReplyAt: new Date(),
+      });
+      const id = Number((inserted as any).insertId);
+
+      // The reference is derived and then STORED, so it survives a change to
+      // the format: a customer who quoted SUP-2026-000123 on a call must still
+      // find it later.
+      const [row] = await db.select({ createdAt: supportTickets.createdAt })
+        .from(supportTickets).where(eq(supportTickets.id, id)).limit(1);
+      const reference = supportReference(id, row?.createdAt ?? new Date());
+      await db.update(supportTickets).set({ reference }).where(eq(supportTickets.id, id));
+
+      await recordAccountEvent(db, {
+        userId: ctx.user.id, actorId: ctx.user.id,
+        action: 'support_ticket_opened', source: 'support',
+        note: `${reference} (${input.category})`,
+      });
+      return { id, reference };
+    }),
+
+  /** One ticket the caller may see, with its conversation. Never internal notes. */
+  ticket: protectedProcedure
+    .input(z.object({ ticketId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const isStaff = hasAdminPermission(ctx.user.adminRole, 'support.manage');
+      let access;
+      try {
+        access = await requireTicketAccess(db, input.ticketId, ctx.user.id, isStaff);
+      } catch (error) {
+        throw asTicketTrpcError(error);
+      }
+      const [full] = await db.select().from(supportTickets)
+        .where(eq(supportTickets.id, access.ticket.id)).limit(1);
+      const thread = await ticketThread(db, access.ticket.id);
+      return {
+        ticket: {
+          ...full,
+          reference: full.reference ?? supportReference(full.id, full.createdAt),
+        },
+        ...thread,
+        via: access.via,
+      };
+    }),
+
+  /**
+   * Reply to your own ticket.
+   *
+   * REPLYING MOVES THE TICKET, and the rule lives in the service rather than
+   * here: answering a ticket that was waiting on you puts it back in the
+   * queue, and replying to a resolved one reopens it. Nobody should have to
+   * remember to change a status for their answer to be seen, and a queue whose
+   * "waiting on the customer" list is stale is worse than no queue.
+   *
+   * A CLOSED TICKET REFUSES. Closed is terminal; a reply that silently
+   * resurrected it would make the terminal state a lie.
+   */
+  reply: protectedProcedure
+    .input(z.object({
+      ticketId: z.number().int().positive(),
+      body: z.string().trim().min(1).max(5000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const isStaff = hasAdminPermission(ctx.user.adminRole, 'support.manage');
+      let access;
+      try {
+        access = await requireTicketAccess(db, input.ticketId, ctx.user.id, isStaff);
+      } catch (error) {
+        throw asTicketTrpcError(error);
+      }
+      if (access.ticket.status === 'closed') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This ticket is closed. Please open a new one and reference ' +
+            (access.ticket.reference ?? `#${access.ticket.id}`) + '.',
+        });
+      }
+
+      const side = access.via === 'support' ? 'support' : 'user';
+      await db.insert(supportTicketMessages).values({
+        ticketId: access.ticket.id, authorId: ctx.user.id,
+        authorSide: side, body: input.body,
+      });
+      await db.update(supportTickets).set(
+        side === 'user' ? { lastUserReplyAt: new Date() } : { lastStaffReplyAt: new Date() },
+      ).where(eq(supportTickets.id, access.ticket.id));
+
+      if (side === 'user') {
+        const next = statusAfterUserReply(access.ticket.status);
+        if (next) {
+          await transitionTicket(db, {
+            ticketId: access.ticket.id, from: access.ticket.status, to: next,
+            actorId: ctx.user.id, reason: 'The customer replied',
+          });
+        }
+      } else {
+        // Staff replied: tell the requester, with a link that exists.
+        const [owner] = await db.select({ requesterId: supportTickets.requesterId })
+          .from(supportTickets).where(eq(supportTickets.id, access.ticket.id)).limit(1);
+        await notifyUser(db, {
+          userId: owner.requesterId,
+          title: 'BuildHub support replied',
+          body: access.ticket.reference ?? `Ticket #${access.ticket.id}`,
+          type: 'info',
+          link: `/support/${access.ticket.id}`,
+          // The KEY carries the meaning; the prose above is the English
+          // fallback. Without this an Arabic customer is told in English that
+          // they have an Arabic-speaking support reply waiting.
+          messageKey: 'notif.support.replied',
+          messageParams: { reference: access.ticket.reference ?? `#${access.ticket.id}` },
+        });
+      }
+      return { ok: true };
+    }),
+
+  /**
+   * Attach a file to your own ticket.
+   *
+   * BLOCKED BY INFRASTRUCTURE where no object store is configured, and it says
+   * so rather than pretending: `storagePut` is the same path dispute evidence
+   * uses, and the `support-ticket/` prefix is authorized in the storage proxy
+   * through this module's own one door.
+   */
+  attach: protectedProcedure
+    .input(z.object({
+      ticketId: z.number().int().positive(),
+      fileName: z.string().trim().min(1).max(255),
+      contentType: z.string().trim().min(1).max(120),
+      dataBase64: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const isStaff = hasAdminPermission(ctx.user.adminRole, 'support.manage');
+      let access;
+      try {
+        access = await requireTicketAccess(db, input.ticketId, ctx.user.id, isStaff);
+      } catch (error) {
+        throw asTicketTrpcError(error);
+      }
+      const bytes = Buffer.from(input.dataBase64, 'base64');
+      if (bytes.length === 0 || bytes.length > 10 * 1024 * 1024) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Attach a file up to 10 MB.' });
+      }
+      // THE BYTES, NOT THE CLAIM. `contentType` is whatever the uploader said;
+      // the shared gate reads the file's own signature and refuses a mismatch.
+      // This endpoint shipped without it for exactly as long as it took the
+      // authorization sweep to notice - which is the whole point of that sweep
+      // asserting EVERY upload site rather than the risky-looking one.
+      assertUploadedFileMatches(input.contentType, bytes, SUPPORT_ATTACHMENT_CONTENT_TYPES);
+      const key = `support-ticket/${access.ticket.id}/${Date.now()}-${input.fileName.replace(/[^\w.-]/g, '_')}`;
+
+      // THE SHARED WRAPPER, not a hand-rolled try/catch. It turns an
+      // unconfigured object store into the same honest refusal every other
+      // upload path gives, AND logs the diagnosis for the operator - which a
+      // local catch here would have silently dropped. The row is written only
+      // after the bytes land, so a deployment without storage never produces
+      // an attachment record pointing at nothing.
+      const stored = await storagePutOrUnavailable(key, bytes, input.contentType);
+      await db.insert(supportTicketAttachments).values({
+        ticketId: access.ticket.id, uploadedBy: ctx.user.id,
+        storageKey: stored.key, fileName: input.fileName,
+        contentType: input.contentType, sizeBytes: bytes.length,
+      });
+      return { ok: true };
+    }),
+});
+
+/** Map the service's own error vocabulary onto tRPC without losing the reason. */
+function asTicketTrpcError(error: unknown): TRPCError {
+  if (error instanceof SupportTicketError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Ticket lookup failed' });
+}
+
+const disputesRouter = router({
+  /**
+   * The caller's own disputes - raised by them, or against them.
+   *
+   * Self-scoped by construction: no userId in the input. The subject's label
+   * comes with each row because "dispute about project 7" is not something a
+   * user can read, and a screen that has to fetch each subject separately would
+   * either N+1 or show ids.
+   */
+  myDisputes: protectedProcedure
+    .input(z.object({
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(50).default(20),
+      /** 'open' | 'closed' | anything else means all. */
+      status: z.string().max(16).optional(),
+    }).default({ page: 0, pageSize: 20 }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      // Self-scoped by the CALL, not by the input: there is no userId to tamper
+      // with. See server/disputeMyView.ts for why this stopped resolving the
+      // subject label one dispute at a time.
+      return listMyDisputes(db, ctx.user.id, input);
+    }),
+
+  /**
+   * WHO CAN BE NAMED, for the "open a dispute" form.
+   *
+   * The respondent is chosen from the real cast of the subject, never typed in:
+   * `create` used to take a `respondentId` from the client and check only that
+   * they were on the project, which does not survive RFQ and quotation
+   * subjects where "on the project" means nothing.
+   *
+   * Refuses with NOT_FOUND when the caller has no relationship to the subject,
+   * so this cannot be used to enumerate the parties of somebody else's RFQ.
+   */
+  subjectParties: protectedProcedure
+    .input(z.object({
+      subjectType: z.enum(DISPUTE_SUBJECT_TYPES),
+      subjectId: z.number().int().positive(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const { relation, subject } = await requireSubjectParty(db, input.subjectType, input.subjectId, ctx.user.id);
+      return {
+        subjectType: subject.subjectType,
+        subjectId: subject.subjectId,
+        label: subject.label,
+        yourRelation: relation,
+        candidates: await respondentCandidates(db, subject, ctx.user.id),
+      };
+    }),
+
+  /**
+   * Raise a dispute about a PROJECT, an RFQ or a QUOTATION.
+   *
+   * Every rule comes from server/disputeEligibility.ts rather than being
+   * restated here: eligibility from a real relationship to the subject, the
+   * respondent validated against that subject's cast, and a competitor supplier
+   * refused - two suppliers bidding on the same RFQ are commercial rivals, and
+   * a dispute about one bid is none of the other's business.
+   */
   create: protectedProcedure
     .input(z.object({
-      projectId: z.number().int().positive(),
+      subjectType: z.enum(DISPUTE_SUBJECT_TYPES).default('project'),
+      subjectId: z.number().int().positive().optional(),
+      /** Pre-0046 callers named the project directly; still accepted. */
+      projectId: z.number().int().positive().optional(),
       respondentId: z.number().int().positive().optional(),
       title: z.string().trim().min(1).max(255),
       description: z.string().trim().min(1).max(5000),
       type: z.string().max(80).optional(),
+      category: z.enum(DISPUTE_CATEGORIES).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      // The reporter must be a participant of the project they dispute about.
-      const access = await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
-
-      let respondentId: number | null = input.respondentId ?? null;
-      if (respondentId != null) {
-        if (respondentId === ctx.user.id) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot open a dispute against yourself.' });
-        }
-        const isOwner = access.ownerId === respondentId;
-        const [member] = await db
-          .select({ userId: projectMembers.userId })
-          .from(projectMembers)
-          .where(and(
-            eq(projectMembers.projectId, input.projectId),
-            eq(projectMembers.userId, respondentId),
-            isNull(projectMembers.removedAt),
-          ))
-          .limit(1);
-        if (!member && !isOwner) {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'The respondent must be a participant on this project.' });
-        }
+      const db = await requireDb();
+      const subjectId = input.subjectId ?? input.projectId;
+      if (!subjectId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'A dispute must name what it is about.' });
       }
+
+      const { subject } = await requireSubjectParty(db, input.subjectType, subjectId, ctx.user.id);
+      const respondentId = validateRespondent(subject, ctx.user.id, input.respondentId ?? null);
 
       const result = await db.insert(disputes).values({
         reporterId: ctx.user.id,
         respondentId,
-        projectId: input.projectId,
+        // The subject is authoritative; `projectId` is its legacy mirror and is
+        // written only from here - see server/disputeSubject.ts.
+        ...subjectColumns(input.subjectType, subjectId),
         title: input.title,
         description: input.description,
         type: input.type ?? 'general',
+        category: input.category ?? 'other',
         status: 'open',
         priority: 'medium',
       });
+      const id = Number(result[0].insertId);
+      // Derived from the id, so it can only be written after the insert.
+      const reference = await assignDisputeReference(db, id);
+
+      // The opening of the record, so the history is complete from the start
+      // rather than beginning at the first administrator action.
+      await db.insert(disputeStatusHistory).values({
+        disputeId: id, fromStatus: 'none', toStatus: 'open',
+        actorId: ctx.user.id, reason: 'Dispute raised',
+      });
+      await recordAccountEvent(db, {
+        userId: ctx.user.id, actorId: ctx.user.id,
+        action: 'dispute_opened', source: 'dispute',
+        note: `${reference ?? id}: ${input.title}`.slice(0, 500),
+      });
+
+      // The respondent is told. A dispute named against somebody who never
+      // hears about it cannot be answered, and the record would show only one
+      // side having been given the chance.
+      if (respondentId != null) {
+        await notifyUser(db, {
+          userId: respondentId,
+          title: 'A dispute names you',
+          body: `${input.title}`,
+          type: 'dispute',
+          link: `/disputes/${id}`,
+          messageKey: 'notif.dispute.raised',
+          messageParams: { reference: reference ?? String(id), subject: subject.label },
+        });
+      }
+      return { id, reference };
+    }),
+
+  /**
+   * WITHDRAW YOUR OWN DISPUTE.
+   *
+   * The reporter's decision about their own filing, and not the same outcome as
+   * an administrator rejecting it - recording both as `rejected` would blame
+   * the platform for a choice the reporter made. Only the reporter, and only
+   * while it is still live.
+   */
+  withdraw: protectedProcedure
+    .input(z.object({
+      disputeId: z.number().int().positive(),
+      reason: z.string().trim().min(1).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const dispute = await requireDisputeAccess(db, input.disputeId, ctx.user.id);
+      if (Number(dispute.reporterId) !== ctx.user.id) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the person who raised a dispute can withdraw it.',
+        });
+      }
+      const moved = await applyTransition(db, {
+        disputeId: input.disputeId, to: 'withdrawn',
+        actor: 'reporter', actorId: ctx.user.id, reason: input.reason,
+      });
+      await notifyDisputeParties(db, moved.dispute, {
+        actorId: ctx.user.id, from: moved.from, to: moved.to, reason: input.reason,
+      });
+      return { success: true as const, from: moved.from, to: moved.to };
+    }),
+
+  /**
+   * REOPEN a concluded dispute. Either party may ask, and must say why.
+   *
+   * A withdrawn dispute is terminal: reopening it would let a party withdraw to
+   * stop an investigation and restart it when it suited them. The state machine
+   * refuses that and says to raise a new one instead.
+   */
+  reopen: protectedProcedure
+    .input(z.object({
+      disputeId: z.number().int().positive(),
+      reason: z.string().trim().min(1).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const dispute = await requireDisputeAccess(db, input.disputeId, ctx.user.id);
+      const actor = Number(dispute.reporterId) === ctx.user.id ? 'reporter' as const
+        : Number(dispute.respondentId) === ctx.user.id ? 'respondent' as const
+          // A party to the subject who is neither is not a party to the
+          // decision to reopen: they can read it, which is not the same thing.
+          : null;
+      if (!actor) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the people named in a dispute can reopen it.',
+        });
+      }
+      const moved = await applyTransition(db, {
+        disputeId: input.disputeId, to: 'open',
+        actor, actorId: ctx.user.id, reason: input.reason,
+      });
+      await notifyDisputeParties(db, moved.dispute, {
+        actorId: ctx.user.id, from: moved.from, to: moved.to, reason: input.reason,
+      });
+      return { success: true as const, from: moved.from, to: moved.to };
+    }),
+
+  /**
+   * One dispute, for somebody entitled to see it.
+   *
+   * NOT_FOUND both for a dispute that does not exist and for one this account
+   * may not read, so an id cannot be probed for existence.
+   */
+  get: protectedProcedure
+    .input(z.object({ disputeId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const dispute = await requireDisputeAccess(db, input.disputeId, ctx.user.id);
+      const subject = hasSubject(dispute)
+        ? await partiesForSubject(db, dispute.subjectType, Number(dispute.subjectId))
+        : null;
+      const [history, messages, evidence] = await Promise.all([
+        db.select().from(disputeStatusHistory)
+          .where(eq(disputeStatusHistory.disputeId, input.disputeId))
+          .orderBy(desc(disputeStatusHistory.createdAt)).limit(100),
+        /*
+         * PARTICIPANT MESSAGES ONLY. Internal admin notes live in `adminNotes`
+         * with subjectType 'dispute' and are not in this table at all, so no
+         * query against it can leak one - the separation is a table rather than
+         * a visibility column precisely so a forgotten clause cannot show a
+         * reporter what an administrator wrote about them.
+         */
+        db.select({
+          id: disputeMessages.id, authorId: disputeMessages.authorId,
+          body: disputeMessages.body, createdAt: disputeMessages.createdAt,
+        }).from(disputeMessages)
+          .where(eq(disputeMessages.disputeId, input.disputeId))
+          .orderBy(asc(disputeMessages.createdAt)).limit(200),
+        db.select({
+          id: disputeEvidence.id, uploadedBy: disputeEvidence.uploadedBy,
+          fileName: disputeEvidence.fileName, contentType: disputeEvidence.contentType,
+          sizeBytes: disputeEvidence.sizeBytes, storageKey: disputeEvidence.storageKey,
+          removedAt: disputeEvidence.removedAt, createdAt: disputeEvidence.createdAt,
+        }).from(disputeEvidence)
+          .where(eq(disputeEvidence.disputeId, input.disputeId))
+          .orderBy(desc(disputeEvidence.createdAt)).limit(100),
+      ]);
+      return {
+        dispute,
+        // The label only. The cast of the subject is not a participant's
+        // business, and returning it here would leak who else bid on an RFQ.
+        subjectLabel: subject?.label ?? null,
+        history,
+        messages,
+        // A removed file keeps its row so the record shows it existed and who
+        // withdrew it, but the key is withheld: it is no longer downloadable.
+        evidence: evidence.map((row: any) => ({
+          ...row,
+          url: row.removedAt ? null : `/manus-storage/${row.storageKey}`,
+          storageKey: undefined,
+        })),
+      };
+    }),
+
+  /**
+   * ── WHAT THE PARTICIPANTS SAY TO EACH OTHER ──────────────────────────────
+   *
+   * A dispute with no way to answer it is a complaint, not a process: the
+   * respondent could be named and had no means of replying anywhere the record
+   * would show it.
+   *
+   * Only while the dispute is LIVE. Adding to a concluded dispute would put
+   * unanswered words after a decision; reopening it is the route, and that has
+   * its own reason and its own record.
+   */
+  postMessage: protectedProcedure
+    .input(z.object({
+      disputeId: z.number().int().positive(),
+      body: z.string().trim().min(1).max(MAX_DISPUTE_MESSAGE_LENGTH),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const dispute = await requireDisputeAccess(db, input.disputeId, ctx.user.id);
+      if (!DISPUTE_OPEN_STATUSES.includes(dispute.status)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `This dispute is ${dispute.status} and is no longer open for messages. Reopen it if there is more to say.`,
+        });
+      }
+      const result = await db.insert(disputeMessages).values({
+        disputeId: input.disputeId, authorId: ctx.user.id, body: input.body,
+      });
+
+      // The OTHER side is told. A message nobody hears about is a note to self.
+      for (const userId of [dispute.reporterId, dispute.respondentId]) {
+        if (userId == null || Number(userId) === ctx.user.id) continue;
+        await notifyUser(db, {
+          userId: Number(userId),
+          title: 'New message on a dispute',
+          body: `${dispute.reference ?? dispute.id}`,
+          type: 'dispute',
+          link: `/disputes/${input.disputeId}`,
+          messageKey: 'notif.dispute.message',
+          messageParams: { reference: dispute.reference ?? String(dispute.id) },
+        });
+      }
       return { id: Number(result[0].insertId) };
+    }),
+
+  /**
+   * ── EVIDENCE ─────────────────────────────────────────────────────────────
+   *
+   * Stored through the same `storagePut` every other upload uses, under a
+   * `dispute-evidence/` prefix that server/_core/storageProxy.ts checks against
+   * the dispute the file belongs to. A participant in dispute A cannot fetch
+   * dispute B's file by guessing a key: the proxy fails closed on anything it
+   * cannot classify, and this category is verified against the owning row.
+   */
+  addEvidence: protectedProcedure
+    .input(z.object({
+      disputeId: z.number().int().positive(),
+      fileName: z.string().trim().min(1).max(255),
+      contentType: z.string().refine(isAllowedDisputeEvidenceType, 'Evidence must be a PDF or an image'),
+      base64: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      enforceUploadRateLimit(ctx.user.id);
+      const db = await requireDb();
+      const dispute = await requireDisputeAccess(db, input.disputeId, ctx.user.id);
+      if (!DISPUTE_OPEN_STATUSES.includes(dispute.status)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `This dispute is ${dispute.status}. Evidence cannot be added after it has been concluded.`,
+        });
+      }
+
+      const [existing] = await db.select({ count: sql<number>`count(*)` })
+        .from(disputeEvidence)
+        .where(and(eq(disputeEvidence.disputeId, input.disputeId), isNull(disputeEvidence.removedAt)));
+      if (Number(existing?.count ?? 0) >= MAX_DISPUTE_EVIDENCE_FILES) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `A dispute may carry at most ${MAX_DISPUTE_EVIDENCE_FILES} files.`,
+        });
+      }
+
+      const bytes = Buffer.from(input.base64, 'base64');
+      if (bytes.length === 0 || bytes.length > MAX_DISPUTE_EVIDENCE_SIZE) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Evidence files must be between 1 byte and 10MB' });
+      }
+      // The declared type is a label the caller controls both sides of; this
+      // reads the bytes.
+      assertUploadedFileMatches(input.contentType, bytes, DISPUTE_EVIDENCE_CONTENT_TYPES);
+
+      const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const { key } = await storagePutOrUnavailable(
+        `dispute-evidence/${input.disputeId}/${Date.now()}-${safeName}`, bytes, input.contentType);
+
+      const result = await db.insert(disputeEvidence).values({
+        disputeId: input.disputeId, uploadedBy: ctx.user.id, storageKey: key,
+        fileName: input.fileName, contentType: input.contentType, sizeBytes: bytes.length,
+      });
+      await recordAccountEvent(db, {
+        userId: dispute.reporterId, actorId: ctx.user.id,
+        action: 'dispute_evidence_added', source: 'dispute',
+        note: `${dispute.reference ?? dispute.id}: ${input.fileName}`.slice(0, 500),
+      });
+      return { id: Number(result[0].insertId), url: `/manus-storage/${key}` };
+    }),
+
+  /**
+   * Withdraw a file you attached.
+   *
+   * SOFT, and only your own. The row stays so the record shows the file existed
+   * and who withdrew it - deleting it outright would let a party quietly
+   * retract evidence the other side had already answered - and only the person
+   * who uploaded it may withdraw it, because removing the other side's evidence
+   * is not a thing a party gets to do.
+   */
+  removeEvidence: protectedProcedure
+    .input(z.object({ evidenceId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [file] = await db.select().from(disputeEvidence).where(eq(disputeEvidence.id, input.evidenceId));
+      // NOT_FOUND before anything else, so an id cannot be probed.
+      if (!file) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evidence not found' });
+      const dispute = await requireDisputeAccess(db, Number(file.disputeId), ctx.user.id);
+      if (Number(file.uploadedBy) !== ctx.user.id) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Only the person who attached a file can withdraw it.' });
+      }
+      if (file.removedAt) return { success: true as const, changed: false };
+
+      await db.update(disputeEvidence)
+        .set({ removedAt: new Date(), removedBy: ctx.user.id })
+        .where(eq(disputeEvidence.id, input.evidenceId));
+      await recordAccountEvent(db, {
+        userId: dispute.reporterId, actorId: ctx.user.id,
+        action: 'dispute_evidence_removed', source: 'dispute',
+        note: `${dispute.reference ?? dispute.id}: ${file.fileName}`.slice(0, 500),
+      });
+      return { success: true as const, changed: true };
     }),
 });
 
@@ -3975,16 +5703,14 @@ const portfolioRouter = router({
   list: protectedProcedure
     .input(z.object({ userId: z.number().int().positive() }))
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return [];
+      const db = await requireDb();
       return db.select().from(portfolioItems)
         .where(eq(portfolioItems.userId, input.userId))
         .orderBy(desc(portfolioItems.createdAt));
     }),
 
   myItems: approvedProviderProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(portfolioItems)
       .where(eq(portfolioItems.userId, ctx.user.id))
       .orderBy(desc(portfolioItems.createdAt));
@@ -4190,20 +5916,40 @@ const profileRouter = router({
     return readOwnVendorProfile(db, ctx.user.id);
   }),
 
+  /**
+   * The caller's own referral programme.
+   *
+   * SELF-SCOPED BY CONSTRUCTION: there is no userId in the input, so no payload
+   * can read another account's invitations or rewards.
+   *
+   * It used to report ONE number - how many people used the code - which is the
+   * one thing an inviter cannot act on. Registered and qualified are different
+   * facts, and a programme where nothing ever qualifies looked identical to one
+   * that worked. The rewards, until now, were not surfaced anywhere at all:
+   * BuildHub granted a benefit and never told the recipient it existed beyond a
+   * single notification they may have missed.
+   */
   myReferral: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const db = await requireDb();
     const [row] = await db.select({ referralCode: users.referralCode }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
     let code = row?.referralCode ?? null;
     if (!code) {
       code = generateReferralCode();
       await db.update(users).set({ referralCode: code }).where(eq(users.id, ctx.user.id));
     }
-    const [countRow] = await db.select({ count: sql<number>`count(*)` }).from(referrals).where(eq(referrals.referrerId, ctx.user.id));
+    const [counts, rewards] = await Promise.all([
+      myReferralCounts(db, ctx.user.id),
+      listMyReferralRewards(db, ctx.user.id),
+    ]);
     return {
       code,
       link: `/auth?mode=signup&ref=${encodeURIComponent(code)}`,
-      referrals: Number(countRow?.count ?? 0),
+      // Kept, because callers render it. It is now the sum of the breakdown
+      // beside it rather than an independently counted number that could
+      // disagree with it.
+      referrals: counts.total,
+      counts,
+      rewards,
     };
   }),
 
@@ -4260,8 +6006,7 @@ const profileRouter = router({
     }),
 
   myVendorNameChanges: approvedProviderProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select().from(vendorNameChangeRequests)
       .where(eq(vendorNameChangeRequests.userId, ctx.user.id))
       .orderBy(desc(vendorNameChangeRequests.createdAt))
@@ -4303,7 +6048,7 @@ const profileRouter = router({
         status: 'pending',
         adminCorrection: false,
       });
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: ctx.user.id,
         actorId: ctx.user.id,
         action: 'vendor_name_change_requested',
@@ -4465,6 +6210,27 @@ const adminWith = (permission: AdminPermission) =>
     return next({ ctx });
   });
 
+/**
+ * A category refusal becomes a BAD_REQUEST carrying the SERVICE's message.
+ *
+ * The reasons - DUPLICATE, NO_DELETE, STALE_COUNT, CYCLE - are the whole value
+ * of those refusals, and flattening them into "something went wrong" would put
+ * the administrator in exactly the position the supplier was in when the
+ * category error said nothing useful. Anything that is NOT a deliberate refusal
+ * is rethrown untouched, so a genuine fault stays a 500 rather than being
+ * reported to the caller as their mistake.
+ */
+async function asCategoryResult<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof CategoryAdminError) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: error.message, cause: error });
+    }
+    throw error;
+  }
+}
+
 /** Only a Super Admin may touch the authority model itself. */
 const superAdminProcedure = adminWith('admins.manage');
 
@@ -4479,7 +6245,8 @@ const superAdminProcedure = adminWith('admins.manage');
 // field-by-field trace. Adding a new users column later does NOT expose it here
 // automatically; it must be added to this list deliberately.
 // The people named in a dispute investigation. An explicit allowlist for the
-// same reason ADMIN_USER_LIST_COLUMNS is one: `users` holds passwordHash and a
+// same reason ADMIN_DIRECTORY_COLUMNS (server/adminUserDirectory.ts) is one:
+// `users` holds passwordHash and a
 // live invitationToken, and Part 53 forbids surfacing either even to a Super
 // Admin. Enough to identify a party and understand their standing; nothing that
 // could be redeemed or replayed.
@@ -4492,22 +6259,6 @@ const INVESTIGATION_PARTY_COLUMNS = {
   verified: users.verified,
   accountStatus: users.accountStatus,
   onboardingStatus: users.onboardingStatus,
-  createdAt: users.createdAt,
-} as const;
-
-const ADMIN_USER_LIST_COLUMNS = {
-  id: users.id,
-  name: users.name,
-  email: users.email,
-  username: users.username,
-  role: users.role,
-  userRole: users.userRole,
-  accountStatus: users.accountStatus,
-  frozenReason: users.frozenReason,
-  verified: users.verified,
-  isDummy: users.isDummy,
-  accountSource: users.accountSource,
-  invitationStatus: users.invitationStatus,
   createdAt: users.createdAt,
 } as const;
 
@@ -4546,10 +6297,118 @@ const COMPLIANCE_APPLICANT_COLUMNS = {
   createdAt: users.createdAt,
 } as const;
 
+/**
+ * WHAT EVERY ADMINISTRATION LIST ACCEPTS.
+ *
+ * One schema, because five lists were each about to grow their own and the
+ * page-size bound is the thing that must not vary: a caller who can name their
+ * own page size can ask for the whole table, which is the read this milestone
+ * exists to stop.
+ */
+
+const ADMIN_LIST_INPUT = z.object({
+  page: z.number().int().min(0).default(0),
+  pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(ADMIN_PAGE_SIZE_DEFAULT),
+  search: z.string().trim().max(200).optional(),
+  status: z.string().trim().max(40).optional(),
+}).default({ page: 0, pageSize: ADMIN_PAGE_SIZE_DEFAULT });
+
 const adminRouter = router({
-  stats: adminWith('users.read').query(async () => {
+  /**
+   * ── THE PRODUCT TAXONOMY, ADMINISTERED ──────────────────────────────────
+   *
+   * Gated on `marketplace.manage`, which the roles table already describes as
+   * "vendor directory, products, compliance review, marketplace content" - the
+   * taxonomy is precisely marketplace content, and it is what a MARKETPLACE_ADMIN
+   * exists to curate. A fresh eleventh permission for one table would cut
+   * against this file's stated reason for having ten: "a permission per
+   * endpoint would be 37 permissions nobody can reason about".
+   *
+   * Every mutation below records who did it. See server/categoryAdmin.ts for
+   * which trail takes which kind of change, and why hiding a category never
+   * touches a product.
+   */
+  categories: adminWith('marketplace.manage').query(async () => {
     const db = await getDb();
-    if (!db) return { users: 0, projects: 0, products: 0, rfqs: 0, disputes: 0 };
+    // NOT an empty list. "The taxonomy has no categories" and "we could not
+    // reach the database" are different facts and the screen must not render
+    // the second as the first.
+    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'The category taxonomy is unavailable right now.' });
+    return { categories: await listCategoriesForAdmin(db) };
+  }),
+
+  createCategory: adminWith('marketplace.manage')
+    .input(z.object({
+      slug: z.string().trim().min(3).max(60),
+      nameEn: z.string().trim().min(1).max(120),
+      nameAr: z.string().trim().min(1).max(120),
+      scope: z.enum(CATEGORY_SCOPES),
+      parentId: z.number().int().positive().nullable().optional(),
+      sortOrder: z.number().int().min(0).max(9999).optional(),
+      icon: z.string().max(64).nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return asCategoryResult(() => createCategory(db, ctx.user.id, input));
+    }),
+
+  updateCategory: adminWith('marketplace.manage')
+    .input(z.object({
+      id: z.number().int().positive(),
+      // `slug` is deliberately absent: it is half the stable identity, and a
+      // category whose slug can move makes every URL and stored reference a
+      // guess about when it was written.
+      nameEn: z.string().trim().min(1).max(120).optional(),
+      nameAr: z.string().trim().min(1).max(120).optional(),
+      scope: z.enum(CATEGORY_SCOPES).optional(),
+      parentId: z.number().int().positive().nullable().optional(),
+      sortOrder: z.number().int().min(0).max(9999).optional(),
+      icon: z.string().max(64).nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return asCategoryResult(() => updateCategory(db, ctx.user.id, input));
+    }),
+
+  setCategoryStatus: adminWith('marketplace.manage')
+    .input(z.object({
+      id: z.number().int().positive(),
+      status: z.enum(CATEGORY_STATUSES),
+      /**
+       * The dependency confirmation. The screen shows the real product count
+       * and echoes it back here, so an administrator who read "3 products" and
+       * clicks Hide after somebody listed forty more is stopped rather than
+       * surprised.
+       */
+      expectedProductCount: z.number().int().min(0).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return asCategoryResult(() => setCategoryStatus(db, ctx.user.id, input));
+    }),
+
+  addCategoryAlias: adminWith('marketplace.manage')
+    .input(z.object({ categoryId: z.number().int().positive(), alias: z.string().trim().min(2).max(120) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return asCategoryResult(() => addCategoryAlias(db, ctx.user.id, input));
+    }),
+
+  removeCategoryAlias: adminWith('marketplace.manage')
+    .input(z.object({ aliasId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      return asCategoryResult(() => removeCategoryAlias(db, ctx.user.id, input.aliasId));
+    }),
+
+  stats: adminWith('users.read').query(async () => {
+    // An all-zero admin dashboard is the most convincing lie on the platform.
+    const db = await requireDb();
     const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.isDummy, false));
     const dummyRows = await db.select({ id: users.id }).from(users).where(eq(users.isDummy, true));
     const dummyIds = dummyRows.map(row => row.id);
@@ -4565,11 +6424,46 @@ const adminRouter = router({
       disputes: Number(disputeCount?.count ?? 0),
     };
   }),
-  users: adminWith('users.read').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
-    return db.select(ADMIN_USER_LIST_COLUMNS).from(users).orderBy(desc(users.createdAt)).limit(250);
-  }),
+  /**
+   * THE USER DIRECTORY, PAGED AND COUNTED BY THE DATABASE.
+   *
+   * This was `.limit(250)` with no total and no indication that a limit had
+   * been reached, and the screen then did its own searching, grouping, sorting
+   * and pagination over whatever came back. Past 250 accounts that is not a
+   * slow screen, it is a WRONG one: users become invisible to administration
+   * with nothing to say so, search silently misses people who exist, and the
+   * group tiles under "User Management by Group" report counts of a truncated
+   * sample as though they were counts of the platform.
+   *
+   * Filtering, sorting and counting now happen where the rows are. The reply
+   * carries `total` for the current filter and `counts` for the tiles, so the
+   * screen never has to infer a population from a page of it.
+   *
+   * THE GROUP EXPRESSION IS `COALESCE(userRole, role)` because that is exactly
+   * what the screen used to compute in JavaScript. It is reproduced rather than
+   * improved on: changing which group an account falls into is a product
+   * decision, and this change is about correctness at scale, not about that.
+   */
+  users: adminWith('users.read')
+    .input(z.object({
+      search: z.string().trim().max(MAX_SEARCH_LENGTH).optional(),
+      /** A role key, or 'all'. Unknown values are treated as 'all' rather than matching nothing. */
+      group: z.string().trim().max(40).default('all'),
+      sort: z.enum(['newest', 'name', 'role']).default('newest'),
+      page: z.number().int().min(0).max(100_000).default(0),
+      /** Bounded: an administrator cannot ask for the whole table in one reply. */
+      pageSize: z.number().int().min(1).max(100).default(10),
+    }).optional())
+    .query(async ({ input }) => {
+      const { search, group, sort, page, pageSize } = {
+        group: 'all', sort: 'newest' as const, page: 0, pageSize: 10, ...(input ?? {}),
+      };
+      // No "empty page" fallback. An administrator looking at a user directory
+      // that reports zero accounts would conclude something very different from
+      // "the directory could not be loaded".
+      const db = await requireDb();
+      return listAdminUsers(db, { search, group, sort, page, pageSize });
+    }),
   // 'admin' is NOT creatable here. This endpoint is gated on `users.manage`,
   // which USER_ADMIN holds - but shared/adminRoles.ts states the invariant that
   // only SUPER_ADMIN (`admins.manage`) may create or re-role an administrator,
@@ -4607,7 +6501,7 @@ const adminRouter = router({
       invitationSentAt: input.sendInvitation ? new Date() : null,
     });
     const userId = Number(result[0]?.insertId);
-    await db.insert(userAccountAuditEvents).values({ userId, actorId: ctx.user.id, action: input.sendInvitation ? 'admin_created_account_with_invite' : 'admin_created_account', source: 'admin_created', note: input.note || null });
+    await recordAccountEvent(db, { userId, actorId: ctx.user.id, action: input.sendInvitation ? 'admin_created_account_with_invite' : 'admin_created_account', source: 'admin_created', note: input.note || null });
     return { success: true, userId, invitationLink: input.sendInvitation ? `/auth/setup-password?token=${inviteToken}` : null };
   }),
   resendInvitation: adminWith('users.manage').input(z.object({ userId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
@@ -4618,7 +6512,7 @@ const adminRouter = router({
     const inviteToken = randomUUID() + '-' + randomUUID().slice(0, 8);
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await db.update(users).set({ invitationStatus: 'invitation_sent', invitationToken: inviteToken, invitationExpiresAt: expiresAt, invitationSentAt: new Date() }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'invitation_resent', source: 'admin_created', note: `Resent to ${target.email}` });
+    await recordAccountEvent(db, { userId: input.userId, actorId: ctx.user.id, action: 'invitation_resent', source: 'admin_created', note: `Resent to ${target.email}` });
     return { success: true, invitationLink: `/auth/setup-password?token=${inviteToken}` };
   }),
   completeInvitation: publicProcedure.input(z.object({ token: z.string().min(10), password: z.string().min(6).max(128) })).mutation(async ({ ctx, input }) => {
@@ -4639,49 +6533,46 @@ const adminRouter = router({
     }
     const passwordHash = await hashPassword(input.password);
     await db.update(users).set({ invitationStatus: 'password_set', invitationToken: null, invitationExpiresAt: null, passwordSetAt: new Date(), passwordHash, verified: true, accountStatus: 'active' }).where(eq(users.id, target.id));
-    await db.insert(userAccountAuditEvents).values({ userId: target.id, actorId: target.id, action: 'password_set_via_invitation', source: 'admin_created', note: 'Password successfully configured by user' });
+    await recordAccountEvent(db, { userId: target.id, actorId: target.id, action: 'password_set_via_invitation', source: 'admin_created', note: 'Password successfully configured by user' });
     return { success: true, username: target.username };
   }),
-  fullAuditReport: adminWith('audit.read').query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
-    const events = await db.select().from(userAccountAuditEvents).orderBy(desc(userAccountAuditEvents.createdAt)).limit(1000);
-    // COLUMN LIST, not `select().from(users)`.
-    //
-    // Nothing leaked: the projection below is already an explicit allowlist, so
-    // no private column ever reached the response. But this pulled EVERY column
-    // of EVERY user - passwordHash, invitationToken, openId - into process
-    // memory to build an audit export, and it is the precise pattern
-    // ADMIN_USER_LIST_COLUMNS exists to forbid, one endpoint over. The next
-    // person to add `...targetUser` to the mapped object would have shipped the
-    // leak without touching this line.
-    const allUsersList = await db.select({
-      id: users.id, name: users.name, email: users.email, isDummy: users.isDummy,
-      accountSource: users.accountSource, userRole: users.userRole, role: users.role,
-      accountStatus: users.accountStatus, invitationStatus: users.invitationStatus,
-    }).from(users);
-    const userMap = new Map(allUsersList.map(u => [u.id, u]));
-    const adminMap = new Map(allUsersList.map(u => [u.id, u.name || u.email || `#${u.id}`]));
-    return events.map(event => {
-      const targetUser = event.userId != null ? userMap.get(event.userId) : undefined;
-      const actorName = event.actorId ? (adminMap.get(event.actorId) ?? `Admin #${event.actorId}`) : 'System';
-      return {
-        id: event.id,
-        userId: event.userId,
-        userName: targetUser?.name || targetUser?.email || (event.userId != null ? `#${event.userId}` : 'Deleted user'),
-        userEmail: targetUser?.email || '—',
-        accountType: targetUser?.isDummy ? 'Dummy / Test' : targetUser?.accountSource === 'admin_created' ? 'Admin Created' : 'Self Registered',
-        role: targetUser?.userRole || targetUser?.role || 'user',
-        actorName,
-        action: event.action,
-        source: event.source || 'system',
-        note: event.note || '—',
-        createdAt: event.createdAt,
-        accountStatus: targetUser?.accountStatus || 'active',
-        invitationStatus: targetUser?.invitationStatus || 'none',
-      };
-    });
+  /**
+   * THE PLATFORM-WIDE ACCOUNT TRAIL, PAGED AND FILTERABLE.
+   *
+   * This took the most recent 1,000 events and returned a bare array, and it
+   * built its identity columns from a map over EVERY user row in the database -
+   * every column of every account, passwordHash and invitationToken included,
+   * pulled into process memory to decorate an export.
+   *
+   * An audit report is the one screen whose entire value is that it is
+   * COMPLETE. One that quietly stops at a thousand and does not say so is worse
+   * than none, because it will be relied on. It now reports the real total, and
+   * `server/adminList.ts` guarantees the count and the rows are filtered
+   * identically by construction.
+   */
+  fullAuditReport: adminWith('audit.read')
+    .input(z.object({
+      action: z.string().max(80).optional(),
+      source: z.string().max(40).optional(),
+      actorId: z.number().int().positive().optional(),
+      userId: z.number().int().positive().optional(),
+      from: z.date().optional(),
+      to: z.date().optional(),
+      search: z.string().max(120).optional(),
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(ADMIN_PAGE_SIZE_DEFAULT),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return listAccountAudit(db, input ?? {});
+    }),
+
+  /** The distinct actions and sources present, for the filter controls. */
+  auditFilterOptions: adminWith('audit.read').query(async () => {
+    const db = await requireDb();
+    return auditFilterOptions(db);
   }),
+
   createDummyUser: adminWith('qa.manage').input(z.object({
     name: z.string().trim().min(1).max(255).optional(),
     username: z.string().trim().min(3).max(100).regex(/^[a-zA-Z0-9._-]+$/).optional(),
@@ -4702,7 +6593,7 @@ const adminRouter = router({
       openId: `dummy_${randomUUID()}`, username, name: input.name?.trim() || `Dummy ${input.userRole}`, email, loginMethod: 'dummy', role: 'user', userRole: input.userRole, accountSource: 'admin_created', isDummy: true, createdBy: ctx.user.id, creationNote: input.note || 'Created for testing', accountStatus: 'frozen', frozenAt: new Date(), frozenReason: 'Dummy/test accounts are disabled by default', deactivatedAt: new Date(), onboardingStatus: professional ? 'not_started' : 'approved', verified: false, passwordHash, invitationStatus: passwordHash ? 'password_set' : 'none', passwordSetAt: passwordHash ? new Date() : null,
     });
     const userId = Number(result[0]?.insertId);
-    await db.insert(userAccountAuditEvents).values({ userId, actorId: ctx.user.id, action: 'dummy_user_created', source: 'dummy', note: input.note || 'Created for testing' });
+    await recordAccountEvent(db, { userId, actorId: ctx.user.id, action: 'dummy_user_created', source: 'dummy', note: input.note || 'Created for testing' });
     return { success: true, userId, username, email };
   }),
   userDetail: adminWith('users.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
@@ -4779,7 +6670,7 @@ const adminRouter = router({
 
     if (Object.keys(patch).length === 0) return { success: true as const, changed: false };
     await db.update(users).set(patch).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: input.userId,
       actorId: ctx.user.id,
       action: 'admin_user_updated',
@@ -4789,8 +6680,7 @@ const adminRouter = router({
     return { success: true as const, changed: true };
   }),
   userNotes: adminWith('users.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const rows = await db.select({
       id: adminNotes.id,
       note: adminNotes.note,
@@ -4818,31 +6708,46 @@ const adminRouter = router({
     });
     return { success: true, noteId: Number(result[0]?.insertId ?? 0) };
   }),
-  referrals: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
-    const rows = await db.select({
-      id: referrals.id,
-      referrerId: referrals.referrerId,
-      referredId: referrals.referredId,
-      code: referrals.code,
-      status: referrals.status,
-      rewardType: referrals.rewardType,
-      rewardValue: referrals.rewardValue,
-      rewardExpiresAt: referrals.rewardExpiresAt,
-      createdAt: referrals.createdAt,
-      referrerName: users.name,
-      referrerEmail: users.email,
-    }).from(referrals)
-      .innerJoin(users, eq(users.id, referrals.referrerId))
-      .orderBy(desc(referrals.createdAt))
-      .limit(250);
-    return rows;
-  }),
-  referralCampaigns: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
-    return db.select().from(referralCampaigns).orderBy(desc(referralCampaigns.createdAt)).limit(100);
+  /**
+   * The referral list, PAGED, with the REAL reward attached.
+   *
+   * The Reward column was built from `referrals.rewardType` / `.rewardValue`,
+   * two columns nothing has ever written, so it read "-" on every row while the
+   * actual reward sat in `referralRewards` next to it. And the query was
+   * `.limit(250)` with no count, so a platform past that saw a silent subset.
+   */
+  referrals: adminWith('marketplace.manage')
+    .input(z.object({
+      page: z.number().int().min(0).max(100_000).default(0),
+      pageSize: z.number().int().min(1).max(100).default(25),
+      search: z.string().trim().max(MAX_SEARCH_LENGTH).optional(),
+      status: z.enum(['all', 'registered', 'qualified', 'rewarded', 'expired', 'revoked']).default('all'),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { page, pageSize, search, status } = { page: 0, pageSize: 25, status: 'all' as const, ...(input ?? {}) };
+      return listAdminReferrals(db, { page, pageSize, search, status });
+    }),
+  /**
+   * Referral campaigns, paged. Was `.limit(100)` and a bare array - which was
+   * fine while campaigns could only be inserted with SQL and there were none.
+   * They are creatable from the product now, so the list will grow.
+   */
+  referralCampaigns: adminWith('marketplace.manage').input(ADMIN_LIST_INPUT).query(async ({ input }) => {
+    const db = await requireDb();
+    const term = (input.search ?? '').trim();
+    const where = allOf(and, [
+      term ? like(referralCampaigns.name, containsTerm(term)) : null,
+      enumFilter(referralCampaigns.status, input.status, eq),
+    ]);
+    return adminPage({
+      countQuery: db.select(COUNT).from(referralCampaigns),
+      rowsQuery: db.select().from(referralCampaigns),
+      where,
+      orderBy: [desc(referralCampaigns.createdAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
   createReferralCampaign: adminWith('marketplace.manage')
     .input(z.object({
@@ -4858,10 +6763,17 @@ const adminRouter = router({
       rewardDurationDays: z.number().int().positive().optional(),
       perInviterCap: z.number().int().positive().default(1),
       campaignCap: z.number().int().positive().optional(),
+      /*
+       * THE ATTRIBUTION WINDOW WAS NOT SETTABLE AT ALL, so every campaign ever
+       * created took the column default and an administrator running a
+       * short-lived promotion could not say so. It is part of eligibility -
+       * "your invite was 100 days old and the window is 90" is a real answer a
+       * campaign owner needs to be able to configure.
+       */
+      attributionWindowDays: z.number().int().positive().max(3650).default(DEFAULT_ATTRIBUTION_WINDOW_DAYS),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const db = await requireDb();
       const startsAt = input.startsAt ? new Date(input.startsAt) : null;
       const endsAt = input.endsAt ? new Date(input.endsAt) : null;
       if (startsAt && endsAt && endsAt <= startsAt) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Campaign end date must be after its start date' });
@@ -4878,9 +6790,10 @@ const adminRouter = router({
         rewardDurationDays: input.rewardDurationDays ?? null,
         perInviterCap: input.perInviterCap,
         campaignCap: input.campaignCap ?? null,
+        attributionWindowDays: input.attributionWindowDays,
         createdBy: ctx.user.id,
       });
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: ctx.user.id,
         actorId: ctx.user.id,
         action: 'referral_campaign_created',
@@ -4889,6 +6802,22 @@ const adminRouter = router({
       });
       return { success: true, campaignId: Number(result[0]?.insertId ?? 0) };
     }),
+  /**
+   * EDIT A CAMPAIGN - including the terms, which could not be edited at all.
+   *
+   * This accepted name, status, dates and caps only. A campaign owner who got
+   * the reward value or the eligible roles wrong had no way to correct them:
+   * the only remedy was to end the campaign and create another, which loses its
+   * history and its identity.
+   *
+   * TERMS ARE FROZEN ONCE SOMETHING HAS BEEN PAID OUT. The reward is snapshotted
+   * onto the ledger row when it is granted, so editing the campaign never
+   * changes what anybody already received - but an administrator investigating
+   * "why did this vendor get 5" would read the campaign and see 9, and the
+   * ledger would appear to disagree with the campaign it names. What was
+   * promised is not rewritten after it has been given; the schedule and the
+   * caps stay editable because those govern what happens NEXT.
+   */
   updateReferralCampaign: adminWith('marketplace.manage')
     .input(z.object({
       campaignId: z.number().int().positive(),
@@ -4898,20 +6827,60 @@ const adminRouter = router({
       endsAt: z.string().datetime().optional(),
       perInviterCap: z.number().int().positive().optional(),
       campaignCap: z.number().int().positive().optional(),
+      // ── The terms, editable only before the campaign has paid anything ──
+      eligibleInviterRoles: z.array(z.string()).min(1).optional(),
+      eligibleReferredRoles: z.array(z.string()).min(1).optional(),
+      qualificationType: z.enum(REFERRAL_QUALIFICATION_TYPES).optional(),
+      rewardType: z.enum(REFERRAL_REWARD_TYPES).optional(),
+      rewardValue: z.string().trim().min(1).max(100).optional(),
+      rewardDurationDays: z.number().int().positive().nullable().optional(),
+      attributionWindowDays: z.number().int().positive().max(3650).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const patch: Record<string, string | number | Date | null> = {};
-      if (input.name !== undefined) patch.name = input.name;
-      if (input.status !== undefined) patch.status = input.status;
-      if (input.startsAt !== undefined) patch.startsAt = input.startsAt ? new Date(input.startsAt) : null;
-      if (input.endsAt !== undefined) patch.endsAt = input.endsAt ? new Date(input.endsAt) : null;
-      if (input.perInviterCap !== undefined) patch.perInviterCap = input.perInviterCap;
-      if (input.campaignCap !== undefined) patch.campaignCap = input.campaignCap ?? null;
+      const db = await requireDb();
+      // Split by the rule in server/referralCampaignEdit.ts rather than here,
+      // so which half a field belongs to is one list and not a shape a reader
+      // has to reconstruct from a run of `if` statements.
+      const { schedule, terms } = splitCampaignEdit({
+        name: input.name,
+        status: input.status,
+        startsAt: input.startsAt === undefined ? undefined : (input.startsAt ? new Date(input.startsAt) : null),
+        endsAt: input.endsAt === undefined ? undefined : (input.endsAt ? new Date(input.endsAt) : null),
+        perInviterCap: input.perInviterCap,
+        campaignCap: input.campaignCap,
+        eligibleInviterRoles: input.eligibleInviterRoles === undefined
+          ? undefined : JSON.stringify(input.eligibleInviterRoles),
+        eligibleReferredRoles: input.eligibleReferredRoles === undefined
+          ? undefined : JSON.stringify(input.eligibleReferredRoles),
+        qualificationType: input.qualificationType,
+        rewardType: input.rewardType,
+        rewardValue: input.rewardValue,
+        rewardDurationDays: input.rewardDurationDays,
+        attributionWindowDays: input.attributionWindowDays,
+      });
+
+      // COUNTED, not assumed, and only when a term was actually asked for.
+      let grantedRewards = 0;
+      if (Object.keys(terms).length > 0) {
+        const [paid] = await db.select({ count: sql<number>`count(*)` })
+          .from(referralRewards).where(eq(referralRewards.campaignId, input.campaignId));
+        grantedRewards = Number(paid?.count ?? 0);
+      }
+      const refusal = refuseCampaignEdit(terms, grantedRewards);
+      if (refusal) throw new TRPCError({ code: 'BAD_REQUEST', message: refusal });
+
+      const patch = { ...schedule, ...terms } as Record<string, string | number | Date | null>;
       if (Object.keys(patch).length === 0) return { success: true as const, changed: false };
+
+      const [existing] = await db.select().from(referralCampaigns).where(eq(referralCampaigns.id, input.campaignId));
+      if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Campaign not found' });
+      const badDates = refuseCampaignDates(
+        (patch.startsAt ?? existing.startsAt) as Date | null,
+        (patch.endsAt ?? existing.endsAt) as Date | null,
+      );
+      if (badDates) throw new TRPCError({ code: 'BAD_REQUEST', message: badDates });
       await db.update(referralCampaigns).set(patch).where(eq(referralCampaigns.id, input.campaignId));
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: ctx.user.id,
         actorId: ctx.user.id,
         action: 'referral_campaign_updated',
@@ -4920,30 +6889,25 @@ const adminRouter = router({
       });
       return { success: true as const, changed: true };
     }),
-  referralRewards: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
-    return db.select({
-      id: referralRewards.id,
-      referralId: referralRewards.referralId,
-      campaignId: referralRewards.campaignId,
-      recipientUserId: referralRewards.recipientUserId,
-      rewardType: referralRewards.rewardType,
-      rewardValue: referralRewards.rewardValue,
-      status: referralRewards.status,
-      effectiveFrom: referralRewards.effectiveFrom,
-      expiresAt: referralRewards.expiresAt,
-      reversedAt: referralRewards.reversedAt,
-      reversalReason: referralRewards.reversalReason,
-      createdAt: referralRewards.createdAt,
-      campaignName: referralCampaigns.name,
-      recipientName: users.name,
-    }).from(referralRewards)
-      .innerJoin(referralCampaigns, eq(referralCampaigns.id, referralRewards.campaignId))
-      .innerJoin(users, eq(users.id, referralRewards.recipientUserId))
-      .orderBy(desc(referralRewards.createdAt))
-      .limit(250);
-  }),
+  /**
+   * The reward ledger, PAGED and READ TRUTHFULLY.
+   *
+   * Two things were wrong with the previous shape. It was `.limit(250)` with no
+   * count - the same silent truncation the user directory had, where an
+   * administrator sees a subset with nothing saying it is one. And it returned
+   * the STORED status, so a bonus whose `expiresAt` passed months ago still
+   * read GRANTED to the administrator deciding whether to grant another.
+   */
+  referralRewards: adminWith('marketplace.manage')
+    .input(z.object({
+      page: z.number().int().min(0).max(100_000).default(0),
+      pageSize: z.number().int().min(1).max(100).default(25),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { page, pageSize } = { page: 0, pageSize: 25, ...(input ?? {}) };
+      return listReferralRewards(db, { page, pageSize });
+    }),
   qualifyReferral: adminWith('marketplace.manage')
     .input(z.object({ referralId: z.number().int().positive(), qualificationType: z.enum(['ACCOUNT_VERIFIED', 'PROVIDER_APPROVED', 'PROFILE_COMPLETED', 'FIRST_VALID_RFQ', 'FIRST_VALID_QUOTATION_RESPONSE']).optional(), note: z.string().max(500).optional() }))
     .mutation(async ({ ctx, input }) => {
@@ -4952,50 +6916,159 @@ const adminRouter = router({
       const [referral] = await db.select().from(referrals).where(eq(referrals.id, input.referralId));
       if (!referral) throw new TRPCError({ code: 'NOT_FOUND', message: 'Referral not found' });
       if (referral.status === 'revoked' || referral.status === 'expired') throw new TRPCError({ code: 'BAD_REQUEST', message: 'Referral cannot be qualified' });
-      const eventKey = `referral:${referral.id}:qualify:${input.qualificationType ?? 'MANUAL'}`;
+      /**
+       * THE SAME ENGINE THE PRODUCT USES - not a second implementation.
+       *
+       * This wrote `status: 'qualified'` directly and granted nothing. An
+       * administrator clicking Qualify moved a word in the database and the
+       * inviter received no reward, no notification and no entitlement: a
+       * permanent dead end, and one that looked like it had worked.
+       *
+       * Routing it through qualifyReferralEvent means the manual path resolves
+       * a campaign, writes a reward, applies its effect and reports the truth,
+       * under exactly the rules the automatic events follow. The note the
+       * administrator wrote is preserved on the referral afterwards.
+       */
       const qualificationType = input.qualificationType ?? 'ACCOUNT_VERIFIED';
-      await db.update(referrals).set({
-        status: 'qualified',
-        qualificationType,
-        qualificationEventKey: eventKey,
-        qualifiedAt: new Date(),
-        qualificationNote: input.note ?? null,
-      }).where(eq(referrals.id, input.referralId));
-      await db.insert(userAccountAuditEvents).values({
+      const eventKey = `admin:${referral.id}:${qualificationType}`;
+      const result = await qualifyReferralEvent(db, referral.referredId, qualificationType, eventKey, new Date());
+
+      if (input.note) {
+        await db.update(referrals).set({ qualificationNote: input.note }).where(eq(referrals.id, input.referralId));
+      }
+      await recordAccountEvent(db, {
         userId: referral.referrerId,
         actorId: ctx.user.id,
         action: 'referral_qualified',
         source: 'referral',
-        note: `referral ${referral.id}`,
+        note: `referral ${referral.id} manually qualified as ${qualificationType}: ${result.outcome}`,
       });
-      return { success: true, status: 'qualified' as const };
+
+      /*
+       * The administrator is told what actually happened. "Qualified" when no
+       * campaign was eligible would be the same dead end wearing a success
+       * message.
+       */
+      if (result.outcome === 'granted') {
+        return { success: true, status: 'rewarded' as const, outcome: result.outcome, rewardType: result.rewardType, rewardValue: result.rewardValue };
+      }
+      if (result.outcome === 'already_qualified') {
+        return { success: true, status: 'qualified' as const, outcome: result.outcome };
+      }
+      if (result.outcome === 'reward_pending') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'The referral qualified but its reward could not be applied. See the reward ledger for the reason.',
+        });
+      }
+      if (result.outcome === 'cap_reached') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Every eligible campaign has reached its cap for this inviter.' });
+      }
+      if (result.outcome === 'no_referral') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That referral no longer exists.' });
+      }
+      // campaign_ineligible - and its `reason` is the useful half, so it is
+      // passed through rather than flattened into "not eligible".
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `No campaign is currently eligible to reward this referral (${result.reason}).`,
+      });
     }),
   reverseReferralReward: adminWith('marketplace.manage')
     .input(z.object({ rewardId: z.number().int().positive(), reason: z.string().trim().min(1).max(500) }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const [reward] = await db.select().from(referralRewards).where(eq(referralRewards.id, input.rewardId));
-      if (!reward) throw new TRPCError({ code: 'NOT_FOUND', message: 'Reward not found' });
-      if (reward.status === 'REVERSED') return { success: true as const, changed: false };
-      await db.update(referralRewards).set({
-        status: 'REVERSED',
-        reversedAt: new Date(),
-        reversalReason: input.reason,
-      }).where(eq(referralRewards.id, input.rewardId));
-      await db.insert(userAccountAuditEvents).values({
-        userId: reward.recipientUserId,
-        actorId: ctx.user.id,
-        action: 'referral_reward_reversed',
-        source: 'referral',
-        note: input.reason,
+      const db = await requireDb();
+      /**
+       * THE EFFECT, NOT JUST THE WORD.
+       *
+       * This set `status: 'REVERSED'` on the ledger row and stopped. The
+       * entitlement stayed granted and the Spotlight kept running, so an
+       * administrator reversing a fraudulent referral changed a label and
+       * nothing else - and the ledger then disagreed with the platform about
+       * what the vendor actually had.
+       *
+       * ONE TRANSACTION, with the reward row locked. Withdrawing the effect
+       * and recording the withdrawal are the same event: a failure between
+       * them would leave either a revoked entitlement the ledger still calls
+       * GRANTED, or a REVERSED ledger row sitting over a live benefit. The
+       * lock also settles two administrators pressing reverse at the same
+       * moment - the second reads the first's REVERSED and reports no change,
+       * rather than both running and one of them revoking a row that a later
+       * grant had since reused.
+       */
+      const outcome = await db.transaction(async (tx: any) => {
+        const [reward] = await tx.select().from(referralRewards)
+          .where(eq(referralRewards.id, input.rewardId)).for('update');
+        if (!reward) throw new TRPCError({ code: 'NOT_FOUND', message: 'Reward not found' });
+        if (reward.status === 'REVERSED') {
+          return {
+            changed: false as const, recipientUserId: reward.recipientUserId,
+            effect: 'already_reversed' as const, detail: '',
+          };
+        }
+
+        const undone = await reverseRewardEffect(tx, reward, ctx.user.id, new Date());
+        if (!undone.ok) {
+          // The effect could not be identified safely - an effectRef pointing
+          // at another account's row. Marking the ledger REVERSED anyway would
+          // bury that, so this writes nothing at all and says why.
+          throw new TRPCError({ code: 'BAD_REQUEST', message: undone.reason });
+        }
+
+        await markRewardReversed(tx, reward.id, input.reason, new Date());
+        await markReferralAfterReversal(tx, reward.referralId);
+        await recordAccountEvent(tx, {
+          userId: reward.recipientUserId,
+          actorId: ctx.user.id,
+          action: 'referral_reward_reversed',
+          source: 'referral',
+          note: `${input.reason} [${undone.effect}]`,
+        });
+        return {
+          changed: true as const, recipientUserId: reward.recipientUserId,
+          effect: undone.effect, detail: undone.detail,
+        };
       });
-      return { success: true as const, changed: true };
+
+      if (outcome.changed) {
+        // AFTER the commit, and only if something changed. A notice about a
+        // withdrawal that rolled back is a message the vendor cannot reconcile
+        // with what they still have.
+        await notifyUser(db, {
+          userId: outcome.recipientUserId,
+          title: 'Referral reward reversed',
+          body: outcome.detail,
+          type: 'referral',
+          link: '/settings#settings-referral',
+          // Per effect, because "your bonus was withdrawn" and "your
+          // subscription time stands" are different facts and a vendor reading
+          // the wrong one would go looking for days that are still there.
+          messageKey: `notif.referral.reversed.${outcome.effect}`,
+          messageParams: { note: input.reason },
+        });
+      }
+      return {
+        success: true as const, changed: outcome.changed,
+        effect: outcome.effect, detail: outcome.detail,
+      };
     }),
-  placements: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
-    return db.select({
+  /** Placements, paged and searched in the query. Was `.limit(250)` + a browser filter. */
+  placements: adminWith('marketplace.manage').input(ADMIN_LIST_INPUT).query(async ({ input }) => {
+    const db = await requireDb();
+    const term = (input.search ?? '').trim();
+    const where = allOf(and, [term ? or(
+      like(users.name, containsTerm(term)),
+      like(products.name, containsTerm(term)),
+      like(vendorSponsorships.package, containsTerm(term)),
+      like(vendorSponsorships.surface, containsTerm(term)),
+      like(vendorSponsorships.category, containsTerm(term)),
+    ) : null]);
+    const joined = (builder: any) => builder
+      .leftJoin(users, eq(users.id, vendorSponsorships.vendorId))
+      .leftJoin(products, eq(products.id, vendorSponsorships.productId));
+    return adminPage({
+      countQuery: joined(db.select(COUNT).from(vendorSponsorships)),
+      rowsQuery: joined(db.select({
       id: vendorSponsorships.id,
       vendorId: vendorSponsorships.vendorId,
       productId: vendorSponsorships.productId,
@@ -5012,11 +7085,12 @@ const adminRouter = router({
       createdAt: vendorSponsorships.createdAt,
       vendorName: users.name,
       productName: products.name,
-    }).from(vendorSponsorships)
-      .leftJoin(users, eq(users.id, vendorSponsorships.vendorId))
-      .leftJoin(products, eq(products.id, vendorSponsorships.productId))
-      .orderBy(desc(vendorSponsorships.createdAt))
-      .limit(250);
+      }).from(vendorSponsorships)),
+      where,
+      orderBy: [desc(vendorSponsorships.createdAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
   /**
    * COMMERCIAL PLACEMENT PERFORMANCE, from real events only.
@@ -5252,8 +7326,7 @@ const adminRouter = router({
 
   /** Administrators an enquiry may be handed to - those who could actually act. */
   assignableAdmins: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return assignableAdmins(db);
   }),
 
@@ -5377,7 +7450,18 @@ const adminRouter = router({
           title: 'Enquiries were assigned to you',
           body: `${assigned} ${assigned === 1 ? 'enquiry' : 'enquiries'}`,
           type: 'info',
-          link: `/admin/enquiries/assignee/${input.assigneeId}`,
+          /**
+           * THE QUEUE, FILTERED TO THEM - as a QUERY, not a path segment.
+           *
+           * This was `/admin/enquiries/assignee/${input.assigneeId}`, which
+           * matches no route: `/admin/:section/:record` is three segments and
+           * that is four, so every admin assigned a batch of enquiries was
+           * notified and sent to "404 Page Not Found". Verified in a browser,
+           * not inferred from the route table. `?assignee=` is the right shape
+           * anyway - the destination is a FILTERED LIST, and the path segment
+           * on this screen already means "one enquiry, by reference".
+           */
+          link: `/admin/enquiries?assignee=${input.assigneeId}`,
           messageKey: 'notif.enquiry.assigned.bulk',
           messageParams: { count: assigned },
         });
@@ -5441,7 +7525,7 @@ const adminRouter = router({
       // the shape userAccountAuditEvents already uses for 'admin_signed_in':
       // userId and actorId are both the administrator, because the event is
       // something they did rather than something done to somebody.
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: ctx.user.id,
         actorId: ctx.user.id,
         action: 'enquiries_exported',
@@ -5498,7 +7582,7 @@ const adminRouter = router({
         reason: input.reason,
       });
       if (result.outcome === 'rejected') throw new TRPCError({ code: 'CONFLICT', message: result.reason });
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: input.entityType === 'PROVIDER' ? input.entityId : ctx.user.id,
         actorId: ctx.user.id,
         action: 'placement_booked',
@@ -5534,7 +7618,7 @@ const adminRouter = router({
       issuedBy: ctx.user.id,
       expiresAt: new Date(Date.now() + input.expiresInMinutes * 60_000),
     });
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: target.id, actorId: ctx.user.id, action: 'test_login_link_issued', source: 'admin',
       note: `Expires in ${input.expiresInMinutes} minute(s)`,
     });
@@ -5570,7 +7654,7 @@ const adminRouter = router({
     await db.update(testLoginTokens)
       .set({ revokedAt: new Date(), revokedBy: ctx.user.id })
       .where(eq(testLoginTokens.id, input.tokenId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: row.userId, actorId: ctx.user.id, action: 'test_login_link_revoked', source: 'admin',
     });
     return { success: true } as const;
@@ -5586,7 +7670,7 @@ const adminRouter = router({
     if (!target?.isDummy) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only dummy users can have a manually managed password' });
     const passwordHash = await hashPassword(input.password);
     await db.update(users).set({ passwordHash, invitationStatus: 'password_set', invitationToken: null, invitationExpiresAt: null, passwordSetAt: new Date() }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'dummy_user_password_changed', source: 'dummy', note: 'Password updated by an administrator' });
+    await recordAccountEvent(db, { userId: input.userId, actorId: ctx.user.id, action: 'dummy_user_password_changed', source: 'dummy', note: 'Password updated by an administrator' });
     return { success: true };
   }),
   setDummyUserActive: adminWith('qa.manage').input(z.object({ userId: z.number().int().positive(), active: z.boolean(), note: z.string().max(500).optional() })).mutation(async ({ ctx, input }) => {
@@ -5595,7 +7679,7 @@ const adminRouter = router({
     const [target] = await db.select().from(users).where(eq(users.id, input.userId));
     if (!target?.isDummy) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only dummy users can be changed here' });
     await db.update(users).set({ accountStatus: input.active ? 'active' : 'frozen', deactivatedAt: input.active ? null : new Date(), frozenAt: input.active ? null : new Date(), frozenReason: input.active ? null : (input.note || 'Disabled by an administrator') }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: input.active ? 'dummy_user_activated' : 'dummy_user_deactivated', source: 'dummy', note: input.note });
+    await recordAccountEvent(db, { userId: input.userId, actorId: ctx.user.id, action: input.active ? 'dummy_user_activated' : 'dummy_user_deactivated', source: 'dummy', note: input.note });
     return { success: true, active: input.active };
   }),
   deleteDummyUser: adminWith('qa.manage').input(z.object({ userId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
@@ -5603,7 +7687,7 @@ const adminRouter = router({
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     const [target] = await db.select().from(users).where(eq(users.id, input.userId));
     if (!target?.isDummy) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only dummy users can be deleted' });
-    await db.insert(userAccountAuditEvents).values({ userId: input.userId, actorId: ctx.user.id, action: 'dummy_user_deleted', source: 'dummy', note: target.creationNote });
+    await recordAccountEvent(db, { userId: input.userId, actorId: ctx.user.id, action: 'dummy_user_deleted', source: 'dummy', note: target.creationNote });
     try {
       await db.delete(users).where(eq(users.id, input.userId));
     } catch (err) {
@@ -5619,8 +7703,9 @@ const adminRouter = router({
   // explicit ADMIN_SUBSCRIPTION_COLUMNS allowlist (no provider references, and
   // BuildHub stores no card/token/credential data anywhere to begin with).
   vendorBilling: adminWith('billing.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return null;
+    // null reads as "this vendor has no subscription", which is a billing
+    // statement an administrator acts on.
+    const db = await requireDb();
     const [row] = await db
       .select(ADMIN_SUBSCRIPTION_COLUMNS)
       .from(vendorSubscriptions)
@@ -5883,7 +7968,7 @@ const adminRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'A qualified-enquiry limit must be zero or a positive whole number' });
       }
 
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: input.userId, actorId: ctx.user.id, action: 'enquiry_allowance_changed', source: 'admin',
         note: `${result.previous ?? 'plan default'} -> ${input.limit ?? 'unlimited'}${input.reason ? ` (${input.reason})` : ''}`,
       });
@@ -5978,49 +8063,93 @@ const adminRouter = router({
       }));
     }),
 
-  projects: adminWith('users.read').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
-    const rows = await db.select({
-      id: projects.id,
-      title: projects.title,
-      type: projects.type,
-      status: projects.status,
-      location: projects.location,
-      progress: projects.progress,
-      ownerId: projects.ownerId,
-      createdAt: projects.createdAt,
-      updatedAt: projects.updatedAt,
-    }).from(projects).orderBy(desc(projects.updatedAt)).limit(250);
-    const ownerIds = Array.from(new Set(rows.map(row => row.ownerId).filter((id): id is number => Number.isInteger(id) && id > 0)));
-    const ownerRows = ownerIds.length
-      ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ownerIds))
-      : [];
-    const ownerNames = new Map(ownerRows.map(row => [row.id, row.name]));
-    return rows.map(row => ({ ...row, ownerName: ownerNames.get(row.ownerId) ?? null }));
+  /** Projects, paged and searched in the query. Was `.limit(250)` + a browser filter. */
+  projects: adminWith('users.read').input(ADMIN_LIST_INPUT).query(async ({ input }) => {
+    const db = await requireDb();
+    const term = (input.search ?? '').trim();
+    const where = allOf(and, [
+      term ? or(
+        like(projects.title, containsTerm(term)),
+        like(projects.location, containsTerm(term)),
+        like(users.name, containsTerm(term)),
+      ) : null,
+      /*
+       * A CLOSED ENUM, and an unrecognised value is DROPPED rather than
+       * compared - see enumFilter. The allowed set is read from the column, so
+       * it cannot fall behind the schema the way a hand-written list does.
+       */
+      enumFilter(projects.status, input.status, eq),
+    ]);
+    const joined = (builder: any) => builder.leftJoin(users, eq(users.id, projects.ownerId));
+    return adminPage({
+      countQuery: joined(db.select(COUNT).from(projects)),
+      rowsQuery: joined(db.select({
+        id: projects.id,
+        title: projects.title,
+        type: projects.type,
+        status: projects.status,
+        location: projects.location,
+        progress: projects.progress,
+        ownerId: projects.ownerId,
+        createdAt: projects.createdAt,
+        updatedAt: projects.updatedAt,
+        ownerName: users.name,
+      }).from(projects)),
+      where,
+      orderBy: [desc(projects.updatedAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
 
-  products: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
-    const rows = await db.select({
-      id: products.id,
-      name: products.name,
-      brand: products.brand,
-      category: products.category,
-      active: products.active,
-      featured: products.featured,
-      price: products.price,
-      stock: products.stock,
-      supplierId: products.supplierId,
-      createdAt: products.createdAt,
-    }).from(products).orderBy(desc(products.createdAt)).limit(250);
-    const supplierIds = Array.from(new Set(rows.map(row => row.supplierId).filter((id): id is number => Number.isInteger(id) && id > 0)));
-    const supplierRows = supplierIds.length
-      ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, supplierIds))
-      : [];
-    const supplierNames = new Map(supplierRows.map(row => [row.id, row.name]));
-    return rows.map(row => ({ ...row, supplierName: supplierNames.get(row.supplierId) ?? null }));
+  /**
+   * The product catalogue, PAGED AND SEARCHED IN THE QUERY.
+   *
+   * Was `.limit(250)` returning a bare array, with the search running in the
+   * browser over whatever arrived - so a search for a product on row 251
+   * answered "no matching products" with exactly the confidence it answers
+   * correctly. See server/adminList.ts.
+   */
+  products: adminWith('marketplace.manage').input(ADMIN_LIST_INPUT).query(async ({ input }) => {
+    const db = await requireDb();
+    const term = (input.search ?? '').trim();
+    // The supplier is JOINED rather than looked up afterwards, so the search can
+    // reach their name and the count can be filtered by it too.
+    const where = allOf(and, [
+      term ? or(
+        like(products.name, containsTerm(term)),
+        like(products.brand, containsTerm(term)),
+        like(products.category, containsTerm(term)),
+        like(users.name, containsTerm(term)),
+      ) : null,
+      // The admin filter reads the authoritative lifecycle, so 'draft' and
+      // 'archived' are answerable at all - under the boolean all three
+      // non-live states collapsed into one 'inactive' bucket. `enumFilter`
+      // validates the value against the column rather than casting it, so an
+      // invented status is ignored instead of reaching MySQL.
+      enumFilter(products.status, input.status, eq),
+    ]);
+    const joined = (builder: any) => builder.leftJoin(users, eq(users.id, products.supplierId));
+    return adminPage({
+      countQuery: joined(db.select(COUNT).from(products)),
+      rowsQuery: joined(db.select({
+        id: products.id,
+        name: products.name,
+        brand: products.brand,
+        category: products.category,
+        status: products.status,
+        featured: products.featured,
+        price: products.price,
+        stock: products.stock,
+        supplierId: products.supplierId,
+        createdAt: products.createdAt,
+        supplierName: users.name,
+      }).from(products)),
+      where,
+      orderBy: [desc(products.createdAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
 
   projectDetail: adminWith('users.read').input(z.object({ projectId: z.number().int().positive() })).query(async ({ input }) => {
@@ -6077,10 +8206,26 @@ const adminRouter = router({
     };
   }),
 
-  vendorNameChanges: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
-    const rows = await db.select({
+  /** Name-change requests, paged and filtered in the query. Was `.limit(250)` + a browser filter. */
+  vendorNameChanges: adminWith('marketplace.manage').input(ADMIN_LIST_INPUT).query(async ({ input }) => {
+    const db = await requireDb();
+    const term = (input.search ?? '').trim();
+    const where = allOf(and, [
+      term ? or(
+        like(users.name, containsTerm(term)),
+        like(users.email, containsTerm(term)),
+        like(vendorProfiles.companyName, containsTerm(term)),
+        like(vendorProfiles.tradingName, containsTerm(term)),
+        like(vendorNameChangeRequests.requestedValue, containsTerm(term)),
+      ) : null,
+      enumFilter(vendorNameChangeRequests.status, input.status, eq),
+    ]);
+    const joined = (builder: any) => builder
+      .innerJoin(users, eq(users.id, vendorNameChangeRequests.userId))
+      .leftJoin(vendorProfiles, eq(vendorProfiles.userId, vendorNameChangeRequests.userId));
+    return adminPage({
+      countQuery: joined(db.select(COUNT).from(vendorNameChangeRequests)),
+      rowsQuery: joined(db.select({
       id: vendorNameChangeRequests.id,
       userId: vendorNameChangeRequests.userId,
       field: vendorNameChangeRequests.field,
@@ -6097,12 +8242,12 @@ const adminRouter = router({
       userEmail: users.email,
       companyName: vendorProfiles.companyName,
       tradingName: vendorProfiles.tradingName,
-    }).from(vendorNameChangeRequests)
-      .innerJoin(users, eq(users.id, vendorNameChangeRequests.userId))
-      .leftJoin(vendorProfiles, eq(vendorProfiles.userId, vendorNameChangeRequests.userId))
-      .orderBy(desc(vendorNameChangeRequests.createdAt))
-      .limit(250);
-    return rows;
+      }).from(vendorNameChangeRequests)),
+      where,
+      orderBy: [desc(vendorNameChangeRequests.createdAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
 
   reviewVendorNameChange: adminWith('marketplace.manage')
@@ -6139,7 +8284,7 @@ const adminRouter = router({
         reviewerNote: input.reviewerNote ?? null,
         reviewedAt: new Date(),
       }).where(eq(vendorNameChangeRequests.id, input.requestId));
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: request.userId,
         actorId: ctx.user.id,
         action: `vendor_name_change_${input.status}`,
@@ -6210,7 +8355,7 @@ const adminRouter = router({
         reviewedAt: new Date(),
         adminCorrection: true,
       });
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: input.userId,
         actorId: ctx.user.id,
         action: 'vendor_name_direct_correction',
@@ -6349,7 +8494,7 @@ const adminRouter = router({
 
       // The account trail, alongside the sponsorship row itself: one records
       // the arrangement, the other records that an administrator made it.
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: input.vendorId, actorId: ctx.user.id,
         action: 'sponsorship_granted', source: 'admin',
         note: `${input.category}${input.endsAt ? ` until ${input.endsAt}` : ' (open-ended)'} (${input.reason})`,
@@ -6376,7 +8521,7 @@ const adminRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'That sponsorship is already revoked.' });
       }
 
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: row.vendorId, actorId: ctx.user.id,
         action: 'sponsorship_revoked', source: 'admin',
         note: `${row.category}${input.reason ? ` (${input.reason})` : ''}`,
@@ -6425,7 +8570,7 @@ const adminRouter = router({
       if (result.outcome === 'rejected') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
       }
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: input.vendorId, actorId: ctx.user.id,
         action: 'featured_granted', source: 'admin',
         note: input.category,
@@ -6448,7 +8593,7 @@ const adminRouter = router({
       if (!removed) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'That featured placement is already removed.' });
       }
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: row.vendorId, actorId: ctx.user.id,
         action: 'featured_removed', source: 'admin',
         note: row.category,
@@ -6504,22 +8649,38 @@ const adminRouter = router({
    * data. Featured first, so the list is ordered the same way the public
    * marketplace shows them.
    */
-  marketplaceProducts: adminWith('marketplace.manage').query(async () => {
-    const db = await getDb();
-    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    return db.select({
-      id: products.id,
-      name: products.name,
-      nameAr: products.nameAr,
-      category: products.category,
-      active: products.active,
-      featured: products.featured,
-      supplierId: products.supplierId,
-      supplierName: users.name,
-    }).from(products)
-      .leftJoin(users, eq(products.supplierId, users.id))
-      .orderBy(desc(products.featured), desc(products.createdAt))
-      .limit(200);
+  /**
+   * The catalogue, for choosing what to feature. Was `.limit(200)` with the
+   * featured ones first - so a product outside the first 200 could not be
+   * featured from this screen at all, and nothing said so.
+   */
+  marketplaceProducts: adminWith('marketplace.manage').input(ADMIN_LIST_INPUT).query(async ({ input }) => {
+    const db = await requireDb();
+    const term = (input.search ?? '').trim();
+    const where = allOf(and, [term ? or(
+      like(products.name, containsTerm(term)),
+      like(products.nameAr, containsTerm(term)),
+      like(products.category, containsTerm(term)),
+      like(users.name, containsTerm(term)),
+    ) : null]);
+    const joined = (builder: any) => builder.leftJoin(users, eq(products.supplierId, users.id));
+    return adminPage({
+      countQuery: joined(db.select(COUNT).from(products)),
+      rowsQuery: joined(db.select({
+        id: products.id,
+        name: products.name,
+        nameAr: products.nameAr,
+        category: products.category,
+        status: products.status,
+        featured: products.featured,
+        supplierId: products.supplierId,
+        supplierName: users.name,
+      }).from(products)),
+      where,
+      orderBy: [desc(products.featured), desc(products.createdAt)],
+      page: input.page,
+      pageSize: input.pageSize,
+    });
   }),
 
   setVendorPlanManually: adminWith('billing.manage')
@@ -6570,7 +8731,7 @@ const adminRouter = router({
       const from = outcome.previousPlan ?? 'free';
       const to = outcome.state.storedPlan;
 
-      await db.insert(userAccountAuditEvents).values({
+      await recordAccountEvent(db, {
         userId: input.userId,
         actorId: ctx.user.id,
         action: 'plan_changed_manually',
@@ -6663,14 +8824,31 @@ const adminRouter = router({
     ]);
     return { ...diagnostics, usage };
   }),
-  accountAudit: adminWith('users.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
-    return db.select().from(userAccountAuditEvents).where(eq(userAccountAuditEvents.userId, input.userId)).orderBy(desc(userAccountAuditEvents.createdAt)).limit(100);
-  }),
+  /**
+   * ONE ACCOUNT'S HISTORY, PAGED.
+   *
+   * This took the most recent 100 and returned a bare array. A long-lived
+   * vendor's EARLY history - the approval, the first freeze, the name
+   * correction - is what falls off the end of that, and it is exactly what
+   * somebody opens this screen to find.
+   *
+   * Same reader as the platform-wide report, narrowed by `userId`, so the two
+   * screens cannot disagree about what an event says.
+   */
+  accountAudit: adminWith('users.read')
+    .input(z.object({
+      userId: z.number().int().positive(),
+      search: z.string().max(120).optional(),
+      action: z.string().max(80).optional(),
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(ADMIN_PAGE_SIZE_DEFAULT),
+    }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return listAccountAudit(db, input);
+    }),
   analyticsSummary: adminWith('audit.read').input(z.object({ includeDummy: z.boolean().default(false) }).optional()).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const dummyRows = await db.select({ id: users.id }).from(users).where(eq(users.isDummy, true));
     const dummyIds = dummyRows.map(row => row.id);
     const userRows = await db.select({ createdAt: users.createdAt, isDummy: users.isDummy }).from(users).where(input?.includeDummy ? undefined : eq(users.isDummy, false));
@@ -6757,7 +8935,7 @@ const adminRouter = router({
     }),
 
   // SECURITY (Phase 4A cumulative final audit): same passwordHash/invitationToken
-  // exposure risk as ADMIN_USER_LIST_COLUMNS above, found independently in the
+  // exposure risk as ADMIN_DIRECTORY_COLUMNS, found independently in the
   // two Compliance Queue endpoints below - both previously did a bare
   // `select().from(users)` and spread the full row (including passwordHash and
   // the live, still-usable invitationToken bearer credential) into the admin
@@ -6766,8 +8944,7 @@ const adminRouter = router({
   // compliance queue list, registration CSV export (shared/registrationMetrics.ts),
   // and the applicant detail dialog.
   complianceQueue: adminWith('marketplace.manage').input(z.object({ includeDummy: z.boolean().default(false) }).optional()).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     const applicantFilter = input?.includeDummy ? inArray(users.userRole, providerRoles) : and(inArray(users.userRole, providerRoles), eq(users.isDummy, false));
     const applicants = await db.select(COMPLIANCE_APPLICANT_COLUMNS).from(users).where(applicantFilter);
     const docs = await db.select().from(registrationDocuments).orderBy(desc(registrationDocuments.createdAt));
@@ -6819,6 +8996,11 @@ const adminRouter = router({
     const [applicant] = await db.select().from(users).where(eq(users.id, input.userId));
     if (!applicant || !isComplianceRole(applicant.userRole)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Compliance applicant not found' });
     await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: new Date(), onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(eq(users.id, input.userId));
+    if (input.status === 'approved') {
+      // PROVIDER_APPROVED. The event key names the USER, not this review, so a
+      // second approval after a later re-review cannot pay twice.
+      await qualifyReferralEvent(db, input.userId, 'PROVIDER_APPROVED', `approved:${input.userId}`, new Date());
+    }
     // Part 42 names supplier approval explicitly. registrationReviewEvents
     // already records the new status; what it cannot answer is what the
     // status was before, which is the question asked when a vendor says they
@@ -6855,6 +9037,14 @@ const adminRouter = router({
     if (applicants.some(applicant => !['under_review', 'update_required', 'not_started'].includes(applicant.onboardingStatus))) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Bulk decisions may only include pending applicants' });
     const reviewedAt = new Date();
     await db.update(users).set({ onboardingStatus: input.status, onboardingReviewNotes: input.note ?? null, onboardingReviewedAt: reviewedAt, onboardingReviewedBy: ctx.user.id, verified: input.status === 'approved' }).where(inArray(users.id, userIds));
+    if (input.status === 'approved') {
+      // The SAME event as the single review above. A bulk approval that paid no
+      // referrals while a one-by-one approval did would make the reward depend
+      // on which button an administrator happened to use.
+      for (const approvedId of userIds) {
+        await qualifyReferralEvent(db, approvedId, 'PROVIDER_APPROVED', `approved:${approvedId}`, reviewedAt);
+      }
+    }
     await db.insert(registrationReviewEvents).values(applicants.map(applicant => ({ userId: applicant.id, actorId: ctx.user.id, action: 'bulk_applicant_status_updated', status: input.status, note: input.note })));
     await notifyUsers(db, applicants.map(applicant => ({ userId: applicant.id, title: input.status === 'approved' ? 'Registration approved' : 'Registration rejected', body: input.note || `Your registration is ${input.status}`, type: 'compliance', link: '/compliance', messageKey: `notif.compliance.applicant.${input.status}`, messageParams: (input.note ? { note: input.note } : {}) as Record<string, string> })));
     return { success: true, updatedCount: applicants.length, onboardingStatus: input.status };
@@ -6906,7 +9096,7 @@ const adminRouter = router({
       frozenAt: input.frozen ? new Date() : null,
       frozenReason: input.frozen ? reasonText : null,
     }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: input.userId,
       actorId: ctx.user.id,
       action,
@@ -6914,31 +9104,520 @@ const adminRouter = router({
     });
     return { success: true, status: input.frozen ? 'frozen' : 'active' };
   }),
-  disputes: adminWith('support.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return [];
-    const rows = await db.select().from(disputes).orderBy(desc(disputes.createdAt));
-    const userRows = await db.select({ id: users.id, name: users.name }).from(users);
-    const names = new Map(userRows.map(row => [row.id, row.name]));
-    return rows.map(row => ({
-      ...row,
-      reporterName: names.get(row.reporterId) ?? null,
-      respondentName: row.respondentId ? names.get(row.respondentId) ?? null : null,
-    }));
+  /**
+   * ── THE SUPPORT QUEUE ────────────────────────────────────────────────────
+   *
+   * Was: every dispute ever filed in one response, plus EVERY USER ON THE
+   * PLATFORM read into memory to resolve two names per row, with the search and
+   * the status filter applied in the browser over whatever arrived. See
+   * server/disputeAdminView.ts for why each of those is a defect rather than
+   * merely slow.
+   */
+  disputes: adminWith('support.manage').input(z.object({
+    page: z.number().int().min(0).default(0),
+    pageSize: z.number().int().min(1).max(100).default(25),
+    search: z.string().trim().max(120).optional(),
+    status: z.string().max(24).optional(),
+    priority: z.string().max(24).optional(),
+    category: z.string().max(24).optional(),
+    subjectType: z.string().max(24).optional(),
+    assignment: z.enum(['all', 'mine', 'assigned', 'unassigned']).optional(),
+  }).default({ page: 0, pageSize: 25 })).query(async ({ ctx, input }) => {
+    const db = await requireDb();
+    const [page, counts] = await Promise.all([
+      // `actorId` comes from the SESSION. Taking "mine" from the client would
+      // let one administrator read another's queue under their own label.
+      listAdminDisputes(db, { ...input, actorId: ctx.user.id }),
+      disputeStatusCounts(db),
+    ]);
+    return { ...page, counts };
   }),
+
+  /** One dispute in full, for the administrator working it. */
+  disputeDetail: adminWith('support.manage')
+    .input(z.object({ disputeId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const detail = await adminDisputeDetail(db, input.disputeId);
+      if (!detail) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dispute not found' });
+      return detail;
+    }),
+
+  /**
+   * Administrators a DISPUTE may be handed to.
+   *
+   * Deliberately NOT `admin.assignableAdmins`, which is gated on
+   * `marketplace.manage` and offers everybody who can sign in: a support
+   * administrator cannot call it, and it would offer names that
+   * `assignDispute` then refuses. This returns exactly the set that mutation
+   * accepts, and a test holds the two together.
+   */
+  /**
+   * ── THE SUPPORT QUEUE ───────────────────────────────────────────────────
+   *
+   * Paged, filtered and ordered by WHO IS WAITING ON US - see
+   * listSupportTickets. Behind `support.manage`, the same permission that
+   * gates disputes, because they are the same job.
+   */
+  /**
+   * ── THE REVIEW MODERATION QUEUE ─────────────────────────────────────────
+   *
+   * Behind `support.manage`, beside disputes and tickets, because it is the
+   * same job: somebody complained and a human has to decide.
+   */
+  reviewReports: adminWith('support.manage')
+    .input(z.object({
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(20),
+      status: z.string().max(16).optional(),
+    }).default({ page: 0, pageSize: 20 }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return listReviewReports(db, input);
+    }),
+
+  /**
+   * Hide or restore a review.
+   *
+   * HIDING REQUIRES A REASON, and hiding removes the review from the average
+   * as well as from the page - a hidden review that still counts is a remedy
+   * in appearance only. Both are enforced in the service, not here.
+   */
+  moderateReview: adminWith('support.manage')
+    .input(z.object({
+      reviewId: z.number().int().positive(),
+      action: z.enum(['hide', 'restore']),
+      reason: z.string().trim().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [review] = await db.select({ revieweeId: reviews.revieweeId, reviewerId: reviews.reviewerId })
+        .from(reviews).where(eq(reviews.id, input.reviewId)).limit(1);
+      if (!review) throw new TRPCError({ code: 'NOT_FOUND', message: 'Review not found' });
+
+      let result;
+      try {
+        result = await moderateReview(db, {
+          reviewId: input.reviewId, actorId: ctx.user.id,
+          action: input.action, reason: input.reason ?? null,
+        });
+      } catch (error) { throw asReviewTrpcError(error); }
+
+      // BOTH PARTIES ARE IN THE RECORD. A hidden review changes the provider's
+      // score and removes the reviewer's words; an audit naming only one of
+      // them answers half the question later.
+      for (const userId of [review.revieweeId, review.reviewerId]) {
+        await recordAccountEvent(db, {
+          userId, actorId: ctx.user.id,
+          action: input.action === 'hide' ? 'review_hidden' : 'review_restored',
+          source: 'admin',
+          note: `review ${input.reviewId}${input.reason ? `: ${input.reason}` : ''}`,
+        });
+      }
+      return result;
+    }),
+
+  /**
+   * Resolve a report.
+   *
+   * UPHOLDING A REPORT DOES NOT HIDE THE REVIEW. They are two decisions: a
+   * report can be well-founded and the review still stand (a single rude word
+   * in an otherwise accurate account), and a review can be hidden with no
+   * report at all. Coupling them would remove the moderator's judgement from
+   * the one place it belongs.
+   */
+  resolveReviewReport: adminWith('support.manage')
+    .input(z.object({
+      reportId: z.number().int().positive(),
+      status: z.enum(['upheld', 'rejected']),
+      note: z.string().trim().max(1000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [report] = await db.select({ reporterId: reviewReports.reporterId, reviewId: reviewReports.reviewId })
+        .from(reviewReports).where(eq(reviewReports.id, input.reportId)).limit(1);
+      if (!report) throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
+      const [review] = await db.select({ revieweeId: reviews.revieweeId })
+        .from(reviews).where(eq(reviews.id, report.reviewId)).limit(1);
+      if (!review) throw new TRPCError({ code: 'NOT_FOUND', message: 'Review not found' });
+
+      try {
+        await resolveReviewReport(db, {
+          reportId: input.reportId, actorId: ctx.user.id,
+          status: input.status, note: input.note ?? null,
+        });
+      } catch (error) { throw asReviewTrpcError(error); }
+
+      await recordAccountEvent(db, {
+        userId: report.reporterId, actorId: ctx.user.id,
+        action: 'review_report_resolved', source: 'admin',
+        note: `report ${input.reportId} on review ${report.reviewId}: ${input.status}`,
+      });
+      await notifyUser(db, {
+        userId: report.reporterId,
+        title: 'Your report about a review was reviewed',
+        body: `The report was ${input.status}.`,
+        type: 'info',
+        // THE REVIEW ITSELF, on the provider's page. A bare '/settings' drops
+        // the reporter at the top of a long page with nothing about the thing
+        // they reported - the notification-destination guard is right to
+        // refuse it. `/vendor/:id` is where the review either still stands or
+        // visibly no longer does, which is the whole question they asked.
+        link: `/vendor/${review.revieweeId}`,
+        messageKey: 'notif.review.reportResolved',
+        messageParams: { statusKey: `reviewReport.status.${input.status}` },
+      });
+      return { ok: true };
+    }),
+
+  supportTickets: adminWith('support.manage')
+    .input(z.object({
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(20),
+      status: z.string().max(24).optional(),
+      category: z.string().max(24).optional(),
+      priority: z.string().max(16).optional(),
+      assignee: z.enum(['all', 'mine', 'unassigned']).default('all'),
+      search: z.string().max(MAX_SEARCH_LENGTH).optional(),
+    }).default({ page: 0, pageSize: 20, assignee: 'all' }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      return listSupportTickets(db, { ...input, actorId: ctx.user.id });
+    }),
+
+  /** Support agents who can be assigned work, filtered to the permission. */
+  supportAssignees: adminWith('support.manage').query(async () => {
+    const db = await requireDb();
+    const admins = await assignableAdmins(db);
+    return admins.filter(admin => hasAdminPermission(admin.adminRole as any, 'support.manage'));
+  }),
+
+  /**
+   * Assign a ticket. Append-only in effect: the previous assignee is replaced
+   * on the row, and the account audit records who did it and when, so "who was
+   * looking at this last week" is answerable.
+   */
+  assignSupportTicket: adminWith('support.manage')
+    .input(z.object({
+      ticketId: z.number().int().positive(),
+      /** null hands it back to the unassigned pool rather than deleting the record. */
+      assigneeId: z.number().int().positive().nullable(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [ticket] = await db.select().from(supportTickets)
+        .where(eq(supportTickets.id, input.ticketId)).limit(1);
+      if (!ticket) throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found' });
+
+      if (input.assigneeId !== null) {
+        // A ticket assigned to someone who cannot work it is a ticket nobody
+        // works. The assignee is re-checked here rather than trusted from the
+        // request: an id is a number, not a permission.
+        const [candidate] = await db.select({ adminRole: users.adminRole })
+          .from(users).where(eq(users.id, input.assigneeId)).limit(1);
+        if (!candidate || !hasAdminPermission(candidate.adminRole as any, 'support.manage')) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'That administrator cannot be assigned support work.',
+          });
+        }
+      }
+
+      await db.update(supportTickets).set({
+        assignedTo: input.assigneeId,
+        assignedBy: input.assigneeId === null ? null : ctx.user.id,
+        assignedAt: input.assigneeId === null ? null : new Date(),
+      }).where(eq(supportTickets.id, input.ticketId));
+
+      await recordAccountEvent(db, {
+        userId: ticket.requesterId, actorId: ctx.user.id,
+        action: 'support_ticket_assigned', source: 'admin',
+        note: `${ticket.reference ?? `#${ticket.id}`} -> ${input.assigneeId ?? 'unassigned'}`,
+      });
+      if (input.assigneeId) {
+        await notifyUser(db, {
+          userId: input.assigneeId,
+          title: 'A support ticket was assigned to you',
+          body: ticket.reference ?? `Ticket #${ticket.id}`,
+          type: 'info', link: `/admin/support/${ticket.id}`,
+          messageKey: 'notif.support.assigned',
+          messageParams: { reference: ticket.reference ?? `#${ticket.id}` },
+        });
+      }
+      return { ok: true };
+    }),
+
+  /** Triage. Staff-only by design - see SUPPORT_PRIORITY_IS_STAFF_ONLY. */
+  setSupportTicketPriority: adminWith('support.manage')
+    .input(z.object({
+      ticketId: z.number().int().positive(),
+      priority: z.enum(SUPPORT_PRIORITIES),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      const result = await db.update(supportTickets).set({ priority: input.priority })
+        .where(eq(supportTickets.id, input.ticketId));
+      if (!changedSomething(result)) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found' });
+      }
+      return { ok: true };
+    }),
+
+  /**
+   * Move a ticket THROUGH THE STATE MACHINE, never by setting a column.
+   *
+   * This is `request-info` (-> awaiting_user), `resolve`, `close` and the
+   * reopen, in one procedure, because they are one operation with different
+   * destinations. The generic "accept any status from any state" mutation this
+   * project deleted from disputes is deliberately not recreated: an undeclared
+   * move is refused and the refusal names both states.
+   *
+   * Resolving REQUIRES a resolution note. A resolution is a record of what was
+   * done, not a bare status flip - the same rule the dispute lifecycle holds.
+   */
+  transitionSupportTicket: adminWith('support.manage')
+    .input(z.object({
+      ticketId: z.number().int().positive(),
+      to: z.enum(SUPPORT_STATUSES),
+      reason: z.string().trim().max(500).optional(),
+      resolutionNotes: z.string().trim().max(5000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [ticket] = await db.select().from(supportTickets)
+        .where(eq(supportTickets.id, input.ticketId)).limit(1);
+      if (!ticket) throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found' });
+
+      if (input.to === 'resolved' && !input.resolutionNotes) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Say what was done. A resolution with no record is a status change, not a resolution.',
+        });
+      }
+
+      const patch: Record<string, unknown> = {};
+      if (input.to === 'resolved') {
+        patch.resolutionNotes = input.resolutionNotes;
+        patch.resolvedBy = ctx.user.id;
+        patch.resolvedAt = new Date();
+      }
+      if (input.to === 'closed') {
+        patch.closedBy = ctx.user.id;
+        patch.closedAt = new Date();
+      }
+
+      try {
+        await transitionTicket(db, {
+          ticketId: ticket.id,
+          from: ticket.status as SupportStatus,
+          to: input.to,
+          actorId: ctx.user.id,
+          reason: input.reason ?? null,
+          patch,
+        });
+      } catch (error) {
+        throw asTicketTrpcError(error);
+      }
+
+      await recordAccountEvent(db, {
+        userId: ticket.requesterId, actorId: ctx.user.id,
+        action: input.to === 'resolved' ? 'support_ticket_resolved'
+          : input.to === 'closed' ? 'support_ticket_closed'
+          : 'support_ticket_status_changed',
+        source: 'admin',
+        note: `${ticket.reference ?? `#${ticket.id}`}: ${ticket.status} -> ${input.to}`,
+      });
+
+      // The requester is told, with a link to a route that exists.
+      await notifyUser(db, {
+        userId: ticket.requesterId,
+        title: input.to === 'awaiting_user'
+          ? 'BuildHub support needs more information'
+          : `Your support ticket is now ${input.to.replace('_', ' ')}`,
+        body: ticket.reference ?? `Ticket #${ticket.id}`,
+        type: 'info',
+        link: `/support/${ticket.id}`,
+        // Two keys rather than one interpolated status: `resolveKeyParams`
+        // cannot translate a status word smuggled into a param, which is the
+        // exact defect the referral engine had.
+        messageKey: input.to === 'awaiting_user'
+          ? 'notif.support.infoRequested'
+          : 'notif.support.statusChanged',
+        messageParams: {
+          reference: ticket.reference ?? `#${ticket.id}`,
+          statusKey: `support.status.${input.to}`,
+        },
+      });
+      return { ok: true };
+    }),
+
+  /**
+   * INTERNAL notes on a ticket. Reuses `adminNotes` - which already serves six
+   * other subject types - rather than inventing a second internal-notes system.
+   * There is no procedure by which a requester can read these.
+   */
+  supportTicketNotes: adminWith('support.manage')
+    .input(z.object({ ticketId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return db.select({
+        id: adminNotes.id,
+        note: adminNotes.note,
+        createdAt: adminNotes.createdAt,
+        authorName: users.name,
+      }).from(adminNotes)
+        .innerJoin(users, eq(users.id, adminNotes.authorId))
+        .where(and(
+          eq(adminNotes.subjectType, 'support_ticket'),
+          eq(adminNotes.subjectId, input.ticketId),
+        ))
+        .orderBy(desc(adminNotes.createdAt))
+        .limit(100);
+    }),
+
+  addSupportTicketNote: adminWith('support.manage')
+    .input(z.object({
+      ticketId: z.number().int().positive(),
+      note: z.string().trim().min(1).max(5000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      await db.insert(adminNotes).values({
+        subjectType: 'support_ticket',
+        subjectId: input.ticketId,
+        note: input.note,
+        authorId: ctx.user.id,
+      });
+      return { ok: true };
+    }),
+
+  disputeAssignees: adminWith('support.manage').query(async () => {
+    const db = await requireDb();
+    const admins = await assignableAdmins(db);
+    return admins.filter(admin => hasAdminPermission(admin.adminRole as any, 'support.manage'));
+  }),
+  /**
+   * Move a dispute, THROUGH THE STATE MACHINE.
+   *
+   * This was `db.update(disputes).set({ status, resolutionNotes })`: any
+   * status, from any state, with no check that the dispute existed, no record
+   * of who did it or from what, and nothing told to the parties. A resolved
+   * dispute could be moved back to open and resolved again with different
+   * notes, and the record would show only the last write.
+   */
   updateDispute: adminWith('support.manage').input(z.object({
-    disputeId: z.number(),
-    status: z.enum(['open', 'investigating', 'resolved', 'rejected']),
-    resolutionNotes: z.string().max(2000).optional(),
-  })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    await db.update(disputes).set({ status: input.status, resolutionNotes: input.resolutionNotes }).where(eq(disputes.id, input.disputeId));
-    return { success: true };
+    disputeId: z.number().int().positive(),
+    // The shared set, which excludes `withdrawn` - the reporter's own decision.
+    status: z.enum(DISPUTE_ADMIN_SETTABLE_STATUSES),
+    /** Required to reject or to reopen. */
+    reason: z.string().trim().max(500).optional(),
+    /** Both required to resolve: a bare status change is not a resolution. */
+    resolutionType: z.enum(DISPUTE_RESOLUTION_TYPES).optional(),
+    resolutionNotes: z.string().trim().max(2000).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await requireDb();
+    const moved = await applyTransition(db, {
+      disputeId: input.disputeId,
+      to: input.status,
+      actor: 'admin',
+      actorId: ctx.user.id,
+      reason: input.reason ?? null,
+      resolutionType: input.resolutionType ?? null,
+      resolutionSummary: input.resolutionNotes ?? null,
+    });
+    await notifyDisputeParties(db, moved.dispute, {
+      actorId: ctx.user.id, from: moved.from, to: moved.to,
+      reason: input.reason ?? input.resolutionNotes ?? null,
+    });
+    return { success: true as const, from: moved.from, to: moved.to };
+  }),
+
+  /**
+   * ── INTERNAL NOTES ON A DISPUTE ──────────────────────────────────────────
+   *
+   * `adminNotes.subjectType` has always allowed 'dispute' and NOTHING HAD EVER
+   * WRITTEN ONE. An administrator working a dispute had no private place to
+   * record what they had checked, so the only writable text on a dispute was
+   * the resolution notes - which the parties read.
+   *
+   * A SEPARATE TABLE from `disputeMessages`, not a visibility flag on it: a
+   * forgotten `where visibility='participants'` would show a reporter what an
+   * administrator wrote about them, and a rule that can be got wrong by
+   * omitting a clause eventually will be.
+   *
+   * THERE IS NO SEPARATE READER. `admin.disputeDetail` returns the notes with
+   * the rest of the record, because that is the only screen that shows them -
+   * a second procedure fetching the same rows for the same screen is a second
+   * place for the subjectType filter to be got wrong.
+   */
+  addDisputeNote: adminWith('support.manage')
+    .input(z.object({
+      disputeId: z.number().int().positive(),
+      note: z.string().trim().min(1).max(2000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      // The dispute must exist. Writing a note against an id that does not
+      // resolve produces an orphan nobody will ever read.
+      const [dispute] = await db.select({ id: disputes.id }).from(disputes).where(eq(disputes.id, input.disputeId));
+      if (!dispute) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dispute not found' });
+      const result = await db.insert(adminNotes).values({
+        subjectType: 'dispute', subjectId: input.disputeId,
+        note: input.note, authorId: ctx.user.id,
+      });
+      // NOT audited against the reporter and NOT notified: this is the
+      // administrator's own working note, and telling a party it exists would
+      // defeat the point of it being internal.
+      return { id: Number(result[0].insertId) };
+    }),
+
+  /**
+   * ASSIGNMENT. `assignedTo` existed on no screen and in no procedure, while
+   * the admin list rendered a priority badge nothing could change.
+   */
+  assignDispute: adminWith('support.manage').input(z.object({
+    disputeId: z.number().int().positive(),
+    /** null hands it back to the queue rather than leaving a stale owner. */
+    assignedTo: z.number().int().positive().nullable(),
+    priority: z.enum(DISPUTE_PRIORITIES).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await requireDb();
+    const [dispute] = await db.select().from(disputes).where(eq(disputes.id, input.disputeId));
+    if (!dispute) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dispute not found' });
+
+    if (input.assignedTo != null) {
+      // ONLY somebody who can actually work it. Assigning a dispute to an
+      // account with no support permission produces a queue entry nobody can
+      // action and an owner who cannot see it.
+      const [assignee] = await db.select({ id: users.id, role: users.role, adminRole: users.adminRole })
+        .from(users).where(eq(users.id, input.assignedTo));
+      if (!assignee || assignee.role !== 'admin' || !hasAdminPermission(assignee.adminRole as any, 'support.manage')) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'A dispute can only be assigned to an administrator who can work on disputes.',
+        });
+      }
+    }
+
+    await db.update(disputes).set({
+      assignedTo: input.assignedTo,
+      assignedBy: input.assignedTo == null ? null : ctx.user.id,
+      assignedAt: input.assignedTo == null ? null : new Date(),
+      ...(input.priority ? { priority: input.priority } : {}),
+    }).where(eq(disputes.id, input.disputeId));
+
+    await recordAccountEvent(db, {
+      userId: dispute.reporterId, actorId: ctx.user.id,
+      action: 'dispute_assigned', source: 'dispute',
+      note: `${dispute.reference ?? dispute.id} -> ${input.assignedTo ?? 'unassigned'}`
+        + (input.priority ? ` (${input.priority})` : ''),
+    });
+    return { success: true as const };
   }),
   settings: adminWith('settings.manage').query(async () => {
-    const db = await getDb();
-    if (!db) return DEFAULT_ADMIN_SETTINGS;
+    // Showing the DEFAULTS as though they were the stored settings invites an
+    // administrator to save them over the real ones.
+    const db = await requireDb();
     const rows = await db.select({ settingKey: adminSettings.settingKey, value: adminSettings.value }).from(adminSettings);
     return { ...DEFAULT_ADMIN_SETTINGS, ...Object.fromEntries(rows.map(row => [row.settingKey, row.value])) };
   }),
@@ -6989,8 +9668,7 @@ const adminRouter = router({
    * Admin Management screen.
    */
   admins: superAdminProcedure.query(async () => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select({
       id: users.id,
       name: users.name,
@@ -7061,7 +9739,7 @@ const adminRouter = router({
       invitedBy: ctx.user.id,
       expiresAt: new Date(Date.now() + ADMIN_INVITE_TTL_HOURS * 60 * 60 * 1000),
     });
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId, actorId: ctx.user.id, action: 'admin_created', source: 'admin_invite',
       note: `Administrator ${username} created with role ${input.adminRole}`,
     });
@@ -7103,7 +9781,7 @@ const adminRouter = router({
     if (input.adminRole !== 'SUPER_ADMIN') await assertSuperAdminSurvives(db, target);
 
     await db.update(users).set({ adminRole: input.adminRole }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: input.userId, actorId: ctx.user.id, action: 'admin_role_changed', source: 'admin_management',
       note: `Role changed from ${target.adminRole} to ${input.adminRole}`,
     });
@@ -7142,7 +9820,7 @@ const adminRouter = router({
       ...(input.active ? {} : { sessionsInvalidBefore: revocationCutoff() }),
     }).where(eq(users.id, input.userId));
 
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: input.userId, actorId: ctx.user.id,
       action: input.active ? 'admin_reactivated' : 'admin_deactivated',
       source: 'admin_management',
@@ -7161,7 +9839,7 @@ const adminRouter = router({
     if (!target || target.role !== 'admin') throw new TRPCError({ code: 'NOT_FOUND', message: 'No such administrator' });
 
     await db.update(users).set({ sessionsInvalidBefore: revocationCutoff() }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: input.userId, actorId: ctx.user.id, action: 'admin_sessions_revoked', source: 'admin_management',
       note: 'All sessions revoked',
     });
@@ -7201,7 +9879,7 @@ const adminRouter = router({
       expiresAt,
     });
     await db.update(users).set({ sessionsInvalidBefore: revocationCutoff() }).where(eq(users.id, input.userId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: input.userId, actorId: ctx.user.id, action: 'admin_password_reset_requested', source: 'admin_management',
       note: 'One-time password reset link issued; existing sessions revoked',
     });
@@ -7212,8 +9890,7 @@ const adminRouter = router({
   adminInvitations: superAdminProcedure.input(z.object({
     userId: z.number().int().positive(),
   })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
+    const db = await requireDb();
     return db.select({
       id: adminInvitations.id,
       adminRole: adminInvitations.adminRole,
@@ -7240,7 +9917,7 @@ const adminRouter = router({
     await db.update(adminInvitations)
       .set({ revokedAt: new Date(), revokedBy: ctx.user.id })
       .where(eq(adminInvitations.id, input.invitationId));
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: row.userId, actorId: ctx.user.id, action: 'admin_invitation_revoked', source: 'admin_management',
       note: 'Outstanding administrator link revoked',
     });
@@ -7281,7 +9958,7 @@ const adminRouter = router({
     });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
 
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId: ctx.user.id, actorId: ctx.user.id, action: 'admin_password_changed', source: 'admin_management',
       note: 'Administrator changed their own password; other sessions revoked',
     });
@@ -7762,8 +10439,7 @@ const auditRouter = router({
   mine: protectedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(100).default(50) }).optional())
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) return [];
+      const db = await requireDb();
       return db.select({
         id: commercialAuditEvents.id,
         subjectType: commercialAuditEvents.subjectType,
@@ -7784,8 +10460,7 @@ const auditRouter = router({
   all: adminWith('audit.read')
     .input(z.object({ limit: z.number().int().min(1).max(200).default(100) }).optional())
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return [];
+      const db = await requireDb();
       return db.select()
         .from(commercialAuditEvents)
         .orderBy(desc(commercialAuditEvents.createdAt))
@@ -7914,21 +10589,48 @@ const billingRouter = router({
   // Phase 4B.2: the vendor's full effective entitlement set, resolved through
   // the one central engine. Self-scoped by construction - no input at all, so
   // no request shape can name another vendor.
-  myEntitlements: protectedProcedure.query(async ({ ctx }) => {
-    const resolution = await resolveVendorEntitlements(ctx.user.id);
-    return toVendorEntitlementResponse(resolution);
-  }),
-
-  // Just the effective plan id, for callers that need nothing else.
-  myPlan: protectedProcedure.query(async ({ ctx }) => {
-    const resolution = await resolveVendorEntitlements(ctx.user.id);
-    return { plan: resolution.effectivePlan, isPaid: resolution.isPaid };
-  }),
+  /*
+   * `myEntitlements` and `myPlan` WERE HERE, and neither had a client caller.
+   * `myBenefits` below returns `toVendorEntitlementResponse(resolution)` as its
+   * `plan` - which is exactly what myEntitlements returned - alongside the usage
+   * and the allowance breakdown the screen actually needs, and myPlan's
+   * `{ plan, isPaid }` is a strict subset of that object. Three readers of one
+   * resolution, two of them reaching no screen, is the shape that lets an
+   * answer drift depending on which one a caller happened to pick.
+   */
 
   // Phase 4B.3: the vendor's own qualified-enquiry consumption this month.
   // Self-scoped - no input, reads ctx.user.id only.
   myEnquiryUsage: protectedProcedure.query(async ({ ctx }) => {
     return getEnquiryUsage(ctx.user.id);
+  }),
+
+  /**
+   * EVERYTHING A VENDOR IS ENTITLED TO, AND WHY - in one read.
+   *
+   * `myEntitlements` returns one effective number and `myPlan` returns a plan
+   * id, and NEITHER HAS EVER HAD A SCREEN. A vendor whose allowance changed -
+   * a referral paid out, an administrator granted something, a bonus lapsed -
+   * had nowhere to find out why. "You have 46 qualified enquiries" is not an
+   * answer to "why 46".
+   *
+   * SELF-SCOPED BY CONSTRUCTION: no userId in the input, so no payload can read
+   * another vendor's entitlements or the administrative reasons attached to
+   * them.
+   */
+  myBenefits: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    const now = new Date();
+    const resolution = await resolveVendorEntitlements(ctx.user.id, now);
+    const [usage, breakdown] = await Promise.all([
+      getEnquiryUsage(ctx.user.id, now),
+      explainEnquiryAllowance(db, ctx.user.id, resolution.effectivePlan, resolution.qualifiedEnquiryAllowance, now),
+    ]);
+    return {
+      plan: toVendorEntitlementResponse(resolution),
+      usage,
+      allowance: breakdown,
+    };
   }),
 
   // ── Subscription lifecycle (Phase 4B.4) ─────────────────────────────────
@@ -7974,10 +10676,12 @@ export const appRouter = router({
   rfq: rfqRouter,
   messages: messagesRouter,
   notifications: notificationsRouter,
+  services: servicesRouter,
   reviews: reviewsRouter,
   profile: profileRouter,
   portfolio: portfolioRouter,
   disputes: disputesRouter,
+  support: supportRouter,
   analytics: analyticsRouter,
   admin: adminRouter,
   compliance: registrationRouter,

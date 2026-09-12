@@ -1,0 +1,55 @@
+PASS  SETUP: the marketplace administrator signed in for real  [MARKETPLACE_ADMIN]
+PASS  the menu offers a Product categories entry to a marketplace administrator
+PASS  and clicking it actually navigates to /admin/categories  [/admin/categories]
+PASS  the taxonomy table renders
+PASS  every category in the database is on the screen  [screen 35, database 35]
+PASS  REPORTED CASE: Waterproofing and Pools are both administrable rows  [35 slugs]
+PASS  the product count on the screen is the database count, not an estimate  [screen "1 (1 live)" vs database 1]
+PASS  there is no Delete control on the page at all
+PASS  Archive is offered instead
+PASS  hiding opens a confirmation first
+PASS  the confirmation states the REAL dependency count  [count=1 screen="1 product(s) use this category, 1 of them currently listed."]
+PASS  and that count is not zero, so the warning was actually exercised  [1]
+PASS  DATABASE: and nothing changed merely by opening it
+PASS  searching an ALIAS finds the category that answers to it  [1 rows]
+PASS  and it is the right one - "Pools" is an alias of Swimming Pool Equipment  [pools]
+PASS  375px EN: direction matches the language  [dir=ltr]
+PASS  375px EN: the PAGE never scrolls sideways  [375 vs 375]
+PASS  375px EN: the table scrolls inside its own container  [auto right=358 DIV.overflow-x-auto]
+PASS  375px EN: still acting as the marketplace administrator
+PASS  375px EN: the heading is in the right language  [Product categories]
+PASS  375px AR: direction matches the language  [dir=rtl]
+PASS  375px AR: the PAGE never scrolls sideways  [375 vs 375]
+PASS  375px AR: the table scrolls inside its own container  [auto right=358 DIV.overflow-x-auto]
+PASS  375px AR: still acting as the marketplace administrator
+PASS  375px AR: the heading is in the right language  [فئات المنتجات]
+PASS  375px AR: category names render in Arabic, not just the chrome  [مواد بناء]
+PASS  768px EN: direction matches the language  [dir=ltr]
+PASS  768px EN: the PAGE never scrolls sideways  [762 vs 768]
+PASS  768px EN: the table scrolls inside its own container  [auto right=745 DIV.overflow-x-auto]
+PASS  768px EN: still acting as the marketplace administrator
+PASS  768px EN: the heading is in the right language  [Product categories]
+PASS  768px AR: direction matches the language  [dir=rtl]
+PASS  768px AR: the PAGE never scrolls sideways  [762 vs 768]
+PASS  768px AR: the table scrolls inside its own container  [auto right=745 DIV.overflow-x-auto]
+PASS  768px AR: still acting as the marketplace administrator
+PASS  768px AR: the heading is in the right language  [فئات المنتجات]
+PASS  768px AR: category names render in Arabic, not just the chrome  [مواد بناء]
+PASS  1440px EN: direction matches the language  [dir=ltr]
+PASS  1440px EN: the PAGE never scrolls sideways  [1434 vs 1440]
+PASS  1440px EN: the table scrolls inside its own container  [auto right=1292 DIV.overflow-x-auto]
+PASS  1440px EN: still acting as the marketplace administrator
+PASS  1440px EN: the heading is in the right language  [Product categories]
+PASS  1440px AR: direction matches the language  [dir=rtl]
+PASS  1440px AR: the PAGE never scrolls sideways  [1434 vs 1440]
+PASS  1440px AR: the table scrolls inside its own container  [auto right=1292 DIV.overflow-x-auto]
+PASS  1440px AR: still acting as the marketplace administrator
+PASS  1440px AR: the heading is in the right language  [فئات المنتجات]
+PASS  1440px AR: category names render in Arabic, not just the chrome  [مواد بناء]
+PASS  SETUP: the support administrator signed in for real  [SUPPORT_ADMIN]
+PASS  a SUPPORT_ADMIN typing the URL is told plainly why, not shown an empty table  [Marketplace administrators only /  / Managing the category taxonomy requires the marketplace permission.]
+PASS  and the menu does not offer them the entry at all
+PASS  CLEANUP: the probe accounts and the seeded product are gone
+PASS  CLEANUP: the taxonomy was never modified by this probe
+
+53/53 passed

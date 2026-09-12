@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
+import { OpenDisputeDialog } from '@/components/OpenDisputeDialog';
 import { useState } from 'react';
 import ProjectDetailEnhancements from '@/components/ProjectDetailEnhancements';
 import ProjectDocuments from '@/components/ProjectDocuments';
@@ -73,17 +74,40 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
   const { data: team, refetch: refetchMembers } = trpc.projects.members.useQuery({ projectId }, { enabled: isAuthenticated && projectId > 0 });
   const [memberForm, setMemberForm] = useState({ userId: '', projectRole: 'viewer' });
   const addMember = trpc.projects.addMember.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تمت إضافة العضو!' : 'Member added!'); setMemberForm({ userId: '', projectRole: 'viewer' }); refetchMembers(); }, onError: (e: { message: string }) => toast.error(e.message) });
-  const removeMember = trpc.projects.removeMember.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تمت إزالة العضو!' : 'Member removed!'); refetchMembers(); }, onError: (e: { message: string }) => toast.error(e.message) });
-  const [disputeOpen, setDisputeOpen] = useState(false);
-  const [disputeForm, setDisputeForm] = useState({ title: '', description: '', type: 'general' });
-  const openDispute = trpc.disputes.create.useMutation({
-    onSuccess: () => {
-      toast.success(lang === 'ar' ? 'تم فتح النزاع.' : 'Dispute opened.');
-      setDisputeOpen(false);
-      setDisputeForm({ title: '', description: '', type: 'general' });
+  /**
+   * CHANGE A CAPACITY WITHOUT PRETENDING SOMEBODY LEFT.
+   *
+   * There was no control for this at all, because there was no procedure: the
+   * only way to promote the site engineer to manager was to REMOVE them and
+   * ADD them back, which reset their assignment date, erased the record that
+   * they had ever been removed, and sent them a "You were added to a project"
+   * notification for a project they never left.
+   */
+  const changeMemberRole = trpc.projects.changeMemberRole.useMutation({
+    onSuccess: result => {
+      // "Changed" and "it was already that" are different outcomes, and the
+      // server distinguishes them - so the screen does too, rather than
+      // claiming a change that did not happen.
+      toast.success(result.changed
+        ? (lang === 'ar' ? `تم تغيير الصفة من ${result.from} إلى ${result.to}` : `Role changed from ${result.from} to ${result.to}`)
+        : (lang === 'ar' ? 'الصفة كما هي بالفعل.' : 'That is already their role.'));
+      refetchMembers();
     },
     onError: (e: { message: string }) => toast.error(e.message),
   });
+  const removeMember = trpc.projects.removeMember.useMutation({
+    // `removed` says whether a row actually changed. It used to be read from a
+    // field mysql2 never returns, so it was ALWAYS false and the screen could
+    // not have told the truth even if it had asked. It asks now.
+    onSuccess: result => {
+      toast.success(result.removed
+        ? (lang === 'ar' ? 'تمت إزالة العضو.' : 'Member removed.')
+        : (lang === 'ar' ? 'هذا الشخص ليس ضمن المشروع بالفعل.' : 'That person was already off this project.'));
+      refetchMembers();
+    },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
+  const [disputeOpen, setDisputeOpen] = useState(false);
 
   if (loading) return null;
   if (!isAuthenticated) { window.location.href = '/auth?mode=login'; return null; }
@@ -454,9 +478,28 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                         </div>
                       </div>
                       {team?.myCapabilities?.includes('manage') && !member.removedAt && (
-                        <Button size="sm" variant="ghost" disabled={removeMember.isPending} onClick={() => removeMember.mutate({ projectId, userId: member.userId })}>
-                          {lang === 'ar' ? 'إزالة' : 'Remove'}
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* The owner's capacity on their own project is not
+                              somebody else's to change, and the server refuses
+                              it - so the control is not offered either. */}
+                          {member.projectRole !== 'owner' && (
+                            <select
+                              className="h-8 rounded-md border bg-background px-2 text-xs"
+                              aria-label={lang === 'ar' ? 'تغيير الصفة' : 'Change role'}
+                              data-testid={`member-role-${member.userId}`}
+                              value={member.projectRole}
+                              disabled={changeMemberRole.isPending}
+                              onChange={e => changeMemberRole.mutate({ projectId, userId: member.userId, projectRole: e.target.value as never })}
+                            >
+                              {['manager', 'contractor', 'architect', 'engineer', 'supplier', 'viewer'].map(r => (
+                                <option key={r} value={r}>{r}</option>
+                              ))}
+                            </select>
+                          )}
+                          <Button size="sm" variant="ghost" disabled={removeMember.isPending} data-testid={`member-remove-${member.userId}`} onClick={() => removeMember.mutate({ projectId, userId: member.userId })}>
+                            {lang === 'ar' ? 'إزالة' : 'Remove'}
+                          </Button>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -464,54 +507,10 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
               </TabsContent>
             </Tabs>
 
-            <Dialog open={disputeOpen} onOpenChange={setDisputeOpen}>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>{lang === 'ar' ? 'فتح نزاع' : 'Open a dispute'}</DialogTitle>
-                </DialogHeader>
-                <p className="text-sm text-muted-foreground">
-                  {lang === 'ar'
-                    ? 'يرتبط النزاع بهذا المشروع. سيصل إلى فريق الدعم للمراجعة.'
-                    : 'The dispute is tied to this project and goes to the support team for review.'}
-                </p>
-                <Input
-                  data-testid="dispute-title"
-                  placeholder={lang === 'ar' ? 'الموضوع' : 'Subject'}
-                  value={disputeForm.title}
-                  onChange={e => setDisputeForm(f => ({ ...f, title: e.target.value }))}
-                />
-                <Textarea
-                  data-testid="dispute-description"
-                  rows={4}
-                  maxLength={5000}
-                  placeholder={lang === 'ar' ? 'وصف المشكلة' : 'Describe the issue'}
-                  value={disputeForm.description}
-                  onChange={e => setDisputeForm(f => ({ ...f, description: e.target.value }))}
-                />
-                <Input
-                  data-testid="dispute-type"
-                  maxLength={80}
-                  placeholder={lang === 'ar' ? 'النوع (اختياري)' : 'Type (optional)'}
-                  value={disputeForm.type}
-                  onChange={e => setDisputeForm(f => ({ ...f, type: e.target.value }))}
-                />
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setDisputeOpen(false)}>{lang === 'ar' ? 'إلغاء' : 'Cancel'}</Button>
-                  <Button
-                    data-testid="dispute-submit"
-                    disabled={!disputeForm.title.trim() || !disputeForm.description.trim() || openDispute.isPending}
-                    onClick={() => openDispute.mutate({
-                      projectId,
-                      title: disputeForm.title.trim(),
-                      description: disputeForm.description.trim(),
-                      type: disputeForm.type.trim() || undefined,
-                    })}
-                  >
-                    {openDispute.isPending ? (lang === 'ar' ? 'جاري الإرسال…' : 'Submitting…') : (lang === 'ar' ? 'إرسال' : 'Submit')}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <OpenDisputeDialog
+              subjectType="project" subjectId={projectId}
+              open={disputeOpen} onOpenChange={setDisputeOpen}
+            />
           </>
         )}
       </div>

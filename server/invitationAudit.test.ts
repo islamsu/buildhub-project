@@ -91,28 +91,58 @@ describe('invitation and audit PDF export features', () => {
   });
 
   it('generates a full audit report for PDF export including account types and invitation statuses', async () => {
-    const auditEvents = [{ id: 1, userId: 77, actorId: 1, action: 'admin_created_account_with_invite', source: 'admin_created', note: null, createdAt: new Date() }];
-    const usersList = [{ id: 77, name: 'Lead Architect', email: 'architect@lead.com', isDummy: false, accountSource: 'admin_created', userRole: 'architect', accountStatus: 'active', invitationStatus: 'invitation_sent' }];
+    /**
+     * THE SHAPE CHANGED, THE RULE DID NOT.
+     *
+     * This doubled the old implementation: one query for the events, a second
+     * that returned EVERY user row so the report could build a lookup map. The
+     * report is now paged and LEFT JOINs the six subject columns it needs, so
+     * the double models a count query and a rows query instead.
+     *
+     * The assertions are unchanged and one is added - the real total, which the
+     * old report never sent and which is the number that tells an administrator
+     * whether they are looking at all of it.
+     */
+    const joined = [{
+      id: 1, action: 'admin_created_account_with_invite', source: 'admin_created',
+      note: null, createdAt: new Date(),
+      userId: 77, userName: 'Lead Architect', userEmail: 'architect@lead.com',
+      actorId: 1, actorName: 'Super Admin', actorEmail: 'admin@buildhub.test',
+      subjectIsDummy: false, subjectAccountSource: 'admin_created',
+      subjectUserRole: 'architect', subjectRole: 'user',
+      subjectAccountStatus: 'active', subjectInvitationStatus: 'invitation_sent',
+    }];
     let selectCount = 0;
     const db = {
       select: vi.fn(() => {
         selectCount += 1;
-        if (selectCount === 1) {
-          return { from: vi.fn().mockReturnValue({ orderBy: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue(auditEvents) }) }) };
-        }
-        return { from: vi.fn().mockResolvedValue(usersList) };
+        const isCount = selectCount === 1;
+        const chain: any = {
+          leftJoin: vi.fn(() => chain),
+          where: vi.fn(() => chain),
+          orderBy: vi.fn(() => chain),
+          limit: vi.fn(() => chain),
+          offset: vi.fn().mockResolvedValue(joined),
+          then: (ok: any, err: any) =>
+            Promise.resolve(isCount ? [{ count: 1 }] : joined).then(ok, err),
+        };
+        return { from: vi.fn(() => chain) };
       }),
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
 
     const caller = appRouter.createCaller(makeAdminCtx());
     const report = await caller.admin.fullAuditReport();
-    expect(report).toHaveLength(1);
-    expect(report[0]).toEqual(expect.objectContaining({
+    expect(report.rows).toHaveLength(1);
+    // THE REAL TOTAL, which the truncating version never sent.
+    expect(report.total).toBe(1);
+    expect(report.rows[0]).toEqual(expect.objectContaining({
       userName: 'Lead Architect',
       accountType: 'Admin Created',
       role: 'architect',
       invitationStatus: 'invitation_sent',
+      // An event with an actor names the person, never a bare id.
+      actorName: 'Super Admin',
     }));
   });
 });

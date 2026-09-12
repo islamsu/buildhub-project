@@ -20,8 +20,10 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
 import LanguageToggle from '@/components/LanguageToggle';
 
-/** Matches ADMIN_PASSWORD_MIN_LENGTH on the server. */
-const MIN_LENGTH = 12;
+import { ADMIN_PASSWORD_MIN_LENGTH } from '@shared/adminRoles';
+
+/** One definition, shared with the server - not a copy with a comment. */
+const MIN_LENGTH = ADMIN_PASSWORD_MIN_LENGTH;
 
 export default function AdminAcceptInvitation() {
   const { lang, dir } = useLanguage();

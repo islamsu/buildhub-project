@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useParams, Link } from 'wouter';
+import { OpenDisputeDialog } from '@/components/OpenDisputeDialog';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/_core/hooks/useAuth';
@@ -10,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import QuotationComparison from '@/components/QuotationComparison';
 import {
-  ArrowLeft, Clock, DollarSign, FileText, MapPin, Lock, Package,
+  ArrowLeft, Clock, DollarSign, FileText, Flag, MapPin, Lock, Package,
 } from 'lucide-react';
 
 /**
@@ -61,6 +63,7 @@ export default function RFQDetail() {
   const ar = lang === 'ar';
   const { user, isAuthenticated } = useAuth();
   const valid = Number.isFinite(rfqId) && rfqId > 0;
+  const [disputeOpen, setDisputeOpen] = useState(false);
 
   // The summary is what ANY authenticated caller may see - the same column
   // allowlist the open feed returns. It is the only read a provider gets.
@@ -80,6 +83,25 @@ export default function RFQDetail() {
   // filters on quotations.providerId = ctx.user.id, so no id from this page
   // can widen what comes back.
   const { data: myQuotations = [] } = trpc.rfq.myQuotations.useQuery(undefined, { enabled: isProvider, retry: false });
+  /**
+   * THE SAME ONE RULE THE RESPOND PAGE ASKS.
+   *
+   * This page offered "Continue to respond" for any open request to any
+   * provider, and the refusal - "this request does not match any of your
+   * declared service categories" - arrived two screens later, after a click.
+   * Reported from real use.
+   *
+   * Asked here rather than judged here: a second copy of the eligibility rule
+   * in the client is how the button and the server start disagreeing. The
+   * server answers, and this renders the answer.
+   */
+  const responseAccess = trpc.rfq.responseAccess.useQuery(
+    { rfqId },
+    { enabled: isProvider && valid, retry: false },
+  );
+  const mayProceed = responseAccess.data
+    ? responseAccess.data.canRespond || responseAccess.data.canOpen
+    : null;
   const myQuotation = myQuotations.find(quote => quote.rfqId === rfqId);
   /**
    * A provider whose verification is not approved yet.
@@ -305,6 +327,33 @@ export default function RFQDetail() {
               </div>
             )}
 
+            {/*
+              ── RAISING A DISPUTE ABOUT THIS REQUEST ──────────────────────
+              Offered to the two relationships this page can PROVE from what it
+              already holds: the requester, and a supplier who has actually
+              quoted. An invited or enquiring supplier is eligible too, and the
+              eligibility service decides that server-side - but showing the
+              control to every authenticated reader of a public board would put
+              a refusal in front of people who were only browsing.
+            */}
+            {(isOwner || Boolean(myQuotation)) && (
+              <div className="rounded-lg border border-dashed p-4" data-testid="rfq-dispute-panel">
+                <p className="text-sm font-medium">{ar ? 'مشكلة بشأن هذا الطلب؟' : 'A problem with this request?'}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {ar
+                    ? 'يصل النزاع إلى فريق الدعم، ويُبلَّغ الطرف الذي تسمّيه.'
+                    : 'Support reviews the dispute, and the party you name is told.'}
+                </p>
+                <Button
+                  variant="outline" size="sm" className="mt-3 gap-2"
+                  data-testid="rfq-open-dispute"
+                  onClick={() => setDisputeOpen(true)}
+                >
+                  <Flag className="h-4 w-4" />{ar ? 'فتح نزاع' : 'Open a dispute'}
+                </Button>
+              </div>
+            )}
+
             {/* Attachments are the OWNER's view only. For a provider they are
                 behind the qualified enquiry, which is what the credit buys. */}
             {isOwner && attachments.length > 0 && (
@@ -383,6 +432,37 @@ export default function RFQDetail() {
                       </Button>
                     </Link>
                   </div>
+                ) : isOpen && mayProceed === false ? (
+                  /*
+                   * THE REASON, INSTEAD OF A BUTTON THAT LEADS TO IT.
+                   * `mayProceed === false` and not `!mayProceed`: while the
+                   * answer is still loading it is null, and treating "not yet
+                   * known" as "refused" would flash a refusal at every
+                   * eligible provider before the query returned.
+                   */
+                  <div className="mt-3" data-testid="rfq-detail-not-eligible">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      {responseAccess.data?.openBlockedReason === 'category_mismatch'
+                        ? (ar
+                            ? 'هذا الطلب خارج فئات الخدمة التي أعلنتها.'
+                            : 'This request is outside the service categories you have declared.')
+                        : responseAccess.data?.openBlockedReason === 'limit_reached'
+                        ? (ar
+                            ? 'لقد استهلكت رصيد الاستفسارات المؤهلة لهذا الشهر.'
+                            : 'You have used all of your qualified enquiries for this month.')
+                        : (ar
+                            ? 'هذا الطلب غير متاح لك للرد عليه.'
+                            : 'This request is not available for you to respond to.')}
+                    </p>
+                    {responseAccess.data?.openBlockedReason === 'category_mismatch' && (
+                      <Link href="/settings#settings-categories">
+                        <Button variant="outline" className="mt-3 gap-2" data-testid="rfq-detail-declare-categories">
+                          <Package className="h-4 w-4" />
+                          {ar ? 'إدارة فئات الخدمة' : 'Manage service categories'}
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
                 ) : isOpen ? (
                   // The id travels with them. This used to be a bare
                   // `/provider`, which landed a provider on a dashboard with no
@@ -436,6 +516,11 @@ export default function RFQDetail() {
           </div>
         )}
       </div>
+
+      <OpenDisputeDialog
+        subjectType="rfq" subjectId={rfqId}
+        open={disputeOpen} onOpenChange={setDisputeOpen}
+      />
     </div>
   );
 }

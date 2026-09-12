@@ -1,0 +1,56 @@
+PASS  the upload screen renders for an approved supplier
+PASS  the acceptable categories are listed ON the upload page, not in a help article
+PASS  and the list is the LIVE taxonomy, not a compiled-in copy  [screen 35, database 35]
+PASS  REPORTED CASE: Waterproofing and the Pools category are both offered  [35 chips, e.g. Materials / Cement & Concrete / Steel & Reinforcement]
+PASS  the bad file produced a verdict
+PASS  30 identical category mistakes render as ONE grouped issue  [1]
+PASS  and the group states the affected rows as a RANGE, not thirty numbers  [“Watrproofing” · 30 rows (rows 2–31)]
+PASS  the grouped issue quotes the offending value back
+PASS  and offers the near match a person can act on  [“Watrproofing” · 30 rows (rows 2–31)
+
+"Watrproofing" is not a BuildHub category. Did you mean "Waterproofing"?
+
+Did you mean: Waterproofing]
+PASS  the per-row detail is RETAINED, behind a disclosure
+PASS  and it is collapsed by default, so the summary is what leads
+PASS  the disclosure holds the real per-row errors  [30]
+PASS  the good file previews as ready
+PASS  the preview shows "Pools" resolving to its canonical name BEFORE commit  [These categories will be saved under their canonical name:
+
+Pools
+Swimming Pool Equipment]
+PASS  and does not clutter it with values that resolved to themselves  [These categories will be saved under their canonical name:
+
+Pools
+Swimming Pool Equipment]
+PASS  nothing has been written yet - this is still a preview
+PASS  375px EN: the document direction matches the language  [dir=ltr]
+PASS  375px EN: the page does not scroll sideways  [scrollWidth 375 vs 375]
+PASS  375px EN: the upload card fits the viewport  [left 16 right 359]
+PASS  375px EN: the category reference is in the right language  [Categories you can use (35)]
+PASS  375px AR: the document direction matches the language  [dir=rtl]
+PASS  375px AR: the page does not scroll sideways  [scrollWidth 375 vs 375]
+PASS  375px AR: the upload card fits the viewport  [left 16 right 359]
+PASS  375px AR: the category reference is in the right language  [الفئات المقبولة (35)]
+PASS  375px AR: the category names are Arabic, not just the heading  [مواد بناء]
+PASS  768px EN: the document direction matches the language  [dir=ltr]
+PASS  768px EN: the page does not scroll sideways  [scrollWidth 762 vs 768]
+PASS  768px EN: the upload card fits the viewport  [left 296 right 746]
+PASS  768px EN: the category reference is in the right language  [Categories you can use (35)]
+PASS  768px AR: the document direction matches the language  [dir=rtl]
+PASS  768px AR: the page does not scroll sideways  [scrollWidth 762 vs 768]
+PASS  768px AR: the upload card fits the viewport  [left 16 right 466]
+PASS  768px AR: the category reference is in the right language  [الفئات المقبولة (35)]
+PASS  768px AR: the category names are Arabic, not just the heading  [مواد بناء]
+PASS  1440px EN: the document direction matches the language  [dir=ltr]
+PASS  1440px EN: the page does not scroll sideways  [scrollWidth 1434 vs 1440]
+PASS  1440px EN: the upload card fits the viewport  [left 345 right 1369]
+PASS  1440px EN: the category reference is in the right language  [Categories you can use (35)]
+PASS  1440px AR: the document direction matches the language  [dir=rtl]
+PASS  1440px AR: the page does not scroll sideways  [scrollWidth 1434 vs 1440]
+PASS  1440px AR: the upload card fits the viewport  [left 65 right 1089]
+PASS  1440px AR: the category reference is in the right language  [الفئات المقبولة (35)]
+PASS  1440px AR: the category names are Arabic, not just the heading  [مواد بناء]
+PASS  CLEANUP: the probe account is gone
+
+44/44 passed

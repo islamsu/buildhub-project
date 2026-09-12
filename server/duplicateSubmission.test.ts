@@ -123,21 +123,44 @@ describe('submitQuotation cannot lose the race either', () => {
   it('takes it before the duplicate check, inside the transaction', () => {
     const tx = body.indexOf('db.transaction');
     const lock = body.indexOf(".for('update')");
-    const check = body.indexOf('recentIdentical');
+    // `recentIdentical` became `sameOffer` in submitQuotation when
+    // de-duplication stopped matching on the price alone. rfq.create is
+    // untouched and keeps its own name. The ORDER is what this test is about
+    // and it is unchanged: lock, then look, then insert.
+    const check = body.indexOf('sameOffer');
+    expect(check, 'the duplicate check was not found at all').toBeGreaterThan(-1);
     const insert = body.indexOf('insert(quotations)');
     expect(tx).toBeLessThan(lock);
     expect(lock).toBeLessThan(check);
     expect(check).toBeLessThan(insert);
   });
 
-  it('matches on PRICE, so a revised bid is not mistaken for a double-click', () => {
-    // The open OWNER DECISION - may a supplier hold several bids on one RFQ,
-    // and is a second one a revision? - is untouched. A bid with different
-    // terms still goes through. Only the same offer twice in seconds is caught,
-    // and nobody revises a bid to the number it already was.
-    expect(body).toContain('eq(quotations.price, String(input.price))');
+  it('matches on THE WHOLE OFFER, so a revised bid is not mistaken for a double-click', () => {
+    /**
+     * THIS TEST'S NAME WAS ALWAYS RIGHT AND ITS ASSERTION CONTRADICTED IT.
+     *
+     * It required `eq(quotations.price, String(input.price))` and its own
+     * comment claimed "a bid with different terms still goes through" - which
+     * was false. Matching on the price ALONE meant a supplier who submitted
+     * 145,000 over 45 days, noticed the timeline was wrong and resubmitted
+     * 145,000 over 60 days was handed back the FIRST quotation with
+     * `success: true`. The corrected timeline was discarded and the customer
+     * never saw it: a revised bid mistaken for a double-click, which is the
+     * exact thing the name forbids.
+     *
+     * Restated to the intent, and STRENGTHENED: every commercial term is
+     * compared, and the SQL must no longer narrow on price - because a
+     * predicate that cannot see the resubmission at all cannot compare it.
+     */
     expect(body).toContain('eq(quotations.rfqId, input.rfqId)');
     expect(body).toContain('eq(quotations.providerId, ctx.user.id)');
+    const lookup = body.slice(body.indexOf('const [recent] = await tx'), body.indexOf('const sameOffer ='));
+    expect(lookup, 'the lookup narrows on price and cannot see a same-price revision')
+      .not.toContain('eq(quotations.price');
+    const compare = body.slice(body.indexOf('const sameOffer ='), body.indexOf('if (sameOffer)'));
+    for (const term of ['price', 'currency', 'timeline', 'warranty', 'commercialTerms', 'paymentTerms', 'notes', 'validUntil', 'attachments']) {
+      expect(compare, `${term} is not part of the duplicate test`).toContain(term);
+    }
   });
 
   it('a de-duplicated submission notifies nobody and audits nothing', () => {

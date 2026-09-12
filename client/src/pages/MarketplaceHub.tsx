@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { useLocation } from 'wouter';
 import { useMemo, useState } from 'react';
 import { Search, Package, Store, PenTool, HardHat, ArrowRight, ArrowLeft, Star, BadgeCheck, TrendingUp, Sparkles } from 'lucide-react';
-import { PRODUCT_CATEGORIES, DESIGN_CATEGORIES, FINISHING_CATEGORIES } from '@/lib/marketplaceData';
+import { DESIGN_CATEGORIES, FINISHING_CATEGORIES } from '@/lib/marketplaceData';
 import { trpc } from '@/lib/trpc';
 
 /**
@@ -21,8 +21,14 @@ import { trpc } from '@/lib/trpc';
  * the compliance decision, categories declared by the vendor. The counts are
  * counts of real accounts, so an empty marketplace shows an empty marketplace.
  *
- * PRODUCT_CATEGORIES, DESIGN_CATEGORIES and FINISHING_CATEGORIES stay: they are
- * browse vocabulary, not claims about anybody.
+ * DESIGN_CATEGORIES and FINISHING_CATEGORIES stay: they are browse vocabulary
+ * for the two provider directories, not claims about anybody.
+ *
+ * PRODUCT_CATEGORIES DID NOT. It was a third product-category list - 33 browse
+ * chips sharing NO values with the 19 the write path accepted - so a shopper
+ * clicking any chip here could never find a product: nothing could be listed
+ * under those names. The chips now come from the same taxonomy a supplier
+ * lists against, and carry the canonical name the marketplace filter uses.
  */
 export default function MarketplaceHub() {
   const { lang, t } = useLanguage();
@@ -35,6 +41,9 @@ export default function MarketplaceHub() {
   // unverified accounts, so nothing here can show a provider the marketplace
   // itself would not list.
   const { data: directory = [] } = trpc.marketplace.vendors.useQuery({ limit: 100 });
+  /** The one taxonomy, in its public view. Not a copy compiled into this page. */
+  const { data: taxonomy } = trpc.marketplace.categories.useQuery({ view: 'public' });
+  const productCategories = taxonomy?.categories ?? [];
   const designers = directory.filter(v => v.categories?.includes('Design'));
   const finishing = directory.filter(v => v.categories?.includes('Renovation'));
 
@@ -43,8 +52,17 @@ export default function MarketplaceHub() {
     if (!search.trim() || search.trim().length < 2) return [];
     const q = search.trim().toLowerCase();
     const out: { type: string; label: string; href: string }[] = [];
-    PRODUCT_CATEGORIES.filter(c => c.en.toLowerCase().includes(q) || c.ar.includes(q)).slice(0, 4).forEach(c =>
-      out.push({ type: t('marketHub.suggestionProductCategory'), label: ar ? c.ar : c.en, href: `/marketplace/products?cat=${c.id}` }));
+    // The link carries the CANONICAL English name, which is what the
+    // marketplace filter and products.category both hold. It used to carry a
+    // slug from a different vocabulary, which matched no filter at all.
+    productCategories
+      .filter(c => c.nameEn.toLowerCase().includes(q) || c.nameAr.includes(q))
+      .slice(0, 4)
+      .forEach(c => out.push({
+        type: t('marketHub.suggestionProductCategory'),
+        label: ar ? c.nameAr : c.nameEn,
+        href: `/marketplace/products?cat=${encodeURIComponent(c.nameEn)}`,
+      }));
     // Suggestions are drawn from the SAME authorized directory rows that the
     // strips below render - never a second, looser source.
     // /vendor/:id, not /marketplace/vendors/:id. The latter renders the whole
@@ -59,7 +77,7 @@ export default function MarketplaceHub() {
     finishing.filter(f => (f.name ?? '').toLowerCase().includes(q)).slice(0, 3).forEach(f =>
       out.push({ type: t('marketHub.suggestionFinishingCompany'), label: f.name ?? `#${f.id}`, href: `/vendor/${f.id}` }));
     return out.slice(0, 8);
-  }, [search, ar, t]);
+  }, [search, ar, t, directory, designers, finishing, productCategories]);
 
   const sections = [
     {
@@ -69,9 +87,9 @@ export default function MarketplaceHub() {
       gradient: 'from-blue-600 to-cyan-500',
       title: t('marketHub.sectionProductsTitle'),
       desc: t('marketHub.sectionProductsDesc'),
-      stat: `${PRODUCT_CATEGORIES.length}+`,
+      stat: `${productCategories.length}`,
       statLabel: t('marketHub.categoriesLabel'),
-      chips: PRODUCT_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
+      chips: productCategories.slice(0, 4).map(c => (ar ? c.nameAr : c.nameEn)),
     },
     {
       id: 'vendors',
@@ -91,8 +109,19 @@ export default function MarketplaceHub() {
       gradient: 'from-violet-600 to-purple-500',
       title: t('marketHub.sectionDesignersTitle'),
       desc: t('marketHub.sectionDesignersDesc'),
-      stat: `${DESIGN_CATEGORIES.length}`,
-      statLabel: t('marketHub.disciplinesLabel'),
+      /**
+       * A REAL COUNT, like the card beside it.
+       *
+       * This was `DESIGN_CATEGORIES.length` - a constant compiled into the
+       * page - sitting in the same slot as the vendors card's count of real
+       * accounts. With no designer on the platform the card still read "14
+       * disciplines", which is a number that cannot move, presented as one
+       * that can. `designers` is already computed above from the authorized
+       * directory; it was used for the suggestions and the featured strip and
+       * not for the headline figure.
+       */
+      stat: `${designers.length}`,
+      statLabel: t('marketHub.providersLabel'),
       chips: DESIGN_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
     },
     {
@@ -102,15 +131,21 @@ export default function MarketplaceHub() {
       gradient: 'from-orange-600 to-amber-500',
       title: t('marketHub.sectionFinishingTitle'),
       desc: t('marketHub.sectionFinishingDesc'),
-      stat: `${FINISHING_CATEGORIES.length}`,
-      statLabel: t('marketHub.servicesLabel'),
+      // The same correction, for the same reason.
+      stat: `${finishing.length}`,
+      statLabel: t('marketHub.providersLabel'),
       chips: FINISHING_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
     },
   ];
 
-  // EDITORIAL FEATURED is now a real admin-curated state, not the top of the
+  // EDITORIAL FEATURED is a real admin-curated state, not the top of the
   // organic ranking. Each row carries its `featuredCategory`, so the hub maps
   // one source onto Featured Vendors, Featured Designers and Featured Finishing.
+  //
+  // ONE READER, AND IT IS THE EDITORIAL ONE. The hub calls no commercial
+  // reader: these strips carry BuildHub's own word, so a paid slot must not
+  // reach them. Commercial placement is rendered on the vendors directory,
+  // in its own section, under the Sponsored label.
   const { data: featured = [] } = trpc.marketplace.featuredProviders.useQuery();
   const featuredVendors = featured
     .filter(v => !['Design', 'Renovation'].includes(v.featuredCategory)).slice(0, 4);
@@ -250,13 +285,18 @@ export default function MarketplaceHub() {
                       <s.icon className="w-7 h-7" />
                     </div>
                     <div className="text-end">
-                      <div className="text-2xl font-bold">{s.stat}</div>
-                      <div className="text-xs text-muted-foreground">{s.statLabel}</div>
+                      <div className="text-2xl font-bold" data-testid={`hub-stat-${s.id}`}>{s.stat}</div>
+                      <div className="text-xs text-muted-foreground" data-testid={`hub-statlabel-${s.id}`}>{s.statLabel}</div>
                     </div>
                   </div>
                   <h2 className="text-xl font-bold mb-2 group-hover:text-primary transition-colors">{s.title}</h2>
                   <p className="text-sm text-muted-foreground mb-4">{s.desc}</p>
-                  <div className="flex flex-wrap gap-1.5 mb-4">
+                  {/* The chips DESCRIBE the section - they are not filters,
+                      and the card as a whole is what navigates. On the two
+                      provider sections they are browse vocabulary rather than
+                      a claim about anybody, which is why they are allowed to
+                      be a constant while the count beside them is not. */}
+                  <div className="flex flex-wrap gap-1.5 mb-4" data-testid={`hub-chips-${s.id}`}>
                     {s.chips.map((c, i) => (
                       <Badge key={i} variant="secondary" className="text-xs font-normal">{c}</Badge>
                     ))}

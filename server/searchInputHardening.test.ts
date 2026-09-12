@@ -21,7 +21,8 @@
 // percent sign or edits a request.
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { containsTerm, MAX_SEARCH_LENGTH } from './_core/searchTerms';
 
 const read = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8');
@@ -64,20 +65,66 @@ describe('containsTerm neutralises the pattern language', () => {
 });
 
 describe('no search surface builds its own LIKE pattern', () => {
-  it('REGRESSION: nothing interpolates raw input into a %...% string', () => {
-    // The general form. A new search added the old way fails here.
-    for (const [name, source] of [['routers.ts', ROUTERS], ['vendorDirectory.ts', DIRECTORY]] as const) {
-      const raw = [...source.matchAll(/`%\$\{[^}]+\}%`/g)].map(m => m[0]);
-      expect(raw, `${name} builds a LIKE pattern by hand`).toEqual([]);
-    }
+  /**
+   * EVERY SERVER FILE, not two of them.
+   *
+   * This checked `routers.ts` and `vendorDirectory.ts` only - the two files
+   * that had the defect when it was written. Search then moved into services:
+   * `disputeAdminView.ts` and `referralRewardView.ts` were both added with
+   * hand-built `%${term}%` patterns and this suite stayed green, because the
+   * files it reads were a snapshot of where searching used to happen. A guard
+   * that names its files goes stale the first time the code moves.
+   */
+  function serverSources(): Array<[string, string]> {
+    const root = new URL('./', import.meta.url).pathname;
+    const found: Array<[string, string]> = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir)) {
+        const path = join(dir, entry);
+        if (statSync(path).isDirectory()) { walk(path); continue; }
+        if (!/\.ts$/.test(entry) || /\.test\.ts$/.test(entry)) continue;
+        // The escaper itself is where the pattern is legitimately built.
+        if (path.endsWith('_core/searchTerms.ts')) continue;
+        found.push([path.slice(root.length), readFileSync(path, 'utf8')]);
+      }
+    };
+    walk(root);
+    return found;
+  }
+
+  it('the sweep actually reads the server, including its subdirectories', () => {
+    const files = serverSources();
+    expect(files.length).toBeGreaterThan(40);
+    expect(files.map(([name]) => name)).toEqual(
+      expect.arrayContaining(['routers.ts', 'vendorDirectory.ts', 'disputeAdminView.ts']),
+    );
+    expect(files.some(([name]) => name.includes('/'))).toBe(true);
   });
 
-  it('every like() call in the directory goes through containsTerm', () => {
-    const likes = [...DIRECTORY.matchAll(/like\([^,]+,\s*([^)]+)\)/g)].map(m => m[1].trim());
-    expect(likes.length).toBeGreaterThanOrEqual(3);
-    for (const argument of likes) {
-      expect(argument, 'a LIKE argument that is not an escaped term').toMatch(/containsTerm\(|^term$/);
+  it('REGRESSION: nothing interpolates raw input into a %...% string', () => {
+    const offenders: string[] = [];
+    for (const [name, source] of serverSources()) {
+      for (const match of source.matchAll(/`%\$\{[^}]+\}%`/g)) offenders.push(`${name}: ${match[0]}`);
     }
+    expect(
+      offenders,
+      'A LIKE pattern built by hand lets a user\'s own % or _ act as a wildcard. '
+      + 'Use containsTerm() from server/_core/searchTerms.ts:\n  ' + offenders.join('\n  '),
+    ).toEqual([]);
+  });
+
+  it('every like() call anywhere on the server takes an escaped term', () => {
+    const offenders: string[] = [];
+    for (const [name, source] of serverSources()) {
+      for (const match of source.matchAll(/\blike\([^,]+,\s*([^)]+)\)/g)) {
+        const argument = match[1].trim();
+        // A bound variable is fine when it was produced by containsTerm; the
+        // names below are the ones this codebase uses for exactly that.
+        if (/containsTerm\(|^(term|pattern)$/.test(argument)) continue;
+        offenders.push(`${name}: like(..., ${argument})`);
+      }
+    }
+    expect(offenders, 'a LIKE argument that is not an escaped term:\n  ' + offenders.join('\n  ')).toEqual([]);
   });
 });
 

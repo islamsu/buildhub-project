@@ -109,7 +109,15 @@ describe('redemption enforces every promise', () => {
     const burn = r.indexOf('isNull(testLoginTokens.usedAt)');
     expect(burn).toBeGreaterThan(-1);
     expect(burn).toBeLessThan(r.indexOf('createSessionToken'));
-    expect(r).toContain('if (affected === 0) throw reject();');
+    // THE SPELLING MOVED, THE RULE DID NOT. "How many rows did that write
+    // touch" had three different readings in this codebase, and one of them -
+    // `rowsAffected`, which mysql2 never returns - made a real removal
+    // elsewhere report as no removal at all. There is one reader now, and what
+    // matters here is unchanged: the session is refused unless the conditional
+    // burn actually changed a row.
+    expect(r).toContain('if (!changedSomething(burn)) throw reject();');
+    expect(r.indexOf('changedSomething(burn)'), 'the burn is checked after the session is issued')
+      .toBeLessThan(r.indexOf('createSessionToken'));
   });
 
   it('is rate limited', () => {

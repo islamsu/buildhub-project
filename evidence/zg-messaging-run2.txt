@@ -1,0 +1,26 @@
+PASS  1. SETUP: three real accounts
+PASS  2. the sidebar answers, with both correspondents  [http=200 n=2]
+PASS  3. THE UNREAD COUNT IS REAL: three from Bob, one from Carol  [bob=3 carol=1]
+PASS  4. ordered by the most recent message - Carol wrote last  [first=2016]
+PASS  5. and carries a DATE, not a server-formatted string  [2026-09-11T18:10:43.000Z]
+PASS  6. the whole-inbox badge agrees: four unread  [count=4]
+PASS  7. THE BADGE GOES DOWN: marking Bob’s thread read moves three rows  [http=200 marked=3]
+PASS  8. Bob’s badge is cleared  [bob=0]
+PASS  9. AND ONLY THE THREAD SHE OPENED: Carol’s is untouched  [carol=1]
+PASS  10. the inbox badge follows
+PASS  11. marking an already-read thread moves nothing, and says so  [marked=0]
+PASS  12. A READ RECEIPT CANNOT BE FORGED: Alice marking her own thread read  [carol before=1 after=1]
+PASS  13. and it cleared only what CAROL had sent HER  [marked=1]
+PASS  14. a thread returns ONE PAGE, oldest-first within it  [n=5]
+PASS  15. and says there is more, with a cursor  [hasMore=true before=67]
+PASS  16. THE OLDER PAGE IS DIFFERENT, and older  [page1=67..71 page2=62..66]
+PASS  17. with NO line repeated between the two pages
+PASS  18. WALKING EVERY PAGE VISITS EVERY MESSAGE EXACTLY ONCE  [walked=15 total=15]
+PASS  19. THE WHOLE-INBOX DUMP IS GONE: a thread is required  [http=400 code=BAD_REQUEST]
+PASS  20. and an unbounded page is refused by the schema  [code=BAD_REQUEST]
+PASS  21. a signed-out caller cannot mark anything read  [code=UNAUTHORIZED]
+PASS  22. nor read a sidebar
+PASS  23. CAROL SEES NOTHING OF ALICE AND BOB’S THREAD  [n=0]
+PASS  24. CLEANUP: every account and message this probe created is gone  [users=0]
+
+24/24 checks passed

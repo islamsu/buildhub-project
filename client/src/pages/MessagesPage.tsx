@@ -48,7 +48,28 @@ export default function MessagesPage() {
   const { user, isAuthenticated } = useAuth();
   const { data: notifications } = trpc.notifications.list.useQuery(undefined, { enabled: isAuthenticated });
   const { data: persistedConversations = [] } = trpc.messages.conversations.useQuery(undefined, { enabled: isAuthenticated });
-  const markRead = trpc.notifications.markAllRead.useMutation({ onSuccess: () => toast.success(lang === 'ar' ? 'تم تحديد الكل كمقروء' : 'All marked as read') });
+  const markRead = trpc.notifications.markAllRead.useMutation({
+    onSuccess: () => {
+      toast.success(lang === 'ar' ? 'تم تحديد الكل كمقروء' : 'All marked as read');
+      void utils.notifications.list.invalidate();
+      void utils.notifications.unreadCount.invalidate();
+    },
+  });
+  /**
+   * OPENING ONE NOTIFICATION READS IT.
+   *
+   * `markAllRead` was the only writer of `read: true`, so the badge was
+   * all-or-nothing: somebody with forty unread who opened one had to clear
+   * every one of them or keep a number that no longer described what they had
+   * seen. Reading a thing is what marks it read - the same rule messaging got
+   * in MSG - and the count is refreshed so the badge in the navbar follows.
+   */
+  const markOneRead = trpc.notifications.markRead.useMutation({
+    onSuccess: () => {
+      void utils.notifications.list.invalidate();
+      void utils.notifications.unreadCount.invalidate();
+    },
+  });
 
   // Was `useState(1)`. A default of 1 is a real user id, and combined with the
   // fabricated conversation list it aimed the composer at that account.
@@ -60,7 +81,44 @@ export default function MessagesPage() {
   const [quotationId, setQuotationId] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { data: persistedMessages = [], refetch: refetchMessages } = trpc.messages.list.useQuery({ otherUserId: selectedConv ?? undefined }, { enabled: isAuthenticated && selectedConv !== null });
+  const utils = trpc.useUtils();
+  const { data: thread, refetch: refetchMessages } = trpc.messages.list.useQuery(
+    { otherUserId: selectedConv ?? 0 },
+    { enabled: isAuthenticated && selectedConv !== null },
+  );
+  const persistedMessages = thread?.messages ?? [];
+
+  /**
+   * OPENING A THREAD READS IT.
+   *
+   * `messages.read` had no writer at all, so a conversation's unread badge only
+   * ever grew - a supplier who read and answered every message still carried
+   * the count. Reading is the act that clears it, which is what opening the
+   * thread is; there is no separate button because there is no separate
+   * decision.
+   *
+   * The receipt is the RECEIVER's: `markThreadRead` takes no message ids and
+   * constrains on `receiverId = caller`, so this cannot mark the other party's
+   * messages read on their behalf.
+   */
+  const markThreadRead = trpc.messages.markThreadRead.useMutation({
+    onSuccess: ({ marked }) => {
+      // Only refresh the sidebar when something actually moved. Re-fetching on
+      // every thread open would reload the list each time somebody clicked
+      // between two already-read conversations.
+      if (marked > 0) {
+        void utils.messages.conversations.invalidate();
+        void utils.messages.unreadCount.invalidate();
+      }
+    },
+  });
+  useEffect(() => {
+    if (!isAuthenticated || selectedConv === null) return;
+    markThreadRead.mutate({ otherUserId: selectedConv });
+    // Keyed on the thread alone: re-running it as messages arrive would mark a
+    // message read the moment it lands, whether or not anybody is looking.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, selectedConv]);
   const sendMutation = trpc.messages.send.useMutation({ onSuccess: () => refetchMessages(), onError: error => toast.error(error.message) });
   const uploadMutation = trpc.messages.uploadAttachment.useMutation({ onError: error => toast.error(error.message) });
 
@@ -111,7 +169,7 @@ export default function MessagesPage() {
   // real conversation. Placed first so the person you just chose to contact is
   // the one selected, and never duplicated if you already have a thread.
   const conversations = requestedRecipient && !persistedConversations.some(c => c.id === requestedRecipient.id)
-    ? [{ ...requestedRecipient, lastMessage: '', time: '', unread: 0 }, ...persistedConversations]
+    ? [{ ...requestedRecipient, lastMessage: '', lastMessageAt: null, unread: 0 }, ...persistedConversations]
     : persistedConversations;
   const filteredConvs = conversations.filter(c =>
     !searchConv || c.name.toLowerCase().includes(searchConv.toLowerCase())
@@ -213,7 +271,16 @@ export default function MessagesPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-0.5">
                           <p className="text-sm font-medium truncate">{conv.name}</p>
-                          <span className="text-xs text-muted-foreground flex-shrink-0">{conv.time}</span>
+                          {/* FORMATTED IN THE READER'S LOCALE, not the server's.
+                              This was a string the router built with
+                              toLocaleDateString(), which handed every reader
+                              the SERVER's locale - an Arabic reader got an
+                              English date and had no way to change it. */}
+                          <span className="text-xs text-muted-foreground flex-shrink-0">
+                            {conv.lastMessageAt
+                              ? new Date(conv.lastMessageAt).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-GB')
+                              : ''}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between">
                           <p className="text-xs text-muted-foreground truncate">{conv.lastMessage}</p>
@@ -371,9 +438,13 @@ export default function MessagesPage() {
                 // A notification with no link still renders - some events are
                 // genuinely informational and inventing a destination for them
                 // would be worse than having none.
+                // The read receipt is given on OPENING, whether or not the
+                // notification has somewhere to go: an informational one is
+                // just as read once somebody has clicked it.
+                const open = () => { if (!n.read) markOneRead.mutate({ id: n.id }); };
                 return n.link
-                  ? <Link key={n.id} href={n.link} className="block">{card}</Link>
-                  : <div key={n.id}>{card}</div>;
+                  ? <Link key={n.id} href={n.link} className="block" onClick={open}>{card}</Link>
+                  : <div key={n.id} onClick={open} className={n.read ? undefined : 'cursor-pointer'}>{card}</div>;
               })}
             </div>
           </TabsContent>

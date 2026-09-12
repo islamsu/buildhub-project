@@ -140,7 +140,7 @@ describe('vendor directory field allowlist (Phase 4B.3)', () => {
     // Paying must not buy a higher position (Phase 4B.3 §13).
     //
     // Scoped to listDirectoryVendors and the visibility filter it uses, rather
-    // than the whole file. Slice 8 added listFeaturedVendors further down,
+    // than the whole file. Slice 8 added listEntitlementSponsoredVendors further down,
     // which legitimately reads subscriptions - it builds a SEPARATE sponsored
     // strip and does not touch the ordering below. Keeping this as a
     // whole-file scan would have forced a choice between deleting the §13
@@ -163,7 +163,7 @@ describe('vendor directory field allowlist (Phase 4B.3)', () => {
 
   it('Slice 8: featured placement is a separate function that never reorders the organic list', () => {
     const source = readFileSync(new URL('./vendorDirectory.ts', import.meta.url), 'utf8');
-    const featured = source.slice(source.indexOf('export async function listFeaturedVendors'));
+    const featured = source.slice(source.indexOf('export async function listEntitlementSponsoredVendors'));
     // It derives eligibility from live billing state, not the stored plan column.
     expect(featured).toContain('deriveBillingState(row.subscription, now)');
     expect(featured).toContain('featuredPlacementEligible');

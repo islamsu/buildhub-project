@@ -1,0 +1,24 @@
+PASS  WORKING: marketplace.categoryNames answers  [200 ]
+PASS  WORKING: marketplace.list answers  [200 ]
+PASS  WORKING: notifications.unreadCount answers  [200 ]
+PASS  WORKING: notifications.list answers  [200 ]
+PASS  WORKING: projects.list answers  [200 ]
+PASS  WORKING: marketplace.myProducts answers  [200 ]
+PASS  the probe found the live pool connections to kill  [2 threads]
+PASS  INSTRUMENT: the application account really cannot read any table
+PASS  OUTAGE: marketplace.categoryNames FAILS rather than reporting no categories at all  [status=500 data=null]
+PASS  OUTAGE: marketplace.list FAILS rather than reporting an empty catalogue  [status=500 data=null]
+PASS  OUTAGE: notifications.unreadCount FAILS rather than reporting 0 unread  [status=401 data=null]
+PASS  OUTAGE: notifications.list FAILS rather than reporting no notifications  [status=401 data=null]
+PASS  OUTAGE: projects.list FAILS rather than reporting no projects  [status=401 data=null]
+PASS  OUTAGE: marketplace.myProducts FAILS rather than reporting an empty catalogue of your own  [status=401 data=null]
+PASS  OUTAGE: the cached platform figures are stale, never zeroed  [status=500 users=undefined]
+PASS  RECOVERED: marketplace.categoryNames answers again  [200 ]
+PASS  RECOVERED: marketplace.list answers again  [200 ]
+PASS  RECOVERED: notifications.unreadCount answers again  [200 ]
+PASS  RECOVERED: notifications.list answers again  [200 ]
+PASS  RECOVERED: projects.list answers again  [200 ]
+PASS  RECOVERED: marketplace.myProducts answers again  [200 ]
+PASS  CLEANUP: the application can reach its database again
+
+22/22 passed

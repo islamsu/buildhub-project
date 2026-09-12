@@ -144,9 +144,23 @@ describe('§1 every procedure is pinned to a tier', () => {
       // The plan catalogue: prices a signed-out visitor must be able to read.
       'billing.plans',
       // The public marketplace: product catalogue and vendor directory.
+      // Both category readers are public because BROWSING IS PUBLIC - the
+      // marketplace filter renders before anyone signs in. They return the
+      // taxonomy and nothing else: slug, English and Arabic name, scope,
+      // status, ordering and icon. No usage counts, no vendor, no product, no
+      // administrator identity, no audit. Its 'listable'/'public' views are
+      // BOTH public filters over active rows - the administrator's view of
+      // hidden and archived categories is a separate, permissioned procedure
+      // and is not reachable from here.
+      //
+      // `categoryNames`, the bare string-array form, WAS BESIDE IT AND IS GONE:
+      // it had no client caller, and every one of `categories`' four callers
+      // needs the slug and both languages a string array cannot carry. One
+      // public reader of the taxonomy, not two.
       'marketplace.categories',
-      // ADMIN-CURATED FEATURED PROVIDERS, the editorial counterpart to the
-      // paid strip below. Public for the same reason and on the same terms:
+      // ADMIN-CURATED FEATURED PROVIDERS - the canonical EDITORIAL reader,
+      // and the counterpart to the commercial strip (sponsoredVendors) below.
+      // Public for the same reason and on the same terms:
       // it returns the directory's own column allowlist plus the category the
       // pick was made in, resolved through the directory's own visibility
       // filter. It carries no granter, no period, no reason and no billing
@@ -154,7 +168,6 @@ describe('§1 every procedure is pinned to a tier', () => {
       // surface without being written down here, which is exactly the drift
       // this list exists to catch.
       'marketplace.featuredProviders',
-      'marketplace.featuredVendors',
       'marketplace.get',
       'marketplace.importTemplate',
       'marketplace.list',
@@ -203,6 +216,17 @@ describe('§1 every procedure is pinned to a tier', () => {
       // A vendor's public reputation, shown on their profile.
       'reviews.forUser',
       'reviews.statsForUser',
+      // The service categories a provider may list under - the same list the
+      // customer-facing browse needs, containing nothing but names an
+      // administrator published on purpose.
+      'services.categories',
+      // One provider's PUBLISHED catalogue, addressed by providerId. Public for
+      // the reason reviews.forUser is: a catalogue only its owner could read
+      // would not be a shop window. It applies BOTH visibility clauses - live
+      // offering AND approved account - so it returns strictly less than the
+      // provider's own `services.mine`, and nothing at all from an account
+      // BuildHub has not finished vetting.
+      'services.forProvider',
     ]);
   });
 
@@ -349,11 +373,17 @@ describe('§2 rfq.list — the one that mattered', () => {
 });
 
 describe('§2b marketplace', () => {
-  it('REGRESSION: marketplace.get does not serve a deactivated product', () => {
+  it('REGRESSION: marketplace.get does not serve a product the supplier has withdrawn', () => {
     // `list` filtered active=true; `get` did not, so a product the supplier had
     // withdrawn stayed fully readable by id.
+    //
+    // The predicate is now `publicProductFilter()` rather than an inline
+    // `eq(products.active, true)`: "withdrawn" grew from one boolean into four
+    // states (draft, live, off sale, archived), and an inline literal at each
+    // reader is what would let one of them keep serving drafts. The class-level
+    // census over every products reader lives in productLifecycle.test.ts.
     const body = procedureBody('marketplace.get');
-    expect(body).toContain('eq(products.active, true)');
+    expect(body).toContain('publicProductFilter()');
   });
 
   it('REGRESSION: marketplace.questions does not expose askerId', () => {
@@ -388,7 +418,9 @@ describe('§2b marketplace', () => {
     // codeOnly, because the comment that replaced the defect quotes it.
     const body = codeOnly(procedureBody('marketplace.askQuestion'));
     expect(body).not.toMatch(/productId > \d/);
-    expect(body).toContain('eq(products.active, true)');
+    // THE SAME predicate as marketplace.get, and that is now literally true
+    // rather than true by matching spelling: both call the one filter.
+    expect(body).toContain('publicProductFilter()');
     expect(body).toContain("code: 'NOT_FOUND'");
   });
 
@@ -444,7 +476,11 @@ describe('§2c messages', () => {
     // or certificate with a bid.
     // SIX since provider portfolio images gained their own upload endpoint,
     // which sanitises its filename with the same corrected pattern.
-    expect((ROUTERS_CODE.match(/\[\^\\w\.-\]\+/g) ?? []).length).toBe(6);
+    // SEVEN since a project document can be REPLACED with a corrected
+    // revision - a second upload path into `project-documents/`, which must
+    // sanitise its filename exactly as the first one does or the two write
+    // keys of different shapes into the same prefix.
+    expect((ROUTERS_CODE.match(/\[\^\\w\.-\]\+/g) ?? []).length).toBe(7);
   });
 });
 
@@ -565,7 +601,23 @@ describe('§3 uploads are checked against their bytes', () => {
     // the ninth site is genuinely byte-checked and this is a stale counter
     // rather than an unguarded endpoint. The equality below is the real
     // invariant; the count exists so a NEW path cannot arrive unnoticed.
-    expect(puts).toBe(9);
+    // TEN since dispute evidence became an upload path - a participant
+    // attaching a photograph or a specification to make their case. Verified
+    // the same way before the number moved: `asserted + validated` is 10 too.
+    // ELEVEN since support ticket attachments arrived. That endpoint SHIPPED
+    // WITHOUT the byte check and this assertion is what found it: `puts` went
+    // to 11 while `asserted + validated` stayed at 10, which is exactly the
+    // unguarded-endpoint case the equality below exists to catch. The number
+    // was moved only after the check was added, never to make the red go away.
+    // TWELVE since a project document can be replaced with a corrected
+    // revision. Verified the same way before the number moved: `puts` and
+    // `asserted + validated` BOTH went to 12, so the new path is genuinely
+    // byte-checked. Had only `puts` moved, the equality below would have
+    // caught it, which is exactly what happened to support attachments.
+    expect(puts).toBe(12);
+    // THE REAL INVARIANT. Every byte that reaches storage was checked against
+    // its declared type first; the count above only ensures a NEW path cannot
+    // arrive unnoticed.
     expect(asserted + validated).toBe(puts);
   });
 

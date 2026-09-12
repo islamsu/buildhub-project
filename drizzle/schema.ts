@@ -284,10 +284,27 @@ export const documents = mysqlTable('documents', {
   url:       text('url').notNull(),
   fileKey:   varchar('fileKey', { length: 255 }),
   size:      int('size'),
+  /**
+   * ARCHIVED, NEVER DELETED. A contract, a BOQ or a drawing is evidence of
+   * what was agreed at a moment in time, and a dispute six months later is
+   * exactly when somebody needs the superseded revision. An archived document
+   * leaves the working list and stays downloadable to everyone who could
+   * already read the project.
+   */
+  archivedAt:    timestamp('archivedAt'),
+  archivedBy:    int('archivedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  archiveReason: varchar('archiveReason', { length: 500 }),
+  /**
+   * REPLACING IS A LINK, NOT AN OVERWRITE. The new file is a new row; this one
+   * points forward to it, so "which revision was current in March" has an
+   * answer rather than being lost the moment somebody corrects a drawing.
+   */
+  supersededById: int('supersededById').references((): any => documents.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
 }, table => ({
   projectIdIdx: index('documents_projectId_idx').on(table.projectId),
   uploaderIdIdx: index('documents_uploaderId_idx').on(table.uploaderId),
+  projectArchivedIdx: index('documents_project_archived_idx').on(table.projectId, table.archivedAt),
 }));
 
 // ── Registration Compliance Documents ────────────────────────────────────────
@@ -376,6 +393,12 @@ export const products = mysqlTable('products', {
   description: text('description'),
   descriptionAr: text('descriptionAr'),
   category:    varchar('category', { length: 100 }).notNull(),
+  /**
+   * The canonical link. `category` above stays as the stored display value for
+   * now: it is what every existing row already holds, and forward-only means
+   * the varchar is retired only once everything reads the link instead.
+   */
+  categoryId:  int('categoryId').references(() => productCategories.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   subCategory: varchar('subCategory', { length: 100 }),
   brand:       varchar('brand', { length: 100 }),
   origin:      varchar('origin', { length: 100 }),
@@ -390,11 +413,33 @@ export const products = mysqlTable('products', {
   rating:      decimal('rating', { precision: 3, scale: 2 }).default('0.00'),
   reviewCount: int('reviewCount').default(0),
   featured:    boolean('featured').default(false),
+  /**
+   * THE AUTHORITATIVE LIFECYCLE. A boolean could only say two things, so a
+   * half-written draft, a line that is temporarily off sale and a product
+   * discontinued last year were all the same row to a supplier's catalogue.
+   * See shared/productLifecycle.ts for the states and the declared moves.
+   *
+   * There is no 'deleted': a product id appears in questions, quotations,
+   * placements and audit events, so retiring one archives it.
+   */
+  status:      mysqlEnum('status', ['draft', 'active', 'inactive', 'archived']).default('active').notNull(),
+  statusChangedAt: timestamp('statusChangedAt'),
+  archivedAt:  timestamp('archivedAt'),
+  /**
+   * LEGACY, and derived. Kept for one migration so the 0049 backfill stays
+   * reversible by inspection, exactly as `disputes.projectId` was kept after
+   * the subject became polymorphic. Written in exactly ONE place -
+   * server/productLifecycle.ts - from `status`, never independently, and
+   * server/productLifecycle.test.ts holds the two in agreement. Deliberately
+   * NOT a second authoritative field.
+   */
   active:      boolean('active').default(true),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
   updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
 }, table => ({
   supplierIdIdx: index('products_supplierId_idx').on(table.supplierId),
+  statusIdx: index('products_status_idx').on(table.status),
+  supplierStatusIdx: index('products_supplier_status_idx').on(table.supplierId, table.status),
 }));
 
 // ── Provider Portfolio ─────────────────────────────────────────────────────
@@ -567,6 +612,78 @@ export const notifications = mysqlTable('notifications', {
   userIdReadIdx: index('notifications_userId_read_idx').on(table.userId, table.read),
 }));
 
+/**
+ * Per-user notification preferences. ONLY OVERRIDES LIVE HERE: the absence of a
+ * row means the category is on, so every existing user keeps receiving exactly
+ * what they received before this table existed, and a category added later is
+ * on for everybody without touching a single row.
+ *
+ * MANDATORY CATEGORIES ARE NOT WRITABLE HERE. `shared/notificationPreferences.ts`
+ * names them (account, compliance, billing, disputes, moderation);
+ * `server/notificationPreferences.ts` refuses to store a suppression for one,
+ * and the delivery gate ignores such a row if it ever arrives by another route.
+ *
+ * `category` is a varchar rather than a mysqlEnum because the vocabulary is
+ * declared once in shared/ and validated there. An enum would put a second
+ * authority in the database that has to be migrated in lockstep with the first.
+ */
+export const notificationPreferences = mysqlTable('notificationPreferences', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  category:  varchar('category', { length: 40 }).notNull(),
+  /** False suppresses the category. True is an explicit re-enable, kept rather than deleted so the choice is a fact. */
+  enabled:   boolean('enabled').notNull().default(false),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull().onUpdateNow(),
+}, table => ({
+  userCategoryIdx: uniqueIndex('notificationPreferences_user_category_idx').on(table.userId, table.category),
+}));
+
+/**
+ * A SERVICE A PROVIDER OFFERS. The counterpart of `products`, for the four
+ * provider roles that sell work rather than goods - and for a supplier who also
+ * installs what they sell.
+ *
+ * NOT A SECOND PRODUCT TABLE, and the differences are the reason it is its own
+ * table rather than a flag on `products`:
+ *
+ *   A product has ONE price and ONE unit. A service has a PRICING BASIS, and
+ *   its most common honest value is "quote on request" - no figure at all.
+ *   Forcing a service through a NOT NULL price column is how invented prices
+ *   get published.
+ *
+ *   A service carries lead time and warranty, which is what a customer actually
+ *   asks a contractor. A product carries stock and origin, which is what they
+ *   ask a supplier.
+ *
+ * WHAT IT REUSES rather than forks: `categoryId` points at the one canonical
+ * administrable taxonomy (scope SERVICE or BOTH), and `status` carries the same
+ * four values and the same declared transitions as a product. See
+ * shared/serviceCatalogue.ts for why each.
+ */
+export const serviceOfferings = mysqlTable('serviceOfferings', {
+  id:          int('id').autoincrement().primaryKey(),
+  providerId:  int('providerId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /** Scope SERVICE or BOTH. Enforced in server/serviceCatalogue.ts, not here. */
+  categoryId:  int('categoryId').notNull().references(() => productCategories.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  title:       varchar('title', { length: 120 }).notNull(),
+  description: text('description'),
+  pricingBasis: mysqlEnum('pricingBasis', ['quote_on_request', 'per_square_metre', 'per_linear_metre', 'per_unit', 'per_day', 'fixed_project']).default('quote_on_request').notNull(),
+  /** Both NULL when the basis is quote_on_request - refused, not merely ignored. */
+  priceMin:    decimal('priceMin', { precision: 12, scale: 2 }),
+  priceMax:    decimal('priceMax', { precision: 12, scale: 2 }),
+  leadTimeDays:   int('leadTimeDays'),
+  warrantyMonths: int('warrantyMonths'),
+  status:      mysqlEnum('status', ['draft', 'active', 'inactive', 'archived']).default('draft').notNull(),
+  statusChangedAt: timestamp('statusChangedAt'),
+  archivedAt:  timestamp('archivedAt'),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+  updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  providerStatusIdx: index('serviceOfferings_provider_status_idx').on(table.providerId, table.status),
+  categoryStatusIdx: index('serviceOfferings_category_status_idx').on(table.categoryId, table.status),
+}));
+
 // ── Reviews ────────────────────────────────────────────────────────────────
 export const reviews = mysqlTable('reviews', {
   id:         int('id').autoincrement().primaryKey(),
@@ -576,12 +693,75 @@ export const reviews = mysqlTable('reviews', {
   rating:     int('rating').notNull(),
   comment:    text('comment'),
   verified:   boolean('verified').default(false),
+  /**
+   * ── MODERATION: HIDDEN, NEVER DELETED ───────────────────────────────────
+   *
+   * A hidden review is excluded from the public list AND from the average, so
+   * hiding is a real remedy rather than a cosmetic one. The ROW survives
+   * because the reviewer wrote something real, because an administrator's
+   * decision has to be reviewable afterwards, and because a deleted review is
+   * a rating that changes with no explanation - the exact drift this system
+   * already refuses to allow for stored aggregates.
+   */
+  hiddenAt:     timestamp('hiddenAt'),
+  hiddenBy:     int('hiddenBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  hiddenReason: varchar('hiddenReason', { length: 500 }),
   createdAt:  timestamp('createdAt').defaultNow().notNull(),
 }, table => ({
   projectIdIdx: index('reviews_projectId_idx').on(table.projectId),
   reviewerIdIdx: index('reviews_reviewerId_idx').on(table.reviewerId),
   revieweeIdIdx: index('reviews_revieweeId_idx').on(table.revieweeId),
 }));
+
+/**
+ * THE REVIEWED PROVIDER'S RIGHT OF REPLY.
+ *
+ * ONE response per review, by the REVIEWEE only - enforced by the unique key
+ * below rather than by a check somebody can forget. Not a thread: a review
+ * that becomes an argument helps nobody reading it, and the reviewer already
+ * had their say.
+ */
+export const reviewResponses = mysqlTable('reviewResponses', {
+  id:        int('id').autoincrement().primaryKey(),
+  reviewId:  int('reviewId').notNull().references(() => reviews.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /** Always the review's own reviewee. Stored so the row stands on its own. */
+  authorId:  int('authorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  body:      text('body').notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  /** ONE reply per review, in the database rather than in a procedure. */
+  reviewUnique: uniqueIndex('reviewResponses_review_unique').on(table.reviewId),
+  authorIdx:    index('reviewResponses_author_idx').on(table.authorId),
+}));
+
+/**
+ * A REPORT AGAINST A REVIEW.
+ *
+ * Anyone who can see a review may report it, but the reasons are a closed set
+ * (shared/reviews.ts) and none of them is "I disagree" - a negative review
+ * that is accurate is the system working.
+ */
+export const reviewReports = mysqlTable('reviewReports', {
+  id:         int('id').autoincrement().primaryKey(),
+  reviewId:   int('reviewId').notNull().references(() => reviews.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  reporterId: int('reporterId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  reason:     mysqlEnum('reason', ['abusive', 'off_topic', 'personal_data', 'not_a_customer', 'spam', 'other']).notNull(),
+  detail:     varchar('detail', { length: 1000 }),
+  status:     mysqlEnum('status', ['open', 'upheld', 'rejected']).default('open').notNull(),
+  /** What the moderator decided and why - never a bare status flip. */
+  resolutionNote: varchar('resolutionNote', { length: 1000 }),
+  resolvedBy: int('resolvedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  resolvedAt: timestamp('resolvedAt'),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  /** One report per person per review. Repeat-reporting is not a louder vote. */
+  reporterUnique: uniqueIndex('reviewReports_review_reporter_unique').on(table.reviewId, table.reporterId),
+  /** The moderation queue's own ordering: open work, oldest first. */
+  statusIdx:      index('reviewReports_status_idx').on(table.status, table.createdAt),
+  reviewIdx:      index('reviewReports_review_idx').on(table.reviewId),
+}));
+
 
 // ── Progress Reports ────────────────────────────────────────────────────────
 export const progressReports = mysqlTable('progressReports', {
@@ -602,22 +782,274 @@ export const disputes = mysqlTable('disputes', {
   id:             int('id').autoincrement().primaryKey(),
   reporterId:     int('reporterId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   respondentId:   int('respondentId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  /**
+   * ── THE POLYMORPHIC SUBJECT (migration 0046) ─────────────────────────────
+   *
+   * The owner's decision: ONE dispute architecture with a subject, not three
+   * parallel dispute systems. A dispute names the thing it is about, and
+   * eligibility is derived from the real BuildHub relationship to that thing.
+   *
+   * `projectId` alone meant a supplier who disagreed with a quotation had
+   * nothing to dispute against.
+   */
+  subjectType:    mysqlEnum('subjectType', ['project', 'rfq', 'quotation']).default('project').notNull(),
+  subjectId:      int('subjectId').notNull().default(0),
+  /**
+   * LEGACY, and derived. Kept so `admin.projectDetail`'s existing count keeps
+   * working and so the 0046 backfill is reversible by inspection. It is written
+   * in exactly ONE place - server/disputeSubject.ts - from the subject above,
+   * never independently, and a test holds the two in agreement. It is scheduled
+   * for removal once nothing reads it; deliberately NOT a second authoritative
+   * field, which is the shape that produced four disagreeing category
+   * vocabularies elsewhere in this codebase.
+   */
   projectId:      int('projectId').references(() => projects.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  /**
+   * The human reference - `DSP-2026-000123`. A dispute is discussed in email
+   * and on the phone, and "dispute 123" is ambiguous the moment a second system
+   * has its own 123. Nullable only because it is derived from the id, so it is
+   * written immediately after the insert.
+   */
+  reference:      varchar('reference', { length: 32 }),
   title:          varchar('title', { length: 255 }).notNull(),
   description:    text('description').notNull(),
+  /** Free text, pre-0046. Superseded by `category`; kept for the old rows. */
   type:           varchar('type', { length: 80 }).default('general').notNull(),
+  /** The closed set in shared/disputes.ts. Nothing about money: BuildHub holds no funds. */
+  category:       mysqlEnum('category', ['quality', 'delivery', 'quantity', 'specification', 'communication', 'conduct', 'pricing', 'other']).default('other').notNull(),
   priority:       mysqlEnum('priority', ['low', 'medium', 'high']).default('medium').notNull(),
-  status:         mysqlEnum('status', ['open', 'investigating', 'resolved', 'rejected']).default('open').notNull(),
+  /**
+   * `withdrawn` is the REPORTER's own decision, and is not the same outcome as
+   * an administrator rejecting the dispute. Recording both as `rejected` would
+   * blame the platform for a choice the reporter made.
+   */
+  status:         mysqlEnum('status', ['open', 'investigating', 'resolved', 'rejected', 'withdrawn']).default('open').notNull(),
+
+  // ── Assignment: who is working on it ─────────────────────────────────────
+  assignedTo:     int('assignedTo').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  assignedBy:     int('assignedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  assignedAt:     timestamp('assignedAt'),
+
+  // ── Resolution: never a bare status flip ─────────────────────────────────
   resolutionNotes:text('resolutionNotes'),
+  resolutionType: mysqlEnum('resolutionType', ['resolved_by_agreement', 'resolved_by_platform', 'no_action_required', 'insufficient_evidence', 'out_of_scope']),
+  resolvedBy:     int('resolvedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  resolvedAt:     timestamp('resolvedAt'),
+
+  // ── Reopen and withdrawal, with an actor and a reason ────────────────────
+  reopenedBy:     int('reopenedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  reopenedAt:     timestamp('reopenedAt'),
+  reopenReason:   varchar('reopenReason', { length: 500 }),
+  withdrawnAt:    timestamp('withdrawnAt'),
+
   createdAt:      timestamp('createdAt').defaultNow().notNull(),
   updatedAt:      timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
 }, table => ({
   reporterIdIdx: index('disputes_reporterId_idx').on(table.reporterId),
   respondentIdIdx: index('disputes_respondentId_idx').on(table.respondentId),
   projectIdIdx: index('disputes_projectId_idx').on(table.projectId),
+  // The columns the admin list orders and filters on, and the one
+  // server/admin/operationalHealth.ts counts open disputes with.
+  subjectIdx:   index('disputes_subject_idx').on(table.subjectType, table.subjectId),
+  statusIdx:    index('disputes_status_idx').on(table.status),
+  priorityIdx:  index('disputes_priority_idx').on(table.priority),
+  createdIdx:   index('disputes_createdAt_idx').on(table.createdAt),
+  assignedIdx:  index('disputes_assignedTo_idx').on(table.assignedTo),
+  referenceIdx: uniqueIndex('disputes_reference_unique').on(table.reference),
 }));
 
+/**
+ * ── EVIDENCE ───────────────────────────────────────────────────────────────
+ *
+ * A file a participant attached to make their case. Stored through the same
+ * `server/storage.ts` every other upload uses, under a `dispute-evidence/`
+ * prefix, and downloadable only through an authorization check against the
+ * dispute it belongs to - a participant in dispute A must not be able to fetch
+ * dispute B's file by guessing a key.
+ *
+ * SOFT REMOVAL. The row stays so the record shows the file existed and who
+ * withdrew it; deleting it outright would let a party quietly retract evidence
+ * the other side had already answered.
+ */
+export const disputeEvidence = mysqlTable('disputeEvidence', {
+  id:          int('id').autoincrement().primaryKey(),
+  disputeId:   int('disputeId').notNull().references(() => disputes.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  uploadedBy:  int('uploadedBy').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  storageKey:  varchar('storageKey', { length: 500 }).notNull(),
+  fileName:    varchar('fileName', { length: 255 }).notNull(),
+  contentType: varchar('contentType', { length: 120 }).notNull(),
+  sizeBytes:   int('sizeBytes').notNull(),
+  removedAt:   timestamp('removedAt'),
+  removedBy:   int('removedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  disputeIdx:  index('disputeEvidence_dispute_idx').on(table.disputeId),
+  uploaderIdx: index('disputeEvidence_uploader_idx').on(table.uploadedBy),
+}));
+
+/**
+ * ── WHAT THE PARTICIPANTS SAY TO EACH OTHER ────────────────────────────────
+ *
+ * PARTICIPANT MESSAGES ONLY. An administrator's internal note goes in
+ * `adminNotes` with `subjectType: 'dispute'`, which that enum has always
+ * allowed and nothing has ever written.
+ *
+ * The separation is a TABLE, not a visibility column, on purpose: a forgotten
+ * `where visibility = 'participants'` would show a reporter what an
+ * administrator wrote about them, and a rule that can be got wrong by omitting
+ * a clause will eventually be got wrong. Internal notes are not in this table
+ * at all, so no query against it can leak one.
+ */
+export const disputeMessages = mysqlTable('disputeMessages', {
+  id:        int('id').autoincrement().primaryKey(),
+  disputeId: int('disputeId').notNull().references(() => disputes.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  authorId:  int('authorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  body:      text('body').notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  disputeIdx: index('disputeMessages_dispute_idx').on(table.disputeId, table.createdAt),
+  authorIdx:  index('disputeMessages_author_idx').on(table.authorId),
+}));
+
+/**
+ * ── HOW IT GOT HERE ────────────────────────────────────────────────────────
+ *
+ * Append-only. `admin.updateDispute` accepted any status from any state and
+ * wrote nothing but the new value, so "who moved this to resolved, and when,
+ * and from what" was unanswerable - on the record a party is entitled to see.
+ */
+export const disputeStatusHistory = mysqlTable('disputeStatusHistory', {
+  id:         int('id').autoincrement().primaryKey(),
+  disputeId:  int('disputeId').notNull().references(() => disputes.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  fromStatus: varchar('fromStatus', { length: 20 }).notNull(),
+  toStatus:   varchar('toStatus', { length: 20 }).notNull(),
+  actorId:    int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  reason:     varchar('reason', { length: 500 }),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  disputeIdx: index('disputeStatusHistory_dispute_idx').on(table.disputeId, table.createdAt),
+}));
+
+export type DisputeEvidence = typeof disputeEvidence.$inferSelect;
+export type DisputeMessage = typeof disputeMessages.$inferSelect;
+export type DisputeStatusChange = typeof disputeStatusHistory.$inferSelect;
+
 // ── Admin Settings ──────────────────────────────────────────────────────────
+/**
+ * ── SUPPORT TICKETS ───────────────────────────────────────────────────────
+ *
+ * A conversation between ONE USER and BUILDHUB. See shared/supportTickets.ts
+ * for why this is not the dispute table with nullable columns: a dispute has a
+ * respondent and a commercial subject, a support ticket has neither, and one
+ * table meaning both is one table whose rules cannot be stated.
+ *
+ * NO RESPONDENT COLUMN EXISTS, deliberately. The counterparty is BuildHub, and
+ * a nullable respondent would invite code that half-treats a ticket as a
+ * dispute.
+ */
+export const supportTickets = mysqlTable('supportTickets', {
+  id:          int('id').autoincrement().primaryKey(),
+  /** The account that asked. Every signed-in account may; there is no eligibility to derive. */
+  requesterId: int('requesterId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /**
+   * `SUP-2026-000123`, derived from id and createdAt and stored so it survives
+   * a change to the format. An id is not something a person reads out on a
+   * call, and support is exactly where somebody has to.
+   */
+  reference:   varchar('reference', { length: 32 }),
+  category:    mysqlEnum('category', ['account', 'billing', 'technical', 'marketplace', 'rfq', 'project', 'compliance', 'other']).default('other').notNull(),
+  subject:     varchar('subject', { length: 255 }).notNull(),
+  description: text('description').notNull(),
+  /**
+   * STAFF-ONLY. A requester who sets their own priority sets `urgent` every
+   * time and the column stops carrying information - see
+   * SUPPORT_PRIORITY_IS_STAFF_ONLY. The create input does not accept it.
+   */
+  priority:    mysqlEnum('priority', ['low', 'medium', 'high', 'urgent']).default('medium').notNull(),
+  status:      mysqlEnum('status', ['open', 'in_progress', 'awaiting_user', 'resolved', 'closed']).default('open').notNull(),
+
+  assignedTo:  int('assignedTo').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  assignedBy:  int('assignedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  assignedAt:  timestamp('assignedAt'),
+
+  /** A resolution is a record, never a bare status flip. */
+  resolutionNotes: text('resolutionNotes'),
+  resolvedBy:  int('resolvedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  resolvedAt:  timestamp('resolvedAt'),
+  closedBy:    int('closedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  closedAt:    timestamp('closedAt'),
+
+  /**
+   * When the requester last said something. The support queue's real ordering
+   * question is "who has been waiting longest for us", and that cannot be
+   * answered from createdAt once a ticket has been going back and forth.
+   */
+  lastUserReplyAt: timestamp('lastUserReplyAt'),
+  lastStaffReplyAt: timestamp('lastStaffReplyAt'),
+
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+  updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  requesterIdx: index('supportTickets_requester_idx').on(table.requesterId),
+  /** The queue's own ordering: open work, oldest first. */
+  statusIdx:    index('supportTickets_status_idx').on(table.status, table.createdAt),
+  assignedIdx:  index('supportTickets_assigned_idx').on(table.assignedTo),
+  referenceIdx: index('supportTickets_reference_idx').on(table.reference),
+}));
+
+/**
+ * The conversation the REQUESTER can see. Internal staff discussion belongs in
+ * `adminNotes` with subjectType 'support_ticket', which the requester cannot
+ * read - the same separation the dispute lifecycle draws, and for the same
+ * reason: a support agent must have somewhere to think out loud.
+ */
+export const supportTicketMessages = mysqlTable('supportTicketMessages', {
+  id:       int('id').autoincrement().primaryKey(),
+  ticketId: int('ticketId').notNull().references(() => supportTickets.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  authorId: int('authorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  /**
+   * Which side of the conversation, recorded at write time rather than
+   * re-derived later from the author's current role. An agent who stops being
+   * an administrator must not retroactively turn their past replies into
+   * customer messages.
+   */
+  authorSide: mysqlEnum('authorSide', ['user', 'support']).notNull(),
+  body:     text('body').notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  ticketIdx: index('supportTicketMessages_ticket_idx').on(table.ticketId, table.createdAt),
+  authorIdx: index('supportTicketMessages_author_idx').on(table.authorId),
+}));
+
+/** Attachments, behind the storage proxy's `support-ticket/` prefix. */
+export const supportTicketAttachments = mysqlTable('supportTicketAttachments', {
+  id:          int('id').autoincrement().primaryKey(),
+  ticketId:    int('ticketId').notNull().references(() => supportTickets.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  uploadedBy:  int('uploadedBy').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  storageKey:  varchar('storageKey', { length: 500 }).notNull(),
+  fileName:    varchar('fileName', { length: 255 }).notNull(),
+  contentType: varchar('contentType', { length: 120 }).notNull(),
+  sizeBytes:   int('sizeBytes').notNull(),
+  removedAt:   timestamp('removedAt'),
+  removedBy:   int('removedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  ticketIdx: index('supportTicketAttachments_ticket_idx').on(table.ticketId),
+}));
+
+/** Append-only. Every status change, with who and why. */
+export const supportTicketStatusHistory = mysqlTable('supportTicketStatusHistory', {
+  id:         int('id').autoincrement().primaryKey(),
+  ticketId:   int('ticketId').notNull().references(() => supportTickets.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  fromStatus: varchar('fromStatus', { length: 20 }).notNull(),
+  toStatus:   varchar('toStatus', { length: 20 }).notNull(),
+  actorId:    int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  reason:     varchar('reason', { length: 500 }),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  ticketIdx: index('supportTicketStatusHistory_ticket_idx').on(table.ticketId, table.createdAt),
+}));
+
 export const adminSettings = mysqlTable('adminSettings', {
   id:        int('id').autoincrement().primaryKey(),
   settingKey:varchar('settingKey', { length: 120 }).notNull().unique(),
@@ -803,6 +1235,57 @@ export const billingEvents = mysqlTable('billingEvents', {
 // follows the Phase 3C convention; the unique index makes a duplicate
 // declaration impossible at the database level rather than by application
 // convention.
+/**
+ * THE CANONICAL PRODUCT CATEGORY TAXONOMY.
+ *
+ * `slug` is the identity; the display names are editable without breaking
+ * anything that references a category. See shared/categoryTaxonomy.ts for how
+ * the three previous vocabularies were reconciled into this one.
+ */
+export const productCategories = mysqlTable('productCategories', {
+  id:        int('id').autoincrement().primaryKey(),
+  slug:      varchar('slug', { length: 80 }).notNull().unique(),
+  nameEn:    varchar('nameEn', { length: 120 }).notNull(),
+  nameAr:    varchar('nameAr', { length: 120 }).notNull(),
+  /** PRODUCT and BOTH are listable; SERVICE is deliberately not. */
+  scope:     mysqlEnum('scope', ['PRODUCT', 'SERVICE', 'BOTH']).default('PRODUCT').notNull(),
+  /** hidden and archived keep existing products intact; nothing is deleted. */
+  status:    mysqlEnum('status', ['active', 'hidden', 'archived']).default('active').notNull(),
+  parentId:  int('parentId').references((): any => productCategories.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  sortOrder: int('sortOrder').default(0).notNull(),
+  icon:      varchar('icon', { length: 16 }),
+  createdBy: int('createdBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  statusIdx: index('productCategories_status_idx').on(table.status),
+  scopeIdx: index('productCategories_scope_idx').on(table.scope),
+  parentIdx: index('productCategories_parentId_idx').on(table.parentId),
+  sortIdx: index('productCategories_sortOrder_idx').on(table.sortOrder),
+}));
+
+/**
+ * A controlled second name for ONE category.
+ *
+ * The unique index on `normalized` is what makes resolution deterministic: two
+ * categories cannot both claim "pools", so bulk upload can never silently pick
+ * one of them.
+ */
+export const productCategoryAliases = mysqlTable('productCategoryAliases', {
+  id:         int('id').autoincrement().primaryKey(),
+  categoryId: int('categoryId').notNull().references(() => productCategories.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  alias:      varchar('alias', { length: 120 }).notNull(),
+  /** Lower-cased, whitespace-collapsed form used for lookup. */
+  normalized: varchar('normalized', { length: 120 }).notNull().unique(),
+  createdBy:  int('createdBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  categoryIdx: index('productCategoryAliases_categoryId_idx').on(table.categoryId),
+}));
+
+export type ProductCategoryRow = typeof productCategories.$inferSelect;
+export type ProductCategoryAliasRow = typeof productCategoryAliases.$inferSelect;
+
 export const vendorCategories = mysqlTable('vendorCategories', {
   id:        int('id').autoincrement().primaryKey(),
   userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
@@ -937,7 +1420,7 @@ export const commercialAuditEvents = mysqlTable('commercialAuditEvents', {
   actorId:     int('actorId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
   // Who the subject record belonged to when the event happened.
   ownerId:     int('ownerId').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
-  subjectType: mysqlEnum('subjectType', ['rfq', 'quotation', 'product', 'document', 'enquiry', 'message']).notNull(),
+  subjectType: mysqlEnum('subjectType', ['rfq', 'quotation', 'product', 'document', 'enquiry', 'message', 'category', 'service', 'project']).notNull(),
   // Deliberately NOT a foreign key. An audit row must survive its subject being
   // deleted - that deletion is often the very thing worth auditing - and a FK
   // would either block it or cascade the evidence away.
@@ -1026,7 +1509,7 @@ export const vendorEntitlementOverrides = mysqlTable('vendorEntitlementOverrides
 // of the code that happens to read it today.
 export const fieldValueHistory = mysqlTable('fieldValueHistory', {
   id:          int('id').autoincrement().primaryKey(),
-  subjectType: mysqlEnum('subjectType', ['rfq', 'quotation', 'product', 'user', 'subscription']).notNull(),
+  subjectType: mysqlEnum('subjectType', ['rfq', 'quotation', 'product', 'user', 'subscription', 'category']).notNull(),
   // Not a foreign key, for the same reason commercialAuditEvents.subjectId is
   // not one: the history must survive its subject being deleted.
   subjectId:   int('subjectId').notNull(),
@@ -1244,7 +1727,7 @@ export const vendorNameChangeRequests = mysqlTable('vendorNameChangeRequests', {
 // ── Internal Admin Notes (migration 0036) ─────────────────────────────────
 export const adminNotes = mysqlTable('adminNotes', {
   id:          int('id').autoincrement().primaryKey(),
-  subjectType: mysqlEnum('subjectType', ['user', 'vendor', 'project', 'rfq', 'quotation', 'dispute']).notNull(),
+  subjectType: mysqlEnum('subjectType', ['user', 'vendor', 'project', 'rfq', 'quotation', 'dispute', 'support_ticket']).notNull(),
   subjectId:   int('subjectId').notNull(),
   note:        text('note').notNull(),
   authorId:    int('authorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
@@ -1297,12 +1780,20 @@ export const referralCampaigns = mysqlTable('referralCampaigns', {
   rewardDurationDays:   int('rewardDurationDays'),
   perInviterCap:        int('perInviterCap').default(1).notNull(),
   campaignCap:          int('campaignCap'),
+  /**
+   * Which campaign wins when several are eligible. Higher first, id breaking a
+   * tie, so resolution is TOTAL and reproducible - see drizzle/0044.
+   */
+  priority:             int('priority').default(0).notNull(),
+  /** How long after signup a referral may still qualify under this campaign. */
+  attributionWindowDays: int('attributionWindowDays').default(90).notNull(),
   createdBy:            int('createdBy').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   createdAt:            timestamp('createdAt').defaultNow().notNull(),
   updatedAt:            timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
 }, table => ({
   statusIdx: index('referralCampaigns_status_idx').on(table.status),
   createdByIdx: index('referralCampaigns_createdBy_idx').on(table.createdBy),
+  resolutionIdx: index('referralCampaigns_resolution_idx').on(table.status, table.qualificationType, table.priority),
 }));
 
 export const referralRewards = mysqlTable('referralRewards', {
@@ -1319,6 +1810,12 @@ export const referralRewards = mysqlTable('referralRewards', {
   grantedAt:       timestamp('grantedAt'),
   reversedAt:      timestamp('reversedAt'),
   reversalReason:  varchar('reversalReason', { length: 500 }),
+  /**
+   * What this reward actually created - `OVERRIDE:123` or `PLACEMENT:45`.
+   * Written when the effect commits, so a reversal can undo THIS grant and not
+   * somebody else's. See drizzle/0045.
+   */
+  effectRef:       varchar('effectRef', { length: 64 }),
   createdAt:       timestamp('createdAt').defaultNow().notNull(),
 }, table => ({
   referralCampaignUnique: uniqueIndex('referralRewards_referral_campaign_unique').on(table.referralId, table.campaignId),

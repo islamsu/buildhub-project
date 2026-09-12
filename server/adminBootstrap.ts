@@ -40,8 +40,9 @@
 import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { getDb } from './db';
-import { users, userAccountAuditEvents } from '../drizzle/schema';
+import { users } from '../drizzle/schema';
 import { hashPassword } from './passwords';
+import { recordAccountEvent } from './_core/accountAudit';
 
 /** Reported to the caller so startup can log what happened without guessing. */
 export type BootstrapOutcome =
@@ -123,7 +124,7 @@ export async function bootstrapFirstAdmin(): Promise<BootstrapOutcome> {
     const userId = Number(result[0]?.insertId);
     // actorId is the account itself: nobody else was involved, and leaving it
     // null would read as "system did this for reasons unknown".
-    await db.insert(userAccountAuditEvents).values({
+    await recordAccountEvent(db, {
       userId,
       actorId: userId,
       action: 'super_admin_bootstrapped',

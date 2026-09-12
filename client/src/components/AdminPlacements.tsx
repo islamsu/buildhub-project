@@ -8,14 +8,23 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Link } from 'wouter';
 import { Megaphone, Search } from 'lucide-react';
+import { Pager } from '@/components/Pager';
 import VendorIdentitySelect from '@/components/VendorIdentitySelect';
 import ProductIdentitySelect from '@/components/ProductIdentitySelect';
+
+const PLACEMENT_PAGE_SIZE = 25;
 
 export default function AdminPlacements() {
   const { lang } = useLanguage();
   const ar = lang === 'ar';
   const [query, setQuery] = useState('');
-  const { data: rows = [] } = trpc.admin.placements.useQuery(undefined, { retry: false });
+  const [page, setPage] = useState(0);
+  /* Search moved into the query: it filtered a `.limit(250)` array. */
+  const list = trpc.admin.placements.useQuery(
+    { page, pageSize: PLACEMENT_PAGE_SIZE, search: query || undefined },
+    { retry: false, placeholderData: previous => previous },
+  );
+  const rows = (list.data?.rows ?? []) as any[];
   const utils = trpc.useUtils();
   const [vendorId, setVendorId] = useState<number | null>(null);
   const [productId, setProductId] = useState<number | null>(null);
@@ -38,11 +47,8 @@ export default function AdminPlacements() {
     onError: mutationError => { setNotice(''); setError(mutationError.message); },
   });
 
-  const filtered = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    if (!term) return rows;
-    return rows.filter(row => `${row.vendorName ?? ''} ${row.package ?? ''} ${row.surface ?? ''} ${row.category ?? ''}`.toLowerCase().includes(term));
-  }, [rows, query]);
+  // The server filters now; this is the page it returned.
+  const filtered = rows;
 
   const sourceLabel = (value: string) => {
     const labels: Record<string, string> = ar
@@ -60,7 +66,7 @@ export default function AdminPlacements() {
         </CardTitle>
         <div className="relative mt-2">
           <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="ps-9" value={query} onChange={event => setQuery(event.target.value)} placeholder={ar ? 'ابحث بالكيان أو الباقة أو السطح…' : 'Search entity, package or surface…'} />
+          <Input className="ps-9" value={query} onChange={event => { setQuery(event.target.value); setPage(0); }} placeholder={ar ? 'ابحث بالكيان أو الباقة أو السطح…' : 'Search entity, package or surface…'} />
         </div>
       </CardHeader>
       <CardContent>
@@ -159,6 +165,12 @@ export default function AdminPlacements() {
             </table>
           </div>
         )}
+
+        <Pager
+          ar={ar} page={page} total={list.data?.total ?? null}
+          pageCount={Math.max(1, Math.ceil((list.data?.total ?? 0) / PLACEMENT_PAGE_SIZE))}
+          onChange={setPage} testId="admin-placements-pager"
+        />
       </CardContent>
     </Card>
   );

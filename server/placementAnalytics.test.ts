@@ -61,7 +61,7 @@ function makeDb(tables: {
 }
 
 const livePlacement = (over = {}) => ({
-  id: 7, surface: 'MASTER_DISCOVERY', entityType: 'PROVIDER',
+  id: 7, kind: 'sponsored', surface: 'MASTER_DISCOVERY', entityType: 'PROVIDER',
   vendorId: 10, productId: null, ...over,
 });
 
@@ -142,7 +142,23 @@ describe('a reported event is checked against a real, live placement', () => {
     await recordPlacementEvent({ placementId: 7, event: 'IMPRESSION', userId: 5, now: NOW });
     const call = vi.mocked(recordEvent).mock.calls[0][0];
     const keys = Object.keys(call.metadata ?? {});
-    expect(keys.sort()).toEqual(['entityId', 'entityType', 'surface']);
+    // A CLOSED SET, deliberately, and it stays closed. `kind` joined it when
+    // the owner's placement decision required editorial and commercial
+    // performance to be countable apart - it is a property of the BOOKING
+    // ('featured' or 'sponsored'), read from the row like every other key
+    // here, and says nothing about the reader. Anything describing the person
+    // instead of the placement still fails this line.
+    expect(keys.sort()).toEqual(['entityId', 'entityType', 'kind', 'surface']);
+  });
+
+  it('the recorded kind comes from the ROW, not from anything a reporter sends', async () => {
+    // The whole point of the dimension is that an advertiser cannot make their
+    // commercial impressions look editorial, or the reverse.
+    vi.mocked(getDb).mockResolvedValue(makeDb({ placements: [{ ...livePlacement(), kind: 'featured' }] }) as never);
+    vi.mocked(recordEvent).mockClear();
+    await recordPlacementEvent({ placementId: 7, event: 'IMPRESSION', userId: 5, now: NOW });
+    const call = vi.mocked(recordEvent).mock.calls[0][0];
+    expect((call.metadata as Record<string, unknown>).kind).toBe('featured');
   });
 
   it('records nothing when there is no database, rather than throwing', async () => {

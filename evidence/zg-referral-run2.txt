@@ -1,0 +1,60 @@
+PASS  SETUP: signup minted a real referral code for the inviter  [BH-6C7B4D96C150E1F6]
+PASS  SETUP: two eligible campaigns exist  [low=119 high=120]
+PASS  the signup recorded the referral against the real code  [referral 128]
+PASS  THE DEFECT: signup binds NO campaign - that is the design, not a gap
+PASS  and no reward exists yet
+PASS  SETUP: an administrator is genuinely signed in  [200]
+PASS  the administrator verifies the referred account
+PASS  LATE BINDING: a campaign is now bound to the referral  [campaign 120]
+PASS  DETERMINISM: it is the HIGHER-PRIORITY campaign, not whichever row came back first  [bound=120 expected=120]
+PASS  the referral records what qualified it, and when
+PASS  exactly one reward row was written  [1]
+PASS  it belongs to the campaign that was chosen
+PASS  and it SNAPSHOTS the terms rather than pointing at a campaign that can change
+PASS  THE EFFECT: the inviter's real enquiry allowance increased by the reward  [5 -> 12]
+PASS  DATABASE: an entitlement override row backs it, not just a ledger entry
+PASS  re-verifying the same account does not grant a second reward
+PASS  a higher-priority campaign appearing LATER does not re-bind a qualified referral  [still 120, better=121]
+PASS  and still exactly one reward
+PASS  a second referral does NOT bind the campaign this inviter has exhausted  [bound=121 exhausted=120]
+PASS  it takes the next eligible campaign instead of failing outright  [bound=121]
+PASS  ATTRIBUTION WINDOW: a signup older than the window earns nothing  [NULL]
+PASS  the granted reward is GRANTED, with a grant timestamp  [GRANTED|2026-09-03 20:55:17]
+PASS  an unpayable reward is recorded REJECTED, not GRANTED  [REJECTED]
+PASS  and it carries the REASON it could not be paid  [Campaign reward value "not-a-number" is not a positive number of enquiries.]
+PASS  the referral stays QUALIFIED - it qualified; the payout is what failed  [qualified]
+PASS  and the inviter is NOT told they received a reward they did not receive  [2 notices for 2 grants]
+PASS  no entitlement was moved by the rejected reward
+PASS  PLACEMENT: booked with a scope the public resolver can actually match  [GLOBAL]
+PASS  PLACEMENT: the platform is the grantor, not the beneficiary himself
+PASS  SETUP: an administrator set an absolute allowance  [200 ]
+PASS  STACKING: the bonus ADDS to the administrator's number, it does not replace it  [admin 40 + bonus 6 = expected 46, got 46]
+PASS  DATABASE: the administrator's override is still live, not revoked by the reward
+PASS  and the bonus is its own row in its own slot
+PASS  the reward records WHAT it created, so a reversal can undo exactly that  [OVERRIDE:86]
+PASS  EXPIRY: when the bonus lapses the ADMINISTRATOR's number remains, not the plan's  [expected 40, got 40]
+PASS  two bonuses in force SUM, rather than one superseding the other  [expected 40+6+3=49, got 49]
+PASS  EXTENSION: a free account with no finite period is REFUSED, not given one  [REJECTED: Subscription extension refused: This account has no finite subscription period to extend. BuildHub does not create one - that would be granting paid access nobody decided to give.]
+PASS  and no subscription period was invented for them  [0]
+PASS  EXTENSION: the reward is GRANTED once the period actually moved  [GRANTED:]
+PASS  EXTENSION: extended FROM THE EXISTING END DATE - 21 days left plus 30 is 51, not 30  [21 -> 51]
+PASS  EXTENSION: and the period only ever moved FORWARD
+PASS  EXTENSION: no payment, invoice or renewal event was fabricated  [0]
+PASS  EXTENSION: the billing history names what actually happened  [subscription_extended]
+PASS  EVENT PROFILE_COMPLETED: the real product action qualifies the referral  [bound=126 expected=126]
+PASS  EVENT PROFILE_COMPLETED: and a reward was granted for it  [GRANTED]
+PASS  EVENT PROVIDER_APPROVED: the real product action qualifies the referral  [bound=127 expected=127]
+PASS  EVENT PROVIDER_APPROVED: and a reward was granted for it  [GRANTED]
+PASS  EVENT FIRST_VALID_RFQ: the real product action qualifies the referral  [bound=128 expected=128]
+PASS  EVENT FIRST_VALID_RFQ: and a reward was granted for it  [GRANTED]
+PASS  ADMIN: manual qualification runs the SAME engine and reports what happened  [200 {"success":true,"status":"rewarded","outcome":"granted","rewardType":"EXTRA_QUALIFIED_ENQUIRIES","rewardValue":"9"}]
+PASS  ADMIN: a real reward row exists, not just a status word
+PASS  ADMIN: and the inviter's real entitlement moved  [14 -> 23]
+PASS  ADMIN: the administrator's note is preserved on the referral
+PASS  ADMIN: with no eligible campaign the administrator is refused, not congratulated  [400 No campaign is currently eligible to reward this referral (no campaign).]
+PASS  ADMIN: and nothing was written for it
+PASS  AUDIT: every grant is recorded against the inviter, one row each  [4 audit rows for 4 rewards]
+PASS  the inviter was notified
+PASS  CLEANUP: every row this probe planted is gone
+
+58/58 passed

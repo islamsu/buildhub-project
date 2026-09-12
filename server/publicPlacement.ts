@@ -27,6 +27,7 @@
  */
 import { and, asc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
 import { products, users, vendorSponsorships } from '../drizzle/schema';
+import { publicProductFilter } from './productLifecycle';
 import { getDb } from './db';
 import {
   DIRECTORY_VENDOR_COLUMNS,
@@ -60,8 +61,15 @@ export const SURFACE_CAPACITY: Record<PlacementSurface, number> = {
   SEARCH_RESULTS_BOOST: 12,
 };
 
-/** Not revoked · already started · not yet ended. Evaluated at read time. */
-function livePlacementFilter(now: Date) {
+/**
+ * Not revoked · already started · not yet ended. Evaluated at read time.
+ *
+ * EXPORTED so `server/productLifecycle.ts` can ask "does a live placement
+ * point at this product?" with the same predicate this module renders by. A
+ * second definition there would let archiving break a paid slot that this file
+ * still considers live.
+ */
+export function livePlacementFilter(now: Date) {
   return and(
     isNull(vendorSponsorships.revokedAt),
     lte(vendorSponsorships.startsAt, now),
@@ -271,7 +279,9 @@ export async function placedProducts(params: {
     .from(products)
     .innerJoin(users, eq(users.id, products.supplierId))
     .where(and(
-      eq(products.active, true),
+      // ONE definition of "a buyer can see this" - a placement must never
+      // render a draft, a withdrawn product or an archived one.
+      publicProductFilter(),
       directoryVisibilityFilter(),
       inArray(products.id, rows.map(row => row.entityId)),
     ));

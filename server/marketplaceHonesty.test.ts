@@ -73,9 +73,20 @@ describe('the fabricated provider lists are gone', () => {
   });
 
   it('the taxonomy that remains asserts nothing about anybody', () => {
-    // Category chips are browse vocabulary and are allowed to stay. What must
-    // NOT survive is a per-entity claim.
-    expect(DATA).toContain('export const PRODUCT_CATEGORIES');
+    // Browse vocabulary is allowed to stay; what must NOT survive is a
+    // per-entity claim. This asserted PRODUCT_CATEGORIES specifically, as the
+    // control proving the honesty pass had not over-deleted. That list has
+    // since become a database table - see shared/categoryTaxonomy.ts and
+    // /admin/categories - so the control now names the two vocabularies that
+    // legitimately remain. The rule is unchanged and the coverage is the same:
+    // something must still be here, and it must claim nothing about anybody.
+    expect(DATA).toContain('export const DESIGN_CATEGORIES');
+    expect(DATA).toContain('export const FINISHING_CATEGORIES');
+    // And the product list must NOT come back. A category vocabulary compiled
+    // into the client is the exact defect that produced
+    // "Waterproofing is not a BuildHub category".
+    expect(DATA, 'the product category list is a database table now')
+      .not.toContain('export const PRODUCT_CATEGORIES');
     for (const attribute of ['rating:', 'reviewCount:', 'verified:', 'yearsExperience:', 'teamSize:', 'projectCount:', 'awardWinning:']) {
       expect(DATA, `${attribute} survives in the data file`).not.toContain(attribute);
     }
@@ -127,10 +138,19 @@ describe('an absent rating is shown as absent, not as a number', () => {
     expect(HUB).toContain('featuredCompanies.length === 0');
   });
 
-  it('the hub does not conflate organic order with PAID placement', () => {
-    // marketplace.featuredVendors is the paid, labelled surface. The hub's
-    // strips are the top of the organic list and must not call that endpoint
-    // without the sponsored labelling the vendors page carries.
+  it('the hub does not conflate organic order with COMMERCIAL placement', () => {
+    // This asserted the hub never called `marketplace.featuredVendors`. That
+    // procedure has since been retired, so the assertion became true of a
+    // procedure that no longer exists - a guard that can never fail again.
+    //
+    // The real rule is unchanged and is now stated against what actually
+    // exists: the hub's strips are the top of the ORGANIC list, and a
+    // commercial reader may not feed them without carrying the Sponsored
+    // labelling the vendors directory renders. `featuredProviders` is fine -
+    // editorial curation is not a paid slot - and the hub does read it.
+    expect(HUB).not.toContain('sponsoredVendors.useQuery');
     expect(HUB).not.toContain('featuredVendors.useQuery');
+    // ...and the strip it does read is the editorial one.
+    expect(HUB).toContain('featuredProviders.useQuery');
   });
 });

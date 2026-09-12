@@ -74,7 +74,10 @@ function stubDb(rows: unknown[] = []) {
   const self = () => builder;
   Object.assign(builder, {
     from: vi.fn(self), where: vi.fn(self), orderBy: vi.fn(self),
-    limit: vi.fn(self), for: vi.fn(self),
+    // `offset` and `groupBy` joined the list when the admin user directory
+    // moved its paging and its group counts into the database. This fixture
+    // stands in for a query builder, so it grows with the builder.
+    limit: vi.fn(self), offset: vi.fn(self), groupBy: vi.fn(self), for: vi.fn(self),
     then: (resolve: (value: unknown) => unknown) => resolve(rows),
   });
   const db = {

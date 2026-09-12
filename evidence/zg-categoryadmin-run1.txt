@@ -1,0 +1,39 @@
+PASS  SETUP: an application-produced password hash is available to seed with  [scrypt$…]
+PASS  SETUP: the marketplace administrator is genuinely signed in  [signIn=200 me=MARKETPLACE_ADMIN]
+PASS  SETUP: the support administrator is genuinely signed in too  [200 SUPPORT_ADMIN]
+PASS  RBAC: a SUPPORT_ADMIN cannot read the taxonomy administration view  [403 You do not have required permission (10002)]
+PASS  RBAC: and cannot create one  [403 You do not have required permission (10002)]
+PASS  RBAC: an ordinary signed-in supplier cannot create a category  [403 FORBIDDEN]
+PASS  RBAC: nor archive one  [403 FORBIDDEN]
+PASS  an administrator creates a category through the product  [200 ]
+PASS  DATABASE: the row exists, active, with both names  [active|PRODUCT|عزل تجريبي 65315071]
+PASS  AUDIT: creation recorded the actor
+PASS  PROPAGATION: a supplier lists into the new category with no restart  [200  imported=1]
+PASS  DATABASE: and the product carries the new category id
+PASS  the admin view reports the REAL product count  [1]
+PASS  and a category with no products reports zero, not a placeholder  [0]
+PASS  an administrator adds an alias
+PASS  PROPAGATION: the alias resolves on the very next upload  [0 ]
+PASS  an alias that another CATEGORY answers to is refused at the point of choosing it  ["Waterproofing" already means "Waterproofing". An alias must point at exactly one category.]
+PASS  an administrator renames a category
+PASS  LIFECYCLE: renaming moves NO product - every link is where it was  [164:52]
+PASS  LIFECYCLE: and the slug is unchanged, so links and stored references still resolve
+PASS  AUDIT: the rename recorded OLD -> NEW with the actor  [nameEn:Probe Insulation 65315071->Probe Insulation Renamed 65315071]
+PASS  hiding is REFUSED when the product count has moved since the screen read it  [This category now holds 1 product(s), not 99. Review the change and try again.]
+PASS  hiding succeeds when the count matches what was shown
+PASS  LIFECYCLE: the existing product is UNTOUCHED - same link, same stored name  [164:52:Probe Insulation 65315071]
+PASS  PROPAGATION: a NEW listing in the hidden category is refused immediately  [1]
+PASS  ERROR QUALITY: as INACTIVE, not as "not a BuildHub category"  ["Probe Insulation Renamed 65315071" is a BuildHub category but is not currently available for new listings. Ask an administrator to reactivate it, or choose another.]
+PASS  and the hidden category leaves the supplier's listable set
+PASS  an administrator reactivates it
+PASS  PROPAGATION: listing works again on the very next upload, with no restart  [0]
+PASS  AUDIT: both status changes are recorded, with the dependency count as context  [active->hidden,hidden->active]
+PASS  there is no delete endpoint at all - not one that refuses politely  [404 No procedure found on path "admin.deleteCategory"]
+PASS  and the category is still there
+PASS  a second category claiming an existing name is refused  [That English name is already used by "Waterproofing". Two categories answering to one name make every upload of that value ambiguous.]
+PASS  and nothing was written
+PASS  a malformed slug is refused  [400]
+PASS  CLEANUP: every row this probe planted is gone
+PASS  CLEANUP: the taxonomy is back exactly as it was found
+
+37/37 passed

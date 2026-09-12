@@ -58,7 +58,7 @@ function stubDb(row: Record<string, unknown> | null) {
 }
 
 const OWNER = 5;
-const answerable = { questionId: 1, answer: null, supplierId: OWNER, active: true };
+const answerable = { questionId: 1, answer: null, supplierId: OWNER, status: 'active' };
 
 describe('only the product owner may answer', () => {
   it('the owning supplier CAN answer - the positive control', async () => {
@@ -106,7 +106,7 @@ describe('only the product owner may answer', () => {
   it('a question on a DELISTED product cannot be answered', async () => {
     // Matches askQuestion: a withdrawn product and an absent one are the same
     // answer to a buyer, so an answer must not appear on nothing.
-    const { update } = stubDb({ ...answerable, active: false });
+    const { update } = stubDb({ ...answerable, status: 'inactive' });
     await expect(
       appRouter.createCaller(ctxFor(OWNER)).marketplace
         .answerQuestion({ questionId: 1, answer: 'ok' }),
@@ -118,7 +118,7 @@ describe('only the product owner may answer', () => {
     // Otherwise the endpoint is an oracle for which question ids exist and
     // which products belong to whom.
     const seen: string[] = [];
-    for (const row of [null, { ...answerable, supplierId: 999 }, { ...answerable, active: false }]) {
+    for (const row of [null, { ...answerable, supplierId: 999 }, { ...answerable, status: 'archived' }]) {
       stubDb(row);
       await appRouter.createCaller(ctxFor(OWNER)).marketplace
         .answerQuestion({ questionId: 1, answer: 'ok' })
