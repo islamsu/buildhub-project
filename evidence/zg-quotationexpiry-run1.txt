@@ -1,0 +1,20 @@
+PASS  1. SETUP: two live bids on one request, the cheaper one at 120,000  [rfq=475 stale=110 live=111]
+PASS  2. THE COMPARISON SAYS WHICH PRICE HAS STOPPED HOLDING  [stale=true live=false]
+PASS  3. and answers the same question the ACT asks, in the same response  [stale=false live=true]
+PASS  4. THE DETAIL PAGE AGREES WITH THE LIST  [expired=true canAccept=false]
+PASS  5. AND THE SUPPLIER IS TOLD TOO — they are the only one who can fix it  [expired=true]
+PASS  6. ACCEPTING AN EXPIRED PRICE IS REFUSED — this used to succeed  [code=CONFLICT]
+PASS  7. and the refusal says what to do about it  [This quotation's validity has passed. Ask the supplier to re]
+PASS  8. NOTHING MOVED — the expired bid is untouched
+PASS  9. nor the other bid, which a successful accept would have auto-rejected
+PASS  10. nor the request itself
+PASS  11. and nobody was told they had won
+PASS  12. REJECTING AN EXPIRED PRICE IS STILL ALLOWED — clearing the board is reasonable  [http=200]
+PASS  13. AND A LIVE PRICE IS STILL ACCEPTED — the capability is not removed from everybody  [http=200 err=null]
+PASS  14. A QUOTATION VALID UNTIL TODAY IS STILL LIVE — the day is inclusive  [expired=false]
+PASS  15. and the ACT agrees with that too, which is the whole point  [http=200 err=null]
+PASS  16. a supplier cannot accept a bid on somebody else’s request  [code=FORBIDDEN]
+PASS  17. and a signed-out caller reads no prices at all  [code=UNAUTHORIZED]
+PASS  18. CLEANUP: every account, request and quotation this probe created is gone  [users=0]
+
+18/18 checks passed

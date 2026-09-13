@@ -88,6 +88,8 @@ const DELIBERATELY_SHARED: Record<string, string> = {
     'Anyone signed in may ask about any listed product. Scoped by the same `active` predicate as marketplace.get.',
   'marketplace.recordPlacementEvent':
     'AN ADVERTISEMENT HAS NO OWNER AMONG ITS VIEWERS. It is shown to everyone, most of them anonymous, so "who may report having seen it" is not an ownership question and owner-scoping it would limit an advertiser\'s impressions to signed-in readers. The id IS constrained, just not by user: the placement must exist AND be live, so a fabricated id and an expired campaign both record nothing. It READS nothing back - it returns only whether the write happened - so there is no data to isolate. The event that WOULD be worth forging, QUALIFIED_ENQUIRY, is absent from the client enum entirely and is written server-side from the enquiry record.',
+  'services.forProvider':
+    'A provider\'s PUBLISHED service catalogue, addressed by providerId - the shop window for the roles that sell work rather than goods. Owner-scoping it would mean only the provider could see what they offer. The id is constrained, just not by user: `visibleServicesFor` applies both visibility clauses, so a draft is invisible and an account BuildHub has not approved returns an empty list rather than an advertisement.',
   'reviews.forUser':
     'A vendor reputation nobody but the vendor could read would not be a reputation.',
   'reviews.statsForUser':
@@ -119,7 +121,10 @@ const DELIBERATELY_SHARED: Record<string, string> = {
 const PUBLIC_BY_OWNER: Record<string, { reason: string; mustAlsoConstrain: RegExp }> = {
   'marketplace.vendorProducts': {
     reason: 'One vendor\'s shop window. Every row it returns is already returned by marketplace.list to anyone at all; withholding it would only mean a vendor page that cannot show what the vendor sells.',
-    mustAlsoConstrain: /eq\(products\.active,\s*true\)/,
+    // The one shared visibility filter, not an inline literal: "publicly
+    // visible" is now four lifecycle states rather than one boolean, and a
+    // reader that spelled the rule out itself would be free to serve drafts.
+    mustAlsoConstrain: /publicProductFilter\(\)/,
   },
 };
 
@@ -153,8 +158,8 @@ describe('the census found the surface it is meant to police', () => {
 
   it('an owner-column exception only holds if the procedure re-filters to the public rows', () => {
     // The exception is earned, not declared. If marketplace.vendorProducts
-    // ever stops filtering on `active`, this fails and the procedure goes back
-    // to being an offender.
+    // ever stops applying the public visibility filter, this fails and the
+    // procedure goes back to being an offender.
     for (const [name, entry] of Object.entries(PUBLIC_BY_OWNER)) {
       const procedure = ALL_PROCEDURES.find(p => p.qualified === name);
       expect(procedure, `${name} is excepted but no longer exists`).toBeDefined();
@@ -227,6 +232,12 @@ describe('every id-taking procedure is owner-scoped, admin-gated, or named', () 
 const TARGETS_ANOTHER_USER: Record<string, RegExp> = {
   'projects.addMember':    /requireProjectAccess\(db, input\.projectId, ctx\.user\.id, 'manage'\)/,
   'projects.removeMember': /requireProjectAccess\(db, input\.projectId, ctx\.user\.id, 'manage'\)/,
+  // Changing somebody's CAPACITY on a project is the same shape as putting
+  // them on it: the request names who, the session decides whether the caller
+  // may. It governs what that person can do on the job, so it needs the same
+  // 'manage' capability and the same proof-carrying entry rather than a
+  // weaker one.
+  'projects.changeMemberRole': /requireProjectAccess\(db, input\.projectId, ctx\.user\.id, 'manage'\)/,
   // Inviting a supplier names that supplier - a TARGET of the invitation, not
   // a claim about who the caller is. `invitedBy`, the column that records
   // WHOSE act this was, comes from ctx.user.id and never from the request.

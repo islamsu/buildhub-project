@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { MySqlDialect } from 'drizzle-orm/mysql-core';
 
 vi.mock('./db', () => ({
   getDb: vi.fn(),
@@ -114,6 +115,13 @@ function fakeDb(scenario: Scenario = {}) {
     ...scenario,
   };
   const inserted: Record<string, unknown>[] = [];
+  /**
+   * Every WHERE the code under test built, WITH THE TABLE it was built for.
+   *
+   * Without the table this collects the vendor-category lookup alongside the
+   * board filter, and an assertion about the board reads whichever came first.
+   */
+  const wheres: { table: unknown; clause: unknown }[] = [];
   // Slice 7 added a product-analytics write alongside the enquiry write. It is
   // captured separately so every assertion below stays a statement about the
   // qualifiedEnquiries table specifically - "one credit was spent" must not
@@ -127,6 +135,25 @@ function fakeDb(scenario: Scenario = {}) {
   const resolveRows = (table: unknown, keys: string[] | null, terminal: string): unknown[] => {
     if (table === rfqsTable) {
       if (keys === null) return s.rfq ? [s.rfq] : [];
+      // THE BOARD IS NOW READ THROUGH THE PAGED QUEUE, so the double answers in
+      // the queue's shape: a count for the total, and joined rows keyed by
+      // `rfqId`. Left as `eligibleRfqs` in the scenarios, because what a
+      // scenario declares should stay a statement about the world rather than
+      // about the projection of the day.
+      if (keys.length === 1 && keys[0] === 'count') return [{ count: s.eligibleRfqs.length }];
+      if (keys.includes('rfqId')) {
+        return s.eligibleRfqs.map(row => {
+          const paid = s.consumed.some(entry => entry.rfqId === row.id);
+          return {
+            rfqId: row.id, title: row.title, category: row.category, location: row.location,
+            budget: row.budget, deadline: row.deadline, rfqStatus: row.status, createdAt: row.createdAt,
+            source: 'category', responseState: paid ? 'opened' : 'available',
+            openedAt: paid ? NOW : null, planAtConsumption: paid ? 'free' : null,
+            invitedAt: null, invitationStatus: null,
+            quotationId: null, quotationStatus: null, quotedAt: null,
+          };
+        });
+      }
       return s.eligibleRfqs;
     }
     if (table === vendorSubscriptionsTable) return s.subscription ? [s.subscription] : [];
@@ -152,18 +179,27 @@ function fakeDb(scenario: Scenario = {}) {
 
   const builder = (table: unknown, keys: string[] | null) => {
     const settle = (terminal: string) => Promise.resolve(resolveRows(table, keys, terminal));
+    // `limit` may be followed by `offset` - a page - or awaited on its own.
+    const afterLimit = (terminal: string): Record<string, unknown> => ({
+      offset: () => settle(terminal),
+      then: (resolve: any, reject: any) => settle(terminal).then(resolve, reject),
+    });
     const afterWhere: Record<string, unknown> = {
-      limit: () => settle('limit'),
+      limit: () => afterLimit('limit'),
       for: () => settle('for'),
       groupBy: () => settle('groupBy'),
-      orderBy: () => ({ limit: () => settle('orderBy'), then: (r: any, j: any) => settle('orderBy').then(r, j) }),
+      orderBy: () => ({ limit: () => afterLimit('orderBy'), then: (r: any, j: any) => settle('orderBy').then(r, j) }),
       then: (resolve: any, reject: any) => settle('await').then(resolve, reject),
     };
     const from: Record<string, unknown> = {
-      where: () => afterWhere,
+      // RECORDED, because the reachability rule that used to be a JavaScript
+      // early return is now this clause - see the test that reads it back.
+      where: (clause: unknown) => { wheres.push({ table, clause }); return afterWhere; },
+      // Chainable: the queue left joins three tables before it filters.
+      leftJoin: () => from,
       innerJoin: () => ({ where: () => ({ then: (r: any, j: any) => settle('distinct').then(r, j) }) }),
-      orderBy: () => ({ limit: () => settle('orderBy') }),
-      limit: () => settle('limit'),
+      orderBy: () => ({ limit: () => afterLimit('orderBy') }),
+      limit: () => afterLimit('limit'),
       then: (resolve: any, reject: any) => settle('await').then(resolve, reject),
     };
     return { from: () => from };
@@ -220,6 +256,7 @@ function fakeDb(scenario: Scenario = {}) {
     get insertAttempts() { return insertAttempts; },
     get transactions() { return transactions; },
     get lockedReads() { return lockedReads; },
+    get wheres() { return wheres; },
     get consumed() { return s.consumed; },
     state: s,
   };
@@ -716,9 +753,33 @@ describe('client manipulation attempts (Phase 4B.3 §15)', () => {
     const usage = source.slice(source.indexOf('myEnquiryUsage: protectedProcedure'), source.indexOf('myEnquiryUsage: protectedProcedure') + 220);
     expect(usage).not.toContain('.input(');
     expect(usage).toContain('ctx.user.id');
-    const eligible = source.slice(source.indexOf('eligible: approvedProviderProcedure'), source.indexOf('openEnquiry: approvedProviderProcedure'));
+    // THE END MARKER MOVED when the work queue was added between `eligible`
+    // and `openEnquiry`, and the slice began swallowing a procedure that DOES
+    // take input - so this failed over a rule that still held. The boundary is
+    // now the procedure that actually follows.
+    const eligibleStart = source.indexOf('eligible: approvedProviderProcedure');
+    const eligibleEnd = source.indexOf('queue: approvedProviderProcedure');
+    expect(eligibleStart, 'rfq.eligible is gone').toBeGreaterThan(-1);
+    expect(eligibleEnd, 'the end marker is gone or moved above the start').toBeGreaterThan(eligibleStart);
+    const eligible = source.slice(eligibleStart, eligibleEnd);
     expect(eligible).not.toContain('.input(');
     expect(eligible).toContain('ctx.user.id');
+
+    // AND THE QUEUE, WHICH DOES TAKE INPUT, takes none that names a vendor.
+    // The rule was never "no input" - it was "no input that could select
+    // somebody else's leads" - and a paged surface needs a page number. So the
+    // property is checked directly: the identity comes from the context, and
+    // nothing in the input schema can stand in for it.
+    const queueEnd = source.indexOf('openEnquiry: approvedProviderProcedure');
+    expect(queueEnd, 'the queue end marker moved').toBeGreaterThan(eligibleEnd);
+    const queue = source.slice(eligibleEnd, queueEnd);
+    const schema = queue.slice(queue.indexOf('.input('), queue.indexOf('.query('));
+    expect(schema.length, 'the input schema is gone').toBeGreaterThan(40);
+    for (const forbidden of ['userId', 'providerId', 'vendorId', 'supplierId', 'ownerId']) {
+      expect(schema, `${forbidden} is accepted from the caller`).not.toContain(forbidden);
+    }
+    expect(queue).toContain('getVendorCategories(ctx.user.id)');
+    expect(queue).toContain('userId: ctx.user.id');
   });
 });
 
@@ -857,12 +918,49 @@ describe('listing is free (Phase 4B.3)', () => {
     expect(fake.transactions).toBe(0);
   });
 
-  it('a vendor with no declared categories is listed nothing at all', async () => {
+  it('a vendor with no declared categories is listed nothing they have no claim on', async () => {
+    // THE RULE MOVED FROM JAVASCRIPT INTO SQL. It used to be an early `return
+    // []` before the query, which a db double could observe by the rows never
+    // being asked for. It is now the WHERE clause - so the clause itself is
+    // read back, which is a stronger statement than the old one: it says what
+    // the DATABASE was asked, not merely what this double chose to answer.
     const fake = fakeDb({ categories: [], eligibleRfqs: [{ id: 501 }] });
     vi.mocked(getDb).mockResolvedValue(fake.db as never);
 
-    const result = await appRouter.createCaller(makeCtx(10)).rfq.eligible();
-    expect(result.items).toEqual([]);
+    await appRouter.createCaller(makeCtx(10)).rfq.eligible();
+
+    const dialect = new MySqlDialect();
+    const clauses = fake.wheres
+      .filter(entry => entry.table === rfqsTable)
+      .map(entry => dialect.sqlToQuery(entry.clause as any).sql);
+    expect(clauses.length, 'the board was never filtered at all').toBeGreaterThan(0);
+    for (const clause of clauses) {
+      // Reachable only through a record this vendor actually holds.
+      expect(clause).toContain('`qualifiedEnquiries`.`id` is not null');
+      expect(clause).toContain('`rfqSuppliers`.`id` is not null');
+      // And NOT through a category, because they have declared none.
+      expect(clause, 'a category arm was built for a vendor with no categories')
+        .not.toContain('`rfqs`.`category` in');
+    }
+  });
+
+  it('and a vendor who HAS declared one is offered that category as well', async () => {
+    // The other half of the same rule: the arm appears exactly when it should.
+    const fake = fakeDb({ categories: ['Materials'], eligibleRfqs: [] });
+    vi.mocked(getDb).mockResolvedValue(fake.db as never);
+
+    await appRouter.createCaller(makeCtx(10)).rfq.eligible();
+
+    const dialect = new MySqlDialect();
+    const clauses = fake.wheres
+      .filter(entry => entry.table === rfqsTable)
+      .map(entry => dialect.sqlToQuery(entry.clause as any).sql);
+    expect(clauses.length, 'the board was never filtered at all').toBeGreaterThan(0);
+    for (const clause of clauses) {
+      expect(clause).toContain('`rfqs`.`category` in (?)');
+      // The offer arm, and only the offer arm, is limited to open requests.
+      expect(clause).toContain('`rfqs`.`status` = ?');
+    }
   });
 
   it('already-opened leads are flagged so the UI never charges twice for a click', async () => {

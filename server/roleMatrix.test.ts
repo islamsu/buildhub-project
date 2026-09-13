@@ -55,7 +55,15 @@ function procedureBody(qualified: string): string {
   const block = ROUTERS.slice(routerStart, routerEnd);
   const start = block.indexOf(`\n  ${procedure}: `);
   expect(start, `${qualified} not found in ${routerName}Router`).toBeGreaterThan(-1);
-  return block.slice(start, start + 2500);
+
+  // TO THE NEXT PROCEDURE, not a fixed number of characters. This used to be
+  // `start + 2500`, and a doc comment added inside marketplace.create pushed
+  // its `userRole !== 'supplier'` guard past the window - so the test failed
+  // for a comment, and would equally have PASSED a procedure whose guard was
+  // deleted and replaced by 2500 characters of anything else.
+  const rest = block.slice(start + 1);
+  const next = /\n  [a-zA-Z_$][\w$]*: (?:publicProcedure|protectedProcedure|approvedProviderProcedure|adminProcedure|adminWith\()/.exec(rest);
+  return block.slice(start, next ? start + 1 + next.index : block.length);
 }
 
 const cells = (): { resource: MatrixResource; verb: MatrixVerb }[] =>
@@ -120,9 +128,12 @@ describe('every implemented cell names something real', () => {
 describe('the N/A claims that can be falsified are checked', () => {
   it('"no update exists" is true - the whole router has exactly two', () => {
     // If someone adds marketplace.update or rfq.update, the matrix's edit
-    // cells become lies and this fails first.
+    // cells become lies and this fails first. `services.update` joined the
+    // list when the service catalogue landed, and the matrix's `service.edit`
+    // cell was corrected to cite it in the same change - which is exactly the
+    // sequence this test exists to force.
     const updates = [...TIERS.keys()].filter(name => /\.update$/.test(name)).sort();
-    expect(updates).toEqual(['portfolio.update', 'profile.update', 'projects.update']);
+    expect(updates).toEqual(['portfolio.update', 'profile.update', 'projects.update', 'services.update']);
   });
 
   it('"no delete exists" is true - nothing user-facing deletes but AI attachments', () => {

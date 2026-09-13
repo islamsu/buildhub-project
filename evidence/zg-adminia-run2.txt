@@ -1,0 +1,38 @@
+PASS  0. the Super Admin sidebar renders its destinations  [15 items]
+PASS  1. PROFESSIONAL REGISTRATIONS IS THE VERY NEXT ITEM AFTER USER MANAGEMENT  [users@1 registrations@2]
+PASS  2. Name Changes is no longer a top-level sidebar destination
+PASS  3. Pending Verifications is no longer a second entry point to registrations
+PASS  4. clicking "Admin Control Panel" lands on /admin and renders  [clicked=true at=/admin chars=1475]
+PASS  4. clicking "User Management" lands on /admin/users and renders  [clicked=true at=/admin/users chars=2304]
+PASS  4. clicking "Professional Registrations" lands on /admin/registrations and renders  [clicked=true at=/admin/registrations chars=4128]
+PASS  4. clicking "Product categories" lands on /admin/categories and renders  [clicked=true at=/admin/categories chars=3329]
+PASS  4. clicking "Placements" lands on /admin/placements and renders  [clicked=true at=/admin/placements chars=1609]
+PASS  4. clicking "Vendor Enquiries" lands on /admin/enquiries and renders  [clicked=true at=/admin/enquiries chars=1727]
+PASS  4. clicking "Referrals" lands on /admin/referrals and renders  [clicked=true at=/admin/referrals chars=541]
+PASS  4. clicking "Disputes" lands on /admin/disputes and renders  [clicked=true at=/admin/disputes chars=942]
+PASS  4. clicking "Support tickets" lands on /admin/support and renders  [clicked=true at=/admin/support chars=622]
+PASS  4. clicking "Reported reviews" lands on /admin/reviews and renders  [clicked=true at=/admin/reviews chars=538]
+PASS  4. clicking "Billing & Benefits" lands on /admin/billing and renders  [clicked=true at=/admin/billing chars=511]
+PASS  4. clicking "Analytics" lands on /admin/analytics and renders  [clicked=true at=/admin/analytics chars=1487]
+PASS  4. clicking "Operations" lands on /admin/operations and renders  [clicked=true at=/admin/operations chars=3732]
+PASS  4. clicking "Administrators" lands on /admin/admins and renders  [clicked=true at=/admin/admins chars=2160]
+PASS  4. clicking "Settings" lands on /admin/settings and renders  [clicked=true at=/admin/settings chars=786]
+PASS  5. EVERY sidebar destination is reachable by clicking it  [15/15]
+PASS  6. Professional Registrations renders the applicant search
+PASS  6. Professional Registrations renders the professional category filter
+PASS  6. Professional Registrations renders the submission date range
+PASS  6. Professional Registrations renders the status bands as tabs
+PASS  6. Professional Registrations renders bulk selection
+PASS  7. /admin shows a registration PREVIEW with a way through to the page
+PASS  8. and no longer carries bulk approval - a dashboard is not a console
+PASS  9. the old /admin/compliance bookmark lands on the registration workflow
+PASS  10. the old /admin/name-changes bookmark lands on the name-change queue
+PASS  11. User Management offers Name Change Requests as a tab
+PASS  12. the Arabic sidebar names Professional Registrations in Arabic  [لوحة التحكم الإدارية | إدارة المستخدمين | تسجيلات المحترفين | فئات المنتجات | المساحات التجارية]
+PASS  13. no raw translation key falls through to the screen
+PASS  14. the page is laid out right-to-left in Arabic  [rtl]
+PASS  15. no horizontal overflow at 375px  [overflow=0px]
+PASS  15. no horizontal overflow at 768px  [overflow=0px]
+PASS  15. no horizontal overflow at 1440px  [overflow=0px]
+
+36/36 passed

@@ -1,0 +1,47 @@
+--------------
+delete from rfqs where projectId=63
+--------------
+
+ERROR 1451 (23000) at line 1: Cannot delete or update a parent row: a foreign key constraint fails (`buildhub_prelaunch`.`qualifiedEnquiries`, CONSTRAINT `qualifiedEnquiries_rfqId_rfqs_id_fk` FOREIGN KEY (`rfqId`) REFERENCES `rfqs` (`id`))
+PASS  SETUP: a support administrator exists
+PASS  1. the owner of a completed project may review the provider  [http=200 id=6 err=null]
+PASS  2. it counts toward the public average immediately  [count=1 avg=2]
+PASS  3. and it is readable on the provider’s public page  [count=1]
+PASS  4. NEGATIVE: a stranger cannot answer somebody else’s review  [http=404 err=Review not found]
+PASS  5. NEGATIVE: the REVIEWER cannot answer their own review either  [http=404]
+PASS  6. a review that does not exist and a review you may not touch answer the SAME way  [ghost=Review not found denied=Review not found]
+PASS  7. the provider the review is ABOUT may answer it  [http=200 err=null]
+PASS  8. a second reply EDITS the first rather than starting a thread  [rows=1 body=Corrected reply.]
+PASS  9. the reply is published under the review it answers
+PASS  10. NEGATIVE: the reviewer cannot report their own review  [http=400]
+PASS  11. the provider may report a review about them  [http=200 id=6 err=null]
+PASS  12. a report opens as OPEN - nothing is decided by the act of reporting
+PASS  13. REPEAT-REPORTING IS NOT A LOUDER VOTE - the second is refused  [http=409 rows=1]
+PASS  14-16. NEGATIVE: admin.reviewReports refuses an ordinary account  [http=403]
+PASS  14-16. NEGATIVE: admin.moderateReview refuses an ordinary account  [http=403]
+PASS  14-16. NEGATIVE: admin.resolveReviewReport refuses an ordinary account  [http=403]
+PASS  17. and none of those attempts changed anything
+PASS  18. HIDING WITHOUT A REASON IS REFUSED  [http=400 err=Say why it is being hidden. A removal with no recorded reaso]
+PASS  19. a support administrator may hide it, with the reason recorded  [http=200]
+PASS  20. WHO hid it is recorded alongside WHY
+PASS  21. A HIDDEN REVIEW LEAVES THE AVERAGE - the count and the average both move  [count=0 avg=null]
+PASS  22. and it is gone from the public page  [count=0]
+PASS  23. HIDDEN, NEVER DELETED - the row and its words survive for the record
+PASS  24. a hidden review cannot be answered while it is being looked at  [http=400]
+PASS  25. hiding names BOTH the provider whose score changed and the reviewer whose words were removed  [userIds=1922,1923]
+PASS  26. the report is in the moderation queue, with the review’s own words  [total=1]
+PASS  27. and the queue shows that the review is already hidden
+PASS  28. a report can be upheld  [http=200]
+PASS  29. A REPORT IS DECIDED ONCE - a second resolution is refused  [http=400 status=upheld]
+PASS  30. restoring CLEARS the stamp rather than leaving fields that can disagree  [stamps=-|-|-]
+PASS  31. and the review returns to the average it left  [count=1 avg=2]
+PASS  32. an RFQ exists on the project to compare quotes on  [http=200 err=null]
+PASS  33a. the provider declares the matching category and opens the enquiry  [declare=200 open=200 err=null]
+PASS  33b. the reviewed provider has a live quotation on it  [http=200 err=null]
+PASS  34. the quote comparison shows the provider’s reputation while the review stands  [count=1 avg=2 rows=1]
+PASS  35. HIDING REMOVES IT HERE TOO - one score for a vendor, not two  [count=0 avg=null]
+PASS  36. NEGATIVE: a signed-out visitor can neither answer nor report  [respond=401 report=401]
+
+CLEANUP: 0 probe users, 0 probe reviews, 0 reports left behind (all must be 0)
+
+38/38 passed

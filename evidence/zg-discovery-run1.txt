@@ -1,0 +1,16 @@
+PASS  1. the designers and finishing cards carry a number  [0 / 0]
+PASS  2. LABELLED AS WHAT THEY COUNT — providers, not "disciplines"  [Providers / Providers]
+PASS  3. and neither is the length of the hardcoded list it used to render  [0 / 0]
+PASS  4. TWO DESIGNERS SIGN UP AND THE COUNT GOES UP BY TWO — a constant cannot do that  [0 -> 2]
+PASS  5. and the finishing card, which gained nobody, does not move  [0 -> 0]
+PASS  6. AND THE CARD AGREES WITH THE DIRECTORY BEHIND IT  [card=2 directory=2 of 12 providers]
+PASS  6a. and that page loads rather than 404ing
+PASS  7. the chips describe the section and are not controls that filter nothing  [buttons=0 text=Architecture Interior Design Landscape D]
+PASS  8. THE ARABIC LABEL IS ARABIC, not English in a flipped layout  [dir=rtl label=مزوّد]
+PASS  9. and the number is the same fact in either language  [2 / 2]
+PASS  10a. readable at 375px with no horizontal overflow  [scroll=375 client=375]
+PASS  10b. readable at 768px with no horizontal overflow  [scroll=762 client=762]
+PASS  10c. readable at 1440px with no horizontal overflow  [scroll=1434 client=1434]
+PASS  11. CLEANUP: every account this probe created is gone  [users=0]
+
+14/14 checks passed

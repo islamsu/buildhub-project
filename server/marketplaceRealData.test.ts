@@ -97,7 +97,10 @@ describe('§3 the endpoint honours its own inputs', () => {
   });
 
   it('withdrawn products stay excluded from the listing', () => {
-    expect(block).toContain('eq(products.active, true)');
+    // Through the one shared filter, not an inline literal - "withdrawn" is
+    // now three states (draft, off sale, archived) rather than one boolean,
+    // and a reader spelling the rule out itself is how one of them leaks.
+    expect(block).toContain('publicProductFilter()');
   });
 
   it('"All" is treated as no filter rather than a category named All', () => {

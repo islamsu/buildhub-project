@@ -1,0 +1,27 @@
+PASS  SETUP: two trades are on the project team  [contractor=200 engineer=200]
+PASS  1. the upload path reaches STORAGE and reports the deployment truthfully - it does not fail silently or pretend to succeed  [http=503 err=File uploads are not available on this deployment.]
+PASS  2. SETUP: a document row exists on the project  [id=5]
+PASS  3. it is in the list for the owner AND for another trade on the team  [owner=1 contractor=1]
+PASS  4. the owner is authorized for the file  [http=503]
+PASS  5. the uploader is authorized for the file  [http=503]
+PASS  6. ANOTHER TRADE ON THE TEAM IS AUTHORIZED - the list and the file agree  [http=503]
+PASS  7. NEGATIVE: somebody not on the project can neither list nor fetch  [list=404 file=403]
+PASS  8. NEGATIVE: and neither can a signed-out visitor  [http=401]
+PASS  9. NEGATIVE: one trade cannot archive another trade’s drawing  [http=403 err=Only the person who uploaded this document, or someone who manages the]
+PASS  10. NEGATIVE: somebody off the project is told NOT FOUND, not forbidden - no id oracle  [http=404]
+PASS  11. the person who uploaded it can retire it, with the reason and the actor recorded  [http=200 err=null]
+PASS  12. archiving it again is refused rather than re-stamping when it left the list  [http=400]
+PASS  13. it leaves the working list  [count=0]
+PASS  14. and is still there when the record is asked for
+PASS  15. ARCHIVED, NEVER DELETED - the row survives and the file stays authorized
+PASS  16. a mistaken retirement can be undone, clearing the WHOLE stamp  [http=200]
+PASS  17. NEGATIVE: somebody off the project cannot replace a document, and is refused BEFORE any storage call  [http=404]
+PASS  18. NEGATIVE: one trade cannot replace another trade’s drawing  [http=403]
+PASS  19. the uploader passes authorization and reaches STORAGE, which reports the deployment truthfully  [http=503 err=File uploads are not available on this deployment.]
+PASS  20. and NOTHING WAS ARCHIVED by an upload that could not complete - the order is the safety property
+PASS  21. a document that does not exist answers the same way as one you may not touch  [ghost=404/Document not found outsider=404/Document not found]
+PASS  22. archiving and restoring are both in the commercial trail  [events=document_archived,document_restored]
+
+CLEANUP: 0 probe users, 0 probe documents left behind (both must be 0)
+
+23/23 passed

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { adminRegistrationSurface } from './_testing/adminSurface';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { summarizeComplianceRegistrations } from '../shared/compliance';
@@ -32,7 +33,7 @@ describe('compliance queue enhancements', () => {
   });
 
   it('keeps document quick view inside the admin queue workflow', () => {
-    const admin = source('client/src/pages/AdminDashboard.tsx');
+    const admin = adminRegistrationSurface();
     expect(admin).toContain('activeDocument');
     expect(admin).toContain('setActiveDocument(document)');
     expect(admin).toContain("loadDocumentPreview(previewDocument)");
@@ -46,7 +47,7 @@ describe('compliance queue enhancements', () => {
   });
 
   it('exposes combined widget filters and permission-aware CSV export', () => {
-    const admin = source('client/src/pages/AdminDashboard.tsx');
+    const admin = adminRegistrationSurface();
     expect(admin).toContain('registrationRoleFilter');
     expect(admin).toContain('registrationDateFrom');
     expect(admin).toContain('registrationDateTo');
@@ -57,7 +58,7 @@ describe('compliance queue enhancements', () => {
   });
 
   it('provides a loading animation, failure message, and retry action for document previews', () => {
-    const admin = source('client/src/pages/AdminDashboard.tsx');
+    const admin = adminRegistrationSurface();
     expect(admin).toContain('documentPreviewStatus === \'loading\'');
     expect(admin).toContain('documentPreviewStatus === \'error\'');
     expect(admin).toContain('loadDocumentPreview(activeDocument)');
@@ -65,7 +66,7 @@ describe('compliance queue enhancements', () => {
   });
 
   it('wires applicant search, confirmed bulk decisions, and export toast lifecycle', () => {
-    const admin = source('client/src/pages/AdminDashboard.tsx');
+    const admin = adminRegistrationSurface();
     const router = source('server/routers.ts');
     expect(admin).toContain('registrationSearch');
     expect(admin).toContain('pendingRegistrationApplicants');

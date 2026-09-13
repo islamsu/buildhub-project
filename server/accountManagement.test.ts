@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { adminRegistrationSurface } from './_testing/adminSurface';
 import { scryptSync } from 'node:crypto';
 import { filterRegistrationApplicants } from '../shared/registrationMetrics';
 
@@ -229,7 +230,7 @@ describe('dummy account isolation and UI wiring', () => {
   });
 
   it('exposes source, dummy controls, and account audit wiring in the admin UI and router', () => {
-    const dashboard = readFileSync(new URL('../client/src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
+    const dashboard = adminRegistrationSurface();
     const authPage = readFileSync(new URL('../client/src/pages/AuthPage.tsx', import.meta.url), 'utf8');
     const router = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
     expect(dashboard).toContain('Create account');

@@ -1,0 +1,28 @@
+PASS  1. SETUP: a customer, an approved contractor and a project  [project=75]
+PASS  2. an RFQ is open  [http=200 err=null]
+PASS  3. the supplier opens the qualified enquiry through the real route  [http=200 err=null]
+PASS  4. a first bid is stored  [http=200 err=null]
+PASS  5. A FIRST BID CONTRASTS AGAINST NULL - nothing genuinely came before it  [NULL|125000]
+PASS  6. and its revision number is 1
+PASS  7. the customer was notified once  [n=1]
+PASS  8. the SAME offer resubmitted is de-duplicated, not revised  [returned=103 first=103]
+PASS  9. AND THE CUSTOMER IS NOT NOTIFIED TWICE for it
+PASS  10. nor does it write a second change trail
+PASS  11. a changed bid is stored as a NEW row  [id=104]
+PASS  12. numbered revision 2
+PASS  13. and the first version is superseded, not deleted
+PASS  14. THE TRAIL NAMES THE PREVIOUS PRICE — not "from nothing"  [125000|145000]
+PASS  15. and the previous timeline  [30|45]
+PASS  16. AN UNCHANGED FIELD PRODUCES NO ROW AT ALL  [warranty=absent]
+PASS  17. the reason names the revision, so the trail reads without arithmetic  [quotation revised to revision 2]
+PASS  18. A CORRECTION AT THE SAME PRICE IS A REVISION, not a duplicate  [id=105 previous=104]
+PASS  19. THE PRICE IS COMPARED AS A NUMBER: "145000.00" vs 145000 is not a change  [price=absent]
+PASS  19b. while the field that did move is recorded  [45|60]
+PASS  19c. and it is numbered revision 3  [3]
+PASS  20a. the customer’s comparison actually answers  [http=200 n=1 err=null]
+PASS  20. ONE CURRENT QUOTATION SURVIVES in the customer’s comparison  [n=1 id=105 latest=105]
+PASS  21. and all three versions are still in the table as history  [3]
+PASS  22. a superseded version is NOT offered as a live bid  [rows=1]
+PASS  23. CLEANUP: every account, RFQ and quotation this probe created is gone  [users=0]
+
+26/26 checks passed

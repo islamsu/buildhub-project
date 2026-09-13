@@ -1,0 +1,22 @@
+PASS  1. SETUP: 25 requests, one of them paid for and then closed by the customer  [rfqs=25]
+PASS  2. the queue renders one bounded page, not everything  [rows=20]
+PASS  3. and states the REAL total, which is what says whether a filter found everything  [30 requests]
+PASS  4. with a pager, because there is more than one page  [Page 1 of 2]
+PASS  5. A REAL SEARCH BY REFERENCE finds the paid lead, from page two
+PASS  6. THE RECEIPT IS ON THE SCREEN — the date the credit was spent  [Probe UI RFQ 71300186 number 00 #447 Opened Closed Renovation Cairo 9/]
+PASS  7. on a request the customer has since closed — the row that used to vanish
+PASS  8. and a closed request is offered NO respond button  [respond=false]
+PASS  9. A REAL CLICK ON A TILE FILTERS AT THE SERVER — one row, the paid one  [rows=447]
+PASS  10. and the TOTAL moves with it, rather than describing the unfiltered set  [1 request]
+PASS  11. so the pager is gone, because one row is one page
+PASS  12. THE PAGER MOVES to a second page of real rows  [Page 2 of 2 rows=10]
+PASS  13. and page two repeats nothing from page one  [overlap=0]
+PASS  14. "NOTHING MATCHES" IS NOT "NOTHING HAS REACHED YOU"  [No request matches this filter.]
+PASS  15. THE ARABIC QUEUE IS GENUINELY ARABIC, not English with a flipped layout  [chars=2424 english=false]
+PASS  16. no raw key leaks through, and the direction is RTL  [dir=rtl raw=]
+PASS  17a. readable at 375px with no horizontal overflow  [scroll=375 client=375 visible=true]
+PASS  17b. readable at 768px with no horizontal overflow  [scroll=762 client=762 visible=true]
+PASS  17c. readable at 1440px with no horizontal overflow  [scroll=1434 client=1434 visible=true]
+PASS  18. CLEANUP: every account and request this probe created is gone  [users=0]
+
+20/20 checks passed

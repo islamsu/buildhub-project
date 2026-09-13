@@ -1,0 +1,21 @@
+PASS  1. SETUP: three approved providers with declared categories
+PASS  2. an open Renovation request exists  [http=200]
+PASS  3. THE MISMATCHED PROVIDER IS NOT OFFERED THE ACTION  [canOpen=false reason=category_mismatch]
+PASS  4. AND THE ACT AGREES — it would have refused, exactly as previewed  [code=FORBIDDEN]
+PASS  5. THE MATCHING PROVIDER IS OFFERED IT, and told it costs a credit  [canOpen=true free=false]
+PASS  6. THE PREVIEW COSTS NOTHING — five renders, no credit spent  [before=0 after=0]
+PASS  7. and the act, when taken, IS granted as previewed  [http=200 err=null]
+PASS  8. spending exactly one credit
+PASS  9. A LEAD ALREADY PAID FOR reads as access, and re-opening is free  [canRespond=true canOpen=true free=true]
+PASS  10. the customer invites a provider whose category does NOT match  [http=200 err=null]
+PASS  11. AN INVITATION OUTRANKS THE CATEGORY GATE — offered, and free  [canOpen=true free=true]
+PASS  12. and the act agrees — granted despite the mismatch  [http=200 err=null]
+PASS  13. with no credit spent, as the preview promised  [used=0]
+PASS  14. A CLOSED REQUEST IS NOT OFFERED — a credit on it would buy nothing  [canOpen=false reason=rfq_closed]
+PASS  15. EVERY REASON IS A KEY, so the Arabic screen is not handed English  [category_mismatch,rfq_closed]
+PASS  16. a signed-out caller cannot ask  [code=UNAUTHORIZED]
+PASS  17. nor a homeowner — this is a provider surface  [code=FORBIDDEN]
+PASS  18. and a request that does not exist is NOT_FOUND, not a preview  [code=NOT_FOUND]
+PASS  19. CLEANUP: every account, request and enquiry this probe created is gone  [users=0]
+
+19/19 checks passed

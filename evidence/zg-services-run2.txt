@@ -1,0 +1,36 @@
+PASS  1. the service categories are offered publicly  [http=200 n=20]
+PASS  2. every one carries BOTH languages, and they differ
+PASS  3. and NO product category leaked into the service list
+PASS  4. THE SEED RESCOPED NOTHING: the product categories are untouched  [product-scope rows=35]
+PASS  5. a real Egyptian trade is listable  [Waterproofing]
+PASS  6. SETUP: three providers and a customer exist
+PASS  7. AN UNAPPROVED PROVIDER CAN DRAFT - the catalogue is ready on approval day  [http=200 err=null]
+PASS  8. AND CANNOT PUBLISH - the refusal names the registration, not "forbidden"  [code=FORBIDDEN err=Your registration must be approved before you can publish a service.]
+PASS  9. and the draft is still a draft
+PASS  10. QUOTE ON REQUEST WITH A PRICE IS REFUSED over the wire  [code=BAD_REQUEST err=Quote on request cannot carry a price. Choose a pricing basis, or remo]
+PASS  11. and refused means NOTHING WAS WRITTEN  [rows=0]
+PASS  12. a maximum below the minimum is refused rather than swapped  [The maximum price is below the minimum.]
+PASS  13. a PRODUCT category is refused, and the message says which to pick  [That category is for products. Choose a service category.]
+PASS  14. a coherent service is created, as a DRAFT  [http=200 id=8]
+PASS  15. A DRAFT IS INVISIBLE to the public  [n=0]
+PASS  16. an approved provider publishes it  [http=200 err=null]
+PASS  17. and a signed-out customer sees it, with its real figures  [{"id":8,"title":"Bathroom waterproofing 28259661","description":"Three-coat cementitious membrane, including s]
+PASS  18. carrying the category in both languages  [Waterproofing / Ø£Ø¹Ù…Ø§Ù„ Ø§Ù„Ø¹Ø²Ù„ Ø§Ù„Ù…Ø§Ø¦ÙŠ]
+PASS  19. THE AUDIT ENUM ACCEPTS "service" IN MySQL - create and publish are both recorded  [events=2]
+PASS  20. a second approved provider is visible too - the rule is not "one provider"
+PASS  21. WITHDRAWING APPROVAL HIDES A LIVE SERVICE - the second clause is real  [n=0 status=active]
+PASS  22. and the offering row is untouched - it is hidden, not destroyed
+PASS  23. ANOTHER PROVIDER’S SERVICE IS NOT_FOUND, never FORBIDDEN  [code=NOT_FOUND]
+PASS  24. and the title is untouched
+PASS  25. nor can they archive it  [code=NOT_FOUND]
+PASS  26. a homeowner cannot list a service at all  [code=FORBIDDEN]
+PASS  27. and a signed-out caller certainly cannot  [code=UNAUTHORIZED]
+PASS  28. delisting takes it off the public profile
+PASS  29. ARCHIVED CANNOT GO STRAIGHT LIVE - the refusal names both states  [A service cannot go from archived to active.]
+PASS  30. but it restores to off-sale, a deliberate second step
+PASS  31. the provider’s own list shows it whatever its status  [n=1]
+PASS  32. and shows only THEIR services  [n=1]
+PASS  33. CLEANUP: every account and listing this probe created is gone  [users=0 services=0]
+PASS  34. and the seeded taxonomy is left exactly as the migration made it  [service categories=20]
+
+34/34 checks passed

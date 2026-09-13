@@ -1,6 +1,7 @@
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useSearch } from 'wouter';
 import DashboardLayout from '@/components/DashboardLayout';
+import EnquiryQueue from '@/components/EnquiryQueue';
 import QualifiedEnquiries from '@/components/QualifiedEnquiries';
 
 /**
@@ -31,11 +32,16 @@ export default function EnquiriesPage() {
           <h1 className="text-xl font-bold">{ar ? 'الطلبات المؤهلة' : 'Qualified enquiries'}</h1>
           <p className="text-sm text-muted-foreground">
             {ar
-              ? 'الطلبات التي فتحتها، والرصيد المتبقي في باقتك هذا الشهر.'
-              : 'The requests you have opened, and what your plan leaves you this month.'}
+              /* The old subtitle said "the requests you have opened" over a
+                 list of requests that could be opened, and the ones actually
+                 opened dropped out of it the moment the customer closed the
+                 request. Both halves are now true, and both are on the page. */
+              ? 'كل طلب وصلك — المتاح، وما فتحته، وما قدّمت فيه عرضاً — والرصيد المتبقي هذا الشهر.'
+              : 'Every request that has reached you — available, opened and quoted — and what your plan leaves you this month.'}
           </p>
         </div>
         <QualifiedEnquiries highlightRfqId={highlightRfqId} />
+        <EnquiryQueue highlightRfqId={highlightRfqId} />
       </div>
     </DashboardLayout>
   );

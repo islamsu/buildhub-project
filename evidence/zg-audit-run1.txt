@@ -1,0 +1,25 @@
+PASS  1. SETUP: a Super Admin signs in through the real admin path  [http=200 err=null]
+PASS  2. SETUP: 1,200 events exist — more than the old cap of 1,000  [n=1200]
+PASS  3. THE REPORT NO LONGER STOPS AT 1,000: the real total is reported  [http=200 total=1200 err=null]
+PASS  4. and a page is a page, not the whole thing  [n=100]
+PASS  5. AND THE PAGES COVER ALL 1,200, EXACTLY ONCE  [distinct=1200]
+PASS  6. A SEARCH FINDS AN EVENT PAST THE OLD CUT — row 1,151 of 1,200  [total=1]
+PASS  7. and a search over the SUBJECT’S NAME reaches across the join  [total=1201]
+PASS  8. THE COUNT AND THE ROWS AGREE under that search  [rows=25 total=1201]
+PASS  9. and a search over the ACTOR’S name works too - "Mona" means the person either way  [total=1202]
+PASS  10. AN ACTION IS MATCHED EXACTLY: probe_frozen does not catch probe_unfrozen  [total=400 (expected 400 of 1200)]
+PASS  11. the filter options are read FROM THE DATA  [actions=14]
+PASS  12. a row names the SUBJECT and the ACTOR, never a bare id  [user=Probe auds actor=Probe audm]
+PASS  13. and carries the account facts the export needs  [Self Registered / homeowner / none]
+PASS  14. AN EVENT WITH NO SUBJECT AND NO ACTOR STILL APPEARS — an inner join would drop it  [total=1]
+PASS  15. and an actorless event reads "System", not a blank column  [System]
+PASS  16. ONE ACCOUNT’S TRAIL IS PAGED TOO, with its real total  [total=1201 rows=50]
+PASS  17. and contains only that account’s events
+PASS  18. an unbounded page is refused by the schema  [code=BAD_REQUEST]
+PASS  19. AN ORDINARY ACCOUNT CANNOT READ THE PLATFORM AUDIT  [code=FORBIDDEN]
+PASS  20. nor one account’s trail  [code=FORBIDDEN]
+PASS  21. and a signed-out caller certainly cannot  [code=UNAUTHORIZED]
+PASS  22. NO CREDENTIAL COLUMN APPEARS IN THE RESPONSE
+PASS  23. CLEANUP: every account and all 1,200 probe events are gone  [users=0 events=0]
+
+23/23 checks passed

@@ -1,0 +1,19 @@
+PASS  1. SETUP: five unread notifications  [count=5]
+PASS  2. and the centre lists them  [rows=5]
+PASS  3. READING ONE MARKS ONE — this had no procedure at all  [changed=true]
+PASS  4. AND THE BADGE GOES DOWN BY EXACTLY ONE, not to zero  [count=4]
+PASS  5. the row itself is read, and only that row
+PASS  6. reading it twice is honest about having changed nothing  [changed=false]
+PASS  7. A RECEIPT CANNOT BE FORGED for somebody else’s notification  [changed=false]
+PASS  8. and their unread count is untouched
+PASS  9. a signed-out caller cannot mark anything read  [code=UNAUTHORIZED]
+PASS  10. and clearing the lot still works, for when that is what you want
+PASS  10a. SETUP: a real enquiry is assigned to an administrator  [http=200 assigned=1 err=null]
+PASS  10b. AND THE NOTIFICATION CARRIES A DESTINATION  [/admin/enquiries?assignee=1]
+PASS  11. FOLLOWING THE NOTIFICATION’S OWN LINK REACHES A REAL PAGE — it used to be 404  [link=/admin/enquiries?assignee=1 notFound=false]
+PASS  12. and the narrowing is VISIBLE, not silent  [Assigned to: BuildHub Super Admin Clear]
+PASS  13. with a way to turn it off
+PASS  14. and the OLD four-segment path is still a 404, which is why it was wrong  [notFound=true]
+PASS  15. CLEANUP: every account and notification this probe created is gone  [users=0]
+
+17/17 checks passed

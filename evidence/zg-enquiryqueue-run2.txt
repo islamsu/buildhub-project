@@ -1,0 +1,28 @@
+PASS  1a. and every seeded fixture has a real id, not a zero from a lost connection  [zeros=0]
+PASS  1. SETUP: 25 open Renovation requests, three of them through the real API  [api=3 total=25]
+PASS  2. the provider spends a credit on one of them  [http=200]
+PASS  3. and the customer then closes that request
+PASS  4. THE PAID LEAD IS STILL THERE — a receipt that vanishes is not a receipt  [found=true]
+PASS  5. recorded as opened, on a closed request, and free to re-open  [state=opened status=closed free=true]
+PASS  6. with the date the credit was spent, not just a flag  [2026-09-12T00:00:06.000Z]
+PASS  7. while the OFFER board correctly no longer offers it  [total=29]
+PASS  8. the server reports a REAL total, larger than one page  [total=30 page=10]
+PASS  9. WALKING EVERY PAGE VISITS EVERY REQUEST EXACTLY ONCE  [seen=30 unique=30 total=30]
+PASS  10. A SEARCH FINDS A REQUEST THAT IS NOT ON PAGE ONE  [position=24 found=397]
+PASS  11. and a title search matches the title, not the reference  [total=1]
+PASS  12. a search with no match returns nothing, not everything  [total=0]
+PASS  13. FILTERING BY SOURCE returns exactly the invited request  [total=1]
+PASS  14. FILTERING BY RESPONSE STATE returns the paid lead and the invitation  [total=2]
+PASS  15. FILTERING BY REQUEST STATUS finds the closed one the old board hid  [total=1]
+PASS  16. THE SUMMARY AGREES WITH THE FILTERS it claims to summarise  [summary.opened=2 filter=2 total=30/30]
+PASS  17. and it counts nothing that is not real  [{"available":28,"opened":2,"quoted":0,"declined":0,"total":30}]
+PASS  18. the category filter is offered from the data, not a restated list  [Renovation]
+PASS  19. A SECOND PROVIDER SEES THE SAME BOARD but none of the first’s record  [rows=20 nonAvailable=0]
+PASS  20. and the closed request is not on their board at all
+PASS  21. a signed-out caller cannot read a queue  [code=UNAUTHORIZED]
+PASS  22. nor a homeowner — this is a provider surface  [code=FORBIDDEN]
+PASS  23. nor a provider whose account is not approved yet  [code=FORBIDDEN]
+PASS  24. AND A CALLER CANNOT ASK FOR EVERYTHING — the page size is bounded  [http=400 rows=0]
+PASS  25. CLEANUP: every account, request and enquiry this probe created is gone  [users=0]
+
+26/26 checks passed

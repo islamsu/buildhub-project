@@ -1,7 +1,7 @@
 /**
  * ── ADMIN-GRANTED SPONSORED PLACEMENT ──────────────────────────────────────
  *
- * BuildHub already had ONE route to a sponsored slot: `listFeaturedVendors`,
+ * BuildHub already had ONE route to a sponsored slot: `listEntitlementSponsoredVendors`,
  * derived from live billing state - a Premium plan buys placement. That is
  * real commercial data and it stays exactly as it is.
  *

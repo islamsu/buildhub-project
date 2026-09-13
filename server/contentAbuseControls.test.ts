@@ -108,7 +108,7 @@ describe('the limiter is actually wired to the endpoints that needed it', () => 
     ).toBeLessThan(writeAt);
   });
 
-  it('all nine upload endpoints enforce the upload limit', () => {
+  it('every upload path enforces the upload limit, named upload* or not', () => {
     // Counted rather than spot-checked: the gap was identical at every one of
     // them, and a fix applied to four out of five is not a fix.
     // NINE now: bulk product import accepts a file too, and an unbounded
@@ -117,8 +117,16 @@ describe('the limiter is actually wired to the endpoints that needed it', () => 
     // bulk product import accepts a file without being named upload*, so it
     // takes a limit of its own. Portfolio image upload is the ninth endpoint,
     // added with provider portfolios.
+    // ELEVEN over TEN endpoints since dispute evidence became an upload path:
+    // an authenticated party can otherwise push 10MB per request in a loop, and
+    // the dispute they are pushing into is one they are entitled to write to.
+    // TWELVE over TEN endpoints since a project document can be replaced:
+    // `replaceDocument` accepts a file without being named upload*, exactly
+    // like bulk product import, so it takes a limit of its own. An
+    // authenticated member could otherwise push 8MB per request in a loop
+    // into a project they are entitled to write to.
     const wired = SOURCE.match(/enforceUploadRateLimit\(ctx\.user\.id\)/g) ?? [];
-    expect(wired).toHaveLength(10);
+    expect(wired).toHaveLength(12);
 
     const uploadEndpoints = SOURCE.match(/^\s+upload[A-Za-z]+:/gm) ?? [];
     expect(

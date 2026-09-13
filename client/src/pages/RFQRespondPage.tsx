@@ -77,6 +77,30 @@ export default function RFQRespondPage() {
     onError: error => toast.error(error.message),
   });
 
+  /**
+   * DECLINING AN INVITATION - the answer nothing could give.
+   *
+   * `rfq.declineInvitation` had NO CLIENT CALLER while the requester's own
+   * invitation list rendered a `declined` badge and BuildHub carried a
+   * translated notification for it. A state the UI shows, and the notification
+   * copy to announce it, and no way in the product to reach either: the
+   * requester waited on a supplier who had already decided not to bid, and had
+   * no way to know.
+   *
+   * Offered only to somebody who actually holds an open invitation - the server
+   * answers NOT_FOUND otherwise, so a stranger cannot probe which invitations
+   * exist, and a control that is always visible would put that refusal in front
+   * of every browsing supplier.
+   */
+  const decline = trpc.rfq.declineInvitation.useMutation({
+    onSuccess: async () => {
+      toast.success(ar ? 'تم إبلاغ صاحب الطلب باعتذارك.' : 'The requester has been told you are not quoting.');
+      await utils.rfq.responseAccess.invalidate({ rfqId });
+      navigate('/rfq');
+    },
+    onError: error => toast.error(error.message),
+  });
+
   const submit = trpc.rfq.submitQuotation.useMutation({
     onSuccess: result => {
       toast.success(ar ? 'تم تقديم عرض السعر' : 'Quotation submitted');
@@ -186,14 +210,81 @@ export default function RFQRespondPage() {
 
             {closed ? (
               <Card><CardContent className="pt-6"><p className="flex gap-2 text-sm text-muted-foreground" data-testid="respond-closed"><AlertTriangle className="h-4 w-4" />{ar ? 'هذا الطلب لم يعد مفتوحاً للردود.' : 'This request is no longer open for responses.'}</p></CardContent></Card>
+            ) : !access.data.canRespond && !access.data.canOpen ? (
+              /**
+               * THE OFFER IS WITHHELD, AND THE REASON GIVEN.
+               *
+               * This screen used to show an enabled "Open qualified enquiry"
+               * button to everybody without access, and the refusal - "this
+               * request does not match any of your declared service categories"
+               * - arrived only after the click. A control that is certain to
+               * fail is worse than an absent one: it costs a click, teaches
+               * distrust, and says nothing about what to do instead.
+               *
+               * The server now says in the SAME response whether opening would
+               * be granted, so the reason is shown BEFORE the click, and the
+               * one reason a provider can act on carries the way to act on it.
+               */
+              <Card data-testid="respond-enquiry-blocked">
+                <CardHeader><CardTitle className="text-base">
+                  {ar ? 'لا يمكنك فتح هذا الطلب' : 'You cannot open this request'}
+                </CardTitle></CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="flex gap-2 text-sm text-muted-foreground" data-testid="respond-blocked-reason">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    {access.data.openBlockedReason === 'category_mismatch'
+                      ? (ar
+                          ? 'هذا الطلب خارج فئات الخدمة التي أعلنتها. أضف الفئة المطابقة لتصلك طلبات مثله.'
+                          : 'This request is outside the service categories you have declared. Add the matching category to receive requests like it.')
+                      : access.data.openBlockedReason === 'limit_reached'
+                      ? (ar
+                          ? 'لقد استهلكت رصيد الاستفسارات المؤهلة لهذا الشهر.'
+                          : 'You have used all of your qualified enquiries for this month.')
+                      : access.data.openBlockedReason === 'unclassified_rfq'
+                      ? (ar
+                          ? 'هذا الطلب بلا فئة خدمة معروفة، ولذلك لا يُعرض كاستفسار مؤهل.'
+                          : 'This request has no recognised service category, so it is not offered as a qualified enquiry.')
+                      : access.data.openBlockedReason === 'rfq_closed'
+                      ? (ar
+                          ? 'هذا الطلب لم يعد مفتوحاً للردود.'
+                          : 'This request is no longer open for responses.')
+                      : (ar ? 'هذا الطلب غير متاح لك.' : 'This request is not available to you.')}
+                  </p>
+                  {/* THE ONE REASON THEY CAN FIX gets the way to fix it. The
+                      others are facts about the request or the month, and a
+                      button on those would be the same dead control again. */}
+                  {access.data.openBlockedReason === 'category_mismatch' && (
+                    <Button asChild variant="outline" size="sm" data-testid="respond-declare-categories">
+                      <Link href="/settings#settings-categories">
+                        {ar ? 'إدارة فئات الخدمة' : 'Manage service categories'}
+                      </Link>
+                    </Button>
+                  )}
+                  {access.data.openBlockedReason === 'limit_reached' && (
+                    <Button asChild variant="outline" size="sm" data-testid="respond-view-plan">
+                      <Link href="/settings#settings-billing">
+                        {ar ? 'عرض الباقة والرصيد' : 'View plan and allowance'}
+                      </Link>
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
             ) : !access.data.canRespond ? (
               <Card data-testid="respond-enquiry-gate">
                 <CardHeader><CardTitle className="text-base">{ar ? 'افتح الطلب قبل إعداد العرض' : 'Open the enquiry before preparing a quote'}</CardTitle></CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground">
+                    {/* Says what opening COSTS, now that it is only offered
+                        when it will succeed. NOT a `openIsFree` ternary: the
+                        two free cases are an invitation and a lead already
+                        paid for, and BOTH of them are `canRespond`, so a free
+                        opening can never reach this branch. A ternary here
+                        would read as though it covered that case while the
+                        arm was unreachable - the free wording is rendered
+                        where it is actually true, below. */}
                     {ar
-                      ? 'يتحقق الخادم من فئة خدماتك ورصيد الاستفسارات. الدعوة المباشرة معفاة من الخصم.'
-                      : 'The server checks your declared service category and enquiry allowance. A direct invitation is exempt from usage.'}
+                      ? 'فتح هذا الطلب يخصم استفساراً مؤهلاً واحداً من رصيد هذا الشهر.'
+                      : 'Opening this request uses one qualified enquiry from this month\'s allowance.'}
                   </p>
                   <Button className="mt-4 w-full" disabled={openEnquiry.isPending} onClick={() => openEnquiry.mutate({ rfqId })} data-testid="respond-open-enquiry">
                     {openEnquiry.isPending ? '…' : (ar ? 'فتح الطلب المؤهل' : 'Open qualified enquiry')}
@@ -208,6 +299,51 @@ export default function RFQRespondPage() {
                 fileInput={fileInput} uploading={uploading} attachFiles={attachFiles}
                 validation={validation} onReview={() => setReviewing(true)}
               />
+            )}
+
+            {/*
+              AND WHERE "FREE" IS ACTUALLY TRUE. A provider who can already
+              respond has either been invited or has paid for this lead, and in
+              both cases answering costs nothing more - which is worth saying,
+              because the allowance is the thing a provider is watching and
+              silence about it invites them to assume the worst.
+            */}
+            {!closed && access.data.canRespond && access.data.openIsFree && (
+              <p className="text-xs text-muted-foreground" data-testid="respond-free-lead">
+                {access.data.byInvitation
+                  ? (ar
+                      ? 'أنت مدعوّ لهذا الطلب، والرد عليه لا يخصم من رصيد استفساراتك.'
+                      : 'You were invited to this request, so responding does not use your enquiry allowance.')
+                  : (ar
+                      ? 'هذا الطلب مفتوح لك بالفعل، والرد عليه لا يخصم من رصيدك مرة أخرى.'
+                      : 'This request is already open to you, so responding does not use your allowance again.')}
+              </p>
+            )}
+
+            {/*
+              Only for an invitation that is still open, and only before a
+              quotation exists: declining after quoting would contradict the bid
+              already on the record, and the server refuses it either way.
+            */}
+            {!closed && access.data.byInvitation && !access.data.hasExistingQuotation && (
+              <Card data-testid="respond-decline">
+                <CardContent className="space-y-2 pt-6">
+                  <p className="text-sm font-medium">{ar ? 'لن تقدّم عرضاً؟' : 'Not quoting for this one?'}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {ar
+                      ? 'أبلغ صاحب الطلب بدلاً من تركه ينتظر. لن يُخصم من رصيدك شيء، ويمكن دعوتك مجدداً لاحقاً.'
+                      : 'Tell the requester rather than leaving them waiting. Nothing is charged, and you can be invited again later.'}
+                  </p>
+                  <Button
+                    variant="outline" size="sm" className="w-full"
+                    data-testid="respond-decline-button"
+                    disabled={decline.isPending}
+                    onClick={() => decline.mutate({ rfqId })}
+                  >
+                    {decline.isPending ? '…' : (ar ? 'الاعتذار عن الدعوة' : 'Decline this invitation')}
+                  </Button>
+                </CardContent>
+              </Card>
             )}
           </div>
         </div>

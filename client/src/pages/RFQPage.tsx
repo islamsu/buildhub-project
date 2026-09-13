@@ -1,5 +1,6 @@
 import { useLanguage } from '@/contexts/LanguageContext';
 import Navbar from '@/components/Navbar';
+import { Pager } from '@/components/Pager';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -55,6 +56,9 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+
+/** The provider work board pages now; it used to stop at the newest fifty. */
+const RFQ_PAGE_SIZE = 25;
 
 export default function RFQPage() {
   const { t, lang } = useLanguage();
@@ -186,7 +190,13 @@ export default function RFQPage() {
   // including the homeowner's budget, to anonymous callers - and an UNAUTHORIZED
   // anywhere in the app bounces the visitor to /auth. The signed-out branch of
   // `allRfqs` below already expects an empty list.
-  const { data: rfqs = [], refetch } = trpc.rfq.list.useQuery(undefined, { enabled: isAuthenticated });
+  const [rfqPage, setRfqPage] = useState(0);
+  const rfqList = trpc.rfq.list.useQuery(
+    { page: rfqPage, pageSize: RFQ_PAGE_SIZE },
+    { enabled: isAuthenticated, placeholderData: previous => previous },
+  );
+  const refetch = rfqList.refetch;
+  const rfqs = (rfqList.data?.rows ?? []) as any[];
   const { data: myRfqs = [] } = trpc.rfq.myList.useQuery(undefined, { enabled: isAuthenticated });
 
   const createRfq = trpc.rfq.create.useMutation({
@@ -628,6 +638,22 @@ export default function RFQPage() {
             );
           })}
         </div>
+
+        {/*
+          THE BOARD PAGES NOW. It showed the fifty newest requests and stopped,
+          with nothing on the screen to say there were more - so an RFQ that
+          aged out of the feed was unreachable from the board providers browse
+          for work, even though it was still open and still fetchable by id.
+        */}
+        {isAuthenticated && (
+          <div className="mt-6">
+            <Pager
+              ar={lang === 'ar'} page={rfqPage} total={rfqList.data?.total ?? null}
+              pageCount={Math.max(1, Math.ceil((rfqList.data?.total ?? 0) / RFQ_PAGE_SIZE))}
+              onChange={setRfqPage} testId="rfq-board-pager"
+            />
+          </div>
+        )}
       </div>
 
       {/* Quotation Comparison Sheet */}

@@ -23,7 +23,7 @@ vi.mock('./db', () => ({ getDb: vi.fn() }));
 
 import { getDb } from './db';
 import {
-  FEATURED_PLACEMENT_SLOTS, listFeaturedVendors, rotateFeatured,
+  FEATURED_PLACEMENT_SLOTS, listEntitlementSponsoredVendors, rotateFeatured,
 } from './vendorDirectory';
 import { ENTITLEMENT_ENFORCEMENT, PLANS, isEntitlementEnforced } from '@shared/billing';
 
@@ -61,7 +61,7 @@ function candidate(id: number, subscriptionOverrides: Record<string, unknown> = 
 }
 
 /**
- * Stubs the two-stage query listFeaturedVendors runs: the candidate join first,
+ * Stubs the two-stage query listEntitlementSponsoredVendors runs: the candidate join first,
  * then the reputation and category lookups inside enrichVendorRows.
  */
 function stubDb(candidates: unknown[]) {
@@ -101,18 +101,18 @@ describe('§1 which plans buy a slot', () => {
 
   it('a premium vendor is featured', async () => {
     stubDb([candidate(1)]);
-    const featured = await listFeaturedVendors();
+    const featured = await listEntitlementSponsoredVendors();
     expect(featured.map(v => v.id)).toEqual([1]);
   });
 
   it('a professional vendor is NOT featured, however active their subscription', async () => {
     stubDb([candidate(1, { plan: 'professional' })]);
-    expect(await listFeaturedVendors()).toEqual([]);
+    expect(await listEntitlementSponsoredVendors()).toEqual([]);
   });
 
   it('a free vendor is not featured', async () => {
     stubDb([candidate(1, { plan: 'free', status: 'free' })]);
-    expect(await listFeaturedVendors()).toEqual([]);
+    expect(await listEntitlementSponsoredVendors()).toEqual([]);
   });
 });
 
@@ -127,7 +127,7 @@ describe('§2 a stale row cannot buy a slot', () => {
       currentPeriodEnd: new Date(Date.now() - 400 * DAY),
       cancelAtPeriodEnd: true,
     })]);
-    expect(await listFeaturedVendors()).toEqual([]);
+    expect(await listEntitlementSponsoredVendors()).toEqual([]);
   });
 
   it('a premium vendor inside their grace period is still featured', async () => {
@@ -137,7 +137,7 @@ describe('§2 a stale row cannot buy a slot', () => {
       status: 'past_due',
       gracePeriodEndsAt: new Date(Date.now() + 3 * DAY),
     })]);
-    expect((await listFeaturedVendors()).map(v => v.id)).toEqual([1]);
+    expect((await listEntitlementSponsoredVendors()).map(v => v.id)).toEqual([1]);
   });
 
   it('a premium vendor whose grace period expired is not featured', async () => {
@@ -145,7 +145,7 @@ describe('§2 a stale row cannot buy a slot', () => {
       status: 'past_due',
       gracePeriodEndsAt: new Date(Date.now() - 3 * DAY),
     })]);
-    expect(await listFeaturedVendors()).toEqual([]);
+    expect(await listEntitlementSponsoredVendors()).toEqual([]);
   });
 
   it('a vendor trialing on premium IS featured — the trial grants the plan', async () => {
@@ -153,7 +153,7 @@ describe('§2 a stale row cannot buy a slot', () => {
       status: 'trialing',
       trialEndsAt: new Date(Date.now() + 10 * DAY),
     })]);
-    expect((await listFeaturedVendors()).map(v => v.id)).toEqual([1]);
+    expect((await listEntitlementSponsoredVendors()).map(v => v.id)).toEqual([1]);
   });
 
   it('a MALFORMED subscription fails closed to free and buys nothing', async () => {
@@ -161,18 +161,18 @@ describe('§2 a stale row cannot buy a slot', () => {
     // returns FREE rather than guessing, and a slot must not be the one place
     // that guesses generously.
     stubDb([candidate(1, { status: 'trialing', trialEndsAt: null })]);
-    expect(await listFeaturedVendors()).toEqual([]);
+    expect(await listEntitlementSponsoredVendors()).toEqual([]);
   });
 
   it('derives from deriveBillingState rather than reading the plan column', () => {
-    const featured = DIRECTORY_SOURCE.slice(DIRECTORY_SOURCE.indexOf('export async function listFeaturedVendors'));
+    const featured = DIRECTORY_SOURCE.slice(DIRECTORY_SOURCE.indexOf('export async function listEntitlementSponsoredVendors'));
     expect(featured).toContain('deriveBillingState(row.subscription, now)');
     expect(featured).not.toMatch(/row\.subscription\.plan\b/);
   });
 
   it('returns nothing rather than throwing when the database is unavailable', async () => {
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-    expect(await listFeaturedVendors()).toEqual([]);
+    expect(await listEntitlementSponsoredVendors()).toEqual([]);
   });
 });
 
@@ -222,7 +222,7 @@ describe('§3 rotation is fair and stable', () => {
 
   it('never exceeds the declared slot count, even if a caller asks for more', async () => {
     stubDb(Array.from({ length: 20 }, (_unused, index) => candidate(index + 1)));
-    const featured = await listFeaturedVendors({ limit: 100 });
+    const featured = await listEntitlementSponsoredVendors({ limit: 100 });
     expect(featured.length).toBe(FEATURED_PLACEMENT_SLOTS);
   });
 });
@@ -242,7 +242,7 @@ describe('§4 paying does not buy organic position', () => {
   });
 
   it('featured placement does not touch the organic ordering', () => {
-    const featured = DIRECTORY_SOURCE.slice(DIRECTORY_SOURCE.indexOf('export async function listFeaturedVendors'));
+    const featured = DIRECTORY_SOURCE.slice(DIRECTORY_SOURCE.indexOf('export async function listEntitlementSponsoredVendors'));
     expect(featured).not.toContain('orderBy(desc(users.verified)');
   });
 
@@ -256,7 +256,7 @@ describe('§4 paying does not buy organic position', () => {
     // function and none in another would have passed it. Naming them means a
     // new list that skips the helper fails, and a new list that uses it does
     // not have to edit a magic number.
-    for (const fn of ['listDirectoryVendors', 'listFeaturedVendors', 'listSponsoredVendors']) {
+    for (const fn of ['listDirectoryVendors', 'listEntitlementSponsoredVendors', 'listSponsoredVendors']) {
       const start = DIRECTORY_SOURCE.indexOf(`export async function ${fn}`);
       expect(start, `${fn} not found`).toBeGreaterThan(-1);
       const next = DIRECTORY_SOURCE.indexOf('\nexport ', start + 1);
@@ -270,12 +270,12 @@ describe('§4 paying does not buy organic position', () => {
   it('featured vendors are subject to the same visibility rules as everyone else', () => {
     // An unapproved, frozen, deactivated or dummy account must not become
     // discoverable by paying.
-    const featured = DIRECTORY_SOURCE.slice(DIRECTORY_SOURCE.indexOf('export async function listFeaturedVendors'));
+    const featured = DIRECTORY_SOURCE.slice(DIRECTORY_SOURCE.indexOf('export async function listEntitlementSponsoredVendors'));
     expect(featured).toContain('directoryVisibilityFilter()');
   });
 
   it('the featured response uses the same column allowlist', () => {
-    const featured = DIRECTORY_SOURCE.slice(DIRECTORY_SOURCE.indexOf('export async function listFeaturedVendors'));
+    const featured = DIRECTORY_SOURCE.slice(DIRECTORY_SOURCE.indexOf('export async function listEntitlementSponsoredVendors'));
     expect(featured).toContain('DIRECTORY_VENDOR_COLUMNS');
     expect(featured).not.toContain('select().from(users)');
   });
@@ -284,7 +284,7 @@ describe('§4 paying does not buy organic position', () => {
     // The candidate query joins vendorSubscriptions, which carries provider
     // refs and billing state. None of it may reach a public directory response.
     stubDb([candidate(1)]);
-    const [vendor] = await listFeaturedVendors();
+    const [vendor] = await listEntitlementSponsoredVendors();
     expect(vendor).not.toHaveProperty('subscription');
     expect(JSON.stringify(vendor)).not.toContain('providerCustomerRef');
   });
@@ -293,10 +293,27 @@ describe('§4 paying does not buy organic position', () => {
 // ── §5 Exposure and labelling ──────────────────────────────────────────────
 
 describe('§5 sponsored is labelled as sponsored', () => {
-  it('is a separate endpoint from the organic directory', () => {
-    expect(ROUTERS_SOURCE).toContain('featuredVendors: publicProcedure');
-    const block = ROUTERS_SOURCE.slice(ROUTERS_SOURCE.indexOf('featuredVendors: publicProcedure'));
-    expect(block.slice(0, 900)).toContain('sponsored: true as const');
+  it('the commercial strip is a separate endpoint from the organic directory', () => {
+    // WHAT THIS TEST USED TO PIN, AND WHY IT CHANGED.
+    //
+    // It asserted `featuredVendors: publicProcedure` and that its rows carried
+    // `sponsored: true`. That procedure returned the Premium entitlement
+    // rotation under BuildHub's editorial word, and the owner has retired it:
+    // the public model is now exactly two readers, `featuredProviders`
+    // (editorial) and `sponsoredVendors` (commercial).
+    //
+    // The COVERAGE IS NOT DROPPED, it moves to the surviving reader and gets
+    // stricter - `sponsorshipSource` says which of the two commercial routes
+    // bought the slot, where `sponsored: true` said only that one had. The
+    // whole invariant set for the new architecture lives in
+    // server/publicPlacementReaders.test.ts.
+    expect(ROUTERS_SOURCE).toContain('sponsoredVendors: publicProcedure');
+    expect(ROUTERS_SOURCE).toContain('featuredProviders: publicProcedure');
+    // The organic list stays a third, separate procedure. Merging any of them
+    // into one response is how a client renders a paid slot as an organic hit.
+    expect(ROUTERS_SOURCE).toContain('vendors: publicProcedure');
+    const commercial = DIRECTORY_SOURCE.slice(DIRECTORY_SOURCE.indexOf('export async function listSponsoredVendors'));
+    expect(commercial.slice(0, commercial.indexOf('\nexport '))).toContain('sponsorshipSource');
   });
 
   it('the page renders featured vendors in their own section, not merged into the grid', () => {

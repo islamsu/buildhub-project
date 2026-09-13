@@ -1,0 +1,50 @@
+PASS  the queue answers at all, against real MariaDB  [total=0]
+PASS  every dispute got a human reference  [DSP-2026-000056]
+PASS  the total counts the whole table, not the page  [0 -> 3]
+PASS  the status summary counts the whole table too  [open 0 -> 3]
+PASS  the reporter and the respondent are both named, from the joins  [ZG Owner 14798662 -> ZG Builder 14798662]
+PASS  and their emails come with the row, for the support screen
+PASS  a page is bounded by its size  [2]
+PASS  the total is the table, not the page  [3]
+PASS  the second page is different rows, so nothing is shown twice or skipped  [0 overlapping]
+PASS  searching a reference returns exactly that dispute  [total=1]
+PASS  and a pasted lower-case reference finds it too  [total=1]
+PASS  searching the RESPONDENT's name finds the disputes against them  [total=3]
+PASS  and the total agrees with the rows it returned  [3 rows vs total 3]
+PASS  searching the REPORTER's name finds them as well  [total=3]
+PASS  a search that matches nothing says zero, and does not error
+PASS  the category filter narrows to the one dispute that has it  [total=1]
+PASS  filtering to a subject type nobody used returns nothing, truthfully
+PASS  an unrecognised filter value is ignored rather than emptying the queue  [total=3]
+PASS  unassigned finds all three, because none has an owner yet  [total=3]
+PASS  and none of them is mine yet
+PASS  the assignee list offers only administrators who can work disputes  [4 offered]
+PASS  a dispute can be taken
+PASS  "mine" now finds exactly the one I took  [total=1]
+PASS  and unassigned drops to the other two
+PASS  the priority the assignment set is the priority the filter finds
+PASS  a dispute can be resolved, with a recorded outcome
+PASS  the resolved one sinks below the open ones - a queue, not a diary  [57,58,56]
+PASS  and the status summary followed it  [open=2 resolved=1]
+PASS  an internal note can be recorded
+PASS  the detail resolves every id on the record to a name  [ZG Owner 14798662 / ZG Builder 14798662]
+PASS  the history is there, opening with the dispute being raised
+PASS  the participant's message is shown, attributed
+PASS  the internal note is shown to the administrator
+PASS  the subject is named in words, not as an id  [ZG queue project 14798662]
+PASS  a PARTY to the dispute never sees the internal note
+PASS  and sees no `notes` collection at all
+PASS  the reporter cannot read the admin queue  [403 FORBIDDEN]
+PASS  the reporter cannot read the admin detail  [403 FORBIDDEN]
+PASS  the reporter cannot enumerate the administrators  [403 FORBIDDEN]
+PASS  the reporter cannot write an internal note  [403]
+PASS  an unrelated contractor cannot read the admin queue  [403 FORBIDDEN]
+PASS  an unrelated contractor cannot read the admin detail  [403 FORBIDDEN]
+PASS  an unrelated contractor cannot enumerate the administrators  [403 FORBIDDEN]
+PASS  an unrelated contractor cannot write an internal note  [403]
+PASS  a signed-out caller cannot read the queue  [401]
+PASS  an unrelated contractor cannot read the dispute as a participant  [404 NOT_FOUND]
+PASS  the internal note never reached anybody but an administrator
+PASS  CLEANUP: every row this probe planted is gone
+
+48/48 passed

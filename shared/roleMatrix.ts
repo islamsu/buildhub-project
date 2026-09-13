@@ -156,16 +156,30 @@ export const ROLE_MATRIX: Record<MatrixResource, Record<MatrixVerb, Access>> = {
     communicate: { status: 'ok', via: 'marketplace.askQuestion', tier: 'protectedProcedure', roles: ALL, scope: 'public Q&A on an active listing; the reply side is not implemented' },
   },
 
+  /**
+   * TWO DIFFERENT THINGS SHARE THIS ROW, and the distinction is the point:
+   *
+   *   THE DECLARATION - `profile.setMyCategories` - is TARGETING. It says which
+   *   of the nine RFQ categories may reach this provider, and it is what the
+   *   matching engine reads.
+   *
+   *   THE CATALOGUE - `services.*` - is the OFFERING. It is what the provider
+   *   advertises, filed under the canonical administrable taxonomy, and it is
+   *   what a customer reads on the public profile.
+   *
+   * Until the catalogue existed this row described only the first, and a
+   * contractor could say "I do Renovation" and nothing more.
+   */
   service: {
-    view: { status: 'ok', via: 'profile.myCategories', tier: 'approvedProviderProcedure', roles: PROVIDER_ROLES, scope: 'own declared service categories; marketplace.vendorCategories is the public taxonomy' },
-    create: { status: 'ok', via: 'profile.setMyCategories', tier: 'approvedProviderProcedure', roles: PROVIDER_ROLES, scope: 'own; the whole set is replaced in one call' },
-    edit: { status: 'ok', via: 'profile.setMyCategories', tier: 'approvedProviderProcedure', roles: PROVIDER_ROLES, scope: 'own' },
-    delete: { status: 'ok', via: 'profile.setMyCategories', tier: 'approvedProviderProcedure', roles: PROVIDER_ROLES, scope: 'own; omitting a category from the set removes it - the only delete-shaped operation in the product outside AI attachments' },
-    submit: na('A declaration takes effect immediately; nothing is submitted.'),
-    approve: na('Categories are self-declared. This is deliberate: BuildHub does not guess what a role does.'),
-    reject: na('Categories are self-declared.'),
-    download: na('No export of a vendor\'s declared categories exists.'),
-    communicate: na('A category declaration is not a conversational surface.'),
+    view: { status: 'ok', via: 'services.mine', tier: 'complianceProcedure', roles: PROVIDER_ROLES, scope: 'own catalogue including drafts. services.forProvider is the public shop window and applies both visibility clauses - live offering AND approved account. The separate TARGETING declaration is profile.myCategories' },
+    create: { status: 'ok', via: 'services.create', tier: 'complianceProcedure', roles: PROVIDER_ROLES, scope: 'own; providerId comes from the session. A provider still being vetted MAY draft - only publishing requires approval. The separate TARGETING declaration is profile.setMyCategories' },
+    edit: { status: 'ok', via: 'services.update', tier: 'complianceProcedure', roles: PROVIDER_ROLES, scope: 'own; somebody else\'s service is NOT_FOUND rather than FORBIDDEN. The separate TARGETING declaration is edited through profile.setMyCategories' },
+    delete: { status: 'ok', via: 'profile.setMyCategories', tier: 'approvedProviderProcedure', roles: PROVIDER_ROLES, scope: 'own CATEGORY declarations only - omitting one from the set removes it. A listed SERVICE is archived, never deleted, because its id appears in enquiries and audit events' },
+    submit: na('A declaration takes effect immediately, and a service is published by its provider; neither is submitted to anyone.'),
+    approve: { status: 'ok', via: 'services.setStatus', tier: 'complianceProcedure', roles: PROVIDER_ROLES, scope: 'the provider publishes their own service, and `transitionService` refuses it unless the ACCOUNT is approved - so the approval that gates a public claim is the registration decision an administrator already makes, not a second per-listing review' },
+    reject: na('Categories and services are self-declared. Removing a published service from public view is the provider\'s own delist, or an account-level compliance decision.'),
+    download: na('No export of a provider\'s categories or service catalogue exists.'),
+    communicate: na('A catalogue is not a conversational surface; an enquiry about a service goes through the RFQ and message surfaces that already exist.'),
   },
 
   message: {

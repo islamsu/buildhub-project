@@ -1,0 +1,30 @@
+PASS  1. SETUP: three real accounts exist, created through auth.signUp  [sender=1967 muted=1968 control=1969]
+PASS  2. SETUP: none of them has a stored preference - absence is the default
+PASS  3. every category is listed, not only the stored exceptions  [http=200 n=14]
+PASS  4. and every one of them is ON for an account that has chosen nothing
+PASS  5. the five mandatory categories are flagged as such  [account,billing,compliance,disputes,moderation]
+PASS  6. BASELINE: a real message notifies the recipient  [http=200 n=1]
+PASS  7. BASELINE: and the control account too
+PASS  8. the recipient switches Messages off  [http=200 err=null]
+PASS  9. exactly one row is stored, for that category, switched off  [[["messages","0"]]]
+PASS  10. THE SWITCH STOPS THE ROW: no second notification is written  [send=200 n=1]
+PASS  11. the message itself still arrived - the preference mutes the notice, not the product  [2]
+PASS  12. AND ONLY THE MUTED ONE: the control account still receives it  [n=2]
+PASS  13. the screen reports Messages as off, and everything else as on
+PASS  14. re-enabling UPDATES the row rather than adding a second  [[["messages","1"]]]
+PASS  15. and the notification comes back  [n=2]
+PASS  16. EVERY mandatory category is refused over HTTP, with no screen involved  [5/5]
+PASS  17. and the refusal is FORBIDDEN, not a 500
+PASS  18. nothing was written for any of them  [[["messages","1"]]]
+PASS  19. a category outside the vocabulary is a BAD_REQUEST, not a silent no-op  [http=400 code=BAD_REQUEST]
+PASS  20. SETUP: a forbidden suppression row now exists in the table
+PASS  21. MANDATORY SURVIVES IT: the compliance decision is delivered anyway  [http=200 err=null n=1]
+PASS  22. and the screen reports compliance as ON, matching what BuildHub actually does
+PASS  23. a userId sent by the caller is ignored: the CALLER’s row changes  [[["product_qa","0"]]]
+PASS  24. and the named account is untouched  [[["compliance","0"],["messages","1"]]]
+PASS  25. a signed-out caller cannot read preferences  [http=401 code=UNAUTHORIZED]
+PASS  26. nor write them  [http=401 code=UNAUTHORIZED]
+PASS  27. the database itself refuses a second row for the same user and category  [refused]
+PASS  28. CLEANUP: every account and preference row this probe created is gone  [users=0 prefs=0]
+
+28/28 checks passed

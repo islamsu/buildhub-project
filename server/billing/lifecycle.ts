@@ -514,6 +514,111 @@ export async function setVendorPlanManually(params: {
  * This records an outcome someone else observed. It does not charge, retry, or
  * assert anything about a provider's own retry schedule.
  */
+/**
+ * ── EXTEND AN EXISTING SUBSCRIPTION PERIOD ─────────────────────────────────
+ *
+ * The owner's decision, taken explicitly: SUBSCRIPTION_EXTENSION is a REAL
+ * period extension, and PAYMENT REMAINS DEFERRED. So this may move a
+ * subscription's end date, and it must NEVER fabricate a payment, an invoice,
+ * a transaction, revenue, GMV, commission, a card charge, a payment
+ * confirmation, or a paid renewal. Nothing here touches a price or an amount,
+ * and the history entry it writes is named for what actually happened.
+ *
+ * THREE RULES THAT DECIDE WHETHER IT CAN HAPPEN AT ALL
+ *
+ *   EXTEND FROM THE EXISTING END DATE, NEVER FROM NOW. A vendor with three
+ *   weeks left who is granted thirty days must end up with fifty-one days, not
+ *   thirty. Extending from `now` would silently CONFISCATE the unused time and
+ *   call it a reward.
+ *
+ *   REFUSE HONESTLY WHEN THERE IS NO FINITE PERIOD TO EXTEND. A free account
+ *   has no end date to move, and inventing one would grant paid access that
+ *   nobody decided to give. The caller records the refusal; it does not
+ *   pretend.
+ *
+ *   NEVER SHORTEN. The new end date is taken as the LATER of the computed one
+ *   and what is already there, so this cannot walk a period backwards however
+ *   it is called - including by a caller passing a negative number of days.
+ */
+export async function extendSubscriptionPeriod(params: {
+  userId: number;
+  /** Whole days to add. Must be positive; a non-positive value is refused. */
+  days: number;
+  reason: string;
+  source?: LifecycleSource;
+  /** Null for the platform - a referral reward has no administrator behind it. */
+  actorId?: number | null;
+  now?: Date;
+}): Promise<LifecycleOutcome> {
+  const now = params.now ?? new Date();
+  const reason = params.reason.trim();
+
+  if (!Number.isInteger(params.days) || params.days <= 0) {
+    const { state, lifecycleState } = describe(await getSubscription(params.userId), now);
+    return {
+      outcome: 'rejected',
+      action: 'subscription_extended',
+      reason: 'An extension must be a positive whole number of days.',
+      state,
+      lifecycleState,
+    };
+  }
+  if (reason.length === 0) {
+    const { state, lifecycleState } = describe(await getSubscription(params.userId), now);
+    return {
+      outcome: 'rejected',
+      action: 'subscription_extended',
+      reason: 'An extension requires a reason. It is recorded in billing history.',
+      state,
+      lifecycleState,
+    };
+  }
+
+  return withSubscriptionLock(
+    params.userId,
+    'subscription_extended',
+    params.source ?? 'system',
+    params.actorId ?? null,
+    async (locked, at) => {
+      const current = deriveBillingState(locked, at);
+
+      /*
+       * WHICH DATE IS BEING EXTENDED.
+       *
+       * A trial has its own end date, and extending a trial is extending the
+       * access the vendor actually has. A paid period has currentPeriodEnd.
+       * An account with neither has nothing to extend - and manufacturing a
+       * period here would hand out paid access nobody granted.
+       */
+      const anchorDate = current.inTrial && locked.trialEndsAt
+        ? new Date(locked.trialEndsAt)
+        : locked.currentPeriodEnd ? new Date(locked.currentPeriodEnd) : null;
+
+      if (!anchorDate || Number.isNaN(anchorDate.getTime())) {
+        return {
+          reject: 'This account has no finite subscription period to extend. '
+            + 'BuildHub does not create one - that would be granting paid access nobody decided to give.',
+        };
+      }
+
+      // FROM THE EXISTING END DATE. Extending from `now` would confiscate
+      // whatever time is left and call it a reward.
+      const extended = new Date(anchorDate.getTime() + params.days * 24 * 60 * 60 * 1000);
+
+      // AND NEVER BACKWARDS, whatever was asked for.
+      if (extended.getTime() <= anchorDate.getTime()) {
+        return { reject: 'That extension would not move the period forward.' };
+      }
+
+      return current.inTrial && locked.trialEndsAt
+        ? { trialEndsAt: extended }
+        : { currentPeriodEnd: extended };
+    },
+    now,
+    reason,
+  );
+}
+
 export async function recordPaymentFailure(params: {
   userId: number;
   source?: LifecycleSource;

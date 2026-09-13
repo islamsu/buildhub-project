@@ -1,4 +1,5 @@
 import { TRPCError } from '@trpc/server';
+import { isQuotationExpired, QUOTATION_EXPIRED_MESSAGE } from '../shared/quotationValidity';
 import { and, eq, ne } from 'drizzle-orm';
 import { getDb } from './db';
 import { quotations, rfqs } from '../drizzle/schema';
@@ -34,6 +35,24 @@ export async function acceptQuotationSecure(rfqId: number, quotationId: number, 
     }
     if (quotation.status !== 'pending') {
       throw new TRPCError({ code: 'CONFLICT', message: `Quotation cannot be accepted in state: ${quotation.status}` });
+    }
+
+    /**
+     * AND THE PRICE MUST STILL HOLD.
+     *
+     * `validUntil` is required on every quotation and was enforced nowhere: a
+     * bid whose validity ended on 1 January was accepted in September, the
+     * losing bids were auto-rejected around it, and the supplier was bound to
+     * a price they had explicitly time-limited. Checked INSIDE the transaction
+     * and after the row lock, beside the status check, because both are
+     * statements about the row as it stands at the moment of the decision.
+     *
+     * Rejecting an expired quotation is still allowed - clearing a stale bid
+     * off the board is a reasonable thing to do, and refusing it would leave
+     * the request cluttered with prices nobody can act on.
+     */
+    if (isQuotationExpired(quotation.validUntil)) {
+      throw new TRPCError({ code: 'CONFLICT', message: QUOTATION_EXPIRED_MESSAGE });
     }
 
     // Read who else is about to be auto-rejected (for notifications below) before the cascade

@@ -7,7 +7,7 @@
 // explicit column allowlist - never `select().from(users)` - so a future
 // column added to the schema can never appear in a public directory response
 // by accident. Same discipline as PUBLIC_PROFILE_COLUMNS (Phase 4A.6.1) and
-// ADMIN_USER_LIST_COLUMNS (Phase 4A.6.7).
+// ADMIN_DIRECTORY_COLUMNS in server/adminUserDirectory.ts (Phase 4A.6.7).
 //
 // Ranking here is ORGANIC ONLY. Nothing in this file reads a billing plan,
 // subscription, or entitlement: a paying vendor is not ranked above a free one.
@@ -247,18 +247,30 @@ export async function getVendorTargetingDiagnostics(userId: number) {
 export const FEATURED_PLACEMENT_SLOTS = 6;
 
 /**
- * Vendors currently entitled to featured placement, as a separate labelled set.
+ * ── THE ENTITLEMENT HALF OF COMMERCIAL SPONSORSHIP ────────────────────────
+ *
+ * Vendors whose PLAN currently buys them a sponsored slot. This is COMMERCIAL
+ * placement, not editorial: nobody at BuildHub chose these firms, they hold a
+ * Premium subscription. It was called `listFeaturedVendors` for most of this
+ * project's life, which is how a paid rotation came to wear the word
+ * "Featured" - the word BuildHub reserves for its own curation. The owner has
+ * since settled that vocabulary, so the name says what the function computes.
+ * Editorial picks live in `listFeaturedProviders`, and the two never merge.
+ *
+ * INTERNAL. There is no public reader of this list on its own; the public
+ * commercial reader is `listSponsoredVendors`, which merges this with admin
+ * grants so a caller never has to know which route bought the slot.
  *
  * Eligibility is derived from the live billing state, never from the stored
- * plan column: a premium subscription whose period ended last month is not
- * featured, even if a lifecycle sweep has not run yet and the row still says
+ * plan column: a premium subscription whose period ended last month buys
+ * nothing, even if a lifecycle sweep has not run yet and the row still says
  * `premium`. Same time-derived rule that governs every other entitlement.
  *
  * When more vendors are eligible than there are slots, the set rotates by day.
  * Without that, whoever registered first would own the sponsored strip
  * permanently and every later subscriber would pay premium for nothing.
  */
-export async function listFeaturedVendors(
+export async function listEntitlementSponsoredVendors(
   filters: DirectoryFilters & { now?: Date } = {},
 ): Promise<DirectoryVendor[]> {
   const db = await getDb();
@@ -301,8 +313,14 @@ export async function listFeaturedVendors(
  * BuildHub now sells sponsorship two ways, and a reader should not have to
  * care which:
  *
- *   entitlement   the vendor pays for a Premium plan (listFeaturedVendors)
+ *   entitlement   the vendor pays for a Premium plan
+ *                 (listEntitlementSponsoredVendors)
  *   granted       an administrator granted them a slot in this category
+ *
+ * BOTH ROUTES ARE COMMERCIAL. Neither is editorial Featured placement, which
+ * is a separate concept with its own reader (`listFeaturedProviders`) and its
+ * own label. A grant is an administrator selling or comping a slot; it is not
+ * BuildHub saying this firm is good.
  *
  * ADMIN GRANTS COME FIRST. They are category-specific and deliberate - someone
  * chose this vendor for this category - whereas entitlement placement is a
@@ -344,7 +362,7 @@ export async function listSponsoredVendors(
     granted = await enrichVendorRows(db, rows);
   }
 
-  const entitled = await listFeaturedVendors(filters);
+  const entitled = await listEntitlementSponsoredVendors(filters);
 
   const seen = new Set(granted.map(vendor => vendor.id));
   const combined: (DirectoryVendor & { sponsorshipSource: 'granted' | 'entitlement' })[] = [
@@ -362,7 +380,10 @@ export async function listSponsoredVendors(
 /**
  * ── ADMIN-CURATED FEATURED PROVIDERS ──────────────────────────────────────
  *
- * Editorial featured placement, distinct from sponsorship. Live, active,
+ * THE canonical public reader for EDITORIAL featured placement: providers
+ * BuildHub itself curated, deliberately and without payment. Distinct from
+ * every commercial route above - a Premium plan cannot produce a row here, and
+ * an editorial pick is never rendered under the Sponsored label. Live, active,
  * approved providers only - a featured account that is later deactivated does
  * not appear, because the directory's own visibility filter still applies.
  * Ordered earliest-featured-first so the oldest deliberate pick stays first.

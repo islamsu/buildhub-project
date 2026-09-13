@@ -127,7 +127,22 @@ describe('internal authorization still uses the full ctx.user (unaffected by the
   beforeEach(() => vi.clearAllMocks());
 
   it('admin functionality (adminProcedure) still works - gated on the real ctx.user.role, not the trimmed DTO', async () => {
-    (db.getDb as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    /*
+     * A REACHABLE database, not a null one.
+     *
+     * This used `getDb -> null` to make admin.settings a no-op and asserted
+     * only that it resolved. That stopped working when admin.settings began
+     * FAILING on an unreachable database instead of serving DEFAULT_ADMIN_SETTINGS
+     * as though they were the stored ones - which an administrator could then
+     * have saved over the real settings.
+     *
+     * The subject is unchanged and the positive control is now stronger: the
+     * admin caller reaches a body that runs, the non-admin is still refused by
+     * the tier before any of it.
+     */
+    (db.getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
+      select: () => ({ from: () => Promise.resolve([]) }),
+    });
     const adminCaller = appRouter.createCaller(makeCtx({ role: 'admin', adminRole: 'SUPER_ADMIN' }));
     await expect(adminCaller.admin.settings()).resolves.toBeDefined();
 
@@ -136,14 +151,27 @@ describe('internal authorization still uses the full ctx.user (unaffected by the
   });
 
   it('provider functionality (approvedProviderProcedure) still works - gated on the real ctx.user.userRole/onboardingStatus', async () => {
-    (db.getDb as ReturnType<typeof vi.fn>).mockResolvedValue({
-      select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]), orderBy: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) }),
+    /*
+     * A chain that answers the WHOLE builder, awaitable at every step.
+     *
+     * `projects.directory` pages now, so it also runs a count and an `offset`.
+     * The previous fake stopped at `.limit()` and the route came back as a
+     * thrown 500 - which a test asserting "the approved provider gets through"
+     * cannot tell apart from the refusal it is contrasting against. The gate
+     * being asserted is untouched; the fake had to keep up with the builder.
+     */
+    const chain: any = new Proxy({}, {
+      get: (_target, key) => (key === 'then'
+        ? (resolve: any, reject: any) => Promise.resolve([]).then(resolve, reject)
+        : () => chain),
     });
+    (db.getDb as ReturnType<typeof vi.fn>).mockResolvedValue({ select: vi.fn(() => chain) });
+
     const approvedProvider = appRouter.createCaller(makeCtx({ userRole: 'contractor', onboardingStatus: 'approved' }));
-    await expect(approvedProvider.projects.directory()).resolves.toBeDefined();
+    await expect(approvedProvider.projects.directory({ page: 0, pageSize: 25 })).resolves.toBeDefined();
 
     const unapprovedProvider = appRouter.createCaller(makeCtx({ userRole: 'contractor', onboardingStatus: 'under_review' }));
-    await expect(unapprovedProvider.projects.directory()).rejects.toThrow();
+    await expect(unapprovedProvider.projects.directory({ page: 0, pageSize: 25 })).rejects.toThrow();
   });
 
   it('homeowner functionality (protectedProcedure) still works - a homeowner reaches their own projects list', async () => {

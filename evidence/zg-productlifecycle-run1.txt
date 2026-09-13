@@ -1,0 +1,32 @@
+PASS  SETUP: a real category exists to list against  [category=Materials]
+PASS  1. creating a product publishes it by default, exactly as it did before the lifecycle  [http=200 db=active|1 err=null]
+PASS  2. a product can be created as a DRAFT, which is the new state  [http=200 db=draft|0]
+PASS  3. neither of the two states a product must have been published to reach is creatable
+PASS  4. the marketplace list shows the live product and NOT the draft  [count=1]
+PASS  5. the product page serves the live one and refuses the draft  [live=200 draft=404]
+PASS  6. the vendor’s shop window shows the live one and not the draft  [ids=370]
+PASS  7. a buyer cannot ask a question about a draft  [http=404]
+PASS  8. and searching for it by name finds nothing - not even a hint it exists  [hits=0]
+PASS  9. the supplier can take a live product off sale  [db=inactive|0]
+PASS  10. and a buyer can no longer reach it  [http=404]
+PASS  11. putting it back restores it for buyers, with the derived boolean in step
+PASS  12. a draft publishes, and only then becomes visible  [http=200]
+PASS  13. NOTHING RETURNS TO DRAFT - a published product has been seen and asked about  [http=400 err=A product cannot go from Live to Draft.]
+PASS  14. a product can be retired  [db=archived|0]
+PASS  15. ARCHIVED, NEVER DELETED - the row and its history survive
+PASS  16. an archived product does NOT come straight back to the marketplace, and the refusal names both states  [http=400 err=A product cannot go from Archived to Live.]
+PASS  17. it returns to OFF SALE, and republishing is then a second, deliberate decision  [db=inactive|0]
+PASS  18. NEGATIVE: another supplier cannot move your product  [http=404]
+PASS  19. and a product that does not exist answers IDENTICALLY - no id oracle  [mine=404/Product not found ghost=404/Product not found]
+PASS  20. nothing changed
+PASS  21. NEGATIVE: a homeowner and a signed-out visitor are both refused  [buyer=403 anon=401]
+PASS  22. every move is recorded with the state it came FROM  [history=active>inactive,inactive>active]
+PASS  23. the commercial trail carries the publish and the retirements  [events=product_published,product_delisted,product_delisted]
+PASS  24. ARCHIVING A PRODUCT WITH A LIVE PLACEMENT IS REFUSED, with a reason a supplier can act on  [http=409 err=This product has a live placement. End the placement before archiving it, or the]
+PASS  25. but going off sale is still allowed - the paid slot must not become a trap  [http=200 err=null]
+PASS  26. the legacy boolean agrees with the status on EVERY row in the database  [disagreeing rows=0]
+PASS  27. and no row was left with a status the vocabulary does not declare  [statuses=active,inactive]
+
+CLEANUP: 0 probe users, 0 probe products left behind (both must be 0)
+
+28/28 passed

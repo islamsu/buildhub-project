@@ -17,7 +17,7 @@ import { useState } from 'react';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import {
-  ShieldCheck, Loader2, UserPlus, Copy, Ban, RotateCcw, KeyRound, LogOut, ArrowLeft,
+  ShieldCheck, Loader2, UserPlus, Copy, Ban, RotateCcw, KeyRound, LogOut, ArrowLeft, Link2, XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,7 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
-import { ADMIN_ROLES, ADMIN_ROLE_LABELS, type AdminRole } from '@shared/adminRoles';
+import { ADMIN_ROLES, ADMIN_ROLE_LABELS, ADMIN_PASSWORD_MIN_LENGTH, type AdminRole } from '@shared/adminRoles';
 
 export default function AdminAdmins() {
   const { lang, dir } = useLanguage();
@@ -47,6 +47,19 @@ export default function AdminAdmins() {
   const [form, setForm] = useState({ name: '', email: '', username: '', adminRole: 'SUPPORT_ADMIN' as AdminRole });
   // Held in state only so it can be copied; never persisted, never refetched.
   const [issuedLink, setIssuedLink] = useState<string | null>(null);
+  /**
+   * OUTSTANDING LINKS, AND THE ABILITY TO KILL ONE.
+   *
+   * `admin.adminInvitations` and `admin.revokeAdminInvitation` existed and
+   * worked, and nothing in the client called either. An invitation or reset
+   * link that had gone to the wrong address, or to someone who had since left,
+   * could not be cancelled from anywhere in the product - the only thing that
+   * ended it was its own expiry, hours later. The procedure to revoke it has
+   * been there the whole time.
+   */
+  const [linksFor, setLinksFor] = useState<{ id: number; name: string } | null>(null);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
 
   const refresh = () => utils.admin.admins.invalidate();
   const onError = (error: { message: string }) => toast.error(error.message);
@@ -67,6 +80,51 @@ export default function AdminAdmins() {
     onSuccess: result => { setIssuedLink(`${window.location.origin}${result.resetLink}`); void refresh(); },
     onError,
   });
+
+  const { data: invitations = [], isLoading: invitationsLoading, isError: invitationsFailed } =
+    trpc.admin.adminInvitations.useQuery(
+      { userId: linksFor?.id ?? 0 },
+      { enabled: canManage && linksFor !== null },
+    );
+  const revokeInvitation = trpc.admin.revokeAdminInvitation.useMutation({
+    onSuccess: () => {
+      toast.success(t('Link revoked', 'تم إبطال الرابط'));
+      if (linksFor) void utils.admin.adminInvitations.invalidate({ userId: linksFor.id });
+      void refresh();
+    },
+    onError,
+  });
+
+  /**
+   * Your OWN password. `admin.changeOwnPassword` was also unreachable, which
+   * meant an administrator who suspected their password was known had no way
+   * to rotate it - only another Super Admin issuing them a reset link.
+   */
+  const changeOwnPassword = trpc.admin.changeOwnPassword.useMutation({
+    onSuccess: () => {
+      toast.success(t('Password changed', 'تم تغيير كلمة المرور'));
+      setChangingPassword(false);
+      setPasswordForm({ currentPassword: '', newPassword: '', confirm: '' });
+    },
+    onError,
+  });
+
+  /**
+   * An invitation's state is DERIVED from its own timestamps, never stored
+   * twice: used beats revoked beats expired, and anything else is still live.
+   */
+  const linkState = (row: { usedAt: Date | string | null; revokedAt: Date | string | null; expiresAt: Date | string }) => {
+    if (row.usedAt) return 'used' as const;
+    if (row.revokedAt) return 'revoked' as const;
+    if (new Date(row.expiresAt).getTime() <= Date.now()) return 'expired' as const;
+    return 'live' as const;
+  };
+  const LINK_LABELS = {
+    live: t('Live', 'نشط'),
+    used: t('Used', 'مستخدم'),
+    revoked: t('Revoked', 'مُبطل'),
+    expired: t('Expired', 'منتهٍ'),
+  } as const;
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center" dir={dir}><Loader2 className="h-6 w-6 animate-spin" /></div>;
@@ -111,9 +169,15 @@ export default function AdminAdmins() {
                  'لكل مشرف حساب ودور وسجل تدقيق خاص به.')}
             </p>
           </div>
-          <Button className="gap-2" onClick={() => setCreating(true)}>
-            <UserPlus className="h-4 w-4" />{t('Invite administrator', 'دعوة مشرف')}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="gap-2" data-testid="admin-change-own-password"
+              onClick={() => setChangingPassword(true)}>
+              <KeyRound className="h-4 w-4" />{t('Change my password', 'تغيير كلمة مروري')}
+            </Button>
+            <Button className="gap-2" onClick={() => setCreating(true)}>
+              <UserPlus className="h-4 w-4" />{t('Invite administrator', 'دعوة مشرف')}
+            </Button>
+          </div>
         </div>
 
         <Card>
@@ -170,6 +234,17 @@ export default function AdminAdmins() {
                             {/* No control acts on your own account: the server
                                 refuses it, and offering a button that always
                                 fails is worse than not offering one. */}
+                            <div className="flex flex-wrap gap-1.5">
+                              {/* Outstanding links are shown for EVERY row,
+                                  your own included: a live link to your own
+                                  account is exactly the one you would want to
+                                  kill, and no server rule forbids reading it. */}
+                              <Button size="sm" variant="ghost" className="gap-1"
+                                data-testid={`admin-links-${admin.id}`}
+                                onClick={() => setLinksFor({ id: admin.id, name: admin.name ?? admin.username ?? `#${admin.id}` })}>
+                                <Link2 className="h-3.5 w-3.5" />{t('Links', 'الروابط')}
+                              </Button>
+                            </div>
                             {self ? <span className="text-xs text-muted-foreground">—</span> : (
                               <div className="flex flex-wrap gap-1.5">
                                 <Button size="sm" variant="outline" className="gap-1" onClick={() => resetPassword.mutate({ userId: admin.id })}>
@@ -196,6 +271,107 @@ export default function AdminAdmins() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── OUTSTANDING LINKS FOR ONE ADMINISTRATOR ─────────────────────── */}
+      <Dialog open={linksFor !== null} onOpenChange={open => !open && setLinksFor(null)}>
+        <DialogContent dir={dir} className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t('Outstanding links', 'الروابط القائمة')}{linksFor ? ` — ${linksFor.name}` : ''}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {t('Invitation and reset links issued for this account. Only the hash of each link is stored, so none of them can be shown again - but a live one can be revoked.',
+               'روابط الدعوة وإعادة التعيين الصادرة لهذا الحساب. يُخزَّن التجزئة فقط لكل رابط، لذا لا يمكن عرض أي منها مرة أخرى - لكن يمكن إبطال الرابط النشط.')}
+          </p>
+          {invitationsLoading ? (
+            <div className="py-8 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></div>
+          ) : invitationsFailed ? (
+            /* An error is NOT an empty list. Saying "no links" when the read
+               failed would be a false statement about this account. */
+            <p className="py-8 text-center text-sm text-destructive" data-testid="admin-links-error">
+              {t('These links could not be loaded. Try again.', 'تعذّر تحميل هذه الروابط. حاول مرة أخرى.')}
+            </p>
+          ) : invitations.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground" data-testid="admin-links-empty">
+              {t('No links have been issued for this account.', 'لم تصدر أي روابط لهذا الحساب.')}
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs uppercase text-muted-foreground">
+                  <tr>
+                    {[t('Role', 'الدور'), t('Issued', 'صدر'), t('Expires', 'ينتهي'), t('State', 'الحالة'), t('Action', 'إجراء')]
+                      .map(head => <th key={head} className="px-2 py-2 text-start font-medium">{head}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {invitations.map(row => {
+                    const state = linkState(row);
+                    return (
+                      <tr key={row.id} className="border-t" data-testid={`admin-link-${row.id}`} data-state={state}>
+                        <td className="px-2 py-3">{roleLabel(row.adminRole)}</td>
+                        <td className="px-2 py-3 text-muted-foreground">{new Date(row.createdAt).toLocaleString()}</td>
+                        <td className="px-2 py-3 text-muted-foreground">{new Date(row.expiresAt).toLocaleString()}</td>
+                        <td className="px-2 py-3">
+                          <Badge variant={state === 'live' ? 'default' : state === 'used' ? 'secondary' : 'outline'}>
+                            {LINK_LABELS[state]}
+                          </Badge>
+                        </td>
+                        <td className="px-2 py-3">
+                          {/* Only a live link can be revoked. A used one is
+                              spent and a revoked one is already dead: offering
+                              a button that always fails is worse than none. */}
+                          {state === 'live' ? (
+                            <Button size="sm" variant="destructive" className="gap-1"
+                              data-testid={`admin-revoke-link-${row.id}`}
+                              disabled={revokeInvitation.isPending}
+                              onClick={() => revokeInvitation.mutate({ invitationId: row.id })}>
+                              <XCircle className="h-3.5 w-3.5" />{t('Revoke', 'إبطال')}
+                            </Button>
+                          ) : <span className="text-xs text-muted-foreground">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── YOUR OWN PASSWORD ────────────────────────────────────────────── */}
+      <Dialog open={changingPassword} onOpenChange={open => { setChangingPassword(open); if (!open) setPasswordForm({ currentPassword: '', newPassword: '', confirm: '' }); }}>
+        <DialogContent dir={dir}>
+          <DialogHeader><DialogTitle>{t('Change my password', 'تغيير كلمة مروري')}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <Input type="password" autoComplete="current-password" placeholder={t('Current password', 'كلمة المرور الحالية')}
+              value={passwordForm.currentPassword} onChange={e => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} />
+            <Input type="password" autoComplete="new-password" placeholder={t('New password', 'كلمة المرور الجديدة')}
+              value={passwordForm.newPassword} onChange={e => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} />
+            <Input type="password" autoComplete="new-password" placeholder={t('Confirm new password', 'تأكيد كلمة المرور الجديدة')}
+              value={passwordForm.confirm} onChange={e => setPasswordForm({ ...passwordForm, confirm: e.target.value })} />
+            {passwordForm.confirm.length > 0 && passwordForm.newPassword !== passwordForm.confirm && (
+              <p className="text-xs text-destructive">{t('The two new passwords do not match.', 'كلمتا المرور الجديدتان غير متطابقتين.')}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {t('Your current password is required, so a borrowed session cannot lock you out of your own account.',
+                 'كلمة مرورك الحالية مطلوبة، حتى لا تتمكن جلسة مُستعارة من إخراجك من حسابك.')}
+            </p>
+            <Button className="w-full gap-2" data-testid="admin-submit-own-password"
+              disabled={changeOwnPassword.isPending
+                || passwordForm.currentPassword.length < 1
+                || passwordForm.newPassword.length < ADMIN_PASSWORD_MIN_LENGTH
+                || passwordForm.newPassword !== passwordForm.confirm}
+              onClick={() => changeOwnPassword.mutate({
+                currentPassword: passwordForm.currentPassword,
+                newPassword: passwordForm.newPassword,
+              })}>
+              {changeOwnPassword.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t('Change password', 'تغيير كلمة المرور')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent dir={dir}>

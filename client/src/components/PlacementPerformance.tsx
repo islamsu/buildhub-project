@@ -1,11 +1,15 @@
 /**
- * ── COMMERCIAL PLACEMENT PERFORMANCE ──────────────────────────────────────
+ * ── PLACEMENT PERFORMANCE ─────────────────────────────────────────────────
  *
- * Every number here is a COUNT of events that were actually observed. There is
- * no revenue, GMV, commission or order column - BuildHub observes none of them
- * while payments are deferred, and a column is an invitation to fill it in.
+ * THREE presentation rules, and the first one is a commercial-honesty rule.
  *
- * TWO PRESENTATION RULES THAT ARE REALLY HONESTY RULES.
+ * 0. EDITORIAL AND COMMERCIAL ARE LABELLED AND NEVER SUMMED. Every row says
+ *    whether it is a Featured (editorial, curated by BuildHub, not bought) or
+ *    a Sponsored (commercial) placement, and the totals strip reports the two
+ *    separately. This screen used to call itself "commercial placement
+ *    performance" while listing both, which inflated the apparent reach of
+ *    what BuildHub actually sells. An editorial pick's impressions are not
+ *    advertising inventory.
  *
  * 1. A rate with no denominator shows a dash, not 0%. "0% clicked" asserts
  *    that people saw the placement and chose not to act. With no impressions
@@ -15,6 +19,10 @@
  * 2. The formulas are printed on the screen. An administrator comparing two
  *    placements needs to know that conversion is measured against VIEWS and
  *    not against impressions, without reading the source.
+ *
+ * Every number here is a COUNT of events that were actually observed. There is
+ * no revenue, GMV, commission or order column - BuildHub observes none of them
+ * while payments are deferred, and a column is an invitation to fill it in.
  */
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -30,21 +38,63 @@ function Rate({ value }: { value: number | null }) {
   return <span>{value}%</span>;
 }
 
+/**
+ * Editorial or commercial, said in words rather than left to a raw enum. The
+ * two badges are visually distinct because confusing them is the specific
+ * mistake this screen has to make impossible.
+ */
+function KindBadge({ kind, ar }: { kind: string; ar: boolean }) {
+  const editorial = kind === 'featured';
+  return (
+    <Badge variant={editorial ? 'secondary' : 'outline'} className="text-[10px]">
+      {editorial
+        ? (ar ? 'مميّز (تحريري)' : 'Featured (editorial)')
+        : (ar ? 'برعاية (تجاري)' : 'Sponsored (commercial)')}
+    </Badge>
+  );
+}
+
 export default function PlacementPerformance() {
   const { lang } = useLanguage();
   const ar = lang === 'ar';
   const { data, isLoading } = trpc.admin.placementPerformance.useQuery();
   const rows = data?.rows ?? [];
 
+  // Counted separately, on purpose. One combined impression total would read
+  // as commercial reach and would be wrong by however much editorial curation
+  // contributed to it.
+  const editorialRows = rows.filter(row => row.kind === 'featured');
+  const commercialRows = rows.filter(row => row.kind !== 'featured');
+  const sum = (subset: typeof rows) => subset.reduce((total, row) => total + row.impressions, 0);
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <BarChart3 className="h-5 w-5" />
-          {ar ? 'أداء المساحات الإعلانية' : 'Placement performance'}
+          {ar ? 'أداء المساحات' : 'Placement performance'}
         </CardTitle>
       </CardHeader>
       <CardContent>
+        {/* Editorial and commercial totals, side by side and never added
+            together. Rendered only when there is something to count. */}
+        {!isLoading && rows.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-4 text-xs">
+            <span>
+              <KindBadge kind="featured" ar={ar} />
+              <span className="ms-2 text-muted-foreground">
+                {editorialRows.length} {ar ? 'مساحة' : 'placements'} · {sum(editorialRows)} {ar ? 'ظهور' : 'impressions'}
+              </span>
+            </span>
+            <span>
+              <KindBadge kind="sponsored" ar={ar} />
+              <span className="ms-2 text-muted-foreground">
+                {commercialRows.length} {ar ? 'مساحة' : 'placements'} · {sum(commercialRows)} {ar ? 'ظهور' : 'impressions'}
+              </span>
+            </span>
+          </div>
+        )}
+
         {/* The formulas, stated on the screen rather than left implicit. */}
         <div className="mb-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
           <Badge variant="outline">CTR = {data?.formulas.ctr ?? 'CTA actions ÷ impressions'}</Badge>
@@ -77,6 +127,7 @@ export default function PlacementPerformance() {
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="p-2">{ar ? 'الجهة' : 'Entity'}</th>
+                  <th className="p-2">{ar ? 'النوع' : 'Type'}</th>
                   <th className="p-2">{ar ? 'السطح' : 'Surface'}</th>
                   <th className="p-2 text-right">{ar ? 'الظهور' : 'Impressions'}</th>
                   <th className="p-2 text-right">{ar ? 'المشاهدات' : 'Entity views'}</th>
@@ -95,6 +146,7 @@ export default function PlacementPerformance() {
                       {row.entityName ?? <span className="text-muted-foreground">{ar ? 'غير متاح' : 'Not available'}</span>}
                       <span className="ms-2 text-xs text-muted-foreground">{row.entityType}</span>
                     </td>
+                    <td className="p-2"><KindBadge kind={row.kind} ar={ar} /></td>
                     <td className="p-2 text-muted-foreground">{row.surface ?? '—'}</td>
                     <td className="p-2 text-right tabular-nums">{row.impressions}</td>
                     <td className="p-2 text-right tabular-nums">{row.entityViews}</td>

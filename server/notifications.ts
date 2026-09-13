@@ -1,5 +1,6 @@
 import type { getDb } from './db';
 import { notifications } from '../drizzle/schema';
+import { deliveryDecision, suppressedCategoriesFor } from './notificationPreferences';
 
 export type NotifyParams = {
   userId: number;
@@ -40,6 +41,13 @@ type Db = Awaited<ReturnType<typeof getDb>>;
 export async function notifyUser(db: Db, params: NotifyParams): Promise<void> {
   if (!db) return;
   try {
+    // The preference gate. It sits HERE, at the write, and not in the settings
+    // screen: a screen that hides a switch changes nothing about what BuildHub
+    // sends. Mandatory categories never reach a suppression check, an
+    // unrecognised key is delivered, and a failed lookup is delivered - the
+    // rules and the reasons are in ./notificationPreferences.
+    const suppressed = (await suppressedCategoriesFor(db, [params.userId])).get(params.userId);
+    if (!deliveryDecision(params.messageKey, suppressed).deliver) return;
     await db.insert(notifications).values({
       userId: params.userId,
       title: params.title,
@@ -57,7 +65,17 @@ export async function notifyUser(db: Db, params: NotifyParams): Promise<void> {
 export async function notifyUsers(db: Db, paramsList: NotifyParams[]): Promise<void> {
   if (!db || paramsList.length === 0) return;
   try {
-    await db.insert(notifications).values(paramsList.map(params => ({
+    // The same gate, applied PER RECIPIENT. A bulk notification is a set of
+    // individual messages that happen to share a sentence, so one recipient
+    // having muted the category must not decide it for the rest of the batch -
+    // and must not be overridden by them either. One query for the whole batch
+    // rather than one per recipient, because a bulk compliance decision can
+    // address every applicant in a queue.
+    const suppressed = await suppressedCategoriesFor(db, paramsList.map(params => params.userId));
+    const deliverable = paramsList.filter(params =>
+      deliveryDecision(params.messageKey, suppressed.get(params.userId)).deliver);
+    if (deliverable.length === 0) return;
+    await db.insert(notifications).values(deliverable.map(params => ({
       userId: params.userId,
       title: params.title,
       body: params.body ?? null,

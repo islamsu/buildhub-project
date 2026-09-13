@@ -3,7 +3,10 @@ import { and, eq } from "drizzle-orm";
 import { getObjectStorage, isObjectStorageConfigured } from "./objectStorage";
 import { sdk, type AuthenticatedUser } from "./sdk";
 import { getDb } from "../db";
-import { aiAttachments, documents, messages, projects, qualifiedEnquiries, quotations, registrationDocumentSubmissions, rfqs } from "../../drizzle/schema";
+import { aiAttachments, disputeEvidence, disputes, documents, messages, projects, qualifiedEnquiries, quotations, registrationDocumentSubmissions, rfqs, supportTicketAttachments } from "../../drizzle/schema";
+import { canAccessProject } from '../projectMembership';
+import { canReadDispute } from "../disputeEligibility";
+import { requireTicketAccess } from "../supportTickets";
 import { parseRfqAttachments } from "../../shared/rfqAttachments";
 
 async function authenticateStorageRequest(req: Request): Promise<AuthenticatedUser | null> {
@@ -193,17 +196,25 @@ export async function authorizeStorageKey(key: string, user: AuthenticatedUser |
     return !!row && row.userId === user.id;
   }
 
-  // Category C: private project files - project owner only, matching the ownership rule
-  // already used for every other project sub-resource (see projectsRouter).
+  // Category C: private project files - EVERY MEMBER WHO MAY READ THE PROJECT,
+  // through the same rule `projects.documents` lists them by.
+  //
+  // This used to resolve the project OWNER only. Since PM-A2 the list has
+  // returned documents to every live member, so a contractor on the team saw a
+  // drawing in the list and got a refusal on the file: the list and the file
+  // disagreed, which reads as a broken product rather than a boundary. A
+  // second copy of an access rule is what produced it, so there is now one -
+  // `canAccessProject`, the non-throwing form of `requireProjectAccess`.
+  //
+  // 'read' is the right capability: it is what listing the document required,
+  // and downloading is reading. A removed member is not a live member, so the
+  // same call also revokes their access to the files.
   if (key.startsWith('project-documents/')) {
     const [row] = await db.select({ projectId: documents.projectId })
       .from(documents)
       .where(eq(documents.fileKey, key));
     if (!row) return false;
-    const [project] = await db.select({ id: projects.id })
-      .from(projects)
-      .where(and(eq(projects.id, row.projectId), eq(projects.ownerId, user.id)));
-    return !!project;
+    return canAccessProject(db, row.projectId, user.id, 'read');
   }
 
   // Category E: message attachments - only the sender or receiver of the message that
@@ -215,6 +226,61 @@ export async function authorizeStorageKey(key: string, user: AuthenticatedUser |
       .from(messages)
       .where(eq(messages.fileUrl, url));
     return !!row && (row.senderId === user.id || row.receiverId === user.id);
+  }
+
+  /**
+   * Category F: DISPUTE EVIDENCE - only somebody entitled to read the dispute
+   * the file belongs to.
+   *
+   * The key is looked up in `disputeEvidence` and the DISPUTE it names is then
+   * put through the same eligibility service the dispute API uses, so a
+   * participant in dispute A cannot fetch dispute B's file by guessing a key,
+   * and a supplier who lost a bid cannot read the evidence in the dispute the
+   * winner is in. Unpredictability of the key is never the control.
+   *
+   * A WITHDRAWN FILE IS NOT DOWNLOADABLE. The row survives so the record shows
+   * it existed and who withdrew it; serving the bytes afterwards would make the
+   * withdrawal cosmetic.
+   */
+  if (key.startsWith('dispute-evidence/')) {
+    const [file] = await db.select({
+      disputeId: disputeEvidence.disputeId, removedAt: disputeEvidence.removedAt,
+    }).from(disputeEvidence).where(eq(disputeEvidence.storageKey, key));
+    if (!file || file.removedAt) return false;
+    const [dispute] = await db.select().from(disputes).where(eq(disputes.id, file.disputeId));
+    if (!dispute) return false;
+    return canReadDispute(db, dispute as never, user.id);
+  }
+
+  /**
+   * ── SUPPORT TICKET ATTACHMENTS ──────────────────────────────────────────
+   *
+   * The key is looked up in `supportTicketAttachments` and the TICKET it names
+   * goes through the same one door the ticket API uses. So a customer cannot
+   * fetch another customer's attachment by guessing a key, and only support
+   * staff see anyone else's. Unpredictability of the key is never the control.
+   *
+   * A WITHDRAWN FILE IS NOT DOWNLOADABLE, for the same reason as dispute
+   * evidence: the row survives so the record shows it existed, but serving the
+   * bytes afterwards would make the withdrawal cosmetic.
+   */
+  if (key.startsWith('support-ticket/')) {
+    const [file] = await db.select({
+      ticketId: supportTicketAttachments.ticketId,
+      removedAt: supportTicketAttachments.removedAt,
+    }).from(supportTicketAttachments).where(eq(supportTicketAttachments.storageKey, key));
+    if (!file || file.removedAt) return false;
+    //
+    // `isSupportStaff` is FALSE here, and that is correct rather than a
+    // limitation: an administrator already returned true at the top of this
+    // function, so the only readers who reach this line are ordinary accounts.
+    // Passing a staff flag would be dead code pretending to be a control.
+    try {
+      await requireTicketAccess(db, file.ticketId, user.id, false);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // Anything outside the classified categories above (e.g. unused/legacy prefixes) fails closed.

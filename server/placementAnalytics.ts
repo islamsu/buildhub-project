@@ -62,6 +62,7 @@ export async function recordPlacementEvent(params: {
   const [placement] = await db
     .select({
       id: vendorSponsorships.id,
+      kind: vendorSponsorships.kind,
       surface: vendorSponsorships.surface,
       entityType: vendorSponsorships.entityType,
       vendorId: vendorSponsorships.vendorId,
@@ -87,6 +88,11 @@ export async function recordPlacementEvent(params: {
     subjectType: 'placement',
     subjectId: placement.id,
     metadata: {
+      // EDITORIAL OR COMMERCIAL, recorded on the event itself. Without it, an
+      // editorial impression and a paid one are indistinguishable after the
+      // fact, and any report that sums them misstates commercial performance.
+      // Read from the ROW like everything else here, never from the request.
+      kind: placement.kind,
       surface: placement.surface ?? '',
       entityType: placement.entityType,
       entityId: entityId ?? 0,
@@ -145,6 +151,15 @@ export async function attributePlacementEnquiry(params: {
 
 export type PlacementPerformanceRow = {
   placementId: number;
+  /**
+   * 'featured' = editorial placement BuildHub curated.
+   * 'sponsored' = commercial placement, bought or granted.
+   *
+   * The two are never summed into one performance figure: an editorial pick's
+   * impressions are not advertising inventory, and reporting them as though
+   * they were would overstate what BuildHub actually sells.
+   */
+  kind: string;
   surface: string | null;
   entityType: string;
   entityName: string | null;
@@ -172,6 +187,7 @@ export async function placementPerformance(now: Date = new Date()): Promise<Plac
   const placements = await db
     .select({
       id: vendorSponsorships.id,
+      kind: vendorSponsorships.kind,
       surface: vendorSponsorships.surface,
       entityType: vendorSponsorships.entityType,
       vendorId: vendorSponsorships.vendorId,
@@ -209,6 +225,7 @@ export async function placementPerformance(now: Date = new Date()): Promise<Plac
     const qualifiedEnquiries = count(placement.id, ANALYTICS_EVENTS.PLACEMENT_QUALIFIED_ENQUIRY);
     return {
       placementId: placement.id,
+      kind: placement.kind,
       surface: placement.surface,
       entityType: placement.entityType,
       entityName: names.get(placement.id) ?? null,
@@ -224,7 +241,7 @@ export async function placementPerformance(now: Date = new Date()): Promise<Plac
 }
 
 type PlacementRowLite = {
-  id: number; surface: string | null; entityType: string;
+  id: number; kind: string; surface: string | null; entityType: string;
   vendorId: number | null; productId: number | null;
 };
 

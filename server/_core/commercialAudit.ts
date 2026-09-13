@@ -33,7 +33,7 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
  *    never happened, and nobody reading it later could tell which.
  */
 
-export type CommercialSubject = 'rfq' | 'quotation' | 'product' | 'document' | 'enquiry' | 'message';
+export type CommercialSubject = 'rfq' | 'quotation' | 'product' | 'document' | 'enquiry' | 'message' | 'category' | 'service' | 'project';
 
 /**
  * The vocabulary. A closed set rather than free text, so the trail can be
@@ -52,7 +52,28 @@ export type CommercialAction =
   | 'product_featured' | 'product_unfeatured'
   | 'product_images_changed' | 'product_question_answered'
   // Files
-  | 'document_uploaded' | 'document_deleted' | 'attachment_added' | 'attachment_removed';
+  | 'document_uploaded' | 'document_deleted' | 'attachment_added' | 'attachment_removed'
+  // The document lifecycle. `document_deleted` predates it and is kept in the
+  // union because historical rows carry it; nothing writes it any more, because
+  // a project document is archived rather than destroyed.
+  | 'document_archived' | 'document_restored' | 'document_replaced'
+  // The product taxonomy. Creating a category and pointing an alias at one have
+  // no prior value to contrast, so they belong here rather than in
+  // fieldValueHistory - a rename or a status change, which do, go there.
+  | 'category_created' | 'category_alias_added' | 'category_alias_removed'
+  // The service catalogue. Its own verbs rather than reusing the product ones,
+  // because "a contractor published a service" and "a supplier published a
+  // product" are different commercial acts and an operator filtering the trail
+  // for one should not be handed the other.
+  | 'service_created' | 'service_updated' | 'service_published'
+  | 'service_delisted' | 'service_archived'
+  // PROJECT MEMBERSHIP. Adding somebody to a project, changing their capacity
+  // on it, or taking them off it changes WHO CAN READ the customer's documents,
+  // RFQs and quotations - so it is a commercial act, not a settings change, and
+  // "who let the other contractor see our drawings, and when" needs an answer.
+  // The role change is its own verb rather than a remove followed by an add:
+  // conflating them would lose the fact that the person never left.
+  | 'project_member_added' | 'project_member_role_changed' | 'project_member_removed';
 
 export type CommercialEvent = {
   actorId: number | null;

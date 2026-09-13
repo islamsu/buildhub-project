@@ -1,3 +1,4 @@
+import { Link } from 'wouter';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
@@ -36,6 +37,21 @@ export default function QualifiedEnquiries({ highlightRfqId }: { highlightRfqId?
   const ar = lang === 'ar';
   const utils = trpc.useUtils();
   const { data, isLoading } = trpc.rfq.eligible.useQuery();
+  /**
+   * WHEN THE LINKED REQUEST IS NOT IN THIS CARD, ASK THE SERVER WHY.
+   *
+   * The notice below used to name both possible reasons - closed, or outside
+   * the declared categories - because nothing could tell them apart. Something
+   * can now: `responseAccess` reports whether this provider already HAS access,
+   * and a request they have opened and paid for is in their record even though
+   * this card, which lists open requests still available to open, does not show
+   * it. Announcing "not in your qualified enquiries" over a lead they bought
+   * would be the card contradicting the queue on the same page.
+   */
+  const linkedAccess = trpc.rfq.responseAccess.useQuery(
+    { rfqId: highlightRfqId ?? 0 },
+    { enabled: highlightRfqId !== undefined, retry: false },
+  );
 
   // The RFQ the server returned when the credit was spent. Held here rather
   // than refetched: rfq.get is requester-scoped, so a vendor cannot read the
@@ -113,12 +129,35 @@ export default function QualifiedEnquiries({ highlightRfqId }: { highlightRfqId?
             one being guessed at and shown as fact. Silence would leave the
             vendor scanning a list for something that was never going to be in
             it. */}
-        {highlightRfqId !== undefined && !items.some(item => item.id === highlightRfqId) && (
+        {highlightRfqId !== undefined && !items.some(item => item.id === highlightRfqId)
+          && linkedAccess.data?.canRespond !== true && (
           <div
             className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
             data-testid="enquiry-not-eligible"
           >
-            {t('enquiries.notInList')}
+            <p>{t('enquiries.notInList')}</p>
+            {/* AND A WAY TO THE AUTHORITATIVE ANSWER. The two reasons are the
+                honest summary of the possibilities from here; the request's own
+                page asks the server which one actually applies and says so. */}
+            <Link href={`/rfq/${highlightRfqId}`} className="mt-1 inline-block underline" data-testid="enquiry-not-eligible-open">
+              {ar ? 'افتح الطلب لمعرفة السبب' : 'Open the request to see why'}
+            </Link>
+          </div>
+        )}
+
+        {/* The other half of the same fact, and the reason the notice above is
+            conditional: a request already in their record is not a dead end. */}
+        {highlightRfqId !== undefined && !items.some(item => item.id === highlightRfqId)
+          && linkedAccess.data?.canRespond === true && (
+          <div className="mb-3 rounded-lg border p-3 text-sm text-muted-foreground" data-testid="enquiry-already-yours">
+            <p>
+              {ar
+                ? 'هذا الطلب في سجلّك بالفعل — تجده في قائمة العمل أدناه.'
+                : 'This request is already in your record — it is in the work queue below.'}
+            </p>
+            <Link href={`/rfq/${highlightRfqId}`} className="mt-1 inline-block underline" data-testid="enquiry-already-yours-open">
+              {ar ? 'افتح الطلب' : 'Open the request'}
+            </Link>
           </div>
         )}
 

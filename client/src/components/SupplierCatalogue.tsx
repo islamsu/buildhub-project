@@ -9,7 +9,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Package, PackagePlus, FileSpreadsheet, Pencil, ImagePlus, Star, Trash2, Eye, EyeOff, MessageCircleQuestion } from 'lucide-react';
+import { Package, PackagePlus, FileSpreadsheet, Pencil, ImagePlus, Star, Trash2, Eye, EyeOff, Archive, MessageCircleQuestion } from 'lucide-react';
+import {
+  PRODUCT_TRANSITIONS,
+  productStatusLabel,
+  productStatusHelp,
+  type ProductStatus,
+} from '@shared/productLifecycle';
 import {
   MAX_PRODUCT_IMAGES,
   MAX_PRODUCT_IMAGE_SIZE,
@@ -45,7 +51,7 @@ type Product = {
   unit?: string | null;
   deliveryDays?: number | null;
   images?: string | null;
-  active?: boolean | null;
+  status?: ProductStatus | null;
 };
 
 const readAsBase64 = (file: File) => new Promise<string>((resolve, reject) => {
@@ -70,11 +76,15 @@ export default function SupplierCatalogue() {
 
   const refresh = () => utils.marketplace.myProducts.invalidate();
 
-  const setActive = trpc.marketplace.setProductActive.useMutation({
+  // ONE CONTROL PER DECLARED MOVE, read from shared/productLifecycle.ts.
+  // Rendering a fixed pair of buttons would let the UI offer a move the server
+  // refuses - which is how "invalid status" reaches a supplier who did exactly
+  // what the screen invited.
+  const setStatus = trpc.marketplace.setProductStatus.useMutation({
     onSuccess: result => {
-      toast.success(result.active
-        ? (ar ? 'تم نشر المنتج' : 'Product published')
-        : (ar ? 'تم إخفاء المنتج' : 'Product delisted'));
+      toast.success(ar
+        ? `تم تغيير الحالة إلى «${productStatusLabel(result.to, 'ar')}»`
+        : `Moved to ${productStatusLabel(result.to, 'en')}`);
       refresh();
     },
     onError: error => toast.error(error.message),
@@ -239,7 +249,8 @@ export default function SupplierCatalogue() {
             <div className="space-y-3">
               {products.map((product: Product) => {
                 const images = parseProductImages(product.images);
-                const live = product.active !== false;
+                const status: ProductStatus = product.status ?? 'active';
+                const moves = PRODUCT_TRANSITIONS[status] ?? [];
                 return (
                   <div key={product.id} className="flex flex-wrap items-center gap-3 rounded-xl border p-3" data-testid="catalogue-row">
                     {images[0]
@@ -249,7 +260,18 @@ export default function SupplierCatalogue() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="truncate text-sm font-medium">{ar && product.nameAr ? product.nameAr : product.name}</p>
-                        {!live && <Badge variant="outline" className="text-xs">{ar ? 'مخفي' : 'Delisted'}</Badge>}
+                        {/* THE STATE IS ALWAYS NAMED, including Live. A badge
+                            that appears only when something is wrong makes the
+                            common case ambiguous - "no badge" then means both
+                            "live" and "this row has not loaded". */}
+                        <Badge
+                          variant={status === 'active' ? 'default' : 'outline'}
+                          className="text-xs"
+                          title={productStatusHelp(status, lang)}
+                          data-testid={`catalogue-status-${product.id}`}
+                        >
+                          {productStatusLabel(status, lang)}
+                        </Badge>
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {product.category}
@@ -273,14 +295,22 @@ export default function SupplierCatalogue() {
                       <Button size="sm" variant="ghost" data-testid="catalogue-images" onClick={() => setImaging(product)}>
                         <ImagePlus className="h-3.5 w-3.5" />
                       </Button>
-                      <Button
-                        size="sm" variant="ghost" data-testid="catalogue-toggle"
-                        title={live ? (ar ? 'إخفاء' : 'Delist') : (ar ? 'نشر' : 'Publish')}
-                        onClick={() => setActive.mutate({ id: product.id, active: !live })}
-                        disabled={setActive.isPending}
-                      >
-                        {live ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                      </Button>
+                      {moves.map(next => (
+                        <Button
+                          key={next}
+                          size="sm" variant={next === 'archived' ? 'ghost' : 'outline'}
+                          className={next === 'archived' ? 'text-muted-foreground' : undefined}
+                          data-testid={`catalogue-to-${next}-${product.id}`}
+                          title={productStatusHelp(next, lang)}
+                          onClick={() => setStatus.mutate({ id: product.id, status: next })}
+                          disabled={setStatus.isPending}
+                        >
+                          {next === 'active' && <Eye className="h-3.5 w-3.5 me-1" />}
+                          {next === 'inactive' && <EyeOff className="h-3.5 w-3.5 me-1" />}
+                          {next === 'archived' && <Archive className="h-3.5 w-3.5 me-1" />}
+                          <span className="text-xs">{productStatusLabel(next, lang)}</span>
+                        </Button>
+                      ))}
                     </div>
                   </div>
                 );

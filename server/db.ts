@@ -1,8 +1,9 @@
 import { drizzle } from "drizzle-orm/mysql2";
 import { eq } from "drizzle-orm";
-import { InsertUser, users, userAccountAuditEvents, revokedSessions } from "../drizzle/schema";
+import { InsertUser, users, revokedSessions } from "../drizzle/schema";
 import { readFileSync } from "node:fs";
 import { ENV } from './_core/env';
+import { recordAccountEvent } from './_core/accountAudit';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -157,7 +158,7 @@ export async function upsertUser(user: InsertUser): Promise<{ created: boolean; 
     if (normalizedUsername && !existing.username) updateSet.username = normalizedUsername;
     await db.update(users).set(updateSet).where(eq(users.id, existing.id));
     if (linkedAdminAccount) {
-      await db.insert(userAccountAuditEvents).values({ userId: existing.id, actorId: null, action: 'oauth_identity_linked', source: 'self_registered', note: 'Admin-created account claimed after matching OAuth email.' });
+      await recordAccountEvent(db, { userId: existing.id, actorId: null, action: 'oauth_identity_linked', source: 'self_registered', note: 'Admin-created account claimed after matching OAuth email.' });
     }
     return { created: false, linkedExisting: linkedAdminAccount, userId: existing.id };
   }
@@ -181,7 +182,7 @@ export async function upsertUser(user: InsertUser): Promise<{ created: boolean; 
   const result = await db.insert(users).values(values);
   const userId = Number(result[0]?.insertId);
   if (userId) {
-    await db.insert(userAccountAuditEvents).values({ userId, actorId: user.createdBy ?? null, action: 'account_created', source: values.accountSource ?? 'self_registered', note: values.creationNote ?? null });
+    await recordAccountEvent(db, { userId, actorId: user.createdBy ?? null, action: 'account_created', source: values.accountSource ?? 'self_registered', note: values.creationNote ?? null });
   }
   return { created: true, linkedExisting: false, userId };
 }

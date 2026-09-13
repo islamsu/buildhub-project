@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import VendorReputation from '@/components/VendorReputation';
 import { parseProductImages } from '@shared/productImages';
+import { pricingBasisLabel, type ServicePricingBasis } from '@shared/serviceCatalogue';
 import { ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Calendar, MapPin, MessageSquare, Package, Star, Store } from 'lucide-react';
 
 function initials(name: string | null | undefined) {
@@ -39,6 +40,13 @@ export default function VendorProfile() {
   );
   const { data: portfolio = [] } = trpc.portfolio.list.useQuery(
     { userId },
+    { enabled: Number.isFinite(userId) && userId > 0 },
+  );
+  // WHAT THIS PROVIDER ACTUALLY OFFERS. `forProvider` applies both visibility
+  // clauses - live offering AND approved account - so this page cannot show a
+  // service from an account BuildHub has not finished vetting.
+  const { data: offeredServices = [] } = trpc.services.forProvider.useQuery(
+    { providerId: userId },
     { enabled: Number.isFinite(userId) && userId > 0 },
   );
   const isSelf = Boolean(user && (user as { id?: number }).id === userId);
@@ -274,6 +282,48 @@ export default function VendorProfile() {
             </div>
           )}
 
+          {/* THE SERVICE CATALOGUE — what this provider offers, as opposed to
+              the categories above, which are what they can be SENT. Absent
+              entirely when they have listed none: an empty "Services offered"
+              heading reads as a broken page, and a fabricated sample would be
+              worse. */}
+          {offeredServices.length > 0 && (
+            <div data-testid="vendor-services">
+              <h2 className="text-sm font-semibold mb-2">{t('svc.publicHeading')}</h2>
+              <div className="space-y-2">
+                {offeredServices.map(service => (
+                  <div key={service.id} className="rounded-lg border p-3" data-testid={`vendor-service-${service.id}`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{service.title}</span>
+                      <Badge variant="outline" className="font-normal">
+                        {ar ? service.categoryNameAr : service.categoryNameEn}
+                      </Badge>
+                    </div>
+                    {service.description && (
+                      <p className="mt-1 text-sm text-muted-foreground">{service.description}</p>
+                    )}
+                    <p className="mt-1 text-sm">
+                      {/* Quote on request shows the sentence and NO figure.
+                          There is no number to show, and "from EGP 0" would be
+                          worse than saying so. */}
+                      {service.pricingBasis === 'quote_on_request'
+                        ? pricingBasisLabel('quote_on_request', lang)
+                        : `${publicPriceRange(service.priceMin, service.priceMax, ar)} · ${pricingBasisLabel(service.pricingBasis as ServicePricingBasis, lang)}`}
+                    </p>
+                    {(service.leadTimeDays != null || service.warrantyMonths != null) && (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {[
+                          service.leadTimeDays != null ? `${t('svc.leadTime')}: ${service.leadTimeDays} ${t('svc.days')}` : null,
+                          service.warrantyMonths != null ? `${t('svc.warranty')}: ${service.warrantyMonths} ${t('svc.months')}` : null,
+                        ].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* PROVIDER PORTFOLIO. Real completed work the provider added; never
               fabricated, and absent when the provider has added none. */}
           {portfolio.length > 0 && (
@@ -368,4 +418,17 @@ export default function VendorProfile() {
       </Card>
     </Shell>
   );
+}
+
+/**
+ * "EGP 120 – 260", "from EGP 120", "up to EGP 260" - or a plain sentence when
+ * neither bound was given. Never a zero standing in for an unknown price.
+ */
+function publicPriceRange(min: unknown, max: unknown, ar: boolean): string {
+  const currency = ar ? 'ج.م' : 'EGP';
+  const n = (value: unknown) => Number(value).toLocaleString(ar ? 'ar-EG' : 'en-EG');
+  if (min != null && max != null) return `${currency} ${n(min)} – ${n(max)}`;
+  if (min != null) return ar ? `من ${currency} ${n(min)}` : `from ${currency} ${n(min)}`;
+  if (max != null) return ar ? `حتى ${currency} ${n(max)}` : `up to ${currency} ${n(max)}`;
+  return ar ? 'السعر غير محدد' : 'Price not stated';
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { adminRegistrationSurface } from './_testing/adminSurface';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -17,7 +18,7 @@ describe('compliance workflow structure', () => {
   });
 
   it('exposes role and status filters in the admin compliance queue', () => {
-    const admin = source('client/src/pages/AdminDashboard.tsx');
+    const admin = adminRegistrationSurface();
     expect(admin).toContain('complianceRoleFilter');
     expect(admin).toContain('complianceStatusFilter');
     expect(admin).toContain('filteredComplianceQueue');

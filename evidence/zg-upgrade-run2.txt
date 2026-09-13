@@ -1,0 +1,7 @@
+PASS  a database at MAIN's migration state exists  [42 migrations, 279 statements, 45 tables]
+PASS  and it holds real rows a migration could break  [{"ownerId":1,"vendorId":2,"projectId":1,"productId":1}]
+PASS  every one of this branch's 12 migrations applies to a POPULATED database  [0042_product_category_taxonomy.sql:14 0043_category_administration.sql:2 0044_referral_late_binding.sql:3 0045_referral_effect_ref.sql:1 0046_dispute_lifecycle.sql:24 0047_support_tickets.sql:25 0048_review_moderation.sql:16 0049_product_lifecycle.sql:6 0050_document_lifecycle.sql:7 0051_notification_preferences.sql:3 0052_service_catalogue.sql:7 0053_project_membership_audit.sql:1]
+PASS  and every pre-existing row survived with its values intact  [7 values unchanged]
+PASS  and the schema actually moved forward  [45 tables at main -> 58 after the upgrade]
+
+5/5 checks passed

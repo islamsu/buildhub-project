@@ -56,6 +56,25 @@ export function PlacementBadge({ label }: { label: PlacementLabel }) {
   );
 }
 
+/**
+ * The heading for a Master slot, DERIVED FROM THE ROW rather than fixed.
+ *
+ * This heading used to read "Featured provider" whatever filled the slot, so a
+ * PAID Master booking rendered under BuildHub's editorial word while the badge
+ * on the card two lines below it said Sponsored. The owner's placement decision
+ * settles that vocabulary - Featured is editorial, Sponsored is commercial - so
+ * the heading now follows the same `label` the badge does and the two can no
+ * longer contradict each other.
+ */
+function masterSlotHeading(label: PlacementLabel, entity: 'provider' | 'product', ar: boolean): string {
+  if (label === 'SPONSORED') {
+    if (entity === 'provider') return ar ? 'مزوّد خدمة برعاية' : 'Sponsored provider';
+    return ar ? 'منتج برعاية' : 'Sponsored product';
+  }
+  if (entity === 'provider') return ar ? 'مزوّد الخدمة المميّز' : 'Featured provider';
+  return ar ? 'منتج مميّز' : 'Featured product';
+}
+
 /** The heading that sits above the slot, in both languages. */
 function SlotHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -189,9 +208,13 @@ export function ProviderSpotlight({ category }: { category?: string }) {
   );
   if (!enabled || placed.length === 0) return null;
 
+  // A MIXED strip: it can hold a paid booking and an editorial pick at the
+  // same time, so the heading has to be neutral in BOTH languages and the
+  // per-card PlacementBadge carries the actual claim. The Arabic read
+  // 'مزوّدون مميّزون' - the editorial word - over rows that may be bought.
   return (
-    <section className="mb-8" aria-label={ar ? 'مزوّدون مميّزون' : 'Spotlight providers'} data-testid="provider-spotlight">
-      <SlotHeading>{ar ? 'مزوّدون مميّزون' : 'Spotlight providers'}</SlotHeading>
+    <section className="mb-8" aria-label={ar ? 'مزوّدون في دائرة الضوء' : 'Spotlight providers'} data-testid="provider-spotlight">
+      <SlotHeading>{ar ? 'مزوّدون في دائرة الضوء' : 'Spotlight providers'}</SlotHeading>
       <div className="grid gap-3">
         {placed.map(vendor => (
           <PlacedProviderCard key={`spotlight-${vendor.placementId}`} placed={vendor} compact />
@@ -214,8 +237,8 @@ export function ProductSpotlight({ category }: { category?: string }) {
   if (!enabled || placed.length === 0) return null;
 
   return (
-    <section className="mb-6" aria-label={ar ? 'منتجات مميّزة' : 'Spotlight products'} data-testid="product-spotlight">
-      <SlotHeading>{ar ? 'منتجات مميّزة' : 'Spotlight products'}</SlotHeading>
+    <section className="mb-6" aria-label={ar ? 'منتجات في دائرة الضوء' : 'Spotlight products'} data-testid="product-spotlight">
+      <SlotHeading>{ar ? 'منتجات في دائرة الضوء' : 'Spotlight products'}</SlotHeading>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {placed.map(product => (
           <Card key={`spotlight-${product.placementId}`} className="overflow-hidden">
@@ -268,7 +291,7 @@ export function MasterProviderSlot({ category }: { category?: string }) {
 
   return (
     <section className="mb-8" aria-label={ar ? 'مساحة إعلانية رئيسية' : 'Master placement'} data-testid="master-provider-slot">
-      <SlotHeading>{ar ? 'مزوّد الخدمة المميّز' : 'Featured provider'}</SlotHeading>
+      <SlotHeading>{masterSlotHeading(placed.label, 'provider', ar)}</SlotHeading>
       {/* THE SAME CARD the Spotlight block renders, at full width. One
           component means a field cannot appear on one surface and not the
           other, and a fabricated field cannot be slipped into the smaller of
@@ -306,7 +329,7 @@ export function MasterProductSlot({ category }: { category?: string }) {
 
   return (
     <section className="mb-8" aria-label={ar ? 'مساحة إعلانية رئيسية' : 'Master placement'} data-testid="master-product-slot">
-      <SlotHeading>{ar ? 'منتج مميّز' : 'Featured product'}</SlotHeading>
+      <SlotHeading>{masterSlotHeading(placed.label, 'product', ar)}</SlotHeading>
       <Card className="overflow-hidden border-2">
         <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
           <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted">

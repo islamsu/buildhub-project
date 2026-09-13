@@ -1,0 +1,51 @@
+PASS  BOTH suppliers really did bid on the same RFQ - they are rivals  [2]
+PASS  a quotation dispute offers exactly ONE respondent - the supplier who quoted  [["ZG Winner 14986425"]]
+PASS  and the losing bidder is NOT among them
+PASS  A RIVAL BIDDER CANNOT EVEN READ THE CAST of the winning quotation  [404 NOT_FOUND]
+PASS  A RIVAL BIDDER CANNOT RAISE A DISPUTE about the winning quotation  [404 NOT_FOUND]
+PASS  the buyer CAN raise one about the quotation they received
+PASS  and it is recorded against the QUOTATION, not against a project  [quotation:79:null]
+PASS  naming somebody who is not in the subject's cast is refused  [403: The respondent must be someone involved in the thing you are]
+PASS  and naming YOURSELF as the respondent is refused too  [400: You cannot open a dispute against yourself.]
+PASS  a subject id that does not exist is refused, not created against nothing  [404 NOT_FOUND]
+PASS  the rival bidder cannot READ the dispute  [404 NOT_FOUND]
+PASS  the rival bidder cannot post a MESSAGE into it  [404 NOT_FOUND]
+PASS  the rival bidder cannot ATTACH evidence to it  [404 NOT_FOUND]
+PASS  the rival bidder cannot WITHDRAW it  [404 NOT_FOUND]
+PASS  the rival bidder cannot REOPEN it  [404 NOT_FOUND]
+PASS  the rival bidder does not see it in their own list  [total=0]
+PASS  an unrelated contractor cannot READ the dispute  [404 NOT_FOUND]
+PASS  an unrelated contractor cannot post a MESSAGE into it  [404 NOT_FOUND]
+PASS  an unrelated contractor cannot ATTACH evidence to it  [404 NOT_FOUND]
+PASS  an unrelated contractor cannot WITHDRAW it  [404 NOT_FOUND]
+PASS  an unrelated contractor cannot REOPEN it  [404 NOT_FOUND]
+PASS  an unrelated contractor does not see it in their own list  [total=0]
+PASS  the rival bidder posted nothing into the dispute
+PASS  a PARTY to the dispute cannot reach the support queue  [403 FORBIDDEN]
+PASS  a PARTY to the dispute cannot reach the admin detail  [403 FORBIDDEN]
+PASS  a PARTY to the dispute cannot reach the assignee list  [403 FORBIDDEN]
+PASS  a PARTY to the dispute cannot reach the internal notes  [404 NOT_FOUND]
+PASS  a party cannot move it through the state machine  [403 FORBIDDEN]
+PASS  a party cannot assign it  [403 FORBIDDEN]
+PASS  a party cannot write an internal note  [403 FORBIDDEN]
+PASS  resolving WITHOUT saying how is refused - a bare status flip is not a resolution  [400: Resolving a dispute requires a resolution type - a bare status change ]
+PASS  open -> investigating is allowed
+PASS  and moving it to the state it is already in is refused  [400: This dispute is already investigating.]
+PASS  an administrator cannot record a WITHDRAWAL - that is the reporter's own decision  [400]
+PASS  resolving WITH a type and notes is allowed
+PASS  and a resolved dispute cannot be quietly re-resolved with a different answer  [400: This dispute is already resolved.]
+PASS  the first resolution stands, unchanged  [resolved_by_platform]
+PASS  every move is in the history, in order, with nothing invented  [none>open,open>investigating,investigating>resolved]
+PASS  and each history row records WHO made the move
+PASS  the refused moves left NO history rows behind  [3]
+PASS  opening the dispute is in the account audit trail  [3]
+PASS  the supplier was notified when it was raised and when it moved  [3 notifications]
+PASS  and the RIVAL BIDDER was told nothing about any of it  [0 notifications]
+PASS  the support queue finds it by title  [total=1]
+PASS  and the admin detail names the quotation it is about, in words  [Quotation #79 on ZG matrix rfq 14986425]
+BLOCKED  a participant in dispute A cannot fetch dispute B's file  [no object store configured on this environment - storagePut refuses, so no file exists to fetch]
+PASS  an evidence id that does not exist is refused, not probed  [404 NOT_FOUND]
+PASS  and the storage proxy refuses a guessed dispute-evidence key outright  [403]
+PASS  CLEANUP: every row this probe planted is gone
+
+48/48 passed, 1 BLOCKED BY INFRASTRUCTURE (not counted either way)

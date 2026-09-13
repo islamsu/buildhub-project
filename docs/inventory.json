@@ -73,6 +73,14 @@
       "deadParamRoute": false
     },
     {
+      "path": "/admin/categories",
+      "component": "AdminCategories",
+      "source": "client/src/pages/AdminCategories.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
       "path": "/admin/users/:id",
       "component": "AdminUserDetail",
       "source": "client/src/pages/AdminUserDetail.tsx",
@@ -297,6 +305,38 @@
       "deadParamRoute": false
     },
     {
+      "path": "/disputes/:id",
+      "component": "DisputeDetail",
+      "source": "client/src/pages/DisputeDetail.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/disputes",
+      "component": "MyDisputes",
+      "source": "client/src/pages/MyDisputes.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/support/:id",
+      "component": "SupportTicketDetail",
+      "source": "client/src/pages/SupportTicketDetail.tsx",
+      "declaresParam": true,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
+      "path": "/support",
+      "component": "MySupport",
+      "source": "client/src/pages/MySupport.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
       "path": "/service-categories",
       "component": "ServiceCategoriesPage",
       "source": "client/src/pages/ServiceCategoriesPage.tsx",
@@ -436,6 +476,11 @@
       "indent": 2
     },
     {
+      "name": "changeMemberRole",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "removeMember",
       "tier": "protectedProcedure",
       "indent": 2
@@ -496,6 +541,21 @@
       "indent": 2
     },
     {
+      "name": "replaceDocument",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "archiveDocument",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "restoreDocument",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "uploadDocument",
       "tier": "protectedProcedure",
       "indent": 2
@@ -527,11 +587,6 @@
     },
     {
       "name": "platformStats",
-      "tier": "publicProcedure",
-      "indent": 2
-    },
-    {
-      "name": "featuredVendors",
       "tier": "publicProcedure",
       "indent": 2
     },
@@ -596,6 +651,11 @@
       "indent": 2
     },
     {
+      "name": "categories",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
       "name": "importTemplate",
       "tier": "publicProcedure",
       "indent": 2
@@ -606,7 +666,7 @@
       "indent": 3
     },
     {
-      "name": "setProductActive",
+      "name": "setProductStatus",
       "tier": "approvedProviderProcedure",
       "indent": 2
     },
@@ -619,11 +679,6 @@
       "name": "setProductImages",
       "tier": "approvedProviderProcedure",
       "indent": 2
-    },
-    {
-      "name": "categories",
-      "tier": "publicProcedure",
-      "indent": 3
     },
     {
       "name": "questions",
@@ -713,7 +768,12 @@
     {
       "name": "eligible",
       "tier": "approvedProviderProcedure",
-      "indent": 3
+      "indent": 2
+    },
+    {
+      "name": "queue",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
     },
     {
       "name": "openEnquiry",
@@ -766,6 +826,16 @@
       "indent": 2
     },
     {
+      "name": "markThreadRead",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "unreadCount",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "send",
       "tier": "protectedProcedure",
       "indent": 2
@@ -786,9 +856,54 @@
       "indent": 2
     },
     {
+      "name": "markRead",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "markAllRead",
       "tier": "protectedProcedure",
       "indent": 2
+    },
+    {
+      "name": "preferences",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "setPreference",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "categories",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "mine",
+      "tier": "complianceProcedure",
+      "indent": 2
+    },
+    {
+      "name": "forProvider",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "create",
+      "tier": "complianceProcedure",
+      "indent": 3
+    },
+    {
+      "name": "update",
+      "tier": "complianceProcedure",
+      "indent": 3
+    },
+    {
+      "name": "setStatus",
+      "tier": "complianceProcedure",
+      "indent": 3
     },
     {
       "name": "forUser",
@@ -811,14 +926,84 @@
       "indent": 2
     },
     {
+      "name": "respond",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "report",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myTickets",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "createTicket",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "ticket",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "reply",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "attach",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "myDisputes",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "subjectParties",
       "tier": "protectedProcedure",
       "indent": 2
     },
     {
       "name": "create",
       "tier": "protectedProcedure",
-      "indent": 3
+      "indent": 2
+    },
+    {
+      "name": "withdraw",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "reopen",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "get",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "postMessage",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "addEvidence",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "removeEvidence",
+      "tier": "protectedProcedure",
+      "indent": 2
     },
     {
       "name": "list",
@@ -873,7 +1058,7 @@
     {
       "name": "myReferral",
       "tier": "protectedProcedure",
-      "indent": 3
+      "indent": 2
     },
     {
       "name": "saveMyCompanyProfile",
@@ -911,9 +1096,39 @@
       "indent": 2
     },
     {
+      "name": "categories",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "createCategory",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "updateCategory",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "setCategoryStatus",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "addCategoryAlias",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
+      "name": "removeCategoryAlias",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 3
+    },
+    {
       "name": "stats",
       "tier": "adminWith:users.read",
-      "indent": 2
+      "indent": 3
     },
     {
       "name": "users",
@@ -941,9 +1156,14 @@
       "indent": 2
     },
     {
+      "name": "auditFilterOptions",
+      "tier": "adminWith:audit.read",
+      "indent": 2
+    },
+    {
       "name": "createDummyUser",
       "tier": "adminWith:qa.manage",
-      "indent": 2
+      "indent": 3
     },
     {
       "name": "userDetail",
@@ -1128,12 +1348,12 @@
     {
       "name": "projects",
       "tier": "adminWith:users.read",
-      "indent": 3
+      "indent": 2
     },
     {
       "name": "products",
       "tier": "adminWith:marketplace.manage",
-      "indent": 3
+      "indent": 2
     },
     {
       "name": "projectDetail",
@@ -1143,7 +1363,7 @@
     {
       "name": "vendorNameChanges",
       "tier": "adminWith:marketplace.manage",
-      "indent": 3
+      "indent": 2
     },
     {
       "name": "reviewVendorNameChange",
@@ -1311,7 +1531,77 @@
       "indent": 2
     },
     {
+      "name": "disputeDetail",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "reviewReports",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "moderateReview",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "resolveReviewReport",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "supportTickets",
+      "tier": "adminWith:support.manage",
+      "indent": 3
+    },
+    {
+      "name": "supportAssignees",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "assignSupportTicket",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "setSupportTicketPriority",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "transitionSupportTicket",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "supportTicketNotes",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "addSupportTicketNote",
+      "tier": "adminWith:support.manage",
+      "indent": 3
+    },
+    {
+      "name": "disputeAssignees",
+      "tier": "adminWith:support.manage",
+      "indent": 3
+    },
+    {
       "name": "updateDispute",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "addDisputeNote",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "assignDispute",
       "tier": "adminWith:support.manage",
       "indent": 2
     },
@@ -1416,17 +1706,12 @@
       "indent": 2
     },
     {
-      "name": "myEntitlements",
-      "tier": "protectedProcedure",
-      "indent": 2
-    },
-    {
-      "name": "myPlan",
-      "tier": "protectedProcedure",
-      "indent": 2
-    },
-    {
       "name": "myEnquiryUsage",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myBenefits",
       "tier": "protectedProcedure",
       "indent": 2
     },
@@ -1447,20 +1732,20 @@
     }
   ],
   "procedureTiers": {
-    "publicProcedure": 33,
-    "protectedProcedure": 65,
-    "complianceProcedure": 2,
-    "approvedProviderProcedure": 29,
+    "publicProcedure": 34,
+    "protectedProcedure": 87,
+    "complianceProcedure": 6,
+    "approvedProviderProcedure": 30,
+    "adminWith:marketplace.manage": 44,
     "adminWith:users.read": 7,
     "adminWith:users.manage": 6,
-    "adminWith:audit.read": 5,
+    "adminWith:audit.read": 6,
     "adminWith:qa.manage": 7,
-    "adminWith:marketplace.manage": 38,
     "adminWith:billing.read": 4,
     "superAdminProcedure": 10,
     "adminProcedure": 4,
     "adminWith:billing.manage": 8,
-    "adminWith:support.manage": 2,
+    "adminWith:support.manage": 16,
     "adminWith:settings.manage": 2,
     "aiChatProcedure": 1
   },
@@ -1532,8 +1817,8 @@
     {
       "ident": "documents",
       "name": "documents",
-      "columns": 11,
-      "references": 2,
+      "columns": 16,
+      "references": 4,
       "notNull": 5,
       "unique": 0
     },
@@ -1572,9 +1857,9 @@
     {
       "ident": "products",
       "name": "products",
-      "columns": 25,
-      "references": 1,
-      "notNull": 5,
+      "columns": 31,
+      "references": 2,
+      "notNull": 6,
       "unique": 0
     },
     {
@@ -1626,9 +1911,41 @@
       "unique": 0
     },
     {
+      "ident": "notificationPreferences",
+      "name": "notificationPreferences",
+      "columns": 7,
+      "references": 1,
+      "notNull": 5,
+      "unique": 0
+    },
+    {
+      "ident": "serviceOfferings",
+      "name": "serviceOfferings",
+      "columns": 17,
+      "references": 2,
+      "notNull": 7,
+      "unique": 0
+    },
+    {
       "ident": "reviews",
       "name": "reviews",
-      "columns": 11,
+      "columns": 14,
+      "references": 4,
+      "notNull": 5,
+      "unique": 0
+    },
+    {
+      "ident": "reviewResponses",
+      "name": "reviewResponses",
+      "columns": 8,
+      "references": 2,
+      "notNull": 5,
+      "unique": 0
+    },
+    {
+      "ident": "reviewReports",
+      "name": "reviewReports",
+      "columns": 13,
       "references": 3,
       "notNull": 5,
       "unique": 0
@@ -1644,9 +1961,65 @@
     {
       "ident": "disputes",
       "name": "disputes",
-      "columns": 15,
+      "columns": 35,
+      "references": 7,
+      "notNull": 11,
+      "unique": 0
+    },
+    {
+      "ident": "disputeEvidence",
+      "name": "disputeEvidence",
+      "columns": 12,
       "references": 3,
+      "notNull": 7,
+      "unique": 0
+    },
+    {
+      "ident": "disputeMessages",
+      "name": "disputeMessages",
+      "columns": 7,
+      "references": 2,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "disputeStatusHistory",
+      "name": "disputeStatusHistory",
+      "columns": 8,
+      "references": 2,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "supportTickets",
+      "name": "supportTickets",
+      "columns": 24,
+      "references": 5,
       "notNull": 8,
+      "unique": 0
+    },
+    {
+      "ident": "supportTicketMessages",
+      "name": "supportTicketMessages",
+      "columns": 8,
+      "references": 2,
+      "notNull": 5,
+      "unique": 0
+    },
+    {
+      "ident": "supportTicketAttachments",
+      "name": "supportTicketAttachments",
+      "columns": 11,
+      "references": 3,
+      "notNull": 7,
+      "unique": 0
+    },
+    {
+      "ident": "supportTicketStatusHistory",
+      "name": "supportTicketStatusHistory",
+      "columns": 8,
+      "references": 2,
+      "notNull": 4,
       "unique": 0
     },
     {
@@ -1696,6 +2069,22 @@
       "references": 3,
       "notNull": 2,
       "unique": 0
+    },
+    {
+      "ident": "productCategories",
+      "name": "productCategories",
+      "columns": 16,
+      "references": 2,
+      "notNull": 8,
+      "unique": 1
+    },
+    {
+      "ident": "productCategoryAliases",
+      "name": "productCategoryAliases",
+      "columns": 7,
+      "references": 2,
+      "notNull": 4,
+      "unique": 1
     },
     {
       "ident": "vendorCategories",
@@ -1796,15 +2185,15 @@
     {
       "ident": "referralCampaigns",
       "name": "referralCampaigns",
-      "columns": 18,
+      "columns": 21,
       "references": 1,
-      "notNull": 11,
+      "notNull": 13,
       "unique": 0
     },
     {
       "ident": "referralRewards",
       "name": "referralRewards",
-      "columns": 17,
+      "columns": 18,
       "references": 3,
       "notNull": 8,
       "unique": 0
@@ -1829,102 +2218,147 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 1266,
+      "line": 652,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2221,
+      "line": 1429,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2301,
+      "line": 1517,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3029,
+      "line": 2745,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3086,
+      "line": 2825,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3493,
+      "line": 3641,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3740,
+      "line": 3698,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3880,
+      "line": 4244,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5297,
+      "line": 4571,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5375,
+      "line": 4986,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6149,
+      "line": 5228,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6220,
+      "line": 5420,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6608,
+      "line": 5590,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6809,
+      "line": 7037,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6834,
+      "line": 7370,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 6859,
+      "line": 7448,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 8294,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 8365,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 8769,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 8986,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 9016,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 9049,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 9256,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 9338,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 9432,
       "via": "notifyUser"
     },
     {
       "file": "server/notifications.ts",
-      "line": 40,
+      "line": 41,
       "via": "notifyUser"
     },
     {
       "file": "server/notifications.ts",
-      "line": 43,
+      "line": 51,
       "via": "helper implementation"
     },
     {
       "file": "server/notifications.ts",
-      "line": 57,
+      "line": 65,
       "via": "notifyUser"
     },
     {
       "file": "server/notifications.ts",
-      "line": 60,
+      "line": 78,
       "via": "helper implementation"
     }
   ],
@@ -1932,6 +2366,18 @@
     {
       "name": "uploadDocument",
       "tier": "complianceProcedure"
+    },
+    {
+      "name": "replaceDocument",
+      "tier": "protectedProcedure"
+    },
+    {
+      "name": "archiveDocument",
+      "tier": "protectedProcedure"
+    },
+    {
+      "name": "restoreDocument",
+      "tier": "protectedProcedure"
     },
     {
       "name": "uploadDocument",

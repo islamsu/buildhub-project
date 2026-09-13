@@ -1,0 +1,45 @@
+PASS  the taxonomy reached the real database  [waterproofing=24 pools=32 marble=8 granite=9]
+PASS  "Pools" is an ALIAS of a canonically-named category, not a duplicate row
+PASS  REPORTED CASE: the dry run accepts Waterproofing and Pools  [status=200 errorCount=0 first=]
+PASS  REPORTED CASE: all four rows parsed  [4]
+PASS  REPORTED CASE: no category issues to group
+PASS  the preview shows "Pools" resolving to its canonical name BEFORE anything is written  [[["Waterproofing","Waterproofing"],["Pools","Swimming Pool Equipment"],["waterproofing","Waterproofing"]]]
+PASS  the preview shows Waterproofing resolving to itself
+PASS  a dry run writes nothing
+PASS  REPORTED CASE: the import commits  [status=200 imported=4 err=]
+PASS  DATABASE: four products persisted for this supplier
+PASS  DATABASE: the Waterproofing rows carry the canonical id, not free text
+PASS  DATABASE: a row typed as "Pools" is stored under Swimming Pool Equipment
+PASS  DATABASE: no imported row was left without a category link
+PASS  PARITY: single product listing accepts Waterproofing
+PASS  PARITY: single product listing accepts the alias "Pools"
+PASS  PARITY: the single-product path stores exactly what bulk stored  [32|Swimming Pool Equipment]
+PASS  EDIT: changing a category resolves through the same resolver
+PASS  EDIT: and the LINK moves with the name, never left behind  [32|Swimming Pool Equipment]
+PASS  EDIT: free text is refused rather than stored  [status=400]
+PASS  EDIT: and the refused edit left the row exactly as it was
+PASS  NEGATIVE: "Watrproofing" is refused, not silently filed under Waterproofing  [UNKNOWN]
+PASS  NEGATIVE: but the refusal OFFERS the near match for a person to choose  [["Waterproofing"]]
+PASS  PROPAGATION: hiding a category takes effect on the next upload, with no deployment  [errorCount=1]
+PASS  ERROR QUALITY: a hidden category is reported as INACTIVE, not UNKNOWN  [INACTIVE]
+PASS  ERROR QUALITY: and the message does not send the supplier hunting for a typo  ["Waterproofing" is a BuildHub category but is not currently available for new listings. Ask an administrator to reactivate it, or choose another.]
+PASS  PROPAGATION: reactivating restores it immediately
+PASS  PROPAGATION: a category created in the taxonomy is listable against with no deployment  [200  imported=1]
+PASS  DATABASE: and the product links to the new category row
+PASS  a file with 30 identical category mistakes reports ONE grouped issue  [1]
+PASS  and the grouped issue names every affected line  [30]
+PASS  while the per-row errors are still there for an error export  [30]
+PASS  VALIDATION FIRST: a file with one bad row imports nothing at all  [imported=0 count 1 -> 1]
+PASS  a categoryId column in the file is ignored
+PASS  SECURITY: the stored category follows the resolved name, not the file column  [stored=24 file said 32]
+PASS  the legacy "Marble & Granite" is refused rather than assigned to either  [UNKNOWN]
+PASS  AMBIGUOUS: two categories claiming one name is refused, not resolved by row order  [AMBIGUOUS]
+PASS  AMBIGUOUS: and the message names both candidates  ["Granite" matches more than one BuildHub category (Granite, Marble). Use the exact category name.]
+PASS  and removing the collision restores a clean resolution immediately
+PASS  the browse list is served from the taxonomy and is not empty  [36]
+PASS  the browse list offers Waterproofing and Pools' canonical name
+PASS  EVERY name the browse filter offers is a name a supplier may list against  [no orphans]
+PASS  CLEANUP: every row this probe planted is gone
+PASS  CLEANUP: the taxonomy is back exactly as it was found
+
+43/43 passed

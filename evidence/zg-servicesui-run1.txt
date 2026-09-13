@@ -1,0 +1,27 @@
+PASS  1. SETUP: a contractor signs up and holds a session  [http=200]
+PASS  2. the Service catalogue section renders in /settings for a provider  [{"section":true,"card":true,"empty":true,"add":true}]
+PASS  3. and an empty catalogue says so, rather than showing a sample service
+PASS  4. with a way to add one
+PASS  5. QUOTE ON REQUEST IS THE DEFAULT, and no price box is offered with it  [quote_on_request|false]
+PASS  6. choosing a real basis REVEALS the price fields  [shown=true]
+PASS  7. and the help line follows the choice rather than sitting still  [An indicative rate per square metre of work.]
+PASS  8. the form accepts real values
+PASS  9. A REAL CLICK SAVES IT — as a draft, with the figures typed  [draft	120.00	260.00]
+PASS  10. A DRAFT IS INVISIBLE on the public vendor page, to a signed-out reader
+PASS  11. and a real click publishes it
+PASS  12. THE CUSTOMER SEES IT — on the public page, signed out  [Services offered Probe waterproofing 28475603 Waterproofing  Three-coa]
+PASS  13. with the real price range, not a placeholder
+PASS  14. and no zero standing in for anything
+PASS  15a. the EN catalogue has real content  [chars=283]
+PASS  16a. no raw translation key in EN
+PASS  17a. direction is ltr  [ltr]
+PASS  15b. the AR catalogue has real content  [chars=255]
+PASS  16b. no raw translation key in AR
+PASS  17b. direction is rtl  [rtl]
+PASS  18. and the status badge is genuinely Arabic  [منشورة]
+PASS  19. at 375px the catalogue renders with no horizontal overflow  [scroll=375 client=375]
+PASS  19. at 768px the catalogue renders with no horizontal overflow  [scroll=762 client=762]
+PASS  19. at 1440px the catalogue renders with no horizontal overflow  [scroll=1434 client=1434]
+PASS  20. CLEANUP: the probe account and its listings are gone
+
+25/25 checks passed

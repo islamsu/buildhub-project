@@ -183,6 +183,21 @@ describe('the events that matter are recorded', () => {
     // described the trail without writing to it.
     ;
 
+  /**
+   * EVERY FILE THAT WRITES THE TRAIL, not just routers.ts.
+   *
+   * The product publish/delist events moved into server/productLifecycle.ts
+   * when the boolean became a four-state lifecycle - one writer for all four
+   * moves rather than each call site remembering to record. A census that
+   * still read only routers.ts would have reported those events as missing
+   * while they were being written correctly, and - the direction that matters
+   * - would stop policing the subjectId invariant for them entirely.
+   */
+  const INSTRUMENTED = [
+    ROUTERS,
+    readSourceForAssertions(readFileSync(new URL('./productLifecycle.ts', import.meta.url), 'utf8')),
+  ].join('\n');
+
   it.each([
     'rfq_created',
     'quotation_submitted',
@@ -197,7 +212,7 @@ describe('the events that matter are recorded', () => {
     'product_images_changed',
     'product_question_answered',
   ])('%s is written from a real call site', action => {
-    expect(ROUTERS).toContain(`'${action}'`);
+    expect(INSTRUMENTED).toContain(`'${action}'`);
   });
 
   it('the award is recorded - the single event most worth keeping', () => {
@@ -240,7 +255,7 @@ describe('the events that matter are recorded', () => {
    * at the moment somebody would otherwise not ask it.
    */
   it('every call site records an id from the table its subjectType names', () => {
-    const sites = [...ROUTERS.matchAll(
+    const sites = [...INSTRUMENTED.matchAll(
       /recordCommercialEvent\([\s\S]{0,600}?\}\);/g,
     )].map(match => {
       const body = match[0];
@@ -251,15 +266,30 @@ describe('the events that matter are recorded', () => {
     }).filter(site => site.subjectType);
 
     // Instrumented events. If this number moves, the list below must too.
-    expect(sites).toHaveLength(10);
+    // 10 -> 12 when the service catalogue landed: created and updated in the
+    // router, plus the three transitions, which share one call site.
+    // 12 -> 15 when project membership became auditable: added, role changed,
+    // removed. Putting somebody on a project, changing their capacity on it or
+    // taking them off it decides WHO CAN READ the customer's documents, RFQs
+    // and quotations, and none of it was recorded anywhere.
+    expect(sites).toHaveLength(15);
 
     // The id expression each subjectType is allowed to carry. `input.rfqId` is
     // absent from 'quotation' and 'enquiry' deliberately - that was the defect.
     const ALLOWED: Record<string, string[]> = {
-      product:   ['id', 'input.id', 'input.productId', 'row.productId'],
+      product:   ['id', 'input.id', 'input.productId', 'row.productId', 'params.productId'],
+      // A service event names the service, never its category or its provider.
+      service:   ['serviceId', 'input.serviceId', 'params.serviceId'],
       rfq:       ['rfqId'],
       quotation: ['quotationId', 'input.quotationId'],
       enquiry:   ['result.enquiryId ?? 0'],
+      // A membership event names the PROJECT. The person it is about lives in
+      // `detail`, deliberately: `subjectId` is the handle the trail is queried
+      // by, and "everything that happened to project 12" is the question a
+      // dispute asks. Recording the userId here would answer it with another
+      // project's history whenever the two numbers happened to coincide -
+      // exactly the defect this test was written for.
+      project:   ['input.projectId'],
     };
 
     for (const site of sites) {

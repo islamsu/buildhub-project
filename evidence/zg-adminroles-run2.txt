@@ -1,0 +1,24 @@
+PASS  1. SETUP: an application-minted password hash is available to seed with  [scrypt$…]
+PASS  2. and four real administrators exist, one per job  [SUPER_ADMIN, USER_ADMIN, MARKETPLACE_ADMIN, SUPPORT_ADMIN]
+PASS  3. SUPER_ADMIN: signs in and the control plane renders
+PASS  4. SUPER_ADMIN: every destination their job needs is offered  [15 offered]
+PASS  5. SUPER_ADMIN: and NOTHING BEYOND IT — no control that would be refused  [none]
+PASS  6. SUPER_ADMIN: EVERY offered destination renders — no blank, no 404, no Access Denied, no wrong section  [15 destinations clicked]
+PASS  7. USER_ADMIN: signs in and the control plane renders
+PASS  8. USER_ADMIN: every destination their job needs is offered  [4 offered]
+PASS  9. USER_ADMIN: and NOTHING BEYOND IT — no control that would be refused  [none]
+PASS  10. USER_ADMIN: EVERY offered destination renders — no blank, no 404, no Access Denied, no wrong section  [4 destinations clicked]
+PASS  11. USER_ADMIN: THE SERVER REFUSES what the menu withheld — the boundary is not the sidebar  [5 refused server-side]
+PASS  12. MARKETPLACE_ADMIN: signs in and the control plane renders
+PASS  13. MARKETPLACE_ADMIN: every destination their job needs is offered  [7 offered]
+PASS  14. MARKETPLACE_ADMIN: and NOTHING BEYOND IT — no control that would be refused  [none]
+PASS  15. MARKETPLACE_ADMIN: EVERY offered destination renders — no blank, no 404, no Access Denied, no wrong section  [7 destinations clicked]
+PASS  16. MARKETPLACE_ADMIN: THE SERVER REFUSES what the menu withheld — the boundary is not the sidebar  [6 refused server-side]
+PASS  17. SUPPORT_ADMIN: signs in and the control plane renders
+PASS  18. SUPPORT_ADMIN: every destination their job needs is offered  [5 offered]
+PASS  19. SUPPORT_ADMIN: and NOTHING BEYOND IT — no control that would be refused  [none]
+PASS  20. SUPPORT_ADMIN: EVERY offered destination renders — no blank, no 404, no Access Denied, no wrong section  [5 destinations clicked]
+PASS  21. SUPPORT_ADMIN: THE SERVER REFUSES what the menu withheld — the boundary is not the sidebar  [6 refused server-side]
+PASS  CLEANUP: every administrator this probe created is gone  [users=0]
+
+22/22 checks passed

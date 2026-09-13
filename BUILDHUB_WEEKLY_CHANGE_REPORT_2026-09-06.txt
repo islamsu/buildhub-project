@@ -1,0 +1,573 @@
+================================================================================
+BUILDHUB — WEEKLY CHANGE REPORT
+Period: 2026-08-30 to 2026-09-06 (last 7 days)
+Generated: 2026-09-06
+Branch:   claude/buildhub-audit-verification-vrai7l
+HEAD:     afbe3de
+================================================================================
+
+
+1. THE HEADLINE NUMBERS
+--------------------------------------------------------------------------------
+
+  135 commits            62 by Claude, 73 by Codex
+  322 files changed      +51,860 insertions, -1,745 deletions
+  226 files added        1 file deleted
+   19 database migrations (0028 -> 0046)
+   14 new database tables
+   31 new server modules
+   46 new test files
+   29 new live browser/API probes
+    9 new client routes
+
+  Test suite now:        3,765 passing across 174 files
+  Typecheck:             clean (tsc --noEmit)
+  Build:                 clean (dist/index.js ~1.0 MB)
+
+
+2. MERGE STATUS — READ THIS FIRST
+--------------------------------------------------------------------------------
+
+  origin/main is at 3ae57ff (2026-09-03).
+  This branch is 32 COMMITS AHEAD OF MAIN AND UNMERGED.
+
+  PR #42 is open and carries all of it. Nothing in sections 3-6 below is on
+  main. It is all on the branch, tested and pushed, waiting on a merge
+  decision that requires your authority.
+
+  Everything before 3ae57ff (roughly 2026-08-30 to 2026-09-03, the Codex work
+  and the early Claude work) IS on main.
+
+
+3. WHAT WAS BUILT — BY WORKSTREAM
+--------------------------------------------------------------------------------
+
+3.1  COMMERCIAL PLACEMENT  (2026-08-30 -> 09-02, ~20 commits, on main)
+     Sponsored and editorial-featured placement as real records rather than
+     mock-ups. Master Discovery, Spotlight and Boost surfaces; placement
+     priority, capacity and package/surface rules; analytics an advertiser
+     could be shown. New tables: vendorSponsorships. Migrations 0028-0034,
+     0039, 0040.
+
+3.2  VENDOR IDENTITY AND PORTFOLIO  (2026-08-30 -> 09-01, on main)
+     A vendor is a company, not a personal name: business profile, primary
+     contact, tiers. Provider portfolio, publicly shown on the vendor page.
+     Vendor name-change requests with admin review. New tables:
+     vendorProfiles, portfolioItems, vendorNameChangeRequests.
+
+3.3  SUPPLIER AND RFQ WORKFLOW  (2026-08-31 -> 09-01, on main)
+     Dedicated supplier quote flow with attachments, review and audit.
+     Quotation revision model (one current per supplier per RFQ). RFQ
+     supplier invitations added alongside the open board. Project member
+     management wired to a real UI. Migration 0029, 0033.
+
+3.4  ADMIN CONSOLE — IDENTITY AND NAVIGATION  (2026-09-01, on main)
+     Raw database ids replaced by business identity throughout: vendor
+     lookup, RFQ investigation search, entity links, drill-down
+     destinations, humanized invitation and investigation states,
+     pagination on user management. Misleading 'healthy' badges removed.
+
+3.5  ADMIN CONTROL PLANE  (2026-09-02 -> 09-03, on main)
+     BuildHub cannot be robbed of its own control plane: Super Admin
+     survival rules, eligibility drift guard, admin internal notes,
+     allowlisted user detail editing. New table: adminNotes.
+
+3.6  VENDOR ENQUIRIES  (2026-09-02 -> 09-03, on main)
+     What a 'vendor enquiry' actually is, defined and then built: overview
+     counted in the database, list and detail with the platform's own
+     privacy boundary, assignment and its notification, per-enquiry URLs,
+     internal notes, a permissioned export. New table: enquiryAssignments.
+     Migration 0041. First rendered-browser QA in this project's history.
+
+3.7  P0 FIXES  (2026-09-03, BRANCH ONLY)
+     - The Super Admin authority console had NO WAY IN. /admin/admins was
+       the only surface for creating admins, setting roles, revoking
+       sessions and resetting passwords, and it was absent from the menu
+       with zero inbound links. Revoking a compromised admin's sessions
+       required typing a URL nobody was told existed.
+     - Three more administrator capabilities existed and could not be
+       reached.
+     - The user directory reported a sample of the platform as the
+       platform (silent truncation at 250).
+     - The account audit trail had forty-six writers and no writer.
+     - An outage rendered as an empty state ('No disputes have been
+       filed') instead of as a failure.
+
+3.8  CATEGORY TAXONOMY — CAT-1..CAT-12  (2026-09-03, BRANCH ONLY)
+     Root-caused from a real report (bulk upload rejecting 'Waterproofing'
+     and 'Pools'). The finding was larger than the report: THREE unrelated
+     product-category vocabularies existed, none administrable, and list 2
+     shared no values with list 1 - so a shopper browsing a marketplace
+     chip could never find a product, because nothing could be listed
+     under those names.
+     One canonical productCategories table, one resolver for all three
+     product write paths, a Super Admin management page, error quality
+     that distinguishes unknown from inactive from not-allowed, and the
+     compiled-in lists deleted. New tables: productCategories,
+     productCategoryAliases. Migrations 0042, 0043.
+
+3.9  REFERRAL LIFECYCLE — REF-1..REF-10  (2026-09-03 -> 09-04, BRANCH ONLY)
+     THE ENGINE COULD NEVER FIRE. Nothing wrote referrals.campaignId, so
+     every referral in the product's history short-circuited at 'no
+     campaign'. No reward had ever been granted by BuildHub, and none
+     could have been.
+     Late binding at qualification (owner decision), deterministic
+     campaign resolution under a row lock, all five qualification events
+     wired, rewards that ADD to an administrator's grant instead of
+     destroying it, SUBSCRIPTION_EXTENSION as real time with no invented
+     money, reversal that takes the reward back rather than just the word,
+     anti-abuse caps that hold under a race, expiry derived at read time,
+     and the ledger's first screens. New tables: referrals,
+     referralCampaigns, referralRewards. Migrations 0037, 0038, 0044, 0045.
+
+3.10 DISPUTE LIFECYCLE — DSP-1..DSP-8  (2026-09-04 -> 09-05, BRANCH ONLY)
+     DISPUTES WERE WRITE-ONLY FOR USERS. disputes.myDisputes had no client
+     caller and there was no /disputes route, while the notification a
+     respondent receives links to /disputes/:id. Being named in a dispute
+     meant being told about a page that was not there.
+     Polymorphic subject (PROJECT | RFQ | QUOTATION, owner decision), one
+     eligibility service where a competitor supplier never gets in, a real
+     state machine, evidence with per-dispute download authorization,
+     participant messages kept apart from admin internal notes, a paged
+     support queue, the user-facing surface, and the full negative matrix.
+     New tables: disputeEvidence, disputeMessages, disputeStatusHistory.
+     Migration 0046.
+
+3.11 REACHABILITY SWEEP  (2026-09-05, BRANCH ONLY)
+     20 tRPC procedures had no client caller. Each is now wired, deleted,
+     or declared with a reason - and a guard fails the build on the next
+     one. Wired: rfq.declineInvitation (the requester's list rendered a
+     'declined' badge no supplier could produce), createReferralCampaign
+     (campaigns were insertable only with SQL), and the whole audit
+     namespace. Deleted: four superseded readers.
+
+3.12 ADMIN LIST PAGINATION  (2026-09-05, BRANCH ONLY)
+     Five more lists were truncating silently at 250/200 rows with clients
+     that searched the truncated array in the browser. One canonical pager
+     now serves nine reads, with a guard against the next one.
+
+
+4. DEFECTS FOUND AND FIXED THAT NOBODY HAD REPORTED
+--------------------------------------------------------------------------------
+
+  These were found by building guards and probes, not by a bug report. Listed
+  because they indicate the class of problem the codebase had.
+
+  - The referral engine could never fire (no writer for campaignId).
+  - The Super Admin console was unreachable except by typing a URL.
+  - Disputes were write-only; the notification link resolved to nothing.
+  - Three disagreeing product-category vocabularies; one pair shared no values,
+    so a whole browse path could never return a product.
+  - Six silent list truncations (users, disputes, products, projects,
+    placements, vendorNameChanges) each paired with browser-side search.
+  - Unescaped LIKE patterns in six places, including one predating this work:
+    an administrator searching the enquiry list for "%" matched every row.
+  - A referral reward silently destroyed an unrelated administrator grant.
+  - Referral placements were booked on a surface no reader queries, so the
+    reward was invisible.
+  - admin.disputes read every user on the platform into memory to resolve two
+    names per row.
+
+
+5. THREE GUARDS NOW STOP CLASSES, NOT INSTANCES
+--------------------------------------------------------------------------------
+
+  Each computes the truth from source on every run, fails on a new instance,
+  and was mutation-tested. Each needed a correction before its silence was
+  worth trusting - recorded here because that matters for how much they can
+  be relied on.
+
+  server/reachability.test.ts
+      Stops: a procedure with no caller that is neither deleted nor declared.
+      Needed fixing: it counted files nothing imports, so deleting a
+      component's only use still read as "called". Now walks the import graph.
+
+  server/adminList.test.ts
+      Stops: a list read with a large fixed limit, no offset and no total.
+      Needed fixing: it read comments as code, and bounded procedure bodies
+      loosely - five false positives.
+
+  server/searchInputHardening.test.ts
+      Stops: a LIKE pattern built by hand.
+      Needed fixing: it named two files. Search had since moved into services,
+      so three files' worth of the defect went unseen.
+
+
+6. BLOCKED BY INFRASTRUCTURE — REPORTED, NEVER CONVERTED TO A PASS
+--------------------------------------------------------------------------------
+
+  OBJECT STORAGE      No S3 and no Forge on the local/staging environment, so
+                      dispute evidence upload refuses correctly. Seven checks
+                      across the dispute probes are recorded as BLOCKED BY
+                      INFRASTRUCTURE. The rules have unit coverage and the
+                      storage proxy's canaries; the end-to-end proof needs S3.
+
+  SMTP                No mail has ever been sent (server/_core/mailer.ts).
+
+  PAYMENT PROVIDER    Owner-deferred. Five procedures exist for a provider's
+                      webhook writes and reconciliation, declared unreachable
+                      for that reason. Wiring a button to any of them would
+                      record revenue BuildHub never received.
+
+
+7. LIVE VERIFICATION — WHAT WAS ACTUALLY PROVEN AGAINST A RUNNING SYSTEM
+--------------------------------------------------------------------------------
+
+  29 probes were added this week. They run against real MariaDB and a real
+  HTTP server, create their accounts through the real signup path, and clean
+  up after themselves proving the cleanup. Latest results:
+
+  zg-disputequeue          48/48 passed
+  zg-disputeuser           118/118 passed, 6 BLOCKED BY INFRASTRUCTURE (not counted either way)
+  zg-disputematrix         48/48 passed, 1 BLOCKED BY INFRASTRUCTURE (not counted either way)
+  zg-adminlists            33/33 passed
+  zg-referral              58/58 passed
+
+  Every probe is run TWICE against a verified-fresh server, because a probe
+  passing against a stale server has produced a false pass in this project
+  before.
+
+  Two environment facts that cause false passes if ignored:
+    - tsx does NOT hot-reload. The server needs a restart after any
+      server/*.ts change. Check the process start time against the file mtime.
+    - Vite runs in dev mode here, so a route's modules compile on first
+      request. Browser probes warm through / first and wait on the element
+      they assert, not on <body>.
+
+
+8. ONE DECISION LEFT OPEN FOR YOU
+--------------------------------------------------------------------------------
+
+  marketplace.featuredVendors, marketplace.sponsoredVendors and
+  marketplace.featuredProviders are three public readers of the placement
+  strip. The live pages use the latter two. The first is pinned by
+  featuredPlacement.test.ts section 5 and is backed by a genuinely different
+  function, not an alias.
+
+  Deciding which survives has commercial consequences, so it is declared in
+  server/reachability.ts with that reasoning rather than folded into a sweep.
+  It is yours to decide.
+
+
+9. WHAT REMAINS
+--------------------------------------------------------------------------------
+
+  todo.md stands at 53 unchecked, 324 checked.
+
+  1. PM-A5 / PM-A6 - tests and live scenarios for the project-team and
+     RFQ-invitation work. The UI is done.
+  2. SUPPORT TICKETS (todo.md:433) - genuinely absent. No table, no router,
+     no UI, zero references in the codebase. The largest single gap left.
+  3. Reviews and reputation, product lifecycle and image management, RFQ
+     basket persistence, messaging reconciliation, notification preferences
+     (todo.md:434-476).
+  4. Quotation revision model (server/routers.ts:3627, marked KNOWN GAP) -
+     duplicate bids unprevented, re-notify each time. Touches a recorded owner
+     decision.
+  5. ACC-4 - final cross-role acceptance.
+
+  NOT on this list because it is done: raw-ID rendering. What remains in the
+  admin screens is "name ?? #id" - a name when there is one, an id when there
+  is not, which is the correct pattern.
+
+
+10. FULL COMMIT LOG (newest first)
+--------------------------------------------------------------------------------
+
+  09-05 14:44  afbe3de  Claude
+      Handover: what shipped, what is blocked, what is left, and how to verify it
+  09-05 14:42  9163830  Claude
+      LIST-1: one pager for every administration list, and a guard against the next one
+  09-05 13:34  38fe4d9  Claude
+      SWEEP-1: every procedure is wired, deleted, or declared - and a guard holds it
+  09-05 13:12  9f0322a  Claude
+      DSP-8: the negative matrix, proven against a real rival bidder
+  09-05 12:59  cd64bc9  Claude
+      DSP-7: a user can finally read, answer and end the dispute they are in
+  09-04 14:12  bf0f2af  Claude
+      DSP-6: the dispute queue is paged, filtered, and stops scanning the user table
+  09-04 13:48  b81a360  Claude
+      DSP-4/5: evidence, participant messages, and internal notes kept apart
+  09-04 09:12  8cf52a5  Claude
+      DSP-3: a dispute moves through a state machine, not a blind write
+  09-04 09:04  5da8eaf  Claude
+      DSP-2: one eligibility service, and a competitor supplier never gets in
+  09-04 08:55  e7841db  Claude
+      DSP-1: the dispute record a lifecycle can actually run on
+  09-04 08:42  5fcebda  Claude
+      REF-10: campaigns can be corrected, and the promise is fixed once it is kept
+  09-04 04:58  48cbca5  Claude
+      REF-9: Benefits & Limits, and the screens that show where a number came from
+  09-04 04:11  7e797ff  Claude
+      REF-8: anti-abuse - the cap holds under a race, and a bad code leaves a trace
+  09-04 03:57  799ea34  Claude
+      REF-7: the referral ledger gets screens, and reads truthfully
+  09-04 03:41  06e5dc4  Claude
+      REF-6: a referral reversal takes the reward back, not just the word
+  09-03 20:56  90e1f95  Claude
+      REF-5: all five qualification events fire, and the manual path grants
+  09-03 20:46  564a7e4  Claude
+      REF-4: SUBSCRIPTION_EXTENSION extends real time and invents no money
+  09-03 20:39  51bb9a8  Claude
+      REF-3: a referral bonus adds, instead of destroying an administrator's grant
+  09-03 20:33  9a65660  Claude
+      REF-2/3: the reward ledger stops claiming more than the effect delivered
+  09-03 20:28  51989e9  Claude
+      REF-1: the referral engine can fire, for the first time
+  09-03 20:17  618489a  Claude
+      P0-5: an outage is not an empty state
+  09-03 19:57  e409605  Claude
+      CAT-7: one taxonomy, and the compiled-in lists are deleted
+  09-03 19:39  56af8c1  Claude
+      CAT-6/8/9/10/12: the taxonomy becomes administrable, and every change is recorded
+  09-03 19:04  9c8cd38  Claude
+      CAT-5: the upload screen shows one problem, not fifty
+  09-03 17:20  6c46acd  Claude
+      CAT-2/3/4: one resolver for all three product write paths
+  09-03 16:09  d92597a  Claude
+      CAT-1: one canonical category taxonomy, reconciled from three
+  09-03 15:59  318316c  Claude
+      Record the category-taxonomy milestone, root-caused before any change
+  09-03 15:57  7693931  Claude
+      The account audit trail had forty-six writers and no writer
+  09-03 10:26  275c9d6  Claude
+      The user directory reported a sample of the platform as the platform
+  09-03 10:11  0da1bcd  Claude
+      Three administrator capabilities that existed and could not be reached
+  09-03 10:00  b060d5b  Claude
+      The Super Admin authority console had no way in
+  09-03 08:47  d4e8829  Claude
+      Staging gate: correct eight stale assertions after the PR #41 merge
+  09-03 06:51  3ae57ff  Claude
+      PR #41: integration check against main - no blockers
+  09-03 04:47  71d1dcd  Claude
+      Staging: state the blocker precisely, and prove everything that does not depend on it
+  09-03 03:59  d280e0b  Claude
+      Vendor enquiries: entitlement routing, safe bulk only, and a permissioned export
+  09-03 03:45  e60b74a  Claude
+      Vendor enquiries report: through the assignment milestone
+  09-03 03:44  15445c1  Claude
+      Vendor enquiries: assignment, its notification, and a per-enquiry URL
+  09-02 20:45  a8c3376  Claude
+      Vendor enquiries: the admin screens, internal notes, and the first rendered-browser QA
+  09-02 20:07  47b7f7c  Claude
+      Vendor enquiries: the list and the detail, with the privacy boundary the platform already drew
+  09-02 19:53  c41ae95  Claude
+      Vendor enquiries report: continuation from current HEAD
+  09-02 19:51  10b11f8  Claude
+      Vendor enquiries: action semantics, and an overview counted in the database
+  09-02 19:35  72c911b  Claude
+      Admin authority: eligibility drift guard, and correct the entitlement vocabulary
+  09-02 18:43  dd220c2  Claude
+      Admin control plane report: milestones A and B-foundation
+  09-02 15:30  eff9a02  Claude
+      Milestone B foundation: what a "Vendor Enquiry" actually is
+  09-02 15:24  ce068a3  Claude
+      Milestone A: BuildHub cannot be robbed of its own control plane
+  09-02 14:46  7ccfab7  Claude
+      Commercial Placement report: Spotlight, Boost and Analytics
+  09-02 14:39  28e9810  Claude
+      CP-5: commercial analytics an advertiser could be shown
+  09-02 14:24  2bb6c63  Claude
+      CP-4: Boost re-ranks results; it never injects
+  09-02 14:14  87a3a43  Claude
+      CP-3: Spotlight, and the scope dimension the owner defined
+  09-02 13:40  b726a68  Claude
+      Takeover report: what was done after the DeepSeek handoff
+  09-02 13:18  529e711  Claude
+      Ignore the agent session scratchpad
+  09-02 13:17  b7eeaa2  Claude
+      Master Discovery, rendered - and the migrations that had never run
+  09-02 13:02  6846287  Claude
+      Green the branch: nine real defects behind sixteen failing tests
+  09-02 15:35  eb33947  Codex
+      BuildHub: final handoff document correction
+  09-02 15:27  569b0d3  Codex
+      BuildHub: final handoff refresh
+  09-02 15:26  0974e11  Codex
+      Placement capacity overlap tests
+  09-02 15:16  ac2efea  Codex
+      BuildHub: refresh handoff after placement integrity
+  09-02 15:14  8a7f6de  Codex
+      Enforce placement package surface rules
+  09-02 15:08  bd5b53d  Codex
+      BuildHub: refresh handoff after product booking
+  09-02 15:06  fd053bc  Codex
+      Product placement booking selector
+  09-02 15:00  57e57b0  Codex
+      BuildHub: refresh handoff after placement booking form
+  09-02 14:59  6431ec0  Codex
+      Admin placement booking form
+  09-02 14:56  50a764e  Codex
+      Product placement model
+  09-02 14:49  afdf728  Codex
+      BuildHub: refresh handoff after placement booking
+  09-02 14:48  95d3280  Codex
+      Commercial placement booking and referral featured integration
+  09-02 14:35  4fb05b9  Codex
+      BuildHub: refresh handoff after placement schema
+  09-02 14:34  f294dcb  Codex
+      Commercial placement schema extension
+  09-02 14:25  f172945  Codex
+      BuildHub: refresh handoff after referral engine
+  09-02 14:24  5c8f807  Codex
+      Referral effective qualification engine
+  09-02 13:09  7af0158  Codex
+      BuildHub: refresh handoff after referral backend
+  09-02 13:08  ac4e3d8  Codex
+      Referral campaign and reward backend
+  09-02 12:49  8fdae72  Codex
+      Admin referral management list
+  09-02 12:29  6a7613e  Codex
+      BuildHub: refresh handoff after referral foundation
+  09-02 12:28  2febc07  Codex
+      Referral foundation and invite attribution
+  09-02 12:13  b9e94f6  Codex
+      BuildHub: refresh handoff after tracker completeness
+  09-02 12:12  9f36e5b  Codex
+      BuildHub: complete master reconciliation tracker
+  09-02 12:07  e6a5289  Codex
+      BuildHub: refresh handoff after admin notes
+  09-02 12:06  c66e232  Codex
+      Admin internal notes and complete backlog register
+  09-02 11:51  a890cfb  Codex
+      BuildHub: refresh handoff after admin user editing
+  09-02 11:49  fb0af30  Codex
+      Admin: allowlisted user detail editing
+  09-02 10:55  aa5a1cb  Codex
+      BuildHub: refresh handoff after vendor name change
+  09-02 10:53  0284957  Codex
+      Vendor name change request and admin correction
+  09-02 10:19  7d887a9  Codex
+      BuildHub: harden cross-model engineering handoff
+  09-01 18:29  ceb2169  Codex
+      Admin: entity links and humanized investigation statuses
+  09-01 18:26  d6ef973  Codex
+      Admin: promotion list search filter sort pagination
+  09-01 18:21  ca1b2df  Codex
+      Admin: human-first RFQ investigation search
+  09-01 18:17  4b477c7  Codex
+      Admin: close identity, project detail and count partials
+  09-01 17:48  8459539  Codex
+      Admin: clarify total user count excludes test accounts
+  09-01 17:45  c54c014  Codex
+      Admin: replace misleading healthy live badges
+  09-01 17:42  ec9186a  Codex
+      Admin: identity search replaces raw vendor id workflows
+  09-01 17:37  09b64e0  Codex
+      Admin: humanize invitation states and paginate user management
+  09-01 17:31  1bf5f1f  Codex
+      Admin: project and product drill-down destinations
+  09-01 17:25  f0bb5eb  Codex
+      Admin: compact user overview, clickable user detail and single nav
+  09-01 16:44  a065aca  Codex
+      Admin: vendor lookup by business identity, not database id
+  09-01 16:27  8e407b8  Codex
+      Sponsored admin: deterministic scheduled/active/expired status
+  09-01 16:25  6ef1b8a  Codex
+      Featured/Sponsored: complete From-To and indefinite admin controls
+  09-01 16:02  309fa8d  Codex
+      Featured/Sponsored: explicit placement priority
+  09-01 15:57  1f71b13  Codex
+      Supplier dashboard: compact catalogue preview with dedicated page
+  09-01 15:07  6bbc879  Codex
+      Disputes: user-facing open-dispute workflow
+  09-01 15:00  18be3b9  Codex
+      Catalogue: visible Bulk Upload and own-product Edit
+  09-01 14:41  60c6b88  Codex
+      Vendor directory: editorial Featured above sponsored and organic
+  09-01 14:27  202a80c  Codex
+      Supplier catalogue: actionable empty state
+  09-01 14:25  dd29462  Codex
+      Marketplace hub: featured content into prime position
+  09-01 12:50  a205f30  Codex
+      Update tracker: portfolio settings, member management, quotation revisions
+  09-01 12:49  ca0016e  Codex
+      Quotation revision model: one current per supplier per RFQ
+  09-01 12:42  795b7aa  Codex
+      Project member management: wire the backend to a real UI
+  09-01 12:37  5428aee  Codex
+      Portfolio: available to all project-based professionals via Settings
+  09-01 12:29  a5ecc5e  Codex
+      Update development tracker for final-closure progress
+  09-01 12:28  7e25b7e  Codex
+      Vendor profile: show the provider's portfolio publicly
+  09-01 12:25  e413546  Codex
+      Product form: warranty and Arabic description fields
+  09-01 12:21  cf1350e  Codex
+      Provider portfolio: real self-managed showcase
+  09-01 11:55  d429e8b  Codex
+      Update acceptance report: featured providers, vendor profile, product specs
+  09-01 11:50  17ceb84  Codex
+      Product specifications: complete the persistence chain
+  09-01 11:45  bfb2966  Codex
+      Vendor profile: complete business identity and discovery fields
+  09-01 11:39  13d8b3e  Codex
+      Featured providers: admin-curated editorial placement
+  09-01 11:26  157f8ce  Codex
+      Update acceptance report for featured-products milestone
+  09-01 11:22  61ad73e  Codex
+      Featured products: admin curation list and toggle UI
+  09-01 11:17  703b1d8  Codex
+      Featured products: admin write path and audit contract
+  09-01 10:21  067fac7  Codex
+      Update final acceptance report with portability and dashboard closure
+  09-01 10:17  6f614a5  Codex
+      Get Quotes: full RFQ reference clickable to open details
+  09-01 10:15  b8f26ae  Codex
+      Supplier dashboard: catalogue once and full RFQ reference clickable
+  09-01 10:05  791a688  Codex
+      Fix dashboard redirect ordering test and refresh repository inventory
+  09-01 09:55  c917432  Codex
+      Test portability: LF normalization and Windows-safe paths
+  08-31 18:49  c5a68b4  Codex
+      Add final master platform acceptance report
+  08-31 18:44  efcc0f4  Codex
+      New product listing: single product and bulk upload side by side
+  08-31 18:31  f2f6411  Codex
+      Supplier RFQ response: dedicated quote flow with attachments, review and audit
+  08-30 19:13  f5eed47  Claude
+      Supplier dashboard: the order the brief specifies, measured from the DOM
+  08-30 18:57  7233109  Claude
+      Sponsored placement: a second, admin-granted route - as a record, not a mock-up
+  08-30 18:38  473424e  Claude
+      A vendor is a company, not a personal name: profile, contact, and its tiers
+  08-30 14:38  3510f0a  Claude
+      The invitation panel, gated by the server rather than by a copied rule
+  08-30 14:32  7df5a3f  Claude
+      Live invitations: 46/46 twice, and two real defects the live run found
+  08-30 14:24  200b4fd  Claude
+      Move live-probe artefacts into evidence/ and stop the root sweeping them
+  08-30 14:24  78d2a6a  Claude
+      RFQ supplier invitations: push added to pull, without replacing it
+  08-30 14:01  fb7caf4  Claude
+      Live evidence for the manual plan change: 48/48, twice, against the database
+  08-30 13:40  a83019e  Claude
+      A Super Admin can grant a plan, and the grant is a record rather than a favour
+
+================================================================================
+STANDING RULES HELD TO THROUGHOUT
+================================================================================
+
+  No test was weakened to go green. Where an existing test broke, it was
+  restated against the behaviour that replaced it - with the reasoning written
+  at the test.
+
+  Every new guard was mutation-tested. Several times a mutation SURVIVED and
+  forced the test to be strengthened rather than the pass accepted.
+
+  No fabricated data anywhere. Zero rows produce a truthful empty state. No
+  fake payment, revenue, order, wallet, commission or cash-reward
+  functionality was built to make the platform look complete.
+
+  Authorization is enforced server-side. The probes prove the refusals rather
+  than describing them.
+
+  Where an instrument was wrong, the instrument was fixed rather than the
+  reading: the reachability census had both a false positive and a false
+  negative; the truncation census read prose as code; the dispute probes were
+  leaving orphaned audit rows that the new audit screen exposed.
+
+================================================================================
+END OF REPORT
+================================================================================

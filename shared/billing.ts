@@ -168,7 +168,7 @@ export const ENTITLEMENT_ENFORCEMENT: Readonly<Record<keyof PlanEntitlements, st
   // categories a vendor may declare.
   serviceCategoryLimit: 'phase-4b.3',
   promotionalCapability: 'not-implemented',
-  // Enforced as of Slice 8: server/vendorDirectory.ts listFeaturedVendors
+  // Enforced as of Slice 8: server/vendorDirectory.ts listEntitlementSponsoredVendors
   // returns a SEPARATE, sponsored-labelled set. It does not reorder the
   // organic directory, so the Phase 4B.3 §13 constraint - a paid plan cannot
   // buy a higher organic position - still holds.

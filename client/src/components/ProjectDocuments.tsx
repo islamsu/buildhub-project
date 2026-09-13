@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { FileText, Image as ImageIcon, Plus, Upload } from 'lucide-react';
+import { FileText, Image as ImageIcon, Plus, Upload, Archive, RotateCcw } from 'lucide-react';
 import {
   PROJECT_DOCUMENT_TYPES,
   PROJECT_DOCUMENT_CONTENT_TYPES,
@@ -73,7 +73,67 @@ export default function ProjectDocuments({ projectId }: { projectId: number }) {
   const [uploading, setUploading] = useState(false);
   const [filter, setFilter] = useState<'all' | ProjectDocumentType>('all');
 
-  const documents = trpc.projects.documents.useQuery({ projectId }, { enabled: projectId > 0 });
+  const [showArchived, setShowArchived] = useState(false);
+  const documents = trpc.projects.documents.useQuery(
+    { projectId, includeArchived: showArchived },
+    { enabled: projectId > 0 },
+  );
+  const utils = trpc.useUtils();
+  const refresh = () => { void utils.projects.documents.invalidate({ projectId }); };
+
+  // The server owns every refusal - not the uploader, not on the project, a
+  // document already archived, a replaced one that cannot be restored. Its
+  // message is shown rather than a guess made here.
+  const onError = (error: { message: string }) => toast.error(error.message);
+  const archive = trpc.projects.archiveDocument.useMutation({
+    onSuccess: () => { toast.success(ar ? 'تمت أرشفة المستند' : 'Document archived'); refresh(); }, onError,
+  });
+  const restore = trpc.projects.restoreDocument.useMutation({
+    onSuccess: () => { toast.success(ar ? 'تمت استعادة المستند' : 'Document restored'); refresh(); }, onError,
+  });
+  const replace = trpc.projects.replaceDocument.useMutation({
+    onSuccess: () => {
+      toast.success(ar ? 'تم رفع النسخة الجديدة' : 'New revision uploaded');
+      refresh();
+    },
+    onError,
+  });
+
+  // REPLACING KEEPS THE OLD REVISION. The server writes the new row first and
+  // then archives the old one pointing forward to it, so a drawing corrected
+  // on site does not erase what the crew were working from last week.
+  const replaceInput = useRef<HTMLInputElement>(null);
+  const [replacing, setReplacing] = useState<number | null>(null);
+
+  async function submitReplacement(selected: File | null) {
+    const documentId = replacing;
+    setReplacing(null);
+    if (!selected || documentId == null) return;
+    // The same two client-side checks as a first upload, for the same reason:
+    // they save a multi-megabyte round trip, and the server repeats both.
+    if (!isAllowedProjectDocumentType(selected.type)) {
+      toast.error(ar
+        ? 'نوع الملف غير مدعوم. المسموح: صور PNG أو JPEG أو GIF أو WebP، أو ملف PDF.'
+        : 'That file type is not supported. Allowed: PNG, JPEG, GIF or WebP images, or a PDF.');
+      return;
+    }
+    if (selected.size > MAX_SIZE) {
+      toast.error(ar ? 'الحد الأقصى لحجم الملف 8 ميجابايت.' : 'Files must be 8MB or smaller.');
+      return;
+    }
+    let base64: string;
+    try {
+      base64 = await readAsBase64(selected);
+    } catch {
+      toast.error(ar ? 'تعذر قراءة الملف.' : 'That file could not be read.');
+      return;
+    }
+    try {
+      await replace.mutateAsync({ documentId, contentType: selected.type, base64 });
+    } catch {
+      // onError has already shown the server's own message.
+    }
+  }
 
   const upload = trpc.projects.uploadDocument.useMutation({
     onSuccess: () => {
@@ -144,7 +204,13 @@ export default function ProjectDocuments({ projectId }: { projectId: number }) {
     }
   }
 
-  const rows = (documents.data ?? []).filter(doc => filter === 'all' || doc.type === filter);
+  type DocumentRow = {
+    id: number; name: string; type: string; url: string | null; size: number | null;
+    createdAt: string | Date | null; uploaderId: number;
+    archivedAt: string | Date | null; archiveReason: string | null; supersededById: number | null;
+  };
+  const rows = ((documents.data ?? []) as DocumentRow[])
+    .filter(doc => filter === 'all' || doc.type === filter);
 
   return (
     <div data-testid="project-documents">
@@ -163,9 +229,26 @@ export default function ProjectDocuments({ projectId }: { projectId: number }) {
             </SelectContent>
           </Select>
         </div>
-        <Button size="sm" className="gap-1.5" onClick={() => setOpen(true)} data-testid="documents-upload-open">
-          <Plus className="h-4 w-4" />{ar ? 'رفع مستند' : 'Upload Document'}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* ARCHIVED DOCUMENTS ARE OUT OF THE WORKING LIST, NOT OUT OF THE
+              RECORD. A dispute six months later is exactly when a superseded
+              drawing matters, so the history is one click away rather than
+              gone. */}
+          <Button
+            size="sm" variant={showArchived ? 'secondary' : 'ghost'}
+            className="gap-1.5"
+            onClick={() => setShowArchived(value => !value)}
+            data-testid="documents-toggle-archived"
+          >
+            <Archive className="h-4 w-4" />
+            {showArchived
+              ? (ar ? 'إخفاء المؤرشفة' : 'Hide archived')
+              : (ar ? 'إظهار المؤرشفة' : 'Show archived')}
+          </Button>
+          <Button size="sm" className="gap-1.5" onClick={() => setOpen(true)} data-testid="documents-upload-open">
+            <Plus className="h-4 w-4" />{ar ? 'رفع مستند' : 'Upload Document'}
+          </Button>
+        </div>
       </div>
 
       {documents.isLoading && (
@@ -213,9 +296,72 @@ export default function ProjectDocuments({ projectId }: { projectId: number }) {
                 ? TYPE_LABELS[doc.type as ProjectDocumentType]?.ar ?? doc.type
                 : TYPE_LABELS[doc.type as ProjectDocumentType]?.en ?? doc.type}
             </Badge>
+
+            {doc.archivedAt ? (
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge variant="secondary" className="text-[10px]" title={doc.archiveReason ?? undefined}>
+                  {doc.supersededById
+                    ? (ar ? 'استُبدل' : 'Replaced')
+                    : (ar ? 'مؤرشف' : 'Archived')}
+                </Badge>
+                {/* A REPLACED DOCUMENT HAS NO RESTORE. Its replacement is the
+                    current revision, and two live rows claiming to be the same
+                    drawing is worse than the mistake. */}
+                {!doc.supersededById && (
+                  <Button
+                    size="sm" variant="ghost" className="h-7 text-xs"
+                    disabled={restore.isPending}
+                    onClick={() => restore.mutate({ documentId: doc.id })}
+                    data-testid={`document-restore-${doc.id}`}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5 me-1" />{ar ? 'استعادة' : 'Restore'}
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="flex shrink-0 items-center gap-1">
+              <Button
+                size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground"
+                disabled={replace.isPending}
+                onClick={() => { setReplacing(doc.id); replaceInput.current?.click(); }}
+                data-testid={`document-replace-${doc.id}`}
+                title={ar
+                  ? 'ارفع نسخة مصححة — تُحفظ النسخة السابقة في السجل'
+                  : 'Upload a corrected revision — the previous one is kept in the record'}
+              >
+                <Upload className="h-3.5 w-3.5 me-1" />{ar ? 'استبدال' : 'Replace'}
+              </Button>
+              <Button
+                size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground"
+                disabled={archive.isPending}
+                onClick={() => archive.mutate({ documentId: doc.id })}
+                data-testid={`document-archive-${doc.id}`}
+                title={ar
+                  ? 'تُزال من قائمة العمل ويبقى الملف محفوظاً'
+                  : 'Removed from the working list; the file itself is kept'}
+              >
+                <Archive className="h-3.5 w-3.5 me-1" />{ar ? 'أرشفة' : 'Archive'}
+              </Button>
+              </div>
+            )}
           </div>
         ))}
       </div>
+
+      {/* One hidden picker for every Replace button; `replacing` says which
+          document the chosen file belongs to. */}
+      <input
+        ref={replaceInput}
+        type="file"
+        className="hidden"
+        accept={PROJECT_DOCUMENT_CONTENT_TYPES.join(',')}
+        onChange={event => {
+          const selected = event.target.files?.[0] ?? null;
+          event.target.value = '';
+          void submitReplacement(selected);
+        }}
+        data-testid="documents-replace-input"
+      />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md" dir={ar ? 'rtl' : 'ltr'}>

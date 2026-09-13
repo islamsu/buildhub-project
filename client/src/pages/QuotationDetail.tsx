@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useParams, Link } from 'wouter';
+import { OpenDisputeDialog } from '@/components/OpenDisputeDialog';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/_core/hooks/useAuth';
@@ -8,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   ArrowLeft, BadgeCheck, CalendarClock, DollarSign, FileText, Lock,
-  MapPin, Paperclip, ShieldCheck, Wallet,
+  MapPin, Paperclip, ShieldCheck, Wallet, Flag,
 } from 'lucide-react';
 
 /**
@@ -75,6 +77,7 @@ export default function QuotationDetail() {
   const ar = lang === 'ar';
   const { isAuthenticated } = useAuth();
   const valid = Number.isFinite(quotationId) && quotationId > 0;
+  const [disputeOpen, setDisputeOpen] = useState(false);
 
   const query = trpc.rfq.quotation.useQuery(
     { id: quotationId },
@@ -337,9 +340,42 @@ export default function QuotationDetail() {
                 </Link>
               </div>
             )}
+
+            {/*
+              ── RAISING A DISPUTE ABOUT THIS QUOTATION ─────────────────────
+              Reaching this page at all means the server has already decided
+              the reader is the requester or the supplier - `rfq.quotation` is
+              scoped to those two - which are exactly the two parties of a
+              quotation dispute. A competitor who also bid on the RFQ never got
+              here, and would be refused by the eligibility service anyway.
+
+              Before this, a supplier who disagreed with a quotation had
+              nothing to dispute against: `disputes.create` could only name a
+              project.
+            */}
+            <div className="rounded-xl border border-dashed p-4">
+              <p className="text-sm font-medium">{ar ? 'مشكلة بشأن هذا العرض؟' : 'A problem with this quotation?'}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {ar
+                  ? 'يمكنك فتح نزاع بشأنه. يصل إلى فريق الدعم، ويُبلَّغ الطرف الآخر.'
+                  : 'You can raise a dispute about it. Support reviews it, and the other party is told.'}
+              </p>
+              <Button
+                variant="outline" size="sm" className="mt-3 gap-2"
+                data-testid="quotation-open-dispute"
+                onClick={() => setDisputeOpen(true)}
+              >
+                <Flag className="h-4 w-4" />{ar ? 'فتح نزاع' : 'Open a dispute'}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
+
+      <OpenDisputeDialog
+        subjectType="quotation" subjectId={quotationId}
+        open={disputeOpen} onOpenChange={setDisputeOpen}
+      />
     </div>
   );
 }

@@ -118,3 +118,17 @@ export const ADMIN_ROLE_LABELS: Readonly<Record<AdminRole, { en: string; ar: str
   SUPPORT_ADMIN: { en: 'Support Admin', ar: 'مدير الدعم' },
   BILLING_ADMIN: { en: 'Billing Admin', ar: 'مدير الفوترة' },
 };
+
+/**
+ * THE MINIMUM LENGTH OF AN ADMINISTRATOR'S PASSWORD, IN ONE PLACE.
+ *
+ * It lived as a server-local const in routers.ts while the invitation screen
+ * carried its own copy under the comment "Matches ADMIN_PASSWORD_MIN_LENGTH on
+ * the server" - which is a comment doing a compiler's job, and which drifts
+ * silently the moment one side changes. A third copy was about to be written
+ * for the change-your-own-password form, so the number moved here instead.
+ *
+ * Deliberately longer than the ordinary account minimum: an administrator
+ * password is worth more, so it has to cost more to guess.
+ */
+export const ADMIN_PASSWORD_MIN_LENGTH = 12;

@@ -51,6 +51,36 @@ export async function liveMembership(
 }
 
 /**
+ * The caller's capacity on a project, or null if they are not on it at all.
+ *
+ * EXTRACTED so that a surface which must answer a BOOLEAN - the storage proxy,
+ * which returns "may this key be fetched" rather than throwing - decides access
+ * by the same rule as every procedure. It did not: `project-documents/`
+ * resolved to the project OWNER only, while `projects.documents` has listed
+ * documents for every member since PM-A2. A contractor on the team could see a
+ * drawing in the list and be refused the file, which reads as a broken product
+ * rather than a boundary - and it is the shape of bug that a second copy of an
+ * access rule always eventually produces.
+ */
+export async function projectRoleFor(
+  db: Db, projectId: number, userId: number,
+): Promise<ProjectRole | null> {
+  const [project] = await db.select({ id: projects.id, ownerId: projects.ownerId })
+    .from(projects).where(eq(projects.id, projectId)).limit(1);
+  if (!project) return null;
+  if (project.ownerId === userId) return 'owner';
+  return liveMembership(db, projectId, userId);
+}
+
+/** The non-throwing form, for callers that answer yes or no rather than raise. */
+export async function canAccessProject(
+  db: Db, projectId: number, userId: number, capability: ProjectCapability,
+): Promise<boolean> {
+  const role = await projectRoleFor(db, projectId, userId);
+  return role != null && projectRoleCan(role, capability);
+}
+
+/**
  * Authorize a capability on a project, or throw.
  *
  * OWNERSHIP IS STILL HONOURED DIRECTLY, not only through the membership table.
