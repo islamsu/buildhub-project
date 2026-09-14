@@ -201,7 +201,7 @@ import {
   requireTicketAccess, transitionTicket, listSupportTickets, listMyTickets,
   ticketThread, statusAfterUserReply, SupportTicketError,
 } from './supportTickets';
-import { requireProjectAccess, readableProjectIds, liveMembership } from './projectMembership';
+import { requireProjectAccess, readableProjectIds, liveMembership, canAccessProject } from './projectMembership';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSponsorships, vendorSubscriptions } from '../drizzle/schema';
 import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
@@ -3197,7 +3197,31 @@ const rfqRouter = router({
     // become a second way to learn what an RFQ contains.
     const items = await db.select().from(rfqItems)
       .where(eq(rfqItems.rfqId, rfq.id)).orderBy(rfqItems.position, rfqItems.id);
-    return { ...rfq, items };
+
+    /**
+     * THE PROJECT THIS WAS RAISED FOR, resolved to a NAME the buyer recognises.
+     *
+     * `rfqs.projectId` has been written since the RFQ form gained its project
+     * selector, and this procedure has always returned it - as a bare integer
+     * nothing rendered. A buyer could link an RFQ to a project and then never
+     * be told, on the RFQ's own page, which project that was.
+     *
+     * ACCESS IS RE-CHECKED HERE RATHER THAN ASSUMED. Linking happened at
+     * creation; membership can be withdrawn afterwards, and removal is
+     * supposed to revoke access. Reading the title off `projectId` alone would
+     * make the RFQ page a way to keep reading the name of a project somebody
+     * has been removed from. So the title is resolved only while `read` still
+     * holds, and the caller is told plainly when it no longer does - `linked:
+     * true, project: null` is a fact about their own RFQ, not a leak, since
+     * they are the person who created the link.
+     */
+    let project: { id: number; title: string } | null = null;
+    if (rfq.projectId != null && await canAccessProject(db, rfq.projectId, ctx.user.id, 'read')) {
+      const [row] = await db.select({ id: projects.id, title: projects.title })
+        .from(projects).where(eq(projects.id, rfq.projectId)).limit(1);
+      project = row ?? null;
+    }
+    return { ...rfq, items, project, projectLinked: rfq.projectId != null };
   }),
   create: protectedProcedure
     .input(z.object({
