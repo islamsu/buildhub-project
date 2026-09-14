@@ -202,6 +202,7 @@ import {
   ticketThread, statusAfterUserReply, SupportTicketError,
 } from './supportTickets';
 import { requireProjectAccess, readableProjectIds, liveMembership, canAccessProject } from './projectMembership';
+import { assertOwnedUploads } from './_core/ownedUpload';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSponsorships, vendorSubscriptions } from '../drizzle/schema';
 import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
@@ -2630,30 +2631,10 @@ const marketplaceRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
-      const prefix = `/manus-storage/product-images/user-${ctx.user.id}/`;
-      for (const image of input.images) {
-        // startsWith ALONE IS NOT ENOUGH. `.../user-5/../../secret.png` begins
-        // with the caller's own prefix and then climbs out of it, so the
-        // remainder is checked for traversal too. The storage proxy would
-        // refuse such a key on READ, but without this the row would still
-        // store a path that means something other than it appears to - and the
-        // next reader of that column has no reason to expect one.
-        if (!image.startsWith(prefix)) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'You may only use images you uploaded.',
-          });
-        }
-        const remainder = image.slice(prefix.length);
-        const traverses = remainder.length === 0
-          || remainder.split('/').some(segment => segment.length === 0 || segment === '.' || segment === '..');
-        if (traverses) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'You may only use images you uploaded.',
-          });
-        }
-      }
+      // One rule, shared with the portfolio, in server/_core/ownedUpload.ts -
+      // including the traversal defence, because a second copy of a security
+      // check is how the two start refusing different things.
+      assertOwnedUploads(input.images, 'product-images', ctx.user.id);
       // Duplicates would render the same photo twice and make "reorder" lie.
       if (new Set(input.images).size !== input.images.length) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'That image is already on this product.' });
@@ -5753,6 +5734,11 @@ const portfolioRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      // A portfolio image is readable by any signed-in user, so the protection
+      // is on the CLAIM, not the read: without this a provider could point
+      // their portfolio at a rival's photograph and pass the work off as their
+      // own. Same rule the product catalogue uses, from the same module.
+      if (input.images) assertOwnedUploads(input.images, 'portfolio-images', ctx.user.id);
       const result = await db.insert(portfolioItems).values({
         ...input,
         userId: ctx.user.id,
@@ -5776,6 +5762,9 @@ const portfolioRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       const { id, images, ...fields } = input;
+      // Checked on EDIT as well as on create - an item can be created clean and
+      // then have somebody else's photograph added to it.
+      if (images) assertOwnedUploads(images, 'portfolio-images', ctx.user.id);
       const [owned] = await db.select({ id: portfolioItems.id })
         .from(portfolioItems).where(and(eq(portfolioItems.id, id), eq(portfolioItems.userId, ctx.user.id))).limit(1);
       if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Portfolio item not found' });
