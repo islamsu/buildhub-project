@@ -147,23 +147,48 @@ describe('storage authorization stays coupled to RFQ visibility', () => {
     expect(fn.indexOf('if (!user) return false;')).toBeLessThan(fn.indexOf('rfq-attachments/'));
   });
 
-  it('only the two PUBLIC-BY-DESIGN categories are unlocked by prefix alone', () => {
+  it('only the PUBLIC-BY-DESIGN categories are unlocked by prefix alone', () => {
     // Deliberate, and the list is short on purpose. Recording it as an
     // assertion means a future blanket-allow has to be ARGUED FOR HERE rather
     // than added quietly - which is exactly what happened when product images
     // were added, and why this test needed a considered edit rather than a
     // relaxed regex.
     //
-    //   avatars/        - already on every public vendor card and directory row
-    //   product-images/ - on every marketplace card and public product page
+    //   avatars/          - already on every public vendor card and directory row
+    //   product-images/   - on every marketplace card and public product page
+    //   portfolio-images/ - a provider's work samples, shown on their vendor
+    //                       profile to any signed-in visitor
     //
-    // Both are content a buyer is meant to see. The ownership rule for product
-    // images lives on the WRITE side instead: setProductImages refuses any URL
-    // outside the caller's own prefix, so a supplier cannot claim another
-    // supplier's photo. Reading one is not sensitive; claiming one is.
+    // All three are content a viewer is MEANT to see, and the argument for the
+    // third is the same as for the second, with one difference worth writing
+    // down: portfolio images were not added here as a new permission. The
+    // branch was MISSING, so every portfolio image 403ed - including for the
+    // provider who uploaded it - and the feature had never worked. Widening
+    // the set here is what made an existing feature function, not what opened
+    // it up.
+    //
+    // The ownership rule for both image families lives on the WRITE side
+    // instead, in server/_core/ownedUpload.ts: a caller may only reference a
+    // file under their own prefix, so neither a supplier nor a provider can
+    // claim somebody else's photograph. Reading one is not sensitive; claiming
+    // one is.
     const fn = authorizeFn();
     const blanket = [...fn.matchAll(/key\.startsWith\('([^']+)'\)\)\s*\{\s*\n\s*return true;/g)]
       .map(m => m[1]);
-    expect(blanket).toEqual(['avatars/', 'product-images/']);
+    expect(blanket).toEqual(['avatars/', 'product-images/', 'portfolio-images/']);
+  });
+
+  it('and each blanket-allow family is ownership-checked on the WRITE side', () => {
+    // The other half of the argument above. A family may be readable by
+    // everyone ONLY because claiming it is refused elsewhere - so if that
+    // write-side rule ever disappears, the blanket read becomes the whole
+    // story and this fails rather than silently becoming untrue.
+    for (const family of ['product-images', 'portfolio-images']) {
+      expect(
+        ROUTERS,
+        `${family} is readable by prefix alone, so its write path must assert ownership`,
+      ).toContain(`'${family}', ctx.user.id)`);
+    }
+    expect(ROUTERS).toContain('assertOwnedUploads(');
   });
 });
