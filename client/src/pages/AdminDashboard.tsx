@@ -43,7 +43,7 @@ import { LoadFailed } from '@/components/LoadFailed';
 import { ROLE_GROUPS, labelForRole, formatComplianceStatus, EmptyState } from '@/lib/adminRoleLabels';
 import AdminPlacements from '@/components/AdminPlacements';
 import PlacementPerformance from '@/components/PlacementPerformance';
-import { ADMIN_NAV } from '@/lib/adminNavigation';
+import { ADMIN_NAV, ADMIN_SECTIONS, ADMIN_SECTION_ALIASES } from '@/lib/adminNavigation';
 
 /*
  * Slice 4 removed a hardcoded MONTHLY_USERS array from this file - six months
@@ -125,9 +125,11 @@ export default function AdminDashboard() {
      * bookmark an administrator saved last month should land somewhere useful
      * rather than on an overview with no explanation.
      */
-    const ALIASES: Record<string, string> = { compliance: 'registrations', 'name-changes': 'users' };
-    const requested = ALIASES[section ?? ''] ?? section;
-    return ['users', 'registrations', 'projects', 'products', 'referrals', 'placements', 'enquiries', 'analytics', 'billing', 'disputes', 'support', 'reviews', 'operations', 'settings'].includes(requested ?? '') ? requested! : 'overview';
+    const requested = ADMIN_SECTION_ALIASES[section ?? ''] ?? section;
+    // Held as data beside the menu, not as a second literal list here: this
+    // array and ADMIN_NAV drifted apart once already, and a destination missing
+    // from it renders the overview under the right heading.
+    return ADMIN_SECTIONS.includes(requested ?? '') ? requested! : 'overview';
   }, [location]);
   // The record a section is showing, when it has one. `/admin/enquiries/ENQ-7-3`
   // makes an enquiry addressable without giving it a table: the reference is
@@ -817,10 +819,10 @@ export default function AdminDashboard() {
 
           <TabsContent value="billing"><div className="space-y-6"><AdminVendorBilling /><AdminEnquiryAllowance /></div></TabsContent>
 
-          <TabsContent value="disputes"><div className="space-y-6"><AdminPlatformSearch /><AdminRfqInvestigation /><AdminDisputes /></div></TabsContent>
+          <TabsContent value="disputes"><div className="space-y-6"><AdminRfqInvestigation /><AdminDisputes openRecord={adminRecord} /></div></TabsContent>
           <TabsContent value="registrations"><AdminRegistrations /></TabsContent>
 
-          <TabsContent value="support"><AdminSupportTickets /></TabsContent>
+          <TabsContent value="support"><AdminSupportTickets openRecord={adminRecord} /></TabsContent>
           <TabsContent value="reviews"><AdminReviewModeration /></TabsContent>
 
           {/* Operations. The tab this replaces was "Fraud Detection", which
@@ -839,7 +841,17 @@ export default function AdminDashboard() {
               Operations in the menu, and a USER_ADMIN who did see it got the
               three components hidden. They have moved to Placements, where the
               domain and the permission finally agree. */}
-          <TabsContent value="operations"><div className="space-y-6"><AdminDataQuality /><AdminOperationalHealth />{can('audit.read') && <AdminAuditTrail />}</div></TabsContent>
+          <TabsContent value="operations"><div className="space-y-6">
+            {/* PLATFORM SEARCH LIVES HERE, not in Disputes.
+                It was rendered above the RFQ investigation because the
+                investigation needs a request id - but the investigation grew
+                its own typeahead over the same procedure, which left this card
+                as a second search box inside a case queue, reachable only by an
+                administrator who first went looking for disputes. Operations is
+                where the console keeps the cross-cutting instruments: data
+                quality, operational health, the audit trail, and finding a
+                record. One search, one home. */}
+            <AdminPlatformSearch /><AdminDataQuality /><AdminOperationalHealth />{can('audit.read') && <AdminAuditTrail />}</div></TabsContent>
 
           <TabsContent value="settings"><Card><CardHeader><CardTitle className="flex items-center gap-2"><Settings className="w-5 h-5" />{lang === 'ar' ? 'إعدادات المنصة' : 'Platform Settings'}</CardTitle></CardHeader><CardContent><div className="grid gap-4 md:grid-cols-2">{SETTING_DEFINITIONS.map(definition => { const value = settingDrafts[definition.key] ?? ''; const isBoolean = definition.type === 'boolean'; return <div key={definition.key} className="rounded-xl border p-4"><div className="flex items-center justify-between gap-4"><div><p className="text-sm font-medium">{lang === 'ar' ? definition.ar : definition.en}</p><p className="mt-1 text-xs text-muted-foreground">{definition.key}</p></div>{isBoolean ? <Switch checked={value === 'true'} onCheckedChange={checked => { const next = checked ? 'true' : 'false'; setSettingDrafts(draft => ({ ...draft, [definition.key]: next })); updateSetting.mutate({ key: definition.key, value: next }); }} disabled={updateSetting.isPending} /> : <div className="flex items-center gap-2"><Input className="h-8 w-28" type={definition.type === 'number' ? 'number' : 'text'} value={value} onChange={event => setSettingDrafts(draft => ({ ...draft, [definition.key]: event.target.value }))} /><Button size="sm" className="h-8 gap-1" onClick={() => updateSetting.mutate({ key: definition.key, value })} disabled={updateSetting.isPending}><Save className="h-3 w-3" />{lang === 'ar' ? 'حفظ' : 'Save'}</Button></div>}</div></div>; })}</div></CardContent></Card></TabsContent>
         </Tabs>

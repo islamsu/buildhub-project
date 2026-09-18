@@ -7,6 +7,7 @@ import { appRouter } from './routers';
 import type { TrpcContext } from './_core/context';
 import { getDb } from './db';
 import { ENTITLEMENT_ENFORCEMENT, PLANS , isEntitlementEnforced } from '@shared/billing';
+import { ADMIN_NAV, ADMIN_SECTIONS } from '../client/src/lib/adminNavigation';
 
 // Phase 4B Slice 2. The billing engine built across 4B.1-4B.4 was complete and
 // unreachable: one trpc.billing.* call site existed in the entire client, and it
@@ -238,11 +239,17 @@ describe('the billing system is actually reachable now (Slice 2)', () => {
 
   it('the admin dashboard has a billing section that is actually routable', () => {
     const admin = client('pages/AdminDashboard.tsx');
-    expect(admin).toContain("'billing'");
     expect(admin).toContain('<AdminVendorBilling />');
-    // The URL allowlist must include it, or /admin/billing silently falls back.
-    const allowlist = admin.slice(admin.indexOf('const adminSection'), admin.indexOf('const handleAdminSectionChange'));
-    expect(allowlist).toContain("'billing'");
+    // The section allowlist must include it, or /admin/billing silently falls
+    // back to the overview. That allowlist used to be a literal array inside
+    // the resolver; it is now derived from ADMIN_NAV beside the menu, because
+    // the two copies drifted. Same assertion, asserted where it now lives -
+    // and this form is STRONGER: it fails if billing leaves the menu too.
+    expect(ADMIN_SECTIONS).toContain('billing');
+    expect(ADMIN_NAV.map(entry => entry.path)).toContain('/admin/billing');
+    // The resolver must really consult it rather than keep a private copy.
+    const resolver = admin.slice(admin.indexOf('const adminSection'), admin.indexOf('const handleAdminSectionChange'));
+    expect(resolver).toContain('ADMIN_SECTIONS.includes');
   });
 
   it('REGRESSION: billing procedures are no longer orphaned in the client', () => {

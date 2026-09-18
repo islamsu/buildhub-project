@@ -24,7 +24,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { readSourceForAssertions } from './_testing/sourceText';
 import { adminRegistrationSurface } from './_testing/adminSurface';
 import {
-  ADMIN_NAV, ADMIN_NAV_GROUPS, ADMIN_ROUTES_NOT_IN_MENU, adminMenuFor,
+  ADMIN_NAV,
+  ADMIN_NAV_GROUPS,
+  ADMIN_ROUTES_NOT_IN_MENU,
+  adminMenuFor,
+  ADMIN_SECTIONS,
+  ADMIN_SECTION_ALIASES,
 } from '../client/src/lib/adminNavigation';
 import { ADMIN_ROLE_PERMISSIONS, ADMIN_PERMISSIONS } from '../shared/adminRoles';
 
@@ -132,9 +137,19 @@ describe('the consolidation is real, not a renamed duplicate', () => {
       expect(ADMIN_ROUTES_NOT_IN_MENU[retired].length).toBeGreaterThan(60);
     }
     // The alias map the section resolver uses, so a bookmark lands on the
-    // capability rather than on the overview.
-    expect(DASHBOARD).toContain("compliance: 'registrations'");
-    expect(DASHBOARD).toContain("'name-changes': 'users'");
+    // capability rather than on the overview. It moved OUT of the dashboard
+    // and into the navigation data beside the menu, because the resolver also
+    // held its own literal list of sections and the two drifted; asserting it
+    // where it now lives is the same assertion about the same behaviour.
+    expect(ADMIN_SECTION_ALIASES.compliance).toBe('registrations');
+    expect(ADMIN_SECTION_ALIASES['name-changes']).toBe('users');
+    // And the resolver really uses it, rather than carrying a third copy.
+    expect(DASHBOARD).toContain('ADMIN_SECTION_ALIASES[section');
+    // Every alias must target a section that resolves, or the bookmark lands
+    // on the overview by a different route than before.
+    for (const target of Object.values(ADMIN_SECTION_ALIASES)) {
+      expect(ADMIN_SECTIONS, target).toContain(target);
+    }
   });
 });
 

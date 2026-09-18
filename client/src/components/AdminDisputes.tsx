@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
 import { Badge } from '@/components/ui/badge';
@@ -48,7 +48,7 @@ const NO_FILTERS: Filters = {
   status: 'all', priority: 'all', category: 'all', subjectType: 'all', assignment: 'all',
 };
 
-export default function AdminDisputes() {
+export default function AdminDisputes({ openRecord = null }: { openRecord?: string | null }) {
   const { lang } = useLanguage();
   const ar = lang === 'ar';
   const failedCopy = loadFailedCopy(ar);
@@ -59,6 +59,23 @@ export default function AdminDisputes() {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState<number | null>(null);
+  /**
+   * OPENING A CASE FROM THE URL.
+   *
+   * `/admin/disputes/<id>` is a real address: the console's search, a notification
+   * and an administrator pasting a link all reach the case itself rather than
+   * the queue it sits in. Without this the record in the path was parsed and
+   * then dropped, and every one of those links landed on an unfiltered list -
+   * which reads as a broken link, because it is one.
+   *
+   * An EFFECT rather than a seeded initial state, so arriving at a second case
+   * while already on this screen opens that one. It runs on the prop, so closing
+   * the panel does not immediately re-open it.
+   */
+  useEffect(() => {
+    const parsed = Number(openRecord);
+    if (openRecord != null && Number.isSafeInteger(parsed) && parsed > 0) setOpenId(parsed);
+  }, [openRecord]);
 
   const setFilter = (patch: Partial<Filters>) => { setFilters(current => ({ ...current, ...patch })); setPage(0); };
 

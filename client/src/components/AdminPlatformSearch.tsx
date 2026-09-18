@@ -23,29 +23,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Search, AlertTriangle, Lock } from 'lucide-react';
+// The one map from a result to a destination, held as data so a test can
+// check every kind the server can emit against the routes App.tsx registers.
+import { searchHitHref } from '@/lib/adminSearchDestinations';
 
 const SEGMENT_LABEL: Record<string, { en: string; ar: string }> = {
-  users: { en: 'People', ar: 'الأشخاص' },
+  users: { en: 'People & businesses', ar: 'الأشخاص والشركات' },
   rfqs: { en: 'Requests', ar: 'الطلبات' },
   quotations: { en: 'Bids', ar: 'العروض' },
   products: { en: 'Products', ar: 'المنتجات' },
   projects: { en: 'Projects', ar: 'المشاريع' },
+  disputes: { en: 'Disputes', ar: 'النزاعات' },
+  tickets: { en: 'Support tickets', ar: 'تذاكر الدعم' },
+  enquiries: { en: 'Vendor enquiries', ar: 'استفسارات الموردين' },
 };
-
-/** Where a result takes you. A bid opens the request it was made on. */
-function hrefFor(segment: string, id: number, hit: { detail: string | null }): string | null {
-  switch (segment) {
-    case 'rfqs': return `/rfq/${id}`;
-    case 'products': return `/marketplace/products/${id}`;
-    case 'projects': return `/admin/projects/${id}`;
-    case 'users': return `/admin/users/${id}`;
-    case 'quotations': {
-      const match = hit.detail?.match(/#(\d+)\)?$/);
-      return match ? `/rfq/${match[1]}` : null;
-    }
-    default: return null;
-  }
-}
 
 export default function AdminPlatformSearch() {
   const { lang } = useLanguage();
@@ -69,8 +60,8 @@ export default function AdminPlatformSearch() {
         </CardTitle>
         <p className="pt-2 text-sm text-muted-foreground">
           {ar
-            ? 'اسم، بريد إلكتروني، أو رقم سجل. الأقسام التي لا تملك صلاحية قراءتها تُذكر صراحةً بدلاً من أن تظهر فارغة.'
-            : 'A name, an email address, or a record id. Sections you may not read are named rather than shown empty.'}
+            ? 'اسم، شركة، بريد إلكتروني، أو مرجع سجل مثل DSP-2026-000012 أو ENQ-501-10. الأقسام التي لا تملك صلاحية قراءتها تُذكر صراحةً بدلاً من أن تظهر فارغة.'
+            : 'A name, a company, an email address, or a record reference such as DSP-2026-000012 or ENQ-501-10. Sections you may not read are named rather than shown empty.'}
         </p>
         <div className="flex flex-wrap items-end gap-2 pt-3">
           <div className="w-full sm:w-80">
@@ -93,8 +84,8 @@ export default function AdminPlatformSearch() {
         {!enabled && (
           <p className="text-sm text-muted-foreground" data-testid="search-empty">
             {ar
-              ? 'ابحث عن حساب أو طلب أو عرض أو منتج أو مشروع للوصول إلى رقمه.'
-              : 'Search for an account, request, bid, product or project to get its id.'}
+              ? 'ابحث باسم أو شركة أو بريد إلكتروني أو مرجع سجل — حساب، طلب، عرض، منتج، مشروع، نزاع، تذكرة دعم أو استفسار مورد.'
+              : 'Search by name, company, email or record reference — accounts, requests, bids, products, projects, disputes, support tickets and vendor enquiries.'}
           </p>
         )}
 
@@ -118,15 +109,20 @@ export default function AdminPlatformSearch() {
                 {segment.hits.length === 0 ? (
                   <p className="border-t p-3 text-sm text-muted-foreground">{ar ? 'لا نتائج' : 'No matches'}</p>
                 ) : segment.hits.map(hit => {
-                  const href = hrefFor(segment.key, hit.id, hit);
+                  const href = searchHitHref(hit.link);
                   return (
                     <div
-                      key={`${segment.key}-${hit.id}`}
+                      key={`${segment.key}-${hit.ref ?? hit.id}`}
                       className="flex flex-wrap items-center justify-between gap-2 border-t p-3 text-sm"
                       data-testid="search-hit"
                     >
                       <span className="min-w-0">
-                        <span className="font-mono text-xs text-muted-foreground" data-testid="search-hit-id">#{hit.id}</span>{' '}
+                        {/* THE HUMAN REFERENCE LEADS. A dispute is
+                            DSP-2026-000012 to everyone who has discussed it;
+                            the row id is technical metadata and sits second. */}
+                        <span className="font-mono text-xs text-muted-foreground" data-testid="search-hit-id">
+                          {hit.ref ?? `#${hit.id}`}
+                        </span>{' '}
                         {href
                           ? <a className="underline underline-offset-2" href={href} data-testid="search-hit-link">{hit.label}</a>
                           : <span>{hit.label}</span>}

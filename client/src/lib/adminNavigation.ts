@@ -121,3 +121,38 @@ export const ADMIN_ROUTES_NOT_IN_MENU: Readonly<Record<string, string>> = {
 export function adminMenuFor(permissions: readonly string[]): AdminNavEntry[] {
   return ADMIN_NAV.filter(entry => permissions.includes(entry.permission));
 }
+
+/**
+ * SECTIONS THE CONSOLE SERVES that are not menu destinations, each with its
+ * reason - the same discipline as ADMIN_ROUTES_NOT_IN_MENU.
+ *
+ * `/admin/:section` is a CATCH-ALL, so "the route is registered" is true of
+ * any spelling at all. That makes the route table useless as a check on
+ * whether a link works: `/admin/dispute-cases/7` matches the pattern and lands
+ * on the overview. The real question is whether the section is one the console
+ * RESOLVES, and that question needs this list.
+ */
+export const ADMIN_SECTIONS_NOT_IN_MENU: Readonly<Record<string, string>> = {
+  projects: 'reached by the Active Projects KPI card, not from the menu',
+  products: 'reached by the Products Listed KPI card, not from the menu',
+};
+
+/**
+ * Every section `/admin/:section` resolves, as data.
+ *
+ * Derived from ADMIN_NAV rather than kept as a second literal array: the
+ * console held its own copy, so adding a destination to the menu and forgetting
+ * the array produced a menu entry that rendered the overview.
+ */
+export const ADMIN_SECTIONS: readonly string[] = [
+  ...ADMIN_NAV
+    .map(entry => entry.path.slice('/admin/'.length))
+    .filter(section => section.length > 0 && !section.includes('/')),
+  ...Object.keys(ADMIN_SECTIONS_NOT_IN_MENU),
+];
+
+/** Aliases kept so a saved bookmark lands on the capability that replaced it. */
+export const ADMIN_SECTION_ALIASES: Readonly<Record<string, string>> = {
+  compliance: 'registrations',
+  'name-changes': 'users',
+};
