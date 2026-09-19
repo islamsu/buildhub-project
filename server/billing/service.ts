@@ -234,54 +234,28 @@ export function analyticsEventFor(event: BillingEventInput): AnalyticsEventType 
   }
 }
 
-/**
- * Apply a domain-produced patch to a vendor's subscription row, creating the
- * row on first use, and record the transition in the audit trail.
+/*
+ * `applySubscriptionPatch` WAS HERE, AND IT WAS REMOVED RATHER THAN REPAIRED.
  *
- * Patches only ever come from domain.ts's transition functions - this is
- * intentionally not a general-purpose "set any field" writer, so there is no
- * path by which an arbitrary caller could write a plan or price of its own
- * choosing.
+ * It was the last entry on the outage-honesty debt list: an unreachable
+ * database made it answer `null`, so a subscription change silently did not
+ * happen - neither fail-open nor fail-closed but fail-silent, which is the
+ * worst of the three on a commercial mutation.
+ *
+ * Repairing it would have preserved the wrong thing. NOTHING CALLED IT. The
+ * real write path is `billing/lifecycle.ts`, which does the same job inside a
+ * TRANSACTION with the subscription row LOCKED - `SELECT ... FOR UPDATE`, then
+ * a domain decision, then the update - so two concurrent lifecycle actions on
+ * one vendor cannot interleave. This function took no lock. Keeping a second,
+ * weaker writer for the same table, reachable by import, is how the careful
+ * path gets bypassed later by somebody reaching for the obvious name.
+ *
+ * `billingAuthorization.test.ts` asserted that "the only writes to
+ * vendorSubscriptions go through applySubscriptionPatch", which was not true
+ * when it was written - lifecycle.ts has always written directly. The
+ * assertion it carried is still right and still passes; the sentence
+ * explaining it was wrong, and now names the real path.
  */
-export async function applySubscriptionPatch(params: {
-  userId: number;
-  patch: SubscriptionPatch;
-  action: string;
-  source?: BillingEventInput['source'];
-  actorId?: number | null;
-  note?: string | null;
-}): Promise<VendorSubscription | null> {
-  const db = await getDb();
-  if (!db) return null;
-
-  const existing = await getSubscription(params.userId);
-  const fromStatus = existing?.status ?? null;
-
-  if (existing) {
-    await db
-      .update(vendorSubscriptions)
-      .set(params.patch)
-      .where(eq(vendorSubscriptions.id, existing.id));
-  } else {
-    await db.insert(vendorSubscriptions).values({
-      userId: params.userId,
-      ...params.patch,
-    });
-  }
-
-  const updated = await getSubscription(params.userId);
-  await recordBillingEvent({
-    userId: params.userId,
-    subscriptionId: updated?.id ?? null,
-    action: params.action,
-    fromStatus,
-    toStatus: updated?.status ?? null,
-    source: params.source,
-    actorId: params.actorId,
-    note: params.note,
-  });
-  return updated;
-}
 
 export async function getBillingEvents(userId: number, limit = 50) {
   // A vendor's billing history, reported as never having happened.

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 vi.mock('./db', () => ({
   getDb: vi.fn(),
@@ -184,21 +184,57 @@ describe('client manipulation cannot change a plan (Phase 4B.1)', () => {
   });
 
   it('no endpoint anywhere accepts a client-supplied plan, price, or subscription status', () => {
-    // A vendor must not be able to upgrade themselves by manipulating a request.
-    // The only writes to vendorSubscriptions go through applySubscriptionPatch,
-    // whose patches come exclusively from domain.ts transition functions.
+    // A vendor must not be able to upgrade themselves by manipulating a
+    // request. Every write to vendorSubscriptions takes its field set from a
+    // domain.ts transition function, never from input.
     expect(billingRouterBlock).not.toMatch(/z\.enum\(\[['"]free['"]/);
     expect(billingRouterBlock).not.toMatch(/priceAmount:\s*z\./);
     expect(billingRouterBlock).not.toMatch(/plan:\s*z\./);
     expect(billingRouterBlock).not.toMatch(/status:\s*z\./);
   });
 
-  it('the service layer never writes a caller-supplied field set', () => {
+  it('THE WRITE PATH IS lifecycle.ts, AND IT IS THE ONLY ONE', () => {
+    /*
+     * This used to say "the only writes go through applySubscriptionPatch",
+     * which was never true - lifecycle.ts has always written directly, and
+     * applySubscriptionPatch had no callers at all. It has been removed: a
+     * second, UNLOCKED writer for this table, reachable by import, is how the
+     * careful path gets bypassed later by somebody reaching for the obvious
+     * name.
+     *
+     * Asserted over the whole billing directory rather than over one file, so
+     * a third writer cannot appear beside them.
+     */
+    const dir = new URL('./billing/', import.meta.url);
+    const writers: string[] = [];
+    for (const entry of readdirSync(dir)) {
+      if (!entry.endsWith('.ts')) continue;
+      const text = readFileSync(new URL(entry, dir), 'utf8');
+      if (/\.(insert|update)\(vendorSubscriptions\)/.test(text)) writers.push(entry);
+    }
+    expect(writers.sort(), 'a new writer appeared beside the locked one').toEqual(['lifecycle.ts']);
+  });
+
+  it('and that write is LOCKED, with its field set produced by the domain', () => {
+    const lifecycle = readFileSync(new URL('./billing/lifecycle.ts', import.meta.url), 'utf8');
+    // The row is taken FOR UPDATE inside a transaction before it is changed,
+    // so two lifecycle actions on one vendor cannot interleave.
+    // `.for('update')` - the real call, not the phrase in a comment. The
+    // first version of this assertion matched /for update/i, which the file's
+    // own header satisfies while explaining the lock in prose.
+    expect(lifecycle).toContain(".for('update')");
+    expect(lifecycle).toContain('db.transaction(');
+    // The value written is the domain's decision, not a caller's record.
+    expect(lifecycle).toContain('tx.update(vendorSubscriptions).set(decision)');
+    expect(lifecycle).toContain('SubscriptionPatch');
+    expect(lifecycle).not.toMatch(/Record<string,\s*unknown>/);
+  });
+
+  it('the removed writer stays removed', () => {
     const service = readFileSync(new URL('./billing/service.ts', import.meta.url), 'utf8');
-    // applySubscriptionPatch accepts a SubscriptionPatch (produced by domain.ts),
-    // not an arbitrary record.
-    expect(service).toContain('patch: SubscriptionPatch');
-    expect(service).not.toMatch(/Record<string,\s*unknown>/);
+    expect(service, 'the unlocked duplicate is back').not.toContain('export async function applySubscriptionPatch');
+    expect(service, 'the reason it went is no longer recorded')
+      .toMatch(/removed rather than repaired/i);
   });
 });
 

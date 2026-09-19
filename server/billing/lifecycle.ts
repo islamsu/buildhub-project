@@ -117,8 +117,21 @@ function describe(subscription: VendorSubscription | null, now: Date) {
  * therefore can never end up with two subscriptions.
  */
 async function ensureSubscriptionRow(userId: number): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
+  /*
+   * A SILENT RETURN HERE IS A BROKEN PRECONDITION, not a degradation.
+   *
+   * The caller's whole design is "the lock below always has something to
+   * take". Returning quietly when the database is unreachable leaves that
+   * promise unkept while the caller proceeds as though it were kept.
+   *
+   * DEFENCE IN DEPTH RATHER THAN A CHANGE IN BEHAVIOUR: `runLifecycle` already
+   * checks the database first and returns a stated rejection - "Billing
+   * storage is unavailable" - so in practice this never fires. It fires only
+   * if the connection is lost between those two lines, and refusing there is
+   * what the rest of this file already chooses: "refusing a transition is
+   * always safer than pretending one happened."
+   */
+  const db = await requireDb();
   const existing = await getSubscription(userId);
   if (existing) return;
   try {

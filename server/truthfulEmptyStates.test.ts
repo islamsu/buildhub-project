@@ -586,10 +586,12 @@ describe('an outage is not an empty result, in the modules behind the routers', 
     '_core/health.ts': 'closed',
     '_core/storageProxy.ts': 'closed',
     'billing/entitlements.ts': 'closed',
-    'billing/service.ts': 'debt',  // recordBillingEvent swallows by design; the state write at 255 is still debt.
+    // recordBillingEvent swallows by design - a history write must never roll
+    // back the commercial change it describes. The unlocked duplicate writer
+    // that was the last debt here is gone; lifecycle.ts owns that job.
+    'billing/service.ts': 'swallow',
     // The remaining one is a fire-and-forget path; its reads now refuse.
     'billing/enquiries.ts': 'swallow',
-    'billing/lifecycle.ts': 'swallow',
   };
 
   it('the sweep reads the real tree', () => {
@@ -620,6 +622,22 @@ describe('an outage is not an empty result, in the modules behind the routers', 
     const countUsage = enquiries.text.slice(enquiries.text.indexOf('async function countUsage'));
     expect(countUsage.slice(0, 900), 'countUsage answers 0 again, which reads as "quota unused"')
       .toContain('await requireDb()');
+  });
+
+  it('THE DEBT CLASS IS EMPTY, AND THE CLASS IS NOW FROZEN', () => {
+    /*
+     * Every `if (!db) return` left in the tree is a fire-and-forget WRITER or
+     * an honest REFUSAL. None of them answers a question about somebody's data
+     * with a fabricated zero, empty list or "not found".
+     *
+     * That makes this the closing assertion for the whole class. A new one can
+     * still appear - the census above will catch it - but it has to be argued
+     * into `swallow` or `closed` rather than parked as debt, because there is
+     * no longer a queue for it to join.
+     */
+    const debts = Object.entries(CLASSIFIED).filter(([, kind]) => kind === 'debt').map(([path]) => path);
+    expect(debts, `still answering a business question without a database:\n  ${debts.join('\n  ')}`)
+      .toEqual([]);
   });
 
   it('the classification is live - a file that stops matching must leave it', () => {
