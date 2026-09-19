@@ -9,7 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Star } from 'lucide-react';
 import VendorIdentitySelect from '@/components/VendorIdentitySelect';
-import { Link } from 'wouter';
 
 /**
  * EDITORIAL FEATURED PROVIDERS, AS AN ADMIN ACT.
@@ -246,9 +245,7 @@ export default function AdminFeaturedProviders() {
                 {pageRows.map(row => (
                   <tr key={row.id} className="border-b last:border-0">
                     <td className="px-3 py-2">
-                      <Link href={`/vendor/${row.vendorId}`} className="underline-offset-2 hover:underline">
-                        <AdminUserLink id={row.vendorId} name={row.vendorName} testId={`feature-vendor-link-${row.vendorId}`} />
-                      </Link>
+                      <AdminUserLink id={row.vendorId} name={row.vendorName} testId={`feature-vendor-link-${row.vendorId}`} />
                       <span className="text-muted-foreground"> #{row.vendorId}</span>
                     </td>
                     <td className="px-3 py-2">{row.category}</td>

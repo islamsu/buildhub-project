@@ -9,7 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Megaphone } from 'lucide-react';
 import VendorIdentitySelect from '@/components/VendorIdentitySelect';
-import { Link } from 'wouter';
 
 /**
  * SPONSORED PLACEMENT, AS AN ADMINISTRATIVE ACT.
@@ -273,9 +272,7 @@ export default function AdminSponsorships() {
                 {pageRows.map(row => (
                   <tr key={row.id} className="border-b last:border-0">
                     <td className="py-2 px-3">
-                      <Link href={`/vendor/${row.vendorId}`} className="underline-offset-2 hover:underline">
-                        <AdminUserLink id={row.vendorId} name={row.vendorName} testId={`sponsor-vendor-link-${row.vendorId}`} />
-                      </Link>
+                      <AdminUserLink id={row.vendorId} name={row.vendorName} testId={`sponsor-vendor-link-${row.vendorId}`} />
                       <span className="text-muted-foreground"> #{row.vendorId}</span>
                     </td>
                     <td className="py-2 px-3">{row.category}</td>

@@ -116,9 +116,7 @@ export default function AdminProducts() {
                     </td>
                     <td className="p-2">
                       {product.supplierId ? (
-                        <Link href={`/vendor/${product.supplierId}`} className="text-muted-foreground underline-offset-2 hover:underline">
-                          <AdminUserLink id={product.supplierId} name={product.supplierName} />
-                        </Link>
+                        <AdminUserLink id={product.supplierId} name={product.supplierName} className="text-muted-foreground" />
                       ) : '—'}
                     </td>
                     <td className="p-2 text-muted-foreground">{product.category || '—'}</td>

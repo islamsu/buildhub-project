@@ -1,0 +1,13 @@
+PASS  1. SETUP: a real administrator exists
+PASS  2. SIGNED OUT, the sign-in form renders and the console does not  [password field: true, admin content: false]
+PASS  3. 375px: no page is wider than the screen  [28 surfaces clean, 7 of them signed out]
+PASS  4. 375px: every control is at least 24x24  [690 controls, 54 under 24px (17 inline, 9 covered by their own hit area, 28 uncrowded)]
+PASS  5. 768px: no page is wider than the screen  [28 surfaces clean, 7 of them signed out]
+PASS  6. 1440px: no page is wider than the screen  [28 surfaces clean, 7 of them signed out]
+PASS  7. THE SWITCH has a 24px tap area, though it draws at 18px  [32x18 box, tap 11px above: true, below: true]
+PASS  8. THE CHECKBOX has a 24px tap area, though it draws at 16px  [16x16 box, tap 11px above: true, left: true]
+PASS  9. DIALOG at 375px: opens
+PASS  10. and fits the width  [375px in 375px]
+PASS  11. and is scrollable if taller than the screen  [fits vertically]
+
+11/11 checks passed

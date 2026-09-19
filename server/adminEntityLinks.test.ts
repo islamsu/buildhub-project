@@ -242,3 +242,47 @@ describe('every administrative change to an account is recorded', () => {
     expect(verify?.body).toContain('actorId: ctx.user.id');
   });
 });
+
+// ── AN IDENTITY LINK INSIDE ANOTHER LINK IS A DEAD CONTROL ────────────────
+//
+// The rollout above replaced thirteen printed names with AdminUserLink. Three
+// of those names were ALREADY links - to the public vendor page - and the
+// replacement went INSIDE the existing anchor rather than instead of it:
+//
+//   <Link href={`/vendor/${id}`}>      <- kept, and now wraps
+//     <AdminUserLink id={id} ... />    <- which renders its own <a>
+//   </Link>
+//
+// Wouter's <Link> renders an <a>, so this is an anchor nested in an anchor:
+// invalid HTML, two tab stops where a reader expects one, and two different
+// destinations behind the same pixels. Proved in a browser rather than argued
+// about: on /admin/placements the two anchors measured 34x36 with IDENTICAL
+// centres, elementFromPoint over the name returned the INNER anchor, and the
+// click landed on /admin/users/174. The outer /vendor/174 link was covered in
+// every pixel - dead, and silently so, which is exactly what the primitive's
+// own header warns about.
+//
+// Resolved toward the canonical record, which is what the rollout was for.
+// Nothing is lost: the record page carries its own way out to the vendor page.
+//
+// A rendered sweep found ONE of the three, because the other two surfaces had
+// no rows to draw that day. This one reads the source, so it does not depend
+// on which fixtures happen to exist.
+describe('no identity link is nested inside another control', () => {
+  const NESTED = /<(?:Link|a|button)\b[^>]*>\s*<AdminUserLink\b/g;
+
+  it('the sweep can see a nesting when there is one', () => {
+    // POSITIVE CONTROL. Without it, a regex that matches nothing passes.
+    const sample = '<Link href={`/vendor/${id}`} className="x">\n  <AdminUserLink id={id} />\n</Link>';
+    expect(sample.replace(/\n\s*/g, ' ').match(NESTED)).not.toBeNull();
+  });
+
+  it('no admin surface wraps one', () => {
+    const nested = clientFiles()
+      .map(f => ({ path: f.path, hits: f.text.replace(/\n\s*/g, ' ').match(NESTED) ?? [] }))
+      .filter(f => f.hits.length > 0)
+      .map(f => `${f.path} (${f.hits.length})`);
+    expect(nested, `an identity link inside another control is a dead control:\n  ${nested.join('\n  ')}`)
+      .toEqual([]);
+  });
+});
