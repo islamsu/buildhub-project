@@ -302,8 +302,20 @@ export async function openQualifiedEnquiry(
   rfqId: number,
   now: Date = new Date(),
 ): Promise<OpenEnquiryResult> {
-  const db = await getDb();
-  if (!db) return { outcome: 'not_found' };
+  /*
+   * AN OUTAGE IS NOT A MISSING REQUEST.
+   *
+   * This read `getDb()` and returned `not_found` when the database was
+   * unreachable, which the router turns into "RFQ not found" - so a supplier
+   * whose database was simply down was told the lead they were looking at had
+   * gone. They close the tab. Nothing is refunded because nothing was spent,
+   * and nobody finds out.
+   *
+   * requireDb() fails honestly instead. The refusal is just as closed - no
+   * credit is spent and no detail is released - but it says which of the two
+   * things happened.
+   */
+  const db = await requireDb();
 
   const [rfq] = await db.select().from(rfqs).where(eq(rfqs.id, rfqId)).limit(1);
   if (!rfq) return { outcome: 'not_found' };

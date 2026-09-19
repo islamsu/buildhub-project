@@ -1,0 +1,13 @@
+PASS  1. SETUP: a supplier who works in Materials  [vendor 275]
+PASS  2. and 8 separate open requests they are eligible for  [ids 46..53]
+PASS  3. and an allowance this probe knows the size of  [5 a month]
+PASS  4. none of the eight fails with an error  [all eight answered]
+PASS  5. exactly 5 are granted, not more  [5 granted, 3 refused, 0 other]
+PASS  6. and the rest are refused for the right reason  [3 reported limit_reached]
+PASS  7. and the database holds exactly that many  [5 rows]
+PASS  8. and the vendor is told their allowance is spent  [used 5 of 5, limitReached true]
+PASS  9. a later request, with no race at all, is refused too  [limit_reached]
+PASS  10. and wrote nothing  [5 rows]
+PASS  11. POSITIVE: with one credit back, the same request is granted  [granted]
+
+11/11 checks passed

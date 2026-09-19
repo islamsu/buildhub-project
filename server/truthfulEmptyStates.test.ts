@@ -590,8 +590,6 @@ describe('an outage is not an empty result, in the modules behind the routers', 
     // back the commercial change it describes. The unlocked duplicate writer
     // that was the last debt here is gone; lifecycle.ts owns that job.
     'billing/service.ts': 'swallow',
-    // The remaining one is a fire-and-forget path; its reads now refuse.
-    'billing/enquiries.ts': 'swallow',
   };
 
   it('the sweep reads the real tree', () => {
@@ -621,6 +619,21 @@ describe('an outage is not an empty result, in the modules behind the routers', 
     const enquiries = serverModules().find(f => f.path === 'billing/enquiries.ts')!;
     const countUsage = enquiries.text.slice(enquiries.text.indexOf('async function countUsage'));
     expect(countUsage.slice(0, 900), 'countUsage answers 0 again, which reads as "quota unused"')
+      .toContain('await requireDb()');
+
+    /*
+     * AND THE GRANT ITSELF, which failed closed but lied about why.
+     *
+     * openQualifiedEnquiry returned `not_found` when the database was
+     * unreachable, and the router turns that into "RFQ not found" - so a
+     * supplier whose database was down was told the lead had gone. Nothing was
+     * spent and nothing was disclosed, so it was safe; it was just not true,
+     * and the supplier acts on it by closing the tab.
+     */
+    const grant = enquiries.text.slice(enquiries.text.indexOf('export async function openQualifiedEnquiry'));
+    expect(grant.slice(0, 1600), 'an outage is reported as a missing request again')
+      .not.toMatch(/if \(!db\) return \{ outcome: 'not_found' \}/);
+    expect(grant.slice(0, 1600), 'the grant no longer refuses honestly')
       .toContain('await requireDb()');
   });
 
