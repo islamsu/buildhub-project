@@ -31,6 +31,7 @@
 // adminWith('marketplace.manage').
 
 import { useMemo, useState } from 'react';
+import DashboardLayout from '@/components/DashboardLayout';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import {
@@ -169,9 +170,10 @@ export default function AdminCategories() {
     );
   }
 
+  /* Inside the console shell, for the reason written out in AdminAdmins. */
   return (
-    <div className="min-h-screen bg-muted/20 px-4 py-8" dir={dir}>
-      <div className="mx-auto max-w-6xl">
+    <DashboardLayout>
+      <div className="space-y-6" dir={dir}>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <Button variant="ghost" size="sm" className="mb-2 gap-1.5" onClick={() => navigate('/admin')}>
@@ -347,7 +349,6 @@ export default function AdminCategories() {
             </CardContent>
           </Card>
         )}
-      </div>
 
       {/* ── create ─────────────────────────────────────────────────────── */}
       <Dialog open={creating} onOpenChange={open => { if (!open) setCreating(false); }}>
@@ -540,5 +541,6 @@ export default function AdminCategories() {
         </DialogContent>
       </Dialog>
     </div>
+    </DashboardLayout>
   );
 }

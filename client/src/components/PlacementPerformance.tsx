@@ -30,6 +30,7 @@ import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { BarChart3 } from 'lucide-react';
+import { entityTypeLabel, formulaText, metricLabel, surfaceLabel } from '@/lib/placementLabels';
 
 /** A percentage, or an explicit dash when there is nothing to divide by. */
 function Rate({ value }: { value: number | null }) {
@@ -109,9 +110,9 @@ export default function PlacementPerformance() {
 
         {/* The formulas, stated on the screen rather than left implicit. */}
         <div className="mb-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline">CTR = {data?.formulas.ctr ?? 'CTA actions ÷ impressions'}</Badge>
-          <Badge variant="outline">View rate = {data?.formulas.viewRate ?? 'entity views ÷ impressions'}</Badge>
-          <Badge variant="outline">Conversion = {data?.formulas.conversionRate ?? 'attributed qualified enquiries ÷ entity views'}</Badge>
+          <Badge variant="outline">{metricLabel('ctr', lang)} = {formulaText('ctr', data?.formulas.ctr ?? 'CTA actions ÷ impressions', lang)}</Badge>
+          <Badge variant="outline">{metricLabel('viewRate', lang)} = {formulaText('viewRate', data?.formulas.viewRate ?? 'entity views ÷ impressions', lang)}</Badge>
+          <Badge variant="outline">{metricLabel('conversionRate', lang)} = {formulaText('conversionRate', data?.formulas.conversionRate ?? 'attributed qualified enquiries ÷ entity views', lang)}</Badge>
         </div>
 
         {isLoading && (
@@ -151,9 +152,9 @@ export default function PlacementPerformance() {
                   <th className="p-2 text-right">{ar ? 'المشاهدات' : 'Entity views'}</th>
                   <th className="p-2 text-right">{ar ? 'الإجراءات' : 'CTA actions'}</th>
                   <th className="p-2 text-right">{ar ? 'طلبات مؤهلة' : 'Qualified enquiries'}</th>
-                  <th className="p-2 text-right">CTR</th>
-                  <th className="p-2 text-right">{ar ? 'معدل المشاهدة' : 'View rate'}</th>
-                  <th className="p-2 text-right">{ar ? 'معدل التحويل' : 'Conversion'}</th>
+                  <th className="p-2 text-right">{metricLabel('ctr', lang)}</th>
+                  <th className="p-2 text-right">{metricLabel('viewRate', lang)}</th>
+                  <th className="p-2 text-right">{metricLabel('conversionRate', lang)}</th>
                 </tr>
               </thead>
               <tbody>
@@ -162,10 +163,10 @@ export default function PlacementPerformance() {
                     <td className="p-2 font-medium">
                       {/* The business, not the row id - the Admin human-first rule. */}
                       {row.entityName ?? <span className="text-muted-foreground">{ar ? 'غير متاح' : 'Not available'}</span>}
-                      <span className="ms-2 text-xs text-muted-foreground">{row.entityType}</span>
+                      <span className="ms-2 text-xs text-muted-foreground">{entityTypeLabel(row.entityType, lang)}</span>
                     </td>
                     <td className="p-2"><KindBadge kind={row.kind} ar={ar} /></td>
-                    <td className="p-2 text-muted-foreground">{row.surface ?? '—'}</td>
+                    <td className="p-2 text-muted-foreground">{surfaceLabel(row.surface, lang)}</td>
                     <td className="p-2 text-right tabular-nums">{row.impressions}</td>
                     <td className="p-2 text-right tabular-nums">{row.entityViews}</td>
                     <td className="p-2 text-right tabular-nums">{row.ctaActions}</td>

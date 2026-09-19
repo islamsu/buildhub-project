@@ -49,9 +49,22 @@ export async function launchBrowser({ port = 9222 } = {}) {
 
   return {
     version,
-    close: () => {
+    /*
+     * SIGKILL DOES NOT MEAN THE PROCESS IS GONE YET. Chromium's children keep
+     * the profile directory busy for a moment after the parent is killed, and
+     * removing it in the same tick throws ENOTEMPTY - which surfaces as a
+     * probe that crashes in its own teardown and prints no results, after the
+     * whole run has already completed. Waited for, then retried, and never
+     * allowed to fail the run: a leftover directory under /tmp is not a
+     * finding about the product.
+     */
+    close: async () => {
       child.kill('SIGKILL');
-      rmSync(profile, { recursive: true, force: true });
+      await new Promise(resolve => child.once('exit', resolve));
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try { rmSync(profile, { recursive: true, force: true }); return; }
+        catch { await new Promise(resolve => setTimeout(resolve, 200)); }
+      }
     },
     newPage: () => connectPage(port),
   };

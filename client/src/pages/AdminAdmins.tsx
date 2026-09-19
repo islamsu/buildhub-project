@@ -14,6 +14,7 @@
 // copy it. That is the point of hashing it, not an oversight.
 
 import { useState } from 'react';
+import DashboardLayout from '@/components/DashboardLayout';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import {
@@ -155,9 +156,23 @@ export default function AdminAdmins() {
   const roleLabel = (role: string | null) =>
     role && role in ADMIN_ROLE_LABELS ? ADMIN_ROLE_LABELS[role as AdminRole][lang === 'ar' ? 'ar' : 'en'] : '—';
 
+  /*
+   * INSIDE THE CONSOLE SHELL, like every other admin destination.
+   *
+   * This page and Product categories were routed straight to a full-screen
+   * layout of their own, so the two entries the sidebar offers for them led
+   * to pages with no sidebar: an administrator arrived and had a single
+   * "Dashboard" button to get back with - not even a link, so it could not be
+   * opened in a new tab. AdminUserDetail already renders inside
+   * DashboardLayout; these two were the outliers, not the design.
+   *
+   * Found by measuring where the navigation sits in each language: eleven
+   * admin surfaces reported navigation and these two reported none at all, in
+   * English as well as Arabic.
+   */
   return (
-    <div className="min-h-screen bg-muted/20 px-4 py-8" dir={dir}>
-      <div className="mx-auto max-w-6xl">
+    <DashboardLayout>
+      <div className="space-y-6" dir={dir}>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <Button variant="ghost" size="sm" className="mb-2 gap-1.5" onClick={() => navigate('/admin')}>
@@ -270,7 +285,6 @@ export default function AdminAdmins() {
             )}
           </CardContent>
         </Card>
-      </div>
 
       {/* ── OUTSTANDING LINKS FOR ONE ADMINISTRATOR ─────────────────────── */}
       <Dialog open={linksFor !== null} onOpenChange={open => !open && setLinksFor(null)}>
@@ -425,5 +439,6 @@ export default function AdminAdmins() {
         </DialogContent>
       </Dialog>
     </div>
+    </DashboardLayout>
   );
 }

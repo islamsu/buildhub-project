@@ -23,7 +23,7 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags, Megaphone, ShieldCheck, ShieldQuestion, LifeBuoy, Flag, FileSearch } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, PanelRight, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags, Megaphone, ShieldCheck, ShieldQuestion, LifeBuoy, Flag, FileSearch } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -332,7 +332,23 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
-  const { t } = useLanguage();
+  const { t, dir } = useLanguage();
+  /**
+   * WHICH EDGE THE NAVIGATION LIVES ON.
+   *
+   * The Sidebar primitive has always taken a side and always defaulted to the
+   * left, and nothing passed one - so the Arabic console was an RTL page with
+   * its navigation still pinned to the left edge. Every word had been
+   * translated and the layout had not moved at all, which is the difference
+   * between a supported interface and mirrored English. Measured rather than
+   * eyeballed: the mean horizontal centre of the navigation entries was 0.10
+   * of the screen in BOTH languages, across eleven admin surfaces.
+   *
+   * The primitive already handles the rest - it pins to right-0 and moves its
+   * border to the inline edge that faces the content - so this is the prop it
+   * was waiting for, not a second layout.
+   */
+  const rtl = dir === 'rtl';
   /**
    * The effective plan, from the billing system - never the role, never a
    * constant. `billing.mySubscription` is the same server-resolved state the
@@ -453,8 +469,12 @@ function DashboardLayoutContent({
     <>
       <div className="relative" ref={sidebarRef}>
         <Sidebar
+          side={rtl ? 'right' : 'left'}
           collapsible="icon"
-          className="border-r-0"
+          /* The INLINE-END border, so the seam faces the content in both
+             directions - border-r-0 removed a border the RTL sidebar does not
+             have, and left the one it does. */
+          className="border-e-0"
           disableTransition={isResizing}
         >
           <SidebarHeader className="h-16 justify-center">
@@ -464,7 +484,11 @@ function DashboardLayoutContent({
                 className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
                 aria-label="Toggle navigation"
               >
-                <PanelLeft className="h-4 w-4 text-muted-foreground" />
+                {/* The icon points at the panel it toggles, which is not the
+                    same edge in both directions. */}
+                {rtl
+                  ? <PanelRight className="h-4 w-4 text-muted-foreground" />
+                  : <PanelLeft className="h-4 w-4 text-muted-foreground" />}
               </button>
               {/* THE BRAND IS THE WAY HOME, on every signed-in page.
                   This was a bare <div>: the one element a person instinctively

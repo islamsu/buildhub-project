@@ -1,0 +1,9 @@
+PASS  1. SETUP: a real administrator exists
+PASS  2. BASELINE: the English chrome was read  [730 labels across 13 surfaces]
+PASS  3. every Arabic surface is RTL, lang=ar and set in the Arabic face  [13 surfaces]
+PASS  4. NO TRANSLATION KEY reaches the screen  [13 surfaces clean]
+PASS  5. the words a person reads are Arabic  [692 of 733 labels carry Arabic script]
+PASS  6. THE LAYOUT MOVED: navigation starts at the right edge in Arabic  [13 surfaces, mean nav centre 0.10 in English and 0.90 in Arabic]
+PASS  7. ARABIC FITS at 375, 768 and 1440  [39 measurements, no page wider than its screen]
+
+7/7 checks passed
