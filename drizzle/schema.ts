@@ -552,7 +552,21 @@ export const quotations = mysqlTable('quotations', {
    * in storageProxy.ts under the `quotation-attachments/` prefix.
    */
   attachments:  text('attachments'),
-  status:       mysqlEnum('status', ['pending', 'accepted', 'rejected']).default('pending'),
+  /**
+   * WITHDRAWN is the supplier's own exit.
+   *
+   * The other three are the CUSTOMER's decision - a bid is accepted, or it is
+   * rejected because somebody else won. A supplier whose costs moved, or whose
+   * capacity went, had no way to take a price off the table: the audit
+   * vocabulary has carried 'quotation_withdrawn' since it was written and
+   * nothing could ever record it. Revising to an unserious number is not a
+   * withdrawal, it is a worse bid.
+   *
+   * It is terminal and it is the supplier's alone. Only a pending quotation
+   * can be withdrawn - an accepted one is an agreement, and walking away from
+   * that is a dispute, not a state change.
+   */
+  status:       mysqlEnum('status', ['pending', 'accepted', 'rejected', 'withdrawn']).default('pending'),
   /** One current quotation per supplier per RFQ; this counts its versions. */
   revisionNumber: int('revisionNumber').notNull().default(1),
   /** Set on the previous version when a revision supersedes it. */

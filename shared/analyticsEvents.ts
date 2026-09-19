@@ -55,6 +55,13 @@ export const ANALYTICS_EVENTS = {
   QUOTATION_SUBMITTED: 'quotation.submitted',
   /** A homeowner accepted a quotation - the marketplace's actual outcome. */
   QUOTATION_ACCEPTED: 'quotation.accepted',
+  /**
+   * A supplier took their own price back off the table. Counted separately
+   * from a rejection: a rejected bid is the marketplace working, and a
+   * withdrawn one is a supplier who could not hold the price they offered,
+   * which is a different thing to watch.
+   */
+  QUOTATION_WITHDRAWN: 'quotation.withdrawn',
 
   // ── Monetisation ─────────────────────────────────────────────────────────
   /** A paid trial began. metadata: { plan, founder }. */

@@ -42,7 +42,15 @@ type QuotationRow = {
   notes: string | null;
   /** JSON array of {key,url,name,type,size}, or null. */
   attachments: string | null;
-  status: 'pending' | 'accepted' | 'rejected' | null;
+  /**
+   * WITHDRAWN is the supplier's own exit, and it reads differently from the
+   * other three: pending, accepted and rejected are all the customer's
+   * decision about a live price, and a withdrawn bid is no longer a price at
+   * all. It is kept on the comparison rather than hidden - a column that
+   * silently disappears between two visits reads as a bug in the product -
+   * but it is dimmed and it cannot be accepted.
+   */
+  status: 'pending' | 'accepted' | 'rejected' | 'withdrawn' | null;
   createdAt: Date;
   providerName: string | null;
   providerEmail: string | null;
@@ -264,7 +272,10 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
             const isCheapest = parseFloat(q.price) === lowestPrice;
             const isFastest = q.timeline === fastestTimeline && fastestTimeline < 9999;
             const isAccepted = q.status === 'accepted';
-            const isRejected = q.status === 'rejected';
+            const isWithdrawn = q.status === 'withdrawn';
+            // Dimmed for the same reason a rejected one is: still readable,
+            // visibly out of the running.
+            const isRejected = q.status === 'rejected' || isWithdrawn;
             // The server decides, and says so in the same response - the
             // screen renders that answer rather than recomputing the rule.
             const isExpired = q.expired === true;
@@ -632,6 +643,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full
                         ${q.status === 'accepted' ? 'bg-emerald-100 text-emerald-700' :
                           q.status === 'rejected' ? 'bg-red-100 text-red-600' :
+                          q.status === 'withdrawn' ? 'bg-muted text-muted-foreground' :
                           'bg-blue-100 text-blue-700'}`}>
                         {t(`common.${q.status ?? 'pending'}`)}
                       </span>

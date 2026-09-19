@@ -26,6 +26,7 @@ import { MAX_AI_ATTACHMENTS_PER_MESSAGE } from '@shared/aiAttachments';
 import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
 import { acceptQuotationSecure, closeRfqSecure, rejectQuotationSecure } from './quotationWorkflow';
+import { withdrawQuotationSecure } from './quotationWithdrawal';
 import { aiChatLimiters, authLimiters, contentLimiters, getClientIp } from './_core/rateLimit';
 import { recordEventAsync } from './analytics/events';
 import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
@@ -4351,6 +4352,37 @@ const rfqRouter = router({
   close: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => closeRfqSecure(input.id, ctx.user.id)),
+  /**
+   * A SUPPLIER WITHDRAWING THEIR OWN BID.
+   *
+   * approvedProviderProcedure, like submitQuotation - the same standing is
+   * needed to take a price back as to put one up. The rules themselves live
+   * in quotationWithdrawal.ts beside the acceptance they mirror, so the two
+   * take their row locks in the same order and cannot deadlock each other.
+   */
+  withdrawQuotation: approvedProviderProcedure
+    .input(z.object({
+      quotationId: z.number().int().positive(),
+      /**
+       * Optional, and bounded like every other free-text reason. The customer
+       * is told either way - a price vanishing from a comparison with no
+       * explanation reads as a broken product rather than a decision.
+       */
+      reason: z.string().trim().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await withdrawQuotationSecure(
+        input.quotationId, ctx.user.id, input.reason?.trim() || null,
+      );
+      recordEventAsync({
+        type: ANALYTICS_EVENTS.QUOTATION_WITHDRAWN,
+        userId: ctx.user.id,
+        subjectType: 'quotation',
+        subjectId: input.quotationId,
+      });
+      return { success: true, rfqId: result.rfqId };
+    }),
+
   acceptQuotation: protectedProcedure
     .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
     .mutation(async ({ ctx, input }) => {

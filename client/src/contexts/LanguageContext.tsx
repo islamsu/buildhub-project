@@ -192,6 +192,21 @@ const translations: Record<Language, Record<string, string>> = {
     // theirs, in whatever language they wrote it, and is passed through as-is.
     'notif.quotation.received.title': 'New quotation received',
     'notif.quotation.received.body': 'You received a new quotation for "{rfqTitle}".',
+    /*
+     * A price disappearing from a comparison with no explanation reads as a
+     * bug in the product rather than a decision by a supplier, so the
+     * withdrawal is announced.
+     *
+     * TWO BODIES, under the `.bodyNote` convention notificationText already
+     * uses: the supplier's reason is optional, and a sentence ending in a
+     * dangling colon is worse than no reason at all. The reason travels as
+     * `note` because that is the param the resolver looks at when it decides
+     * which body to render, and it is passed through verbatim - it is the
+     * supplier's own words, in whatever language they wrote them.
+     */
+    'notif.quotation.withdrawn.title': 'A quotation was withdrawn',
+    'notif.quotation.withdrawn.body': 'A supplier withdrew their quotation for "{rfqTitle}".',
+    'notif.quotation.withdrawn.bodyNote': 'A supplier withdrew their quotation for "{rfqTitle}": {note}',
     // The in-platform thread is the only contact channel between a customer and
     // a vendor, and nothing announced a message on it. The asker's identity is
     // deliberately absent from the product-question notification: that Q&A is
@@ -887,6 +902,7 @@ const translations: Record<Language, Record<string, string>> = {
     'common.accepted': 'Accepted',
     'common.rejected': 'Rejected',
     'common.pending': 'Pending',
+    'common.withdrawn': 'Withdrawn',
     'common.awarded': 'Awarded',
     'common.status.on_hold': 'On Hold',
     'common.status.in_progress': 'In Progress',
@@ -1406,6 +1422,9 @@ const translations: Record<Language, Record<string, string>> = {
     // ملاحظة: نص المراجع الحر يمرَّر كما هو - هو كلامه بلغته.
     'notif.quotation.received.title': 'عرض سعر جديد',
     'notif.quotation.received.body': 'وصلك عرض سعر جديد على "{rfqTitle}".',
+    'notif.quotation.withdrawn.title': 'تم سحب عرض سعر',
+    'notif.quotation.withdrawn.body': 'سحب أحد المورّدين عرض السعر المقدَّم على "{rfqTitle}".',
+    'notif.quotation.withdrawn.bodyNote': 'سحب أحد المورّدين عرض السعر المقدَّم على "{rfqTitle}": {note}',
     'notif.message.received.title': 'رسالة جديدة',
     'notif.message.received.body': 'أرسل لك {senderName} رسالة.',
     'notif.product.question.title': 'سؤال جديد على منتجك',
@@ -2068,6 +2087,7 @@ const translations: Record<Language, Record<string, string>> = {
     'common.accepted': 'مقبول',
     'common.rejected': 'مرفوض',
     'common.pending': 'قيد الانتظار',
+    'common.withdrawn': 'مسحوب',
     'common.awarded': 'تم الترسية',
     'common.status.on_hold': 'معلق',
     'common.status.in_progress': 'قيد التنفيذ',

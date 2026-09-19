@@ -328,6 +328,54 @@ describe('the server writes the key everywhere it writes prose', () => {
     expect(offenders, 'a notification was added without a messageKey').toEqual([]);
   });
 
+  it('and every key a call site names actually RESOLVES, in both languages', () => {
+    /*
+     * PRESENCE IS NOT RESOLUTION, and the difference is silent.
+     *
+     * The rule above is satisfied by any string. A key with a typo, or one
+     * built to a convention that does not exist, passes it and then fails at
+     * read time in the one way nobody sees: notificationText falls back to the
+     * stored ENGLISH prose, so the notification still renders, still reads
+     * correctly to whoever wrote it, and is simply never translated.
+     *
+     * It was a real miss, not a hypothetical one. A withdrawal notification
+     * was added with `messageKey: 'notif.quotation.withdrawn.bodyReason'`,
+     * inventing a key where the resolver expects a BASE key plus a `note`
+     * param. It would have been looked up as
+     * `notif.quotation.withdrawn.bodyReason.title`, found nothing, and served
+     * English to every Arabic reader. Every test in this file passed.
+     */
+    const named = new Set<string>();
+    for (const [name, source] of SERVER_SOURCES) {
+      if (name === 'notifications.ts') continue;
+      for (const match of source.matchAll(/messageKey:\s*'([\w.]+)'/g)) {
+        named.add(match[1]);
+      }
+      // A conditional key - `cond ? 'a' : 'b'` - is two keys, and both are used.
+      for (const match of source.matchAll(/messageKey:\s*[^,\n]*\?\s*'([\w.]+)'\s*:\s*'([\w.]+)'/g)) {
+        named.add(match[1]);
+        named.add(match[2]);
+      }
+    }
+    expect(named.size, 'no literal message keys found - the scan is broken').toBeGreaterThan(10);
+
+    const unresolved: string[] = [];
+    for (const key of named) {
+      // Template keys are built at the call site from a variable part; they
+      // are covered by the per-language completeness tests above instead.
+      if (key.endsWith('.')) continue;
+      for (const lang of ['en', 'ar'] as const) {
+        const table = lang === 'ar' ? AR : EN;
+        if (!table.has(`${key}.title`)) unresolved.push(`${lang}: ${key}.title`);
+        if (!table.has(`${key}.body`) && !table.has(`${key}.bodyNote`)) {
+          unresolved.push(`${lang}: ${key}.body`);
+        }
+      }
+    }
+    expect(unresolved, `a server call site names a key that renders nothing:\n  ${unresolved.join('\n  ')}`)
+      .toEqual([]);
+  });
+
   it('the scan actually reaches quotationWorkflow.ts', () => {
     // Named explicitly, because this is the file the first version missed. A
     // rule that silently stops covering a file passes for the wrong reason.

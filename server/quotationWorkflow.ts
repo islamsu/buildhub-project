@@ -61,14 +61,34 @@ export async function acceptQuotationSecure(rfqId: number, quotationId: number, 
     // id and status as well as providerId: the auto-rejection has to be
     // recorded per quotation with the status it moved FROM, and after the
     // cascade update below that value no longer exists anywhere.
+    /*
+     * PENDING ONLY, on both halves of the cascade.
+     *
+     * A withdrawn bid is not in the running and must not be swept into
+     * "rejected" when somebody else wins: the supplier took it back, and
+     * telling them their own withdrawal was "not selected" - and sending them
+     * the losing-bid notification to match - reports a decision the customer
+     * never made about a price that was no longer on the table.
+     *
+     * The filter is on the SELECT as well as the UPDATE, because `others` is
+     * what drives both the field-history rows and who gets told they lost.
+     */
     const others = await tx.select({ id: quotations.id, providerId: quotations.providerId, status: quotations.status })
       .from(quotations).where(
-        and(eq(quotations.rfqId, rfqId), ne(quotations.id, quotationId))
+        and(
+          eq(quotations.rfqId, rfqId),
+          ne(quotations.id, quotationId),
+          eq(quotations.status, 'pending'),
+        )
       );
 
     await tx.update(quotations).set({ status: 'accepted' }).where(eq(quotations.id, quotationId));
     await tx.update(quotations).set({ status: 'rejected' }).where(
-      and(eq(quotations.rfqId, rfqId), ne(quotations.id, quotationId))
+      and(
+        eq(quotations.rfqId, rfqId),
+        ne(quotations.id, quotationId),
+        eq(quotations.status, 'pending'),
+      )
     );
     // OLD -> NEW for every quotation this decision moved, not only the winner.
     // A supplier asking "why was my bid rejected when I was never told" needs
