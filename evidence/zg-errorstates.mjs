@@ -195,9 +195,19 @@ try {
 } finally {
   if (stopped) {
     try { service('start'); } catch (e) { console.log(`  WARNING: could not restart mariadb: ${e.message}`); }
-    await settle(3000);
-    try { sql('select 1'); console.log('  database restarted'); }
-    catch { console.log('  WARNING: the database did not come back - restart it before other probes'); }
+    /*
+     * POLLED, NOT SLEPT. A fixed 3s wait was long enough on one run and not on
+     * the next, so the probe reported "the database did not come back" about a
+     * database that had - and the two runs disagreed about a line that has
+     * nothing to do with what is being tested. Wait for the condition.
+     */
+    let back = false;
+    for (let attempt = 0; attempt < 40 && !back; attempt++) {
+      try { sql('select 1'); back = true; } catch { await settle(500); }
+    }
+    console.log(back
+      ? '  database restarted'
+      : '  WARNING: the database did not come back - restart it before other probes');
   }
   try { browser.close(); } catch { /* the result is already printed */ }
 }

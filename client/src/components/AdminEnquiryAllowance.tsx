@@ -1,3 +1,4 @@
+import { LoadFailedInline, loadFailedCopy } from '@/components/LoadFailed';
 import { useEffect, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -46,7 +47,12 @@ export default function AdminEnquiryAllowance() {
   }, [searchText]);
 
   const enabled = selected !== null;
-  const { data: results = [], isFetching: searchFetching } = trpc.admin.vendorSearch.useQuery(
+  /*
+   * A FAILED LOOKUP IS NOT AN ABSENT VENDOR - the third copy of this
+   * typeahead, and the same sentence. An administrator about to grant an
+   * enquiry allowance was told the account does not exist.
+   */
+  const { data: results = [], isFetching: searchFetching, isError: searchFailed } = trpc.admin.vendorSearch.useQuery(
     { query: debounced },
     { enabled: debounced.length >= 2 },
   );
@@ -119,6 +125,8 @@ export default function AdminEnquiryAllowance() {
                 <p className="px-3 py-3 text-sm text-muted-foreground" data-testid="allowance-search-loading">
                   {ar ? 'جارٍ البحث…' : 'Searching…'}
                 </p>
+              ) : searchFailed ? (
+                <LoadFailedInline text={loadFailedCopy(ar).text} />
               ) : results.length === 0 ? (
                 <p className="px-3 py-3 text-sm text-muted-foreground" data-testid="allowance-search-empty">
                   {ar ? 'لا يوجد مورّدون مطابقون.' : 'No matching vendors.'}

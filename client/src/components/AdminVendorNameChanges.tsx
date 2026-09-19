@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useMemo, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -125,7 +126,12 @@ export default function AdminVendorNameChanges() {
           {notice && <p className="text-sm text-emerald-700">{notice}</p>}
           {error && <p className="text-sm text-destructive">{error}</p>}
 
-          {filtered.length === 0 ? (
+          {/* AN OUTAGE IS NOT AN EMPTY QUEUE. A name-change request that is
+              waiting looks exactly like one that was never made, and the
+              administrator who reads "none" stops checking. */}
+          {list.isError ? (
+            <LoadFailed {...loadFailedCopy(ar)} onRetry={() => void list.refetch()} />
+          ) : filtered.length === 0 ? (
             <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
               {ar ? 'لا توجد طلبات مطابقة.' : 'No matching requests.'}
             </p>

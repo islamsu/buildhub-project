@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useLanguage } from '@/contexts/LanguageContext';
 import Navbar from '@/components/Navbar';
 import { Card, CardContent } from '@/components/ui/card';
@@ -47,7 +48,15 @@ export default function MessagesPage() {
   const { t, lang, dir } = useLanguage();
   const { user, isAuthenticated } = useAuth();
   const { data: notifications } = trpc.notifications.list.useQuery(undefined, { enabled: isAuthenticated });
-  const { data: persistedConversations = [] } = trpc.messages.conversations.useQuery(undefined, { enabled: isAuthenticated });
+  /*
+   * "No conversations yet" IS SOMEBODY'S CORRESPONDENCE, REPORTED AS ABSENT.
+   *
+   * The list defaulted to `[]`, so a failed request told a user with an inbox
+   * full of quotations that they have never spoken to anyone - and there is no
+   * second signal on this screen to contradict it.
+   */
+  const conversationsQuery = trpc.messages.conversations.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const persistedConversations = conversationsQuery.data ?? [];
   const markRead = trpc.notifications.markAllRead.useMutation({
     onSuccess: () => {
       toast.success(lang === 'ar' ? 'تم تحديد الكل كمقروء' : 'All marked as read');
@@ -250,7 +259,13 @@ export default function MessagesPage() {
                   </div>
                 </div>
                 <div className="flex-1 overflow-y-auto">
-                  {filteredConvs.length === 0 && (
+                  {conversationsQuery.isError && (
+                    <LoadFailed
+                      {...loadFailedCopy(lang === 'ar')}
+                      onRetry={() => void conversationsQuery.refetch()}
+                    />
+                  )}
+                  {!conversationsQuery.isError && filteredConvs.length === 0 && (
                     <p className="p-4 text-xs text-muted-foreground text-center">
                       {searchConv
                         ? (lang === 'ar' ? 'لا توجد محادثات مطابقة' : 'No conversations match that search')

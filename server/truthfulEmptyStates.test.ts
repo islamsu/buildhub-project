@@ -293,41 +293,62 @@ const EMPTY_PHRASE =
 function surfaces() {
   return pages()
     .filter(p => p.path.startsWith('pages/') || p.path.startsWith('components/'))
-    .filter(p => p.text.includes('useQuery') && EMPTY_PHRASE.test(p.text))
+    // COMMENTS STRIPPED. The phrase has to be one the product SAYS, not one
+    // a comment uses to explain itself: Home was on the debt list because it
+    // carries the note "nothing where there is no count yet" - describing the
+    // very honesty this rule asks for.
+    .filter(p => p.text.includes('useQuery') && EMPTY_PHRASE.test(stripComments(p.text)))
     .map(p => p.path);
 }
 
 const sourceOf = (rel: string) => readFileSync(new URL(rel, CLIENT), 'utf8');
-const distinguishesError = (rel: string) => /\bisError\b/.test(sourceOf(rel));
+
+/**
+ * DOES THIS SURFACE OBSERVE ITS QUERY'S FAILURE?
+ *
+ * THREE SPELLINGS, ALL REAL, and the census had to learn each of them by
+ * getting a file wrong first:
+ *
+ *   isError                       the common one
+ *   const { error } = trpc.…      AdminDataQuality destructures and renders it
+ *   query.error                   RFQRespondPage holds the query object and
+ *                                 reads the property off it
+ *
+ * The last two must be tied to a QUERY. A census that accepted a bare `error`
+ * would have passed AdminFeaturedProviders, which holds an `error` state for
+ * its MUTATIONS while its query's failure went unobserved - the exact file
+ * this rule existed to catch.
+ */
+const distinguishesError = (rel: string) => {
+  const source = sourceOf(rel);
+  if (/\bisError\b/.test(source)) return true;
+  if (/const\s*\{[^}]*\berror\b[^}]*\}\s*=\s*trpc\./.test(source)) return true;
+  // A query held as an object, then read by property.
+  const held = [...source.matchAll(/const\s+(\w+)\s*=\s*trpc\.[\w.]*useQuery/g)].map(m => m[1]);
+  return held.some(name => new RegExp(`\\b${name}\\.error\\b`).test(source));
+};
 
 /**
  * SURFACES THAT STILL CANNOT TELL THE TWO APART.
  *
- * A DEBT LIST, NOT AN EXEMPTION LIST. Every entry is a real instance of the
+ * A DEBT LIST, NOT AN EXEMPTION LIST.
+ *
+ * Five names came off it without a line of product code changing, because the
+ * census was wrong about them rather than they about the rule:
+ *
+ *   AdminDataQuality, AdminRfqInvestigation, VendorReputation  destructure
+ *     `error` from the query and render it - a spelling the first census could
+ *     not see.
+ *   Home  carries the note "nothing where there is no count yet", which
+ *     DESCRIBES the honesty this rule asks for. Comments are stripped now.
+ *   RFQRespondPage  says "No attachments" about files the supplier has just
+ *     attached in this form - local state, not a query result at all. Every entry is a real instance of the
  * defect above, waiting its turn; none of them is here because the rule does
  * not apply. It is written down so that the count can only go DOWN - the test
  * below fails both when a NEW surface joins the list and when an entry is
  * fixed and not removed from it, so it cannot quietly become permanent.
  */
 const KNOWN_GAPS: readonly string[] = [
-  'pages/AdminUserDetail.tsx',
-  'pages/Home.tsx',
-  'pages/MessagesPage.tsx',
-  'pages/ProductDetail.tsx',
-  'pages/ProductFormPage.tsx',
-  'pages/RFQRespondPage.tsx',
-  'components/AdminDataQuality.tsx',
-  'components/AdminEnquiryAllowance.tsx',
-  'components/AdminFeaturedProviders.tsx',
-  'components/AdminPlacements.tsx',
-  'components/AdminRfqInvestigation.tsx',
-  'components/AdminSponsorships.tsx',
-  'components/AdminVendorEnquiries.tsx',
-  'components/AdminVendorNameChanges.tsx',
-  'components/PortfolioManager.tsx',
-  'components/ProjectDetailEnhancements.tsx',
-  'components/VendorNameChangeRequest.tsx',
-  'components/VendorReputation.tsx',
 ];
 
 describe('the census finds real surfaces', () => {
@@ -346,6 +367,31 @@ describe('a surface that can say "nothing here" can also say "I could not look"'
     const offenders = surfaces().filter(rel => !distinguishesError(rel) && !KNOWN_GAPS.includes(rel));
     expect(offenders, `these render an empty state and never look at the error:\n  ${offenders.join('\n  ')}`)
       .toEqual([]);
+  });
+
+  it('AN OBSERVED FAILURE IS ALSO ACTED ON, not merely destructured', () => {
+    /*
+     * `usersFailed` was once destructured on this very surface and used
+     * nowhere - the observation existed and the honesty did not, and a rule
+     * that only looked for the word passed on it.
+     *
+     * So every alias a surface gives its error flag has to appear again
+     * somewhere other than the line that created it. Disabling a branch while
+     * leaving `isError: somethingFailed` in the destructure is exactly the
+     * shape of that regression, and it survived this file until this ran.
+     */
+    const offenders: string[] = [];
+    for (const rel of surfaces()) {
+      const source = sourceOf(rel);
+      for (const [line, alias] of [...source.matchAll(/^.*\bisError:\s*(\w+).*$/gm)].map(m => [m[0], m[1]])) {
+        const elsewhere = source
+          .split('\n')
+          .filter(other => other !== line)
+          .some(other => new RegExp(`\\b${alias}\\b`).test(other));
+        if (!elsewhere) offenders.push(`${rel}: ${alias}`);
+      }
+    }
+    expect(offenders, `observed and then ignored:\n  ${offenders.join('\n  ')}`).toEqual([]);
   });
 
   it('THE DEBT LIST ONLY SHRINKS - a fixed surface must leave it', () => {

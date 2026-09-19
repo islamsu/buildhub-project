@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -80,7 +81,12 @@ export default function AdminUserDetail() {
 
   const { data: adminMe } = trpc.admin.me.useQuery(undefined, { retry: false });
   const can = (permission: string) => adminMe?.permissions.includes(permission as never) ?? false;
-  const { data: detail, isLoading } = trpc.admin.userDetail.useQuery(
+  /*
+   * "User not found." IS A CLAIM ABOUT A PERSON, and an outage is not evidence
+   * for it. The same defect as AdminProjectDetail, on the record an
+   * administrator is most likely to be acting on when they reach for it.
+   */
+  const { data: detail, isLoading, isError: detailFailed, refetch: refetchDetail } = trpc.admin.userDetail.useQuery(
     { userId },
     { enabled: validId && can('users.read') },
   );
@@ -218,6 +224,10 @@ export default function AdminUserDetail() {
 
         {isLoading ? (
           <p className="py-12 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
+        ) : detailFailed ? (
+          <Card><CardContent className="py-8">
+            <LoadFailed {...loadFailedCopy(lang === 'ar')} onRetry={() => void refetchDetail()} />
+          </CardContent></Card>
         ) : !detail ? (
           <Card>
             <CardContent className="py-16 text-center text-sm text-muted-foreground">

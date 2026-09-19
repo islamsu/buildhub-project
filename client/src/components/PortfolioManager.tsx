@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -38,7 +39,14 @@ export default function PortfolioManager() {
   const { lang } = useLanguage();
   const ar = lang === 'ar';
   const utils = trpc.useUtils();
-  const { data: items = [], isLoading } = trpc.portfolio.myItems.useQuery(undefined, { retry: false });
+  /*
+   * A PROVIDER'S OWN PORTFOLIO, REPORTED AS EMPTY BY AN OUTAGE - and the empty
+   * state invites them to "add your first project", which is how a duplicate
+   * gets created from a failed request.
+   */
+  const portfolio = trpc.portfolio.myItems.useQuery(undefined, { retry: false });
+  const items = portfolio.data ?? [];
+  const isLoading = portfolio.isLoading;
 
   const [form, setForm] = useState<FormState>(EMPTY);
   const [images, setImages] = useState<string[]>([]);
@@ -130,7 +138,11 @@ export default function PortfolioManager() {
 
   return (
     <div className="space-y-4" data-testid="portfolio-manager">
-      {items.length === 0 && !editing && (
+      {portfolio.isError && !editing && (
+        <LoadFailed {...loadFailedCopy(ar)} onRetry={() => void portfolio.refetch()} />
+      )}
+
+      {!portfolio.isError && items.length === 0 && !editing && (
         <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground" data-testid="portfolio-empty">
           {ar ? 'لم تضف أعمالاً بعد. أضف أول عمل لعرض خبرتك.' : 'No work added yet. Add your first project to showcase your experience.'}
         </p>

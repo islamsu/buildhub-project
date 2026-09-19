@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useMemo, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -21,7 +22,16 @@ export default function AdminFeaturedProviders() {
   const { lang } = useLanguage();
   const ar = lang === 'ar';
   const utils = trpc.useUtils();
-  const { data: rows = [], isLoading } = trpc.admin.featuredProviders.useQuery(undefined, { retry: false });
+  /*
+   * A FAILED FETCH IS NOT AN EMPTY LEDGER.
+   *
+   * This destructured only `isLoading`, so an outage rendered the empty state
+   * below - a statement that the platform has none of these on record, made
+   * because a request did not come back. Commercial records especially: an
+   * administrator reading "none" stops looking.
+   */
+  const featured = trpc.admin.featuredProviders.useQuery(undefined, { retry: false });
+  const rows = featured.data ?? [];
   const { data: categories = [] } = trpc.marketplace.vendorCategories.useQuery();
 
   const [vendorId, setVendorId] = useState<number | null>(null);
@@ -192,8 +202,10 @@ export default function AdminFeaturedProviders() {
         {notice && <p className="text-sm text-emerald-700" data-testid="feature-notice">{notice}</p>}
         {error && <p className="text-sm text-destructive" data-testid="feature-error">{error}</p>}
 
-        {isLoading ? (
+        {featured.isLoading ? (
           <p className="text-sm text-muted-foreground">{ar ? 'جاري التحميل…' : 'Loading…'}</p>
+        ) : featured.isError ? (
+          <LoadFailed {...loadFailedCopy(ar)} onRetry={() => void featured.refetch()} />
         ) : rows.length === 0 ? (
           <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground" data-testid="feature-empty">
             {ar ? 'لا يوجد مزوّدون مميزون.' : 'No featured providers.'}

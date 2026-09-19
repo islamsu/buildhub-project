@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useMemo, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -116,7 +117,14 @@ export default function AdminPlacements() {
           {notice && <p className="mt-2 text-sm text-emerald-700">{notice}</p>}
           {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
         </div>
-        {filtered.length === 0 ? (
+        {/* AN OUTAGE IS NOT AN EMPTY BOARD. `filtered` is derived from a
+            `?? []` default, so a failed request said the platform has no
+            commercial placements - a claim about the business, made because a
+            request did not come back. The filter's own empty result is a
+            different sentence and keeps its own arm below. */}
+        {list.isError ? (
+          <LoadFailed {...loadFailedCopy(ar)} onRetry={() => void list.refetch()} />
+        ) : filtered.length === 0 ? (
           <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
             {ar ? 'لا توجد مساحات تجارية مطابقة.' : 'No matching placements.'}
           </p>

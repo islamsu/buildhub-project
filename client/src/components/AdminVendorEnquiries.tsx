@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -118,7 +119,12 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
   const [bulkResult, setBulkResult] = useState('');
   const [exportError, setExportError] = useState('');
 
-  const overview = trpc.admin.enquiryOverview.useQuery();
+  /*
+   * "No enquiries yet" IS A STATEMENT ABOUT THE WHOLE MARKETPLACE - every
+   * vendor invited to a request, every one who opened one, every one who
+   * answered. An outage said none of it had ever happened.
+   */
+  const overview = trpc.admin.enquiryOverview.useQuery(undefined, { retry: false });
   const list = trpc.admin.enquiryList.useQuery({
     ...(state === 'all' ? {} : { state: state as any }),
     ...(search.trim() ? { search: search.trim() } : {}),
@@ -504,6 +510,8 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
               <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" />
               {ar ? 'جاري التحميل…' : 'Loading…'}
             </div>
+          ) : overview.isError ? (
+            <LoadFailed {...loadFailedCopy(ar)} onRetry={() => void overview.refetch()} />
           ) : !counted || counted.total === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground" data-testid="enquiry-overview-empty">
               {ar

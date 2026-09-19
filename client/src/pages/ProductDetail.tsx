@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'wouter';
 import Navbar from '@/components/Navbar';
@@ -34,7 +35,14 @@ export default function ProductDetail() {
   // hardcoded boundary where ids 1 to 10 were fictional products and anything
   // above was real. A real product that happened to be assigned a low id would
   // have rendered as whichever invented item shared its number.
-  const { data: storedProduct, isLoading } = trpc.marketplace.get.useQuery(
+  /*
+   * "Product not found" IS A CLAIM ABOUT THE CATALOGUE, on a public page.
+   *
+   * A failed request left `product` undefined and fell into the same arm as a
+   * genuinely absent product - so an outage told a buyer that a listing they
+   * had been sent a link to does not exist.
+   */
+  const { data: storedProduct, isLoading, isError: productFailed, refetch: refetchProduct } = trpc.marketplace.get.useQuery(
     { id: productId },
     { enabled: Number.isFinite(productId) && productId > 0, retry: false },
   );
@@ -47,6 +55,7 @@ export default function ProductDetail() {
   const BackIcon = lang === 'ar' ? ArrowRight : ArrowLeft;
 
   if (isLoading) return <div className="min-h-screen bg-background"><Navbar /><div className="container pt-32 text-center text-muted-foreground">{lang === 'ar' ? 'جاري تحميل المنتج…' : 'Loading product…'}</div></div>;
+  if (productFailed) return <div className="min-h-screen bg-background"><Navbar /><div className="container pt-32"><LoadFailed {...loadFailedCopy(lang === 'ar')} onRetry={() => void refetchProduct()} /></div></div>;
   if (!product) return <div className="min-h-screen bg-background"><Navbar /><div className="container pt-32 text-center text-muted-foreground">{lang === 'ar' ? 'المنتج غير موجود' : 'Product not found'}</div></div>;
 
   const name = lang === 'ar' && product.nameAr ? product.nameAr : product.name;
