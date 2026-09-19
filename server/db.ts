@@ -70,9 +70,31 @@ export function normalizeUsername(value: string | null | undefined) {
   return normalized || null;
 }
 
+/**
+ * The same refusal `_core/requireDb` raises, without importing the transport
+ * layer into the connection module.
+ *
+ * requireDb lives in _core because db.ts should not know about tRPC, and that
+ * reasoning is written out at its definition. These functions are underneath
+ * it and need the same behaviour, so they raise a plain Error carrying the
+ * same sentence - `createContext` classifies anything that is not an HttpError
+ * as "could not check", which is exactly what this is.
+ */
+function requireDbHere(): Promise<NonNullable<Awaited<ReturnType<typeof getDb>>>> {
+  return getDb().then(db => {
+    if (!db) {
+      throw new Error('BuildHub could not reach its database. This is not an empty result - please try again.');
+    }
+    return db;
+  });
+}
+
 export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) return undefined;
+  // UNDEFINED HERE MEANS "NO SUCH ACCOUNT", and the authenticator repeats
+  // that to the browser. It is the bottom of the chain that turned a
+  // database outage into a sign-out; the layers above now classify a non-
+  // HttpError as "could not check", and this is what raises one.
+  const db = await requireDbHere();
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
@@ -80,8 +102,10 @@ export async function getUserByOpenId(openId: string) {
 export async function getUserByEmail(email: string) {
   const normalized = normalizeEmail(email);
   if (!normalized) return undefined;
-  const db = await getDb();
-  if (!db) return undefined;
+  // Same claim, on the sign-in path: "no account with that email" is why a
+  // person is told their credentials are wrong. An outage is not a wrong
+  // password.
+  const db = await requireDbHere();
   const result = await db.select().from(users).where(eq(users.email, normalized)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
@@ -89,8 +113,8 @@ export async function getUserByEmail(email: string) {
 export async function getUserByUsername(username: string) {
   const normalized = normalizeUsername(username);
   if (!normalized) return undefined;
-  const db = await getDb();
-  if (!db) return undefined;
+  // Same as getUserByEmail above.
+  const db = await requireDbHere();
   const result = await db.select().from(users).where(eq(users.username, normalized)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
@@ -132,8 +156,20 @@ export async function isSessionRevoked(jti: string): Promise<boolean> {
 }
 
 export async function revokeSession(jti: string, userId: number, expiresAt: Date): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
+  /*
+   * A SILENT NO-OP HERE MEANS "SIGNED OUT" IS NOT TRUE.
+   *
+   * `auth.logout` calls this, clears the cookie and reports success. If the
+   * revocation is skipped, the browser is clean and THE TOKEN IS STILL VALID
+   * everywhere else it was copied - which is the whole reason server-side
+   * revocation exists. The person was told they had signed out.
+   *
+   * This is the same instinct as `isSessionRevoked` a few lines above, which
+   * refuses rather than answering a question it cannot check. The client's
+   * logout already clears local state in a `finally`, so a raised failure
+   * still ends the session in this browser - it just stops claiming more.
+   */
+  const db = await requireDbHere();
   await db.insert(revokedSessions).values({ jti, userId, expiresAt })
     .onDuplicateKeyUpdate({ set: { revokedAt: new Date() } });
 }

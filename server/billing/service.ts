@@ -284,8 +284,8 @@ export async function applySubscriptionPatch(params: {
 }
 
 export async function getBillingEvents(userId: number, limit = 50) {
-  const db = await getDb();
-  if (!db) return [];
+  // A vendor's billing history, reported as never having happened.
+  const db = await requireDb();
   return db
     .select()
     .from(billingEvents)

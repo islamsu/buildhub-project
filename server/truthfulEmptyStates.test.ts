@@ -104,7 +104,19 @@ describe('what still degrades quietly does so deliberately', () => {
     // supplier's product listing because a KPI could not be written would be
     // the worse outcome, and nobody reads an analytics gap as a fact about
     // their own data.
-    expect(read('analytics/events.ts')).not.toContain('requireDb');
+    //
+    // SCOPED TO THE RECORDER, not to the file. This asserted that
+    // analytics/events.ts contained no `requireDb` anywhere, which held only
+    // while the whole file swallowed - and the same file's READS were
+    // answering a zeroed funnel for an unreachable database, which is the
+    // opposite rule. A file can legitimately contain both; the exemption
+    // belongs to the function that earns it.
+    const source = read('analytics/events.ts');
+    const recorder = source.slice(source.indexOf('export async function recordEvent'));
+    const body = recorder.slice(0, recorder.indexOf('\nexport '));
+    expect(body.length, 'recordEvent could not be isolated').toBeGreaterThan(80);
+    expect(body, 'the recorder now fails a mutation over a metric').not.toContain('requireDb');
+    expect(body, 'the recorder no longer swallows').toContain('if (!db) return;');
   });
 
   it('the commercial audit helper still swallows, for the same reason', () => {
@@ -568,16 +580,16 @@ describe('an outage is not an empty result, in the modules behind the routers', 
     'audit/fieldHistory.ts': 'swallow',
     '_core/commercialAudit.ts': 'swallow',
     'notifications.ts': 'swallow',
-    'analytics/events.ts': 'debt',
+    // Both, legitimately: a swallowing recorder and reads that must refuse.
+    'analytics/events.ts': 'swallow',
     'adminBootstrap.ts': 'closed',
     '_core/health.ts': 'closed',
     '_core/storageProxy.ts': 'closed',
     'billing/entitlements.ts': 'closed',
-    'billing/service.ts': 'debt',
-    'billing/enquiries.ts': 'debt',
-    'billing/lifecycle.ts': 'debt',
-    'db.ts': 'debt',
-    'publicPlacement.ts': 'debt',
+    'billing/service.ts': 'debt',  // recordBillingEvent swallows by design; the state write at 255 is still debt.
+    // The remaining one is a fire-and-forget path; its reads now refuse.
+    'billing/enquiries.ts': 'swallow',
+    'billing/lifecycle.ts': 'swallow',
   };
 
   it('the sweep reads the real tree', () => {

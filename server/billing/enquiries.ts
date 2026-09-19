@@ -54,8 +54,9 @@ function isSerializationFailure(error: unknown): boolean {
 }
 
 export async function getVendorCategories(userId: number): Promise<string[]> {
-  const db = await getDb();
-  if (!db) return [];
+  // A vendor's declared categories drive which requests they are matched to.
+  // Answering none quietly removes them from matching.
+  const db = await requireDb();
   const rows = await db
     .select({ category: vendorCategories.category })
     .from(vendorCategories)

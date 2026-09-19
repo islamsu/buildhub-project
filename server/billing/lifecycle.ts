@@ -37,6 +37,7 @@ import { and, eq, isNotNull, lte, or } from 'drizzle-orm';
 import { PLAN_IDS, isFounderPriceAvailable, isPlanId, type BillingInterval, type PlanId } from '@shared/billing';
 import { vendorSubscriptions, type VendorSubscription } from '../../drizzle/schema';
 import { getDb } from '../db';
+import { requireDb } from '../_core/requireDb';
 import {
   BillingDomainError,
   activate,
@@ -747,8 +748,9 @@ export async function reconcileSubscription(params: {
  * depend on it (see reconcileSubscription).
  */
 export async function findSubscriptionsNeedingReconciliation(now: Date = new Date(), limit = 200) {
-  const db = await getDb();
-  if (!db) return [];
+  // An empty reconciliation queue means every subscription is in order. That
+  // is precisely the claim an unreachable database cannot support.
+  const db = await requireDb();
   return db
     .select({ userId: vendorSubscriptions.userId, status: vendorSubscriptions.status })
     .from(vendorSubscriptions)
