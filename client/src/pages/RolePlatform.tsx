@@ -182,7 +182,10 @@ export default function RolePlatform() {
     { label: t('dash.messages'), icon: MessageSquare, onClick: () => navigate('/messages'), tone: 'text-violet-600' },
   ] : role === 'project_manager' ? [
     { label: t('platform.project_queue'), icon: KanbanSquare, onClick: () => goToSection('role-queue'), tone: 'text-cyan-600' },
-    { label: t('platform.team'), icon: Users, onClick: () => navigate('/messages'), tone: 'text-violet-600' },
+    /* Was "Team", and went to Messages - the same defect the note below
+       describes, two lines above the note. Team structure is an open owner
+       decision; the shortcut says what it does. */
+    { label: t('dash.messages'), icon: MessageSquare, onClick: () => navigate('/messages'), tone: 'text-violet-600' },
     /* "Documents" used to sit here and scroll to the project list. A project
        manager's documents live on a project, not on this page, and a shortcut
        that lands somewhere other than its label is the same defect as one that

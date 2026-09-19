@@ -176,7 +176,19 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     COMPLIANCE_MENU_ITEM,
     workspaceItem('project_manager', KanbanSquare, 'platform.project_queue', 'role-queue'),
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
-    { icon: Users, labelKey: 'platform.team', path: '/messages' },
+    /*
+     * IT SAYS MESSAGES BECAUSE IT GOES TO MESSAGES.
+     *
+     * This read "Team" and navigated to /messages - a destination labelled as
+     * a feature BuildHub does not have. Team / organization structure is an
+     * OPEN OWNER DECISION (todo.md), so there is nothing behind the word; a
+     * project manager clicking it arrived at their inbox, and the one role
+     * that had no Messages entry at all was the one whose Messages entry was
+     * disguised as something else.
+     *
+     * The label is not the place to prototype an unbuilt feature.
+     */
+    { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('project_manager', BarChart3, 'platform.performance', 'role-performance'),
     DISPUTES_MENU_ITEM,
     SUPPORT_MENU_ITEM,
