@@ -110,8 +110,19 @@ export default function AdminDataQuality() {
             ? 'كل رقم هنا هو عدد سجلات حقيقية مطابقة للسؤال المذكور. لا توجد نسبة ولا تقييم عام: لا معنى لجمع "حسابان مكرران" مع "تسعة عروض معلّقة".'
             : 'Every number here is a count of real rows matching the question beside it. There is no percentage and no overall grade: adding "two duplicate accounts" to "nine stale bids" would not mean anything.'}
         </p>
+        {/*
+          * THE WRAPPING <label> DOES NOT NAME THIS CONTROL.
+          *
+          * Radix renders a Switch as a <button>, and a <label> only names form
+          * controls - so the text beside it is there for sighted readers and a
+          * screen reader announces "button". The name has to be on the control.
+          */}
         <label className="flex items-center gap-2 pt-3 text-sm" data-testid="dq-dummy-toggle">
-          <Switch checked={includeDummy} onCheckedChange={setIncludeDummy} />
+          <Switch
+            checked={includeDummy}
+            onCheckedChange={setIncludeDummy}
+            aria-label={ar ? 'أدرج حسابات الاختبار' : 'Include QA test accounts'}
+          />
           <span>{ar ? 'أدرج حسابات الاختبار' : 'Include QA test accounts'}</span>
         </label>
       </CardHeader>
