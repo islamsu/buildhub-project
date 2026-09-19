@@ -1,5 +1,5 @@
 import { and, eq, gte, lt } from 'drizzle-orm';
-import { getDb } from '../db';
+import { requireDb } from '../_core/requireDb';
 import { billingEvents, users, vendorSubscriptions } from '../../drizzle/schema';
 import { deriveBillingState } from '../billing/domain';
 import { BILLING_CURRENCY, PLAN_IDS, resolvePrice, type PlanId } from '@shared/billing';
@@ -106,8 +106,20 @@ export async function getCommercialKpis(
     founderPricedVendors: 0,
   };
 
-  const db = await getDb();
-  if (!db) return empty;
+  /*
+   * 4. AN OUTAGE IS NOT A REVENUE COLLAPSE.
+   *
+   * This returned `empty` - MRR 0, ARR 0, zero paying vendors - when the
+   * database was unreachable. Of every place in BuildHub where an outage could
+   * be mistaken for a fact, this is the worst: the owner's revenue figure,
+   * on the screen they check it on, reading zero. `requireDb` is the rule the
+   * routers already follow and it belongs here more than anywhere.
+   *
+   * `empty` stays, because it is still the right SHAPE for a platform with no
+   * subscriptions at all - which is a real state and must render as zeros.
+   * What it must not be is the answer to a question nobody could ask.
+   */
+  const db = await requireDb();
 
   const dummyIds = options.includeDummy
     ? new Set<number>()
@@ -212,9 +224,12 @@ export type ChurnWindow = {
 export async function getChurn(
   options: { from: Date; to: Date; includeDummy?: boolean },
 ): Promise<ChurnWindow> {
-  const db = await getDb();
+  // Same rule as MRR above: "0 churned" is a claim about the business, and an
+  // unreachable database is not evidence for it. `ratePercent` is already null
+  // rather than 0 when there is nothing to divide by - the shape was careful
+  // and the outage path was not.
+  const db = await requireDb();
   const base: ChurnWindow = { from: options.from, to: options.to, churned: 0, atStart: 0, ratePercent: null };
-  if (!db) return base;
 
   const dummyIds = options.includeDummy
     ? new Set<number>()

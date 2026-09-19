@@ -15,6 +15,7 @@ import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { isClassifiableRfqCategory } from '@shared/rfqCategories';
 import { qualifiedEnquiries, quotations, rfqs, vendorCategories, type Rfq } from '../../drizzle/schema';
 import { getDb } from '../db';
+import { requireDb } from '../_core/requireDb';
 import { allowancePeriodFor, resolveVendorEntitlements } from './entitlements';
 import { recordEventAsync } from '../analytics/events';
 import { hasOpenInvitation, invitedRfqIds, markInvitationViewed } from '../rfqInvitations';
@@ -127,8 +128,19 @@ export async function getRfqResponseAccess(db: any, userId: number, rfqId: numbe
 }
 
 async function countUsage(userId: number, yearMonth: string): Promise<number> {
-  const db = await getDb();
-  if (!db) return 0;
+  /*
+   * THIS FAILED OPEN ON A PAID QUOTA.
+   *
+   * It answered `0` when the database was unreachable, which flows straight
+   * into `getEnquiryUsage`: used 0, remaining full, `limitReached` FALSE. A
+   * vendor who had spent their whole monthly allowance was reported as having
+   * spent none of it - to them, and to the check that decides whether another
+   * qualified enquiry may be opened.
+   *
+   * Of the two ways to be wrong here, this was the expensive one. An honest
+   * failure costs a retry; a fabricated zero gives away paid leads.
+   */
+  const db = await requireDb();
   const [row] = await db
     .select({ count: sql<number>`count(*)` })
     .from(qualifiedEnquiries)

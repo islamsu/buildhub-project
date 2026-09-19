@@ -14,6 +14,7 @@ import { adminSettings, billingEvents, vendorSubscriptions, type VendorSubscript
 import { recordEventAsync } from '../analytics/events';
 import { ANALYTICS_EVENTS, type AnalyticsEventType } from '@shared/analyticsEvents';
 import { getDb } from '../db';
+import { requireDb } from '../_core/requireDb';
 import { deriveBillingState, isFounderEligible, type BillingState, type SubscriptionPatch } from './domain';
 
 /** Columns exposed to a vendor about their OWN subscription. */
@@ -64,8 +65,16 @@ export const ADMIN_SUBSCRIPTION_COLUMNS = {
 } as const;
 
 export async function getSubscription(userId: number): Promise<VendorSubscription | null> {
-  const db = await getDb();
-  if (!db) return null;
+  /*
+   * `null` HERE MEANS "THIS VENDOR HAS NO SUBSCRIPTION", which every caller
+   * reads as the free plan. Returning it for an unreachable database silently
+   * downgrades a paying vendor - their entitlements shrink, their allowance
+   * drops, and nothing anywhere says why.
+   *
+   * It fails toward LESS access, which is the safer direction, and it is still
+   * a false statement about a commercial relationship.
+   */
+  const db = await requireDb();
   const rows = await db
     .select()
     .from(vendorSubscriptions)
@@ -88,8 +97,9 @@ export async function getBillingState(userId: number, now: Date = new Date()): P
 
 /** The founder-offer cut-off, read from the runtime-configurable admin setting. */
 export async function getFounderOfferEndsAt(): Promise<Date | null> {
-  const db = await getDb();
-  if (!db) return null;
+  // Same shape, same rule: `null` means "there is no founder offer", which is
+  // a statement about what BuildHub is currently selling.
+  const db = await requireDb();
   const rows = await db
     .select({ value: adminSettings.value })
     .from(adminSettings)

@@ -505,3 +505,126 @@ describe('the six surfaces fixed in this pass, by what each of them claimed', ()
     expect(source).toContain('if (isError || !data) {');
   });
 });
+
+/*
+ * ── THE SAME RULE, BEYOND routers.ts ──────────────────────────────────────
+ *
+ * The sweep above reads routers.ts, because that is where the forty-five
+ * instances were. The pattern lives in the modules behind it too, and the
+ * worst instance in the product was one of them: `analytics/kpis.ts` answered
+ * MRR 0 and ARR 0 for an unreachable database - the owner's revenue figure, on
+ * the screen they check revenue on, reading zero during a blip.
+ *
+ * Three of them mattered enough to fix first:
+ *
+ *   analytics/kpis.ts        MRR, ARR and churn as zeros. Revenue.
+ *   billing/enquiries.ts     `countUsage` answered 0, which flows into
+ *                            `limitReached: false` - it FAILED OPEN on a paid
+ *                            quota, reporting a vendor who had spent their
+ *                            whole allowance as having spent none.
+ *   vendorDirectory.ts       the public marketplace, with no providers in it.
+ *
+ * Not every instance is a defect, so this classifies rather than forbids.
+ */
+describe('an outage is not an empty result, in the modules behind the routers', () => {
+  const SERVER_DIR = new URL('.', import.meta.url);
+
+  function serverModules(dir = SERVER_DIR, prefix = ''): { path: string; text: string }[] {
+    const out: { path: string; text: string }[] = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const child = new URL(entry.name + (entry.isDirectory() ? '/' : ''), dir);
+      if (entry.isDirectory()) { out.push(...serverModules(child, `${prefix}${entry.name}/`)); continue; }
+      if (!entry.name.endsWith('.ts') || entry.name.includes('.test.')) continue;
+      out.push({ path: `${prefix}${entry.name}`, text: readFileSync(child, 'utf8') });
+    }
+    return out;
+  }
+
+  /** Every `if (!db) return …` still in the tree, with its file and answer. */
+  function instances(): { path: string; answer: string }[] {
+    const out: { path: string; answer: string }[] = [];
+    for (const file of serverModules()) {
+      if (file.path === 'routers.ts' || file.path === '_core/requireDb.ts') continue;
+      for (const line of file.text.split('\n')) {
+        const match = /if \(!db\) (return[^;]*);/.exec(line.trim());
+        if (match) out.push({ path: file.path, answer: match[1].trim() });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * WHAT MAY STILL ANSWER WITHOUT A DATABASE, and why.
+   *
+   *   swallow   a fire-and-forget WRITER. Failing a user's mutation because a
+   *             metric or an audit line could not be written is the worse
+   *             outcome, and requireDb's own header says so.
+   *   closed    a refusal. `false`, `unavailable`, `not_found` - the caller is
+   *             denied rather than told something untrue about their data.
+   *   debt      a READ that states a fact. Each one is waiting its turn.
+   */
+  const CLASSIFIED: Readonly<Record<string, 'swallow' | 'closed' | 'debt'>> = {
+    'placementAnalytics.ts': 'swallow',
+    'audit/fieldHistory.ts': 'swallow',
+    '_core/commercialAudit.ts': 'swallow',
+    'notifications.ts': 'swallow',
+    'analytics/events.ts': 'debt',
+    'adminBootstrap.ts': 'closed',
+    '_core/health.ts': 'closed',
+    '_core/storageProxy.ts': 'closed',
+    'billing/entitlements.ts': 'closed',
+    'billing/service.ts': 'debt',
+    'billing/enquiries.ts': 'debt',
+    'billing/lifecycle.ts': 'debt',
+    'db.ts': 'debt',
+    'publicPlacement.ts': 'debt',
+  };
+
+  it('the sweep reads the real tree', () => {
+    // POSITIVE CONTROL. A broken walk makes everything below pass.
+    const modules = serverModules().map(f => f.path);
+    expect(modules.length).toBeGreaterThan(40);
+    expect(modules).toContain('analytics/kpis.ts');
+    expect(modules).toContain('vendorDirectory.ts');
+  });
+
+  it('EVERY REMAINING INSTANCE IS CLASSIFIED - a new one cannot appear unnoticed', () => {
+    const unclassified = [...new Set(instances().map(i => i.path))]
+      .filter(path => !(path in CLASSIFIED));
+    expect(unclassified, `these answer without a database and nobody has said why:\n  ${unclassified.join('\n  ')}`)
+      .toEqual([]);
+  });
+
+  it('THE THREE THAT MATTERED MOST ARE FIXED, and stay fixed', () => {
+    const fixed = ['analytics/kpis.ts', 'vendorDirectory.ts'];
+    for (const path of fixed) {
+      const file = serverModules().find(f => f.path === path);
+      expect(file, path).toBeDefined();
+      expect(file!.text, `${path} answers without a database again`).not.toMatch(/if \(!db\) return/);
+      expect(file!.text, `${path} no longer refuses honestly`).toContain('requireDb()');
+    }
+    // The quota read, named specifically - it is the one that failed OPEN.
+    const enquiries = serverModules().find(f => f.path === 'billing/enquiries.ts')!;
+    const countUsage = enquiries.text.slice(enquiries.text.indexOf('async function countUsage'));
+    expect(countUsage.slice(0, 900), 'countUsage answers 0 again, which reads as "quota unused"')
+      .toContain('await requireDb()');
+  });
+
+  it('the classification is live - a file that stops matching must leave it', () => {
+    const present = new Set(instances().map(i => i.path));
+    const stale = Object.keys(CLASSIFIED).filter(path => !present.has(path));
+    expect(stale, `no longer answer without a database, so remove them:\n  ${stale.join('\n  ')}`)
+      .toEqual([]);
+  });
+
+  it('nothing classified as a WRITER is actually returning data', () => {
+    // The exemption is for side-channels that return nothing meaningful. A
+    // "swallow" that hands back a list is a read wearing a writer's exemption.
+    const wrong = instances()
+      .filter(i => CLASSIFIED[i.path] === 'swallow')
+      .filter(i => /return \[\]|return 0\b|return null/.test(i.answer))
+      .map(i => `${i.path}: ${i.answer}`);
+    expect(wrong, `classified as writers but answering with data:\n  ${wrong.join('\n  ')}`)
+      .toEqual([]);
+  });
+});

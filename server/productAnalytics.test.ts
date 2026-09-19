@@ -350,12 +350,40 @@ describe('§4b the aggregate', () => {
     expect(kpis.mrr).toBe(0);
   });
 
-  it('returns a zeroed shape when the database is unavailable rather than throwing', async () => {
-    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+  it('a platform with NO subscriptions returns a zeroed shape, not a broken one', async () => {
+    // The half of the old assertion that was right, and still is: zero
+    // subscriptions is a REAL state, it must render as zeros, and every field
+    // a caller reads has to be there.
+    stubDb({ subscriptions: [] });
     const kpis = await getCommercialKpis();
     expect(kpis.mrr).toBe(0);
     expect(kpis.arpv).toBeNull();
     expect(kpis.byPlan).toHaveLength(3);
+  });
+
+  it('AN UNREACHABLE DATABASE THROWS - it does not answer "no revenue"', async () => {
+    /*
+     * This used to assert the opposite: "returns a zeroed shape when the
+     * database is unavailable rather than throwing". That was written before
+     * requireDb, and it is the single worst place in BuildHub to have kept it.
+     *
+     * MRR 0 and ARR 0 are not a degraded response, they are a SENTENCE about
+     * the business - read on the screen the owner checks revenue on, during a
+     * blip, indistinguishable from every customer having left. The empty
+     * result is the one thing a read must never fabricate, and revenue is the
+     * one number where fabricating it is least forgivable.
+     *
+     * Throwing is not less graceful. The caller renders "could not be loaded"
+     * instead of a figure, which is what the reader needs to know.
+     */
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await expect(getCommercialKpis()).rejects.toThrow(/could not reach its database/i);
+  });
+
+  it('and the same is true of churn, for the same reason', async () => {
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await expect(getChurn({ from: new Date(Date.now() - 86_400_000), to: new Date() }))
+      .rejects.toThrow(/could not reach its database/i);
   });
 });
 

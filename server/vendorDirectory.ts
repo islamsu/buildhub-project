@@ -21,6 +21,7 @@ import { deriveBillingState } from './billing/domain';
 import { liveSponsorshipFilter, sponsoredVendorIds } from './vendorSponsorship';
 import { getEntitlements } from '@shared/billing';
 import { getDb } from './db';
+import { requireDb } from './_core/requireDb';
 import { isTestLoginEnabled } from './_core/env';
 
 /** The only user columns a public directory response may ever contain. */
@@ -100,8 +101,20 @@ export type DirectoryVendor = {
 };
 
 export async function listDirectoryVendors(filters: DirectoryFilters = {}): Promise<DirectoryVendor[]> {
-  const db = await getDb();
-  if (!db) return [];
+  /*
+   * AN OUTAGE IS NOT AN EMPTY MARKETPLACE.
+   *
+   * Every read in this file answered `[]` when the database was unreachable,
+   * and these are the reads the PUBLIC marketplace is built from - the vendor
+   * directory, the categories that can be browsed, the featured strip. A
+   * visitor judging whether BuildHub has anyone on it was shown a platform
+   * with no providers, and the hub's own headline counts were fixed once for
+   * exactly this reason on the client side.
+   *
+   * The empty array is still correct for a marketplace with no approved
+   * providers yet. It must not also be the answer when nobody could look.
+   */
+  const db = await requireDb();
 
   const limit = Math.min(Math.max(filters.limit ?? 48, 1), 100);
   const conditions = [directoryVisibilityFilter()];
@@ -187,8 +200,8 @@ export async function enrichVendorRows(
 
 /** Distinct declared categories among currently-visible vendors, for filter UI. */
 export async function listDirectoryCategories(): Promise<string[]> {
-  const db = await getDb();
-  if (!db) return [];
+  // Same rule as listDirectoryVendors above.
+  const db = await requireDb();
   const rows = await db
     .selectDistinct({ category: vendorCategories.category })
     .from(vendorCategories)
@@ -199,8 +212,8 @@ export async function listDirectoryCategories(): Promise<string[]> {
 
 /** Admin troubleshooting view: a vendor's declarations and enquiry consumption. */
 export async function getVendorTargetingDiagnostics(userId: number) {
-  const db = await getDb();
-  if (!db) return { categories: [], recentEnquiries: [] };
+  // Same rule as listDirectoryVendors above.
+  const db = await requireDb();
   const categories = await db
     .select({ category: vendorCategories.category, createdAt: vendorCategories.createdAt })
     .from(vendorCategories)
@@ -273,8 +286,8 @@ export const FEATURED_PLACEMENT_SLOTS = 6;
 export async function listEntitlementSponsoredVendors(
   filters: DirectoryFilters & { now?: Date } = {},
 ): Promise<DirectoryVendor[]> {
-  const db = await getDb();
-  if (!db) return [];
+  // Same rule as listDirectoryVendors above.
+  const db = await requireDb();
 
   const now = filters.now ?? new Date();
   const conditions = [directoryVisibilityFilter()];
@@ -340,8 +353,8 @@ export async function listEntitlementSponsoredVendors(
 export async function listSponsoredVendors(
   filters: DirectoryFilters & { now?: Date } = {},
 ): Promise<(DirectoryVendor & { sponsorshipSource: 'granted' | 'entitlement' })[]> {
-  const db = await getDb();
-  if (!db) return [];
+  // Same rule as listDirectoryVendors above.
+  const db = await requireDb();
   const now = filters.now ?? new Date();
 
   // A grant is scoped to ONE category, so without a category filter there is
@@ -389,8 +402,8 @@ export async function listSponsoredVendors(
  * Ordered earliest-featured-first so the oldest deliberate pick stays first.
  */
 export async function listFeaturedProviders(filters: { category?: string } = {}): Promise<(DirectoryVendor & { featuredCategory: string })[]> {
-  const db = await getDb();
-  if (!db) return [];
+  // Same rule as listDirectoryVendors above.
+  const db = await requireDb();
   const now = new Date();
   const conditions = [eq(vendorSponsorships.kind, 'featured'), liveSponsorshipFilter(now)];
   if (filters.category) conditions.push(eq(vendorSponsorships.category, filters.category));

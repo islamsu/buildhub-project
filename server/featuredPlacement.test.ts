@@ -170,9 +170,20 @@ describe('§2 a stale row cannot buy a slot', () => {
     expect(featured).not.toMatch(/row\.subscription\.plan\b/);
   });
 
-  it('returns nothing rather than throwing when the database is unavailable', async () => {
+  it('AN UNREACHABLE DATABASE THROWS - it does not answer "no sponsors"', async () => {
+    /*
+     * This asserted the opposite, and the reasoning has moved on. An empty
+     * slot list is a statement about the marketplace: no vendor has bought
+     * this surface. Returning it for a database nobody could read makes an
+     * outage look like an absence of commercial demand, on the public page a
+     * visitor judges the platform by - and the client-side counts on that same
+     * hub were fixed for exactly this, one layer up.
+     *
+     * The empty list stays correct for a marketplace with no sponsors, which
+     * the test three cases above still pins.
+     */
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-    expect(await listEntitlementSponsoredVendors()).toEqual([]);
+    await expect(listEntitlementSponsoredVendors()).rejects.toThrow(/could not reach its database/i);
   });
 });
 

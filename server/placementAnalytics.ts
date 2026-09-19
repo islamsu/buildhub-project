@@ -28,6 +28,7 @@
 import { and, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
 import { analyticsEvents, vendorSponsorships } from '../drizzle/schema';
 import { getDb } from './db';
+import { requireDb } from './_core/requireDb';
 import { recordEvent } from './analytics/events';
 import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
 import { rate, type PlacementClientEvent } from '@shared/placementAnalytics';
@@ -181,8 +182,20 @@ export type PlacementPerformanceRow = {
  * Admin screen renders as an empty state rather than as failure.
  */
 export async function placementPerformance(now: Date = new Date()): Promise<PlacementPerformanceRow[]> {
-  const db = await getDb();
-  if (!db) return [];
+  /*
+   * THE READ IN A FILE OF WRITERS, and it does not get their exemption.
+   *
+   * The two recorders above may swallow an outage - failing somebody's page
+   * view because an impression could not be counted is the worse outcome, and
+   * each answers `{ recorded: false }` rather than pretending. This is the
+   * other direction: it ANSWERS A QUESTION, and `[]` here renders as "No
+   * placements booked yet" under a heading about commercial reach.
+   *
+   * The comment directly above says a placement nobody has seen reports zeros
+   * "which is the truthful answer". It is - for a placement that exists. It
+   * was not the truthful answer for a database nobody could read.
+   */
+  const db = await requireDb();
 
   const placements = await db
     .select({
