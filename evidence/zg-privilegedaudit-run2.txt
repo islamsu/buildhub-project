@@ -1,0 +1,15 @@
+PASS  1. SETUP: a real administrator exists  [id 250]
+PASS  2. the administrator is signed in
+PASS  3. SETTING: maintenance mode is changed  [false -> true]
+PASS  4. and the trail names the administrator, with no account as its subject  [platform_setting_changed|NULL|250|maintenanceMode: false -> true]
+PASS  5. and records what it was as well as what it became  [maintenanceMode: false -> true]
+PASS  6. and both changes survive, not just the last one  [2 rows]
+PASS  7. TICKET: the priority is changed  [medium -> high]
+PASS  8. and the ticket actually moved  [stored high]
+PASS  9. and the trail names the actor AND the requester it is about  [support_ticket_priority_changed|100|250|TCK-61065468: medium -> high]
+PASS  10. and records the priority it was moved from  [TCK-61065468: medium -> high]
+PASS  11. and setting the same priority again records nothing  [2 then 2]
+PASS  12. NEGATIVE: with no session the setting is refused  [HTTP 401]
+PASS  13. and the refused call changed nothing  [value false]
+
+13/13 checks passed

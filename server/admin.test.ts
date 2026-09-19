@@ -288,17 +288,65 @@ describe('admin disputes and settings', () => {
   });
 
   it('persists a known admin setting and rejects unknown keys', async () => {
-    const whereMock = vi.fn().mockResolvedValue([{ id: 2 }]);
+    const whereMock = vi.fn().mockResolvedValue([{ id: 2, value: 'false' }]);
     const setMock = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
+    // `insert` is here because changing a setting now writes an audit row as
+    // well as the column. Without it the mutation threw "db.insert is not a
+    // function" - a gap in this harness, not in the product, and the fix is to
+    // teach the harness about the write rather than to stop making it.
+    const valuesMock = vi.fn().mockResolvedValue([]);
     const db = {
       select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: whereMock }) }),
       update: vi.fn().mockReturnValue({ set: setMock }),
+      insert: vi.fn().mockReturnValue({ values: valuesMock }),
     };
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
     const caller = appRouter.createCaller(makeAdminCtx());
     await expect(caller.admin.updateSetting({ key: 'maintenanceMode', value: 'true' })).resolves.toEqual({ success: true });
     expect(setMock).toHaveBeenCalledWith({ value: 'true', updatedBy: 1 });
     await expect(caller.admin.updateSetting({ key: 'notAllowed', value: 'true' })).rejects.toThrow('Unknown setting key');
+  });
+
+  it('records WHO changed a platform setting, and what it had been', async () => {
+    // `updatedBy` on the row answers "who touched this last" and is overwritten
+    // by the next change. Maintenance mode and registration being open are
+    // exactly the switches somebody has to reconstruct afterwards, so the
+    // change goes on the account trail with the old value beside the new one.
+    const whereMock = vi.fn().mockResolvedValue([{ id: 2, value: 'false' }]);
+    const setMock = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
+    const valuesMock = vi.fn().mockResolvedValue([]);
+    const db = {
+      select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: whereMock }) }),
+      update: vi.fn().mockReturnValue({ set: setMock }),
+      insert: vi.fn().mockReturnValue({ values: valuesMock }),
+    };
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+    await caller.admin.updateSetting({ key: 'maintenanceMode', value: 'true' });
+
+    const recorded = valuesMock.mock.calls.map(call => call[0]).find(v => v?.action === 'platform_setting_changed');
+    expect(recorded, 'changing a platform setting must leave a trail').toBeTruthy();
+    expect(recorded.actorId, 'the administrator who did it').toBe(1);
+    expect(recorded.userId, 'the platform is the subject, not a person').toBeNull();
+    expect(recorded.note).toContain('maintenanceMode');
+    expect(recorded.note, 'the old value is half of what makes it useful').toContain('false -> true');
+  });
+
+  it('a setting set to the value it already had records nothing', async () => {
+    // A trail full of "changed from false to false" is a trail nobody reads.
+    const whereMock = vi.fn().mockResolvedValue([{ id: 2, value: 'true' }]);
+    const setMock = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
+    const valuesMock = vi.fn().mockResolvedValue([]);
+    const db = {
+      select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: whereMock }) }),
+      update: vi.fn().mockReturnValue({ set: setMock }),
+      insert: vi.fn().mockReturnValue({ values: valuesMock }),
+    };
+    (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(db);
+    const caller = appRouter.createCaller(makeAdminCtx());
+    await caller.admin.updateSetting({ key: 'maintenanceMode', value: 'true' });
+    const recorded = valuesMock.mock.calls.map(call => call[0]).find(v => v?.action === 'platform_setting_changed');
+    expect(recorded).toBeUndefined();
   });
 });
 

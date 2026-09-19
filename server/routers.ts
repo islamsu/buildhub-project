@@ -9380,18 +9380,45 @@ const adminRouter = router({
     }),
 
   /** Triage. Staff-only by design - see SUPPORT_PRIORITY_IS_STAFF_ONLY. */
+  /**
+   * PRIORITY ORDERS THE QUEUE, so changing it decides whose problem waits.
+   *
+   * This took no `ctx` at all - it could not have recorded an actor if it had
+   * wanted to - and wrote the column and nothing else. Every other privileged
+   * act on a ticket is on the requester's account trail beside the sign-ins
+   * and the plan changes; this one was not, so a ticket could be quietly moved
+   * to the bottom of the queue with no trace of who did it or what it had
+   * been.
+   */
   setSupportTicketPriority: adminWith('support.manage')
     .input(z.object({
       ticketId: z.number().int().positive(),
       priority: z.enum(SUPPORT_PRIORITIES),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await requireDb();
+      // Read first, because the OLD priority is half of what makes the record
+      // worth having - "set to low" does not say what it was moved down from.
+      const [ticket] = await db.select({
+        id: supportTickets.id,
+        reference: supportTickets.reference,
+        requesterId: supportTickets.requesterId,
+        priority: supportTickets.priority,
+      }).from(supportTickets).where(eq(supportTickets.id, input.ticketId));
+      if (!ticket) throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found' });
+      if (ticket.priority === input.priority) return { ok: true };
+
       const result = await db.update(supportTickets).set({ priority: input.priority })
         .where(eq(supportTickets.id, input.ticketId));
       if (!changedSomething(result)) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found' });
       }
+      await recordAccountEvent(db, {
+        userId: ticket.requesterId, actorId: ctx.user.id,
+        action: 'support_ticket_priority_changed',
+        source: 'admin',
+        note: `${ticket.reference ?? `#${ticket.id}`}: ${ticket.priority} -> ${input.priority}`,
+      });
       return { ok: true };
     }),
 
@@ -9653,15 +9680,39 @@ const adminRouter = router({
     const rows = await db.select({ settingKey: adminSettings.settingKey, value: adminSettings.value }).from(adminSettings);
     return { ...DEFAULT_ADMIN_SETTINGS, ...Object.fromEntries(rows.map(row => [row.settingKey, row.value])) };
   }),
+  /**
+   * THE PLATFORM'S OWN SWITCHES, and who threw them.
+   *
+   * `updatedBy` on the row says who touched a setting LAST and nothing else.
+   * It cannot answer the question anybody actually asks afterwards - who
+   * closed registration, when, and for how long - because the previous value
+   * is overwritten by the next one. Maintenance mode and registration being
+   * open are exactly the settings somebody needs to reconstruct later.
+   *
+   * Recorded on the account trail with a null subject: the thing changed is
+   * the platform, not a person. That trail THROWS if it cannot write, which is
+   * the posture this needs - "the setting changed but we failed to record who
+   * did it" is not a degraded success.
+   */
   updateSetting: adminWith('settings.manage').input(z.object({ key: z.string().min(1).max(120), value: z.string().max(2000) })).mutation(async ({ ctx, input }) => {
     if (!(input.key in DEFAULT_ADMIN_SETTINGS)) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unknown setting key' });
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [existing] = await db.select({ id: adminSettings.id }).from(adminSettings).where(eq(adminSettings.settingKey, input.key));
+    const [existing] = await db.select({ id: adminSettings.id, value: adminSettings.value })
+      .from(adminSettings).where(eq(adminSettings.settingKey, input.key));
+    const before = existing ? existing.value : (DEFAULT_ADMIN_SETTINGS as Record<string, string>)[input.key];
     if (existing) {
       await db.update(adminSettings).set({ value: input.value, updatedBy: ctx.user.id }).where(eq(adminSettings.id, existing.id));
     } else {
       await db.insert(adminSettings).values({ settingKey: input.key, value: input.value, updatedBy: ctx.user.id });
+    }
+    if (before !== input.value) {
+      await recordAccountEvent(db, {
+        userId: null, actorId: ctx.user.id,
+        action: 'platform_setting_changed',
+        source: 'admin',
+        note: `${input.key}: ${before ?? '(unset)'} -> ${input.value}`,
+      });
     }
     return { success: true };
   }),

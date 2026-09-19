@@ -143,6 +143,12 @@ export const ACCOUNT_AUDIT_ACTIONS = [
   'support_ticket_status_changed',
   'support_ticket_resolved',
   'support_ticket_closed',
+  /**
+   * Priority orders the queue, so moving a ticket up or down it is a decision
+   * somebody made about whose problem waits. It recorded nothing at all - the
+   * mutation did not even take `ctx`, so there was no actor to record.
+   */
+  'support_ticket_priority_changed',
 
   // ── REVIEWS ─────────────────────────────────────────────────────────────
   // Reputation is account history: who reported what, and what a moderator
@@ -151,6 +157,15 @@ export const ACCOUNT_AUDIT_ACTIONS = [
   'review_hidden',
   'review_restored',
   'review_report_resolved',
+
+  // ── PLATFORM CONFIGURATION ──────────────────────────────────────────────
+  // Not about an account, and recorded here anyway, because this is the trail
+  // that answers "who did that" for a privileged act. Maintenance mode and
+  // registration being open are the platform's own switches: adminSettings
+  // carried `updatedBy` on the current row, which says who touched it LAST and
+  // nothing about the hour registration was closed and reopened. `userId` is
+  // null because the subject is the platform rather than a person.
+  'platform_setting_changed',
 ] as const;
 
 export type AccountAuditAction = (typeof ACCOUNT_AUDIT_ACTIONS)[number];
