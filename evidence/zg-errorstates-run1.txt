@@ -1,0 +1,16 @@
+PASS  1. SETUP: a real administrator and a real project exist  [admin #104, project #29]
+PASS  2. HEALTHY: the project detail renders the project  [ZERR Project 93421804]
+PASS  3. HEALTHY: Operations renders without a failure notice
+PASS  4. HEALTHY: the public marketplace hub renders its section cards
+ERROR 2002 (HY000): Can't connect to local server through socket '/run/mysqld/mysqld.sock' (2)
+PASS  5. THE DATABASE IS STOPPED - this is a real outage, not a mock
+PASS  6. THE PROJECT IS NOT DECLARED MISSING - an outage is not a statement about the record  [no existence claim made]
+PASS  7. and the screen says it could not load, with a way to try again  [This section could not be loaded]
+PASS  7a. THE ADMINISTRATOR IS NOT SIGNED OUT BY AN OUTAGE - the page does not bounce to /auth  [at /admin/projects/29]
+PASS  7b. and is not shown a sign-in screen in place of the page  [the failure is stated where the page was]
+PASS  8. and offers Retry rather than forcing a reload
+PASS  9. PLACEMENT PERFORMANCE does not report the outage as zero placements  [no commercial zero claimed]
+PASS  10. THE PUBLIC HUB does not tell a visitor the marketplace is empty  [no zero counts rendered]
+  database restarted
+
+12/12 checks passed

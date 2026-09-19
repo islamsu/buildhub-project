@@ -40,10 +40,29 @@ export default function MarketplaceHub() {
   // One authorized query. The directory already excludes unapproved and
   // unverified accounts, so nothing here can show a provider the marketplace
   // itself would not list.
-  const { data: directory = [] } = trpc.marketplace.vendors.useQuery({ limit: 100 });
+  const { data: directory = [], isLoading: directoryLoading, isError: directoryFailed } =
+    trpc.marketplace.vendors.useQuery({ limit: 100 }, { retry: false });
   /** The one taxonomy, in its public view. Not a copy compiled into this page. */
-  const { data: taxonomy } = trpc.marketplace.categories.useQuery({ view: 'public' });
+  const { data: taxonomy, isLoading: taxonomyLoading, isError: taxonomyFailed } =
+    trpc.marketplace.categories.useQuery({ view: 'public' }, { retry: false });
   const productCategories = taxonomy?.categories ?? [];
+  /*
+   * A COUNT IS A CLAIM, AND SO IS A ZERO.
+   *
+   * The headline figures on the section cards were fixed once already, when
+   * two of them counted a constant compiled into the page. They still counted
+   * an EMPTY ARRAY the same way: a failed or in-flight request left
+   * `directory` at its `= []` default, and a public page told a visitor that
+   * BuildHub has 0 vendors and 0 designers - a statement about the size of the
+   * business, made because a request did not come back.
+   *
+   * `null` is the third answer that was missing. The card renders a dash for
+   * "not known right now", which is neither a number nor a lie, and the count
+   * only appears once a real response has arrived.
+   */
+  const countOrUnknown = (failed: boolean, loading: boolean, value: number) =>
+    (failed || loading ? '—' : String(value));
+
   const designers = directory.filter(v => v.categories?.includes('Design'));
   const finishing = directory.filter(v => v.categories?.includes('Renovation'));
 
@@ -87,7 +106,7 @@ export default function MarketplaceHub() {
       gradient: 'from-blue-600 to-cyan-500',
       title: t('marketHub.sectionProductsTitle'),
       desc: t('marketHub.sectionProductsDesc'),
-      stat: `${productCategories.length}`,
+      stat: countOrUnknown(taxonomyFailed, taxonomyLoading, productCategories.length),
       statLabel: t('marketHub.categoriesLabel'),
       chips: productCategories.slice(0, 4).map(c => (ar ? c.nameAr : c.nameEn)),
     },
@@ -98,7 +117,7 @@ export default function MarketplaceHub() {
       gradient: 'from-emerald-600 to-teal-500',
       title: t('marketHub.sectionVendorsTitle'),
       desc: t('marketHub.sectionVendorsDesc'),
-      stat: `${directory.length}`,
+      stat: countOrUnknown(directoryFailed, directoryLoading, directory.length),
       statLabel: t('marketHub.vendorsLabel'),
       chips: directory.slice(0, 3).map(v => v.name ?? `#${v.id}`),
     },
@@ -120,7 +139,7 @@ export default function MarketplaceHub() {
        * directory; it was used for the suggestions and the featured strip and
        * not for the headline figure.
        */
-      stat: `${designers.length}`,
+      stat: countOrUnknown(directoryFailed, directoryLoading, designers.length),
       statLabel: t('marketHub.providersLabel'),
       chips: DESIGN_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
     },
@@ -132,7 +151,7 @@ export default function MarketplaceHub() {
       title: t('marketHub.sectionFinishingTitle'),
       desc: t('marketHub.sectionFinishingDesc'),
       // The same correction, for the same reason.
-      stat: `${finishing.length}`,
+      stat: countOrUnknown(directoryFailed, directoryLoading, finishing.length),
       statLabel: t('marketHub.providersLabel'),
       chips: FINISHING_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
     },

@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -23,9 +24,19 @@ export default function AdminProjectDetail() {
   const [, navigate] = useLocation();
   const projectId = Number(params.id);
   const valid = Number.isInteger(projectId) && projectId > 0;
-  const { data: project, isLoading } = trpc.admin.projectDetail.useQuery(
+  /*
+   * `isError` MATTERS HERE MORE THAN ALMOST ANYWHERE.
+   *
+   * This destructured only `isLoading`, so a failed fetch fell through to
+   * "Project not found." - a statement of FACT about the record, made on no
+   * evidence. An administrator investigating a dispute was told the project
+   * does not exist when the query merely failed, and there is no way to tell
+   * the two apart by looking. "Not found" is a claim; only a successful
+   * response can support it.
+   */
+  const { data: project, isLoading, isError, refetch } = trpc.admin.projectDetail.useQuery(
     { projectId },
-    { enabled: valid },
+    { enabled: valid, retry: false },
   );
 
   const statusLabel = (status: string | null | undefined) => {
@@ -47,6 +58,10 @@ export default function AdminProjectDetail() {
 
         {isLoading ? (
           <p className="py-12 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
+        ) : isError ? (
+          <Card><CardContent className="py-8">
+            <LoadFailed {...loadFailedCopy(lang === 'ar')} onRetry={() => void refetch()} />
+          </CardContent></Card>
         ) : !project ? (
           <Card><CardContent className="py-16 text-center text-sm text-muted-foreground">{lang === 'ar' ? 'المشروع غير موجود.' : 'Project not found.'}</CardContent></Card>
         ) : (

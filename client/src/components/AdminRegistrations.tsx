@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LoadFailed } from '@/components/LoadFailed';
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { toast } from 'sonner';
 import {
   AlertTriangle, CheckCircle2, ClipboardCheck, Download, Eye, FileSearch,
@@ -171,11 +171,16 @@ export default function AdminRegistrations() {
     return roleMatches && statusMatches;
   }), [complianceQueue, complianceRoleFilter, complianceStatusFilter]);
 
-  /** The two strings every failed section shows. Worded once, not per tab. */
-  const loadFailedText = lang === 'ar'
-    ? 'تعذّر تحميل هذه البيانات. هذه ليست نتيجة فارغة.'
-    : 'This could not be loaded. This is not an empty result.';
-  const retryText = lang === 'ar' ? 'إعادة المحاولة' : 'Try again';
+  /*
+   * WORDED ONCE ACROSS THE PRODUCT, not once per file.
+   *
+   * This comment used to say "worded once, not per tab" - true inside this
+   * file, and false beside the identical block that had grown in the other
+   * one. Three wordings of the same statement existed: this pair and the
+   * canonical copy in LoadFailed.tsx, which is where the sentence belongs
+   * because it is the same sentence.
+   */
+  const { text: loadFailedText, retryText } = loadFailedCopy(lang === 'ar');
   const isAdmin = true;
 
   const registrationDateRangeInvalid = Boolean(registrationDateFrom && registrationDateTo && registrationDateFrom > registrationDateTo);

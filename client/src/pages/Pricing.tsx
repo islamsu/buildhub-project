@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -51,7 +52,17 @@ export default function Pricing() {
 
   const { isAuthenticated } = useAuth();
 
-  const { data, isLoading } = trpc.billing.plans.useQuery();
+  /*
+   * LOADING AND FAILED ARE DIFFERENT ANSWERS.
+   *
+   * The guard below read `isLoading || !data`, so a failed request left the
+   * public pricing page showing "Loading…" FOREVER - the one page whose whole
+   * job is to answer "what does this cost", quietly hung, with nothing to
+   * click and nothing said. A visitor waits, then leaves.
+   */
+  const { data, isLoading, isError, refetch } = trpc.billing.plans.useQuery(
+    undefined, { retry: false },
+  );
   // ONLY for signed-in visitors. `mySubscription` is a protected procedure, and
   // an UNAUTHORIZED response anywhere in the app triggers a global redirect to
   // /auth (see client/src/main.tsx) - so calling it unconditionally made this
@@ -79,12 +90,28 @@ export default function Pricing() {
     return String(value);
   };
 
-  if (isLoading || !data) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
         <main className="container max-w-6xl pt-24 pb-16">
           <div className="py-24 text-center text-muted-foreground">{t('common.loading')}</div>
+        </main>
+      </div>
+    );
+  }
+
+  // `!data` without an error should not happen, but it is the same experience
+  // for the visitor either way: nothing to read and no way forward. Both land
+  // on the same honest statement with a way to try again.
+  if (isError || !data) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <main className="container max-w-6xl pt-24 pb-16">
+          <div className="py-24">
+            <LoadFailed {...loadFailedCopy(ar)} onRetry={() => void refetch()} />
+          </div>
         </main>
       </div>
     );

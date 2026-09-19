@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 /**
  * ── PLACEMENT PERFORMANCE ─────────────────────────────────────────────────
  *
@@ -57,7 +58,18 @@ function KindBadge({ kind, ar }: { kind: string; ar: boolean }) {
 export default function PlacementPerformance() {
   const { lang } = useLanguage();
   const ar = lang === 'ar';
-  const { data, isLoading } = trpc.admin.placementPerformance.useQuery();
+  /*
+   * A FAILED FETCH IS NOT A COMMERCIAL FACT.
+   *
+   * This destructured only `isLoading`, so an outage rendered "No placements
+   * booked yet" under a heading about reach and revenue - a figure of zero,
+   * stated as the platform's own record, on no evidence at all. The empty
+   * state below is careful not to invent numbers; it was equally careful to
+   * claim there are none, which is the same mistake pointing the other way.
+   */
+  const { data, isLoading, isError, refetch } = trpc.admin.placementPerformance.useQuery(
+    undefined, { retry: false },
+  );
   const rows = data?.rows ?? [];
 
   // Counted separately, on purpose. One combined impression total would read
@@ -78,7 +90,7 @@ export default function PlacementPerformance() {
       <CardContent>
         {/* Editorial and commercial totals, side by side and never added
             together. Rendered only when there is something to count. */}
-        {!isLoading && rows.length > 0 && (
+        {!isLoading && !isError && rows.length > 0 && (
           <div className="mb-4 flex flex-wrap gap-4 text-xs">
             <span>
               <KindBadge kind="featured" ar={ar} />
@@ -108,9 +120,15 @@ export default function PlacementPerformance() {
           </p>
         )}
 
+        {!isLoading && isError && (
+          <LoadFailed {...loadFailedCopy(ar)} onRetry={() => void refetch()} />
+        )}
+
         {/* A REAL empty state. No placements means no rows - not a demonstration
-            table with plausible-looking numbers in it. */}
-        {!isLoading && rows.length === 0 && (
+            table with plausible-looking numbers in it. Guarded on `isError` as
+            well as on `isLoading`, because "none booked" is as much a claim
+            about the business as a number would be. */}
+        {!isLoading && !isError && rows.length === 0 && (
           <div className="rounded-xl border border-dashed py-10 text-center">
             <p className="font-medium">{ar ? 'لا توجد مساحات إعلانية بعد' : 'No placements booked yet'}</p>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -121,7 +139,7 @@ export default function PlacementPerformance() {
           </div>
         )}
 
-        {!isLoading && rows.length > 0 && (
+        {!isLoading && !isError && rows.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>

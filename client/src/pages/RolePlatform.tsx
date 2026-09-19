@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -109,7 +110,16 @@ export default function RolePlatform() {
   const rfqListQuery = trpc.rfq.list.useQuery({ page: 0, pageSize: 50 }, { enabled: isAuthenticated });
   const rfqs = (rfqListQuery.data?.rows ?? []) as any[];
   const { data: myQuotations = [] } = trpc.rfq.myQuotations.useQuery(undefined, { enabled: isAuthenticated && isProfessional });
-  const { data: products = [] } = trpc.marketplace.myProducts.useQuery(undefined, { enabled: isAuthenticated && isSupplier });
+  /*
+   * "NO PRODUCTS YET" IS A STATEMENT ABOUT THE SUPPLIER'S OWN BUSINESS.
+   *
+   * This destructured data only, so a failed request left `products` at its
+   * `= []` default and the catalogue card told a supplier with a full
+   * catalogue that they have none - and invited them to "add your first
+   * product", which is how a duplicate listing gets created from an outage.
+   */
+  const productsQuery = trpc.marketplace.myProducts.useQuery(undefined, { enabled: isAuthenticated && isSupplier, retry: false });
+  const products = productsQuery.data ?? [];
   // Own vendor profile, used only to pass this account's id to VendorReputation below -
   // VendorProfileCard fetches/renders the same query itself (react-query dedupes the
   // identical call into one request; this is not a second profile implementation).
@@ -323,7 +333,9 @@ export default function RolePlatform() {
               </div>
             </CardHeader>
             <CardContent>
-              {products.length === 0 ? (
+              {productsQuery.isError ? (
+                <LoadFailed {...loadFailedCopy(lang === 'ar')} onRetry={() => void productsQuery.refetch()} />
+              ) : products.length === 0 ? (
                 <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
                   {lang === 'ar' ? 'لا توجد منتجات بعد. أضف منتجك الأول أو ارفعه دفعة واحدة.' : 'No products yet. Add your first product or upload in bulk.'}
                 </p>

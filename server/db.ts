@@ -108,9 +108,25 @@ export async function getUserByUsername(username: string) {
 // to zero, because every authenticated operation in the app already needs the
 // database and degrades to nothing without it - so failing closed here does not
 // take down anything that was still working.
+/**
+ * HAS THIS SESSION BEEN SIGNED OUT?
+ *
+ * STILL FAILS CLOSED, and now says which kind of closed. It used to answer
+ * `true` - "yes, revoked" - when the database was unreachable, and the caller
+ * turned that into "Session has been signed out". Failing closed was right;
+ * the sentence was a lie, and it travelled: the browser was sent to the
+ * sign-in screen, where the same outage made signing in impossible.
+ *
+ * Throwing refuses the request exactly as firmly as returning `true` did - no
+ * caller proceeds on an exception - while letting the layers above tell the
+ * difference between a session that was revoked and a question that could not
+ * be answered.
+ */
 export async function isSessionRevoked(jti: string): Promise<boolean> {
   const db = await getDb();
-  if (!db) return true;
+  if (!db) {
+    throw new Error('Session state is unavailable: the user store cannot be reached.');
+  }
   const result = await db.select({ jti: revokedSessions.jti }).from(revokedSessions).where(eq(revokedSessions.jti, jti)).limit(1);
   return result.length > 0;
 }

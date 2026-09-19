@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -233,7 +234,7 @@ export default function DashboardLayout({
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
-  const { loading, user } = useAuth();
+  const { loading, user, authUnknown, retryAuth } = useAuth();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
@@ -243,7 +244,33 @@ export default function DashboardLayout({
     return <DashboardLayoutSkeleton />
   }
 
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+
+  /*
+   * EVERY SIGNED-IN SCREEN IN THE PRODUCT PASSES THROUGH HERE, so this is the
+   * single place a session outage decided to say "Sign In".
+   *
+   * `!user` was being read as "this person is not signed in". It is also true
+   * when the session could not be CHECKED, and the two need different words:
+   * an administrator mid-investigation was shown a sign-in screen during a
+   * database outage, and the button on it led somewhere that could not sign
+   * them in either, because the same outage was underneath both.
+   *
+   * NOTHING IS GRANTED HERE. The person is still not authenticated and every
+   * protected procedure still refuses them server-side; they are simply told
+   * the truth about why the screen is empty, and offered the one action that
+   * can help.
+   */
+  if (authUnknown) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-8">
+        <div className="w-full max-w-md">
+          <LoadFailed {...loadFailedCopy(lang === 'ar')} onRetry={retryAuth} />
+        </div>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-screen">

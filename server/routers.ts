@@ -405,7 +405,24 @@ function assertTestLoginCapabilityEnabled(): void {
 }
 
 const authRouter = router({
-  me: publicProcedure.query(opts => opts.ctx.user ? toPublicSessionUser(opts.ctx.user) : null),
+  /**
+   * WHO IS THIS? - and `null` is an ANSWER, not a shrug.
+   *
+   * The whole client reads this one procedure to decide whether somebody is
+   * signed in, so `null` navigates them to the sign-in screen. Returning it
+   * when the session could not be CHECKED is how a database outage became a
+   * sign-out: the administrator was sent to /auth mid-investigation and could
+   * not sign in there either, because the same database was down.
+   */
+  me: publicProcedure.query(opts => {
+    if (opts.ctx.authUnavailable) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Your session could not be checked right now. This does not mean you are signed out - please try again.',
+      });
+    }
+    return opts.ctx.user ? toPublicSessionUser(opts.ctx.user) : null;
+  }),
   logout: publicProcedure.mutation(async ({ ctx }) => {
     // Server-side revocation (Phase 4A.6.6): without this, clearing the cookie only
     // logs this browser out - the same token, if copied elsewhere, kept working until
