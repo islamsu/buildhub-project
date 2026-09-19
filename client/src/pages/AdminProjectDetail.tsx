@@ -1,3 +1,4 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
 import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -95,9 +96,11 @@ export default function AdminProjectDetail() {
               <section className="space-y-2">
                 <p className="text-sm font-medium">{lang === 'ar' ? 'المالك' : 'Owner'}</p>
                 {project.owner ? (
-                  <Link href={`/admin/users/${project.owner.id}`} className="text-sm font-medium underline-offset-2 hover:underline">
-                    {project.owner.name || project.owner.email || `#${project.owner.id}`}
-                  </Link>
+                  <AdminUserLink
+                    id={project.owner.id}
+                    name={project.owner.name || project.owner.email}
+                    className="text-sm font-medium"
+                  />
                 ) : '—'}
               </section>
 
@@ -112,10 +115,10 @@ export default function AdminProjectDetail() {
                   <div className="overflow-hidden rounded-xl border">
                     {project.members.map(member => (
                       <div key={member.id} className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5 last:border-0">
-                        <Link href={`/admin/users/${member.userId}`} className="flex min-w-0 items-center gap-2 text-sm font-medium underline-offset-2 hover:underline">
+                        <AdminUserLink id={member.userId} className="flex min-w-0 items-center gap-2 text-sm font-medium">
                           <UserRound className="h-4 w-4 text-muted-foreground" />
                           <span className="truncate">{member.name || `#${member.userId}`}</span>
-                        </Link>
+                        </AdminUserLink>
                         <Badge variant="outline">{member.projectRole || member.userRole || '—'}</Badge>
                       </div>
                     ))}

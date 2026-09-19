@@ -1,3 +1,4 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
 import { useEffect, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -191,10 +192,18 @@ export default function AdminAuditTrail() {
                   <tbody>
                     {auditRows.map((row) => (
                       <tr key={row.id} className="border-b last:border-0">
-                        {/* A name, then the id - never the id alone. */}
-                        <td className="p-2 text-xs">{row.userName ?? row.userEmail ?? (row.userId ? `#${row.userId}` : '—')}</td>
+                        {/* A name, then the id - never the id alone, and the
+                            name opens the account. Both columns: the SUBJECT of
+                            an event and the ADMINISTRATOR who caused it are the
+                            two records somebody reading an audit line wants to
+                            look at next, and neither was reachable from here. */}
+                        <td className="p-2 text-xs">
+                          <AdminUserLink id={row.userId} name={row.userName ?? row.userEmail} />
+                        </td>
                         <td className="p-2"><Badge variant="outline">{row.action}</Badge></td>
-                        <td className="p-2 text-xs text-muted-foreground">{row.actorName ?? '—'}</td>
+                        <td className="p-2 text-xs text-muted-foreground">
+                          <AdminUserLink id={row.actorId} name={row.actorName ?? row.actorEmail} />
+                        </td>
                         <td className="p-2 max-w-[24rem] break-words text-xs text-muted-foreground">{row.note ?? '—'}</td>
                         <td className="p-2 text-xs text-muted-foreground">{when(row.createdAt)}</td>
                       </tr>

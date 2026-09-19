@@ -9079,6 +9079,21 @@ const adminRouter = router({
       db, actorAdminRole: ctx.user.adminRole, target: verifyTarget, removesAccess: false,
     });
     await db.update(users).set({ verified: input.verified }).where(eq(users.id, input.userId));
+    /*
+     * RECORDED, like its nine neighbours. This was the one administrative
+     * mutation over `users` that changed a row and said nothing about it - the
+     * account showed the new value and no administrator could answer who set
+     * it or when. It matters more here than the count suggests: the flag
+     * decides whether a provider appears in the marketplace at all, and
+     * setting it qualifies a referral, which can grant a reward.
+     */
+    await recordAccountEvent(db, {
+      userId: input.userId,
+      actorId: ctx.user.id,
+      action: input.verified ? 'account_verified' : 'account_unverified',
+      source: 'admin',
+      note: input.verified ? 'Account marked verified' : 'Verification removed',
+    });
     if (input.verified) {
       await qualifyReferralEvent(db, input.userId, 'ACCOUNT_VERIFIED', `verified:${input.userId}`, new Date());
     }

@@ -69,6 +69,17 @@ export const ACCOUNT_AUDIT_ACTIONS = [
   'account_frozen',
   'account_unfrozen',
 
+  /*
+   * VERIFYING AN ACCOUNT IS A PRIVILEGED ACT, and it was the only one in the
+   * user directory that left no trace. Nine of the ten administrative
+   * mutations over `users` already record; `verifyUser` did not, so the row
+   * carried the new value and nothing said who set it, when, or from what -
+   * on a flag that decides whether a provider is listed at all AND that
+   * qualifies a referral, which can grant a reward.
+   */
+  'account_verified',
+  'account_unverified',
+
   // QA personas
   'dummy_user_created',
   'dummy_user_deleted',

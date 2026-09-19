@@ -1,3 +1,4 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
 import { useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -196,15 +197,16 @@ export default function AdminReferrals() {
                     {(referrals.data?.rows ?? []).map((row: any) => (
                       <tr key={row.id} className="border-b last:border-0">
                         <td className="p-2">
-                          <Link href={`/admin/users/${row.referrerId}`} className="font-medium underline-offset-2 hover:underline">
-                            {row.referrerName || `#${row.referrerId}`}
-                          </Link>
+                          <AdminUserLink id={row.referrerId} name={row.referrerName} className="font-medium" />
                           {row.referrerEmail && <p className="text-xs text-muted-foreground">{row.referrerEmail}</p>}
                         </td>
                         <td className="p-2">
-                          <Link href={`/admin/users/${row.referredId}`} className="underline-offset-2 hover:underline">
-                            #{row.referredId}
-                          </Link>
+                          {/* THE PERSON, not the number. This printed `#4127`
+                              as the referred party's whole identity - the one
+                              row on this screen the human-first rule had
+                              missed - because the query behind it joined
+                              `users` for the referrer only. */}
+                          <AdminUserLink id={row.referredId} name={row.referredName} />
                         </td>
                         <td className="p-2 font-mono text-xs">{row.code}</td>
                         <td className="p-2"><Badge variant="secondary">{statusLabel(row.status)}</Badge></td>
@@ -275,9 +277,7 @@ export default function AdminReferrals() {
                     {(rewards.data?.rows ?? []).map((row: any) => (
                       <tr key={row.id} className="border-b last:border-0">
                         <td className="p-2">
-                          <Link href={`/admin/users/${row.recipientUserId}`} className="font-medium underline-offset-2 hover:underline">
-                            {row.recipientName || `#${row.recipientUserId}`}
-                          </Link>
+                          <AdminUserLink id={row.recipientUserId} name={row.recipientName} className="font-medium" />
                         </td>
                         <td className="p-2 text-muted-foreground">{row.campaignName}</td>
                         <td className="p-2">{row.rewardType}: {row.rewardValue}</td>

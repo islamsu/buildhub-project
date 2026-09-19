@@ -1,0 +1,16 @@
+PASS  1. SETUP: real records exist for four distinct people  [requester Dalia Mansour, referrer Omar Khaled, referred Nour Saad, vendor Tarek Aziz]
+PASS  2. SUPPORT QUEUE: the requester is a link, by name  [Dalia Mansour -> /admin/users/151]
+PASS  3. and it points at THAT person's record  [/admin/users/151]
+PASS  4. and following it opens the account  [Dalia Mansour]
+PASS  5. REFERRALS: the referrer is a link, by name
+PASS  6. AND THE REFERRED PARTY IS A PERSON, NOT A NUMBER  [rendered as "Nour Saad"]
+PASS  7. and the raw id is not their whole identity  ["Nour Saad"]
+PASS  8. PROMOTIONS: the sponsored vendor is shown by name  [Tarek Aziz]
+PASS  9. and no identity link points at a non-record  [every href addresses a real row]
+PASS  9b. a real administrative action is recorded  [admin.verifyUser -> HTTP 200]
+PASS  9c. and the account trail can be opened  [Accounts tab selected]
+PASS  10. AUDIT TRAIL: the SUBJECT of the event opens their account  ["Dalia Mansour"]
+PASS  10b. and so does the ADMINISTRATOR who caused it  ["Probe Super"]
+PASS  11. ARABIC: the same name is the same link under RTL  [dir=rtl]
+
+14/14 checks passed

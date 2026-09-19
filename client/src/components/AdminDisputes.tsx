@@ -1,3 +1,4 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
 import { useEffect, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -211,15 +212,11 @@ export default function AdminDisputes({ openRecord = null }: { openRecord?: stri
                       </p>
                     </td>
                     <td className="p-2 text-xs">
-                      <Link href={`/admin/users/${row.reporterId}`} className="underline-offset-2 hover:underline">
-                        {row.reporterName || `#${row.reporterId}`}
-                      </Link>
+                      <AdminUserLink id={row.reporterId} name={row.reporterName} />
                       {row.respondentId ? (
                         <>
                           <span className="text-muted-foreground"> → </span>
-                          <Link href={`/admin/users/${row.respondentId}`} className="underline-offset-2 hover:underline">
-                            {row.respondentName || `#${row.respondentId}`}
-                          </Link>
+                          <AdminUserLink id={row.respondentId} name={row.respondentName} />
                         </>
                       ) : (
                         <span className="text-muted-foreground"> · {ar ? 'بلا طرف مُسمّى' : 'no named respondent'}</span>

@@ -1,3 +1,4 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
 import { useEffect, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -192,8 +193,16 @@ export default function AdminSupportTickets({ openRecord = null }: { openRecord?
                   <tr key={row.id} className="border-b last:border-0" data-testid={`admin-support-row-${row.id}`}>
                     <td className="p-2 font-mono text-xs">{row.reference}</td>
                     <td className="p-2">{row.subject}</td>
-                    {/* THE PERSON, not the id - the admin human-first rule. */}
-                    <td className="p-2">{row.requesterName ?? <span className="text-muted-foreground">{ar ? 'غير متاح' : 'Not available'}</span>}</td>
+                    {/* THE PERSON, not the id - and the name is the way IN to
+                        their record. `requesterId` has been on this row since
+                        the queue was written and nothing used it, so an
+                        administrator reading a ticket had the name in front of
+                        them and went back to User Management to search for it. */}
+                    <td className="p-2">
+                      {row.requesterName || row.requesterId
+                        ? <AdminUserLink id={row.requesterId} name={row.requesterName} />
+                        : <span className="text-muted-foreground">{ar ? 'غير متاح' : 'Not available'}</span>}
+                    </td>
                     <td className="p-2">
                       <Badge variant="outline">{supportLabel('status', row.status, lang)}</Badge>
                       {row.awaitingParty === 'support' && (

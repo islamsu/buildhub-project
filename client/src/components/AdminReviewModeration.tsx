@@ -1,3 +1,4 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
 import { useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -153,8 +154,12 @@ export default function AdminReviewModeration() {
                         </Badge>
                       )}
                     </td>
-                    <td className="p-2">{row.revieweeName ?? `#${row.revieweeId}`}</td>
-                    <td className="p-2">{row.reporterName ?? `#${row.reporterId}`}</td>
+                    {/* BOTH PARTIES OPEN. Moderating a reported review means
+                        looking at who was reviewed and who objected - and
+                        neither name was a way to either account, though both
+                        ids were already on the row. */}
+                    <td className="p-2"><AdminUserLink id={row.revieweeId} name={row.revieweeName} /></td>
+                    <td className="p-2"><AdminUserLink id={row.reporterId} name={row.reporterName} /></td>
                     <td className="p-2">{reviewLabel('reportReason', row.reason, lang)}</td>
                     <td className="p-2">{reviewLabel('reportStatus', row.status, lang)}</td>
                     <td className="p-2 text-end">

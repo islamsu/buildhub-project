@@ -1,3 +1,4 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
 import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useMemo, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -246,7 +247,7 @@ export default function AdminFeaturedProviders() {
                   <tr key={row.id} className="border-b last:border-0">
                     <td className="px-3 py-2">
                       <Link href={`/vendor/${row.vendorId}`} className="underline-offset-2 hover:underline">
-                        {String(row.vendorName ?? '—')}
+                        <AdminUserLink id={row.vendorId} name={row.vendorName} testId={`feature-vendor-link-${row.vendorId}`} />
                       </Link>
                       <span className="text-muted-foreground"> #{row.vendorId}</span>
                     </td>

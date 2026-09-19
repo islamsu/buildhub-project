@@ -19,8 +19,18 @@
  * turn a withdrawn reward into a lapsed one.
  */
 import { and, desc, eq, inArray, like, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/mysql-core';
 import { containsTerm } from './_core/searchTerms';
 import { referralCampaigns, referralRewards, referrals, users } from '../drizzle/schema';
+
+/**
+ * `users` a second time, as the REFERRED party.
+ *
+ * One query already joins `users` as the referrer; naming the second join is
+ * what lets both identities come back in one read rather than a lookup per
+ * row.
+ */
+const referredUser = alias(users, 'referredUser');
 
 export type DerivedRewardStatus = 'PENDING' | 'GRANTED' | 'EXPIRED' | 'REVERSED' | 'REJECTED';
 
@@ -234,8 +244,22 @@ export async function listAdminReferrals(
     createdAt: referrals.createdAt,
     referrerName: users.name,
     referrerEmail: users.email,
+    /*
+     * THE REFERRED PARTY'S NAME, for the same reason as the campaign's above -
+     * and it was the one identity on this row that the rule had missed. The
+     * admin ledger could only print `#4127` for the person who was referred,
+     * so an administrator investigating an attribution dispute had a number
+     * and no way to tell whose account it was without leaving the screen.
+     *
+     * LEFT joined even though `referredId` is NOT NULL and RESTRICTed: this
+     * read must not silently drop a referral row because of a join, and a
+     * missing name is a dash rather than a disappeared record.
+     */
+    referredName: referredUser.name,
+    referredEmail: referredUser.email,
   }).from(referrals)
     .innerJoin(users, eq(users.id, referrals.referrerId))
+    .leftJoin(referredUser, eq(referredUser.id, referrals.referredId))
     .leftJoin(referralCampaigns, eq(referralCampaigns.id, referrals.campaignId));
   const rows = await (where ? baseRows.where(where) : baseRows)
     .orderBy(desc(referrals.createdAt))

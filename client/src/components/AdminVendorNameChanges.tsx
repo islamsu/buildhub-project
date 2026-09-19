@@ -1,3 +1,4 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
 import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useMemo, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -153,9 +154,11 @@ export default function AdminVendorNameChanges() {
                   {filtered.map(request => (
                     <tr key={request.id} className="border-b last:border-0">
                       <td className="p-2">
-                        <Link href={`/admin/users/${request.userId}`} className="font-medium underline-offset-2 hover:underline">
-                          {request.userName || request.companyName || `#${request.userId}`}
-                        </Link>
+                        <AdminUserLink
+                          id={request.userId}
+                          name={request.userName || request.companyName}
+                          className="font-medium"
+                        />
                         {request.userEmail && <p className="text-xs text-muted-foreground">{request.userEmail}</p>}
                       </td>
                       <td className="p-2 text-muted-foreground">{request.field === 'companyName' ? (ar ? 'الاسم التجاري' : 'Company name') : (ar ? 'الاسم القانوني / التجاري' : 'Legal / trading name')}</td>
