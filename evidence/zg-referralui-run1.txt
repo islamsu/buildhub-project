@@ -1,0 +1,16 @@
+PASS  1. SETUP: an inviter with a referral code  [id 435]
+PASS  2. the referral area renders for a signed-in user
+PASS  3. EMPTY: the code, the link and a Copy action are offered  [link true, copy true]
+PASS  4. EMPTY: and it explains how referral works
+PASS  5. EMPTY: with a truthful empty state rather than a promise  [Share your invite code. Initial rewards are non-cash and granted after qualifica]
+PASS  6. REWARD: it reads as a sentence with its unit  [ Who accepted your invitation QA Referred Supplier 9/20/2026 · because]
+PASS  7. REWARD: and NO stored enum reaches the reader  [none]
+PASS  8. REFERRED: a publicly listed business is named  [named]
+PASS  9. REFERRED: with where the referral got to  [Rewarded]
+PASS  10. PRIVACY: a homeowner who used the code is NOT named to the inviter  [not named]
+PASS  11. PRIVACY: but the referral is still shown, so the count is explainable  [shown without a name]
+PASS  12. ARABIC: the referral area is in Arabic  [شارك رمز الدعوة الخاص بك. المكافآت الأولية غير نقدية وتُمنح ]
+PASS  13. ARABIC: and still no raw enum
+PASS  14. ARABIC: the reward reads as an Arabic sentence too  [ المكافآت الأولية غير نقدية وتُمنح عند اكتمال التأهيل، وتعتم]
+
+14/14 checks passed

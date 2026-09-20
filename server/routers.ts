@@ -62,6 +62,7 @@ import { qualifyReferralEvent } from './referralEngine';
 import { reverseRewardEffect, markRewardReversed, markReferralAfterReversal } from './referralReversal';
 import {
   listAdminReferrals, listReferralRewards, listMyReferralRewards, myReferralCounts,
+  listMyReferredParties,
 } from './referralRewardView';
 import { explainEnquiryAllowance } from './billing/allowanceBreakdown';
 import { splitCampaignEdit, refuseCampaignEdit, refuseCampaignDates } from './referralCampaignEdit';
@@ -6016,13 +6017,22 @@ const profileRouter = router({
       code = generateReferralCode();
       await db.update(users).set({ referralCode: code }).where(eq(users.id, ctx.user.id));
     }
-    const [counts, rewards] = await Promise.all([
+    const [counts, rewards, referred] = await Promise.all([
       myReferralCounts(db, ctx.user.id),
       listMyReferralRewards(db, ctx.user.id),
+      /*
+       * WHO ACCEPTED, and how far each one got. Three counts could not answer
+       * the only question an inviter has - which of these turned into
+       * anything, and what does the rest still need. See the privacy note on
+       * listMyReferredParties: a publicly listed business is named because it
+       * is already public, and nobody else is.
+       */
+      listMyReferredParties(db, ctx.user.id),
     ]);
     return {
       code,
       link: `/auth?mode=signup&ref=${encodeURIComponent(code)}`,
+      referred,
       // Kept, because callers render it. It is now the sum of the breakdown
       // beside it rather than an independently counted number that could
       // disagree with it.
