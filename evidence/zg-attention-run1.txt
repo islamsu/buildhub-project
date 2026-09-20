@@ -8,7 +8,12 @@ PASS  7. ASSIGNED: taking one takes it off the badge  [2 (expected 2)]
 PASS  8. RELEASED: unassigning puts it back - the latest event wins, not the first  [3 (expected 3)]
 PASS  9. REFRESH: the count survives a reload  [3]
 PASS  10. CLICK: the badged entry opens the enquiries queue  [/admin/enquiries]
-PASS  11. OUTAGE: an administrator is NOT thrown out to the public site  [stayed in the console]
-PASS  12. OUTAGE: and is told the session could not be checked, with a retry  [the unavailable panel is shown]
+PASS  11. NAME CHANGES: User Management carries the count, so the queue is findable  [1 (expected 1)]
+PASS  12. and the badge says it is name changes it is counting, not users  [name change requests still open]
+PASS  13. NAME CHANGES: and the tab inside User Management shows the SAME number  [tab 1 vs sidebar 1]
+PASS  14. NAME CHANGES: clicking the badged tab shows the actual pending request  [the requested name is on screen]
+PASS  15. NAME CHANGES: deciding the request clears the badge in BOTH places  [sidebar none, tab none (expected no badge)]
+PASS  16. OUTAGE: an administrator is NOT thrown out to the public site  [stayed in the console]
+PASS  17. OUTAGE: and is told the session could not be checked, with a retry  [the unavailable panel is shown]
 
-12/12 checks passed
+17/17 checks passed

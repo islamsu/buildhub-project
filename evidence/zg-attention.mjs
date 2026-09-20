@@ -67,6 +67,18 @@ async function signIn(email) {
 }
 
 /** What the sidebar shows for the enquiries queue, right now. */
+/** Any attention badge, sidebar or tab, read the same way. */
+const badgeReader = testid => `
+  const b = document.querySelector('[data-testid="${testid}"]');
+  return JSON.stringify({
+    present: !!b,
+    state: b ? b.getAttribute('data-attention-state') : null,
+    count: b ? b.getAttribute('data-attention-count') : null,
+    text: b ? b.innerText.trim() : '',
+    meaning: b ? (b.getAttribute('title') || '') : '',
+  });
+`;
+
 const BADGE = `
   const b = document.querySelector('[data-testid="attention-enquiries"]');
   return JSON.stringify({
@@ -86,6 +98,7 @@ function cleanUp() {
     `delete from qualifiedEnquiries where rfqId in ${rfqIds}`,
     `delete from rfqSuppliers where rfqId in ${rfqIds}`,
     `delete from quotations where rfqId in ${rfqIds}`,
+    `delete from vendorNameChangeRequests where userId in ${ids} or reviewerId in ${ids}`,
     `delete from vendorCategories where userId in ${ids}`,
     `delete from analyticsEvents where userId in ${ids}`,
     `delete from notifications where userId in ${ids}`,
@@ -229,6 +242,86 @@ try {
   await settle(1800);
   const landed = await page.evaluate("return location.pathname;");
   check(landed === '/admin/enquiries', 'CLICK: the badged entry opens the enquiries queue', landed);
+  /*
+   * ── NAME CHANGES: THE QUEUE THE OWNER COULD NOT FIND ────────────────────
+   *
+   * The count existed on the server and was rendered nowhere. Correcting a
+   * vendor's legal or trading name is identity administration, so the queue
+   * is a TAB inside User Management rather than a destination of its own -
+   * which means the sidebar entry that owns the tab has to carry the number,
+   * and the tab itself has to repeat it. A sidebar badge that sends an
+   * administrator to a user directory with nothing waiting on it would be a
+   * worse lie than no badge at all.
+   *
+   * Both numbers come from one procedure, so the two cannot drift apart.
+   */
+  const nameBase = Number(sql(
+    `select count(*) from vendorNameChangeRequests where status in ('pending','under_review','needs_information')`));
+
+  sql(`insert into vendorNameChangeRequests (userId, field, currentValue, requestedValue, reason, status)
+       values (${vendorId}, 'tradingName', 'Probe ${v}', 'Probe ${v} Trading', 'probe', 'pending')`);
+  const nameReqId = Number(sql(`select id from vendorNameChangeRequests where userId=${vendorId} order by id desc limit 1`));
+
+  await page.goto(`${BASE}/admin`);
+  await waitFor(page, `!!document.querySelector('[data-testid="attention-nameChanges"]')`);
+  const nameSidebar = JSON.parse(await page.evaluate(badgeReader('attention-nameChanges')));
+  check(nameSidebar.present && nameSidebar.count === String(nameBase + 1),
+    'NAME CHANGES: User Management carries the count, so the queue is findable',
+    `${nameSidebar.text} (expected ${nameBase + 1})`);
+  check(nameSidebar.state === 'waiting' && /name change/i.test(nameSidebar.meaning),
+    'and the badge says it is name changes it is counting, not users',
+    nameSidebar.meaning);
+
+  /* THE TAB REPEATS IT, so following the badge lands on the work. */
+  await page.goto(`${BASE}/admin/users`);
+  await waitFor(page, `!!document.querySelector('[data-testid="users-tab-name-changes"]')`);
+  await settle(1200);
+  const nameTab = JSON.parse(await page.evaluate(badgeReader('tab-attention-nameChanges')));
+  check(nameTab.present && nameTab.count === nameSidebar.count,
+    'NAME CHANGES: and the tab inside User Management shows the SAME number',
+    `tab ${nameTab.text} vs sidebar ${nameSidebar.text}`);
+
+  /* AND THE TAB OPENS THE QUEUE ITSELF, not a page about it. */
+  await page.evaluate(`
+    const el = document.querySelector('[data-testid="users-tab-name-changes"]');
+    const r = el.getBoundingClientRect();
+    const o = { bubbles: true, cancelable: true, composed: true,
+      clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 };
+    el.dispatchEvent(new PointerEvent('pointerdown', o));
+    el.dispatchEvent(new MouseEvent('mousedown', o));
+    el.dispatchEvent(new PointerEvent('pointerup', o));
+    el.dispatchEvent(new MouseEvent('mouseup', o));
+    el.dispatchEvent(new MouseEvent('click', o));
+    return true;
+  `);
+  await settle(1800);
+  const queueShown = await page.evaluate(`
+    const main = document.querySelector('main') || document.body;
+    return String(main.innerText.includes('Probe ${v} Trading'));
+  `);
+  check(queueShown === 'true',
+    'NAME CHANGES: clicking the badged tab shows the actual pending request',
+    queueShown === 'true' ? 'the requested name is on screen' : 'the request is not listed');
+
+  /* DECIDING IT CLEARS BOTH, because both read the same open-state set. */
+  sql(`update vendorNameChangeRequests set status='approved', reviewerId=${adminId}, reviewedAt=now() where id=${nameReqId}`);
+  await page.goto(`${BASE}/admin/users`);
+  await waitFor(page, `!!document.querySelector('[data-testid="users-tab-name-changes"]')`);
+  await settle(1500);
+  const nameAfter = JSON.parse(await page.evaluate(badgeReader('attention-nameChanges')));
+  const tabAfter = JSON.parse(await page.evaluate(badgeReader('tab-attention-nameChanges')));
+  const expectAfter = nameBase === 0 ? 'no badge' : String(nameBase);
+  /*
+   * A CLEARED BADGE ONLY MEANS SOMETHING IF IT WAS THERE. Without the first
+   * clause this check passes on a build that never renders either badge at
+   * all, which is the exact defect it is meant to catch.
+   */
+  check(nameSidebar.present && nameTab.present
+        && (nameBase === 0 ? !nameAfter.present : nameAfter.count === String(nameBase))
+        && (nameBase === 0 ? !tabAfter.present : tabAfter.count === String(nameBase)),
+    'NAME CHANGES: deciding the request clears the badge in BOTH places',
+    `sidebar ${nameAfter.present ? nameAfter.text : 'none'}, tab ${tabAfter.present ? tabAfter.text : 'none'} (expected ${expectAfter})`);
+
   /*
    * ── AND AN OUTAGE IS NOT ZERO ───────────────────────────────────────────
    *

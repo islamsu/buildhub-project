@@ -191,6 +191,14 @@ export default function AdminDashboard() {
   // `/admin/name-changes` resolves to the users section; this is what makes it
   // land on the name-change queue rather than on the directory beside it.
   const [userTab, setUserTab] = useState(location.startsWith('/admin/name-changes') ? 'name-changes' : 'directory');
+  /*
+   * THE SAME NUMBER THE SIDEBAR SHOWS, from the same procedure. The sidebar
+   * badge on User Management is counting name changes; if this tab restated
+   * the figure from a second query the two could disagree, and an
+   * administrator would have no way to tell which was right.
+   */
+  const attention = trpc.admin.attention.useQuery(undefined, { retry: false });
+  const nameChangesWaiting = attention.data?.nameChanges;
   const [includeDummyRegistrations, setIncludeDummyRegistrations] = useState(false);
   const [createAccountType, setCreateAccountType] = useState<'admin' | 'dummy' | null>(null);
   const [accountDraft, setAccountDraft] = useState({ name: '', username: '', email: '', phone: '', userRole: 'homeowner', note: '', password: '' });
@@ -776,8 +784,27 @@ export default function AdminDashboard() {
                 <TabsTrigger value="directory" data-testid="users-tab-directory">
                   {lang === 'ar' ? 'المستخدمون' : 'Users'}
                 </TabsTrigger>
-                <TabsTrigger value="name-changes" data-testid="users-tab-name-changes">
+                <TabsTrigger value="name-changes" data-testid="users-tab-name-changes" className="gap-2">
                   {t('admin.name_changes')}
+                  {/* A number only when there is one, and "?" when the count
+                      could not be read - an unreachable queue must not look
+                      like an empty one. */}
+                  {attention.isError ? (
+                    <span
+                      data-testid="tab-attention-nameChanges"
+                      data-attention-state="unknown"
+                      title={lang === 'ar' ? 'تعذر تحميل هذا العدد' : 'This count could not be loaded'}
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-dashed px-1.5 text-[11px] font-medium text-muted-foreground"
+                    >?</span>
+                  ) : nameChangesWaiting && nameChangesWaiting.count > 0 ? (
+                    <span
+                      data-testid="tab-attention-nameChanges"
+                      data-attention-state="waiting"
+                      data-attention-count={nameChangesWaiting.count}
+                      title={nameChangesWaiting.meaning}
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground"
+                    >{nameChangesWaiting.count > 99 ? '99+' : nameChangesWaiting.count}</span>
+                  ) : null}
                 </TabsTrigger>
               </TabsList>
 

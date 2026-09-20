@@ -1,16 +1,17 @@
-PASS  1. SETUP: a curated supplier, a curated product and an ordinary one  [vendor 468, products 28/29]
+PASS  1. SETUP: a curated supplier, a curated product and an ordinary one  [vendor 524, products 43/44]
 PASS  2. HOME: the curated PRODUCT is on the marketplace home  [card present]
 PASS  3. HOME: the curated PROVIDER is on the marketplace home too  [named]
-PASS  4. HOME: and Featured sits ABOVE the ordinary section cards - it is prime  [featured at 759px, sections at 1395px]
+PASS  4. HOME: and Featured sits ABOVE the ordinary section cards - it is prime  [featured at 759px, sections at 1652px]
 PASS  5. HOME: while a non-curated product of the same supplier is NOT promoted  [absent, correctly]
-PASS  6. HOME: and the card SAYS it is editorial, in words rather than colour alone  [FEATURED QA Featured Lamp mu9s6tzq EGP 250]
-PASS  7. CATEGORY: the curated product appears inside its own category
-PASS  8. SCOPE: and does NOT appear under a category it does not belong to  [correctly absent]
-PASS  9. HOME: a visitor can browse into a category from the marketplace home  [12 category tiles]
-PASS  10. CATEGORY: the curated product has its OWN editorial block, not just a badge  [block present]
-PASS  11. CATEGORY: and Featured sits ABOVE any sponsored placement  [featured 356px, sponsored 596px]
-PASS  12. DISTINCT: Featured and Sponsored each say which they are, in words  [featured says so: true, sponsored says so: true]
-PASS  13. DISTINCT: and neither claims to be the other  [vocabularies are separate]
-PASS  14. EMPTY: withdrawing the picks removes the premium strip, with no empty heading  [gone, correctly]
+PASS  6. HOME: and the card SAYS it is editorial, in words rather than colour alone  [Featured QA Featured Lamp mua8cwib QA Lighting Supplier Lighting QA EGP 250 View]
+PASS  7. HOME: the product card is built for a PRODUCT - supplier, category, action  [supplier true, category true, action true]
+PASS  8. CATEGORY: the curated product appears inside its own category
+PASS  9. SCOPE: and does NOT appear under a category it does not belong to  [correctly absent]
+PASS  10. HOME: a visitor can browse into a category from the marketplace home  [12 category tiles]
+PASS  11. CATEGORY: the curated product has its OWN editorial block, not just a badge  [block present]
+PASS  12. CATEGORY: and Featured sits ABOVE any sponsored placement  [featured 356px, sponsored 867px]
+PASS  13. DISTINCT: Featured and Sponsored each say which they are, in words  [featured says so: true, sponsored says so: true]
+PASS  14. DISTINCT: and neither claims to be the other  [vocabularies are separate]
+PASS  15. EMPTY: withdrawing the picks removes the premium strip, with no empty heading  [gone, correctly]
 
-14/14 checks passed
+15/15 checks passed
