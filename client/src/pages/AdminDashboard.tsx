@@ -110,7 +110,7 @@ function formatFreezeReason(reason: string | null | undefined, lang: 'en' | 'ar'
 
 export default function AdminDashboard() {
   const { t, lang, dir } = useLanguage();
-  const { user, isAuthenticated, loading } = useAuth();
+  const { user, isAuthenticated, loading, authUnknown, retryAuth } = useAuth();
   const [location, navigate] = useLocation();
   const adminSection = useMemo(() => {
     if (location === '/admin' || location === '/admin/') return 'overview';
@@ -407,6 +407,36 @@ export default function AdminDashboard() {
   }, [complianceQueue, lang]);
 
   if (loading) return null;
+
+  /*
+   * "COULD NOT CHECK" IS NOT "NOT SIGNED IN", and this line was reading them
+   * as the same thing.
+   *
+   * `isAuthenticated` is false during a database outage - correctly, because
+   * it is not a claim that anyone IS authenticated - and this turned that into
+   * a hard `window.location.href` away from the console. An administrator
+   * mid-investigation was thrown out to the sign-in page by an outage that had
+   * nothing to do with their session, losing the URL they were on, and the
+   * destination could not sign them in either because the same outage was
+   * underneath it. Found by stopping the database and reloading /admin: the
+   * console rendered the public marketing home.
+   *
+   * DashboardLayout already had the right answer for every other signed-in
+   * screen; this one had its own guard and never got it. Nothing is granted
+   * here - the person is still not authenticated, every admin procedure still
+   * refuses them server-side - they are told the truth and offered the one
+   * action that helps.
+   */
+  if (authUnknown) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-8" dir={dir}>
+        <div className="w-full max-w-md" data-testid="admin-auth-unavailable">
+          <LoadFailed {...loadFailedCopy(lang === 'ar')} onRetry={retryAuth} />
+        </div>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) { window.location.href = '/auth?mode=login'; return null; }
   if (!isAdmin) {
     return (

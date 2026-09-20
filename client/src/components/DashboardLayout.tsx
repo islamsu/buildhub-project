@@ -55,6 +55,8 @@ type MenuItem = {
   labelKey: string;
   path: string;
   section?: SectionId;
+  /** The admin queue whose waiting count this entry shows, if it shows one. */
+  attentionQueue?: string;
 };
 
 const COMPLIANCE_MENU_ITEM = { icon: Shield, labelKey: 'platform.compliance', path: '/compliance' } as const;
@@ -225,12 +227,73 @@ const ADMIN_ICONS: Record<string, typeof LayoutDashboard> = {
   '/admin/settings': Settings,
 };
 
+/**
+ * WHICH SIDEBAR ENTRY CARRIES WHICH QUEUE'S COUNT.
+ *
+ * Only queues with a genuine pending-action state appear here. A sidebar
+ * where everything is decorated tells you nothing, so Categories, Placements,
+ * Billing, Analytics and Operations deliberately carry no badge - none of
+ * them has a "waiting for you" state that is true rather than merely
+ * non-empty.
+ */
+const ADMIN_ATTENTION_QUEUE: Readonly<Record<string, string>> = {
+  '/admin/enquiries': 'enquiries',
+  '/admin/registrations': 'registrations',
+  '/admin/disputes': 'disputes',
+  '/admin/support': 'support',
+  '/admin/reviews': 'reviews',
+};
+
 const adminMenuItems = (permissions: readonly string[]): MenuItem[] =>
   adminMenuFor(permissions).map(entry => ({
     icon: ADMIN_ICONS[entry.path] ?? LayoutDashboard,
     labelKey: entry.labelKey,
     path: entry.path,
+    attentionQueue: ADMIN_ATTENTION_QUEUE[entry.path],
   }));
+
+/**
+ * THE COUNT BESIDE A QUEUE, or an honest mark that it could not be read.
+ *
+ * Three states, and the third is the point:
+ *
+ *   a number   work is waiting, and how much
+ *   nothing    the queue is genuinely clear
+ *   "?"        the count could not be loaded
+ *
+ * Without the third, a failed query renders as no badge, which is
+ * indistinguishable from "nothing is waiting" - and an administrator acts on
+ * that by not looking. The title attribute carries what the number MEANS,
+ * taken from the server rather than restated here, so the badge and the queue
+ * it opens cannot come to describe different things.
+ */
+function AttentionBadge({ queue, attention }: {
+  queue?: string;
+  attention: { data?: Record<string, { count: number; meaning: string }> | undefined; isError: boolean };
+}) {
+  if (!queue) return null;
+  if (attention.isError) {
+    return (
+      <span
+        data-testid={`attention-${queue}`}
+        data-attention-state="unknown"
+        title="This count could not be loaded"
+        className="ms-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-dashed px-1.5 text-[11px] font-medium text-muted-foreground"
+      >?</span>
+    );
+  }
+  const entry = attention.data?.[queue];
+  if (!entry || entry.count <= 0) return null;
+  return (
+    <span
+      data-testid={`attention-${queue}`}
+      data-attention-state="waiting"
+      data-attention-count={entry.count}
+      title={entry.meaning}
+      className="ms-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground"
+    >{entry.count > 99 ? '99+' : entry.count}</span>
+  );
+}
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
@@ -387,6 +450,23 @@ function DashboardLayoutContent({
    */
   const isAdminViewer = user?.role === 'admin';
   const { data: adminMe } = trpc.admin.me.useQuery(undefined, { enabled: isAdminViewer, retry: false });
+  /*
+   * WHAT IS WAITING, for the badges beside the admin queues.
+   *
+   * Fetched only for administrators, so an ordinary role never calls a
+   * procedure it cannot use. Refetched on an interval because an operations
+   * console left open all afternoon should not keep showing this morning's
+   * count.
+   *
+   * AN ERROR IS NOT A ZERO - see AttentionBadge. A console that quietly shows
+   * no badges when the query failed is telling an administrator every queue
+   * is clear, which is the one thing it must never say untruthfully.
+   */
+  const attention = trpc.admin.attention.useQuery(undefined, {
+    enabled: isAdminViewer,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
   const menuKeys = isAdminViewer
     ? adminMenuItems(adminMe?.permissions ?? [])
     : ROLE_MENU_KEYS[userRole as keyof typeof ROLE_MENU_KEYS] ?? HOMEOWNER_MENU_KEYS;
@@ -527,6 +607,7 @@ function DashboardLayoutContent({
                         className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
                       />
                       <span>{item.label}</span>
+                      <AttentionBadge queue={item.attentionQueue} attention={attention} />
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

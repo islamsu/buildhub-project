@@ -604,3 +604,68 @@ export function toCsvRow(values: (string | number | null)[]): string {
 export function iso(value: Date | null | undefined): string {
   return value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString() : '';
 }
+
+/**
+ * ── WHAT IS WAITING FOR AN ADMINISTRATOR RIGHT NOW ────────────────────────
+ *
+ * The Vendor Enquiries screen showed a queue and nothing said there was
+ * anything new in it. An administrator had to open the page to discover
+ * whether it needed them, which means the queue is only attended to by
+ * somebody who already suspected it needed attending to.
+ *
+ * WHAT "NEW" MEANS HERE, stated rather than assumed.
+ *
+ * Not "unseen by me". A per-administrator read model needs a table, and it
+ * makes the count personal - two administrators would see different numbers
+ * for the same queue, and neither could tell whether the other had dealt with
+ * anything. For a small shared operations team that is worse, not better.
+ *
+ * It is UNASSIGNED AND STILL ACTIONABLE: nobody has taken it, and the request
+ * behind it is still open. That is the state this domain already models -
+ * enquiryList has taken `assigneeId: null` as a filter since it was written -
+ * so the badge and the queue it opens are answering the SAME question, and
+ * cannot drift into disagreeing.
+ *
+ * It follows that the count falls when somebody assigns one, which is the
+ * shared-workflow behaviour the owner's directive allows for explicitly. It
+ * does NOT fall merely because an administrator looked at a record.
+ *
+ * NOT EVERY HISTORICAL ENQUIRY IS "NEW". A closed or awarded request is not
+ * waiting for anyone, whatever its assignment, so it is excluded.
+ */
+export type EnquiryAttention = {
+  /** Unassigned enquiries whose request is still open. */
+  actionable: number;
+  /** The filter that reproduces exactly this set, for the link out of the badge. */
+  filter: { assigneeId: null; rfqStatus: 'open' };
+};
+
+export async function enquiryAttention(db: unknown): Promise<EnquiryAttention> {
+  const execute = (db as { execute: (q: unknown) => Promise<unknown> }).execute.bind(db);
+  /*
+   * THE SAME JOIN THE LIST USES, deliberately, and not a simpler one.
+   *
+   * enquiryAssignments is APPEND-ONLY: the current assignee is the newest row
+   * for the pair, and an unassignment is a row whose assigneeId is NULL. A
+   * plain join on (rfqId, vendorId) therefore matches history rather than
+   * state - an enquiry assigned in March and released in April would be
+   * counted as assigned forever, and the badge would quietly undercount the
+   * work waiting. The badge and the queue it opens have to be answering one
+   * question, so they run one join.
+   */
+  const [row] = rowsOf(await execute(sql.raw(`
+    SELECT COUNT(*) AS actionable FROM (
+      SELECT ${ENQUIRY_UNIVERSE_SELECT}, ea.assigneeId AS assigneeId
+      ${ENQUIRY_UNIVERSE_FROM}
+      LEFT JOIN enquiryAssignments ea ON ea.id = (
+        SELECT MAX(ea2.id) FROM enquiryAssignments ea2
+         WHERE ea2.rfqId = p.rfqId AND ea2.vendorId = p.vendorId
+      )
+    ) enq
+    WHERE enq.assigneeId IS NULL AND enq.rfqStatus = 'open'
+  `)) as unknown);
+  return {
+    actionable: Number(row?.actionable ?? 0),
+    filter: { assigneeId: null, rfqStatus: 'open' },
+  };
+}

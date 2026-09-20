@@ -27,6 +27,7 @@ import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
 import { acceptQuotationSecure, closeRfqSecure, rejectQuotationSecure } from './quotationWorkflow';
 import { withdrawQuotationSecure } from './quotationWithdrawal';
+import { adminAttention } from './adminAttention';
 import { aiChatLimiters, authLimiters, contentLimiters, getClientIp } from './_core/rateLimit';
 import { recordEventAsync } from './analytics/events';
 import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
@@ -7211,6 +7212,16 @@ const adminRouter = router({
    * business carrying the market's prices, and this endpoint is exactly where
    * they would all be in one response.
    */
+  /**
+   * WHAT IS WAITING, for the sidebar and the dashboard.
+   *
+   * `users.read` rather than a per-queue permission: this returns counts, no
+   * record content, and an administrator who can open the console needs to
+   * know which queues want them. The DESTINATIONS remain permission-gated as
+   * they were - a badge is not an authorisation.
+   */
+  attention: adminWith('users.read').query(async () => adminAttention()),
+
   enquiryList: adminWith('marketplace.manage')
     .input(z.object({
       state: z.enum(ENQUIRY_STATES).optional(),

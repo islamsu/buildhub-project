@@ -1,0 +1,14 @@
+PASS  1. SETUP: an admin, a buyer and a supplier
+PASS  2. EMPTY: with nothing waiting there is no badge at all  [no badge]
+PASS  3. ONE: a new enquiry raises the badge  [1 (was 0)]
+PASS  4. and the badge says WHAT it is counting  [unassigned, on a request that is still open]
+PASS  5. MANY: the badge counts them exactly  [3 (expected 3)]
+PASS  6. CLOSED: a closed request stops counting as waiting  [2 (expected 2)]
+PASS  7. ASSIGNED: taking one takes it off the badge  [2 (expected 2)]
+PASS  8. RELEASED: unassigning puts it back - the latest event wins, not the first  [3 (expected 3)]
+PASS  9. REFRESH: the count survives a reload  [3]
+PASS  10. CLICK: the badged entry opens the enquiries queue  [/admin/enquiries]
+PASS  11. OUTAGE: an administrator is NOT thrown out to the public site  [stayed in the console]
+PASS  12. OUTAGE: and is told the session could not be checked, with a retry  [the unavailable panel is shown]
+
+12/12 checks passed

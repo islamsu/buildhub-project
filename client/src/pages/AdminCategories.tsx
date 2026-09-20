@@ -32,6 +32,7 @@
 
 import { useMemo, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import {
@@ -61,13 +62,23 @@ type SortKey = 'order' | 'name' | 'products' | 'status';
 
 export default function AdminCategories() {
   const { lang, dir } = useLanguage();
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, authUnknown, retryAuth } = useAuth();
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
   const t = (en: string, ar: string) => (lang === 'ar' ? ar : en);
 
-  const { data: me } = trpc.admin.me.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const { data: me, isError: meFailed } = trpc.admin.me.useQuery(undefined, { enabled: isAuthenticated, retry: false });
   const canManage = me?.permissions.includes('marketplace.manage') ?? false;
+  /*
+   * "COULD NOT CHECK" IS NOT "NOT ALLOWED".
+   *
+   * `canManage` is false during an outage, which is correct - it is not a
+   * claim that anyone IS allowed - but the refusal screen below states a
+   * PERMISSIONS VERDICT, and during an outage that verdict is a fabrication.
+   * An administrator who holds the permission was told they do not, which is
+   * the kind of thing that gets a working account reported as broken.
+   */
+  const permissionUnknown = authUnknown || meFailed;
 
   const categories = trpc.admin.categories.useQuery(undefined, { enabled: canManage, retry: false });
 
@@ -146,6 +157,16 @@ export default function AdminCategories() {
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center" dir={dir}><Loader2 className="h-6 w-6 animate-spin" /></div>;
+  }
+
+  if (permissionUnknown) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-8" dir={dir}>
+        <div className="w-full max-w-md" data-testid="admin-auth-unavailable">
+          <LoadFailed {...loadFailedCopy(lang === 'ar')} onRetry={retryAuth} />
+        </div>
+      </div>
+    );
   }
 
   // A perfectly valid Sub-Admin who simply lacks this permission. Says so

@@ -1,0 +1,138 @@
+/**
+ * ── WHAT IS WAITING FOR AN ADMINISTRATOR RIGHT NOW ────────────────────────
+ *
+ * The console showed queues and nothing said whether any of them needed
+ * anybody. An administrator had to open each page to find out, which means a
+ * queue is only attended to by someone who already suspected it needed
+ * attending to. The owner's complaint named Vendor Enquiries; the same
+ * omission applies to every operational queue beside it.
+ *
+ * THE RULES THIS FOLLOWS, because a badge that lies is worse than no badge.
+ *
+ * EVERY COUNT IS A REAL COUNT over real rows. No estimate, no sample, no
+ * cached figure. An administrator acts on these numbers.
+ *
+ * AN OUTAGE IS NOT ZERO. Every read goes through requireDb(), so a database
+ * that cannot be reached raises instead of reporting an empty, calm console.
+ * "No disputes are waiting" is the single most dangerous thing this file
+ * could say untruthfully.
+ *
+ * "NEW" IS DEFINED PER QUEUE, and it is a state the domain already models
+ * rather than a read-receipt invented here. A per-administrator "unseen"
+ * model would need its own table and would make the number personal - two
+ * administrators would see different counts for the same shared queue and
+ * neither could tell whether the other had dealt with anything. For a small
+ * operations team that is worse. Where a queue has a canonical actionable
+ * state, that state IS the definition, and it is named in the type below so
+ * the screen can say what it is counting.
+ *
+ * EACH COUNT CARRIES THE FILTER THAT REPRODUCES IT. The badge and the queue
+ * it opens answer the same question because they are given the same question,
+ * not because two pieces of code were written to agree.
+ *
+ * NOT EVERY QUEUE GETS A BADGE. A sidebar where everything is decorated tells
+ * you nothing. Only queues with a genuine pending-action state appear here.
+ */
+import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+import {
+  disputes, reviewReports, supportTickets, users, vendorNameChangeRequests,
+} from '../drizzle/schema';
+import { requireDb } from './_core/requireDb';
+import { enquiryAttention } from './vendorEnquiryQuery';
+import { DISPUTE_OPEN_STATUSES } from '../shared/disputes';
+
+/** The queues that can carry an attention badge. */
+export const ATTENTION_QUEUES = [
+  'enquiries', 'registrations', 'disputes', 'support', 'reviews', 'nameChanges',
+] as const;
+export type AttentionQueue = (typeof ATTENTION_QUEUES)[number];
+
+export type AttentionCount = {
+  /** How many items are waiting. A real count. */
+  count: number;
+  /**
+   * What "waiting" means for this queue, in the product's own words, so the
+   * screen can label the badge rather than leaving a bare number to be
+   * guessed at.
+   */
+  meaning: string;
+  /** Where the badge goes, with the filter that reproduces exactly this set. */
+  href: string;
+};
+
+export type AdminAttention = Record<AttentionQueue, AttentionCount>;
+
+/** Provider roles whose registration goes through compliance review. */
+const PROVIDER_ROLES = ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'] as const;
+
+/** Registration states that are still waiting on a decision from us. */
+const REGISTRATION_PENDING = ['not_started', 'under_review', 'update_required'] as const;
+
+/** Name-change states that are still open. Mirrors the admin list's own filter. */
+const NAME_CHANGE_OPEN = ['pending', 'under_review', 'needs_information'] as const;
+
+export async function adminAttention(): Promise<AdminAttention> {
+  const db = await requireDb();
+
+  const one = async (query: Promise<{ total: number }[]>) =>
+    Number((await query)[0]?.total ?? 0);
+
+  const [enquiries, registrations, openDisputes, openSupport, reportedReviews, nameChanges] =
+    await Promise.all([
+      enquiryAttention(db),
+      one(db.select({ total: count() }).from(users).where(and(
+        inArray(users.userRole, PROVIDER_ROLES),
+        inArray(users.onboardingStatus, REGISTRATION_PENDING),
+      )) as unknown as Promise<{ total: number }[]>),
+      one(db.select({ total: count() }).from(disputes).where(
+        inArray(disputes.status, DISPUTE_OPEN_STATUSES),
+      ) as unknown as Promise<{ total: number }[]>),
+      /*
+       * `awaiting_user` is deliberately NOT counted. The ball is with the
+       * requester, and badging it would tell an administrator to chase work
+       * that is not theirs to do.
+       */
+      one(db.select({ total: count() }).from(supportTickets).where(
+        inArray(supportTickets.status, ['open', 'in_progress'] as const),
+      ) as unknown as Promise<{ total: number }[]>),
+      one(db.select({ total: count() }).from(reviewReports).where(
+        isNull(reviewReports.resolvedAt),
+      ) as unknown as Promise<{ total: number }[]>),
+      one(db.select({ total: count() }).from(vendorNameChangeRequests).where(
+        inArray(vendorNameChangeRequests.status, NAME_CHANGE_OPEN),
+      ) as unknown as Promise<{ total: number }[]>),
+    ]);
+
+  return {
+    enquiries: {
+      count: enquiries.actionable,
+      meaning: 'unassigned, on a request that is still open',
+      href: '/admin/enquiries?assignee=none&rfqStatus=open',
+    },
+    registrations: {
+      count: registrations,
+      meaning: 'professional registrations awaiting a decision',
+      href: '/admin/registrations',
+    },
+    disputes: {
+      count: openDisputes,
+      meaning: 'disputes still being worked on',
+      href: '/admin/disputes',
+    },
+    support: {
+      count: openSupport,
+      meaning: 'tickets waiting on us, not on the requester',
+      href: '/admin/support',
+    },
+    reviews: {
+      count: reportedReviews,
+      meaning: 'reported reviews not yet resolved',
+      href: '/admin/reviews',
+    },
+    nameChanges: {
+      count: nameChanges,
+      meaning: 'name change requests still open',
+      href: '/admin/name-changes',
+    },
+  };
+}
