@@ -361,6 +361,49 @@ export default function MarketplaceHub() {
           </div>
         )}
 
+        {/*
+          CATEGORY DISCOVERY.
+
+          The taxonomy was already loaded on this page and used for exactly two
+          things: a number in a stat tile, and the search autocomplete. A
+          visitor who did not already know what they wanted had no way to
+          browse into one - the four cards below lead to whole directories, not
+          to a subject.
+
+          ONE TAXONOMY, the canonical public one. No second hard-coded array:
+          a category shown here is a category the catalogue can filter by, and
+          the link carries `cat` because that is the parameter the products
+          page reads.
+        */}
+        {productCategories.length > 0 && (
+          <div className="container pt-8 pb-2" data-testid="hub-category-discovery">
+            <div className="mb-5 flex items-center justify-between">
+              <h3 className="text-lg font-bold">{lang === 'ar' ? 'تصفّح حسب الفئة' : 'Browse by category'}</h3>
+              <button
+                className="text-sm font-medium text-primary hover:underline"
+                onClick={() => navigate('/marketplace/products')}
+              >
+                {t('marketHub.viewAll')}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              {productCategories.slice(0, 12).map((category: any) => (
+                <button
+                  key={category.id ?? category.slug ?? category.nameEn}
+                  data-testid={`hub-category-${category.slug ?? category.nameEn}`}
+                  onClick={() => navigate(`/marketplace/products?cat=${encodeURIComponent(category.nameEn)}`)}
+                  className="group flex flex-col items-center gap-2 rounded-xl border bg-card p-4 text-center transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <span className="text-2xl" aria-hidden="true">{category.icon || '📦'}</span>
+                  <span className="line-clamp-2 text-xs font-medium group-hover:text-primary">
+                    {lang === 'ar' ? (category.nameAr || category.nameEn) : category.nameEn}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Four premium section cards */}
         <div className="container py-12">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

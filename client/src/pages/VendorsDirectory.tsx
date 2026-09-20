@@ -150,24 +150,21 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
           </div>
         )}
 
-        {/* MASTER DISCOVERY, above everything. The scope is whichever category
-            is selected; with no category chosen it is the platform-wide slot,
-            which is what a visitor sees before they narrow to a provider type.
-            Renders nothing at all when no eligible Master is booked. */}
-        <MasterProviderSlot category={category === 'all' ? undefined : category} />
+        {/*
+          FEATURED FIRST, then sponsored, then organic.
 
-        {/* SPOTLIGHT, once a provider type is chosen. Master belongs to root
-            discovery and Spotlight to the chosen type; only one of the two ever
-            renders, because each asks for a different scope. Prime position,
-            capped at three, with the organic list immediately below rather than
-            an advertising wall. */}
-        <ProviderSpotlight category={category === 'all' ? undefined : category} />
+          This block used to sit BELOW the Master and Spotlight slots, which
+          are the placements BuildHub sells. The owner's decision is that
+          editorial Featured is PRIME and must never be pushed below a
+          commercial row: a curated pick is BuildHub vouching for a provider,
+          and a visitor who sees a paid slot first has been shown an
+          advertisement before a recommendation.
 
-        {/* Editorial Featured: platform-curated recognition, distinct from paid
-            sponsorship. Shown before sponsored and organic so the strongest
-            providers are immediately visible. */}
+          Sponsored is not hidden or weakened by this - it keeps its slot, its
+          label and its position above the organic list, immediately below.
+        */}
         {editorialFeatured.length > 0 && (
-          <section className="mb-8" aria-label={t('market.featured')}>
+          <section className="mb-8" aria-label={t('market.featured')} data-testid="vendors-editorial-featured" data-placement-kind="featured">
             <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
               <h2 className="text-sm font-semibold">{t('market.featured')}</h2>
               <p className="text-xs text-muted-foreground">{t('vendorsDir.editorialNote')}</p>
@@ -180,6 +177,18 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
             <div className="mt-4 h-px bg-border" />
           </section>
         )}
+
+        {/* MASTER DISCOVERY. The scope is whichever category is selected; with
+            none chosen it is the platform-wide slot, which is what a visitor
+            sees before they narrow to a provider type. Renders nothing at all
+            when no eligible Master is booked. */}
+        <MasterProviderSlot category={category === 'all' ? undefined : category} />
+
+        {/* SPOTLIGHT, once a provider type is chosen. Master belongs to root
+            discovery and Spotlight to the chosen type; only one of the two ever
+            renders, because each asks for a different scope. Capped at three,
+            with the organic list below rather than an advertising wall. */}
+        <ProviderSpotlight category={category === 'all' ? undefined : category} />
 
         {/* Sponsored strip (Slice 8). A SEPARATE, labelled section - never a
             reordering of the organic list below, which still ranks by

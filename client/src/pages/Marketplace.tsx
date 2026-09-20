@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { trpc } from '@/lib/trpc';
 import { useMemo, useState } from 'react';
-import { Search, SlidersHorizontal, Star, Package, ShoppingCart, Zap, ArrowLeft, ArrowRight, Heart, Scale, X } from 'lucide-react';
+import { Search, SlidersHorizontal, Star, Package, ShoppingCart, Zap, ArrowLeft, ArrowRight, Heart, Scale, X, BadgeCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
 import { MasterProductSlot, PlacementBadge, ProductSpotlight } from '@/components/MasterPlacement';
@@ -50,6 +50,14 @@ export default function Marketplace() {
     } catch { return 'All'; }
   })();
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
+  /*
+   * THE CURATED PICKS FOR THIS CATEGORY. Scoped server-side, so a Lighting
+   * pick cannot appear under Tiles - the same rule the paid slots follow.
+   */
+  const { data: editorialProducts = [] } = trpc.marketplace.featuredProducts.useQuery(
+    { category: selectedCategory === 'All' ? undefined : selectedCategory, limit: 3 },
+    { retry: false },
+  );
   const [sortBy, setSortBy] = useState('featured');
   const [wishlist, setWishlist] = useState<number[]>(() => {
     try { return JSON.parse(localStorage.getItem('bh-wishlist') || '[]'); } catch { return []; }
@@ -202,10 +210,77 @@ export default function Marketplace() {
                 ))}
               </div>
 
-              {/* MASTER DISCOVERY for products, above the organic grid. Scoped
-                  to the selected category, or platform-wide on "All" - which is
-                  what a visitor sees before choosing a category. Collapses when
-                  nothing eligible is booked. */}
+              {/*
+                EDITORIAL FEATURED PRODUCTS, first.
+
+                The provider directory has had a curated block for a long time
+                and the catalogue never did: `products.featured` existed and
+                only nudged the ORDER BY, so a product BuildHub had chosen sat
+                somewhere in the grid with a small badge and nothing else.
+
+                FEATURED BEFORE SPONSORED, by the owner's decision. A curated
+                pick is BuildHub vouching for a product; a visitor who meets a
+                paid slot first has been shown an advertisement before a
+                recommendation. Sponsored keeps its slot and its label directly
+                below.
+
+                Scoped to the chosen category, so a Lighting pick cannot appear
+                under Tiles - the same rule the paid slots follow.
+              */}
+              {editorialProducts.length > 0 && (
+                <section
+                  className="mb-8"
+                  aria-label={lang === 'ar' ? 'منتجات مختارة' : 'Featured products'}
+                  data-testid="products-editorial-featured"
+                  data-placement-kind="featured"
+                >
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+                      <BadgeCheck className="h-4 w-4 text-emerald-600" />
+                      {lang === 'ar' ? 'منتجات مختارة' : 'Featured products'}
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      {lang === 'ar' ? 'اختيار من BuildHub، غير مدفوع' : 'Chosen by BuildHub, not paid for'}
+                    </p>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {editorialProducts.map(product => (
+                      <Card
+                        key={`editorial-${product.id}`}
+                        data-testid={`editorial-product-${product.id}`}
+                        className="group cursor-pointer overflow-hidden border-emerald-200 bg-emerald-50/40 ring-1 ring-emerald-500/20 transition-all hover:-translate-y-0.5 hover:shadow-lg dark:border-emerald-900 dark:bg-emerald-950/20"
+                        onClick={() => navigate(`/marketplace/products/${product.id}`)}
+                      >
+                        <CardContent className="p-4">
+                          <div className="mb-2 flex items-center gap-1.5">
+                            <BadgeCheck className="h-3.5 w-3.5 text-emerald-600" />
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                              {lang === 'ar' ? 'مختار' : 'Featured'}
+                            </span>
+                          </div>
+                          <p className="line-clamp-2 font-semibold group-hover:text-primary">
+                            {(lang === 'ar' && product.nameAr) ? product.nameAr : product.name}
+                          </p>
+                          {product.brand && <p className="mt-1 text-xs text-muted-foreground">{product.brand}</p>}
+                          {/* Only what the row holds. No rating, no stock. */}
+                          {product.price && (
+                            <p className="mt-2 text-sm font-medium">
+                              {product.currency ?? 'EGP'} {Number(product.price).toLocaleString()}
+                              {product.unit ? <span className="text-muted-foreground"> / {product.unit}</span> : null}
+                            </p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                  <div className="mt-4 h-px bg-border" />
+                </section>
+              )}
+
+              {/* MASTER DISCOVERY for products. Scoped to the selected
+                  category, or platform-wide on "All" - which is what a visitor
+                  sees before choosing a category. Collapses when nothing
+                  eligible is booked. */}
               <MasterProductSlot category={selectedCategory === 'All' ? undefined : selectedCategory} />
 
               {/* SPOTLIGHT, once a category is chosen. A Tiles placement cannot

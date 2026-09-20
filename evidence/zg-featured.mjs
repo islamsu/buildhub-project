@@ -165,6 +165,60 @@ try {
     'SCOPE: and does NOT appear under a category it does not belong to',
     elsewhere.shown ? 'it leaked into the wrong category' : 'correctly absent');
 
+  /* ── CATEGORY DISCOVERY ON THE HOME ──────────────────────────────────── */
+  await page.goto(`${BASE}/marketplace`);
+  await waitFor(page, `document.body.innerText.length > 200`);
+  await settle(1800);
+  const discovery = JSON.parse(await page.evaluate(`
+    const block = document.querySelector('[data-testid="hub-category-discovery"]');
+    const tiles = block ? block.querySelectorAll('[data-testid^="hub-category-"]').length : 0;
+    return JSON.stringify({ present: !!block, tiles });
+  `));
+  check(discovery.present && discovery.tiles > 0,
+    'HOME: a visitor can browse into a category from the marketplace home',
+    `${discovery.tiles} category tiles`);
+
+  /*
+   * ── THE CATEGORY EXPERIENCE: FEATURED BEFORE SPONSORED ────────────────
+   *
+   * A SPONSORED PLACEMENT IS BOOKED FIRST, deliberately. Without one the
+   * ordering assertion below has nothing to sit above and passes for the
+   * wrong reason - which is exactly what the first run of it did.
+   */
+  sql(`insert into products (supplierId, name, category, price, currency, status, featured)
+       values (${vendorId}, 'QA Sponsored Lamp ${stamp}', '${MINE}', 300, 'EGP', 'active', 0)`);
+  const sponsoredProductId = Number(sql(`select id from products where supplierId=${vendorId}
+                                         and name like 'QA Sponsored%' limit 1`));
+  sql(`insert into vendorSponsorships (vendorId, category, kind, source, entityType, productId,
+        surface, package, priority, startsAt)
+       values (${vendorId}, '${MINE}', 'sponsored', 'ADMIN_EDITORIAL', 'PRODUCT', ${sponsoredProductId},
+        'TYPE_CATEGORY_SPOTLIGHT', 'SPOTLIGHT', 0, now())`);
+
+  await page.goto(`${BASE}/marketplace/products?cat=${encodeURIComponent(MINE)}`);
+  await waitFor(page, `document.body.innerText.length > 200`);
+  await settle(2200);
+  const order = JSON.parse(await page.evaluate(`
+    const featured = document.querySelector('[data-testid="products-editorial-featured"]');
+    const sponsoredHeading = document.querySelector('[data-testid="product-spotlight"]')
+      || [...document.querySelectorAll('section')]
+        .find(s => /sponsor|master|spotlight/i.test(s.getAttribute('aria-label') || ''));
+    const top = el => el ? el.getBoundingClientRect().top + window.scrollY : null;
+    return JSON.stringify({
+      featured: !!featured,
+      featuredTop: top(featured),
+      sponsoredTop: top(sponsoredHeading),
+      hasCurated: featured ? /QA Featured Lamp/.test(featured.innerText) : false,
+    });
+  `));
+  check(order.featured && order.hasCurated,
+    'CATEGORY: the curated product has its OWN editorial block, not just a badge',
+    order.featured ? 'block present' : 'no editorial block');
+  check(order.sponsoredTop === null || order.featuredTop < order.sponsoredTop,
+    'CATEGORY: and Featured sits ABOVE any sponsored placement',
+    order.sponsoredTop === null
+      ? 'nothing sponsored is booked, so nothing to sit above'
+      : `featured ${Math.round(order.featuredTop)}px, sponsored ${Math.round(order.sponsoredTop)}px`);
+
   /* ── WITHDRAWN: the strip disappears rather than standing empty ───────── */
   sql(`update products set featured = 0 where id = ${featuredProductId}`);
   sql(`update vendorSponsorships set revokedAt = now() where vendorId = ${vendorId}`);
