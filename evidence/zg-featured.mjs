@@ -219,6 +219,34 @@ try {
       ? 'nothing sponsored is booked, so nothing to sit above'
       : `featured ${Math.round(order.featuredTop)}px, sponsored ${Math.round(order.sponsoredTop)}px`);
 
+  /*
+   * ── FEATURED AND SPONSORED MUST NOT BE TELLABLE APART BY COLOUR ALONE ──
+   *
+   * Both are on this page now, which is what makes the comparison possible.
+   * A colour-blind reader, a greyscale print and a screen reader all need the
+   * difference to survive the loss of hue - so each block has to carry its
+   * own WORD, and the two words have to differ.
+   */
+  const distinction = JSON.parse(await page.evaluate(`
+    const featured = document.querySelector('[data-testid="products-editorial-featured"]');
+    const sponsored = document.querySelector('[data-testid="product-spotlight"]');
+    const words = el => (el ? el.innerText : '').toLowerCase();
+    const f = words(featured), s = words(sponsored);
+    return JSON.stringify({
+      bothPresent: !!featured && !!sponsored,
+      featuredSaysSo: /featured|chosen by buildhub|مختار/.test(f),
+      sponsoredSaysSo: /sponsor|spotlight|برعاية|مدفوع/.test(s),
+      // The editorial block must not call itself sponsored, and vice versa.
+      confused: /sponsor|برعاية/.test(f) || /chosen by buildhub/.test(s),
+    });
+  `));
+  check(distinction.bothPresent && distinction.featuredSaysSo && distinction.sponsoredSaysSo,
+    'DISTINCT: Featured and Sponsored each say which they are, in words',
+    `featured says so: ${distinction.featuredSaysSo}, sponsored says so: ${distinction.sponsoredSaysSo}`);
+  check(!distinction.confused,
+    'DISTINCT: and neither claims to be the other',
+    distinction.confused ? 'one block uses the other\'s vocabulary' : 'vocabularies are separate');
+
   /* ── WITHDRAWN: the strip disappears rather than standing empty ───────── */
   sql(`update products set featured = 0 where id = ${featuredProductId}`);
   sql(`update vendorSponsorships set revokedAt = now() where vendorId = ${vendorId}`);

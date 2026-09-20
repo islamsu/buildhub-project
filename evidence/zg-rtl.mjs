@@ -81,11 +81,28 @@ const CHROME = `
   return JSON.stringify(out);
 `;
 
-/** A translation key that reached the screen: dotted, lower-case, no spaces. */
+/**
+ * A translation key that reached the screen: dotted, lower-case, no spaces.
+ *
+ * AN EMAIL DOMAIN IS NOT A TRANSLATION KEY. The first version matched
+ * "buildhub.local" out of superadmin@buildhub.local and reported the user
+ * directory as rendering a raw key - a probe finding produced entirely by the
+ * probe's own seeded account. Domains are skipped by the character BEFORE the
+ * match rather than by an ever-growing list of suffixes, because the next
+ * unlisted TLD would do exactly the same thing again.
+ */
 const RAW_KEYS = `
   const text = document.body.innerText;
-  const hits = text.match(/\\b[a-z][a-zA-Z0-9]*(?:\\.[a-z][a-zA-Z0-9]*){1,4}\\b/g) || [];
-  const keep = hits.filter(h => !/\\.(com|net|org|sa|io|test|js|ts|tsx|png|jpg|svg|pdf)$/.test(h));
+  const pattern = /\\b[a-z][a-zA-Z0-9]*(?:\\.[a-z][a-zA-Z0-9]*){1,4}\\b/g;
+  const keep = [];
+  let m;
+  while ((m = pattern.exec(text)) !== null) {
+    const before = m.index > 0 ? text[m.index - 1] : '';
+    // Part of an address (…@buildhub.local) or of a longer dotted path.
+    if (before === '@' || before === '.' || /[a-zA-Z0-9]/.test(before)) continue;
+    if (/\\.(com|net|org|sa|io|test|local|dev|js|ts|tsx|png|jpg|svg|pdf)$/.test(m[0])) continue;
+    keep.push(m[0]);
+  }
   return JSON.stringify([...new Set(keep)].slice(0, 12));
 `;
 

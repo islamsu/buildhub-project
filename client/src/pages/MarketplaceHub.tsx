@@ -224,9 +224,9 @@ export default function MarketplaceHub() {
         {featured.length > 0 && (
           <div className="container pt-10 pb-2">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-bold flex items-center gap-2">
+              <h2 className="text-lg font-bold flex items-center gap-2">
                 <BadgeCheck className="w-5 h-5 text-emerald-600" /> {t('marketHub.featuredVendors')}
-              </h3>
+              </h2>
               <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/vendors')}>
                 {t('marketHub.viewAll')}
               </button>
@@ -250,9 +250,9 @@ export default function MarketplaceHub() {
             <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-8">
               <div>
                 <div className="flex items-center justify-between mb-5">
-                  <h3 className="text-lg font-bold flex items-center gap-2">
+                  <h2 className="text-lg font-bold flex items-center gap-2">
                     <TrendingUp className="w-5 h-5 text-violet-600" /> {t('marketHub.featuredDesigners')}
-                  </h3>
+                  </h2>
                   <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/designers')}>
                     {t('marketHub.viewAll')}
                   </button>
@@ -269,9 +269,9 @@ export default function MarketplaceHub() {
               </div>
               <div>
                 <div className="flex items-center justify-between mb-5">
-                  <h3 className="text-lg font-bold flex items-center gap-2">
+                  <h2 className="text-lg font-bold flex items-center gap-2">
                     <HardHat className="w-5 h-5 text-orange-600" /> {t('marketHub.featuredCompanies')}
-                  </h3>
+                  </h2>
                   <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/finishing')}>
                     {t('marketHub.viewAll')}
                   </button>
@@ -312,10 +312,10 @@ export default function MarketplaceHub() {
         {featuredProducts.length > 0 && (
           <div className="container pt-8 pb-2" data-testid="hub-featured-products">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-bold flex items-center gap-2">
+              <h2 className="text-lg font-bold flex items-center gap-2">
                 <BadgeCheck className="w-5 h-5 text-emerald-600" />
                 {lang === 'ar' ? 'منتجات مختارة' : 'Featured Products'}
-              </h3>
+              </h2>
               <button
                 className="text-sm text-primary font-medium hover:underline"
                 onClick={() => navigate('/marketplace/products')}
@@ -378,7 +378,7 @@ export default function MarketplaceHub() {
         {productCategories.length > 0 && (
           <div className="container pt-8 pb-2" data-testid="hub-category-discovery">
             <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-lg font-bold">{lang === 'ar' ? 'تصفّح حسب الفئة' : 'Browse by category'}</h3>
+              <h2 className="text-lg font-bold">{lang === 'ar' ? 'تصفّح حسب الفئة' : 'Browse by category'}</h2>
               <button
                 className="text-sm font-medium text-primary hover:underline"
                 onClick={() => navigate('/marketplace/products')}
