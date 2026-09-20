@@ -17,6 +17,7 @@
 
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import { searchStatusLabel, type SearchSegment } from '@/lib/searchStatusLabels';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -39,7 +40,7 @@ const SEGMENT_LABEL: Record<string, { en: string; ar: string }> = {
 };
 
 export default function AdminPlatformSearch() {
-  const { lang } = useLanguage();
+  const { lang, t } = useLanguage();
   const ar = lang === 'ar';
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
@@ -128,7 +129,16 @@ export default function AdminPlatformSearch() {
                           : <span>{hit.label}</span>}
                         {hit.detail && <span className="text-muted-foreground"> · {hit.detail}</span>}
                       </span>
-                      {hit.status && <Badge variant="secondary">{hit.status}</Badge>}
+                      {/* The stored enum was rendered here - `in_progress`,
+                          `awaiting_user`, `update_required` - in every one of
+                          the eight segments, and identically in Arabic. The
+                          label comes from the SEGMENT's own vocabulary rather
+                          than from a ninth one written inside this card. */}
+                      {hit.status && (
+                        <Badge variant="secondary" data-testid={`search-status-${hit.id}`}>
+                          {searchStatusLabel(segment.key as SearchSegment, hit.status, lang, t)}
+                        </Badge>
+                      )}
                     </div>
                   );
                 })}

@@ -2,6 +2,7 @@ import type { Express, Request } from "express";
 import { and, eq } from "drizzle-orm";
 import { getObjectStorage, isObjectStorageConfigured } from "./objectStorage";
 import { sdk, type AuthenticatedUser } from "./sdk";
+import { HttpError } from "@shared/_core/errors";
 import { getDb } from "../db";
 import { aiAttachments, disputeEvidence, disputes, documents, messages, projects, qualifiedEnquiries, quotations, registrationDocumentSubmissions, rfqs, supportTicketAttachments } from "../../drizzle/schema";
 import { canAccessProject } from '../projectMembership';
@@ -9,11 +10,35 @@ import { canReadDispute } from "../disputeEligibility";
 import { requireTicketAccess } from "../supportTickets";
 import { parseRfqAttachments } from "../../shared/rfqAttachments";
 
-async function authenticateStorageRequest(req: Request): Promise<AuthenticatedUser | null> {
+/**
+ * WHO IS ASKING - or an admission that we could not find out.
+ *
+ * This caught EVERY error and returned null, which the caller turns into 401
+ * "Authentication required". A signed-in person whose own files could not be
+ * checked - because the user store was unreachable, not because their session
+ * was bad - was told they were not signed in. They see a broken image and, if
+ * they act on the message at all, they sign in again and it happens again.
+ *
+ * THE SAME DISCRIMINATOR THE tRPC CONTEXT USES, deliberately, rather than a
+ * second rule that could drift from it: `HttpError` is what the authenticator
+ * raises for a genuine authentication failure - no session, a bad token, an
+ * expired one. Anything else is the CHECK failing, which is not a statement
+ * about the caller at all.
+ *
+ * Nothing is granted by this. An unavailable check still returns no user and
+ * still serves no file; it just says 503 instead of 401, which is the code the
+ * rest of this proxy already uses for "the storage layer cannot answer".
+ */
+type StorageAuth =
+  | { user: AuthenticatedUser }
+  | { user: null; unavailable: boolean };
+
+async function authenticateStorageRequest(req: Request): Promise<StorageAuth> {
   try {
-    return await sdk.authenticateRequest(req);
-  } catch {
-    return null;
+    const user = await sdk.authenticateRequest(req);
+    return user ? { user } : { user: null, unavailable: false };
+  } catch (error) {
+    return { user: null, unavailable: !(error instanceof HttpError) };
   }
 }
 
@@ -314,11 +339,19 @@ export function registerStorageProxy(app: Express) {
       return;
     }
 
-    const user = await authenticateStorageRequest(req);
-    if (!user) {
+    const auth = await authenticateStorageRequest(req);
+    if (!auth.user) {
+      if ('unavailable' in auth && auth.unavailable) {
+        // 503, like the not-configured branch below: the request may well be
+        // perfectly valid and we cannot tell. Saying 401 blames the caller for
+        // our outage.
+        res.status(503).send("File storage is temporarily unavailable");
+        return;
+      }
       res.status(401).send("Authentication required");
       return;
     }
+    const user = auth.user;
 
     const authorized = await authorizeStorageKey(key, user);
     if (!authorized) {

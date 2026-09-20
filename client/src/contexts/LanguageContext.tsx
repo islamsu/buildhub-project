@@ -854,6 +854,8 @@ const translations: Record<Language, Record<string, string>> = {
     'common.update': 'Update',
     'common.remove': 'Remove',
     'common.status.active': 'Active',
+    /* A frozen account, named the same way the user directory names it. */
+    'common.status.frozen': 'Frozen',
     'common.status.pending': 'Pending',
     'common.status.completed': 'Completed',
     'common.status.cancelled': 'Cancelled',
@@ -2039,6 +2041,7 @@ const translations: Record<Language, Record<string, string>> = {
     'common.update': 'تحديث',
     'common.remove': 'إزالة',
     'common.status.active': 'نشط',
+    'common.status.frozen': 'مُجمَّد',
     'common.status.pending': 'قيد الانتظار',
     'common.status.completed': 'مكتمل',
     'common.status.cancelled': 'ملغي',

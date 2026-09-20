@@ -346,8 +346,56 @@ try {
   check(arabic.segments.some(s => s.key === 'disputes' && s.hits.some(h => h.ref === DISPUTE_REF)),
     '23. and the same dispute is still found in Arabic');
 
+  /*
+   * ── THE STATUS BADGES SAY SOMETHING A PERSON CAN READ ──────────────────
+   *
+   * Every segment rendered `{hit.status}` straight onto the card, so an
+   * administrator saw `in_progress`, `awaiting_user`, `update_required` - and
+   * saw exactly the same in Arabic. Checked in BOTH languages, because a
+   * label that is English in an Arabic console is the same defect one step
+   * quieter.
+   */
+  const badgeText = `
+    const out = [];
+    for (const badge of document.querySelectorAll('[data-testid^="search-status-"]')) {
+      out.push(badge.innerText.trim());
+    }
+    return JSON.stringify(out);
+  `;
+  const arBadges = JSON.parse(await page.evaluate(badgeText));
+  /*
+   * ALL-LOWERCASE IS THE TELL, not the underscore.
+   *
+   * The first version required one - /^[a-z]+(_[a-z]+)+$/ - so `in_progress`
+   * was caught and `open` was not. Half of these vocabularies are single
+   * words, and reverting the fix left both the English and the Arabic sweep
+   * green while the Arabic console showed "open". Every real label here is
+   * either capitalised or Arabic script, so a badge that is nothing but
+   * lower-case latin is the stored value.
+   */
+  const rawShape = /^[a-z][a-z_]*$/;
+  const rawAr = arBadges.filter(text => rawShape.test(text));
+  check(arBadges.length > 0 && rawAr.length === 0,
+    '24. ARABIC: no search result shows a stored status enum',
+    rawAr.length ? `raw: ${rawAr.join(', ')}` : `${arBadges.length} badges, none raw`);
+  check(arBadges.some(text => /[\u0600-\u06FF]/.test(text)),
+    '25. ARABIC: and the statuses are actually in Arabic',
+    arBadges.slice(0, 4).join(' | '));
+
+  await page.evaluate("localStorage.setItem('buildhub_lang', 'en'); return true;");
+  // The box lives on Operations, not on the overview - the same page every
+  // other search in this probe uses.
+  await page.goto(`${BASE}/admin/operations`);
+  await waitFor(page, `!!document.querySelector('[data-testid="search-input"]')`);
+  await searchInBrowser(page, DISPUTE_REF);
+  const enBadges = JSON.parse(await page.evaluate(badgeText));
+  const rawEn = enBadges.filter(text => rawShape.test(text));
+  check(enBadges.length > 0 && rawEn.length === 0,
+    '26. ENGLISH: no search result shows a stored status enum either',
+    rawEn.length ? `raw: ${rawEn.join(', ')}` : `${enBadges.length} badges, none raw`);
+
 } catch (error) {
-  check(false, 'PROBE ABORTED', String(error.message).slice(0, 200));
+  check(false, 'PROBE ABORTED', `${String(error.message).slice(0, 200)} :: ${String(error.stack ?? '').split('\n').slice(0, 3).join(' | ').slice(0, 300)}`);
 } finally {
   // `close()` is synchronous here - awaiting a non-promise threw and masked
   // the exit code on the first run.
