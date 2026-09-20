@@ -167,6 +167,14 @@ describe('§1 every procedure is pinned to a tier', () => {
       // state - those stay behind marketplace.manage. It reached the public
       // surface without being written down here, which is exactly the drift
       // this list exists to catch.
+      // THE EDITORIAL PRODUCT PICKS, the mirror of featuredProviders below and
+      // public for the same reason: the marketplace home and the category
+      // pages that render them are public. It exposes strictly LESS than the
+      // catalogue already does - the fields on a product card, resolved
+      // through publicProductFilter, so an archived or draft product cannot
+      // appear in a premium slot after vanishing from the list beneath it. No
+      // supplier contact, no stock position, no margin.
+      'marketplace.featuredProducts',
       'marketplace.featuredProviders',
       'marketplace.get',
       'marketplace.importTemplate',

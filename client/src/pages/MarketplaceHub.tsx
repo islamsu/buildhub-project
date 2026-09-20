@@ -166,6 +166,8 @@ export default function MarketplaceHub() {
   // reach them. Commercial placement is rendered on the vendors directory,
   // in its own section, under the Sponsored label.
   const { data: featured = [] } = trpc.marketplace.featuredProviders.useQuery();
+  /* The editorial product picks, for the strip beside the provider ones. */
+  const { data: featuredProducts = [] } = trpc.marketplace.featuredProducts.useQuery({ limit: 4 });
   const featuredVendors = featured
     .filter(v => !['Design', 'Renovation'].includes(v.featuredCategory)).slice(0, 4);
   const featuredDesigners = featured.filter(v => v.featuredCategory === 'Design').slice(0, 3);
@@ -284,6 +286,77 @@ export default function MarketplaceHub() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/*
+          FEATURED PRODUCTS, beside Featured Providers and above the section
+          cards - the owner's decision that Featured is PRIME.
+
+          `products.featured` had existed for a long time and did exactly one
+          thing: it broke ties in the catalogue's ORDER BY. A product BuildHub
+          had deliberately chosen appeared slightly higher in a list and
+          nowhere else, so the editorial decision was invisible to the person
+          it was made for.
+
+          EDITORIAL, AND SAID SO. The badge names it, in words and with an
+          icon, because a paid placement and a curated one must never be
+          distinguishable by hue alone. The paid slots have their own
+          components and their own label, deliberately unshared.
+
+          Hidden entirely when nothing is curated. No heading over an empty
+          grid, and no invented product - a fabricated editorial pick is a
+          claim BuildHub made about a supplier it never chose.
+        */}
+        {featuredProducts.length > 0 && (
+          <div className="container pt-8 pb-2" data-testid="hub-featured-products">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <BadgeCheck className="w-5 h-5 text-emerald-600" />
+                {lang === 'ar' ? 'منتجات مختارة' : 'Featured Products'}
+              </h3>
+              <button
+                className="text-sm text-primary font-medium hover:underline"
+                onClick={() => navigate('/marketplace/products')}
+              >
+                {t('marketHub.viewAll')}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {featuredProducts.map(product => (
+                <Card
+                  key={product.id}
+                  data-testid={`hub-featured-product-${product.id}`}
+                  data-placement-kind="featured"
+                  className="group cursor-pointer overflow-hidden border-emerald-200 bg-emerald-50/40 ring-1 ring-emerald-500/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl dark:border-emerald-900 dark:bg-emerald-950/20"
+                  onClick={() => navigate(`/marketplace/products/${product.id}`)}
+                >
+                  <div className="p-4">
+                    <div className="mb-3 flex items-center gap-1.5">
+                      <BadgeCheck className="h-3.5 w-3.5 text-emerald-600" />
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                        {lang === 'ar' ? 'مختار' : 'Featured'}
+                      </span>
+                    </div>
+                    <p className="line-clamp-2 font-semibold group-hover:text-primary">
+                      {(lang === 'ar' && product.nameAr) ? product.nameAr : product.name}
+                    </p>
+                    {product.brand && (
+                      <p className="mt-1 text-xs text-muted-foreground">{product.brand}</p>
+                    )}
+                    {/* Only what the row actually holds. No rating, no stock,
+                        no review count - a premium card is a more visible
+                        card, not a more inventive one. */}
+                    {product.price && (
+                      <p className="mt-2 text-sm font-medium">
+                        {product.currency ?? 'EGP'} {Number(product.price).toLocaleString()}
+                        {product.unit ? <span className="text-muted-foreground"> / {product.unit}</span> : null}
+                      </p>
+                    )}
+                  </div>
+                </Card>
+              ))}
             </div>
           </div>
         )}

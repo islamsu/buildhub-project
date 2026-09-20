@@ -28,6 +28,7 @@ import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttach
 import { acceptQuotationSecure, closeRfqSecure, rejectQuotationSecure } from './quotationWorkflow';
 import { withdrawQuotationSecure } from './quotationWithdrawal';
 import { adminAttention } from './adminAttention';
+import { listFeaturedProducts } from './featuredProducts';
 import { aiChatLimiters, authLimiters, contentLimiters, getClientIp } from './_core/rateLimit';
 import { recordEventAsync } from './analytics/events';
 import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
@@ -1973,6 +1974,21 @@ const marketplaceRouter = router({
    * advertiser to fall back to and inventing one would be fabricating a
    * business relationship.
    */
+  /**
+   * EDITORIAL featured products, the mirror of featuredProviders.
+   *
+   * Public and exposing strictly less than the catalogue already does: the
+   * same fields a product card shows. No supplier contact, no stock position,
+   * no margin - a premium slot is a more visible card, not a more revealing
+   * one.
+   */
+  featuredProducts: publicProcedure
+    .input(z.object({
+      category: z.string().max(MAX_SEARCH_LENGTH).optional(),
+      limit: z.number().int().positive().max(24).optional(),
+    }).optional())
+    .query(async ({ input }) => listFeaturedProducts(input ?? {})),
+
   masterProvider: publicProcedure
     .input(z.object({ category: z.string().max(MAX_SEARCH_LENGTH).optional() }).optional())
     .query(async ({ input }) => masterProvider(input?.category)),
