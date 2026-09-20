@@ -23,14 +23,33 @@ import { readSourceForAssertions } from './_testing/sourceText';
 const NAVBAR = readSourceForAssertions(readFileSync('client/src/components/Navbar.tsx', 'utf8'));
 const MARKET = readSourceForAssertions(readFileSync('client/src/pages/MarketplaceHub.tsx', 'utf8'));
 
+/**
+ * The source immediately before an anchor, and a LOUD failure when the anchor
+ * has moved.
+ *
+ * `indexOf` returns -1 for a missing anchor, and slicing from -1 - 500 hands
+ * back a window from somewhere else in the file entirely. These tests then
+ * assert against whatever happened to be there: sometimes a false pass,
+ * sometimes a false failure. The bell's anchor did move - it now carries a
+ * tab in its destination - and this test reported a missing aria-label that
+ * was still present three lines above the window it was reading.
+ */
+function sourceBefore(source: string, anchor: string, chars: number): string {
+  const at = source.indexOf(anchor);
+  if (at === -1) throw new Error(`anchor "${anchor}" is no longer in the source - rewire this test`);
+  return source.slice(Math.max(0, at - chars), at);
+}
+
 describe('icon-only buttons carry a name', () => {
   it('the notifications button', () => {
-    const block = NAVBAR.slice(NAVBAR.indexOf("navigate('/messages')") - 500, NAVBAR.indexOf("navigate('/messages')"));
+    // The bell lands on the notifications tab: its badge counts unread
+    // notifications, and without the tab it opened on conversations.
+    const block = sourceBefore(NAVBAR, "navigate('/messages?tab=notifications')", 500);
     expect(block).toMatch(/aria-label=/);
   });
 
   it('the mobile menu toggle - the only way to navigate on a phone', () => {
-    const block = NAVBAR.slice(NAVBAR.indexOf('setMobileOpen(!mobileOpen)') - 600, NAVBAR.indexOf('setMobileOpen(!mobileOpen)'));
+    const block = sourceBefore(NAVBAR, 'setMobileOpen(!mobileOpen)', 600);
     expect(block).toMatch(/aria-label=/);
     // Its state is announced too: "open menu" and "close menu" are different
     // actions and a toggle that always says one of them is lying half the time.
@@ -47,7 +66,11 @@ describe('icon-only buttons carry a name', () => {
 
 describe('inputs are named by a label, not by a placeholder', () => {
   it('the marketplace search field', () => {
-    const block = MARKET.slice(MARKET.indexOf('marketHub.searchPlaceholder') - 400, MARKET.indexOf('marketHub.searchPlaceholder') + 200);
+    // Same hardening as the two above: a moved anchor must fail loudly rather
+    // than hand back a window from elsewhere in the file.
+    const searchAt = MARKET.indexOf('marketHub.searchPlaceholder');
+    expect(searchAt, 'the search box anchor has moved - rewire this test').toBeGreaterThan(-1);
+    const block = MARKET.slice(Math.max(0, searchAt - 400), searchAt + 200);
     expect(block).toMatch(/aria-label=\{t\('marketHub\.searchPlaceholder'\)\}/);
   });
 

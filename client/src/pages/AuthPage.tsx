@@ -365,6 +365,7 @@ export default function AuthPage() {
             {ROLES.map(role => (
               <button
                 key={role.id}
+                data-testid={`auth-role-${role.id}`}
                 onClick={() => setSelectedRole(role.id)}
                 className={`p-4 rounded-xl border-2 text-left transition-all ${
                   selectedRole === role.id
@@ -407,6 +408,7 @@ export default function AuthPage() {
           {!isLoginMode && !isOAuthMode && <Button
             className="w-full gap-2"
             size="lg"
+            data-testid="auth-signup-submit"
             disabled={!selectedRole || updateRole.isPending || signUp.isPending
               || (!isAuthenticated && (username.trim().length < 3 || !email.trim() || password.length < 8))}
             onClick={handleContinue}

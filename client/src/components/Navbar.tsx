@@ -124,7 +124,12 @@ export default function Navbar() {
                   size="icon"
                   aria-label={lang === 'ar' ? 'الرسائل والإشعارات' : 'Messages and notifications'}
                   className={`relative ${isTransparent ? 'text-white/80 hover:text-white hover:bg-white/10' : ''}`}
-                  onClick={() => navigate('/messages')}
+                  /* The badge on this button counts NOTIFICATIONS, so this
+                     is where it has to land. Without the tab a reader with
+                     one unread notification arrived on the conversations tab
+                     and was told there were none. */
+                  onClick={() => navigate('/messages?tab=notifications')}
+                  data-testid="navbar-notifications"
                 >
                   <Bell className="w-4 h-4" />
                   {(notifData?.count ?? 0) > 0 && (

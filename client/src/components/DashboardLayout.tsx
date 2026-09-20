@@ -287,6 +287,31 @@ function AttentionBadge({ queue, attention }: {
   );
 }
 
+/**
+ * UNREAD NOTIFICATIONS, BESIDE THE ENTRY THAT OPENS THEM.
+ *
+ * Deliberately quieter than AttentionBadge and deliberately NOT a "?" on
+ * error. The admin queues are shared operational work and a count that
+ * failed to load has to say so, because an administrator acts on its absence.
+ * This is one person's own unread mail: a momentary blank while a query
+ * retries is ordinary, and decorating it with an error mark would train
+ * people to ignore the one place a mark means something.
+ */
+function UnreadBadge({ show, unread }: {
+  show: boolean;
+  unread: { data?: { count: number } | undefined };
+}) {
+  const count = unread.data?.count ?? 0;
+  if (!show || count <= 0) return null;
+  return (
+    <span
+      data-testid="nav-unread-notifications"
+      data-unread-count={count}
+      className="ms-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold text-destructive-foreground"
+    >{count > 99 ? '99+' : count}</span>
+  );
+}
+
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
 const MIN_WIDTH = 200;
@@ -459,6 +484,47 @@ function DashboardLayoutContent({
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
+  /*
+   * UNREAD NOTIFICATIONS, FOR EVERY ROLE.
+   *
+   * This layout is where a supplier, a contractor, an engineer and a project
+   * manager all WORK, and it carried no notification indicator at all - the
+   * bell lives in the marketing/marketplace Navbar, which a person inside
+   * their workspace never sees. A supplier whose quotation had just been
+   * accepted had nothing on screen to tell them. Found by walking the whole
+   * journey rather than by testing the capability
+   * (evidence/zg-journey-homeowner.mjs).
+   *
+   * The count sits on the Messages entry, which is the destination that
+   * holds notifications, so the badge and the page it opens are the same
+   * thing. Refetched on an interval for the same reason the admin counts
+   * are: a workspace left open all afternoon should not show this morning's
+   * state.
+   */
+  const unreadNotifications = trpc.notifications.unreadCount.useQuery(undefined, {
+    enabled: !!user,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+  const unreadMessages = trpc.messages.unreadCount.useQuery(undefined, {
+    enabled: !!user,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+  /*
+   * BOTH, because the entry is one destination holding both. A badge that
+   * counted only notifications would send somebody to a page that opens on
+   * conversations; one that counted only messages would hide the notice
+   * telling a supplier they had won the job. The page opens on whichever tab
+   * has the unread thing, so the number and the landing agree.
+   */
+  const unread = {
+    data: (unreadNotifications.data || unreadMessages.data)
+      ? { count: (unreadNotifications.data?.count ?? 0) + (unreadMessages.data?.count ?? 0) }
+      : undefined,
+  };
   const menuKeys = isAdminViewer
     ? adminMenuItems(adminMe?.permissions ?? [])
     : ROLE_MENU_KEYS[userRole as keyof typeof ROLE_MENU_KEYS] ?? HOMEOWNER_MENU_KEYS;
@@ -600,6 +666,7 @@ function DashboardLayoutContent({
                       />
                       <span>{item.label}</span>
                       <AttentionBadge queue={item.attentionQueue} attention={attention} />
+                      <UnreadBadge show={item.path === '/messages'} unread={unread} />
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

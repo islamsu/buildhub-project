@@ -262,11 +262,13 @@ export default function RFQPage() {
                 </DialogHeader>
                 <div className="space-y-4 mt-2">
                   <Input
+                    data-testid="rfq-title"
                     placeholder={t('rfq.title.placeholder')}
                     value={form.title}
                     onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
                   />
                   <Textarea
+                    data-testid="rfq-description"
                     placeholder={t('rfq.description.placeholder')}
                     rows={4}
                     value={form.description}
@@ -451,6 +453,7 @@ export default function RFQPage() {
 
                   <Button
                     className="w-full gap-2"
+                    data-testid="rfq-create-submit"
                     onClick={() => {
                       // Narrows `category` off '' for real rather than casting
                       // it away. The button is disabled in this state, so this

@@ -1,0 +1,26 @@
+PASS  1. REGISTER: a new visitor is asked who they are before anything else
+PASS  2. REGISTER: choosing Homeowner opens the details they have to give
+PASS  3. REGISTER: every field the form asks for is fillable
+PASS  4. REGISTER: with the form filled, the account button becomes available
+PASS  5. REGISTER: the account exists in the database afterwards  [1 row(s)]
+PASS  6. REGISTER: and is created as a homeowner, not an administrator  [homeowner]
+PASS  7. EMPTY: a brand-new account has NO projects - none are invented for it  [0 cards]
+PASS  8. EMPTY: and nothing has been spent, truthfully rather than decoratively  [Overview 👋 |  | Welcome back, Probe! |  | AI Assistant | New Project |  | 0 |  | Total Projects |  | 0 |  | Active Projects |  | EGP 0 |  | Total Budget |  | EGP 0 |  | Total Spent |  | Explore Marketplace |  | Get Quotes |  | AI Assistant |  | Messages |  | My]
+PASS  9. PROJECT: creating one puts it on the dashboard, not just in the database  [project 80]
+PASS  10. RFQ: the category list offers the category a customer needs  [Materials]
+PASS  11. RFQ: posting one stores a real request  [rfq 128]
+PASS  12. RFQ: and the customer can see it on their own list afterwards
+PASS  13. DISCOVERY: an approved supplier can find the request in their feed  [1 in feed]
+PASS  14. LEAD: the supplier takes the lead up before they may price it  [1 qualified enquiry, opened=yes]
+PASS  15. BID: the supplier can price the work  [quotation 28]
+PASS  16. NOTIFIED: the customer is told a price arrived, rather than having to look  [1 notification(s)]
+PASS  17. QUOTE: the customer sees the price AND who is offering it  [price true, supplier true — BuildHub | Home | Dashboard | AI Assistant | Marketplace | Get Quotes | Pricing | العربية | 1 | P | Probe | · | Free | All requests | Marble for villa muaajk01 |  | Request #128 · 9/20/2026 |  | open | Your request |  | Forty square metres of marble. |  | Category |  | Materials |  | Withdraw this request |  | New qu]
+PASS  18. ACCEPT: the customer has a control to accept the bid they were shown
+PASS  19. ACCEPT: and is asked to confirm - a commitment is not one misclick away
+PASS  20. ACCEPT: the bid is accepted in the database  [accepted]
+PASS  21. ACCEPT: and the request stops being open, so nobody else bids on settled work  [awarded]
+PASS  22. CLOSED: the supplier is told they won, rather than finding out by chance  [1 notification(s)]
+PASS  23. CLOSED: the supplier WORKSPACE says there is something to read  [badge "1"]
+PASS  24. CLOSED: and reads "Quotation accepted" on their own screen, in words
+
+24/24 checks passed

@@ -476,7 +476,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                       size="sm"
                       variant="ghost"
                       className="w-full gap-1.5 text-xs"
-                      data-testid="quotation-comparison-open"
+                      data-testid={`quotation-open-${q.id}`}
                     >
                       <FileText className="w-3.5 h-3.5" /> {t('rfq.viewQuotation')}
                     </Button>
@@ -669,6 +669,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-emerald-600 hover:bg-emerald-700"
+              data-testid="quotation-accept-confirm"
               onClick={() => confirmAccept && acceptMutation.mutate({ quotationId: confirmAccept.id, rfqId })}
               disabled={acceptMutation.isPending}
             >

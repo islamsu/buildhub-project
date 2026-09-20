@@ -80,15 +80,15 @@ export default function HomeownerDashboard() {
             </Button>
             <Dialog open={newProjectOpen} onOpenChange={setNewProjectOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" className="gap-2"><Plus className="w-4 h-4" /> {t('project.new')}</Button>
+                <Button size="sm" className="gap-2" data-testid="project-new-trigger"><Plus className="w-4 h-4" /> {t('project.new')}</Button>
               </DialogTrigger>
               <DialogContent className="max-w-lg">
                 <DialogHeader>
                   <DialogTitle>{t('project.new')}</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 mt-2">
-                  <Input placeholder={t('project.name')} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
-                  <Textarea placeholder={t('project.description')} rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+                  <Input data-testid="project-title" placeholder={t('project.name')} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+                  <Textarea data-testid="project-description" placeholder={t('project.description')} rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
                   <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v as any }))}>
                     <SelectTrigger><SelectValue placeholder={t('project.type')} /></SelectTrigger>
                     <SelectContent>
@@ -101,10 +101,10 @@ export default function HomeownerDashboard() {
                     </SelectContent>
                   </Select>
                   <div className="grid grid-cols-2 gap-3">
-                    <Input placeholder={`${t('project.budget')} (${t('common.egp')})`} type="number" value={form.budget} onChange={e => setForm(f => ({ ...f, budget: e.target.value }))} />
-                    <Input placeholder={t('project.location')} value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
+                    <Input data-testid="project-budget" placeholder={`${t('project.budget')} (${t('common.egp')})`} type="number" value={form.budget} onChange={e => setForm(f => ({ ...f, budget: e.target.value }))} />
+                    <Input data-testid="project-location" placeholder={t('project.location')} value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
                   </div>
-                  <Button className="w-full" onClick={() => createProject.mutate({ ...form, budget: form.budget ? parseFloat(form.budget) : undefined })} disabled={createProject.isPending || !form.title}>
+                  <Button className="w-full" data-testid="project-create-submit" onClick={() => createProject.mutate({ ...form, budget: form.budget ? parseFloat(form.budget) : undefined })} disabled={createProject.isPending || !form.title}>
                     {createProject.isPending ? t('common.loading') : t('project.create')}
                   </Button>
                 </div>
@@ -168,7 +168,7 @@ export default function HomeownerDashboard() {
                   const StatusIcon = sc.icon;
                   const spentPct = project.budget ? Math.min(100, (Number(project.spent) / Number(project.budget)) * 100) : 0;
                   return (
-                    <div key={project.id} className="p-4 rounded-xl border border-border hover:border-primary/30 hover:bg-muted/30 transition-all cursor-pointer" onClick={() => navigate(`/projects/${project.id}`)}>
+                    <div key={project.id} data-testid={`project-card-${project.id}`} className="p-4 rounded-xl border border-border hover:border-primary/30 hover:bg-muted/30 transition-all cursor-pointer" onClick={() => navigate(`/projects/${project.id}`)}>
                       <div className="flex items-start justify-between gap-3 mb-3">
                         <div className="min-w-0">
                           <h3 className="font-semibold truncate">{project.title}</h3>
