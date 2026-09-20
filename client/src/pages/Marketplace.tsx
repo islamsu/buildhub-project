@@ -13,6 +13,7 @@ import { Search, SlidersHorizontal, Star, Package, ShoppingCart, Zap, ArrowLeft,
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
 import { MasterProductSlot, PlacementBadge, ProductSpotlight } from '@/components/MasterPlacement';
+import { FeaturedProductCard } from '@/components/FeaturedProductCard';
 
 /**
  * THIS FILE USED TO HOLD TWO HAND-KEPT CATEGORY MAPS.
@@ -245,32 +246,12 @@ export default function Marketplace() {
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {editorialProducts.map(product => (
-                      <Card
+                      <FeaturedProductCard
                         key={`editorial-${product.id}`}
-                        data-testid={`editorial-product-${product.id}`}
-                        className="group cursor-pointer overflow-hidden border-emerald-200 bg-emerald-50/40 ring-1 ring-emerald-500/20 transition-all hover:-translate-y-0.5 hover:shadow-lg dark:border-emerald-900 dark:bg-emerald-950/20"
-                        onClick={() => navigate(`/marketplace/products/${product.id}`)}
-                      >
-                        <CardContent className="p-4">
-                          <div className="mb-2 flex items-center gap-1.5">
-                            <BadgeCheck className="h-3.5 w-3.5 text-emerald-600" />
-                            <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
-                              {lang === 'ar' ? 'مختار' : 'Featured'}
-                            </span>
-                          </div>
-                          <p className="line-clamp-2 font-semibold group-hover:text-primary">
-                            {(lang === 'ar' && product.nameAr) ? product.nameAr : product.name}
-                          </p>
-                          {product.brand && <p className="mt-1 text-xs text-muted-foreground">{product.brand}</p>}
-                          {/* Only what the row holds. No rating, no stock. */}
-                          {product.price && (
-                            <p className="mt-2 text-sm font-medium">
-                              {product.currency ?? 'EGP'} {Number(product.price).toLocaleString()}
-                              {product.unit ? <span className="text-muted-foreground"> / {product.unit}</span> : null}
-                            </p>
-                          )}
-                        </CardContent>
-                      </Card>
+                        product={product as any}
+                        lang={lang}
+                        onOpen={() => navigate(`/marketplace/products/${product.id}`)}
+                      />
                     ))}
                   </div>
                   <div className="mt-4 h-px bg-border" />

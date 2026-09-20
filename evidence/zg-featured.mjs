@@ -104,7 +104,7 @@ try {
   await settle(2000);
 
   const home = JSON.parse(await page.evaluate(`
-    const prod = document.querySelector('[data-testid="hub-featured-product-${featuredProductId}"]');
+    const prod = document.querySelector('[data-testid="featured-product-${featuredProductId}"]');
     const strip = document.querySelector('[data-testid="hub-featured-products"]');
     const sections = document.querySelector('[data-testid^="hub-stat-"]');
     const text = document.body.innerText;
@@ -117,7 +117,11 @@ try {
       providerNamed: /QA Lighting Supplier/.test(text),
       ordinaryShown: /QA Ordinary Lamp/.test(text),
       stripTop, sectionTop,
-      badgeText: prod ? prod.innerText.replace(/\\s+/g, ' ').slice(0, 60) : '',
+      badgeText: prod ? prod.innerText.replace(/\\s+/g, ' ').slice(0, 120) : '',
+      // Section 7: a product card is not a provider card with different data.
+      namesSupplier: prod ? /QA Lighting Supplier/.test(prod.innerText) : false,
+      namesCategory: prod ? prod.innerText.includes('${MINE}') : false,
+      hasAction: !!document.querySelector('[data-testid="featured-product-open-${featuredProductId}"]'),
       kind: prod ? prod.getAttribute('data-placement-kind') : null,
     });
   `));
@@ -136,6 +140,9 @@ try {
   check(home.kind === 'featured' && /featured/i.test(home.badgeText),
     'HOME: and the card SAYS it is editorial, in words rather than colour alone',
     home.badgeText);
+  check(home.namesSupplier && home.namesCategory && home.hasAction,
+    'HOME: the product card is built for a PRODUCT - supplier, category, action',
+    `supplier ${home.namesSupplier}, category ${home.namesCategory}, action ${home.hasAction}`);
 
   /* ── ITS OWN CATEGORY ────────────────────────────────────────────────── */
   /*

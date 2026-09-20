@@ -25,7 +25,7 @@
  *   pick is a claim BuildHub made about a supplier it did not choose.
  */
 import { and, desc, eq } from 'drizzle-orm';
-import { products } from '../drizzle/schema';
+import { products, users } from '../drizzle/schema';
 import { requireDb } from './_core/requireDb';
 import { publicProductFilter } from './productLifecycle';
 
@@ -40,6 +40,12 @@ export type FeaturedProduct = {
   unit: string | null;
   images: string | null;
   supplierId: number | null;
+  /**
+   * WHO SELLS IT. A premium product card that does not name its supplier is
+   * an advertisement for a thing rather than an introduction to a business,
+   * and a buyer comparing two lamps is comparing two companies.
+   */
+  supplierName: string | null;
 };
 
 /**
@@ -69,7 +75,9 @@ export async function listFeaturedProducts(
     unit: products.unit,
     images: products.images,
     supplierId: products.supplierId,
+    supplierName: users.name,
   }).from(products)
+    .leftJoin(users, eq(users.id, products.supplierId))
     .where(and(...conditions))
     // Newest deliberate pick first. Ties broken by id so the order is stable
     // between two requests - a premium strip that reshuffles on refresh reads

@@ -1,5 +1,6 @@
 import { useLanguage } from '@/contexts/LanguageContext';
 import Navbar from '@/components/Navbar';
+import { FeaturedProductCard } from '@/components/FeaturedProductCard';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -325,37 +326,12 @@ export default function MarketplaceHub() {
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {featuredProducts.map(product => (
-                <Card
+                <FeaturedProductCard
                   key={product.id}
-                  data-testid={`hub-featured-product-${product.id}`}
-                  data-placement-kind="featured"
-                  className="group cursor-pointer overflow-hidden border-emerald-200 bg-emerald-50/40 ring-1 ring-emerald-500/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl dark:border-emerald-900 dark:bg-emerald-950/20"
-                  onClick={() => navigate(`/marketplace/products/${product.id}`)}
-                >
-                  <div className="p-4">
-                    <div className="mb-3 flex items-center gap-1.5">
-                      <BadgeCheck className="h-3.5 w-3.5 text-emerald-600" />
-                      <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
-                        {lang === 'ar' ? 'مختار' : 'Featured'}
-                      </span>
-                    </div>
-                    <p className="line-clamp-2 font-semibold group-hover:text-primary">
-                      {(lang === 'ar' && product.nameAr) ? product.nameAr : product.name}
-                    </p>
-                    {product.brand && (
-                      <p className="mt-1 text-xs text-muted-foreground">{product.brand}</p>
-                    )}
-                    {/* Only what the row actually holds. No rating, no stock,
-                        no review count - a premium card is a more visible
-                        card, not a more inventive one. */}
-                    {product.price && (
-                      <p className="mt-2 text-sm font-medium">
-                        {product.currency ?? 'EGP'} {Number(product.price).toLocaleString()}
-                        {product.unit ? <span className="text-muted-foreground"> / {product.unit}</span> : null}
-                      </p>
-                    )}
-                  </div>
-                </Card>
+                  product={product as any}
+                  lang={lang}
+                  onOpen={() => navigate(`/marketplace/products/${product.id}`)}
+                />
               ))}
             </div>
           </div>
