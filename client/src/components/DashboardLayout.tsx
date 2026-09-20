@@ -30,7 +30,7 @@ import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import LanguageToggle from "./LanguageToggle";
 import { workspaceHref, type SectionId, type WorkspaceRole } from "@shared/roleWorkspaceSections";
-import { adminMenuFor } from "@/lib/adminNavigation";
+import { ADMIN_ATTENTION_QUEUE, adminMenuFor } from "@/lib/adminNavigation";
 import { useHashSection, revealSection } from "@/hooks/useSectionAnchor";
 
 /**
@@ -236,27 +236,6 @@ const ADMIN_ICONS: Record<string, typeof LayoutDashboard> = {
  * them has a "waiting for you" state that is true rather than merely
  * non-empty.
  */
-const ADMIN_ATTENTION_QUEUE: Readonly<Record<string, string>> = {
-  /*
-   * User Management carries the NAME CHANGES count. The queue is a tab inside
-   * that section rather than a destination of its own, so the sidebar entry
-   * that owns the tab is the entry that must carry its number - otherwise the
-   * count exists on the server and nowhere a person can see it, which is how
-   * the queue came to be reported as missing in the first place.
-   *
-   * The badge's title says what it is counting, and the tab inside the
-   * section repeats the same number from the same query, so an administrator
-   * who follows the badge is not left looking at the user directory
-   * wondering what the sidebar meant.
-   */
-  '/admin/users': 'nameChanges',
-  '/admin/enquiries': 'enquiries',
-  '/admin/registrations': 'registrations',
-  '/admin/disputes': 'disputes',
-  '/admin/support': 'support',
-  '/admin/reviews': 'reviews',
-};
-
 const adminMenuItems = (permissions: readonly string[]): MenuItem[] =>
   adminMenuFor(permissions).map(entry => ({
     icon: ADMIN_ICONS[entry.path] ?? LayoutDashboard,

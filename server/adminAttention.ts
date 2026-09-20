@@ -62,6 +62,41 @@ export type AttentionCount = {
 
 export type AdminAttention = Record<AttentionQueue, AttentionCount>;
 
+/**
+ * WHAT EACH QUEUE MEANS AND WHERE IT LIVES, in one place and separate from
+ * the counting. A badge and the page it opens have to answer the same
+ * question, and they do that by being handed the same question rather than
+ * by two pieces of code being written to agree. Keeping this out of the
+ * query also lets a test read it without a database, which is how a queue
+ * that is counted but rendered nowhere gets caught.
+ */
+export const ATTENTION_META: Readonly<Record<AttentionQueue, { meaning: string; href: string }>> = {
+  enquiries: {
+    meaning: 'unassigned, on a request that is still open',
+    href: '/admin/enquiries?assignee=none&rfqStatus=open',
+  },
+  registrations: {
+    meaning: 'professional registrations awaiting a decision',
+    href: '/admin/registrations',
+  },
+  disputes: {
+    meaning: 'disputes still being worked on',
+    href: '/admin/disputes',
+  },
+  support: {
+    meaning: 'tickets waiting on us, not on the requester',
+    href: '/admin/support',
+  },
+  reviews: {
+    meaning: 'reported reviews not yet resolved',
+    href: '/admin/reviews',
+  },
+  nameChanges: {
+    meaning: 'name change requests still open',
+    href: '/admin/name-changes',
+  },
+};
+
 /** Provider roles whose registration goes through compliance review. */
 const PROVIDER_ROLES = ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'] as const;
 
@@ -103,36 +138,16 @@ export async function adminAttention(): Promise<AdminAttention> {
       ) as unknown as Promise<{ total: number }[]>),
     ]);
 
-  return {
-    enquiries: {
-      count: enquiries.actionable,
-      meaning: 'unassigned, on a request that is still open',
-      href: '/admin/enquiries?assignee=none&rfqStatus=open',
-    },
-    registrations: {
-      count: registrations,
-      meaning: 'professional registrations awaiting a decision',
-      href: '/admin/registrations',
-    },
-    disputes: {
-      count: openDisputes,
-      meaning: 'disputes still being worked on',
-      href: '/admin/disputes',
-    },
-    support: {
-      count: openSupport,
-      meaning: 'tickets waiting on us, not on the requester',
-      href: '/admin/support',
-    },
-    reviews: {
-      count: reportedReviews,
-      meaning: 'reported reviews not yet resolved',
-      href: '/admin/reviews',
-    },
-    nameChanges: {
-      count: nameChanges,
-      meaning: 'name change requests still open',
-      href: '/admin/name-changes',
-    },
+  const counts: Record<AttentionQueue, number> = {
+    enquiries: enquiries.actionable,
+    registrations,
+    disputes: openDisputes,
+    support: openSupport,
+    reviews: reportedReviews,
+    nameChanges,
   };
+
+  return Object.fromEntries(ATTENTION_QUEUES.map(
+    queue => [queue, { count: counts[queue], ...ATTENTION_META[queue] }],
+  )) as AdminAttention;
 }
