@@ -202,7 +202,8 @@ import {
   requireTicketAccess, transitionTicket, listSupportTickets, listMyTickets,
   ticketThread, statusAfterUserReply, SupportTicketError,
 } from './supportTickets';
-import { requireProjectAccess, readableProjectIds, liveMembership } from './projectMembership';
+import { requireProjectAccess, readableProjectIds, liveMembership, canAccessProject } from './projectMembership';
+import { assertOwnedUploads } from './_core/ownedUpload';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSponsorships, vendorSubscriptions } from '../drizzle/schema';
 import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
@@ -2648,30 +2649,10 @@ const marketplaceRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
-      const prefix = `/manus-storage/product-images/user-${ctx.user.id}/`;
-      for (const image of input.images) {
-        // startsWith ALONE IS NOT ENOUGH. `.../user-5/../../secret.png` begins
-        // with the caller's own prefix and then climbs out of it, so the
-        // remainder is checked for traversal too. The storage proxy would
-        // refuse such a key on READ, but without this the row would still
-        // store a path that means something other than it appears to - and the
-        // next reader of that column has no reason to expect one.
-        if (!image.startsWith(prefix)) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'You may only use images you uploaded.',
-          });
-        }
-        const remainder = image.slice(prefix.length);
-        const traverses = remainder.length === 0
-          || remainder.split('/').some(segment => segment.length === 0 || segment === '.' || segment === '..');
-        if (traverses) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'You may only use images you uploaded.',
-          });
-        }
-      }
+      // One rule, shared with the portfolio, in server/_core/ownedUpload.ts -
+      // including the traversal defence, because a second copy of a security
+      // check is how the two start refusing different things.
+      assertOwnedUploads(input.images, 'product-images', ctx.user.id);
       // Duplicates would render the same photo twice and make "reorder" lie.
       if (new Set(input.images).size !== input.images.length) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'That image is already on this product.' });
@@ -3215,7 +3196,31 @@ const rfqRouter = router({
     // become a second way to learn what an RFQ contains.
     const items = await db.select().from(rfqItems)
       .where(eq(rfqItems.rfqId, rfq.id)).orderBy(rfqItems.position, rfqItems.id);
-    return { ...rfq, items };
+
+    /**
+     * THE PROJECT THIS WAS RAISED FOR, resolved to a NAME the buyer recognises.
+     *
+     * `rfqs.projectId` has been written since the RFQ form gained its project
+     * selector, and this procedure has always returned it - as a bare integer
+     * nothing rendered. A buyer could link an RFQ to a project and then never
+     * be told, on the RFQ's own page, which project that was.
+     *
+     * ACCESS IS RE-CHECKED HERE RATHER THAN ASSUMED. Linking happened at
+     * creation; membership can be withdrawn afterwards, and removal is
+     * supposed to revoke access. Reading the title off `projectId` alone would
+     * make the RFQ page a way to keep reading the name of a project somebody
+     * has been removed from. So the title is resolved only while `read` still
+     * holds, and the caller is told plainly when it no longer does - `linked:
+     * true, project: null` is a fact about their own RFQ, not a leak, since
+     * they are the person who created the link.
+     */
+    let project: { id: number; title: string } | null = null;
+    if (rfq.projectId != null && await canAccessProject(db, rfq.projectId, ctx.user.id, 'read')) {
+      const [row] = await db.select({ id: projects.id, title: projects.title })
+        .from(projects).where(eq(projects.id, rfq.projectId)).limit(1);
+      project = row ?? null;
+    }
+    return { ...rfq, items, project, projectLinked: rfq.projectId != null };
   }),
   create: protectedProcedure
     .input(z.object({
@@ -5778,6 +5783,11 @@ const portfolioRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      // A portfolio image is readable by any signed-in user, so the protection
+      // is on the CLAIM, not the read: without this a provider could point
+      // their portfolio at a rival's photograph and pass the work off as their
+      // own. Same rule the product catalogue uses, from the same module.
+      if (input.images) assertOwnedUploads(input.images, 'portfolio-images', ctx.user.id);
       const result = await db.insert(portfolioItems).values({
         ...input,
         userId: ctx.user.id,
@@ -5801,6 +5811,9 @@ const portfolioRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       const { id, images, ...fields } = input;
+      // Checked on EDIT as well as on create - an item can be created clean and
+      // then have somebody else's photograph added to it.
+      if (images) assertOwnedUploads(images, 'portfolio-images', ctx.user.id);
       const [owned] = await db.select({ id: portfolioItems.id })
         .from(portfolioItems).where(and(eq(portfolioItems.id, id), eq(portfolioItems.userId, ctx.user.id))).limit(1);
       if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Portfolio item not found' });

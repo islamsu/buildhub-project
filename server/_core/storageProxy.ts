@@ -188,6 +188,25 @@ export async function authorizeStorageKey(key: string, user: AuthenticatedUser |
     return true;
   }
 
+  // Category B2: PORTFOLIO images - a provider's showcase, read by anyone
+  // signed in, for exactly the reasons above.
+  //
+  // THIS BRANCH WAS MISSING, and the consequence was not a boundary: it was a
+  // dead feature. `portfolio.uploadImage` writes `portfolio-images/user-<id>/`,
+  // PortfolioManager renders the returned `/manus-storage/...` URL in an <img>,
+  // and every one of those requests fell through to the closing `return false`
+  // - so a provider uploaded work samples that NOBODY could see, including
+  // themselves. The same omission had already happened once to `avatars/`,
+  // which is why the note above it exists; this is the third image family and
+  // the second time the classifier has been the thing left behind.
+  //
+  // The ownership rule lives on the write side, in
+  // server/_core/ownedUpload.ts, shared with the product catalogue: reading a
+  // portfolio photograph is not sensitive, claiming one as your own work is.
+  if (key.startsWith('portfolio-images/')) {
+    return true;
+  }
+
   // Category D: compliance/registration documents - owner only (+ admin above).
   if (key.startsWith('registration/')) {
     const [row] = await db.select({ userId: registrationDocumentSubmissions.userId })
