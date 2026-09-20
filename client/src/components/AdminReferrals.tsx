@@ -1,4 +1,5 @@
 import { AdminUserLink } from '@/components/AdminEntityLink';
+import { qualificationLabel, rewardSentence } from '@/lib/referralLabels';
 import { useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -99,7 +100,7 @@ export default function AdminReferrals() {
       <div className="space-y-1">
         {list.map(reward => (
           <div key={reward.id} className="flex flex-wrap items-center gap-1">
-            <span className="text-xs">{reward.rewardType}: {reward.rewardValue}</span>
+            <span className="text-xs">{rewardSentence(String(reward.rewardType), reward.rewardValue as number, lang)}</span>
             <Badge variant={rewardTone(reward.status) as any} className="text-[10px]">
               {rewardStatusLabel(reward.status)}
             </Badge>
@@ -280,7 +281,10 @@ export default function AdminReferrals() {
                           <AdminUserLink id={row.recipientUserId} name={row.recipientName} className="font-medium" />
                         </td>
                         <td className="p-2 text-muted-foreground">{row.campaignName}</td>
-                        <td className="p-2">{row.rewardType}: {row.rewardValue}</td>
+                        {/* The reward as words. An administrator explaining a
+                            grant to a supplier should be reading the same
+                            sentence the supplier sees, not a stored token. */}
+                        <td className="p-2">{rewardSentence(String(row.rewardType), row.rewardValue as number, lang)}</td>
                         <td className="p-2">
                           <Badge variant={rewardTone(row.status) as any}>{rewardStatusLabel(row.status)}</Badge>
                           {row.reversalReason && (
@@ -364,9 +368,9 @@ export default function AdminReferrals() {
                             {ar ? ' يومًا' : ' days'}
                           </p>
                         </td>
-                        <td className="p-2 text-xs">{row.qualificationType}</td>
+                        <td className="p-2 text-xs">{qualificationLabel(String(row.qualificationType), lang) ?? String(row.qualificationType)}</td>
                         <td className="p-2 text-xs">
-                          {row.rewardType}: {row.rewardValue}
+                          {rewardSentence(String(row.rewardType), row.rewardValue as number, lang)}
                           {row.rewardDurationDays ? ` · ${row.rewardDurationDays}d` : ''}
                         </td>
                         <td className="p-2 text-xs">
