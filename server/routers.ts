@@ -28,6 +28,7 @@ import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttach
 import { acceptQuotationSecure, closeRfqSecure, rejectQuotationSecure } from './quotationWorkflow';
 import { withdrawQuotationSecure } from './quotationWithdrawal';
 import { adminAttention } from './adminAttention';
+import { spentByProject, spentFor } from './projectSpend';
 import { listFeaturedProducts } from './featuredProducts';
 import { aiChatLimiters, authLimiters, contentLimiters, getClientIp } from './_core/rateLimit';
 import { recordEventAsync } from './analytics/events';
@@ -1198,7 +1199,17 @@ const projectsRouter = router({
     // membership to see it through.
     const ids = await readableProjectIds(db, ctx.user.id);
     if (ids.length === 0) return [];
-    return db.select().from(projects).where(inArray(projects.id, ids)).orderBy(desc(projects.createdAt));
+    const rows = await db.select().from(projects).where(inArray(projects.id, ids)).orderBy(desc(projects.createdAt));
+    /*
+     * `spent` IS DERIVED, never read from the column. The dashboard headlines
+     * this figure as "Total Spent"; the stored column is one no screen writes,
+     * so it was a constant zero sitting beside a project page that correctly
+     * totalled the expense log. One aggregate for the whole list, not one per
+     * project - see server/projectSpend.ts for why the column is left in
+     * place rather than dropped.
+     */
+    const totals = await spentByProject(db, ids);
+    return rows.map(row => ({ ...row, spent: spentFor(totals, row.id) }));
   }),
   directory: approvedProviderProcedure.input(z.object({
     page: z.number().int().min(0).default(0),
@@ -1242,9 +1253,12 @@ const projectsRouter = router({
     const access = await requireProjectAccess(db, input.id, ctx.user.id, 'read');
     const [project] = await db.select().from(projects).where(eq(projects.id, input.id));
     if (!project) throw new TRPCError({ code: 'NOT_FOUND' });
+    // Derived here too, from the same reader, so the record a project page
+    // holds and the row the dashboard lists cannot state different totals.
+    const totals = await spentByProject(db, [project.id]);
     // The caller's own capacity travels with the record so the UI can render
     // the right controls - it is a convenience, never the enforcement.
-    return { ...project, myProjectRole: access.projectRole };
+    return { ...project, spent: spentFor(totals, project.id), myProjectRole: access.projectRole };
   }),
   /**
    * WHO MAY START A PROJECT - the owner's decision, enforced HERE.
@@ -1622,12 +1636,20 @@ const projectsRouter = router({
       status: z.enum(['planning', 'active', 'on_hold', 'completed', 'cancelled']).optional(),
       progress: z.number().min(0).max(100).optional(),
       budget: z.number().optional(),
-      spent: z.number().optional(),
+      /*
+       * `spent` IS NO LONGER ACCEPTED. It was an optional field no screen
+       * sent, writing a column no screen reads - so a caller who did send it
+       * got `{ success: true }` for a write that changed nothing anyone would
+       * ever see. Spend is the sum of the expense log; to change it, log an
+       * expense. Whether a manually stated total should exist ALONGSIDE the
+       * log is an owner decision, and it would need its own field and a
+       * visible marker rather than a silent overwrite of this one.
+       */
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const { id, budget, spent, ...rest } = input;
+      const { id, budget, ...rest } = input;
       // AUTHORIZE FIRST, and throw. The predicate used to be the only guard:
       // `where(id = ? AND ownerId = ?)` simply matched no rows for anyone else
       // and the procedure still returned `{ success: true }` - reporting a
@@ -1637,7 +1659,6 @@ const projectsRouter = router({
       await db.update(projects).set({
         ...rest,
         budget: budget != null ? String(budget) : undefined,
-        spent: spent != null ? String(spent) : undefined,
       }).where(eq(projects.id, id));
       return { success: true };
     }),
