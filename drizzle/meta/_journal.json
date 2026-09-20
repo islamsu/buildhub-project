@@ -386,6 +386,13 @@
       "when": 1789600000000,
       "tag": "0054_quotation_withdrawal",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "5",
+      "when": 1789700000000,
+      "tag": "0055_message_pair_index",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,13 @@
+PASS  1. SETUP: one sender, one unrelated account, and twelve vendors to reach  [sender 649, vendors 12]
+PASS  2. NORMAL: six messages in one thread all go through  [200,200,200,200,200,200]
+PASS  3. FLOOD: blasting seventy-two messages across twelve vendors is stopped  [9 accepted, 63 refused]
+PASS  4. and the refusal is a rate limit, not an incidental error  [63/63 were TOO_MANY_REQUESTS; first other: none]
+PASS  5. and it says how long to wait rather than failing blankly  [Too many requests. Try again in 60s.]
+PASS  6. REAL: exactly the accepted messages were stored, and no refused one was  [stored 15, accepted 15]
+PASS  7. SCOPED: an unrelated account is not throttled by the flooder  [200 ]
+PASS  8. BREADTH: twenty cold approaches are allowed and the twenty-first is not  [20 accepted, 4 refused]
+PASS  9. and the refusal names the REASON - too many new conversations, not too fast  [You have started a lot of new conversations recently. Try again in 3539s.]
+PASS  10. CONTINUING: a thread already open still accepts a message after the limit  [200  ]
+PASS  11. REAL: the refused approaches were never delivered  [stored 21, accepted 21]
+
+11/11 checks passed

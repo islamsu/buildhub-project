@@ -161,3 +161,112 @@ describe('the limiter is actually wired to the endpoints that needed it', () => 
     expect(helper).toContain("code: 'TOO_MANY_REQUESTS'");
   });
 });
+
+/**
+ * ── MESSAGES, THE ONE CONTENT ENDPOINT THAT HAD NO BOUND ──────────────────
+ *
+ * BuildHub deliberately does NOT require a prior relationship before one
+ * account may message another: a customer is meant to be able to contact a
+ * vendor they have just found, and whether that should change is recorded as
+ * an owner decision. That policy is precisely why the send has to be bounded.
+ * With no relationship gate, the rate limit is the only thing between one
+ * stolen account and every vendor in the directory.
+ *
+ * Proven over the real endpoint before any of this existed
+ * (evidence/zg-messageflood.mjs, 4/7): seventy-eight messages to twelve
+ * strangers in a few seconds, every one delivered and every one notified.
+ *
+ * Two axes, because volume and breadth are different abuses, and the tests
+ * below keep them separable - a breadth rule that only ever fires because the
+ * volume rule fired first is a rule nobody has tested.
+ */
+describe('messaging is bounded on volume AND on breadth', () => {
+  beforeEach(() => resetContentLimiters());
+
+  it('lets a fast conversation run without interruption', () => {
+    const now = 2_000_000;
+    // A negotiation is a sentence at a time. Fifteen in a minute has to be
+    // comfortable or the limit becomes a product defect of its own.
+    for (let i = 0; i < 15; i++) {
+      expect(contentLimiters.messageBurst.check('7', now).allowed, `message ${i + 1}`).toBe(true);
+    }
+    expect(contentLimiters.messageBurst.check('7', now).allowed).toBe(false);
+  });
+
+  it('caps the hour well above any real conversation', () => {
+    const now = 2_000_000;
+    for (let i = 0; i < 150; i++) {
+      expect(contentLimiters.messageSustained.check('7', now).allowed, `message ${i + 1}`).toBe(true);
+    }
+    expect(contentLimiters.messageSustained.check('7', now).allowed).toBe(false);
+  });
+
+  it('counts new conversations separately and much more tightly', () => {
+    const now = 2_000_000;
+    for (let i = 0; i < 20; i++) {
+      expect(contentLimiters.messageNewThread.check('7', now).allowed, `approach ${i + 1}`).toBe(true);
+    }
+    expect(contentLimiters.messageNewThread.check('7', now).allowed).toBe(false);
+    // And the breadth ceiling must sit BELOW the volume ceiling, or it can
+    // never be the rule that fires - which is how an untested rule survives.
+    expect(contentLimiters.messageBurst.check('8', now).allowed).toBe(true);
+  });
+
+  it('one account running out does not touch another', () => {
+    const now = 2_000_000;
+    for (let i = 0; i < 20; i++) contentLimiters.messageNewThread.check('7', now);
+    expect(contentLimiters.messageNewThread.check('7', now).allowed).toBe(false);
+    expect(contentLimiters.messageNewThread.check('99', now).allowed).toBe(true);
+  });
+
+  it('resetContentLimiters clears the message limiters too', () => {
+    const now = 2_000_000;
+    for (let i = 0; i < 15; i++) contentLimiters.messageBurst.check('7', now);
+    expect(contentLimiters.messageBurst.check('7', now).allowed).toBe(false);
+    resetContentLimiters();
+    expect(contentLimiters.messageBurst.check('7', now).allowed).toBe(true);
+  });
+});
+
+describe('the message limits are wired to messages.send', () => {
+  const SEND = procedureBody('  send: protectedProcedure', '  uploadAttachment: protectedProcedure');
+
+  it('checks the volume limit before it touches the database', () => {
+    expect(SEND, 'messages.send is unbounded again').toContain('enforceMessageRateLimit(ctx.user.id)');
+    const limit = SEND.indexOf('enforceMessageRateLimit');
+    const db = SEND.indexOf('await getDb()');
+    expect(db, 'the db handle must still be findable in this procedure').toBeGreaterThan(-1);
+    expect(limit, 'a flood should cost the server nothing').toBeLessThan(db);
+  });
+
+  it('charges the breadth limit only when there is no history', () => {
+    expect(SEND).toContain('enforceNewConversationRateLimit(ctx.user.id)');
+    // Guarded on the absence of a prior message, so an established thread is
+    // never charged for the threads that came before it.
+    expect(SEND).toContain('if (!priorContact) enforceNewConversationRateLimit');
+  });
+
+  it('treats a reply as history, not as a new conversation', () => {
+    // The pair is looked up in BOTH directions: a vendor answering a customer
+    // who wrote first is continuing a conversation, and charging them a cold
+    // approach for it would throttle exactly the behaviour the product wants.
+    expect(SEND).toContain('eq(messages.senderId, ctx.user.id), eq(messages.receiverId, input.receiverId)');
+    expect(SEND).toContain('eq(messages.senderId, input.receiverId), eq(messages.receiverId, ctx.user.id)');
+  });
+
+  it('refuses before the row is written, not after', () => {
+    const breadth = SEND.indexOf('enforceNewConversationRateLimit(ctx.user.id)');
+    const write = SEND.indexOf('db.insert(messages)');
+    expect(write, 'the message insert must still be findable').toBeGreaterThan(-1);
+    expect(breadth).toBeLessThan(write);
+  });
+
+  it('the pair lookup is indexed, in both directions', () => {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const schema = readFileSync(new URL('../drizzle/schema.ts', import.meta.url), 'utf8');
+    // Without these the check scans an active account's whole correspondence
+    // on every send, and the cost grows with the account's own history.
+    expect(schema).toContain("index('messages_sender_receiver_idx').on(table.senderId, table.receiverId)");
+    expect(schema).toContain("index('messages_receiver_sender_idx').on(table.receiverId, table.senderId)");
+  });
+});

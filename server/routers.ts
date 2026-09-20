@@ -390,6 +390,26 @@ const enforceRfqRateLimit = (userId: number) =>
 const enforceUploadRateLimit = (userId: number) =>
   enforceContentRateLimit(userId, contentLimiters.uploadBurst, contentLimiters.uploadSustained);
 
+const enforceMessageRateLimit = (userId: number) =>
+  enforceContentRateLimit(userId, contentLimiters.messageBurst, contentLimiters.messageSustained);
+
+/**
+ * A FIRST APPROACH TO SOMEBODY NEW costs more than another line in a thread.
+ *
+ * Only called once the pair is known to have no history, so an established
+ * conversation never touches this limiter however many threads preceded it.
+ */
+function enforceNewConversationRateLimit(userId: number): void {
+  const blocked = contentLimiters.messageNewThread.check(String(userId), Date.now());
+  if (!blocked.allowed) {
+    throw new TRPCError({
+      code: 'TOO_MANY_REQUESTS',
+      message: `You have started a lot of new conversations recently. Try again in ${
+        Math.ceil(blocked.retryAfterMs / 1000)}s.`,
+    });
+  }
+}
+
 /**
  * Refuse the QA-persona machinery wherever test login is switched off.
  *
@@ -4592,6 +4612,14 @@ const messagesRouter = router({
   // sender's own id from the session being required to match, which is a
   // different thing: it stops a sender naming a key that is not theirs.
   send: protectedProcedure.input(z.object({ receiverId: z.number().int().positive(), projectId: z.number().int().positive().optional(), content: z.string().min(1).max(4000), type: z.enum(['text', 'file', 'quotation']).default('text'), fileUrl: z.string().max(512).regex(/^\/manus-storage\/message-attachments\/user-\d+\//, 'Attachment must be a BuildHub message upload').optional(), quotationId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
+    /*
+     * BOUNDED BEFORE ANYTHING ELSE HAPPENS. Every other content endpoint was
+     * rate limited and this one was not, so one account could reach every
+     * vendor in the directory as fast as it could open sockets - and notify
+     * each of them. Checked before the database is touched, so a flood costs
+     * the server nothing.
+     */
+    enforceMessageRateLimit(ctx.user.id);
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     if (input.fileUrl && !input.fileUrl.startsWith(`/manus-storage/message-attachments/user-${ctx.user.id}/`)) {
@@ -4649,6 +4677,22 @@ const messagesRouter = router({
     if (input.receiverId === ctx.user.id) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot send a message to yourself.' });
     }
+
+    /*
+     * IS THIS A FIRST APPROACH? Either direction counts as history: a vendor
+     * replying to a customer who wrote first is continuing a conversation,
+     * not starting one. The breadth limiter applies only when there is none,
+     * so the cost falls on cold outreach and never on an existing thread.
+     */
+    const [priorContact] = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(or(
+        and(eq(messages.senderId, ctx.user.id), eq(messages.receiverId, input.receiverId)),
+        and(eq(messages.senderId, input.receiverId), eq(messages.receiverId, ctx.user.id)),
+      ))
+      .limit(1);
+    if (!priorContact) enforceNewConversationRateLimit(ctx.user.id);
 
     const result = await db.insert(messages).values({ ...input, senderId: ctx.user.id });
     // THE RECIPIENT IS TOLD.

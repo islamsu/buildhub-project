@@ -594,6 +594,10 @@ export const messages = mysqlTable('messages', {
   receiverIdIdx: index('messages_receiverId_idx').on(table.receiverId),
   projectIdIdx: index('messages_projectId_idx').on(table.projectId),
   quotationIdIdx: index('messages_quotationId_idx').on(table.quotationId),
+  // The pair lookup messages.send runs before every write, in both
+  // directions - see drizzle/0055_message_pair_index.sql.
+  senderReceiverIdx: index('messages_sender_receiver_idx').on(table.senderId, table.receiverId),
+  receiverSenderIdx: index('messages_receiver_sender_idx').on(table.receiverId, table.senderId),
 }));
 
 // ── Notifications ──────────────────────────────────────────────────────────

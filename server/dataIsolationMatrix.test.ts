@@ -244,6 +244,24 @@ const TARGETS_ANOTHER_USER: Record<string, RegExp> = {
   // The caller's own right to invite is decided by requireInviteRights;
   // delete that call and this test fails, which a bare allowlist would not do.
   'rfq.inviteSupplier':    /requireInviteRights\(db, input\.rfqId, ctx\.user\)/,
+  /*
+   * messages.send names the RECIPIENT, which is what a recipient id is. The
+   * hit is on the pair lookup that decides whether these two have spoken
+   * before - a cold approach is charged against a much tighter limit than a
+   * reply, and a reply reads the pair the other way round, so `senderId` is
+   * compared against `input.receiverId` in one half of it.
+   *
+   * The requirement here is STRONGER than the generic rule, not an excuse
+   * from it: EVERY clause that names the other party must name the session on
+   * the other side of the same `and`. A predicate that read the pair from the
+   * request alone - or dropped ctx.user.id from either half - would let a
+   * caller ask about two other people's correspondence, and it fails this.
+   *
+   * The identity half is enforced separately and does not rely on this entry:
+   * `senderId` on the INSERT comes from the session, which the write-side
+   * census below checks on its own.
+   */
+  'messages.send': /and\(eq\(messages\.senderId, ctx\.user\.id\), eq\(messages\.receiverId, input\.receiverId\)\),\s*and\(eq\(messages\.senderId, input\.receiverId\), eq\(messages\.receiverId, ctx\.user\.id\)\)/,
 };
 
 describe('an id is never trusted as a substitute for the session', () => {
