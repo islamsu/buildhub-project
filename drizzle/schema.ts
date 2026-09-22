@@ -215,6 +215,15 @@ export const projects = mysqlTable('projects', {
    * in force when they were made.
    */
   createdBy:   int('createdBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  /**
+   * WHERE THE WORK IS. Not where the owner lives, not where they were
+   * browsing, not what their IP said - the country the construction is in.
+   * Authoritative for the project's own workflows and inherited by the RFQs
+   * raised against it. See shared/markets.ts.
+   */
+  marketCode:  varchar('marketCode', { length: 2 }).default('EG').notNull(),
+  /** The sourcing currency for this project. Defaults from its market. */
+  currency:    varchar('currency', { length: 3 }).default('EGP').notNull(),
   title:       varchar('title', { length: 255 }).notNull(),
   description: text('description'),
   type:        mysqlEnum('type', [
@@ -234,6 +243,7 @@ export const projects = mysqlTable('projects', {
   updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
 }, table => ({
   ownerIdIdx: index('projects_ownerId_idx').on(table.ownerId),
+  marketIdx: index('projects_market_idx').on(table.marketCode),
 }));
 
 // ── Milestones ─────────────────────────────────────────────────────────────
@@ -548,6 +558,25 @@ export const rfqs = mysqlTable('rfqs', {
   description: text('description'),
   category:    varchar('category', { length: 100 }),
   budget:      decimal('budget', { precision: 12, scale: 2 }),
+  /**
+   * WHERE THE REQUIREMENT MUST BE SUPPLIED OR PERFORMED.
+   *
+   * SNAPSHOTTED, not read through the project each time. A project RFQ
+   * inherits this at creation and a standalone RFQ states it; neither is
+   * silently reinterpreted afterwards because somebody edited the project.
+   * Not derived from requester nationality, requester IP, supplier country
+   * or UI language (§37).
+   */
+  marketCode:  varchar('marketCode', { length: 2 }).default('EG').notNull(),
+  /**
+   * THE EXPLICIT COMMERCIAL SOURCE OF TRUTH (§38).
+   *
+   * Every quotation against this RFQ is denominated in this currency, by
+   * rule rather than by the supplier's choice - which is what makes
+   * comparing two bids exact and stops a hidden FX assumption deciding who
+   * looks cheaper. It used to come from the supplier's SUBSCRIPTION plan.
+   */
+  currency:    varchar('currency', { length: 3 }).default('EGP').notNull(),
   location:    varchar('location', { length: 255 }),
   deadline:    timestamp('deadline'),
   attachments: text('attachments'),
@@ -558,6 +587,9 @@ export const rfqs = mysqlTable('rfqs', {
 }, table => ({
   requesterIdIdx: index('rfqs_requesterId_idx').on(table.requesterId),
   projectIdIdx: index('rfqs_projectId_idx').on(table.projectId),
+  // Supplier matching for a cross-border RFQ asks "which providers serve this
+  // market?" before anything else, so the market leads.
+  marketStatusIdx: index('rfqs_market_status_idx').on(table.marketCode, table.status),
 }));
 
 // ── Quotations ─────────────────────────────────────────────────────────────
@@ -1218,7 +1250,28 @@ export const vendorSubscriptions = mysqlTable('vendorSubscriptions', {
   // after a trial lapses, a cancellation completes, or a grace period expires.
   status:    mysqlEnum('status', ['free', 'trialing', 'active', 'past_due', 'canceled', 'expired']).default('free').notNull(),
   billingInterval: mysqlEnum('billingInterval', ['month', 'year']),
+  /**
+   * WHAT THE SUPPLIER PAYS BUILDHUB, IN WHICH CURRENCY.
+   *
+   * This is a different domain from the sourcing currency on an RFQ, and the
+   * owner's policy is that they must never be confused: a supplier billed in
+   * EGP under an Egypt contract quotes a Saudi RFQ in SAR. This column used
+   * to be read as the quotation currency too - that is the coupling §43
+   * names as launch-era debt, now removed.
+   */
   currency:  varchar('currency', { length: 3 }).default('EGP').notNull(),
+  /** Which market BuildHub bills this contract in. Not where they sell. */
+  billingMarketCode: varchar('billingMarketCode', { length: 2 }).default('EG').notNull(),
+  /**
+   * WHERE THE BENEFIT APPLIES (§44C), separately from where it is billed.
+   *
+   * GLOBAL today because BuildHub operates in one market, so every existing
+   * row is correct as GLOBAL and nothing is claimed that was not true. A
+   * future plan sold in SAR granting enquiries in SA only is MARKET_SET with
+   * its codes in the column below. Scope is never inferred from currency.
+   */
+  entitlementScope: mysqlEnum('entitlementScope', ['GLOBAL', 'MARKET_SET']).default('GLOBAL').notNull(),
+  entitlementMarkets: json('entitlementMarkets'),
   // Price snapshot at the moment of subscription, so a later catalogue change
   // never retroactively rewrites what a vendor actually agreed to pay.
   priceAmount: decimal('priceAmount', { precision: 10, scale: 2 }),

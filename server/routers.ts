@@ -199,6 +199,7 @@ import {
 } from '../shared/rfqBasket';
 import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shared/productImport';
 import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories, categoryUsage } from './categoryService';
+import { currencyForMarket, DEFAULT_MARKET, isEnabledMarket, marketFor, type MarketCode } from '@shared/markets';
 import { userOperationalSnapshot } from './adminUser360';
 import {
   listReferralCodes, referralCodeHistory, issueReferralCode, rotateReferralCode,
@@ -1408,6 +1409,20 @@ const projectsRouter = router({
       type: z.enum(['residential', 'commercial', 'renovation', 'finishing', 'maintenance', 'other']).optional(),
       budget: z.number().optional(),
       location: z.string().optional(),
+      /**
+       * WHERE THE WORK IS (§36).
+       *
+       * Not where the owner lives, not where they were browsing, not what
+       * their IP said. Authoritative for the project's own workflows and
+       * inherited by every RFQ raised against it, which is why the form must
+       * show it and let it be changed before save rather than defaulting it
+       * silently.
+       *
+       * Optional in the contract so an existing caller keeps working; absent
+       * means the single market BuildHub operates in, which is exactly what
+       * every project created before this meant.
+       */
+      marketCode: z.string().length(2).optional(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
@@ -1435,11 +1450,32 @@ const projectsRouter = router({
        * diverge the moment the product supports naming a customer - and the
        * audit trail already answers "who made this" today.
        */
+      /**
+       * THE MARKET, VALIDATED RATHER THAN ACCEPTED.
+       *
+       * A code that exists in shared/markets.ts so the architecture can be
+       * written against real values is not a market BuildHub can serve.
+       * Accepting a disabled one here would create a project whose RFQs no
+       * supplier could be matched to and whose currency nothing bills in.
+       */
+      if (input.marketCode !== undefined && !isEnabledMarket(input.marketCode)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'BuildHub does not currently operate in that market.',
+        });
+      }
+      const marketCode: MarketCode = isEnabledMarket(input.marketCode) ? input.marketCode : DEFAULT_MARKET;
+
       const projectRole = creatorProjectRole(ctx.user.userRole);
+      const { marketCode: _requestedMarket, ...projectFields } = input;
       const result = await db.insert(projects).values({
-        ...input,
+        ...projectFields,
         ownerId: ctx.user.id,
         createdBy: ctx.user.id,
+        marketCode,
+        // The project's sourcing currency, from its market. Written rather
+        // than left to the column default for the same reason as the RFQ's.
+        currency: currencyForMarket(marketCode),
         budget: input.budget != null ? String(input.budget) : undefined,
       });
       const id = Number(result[0].insertId);
@@ -3202,6 +3238,16 @@ const rfqRouter = router({
       description: rfqs.description,
       category: rfqs.category,
       budget: rfqs.budget,
+      /**
+       * WHICH MARKET, AND IN WHAT (§49).
+       *
+       * A budget figure with no currency beside it is a number the reader has
+       * to guess at, and the guess is wrong as soon as BuildHub lists a second
+       * market. The feed carries both so a supplier scanning it knows what
+       * they would be bidding in before they open anything.
+       */
+      marketCode: rfqs.marketCode,
+      currency: rfqs.currency,
       location: rfqs.location,
       deadline: rfqs.deadline,
       productReference: rfqs.productReference,
@@ -3360,6 +3406,11 @@ const rfqRouter = router({
         description: rfqs.description,
         category: rfqs.category,
         budget: rfqs.budget,
+        // WHERE AND IN WHAT. The respond form shows both and locks the
+        // currency field to this value rather than to the supplier's own
+        // subscription currency, which is what it used to show.
+        marketCode: rfqs.marketCode,
+        currency: rfqs.currency,
         location: rfqs.location,
         deadline: rfqs.deadline,
         productReference: rfqs.productReference,
@@ -3531,6 +3582,21 @@ const rfqRouter = router({
       location: z.string().optional(),
       deadline: z.date().optional(),
       projectId: z.number().optional(),
+      /**
+       * WHERE THE REQUIREMENT MUST BE SUPPLIED OR PERFORMED (§37).
+       *
+       * Optional in the contract and NOT optional in meaning: an RFQ raised
+       * against a project inherits the project's market, and a standalone one
+       * falls back to the single market BuildHub operates in. What the server
+       * refuses to do is derive it from requester nationality, requester IP,
+       * supplier country or UI language - none of which are where the work is.
+       *
+       * Only an ENABLED market is accepted. A code sitting in shared/markets.ts
+       * so the architecture can be written against real values is not a market
+       * BuildHub can serve, and accepting one here would create an RFQ no
+       * supplier could be matched to.
+       */
+      marketCode: z.string().length(2).optional(),
       productReference: z.object({ productId: z.number(), variantId: z.string().min(1), variantLabel: z.string().min(1) }).optional(),
       /**
        * THE LINES OF THE REQUEST — what the customer is actually asking to be
@@ -3568,7 +3634,38 @@ const rfqRouter = router({
         // the job can see it and report on it but cannot commission from it.
         await requireProjectAccess(db, input.projectId, ctx.user.id, 'commercial');
       }
-      const { attachments, productReference, items, ...rest } = input;
+
+      /**
+       * THE MARKET, RESOLVED ONCE AND SNAPSHOTTED ONTO THE RFQ.
+       *
+       * Order: the project's market if this RFQ belongs to one, then an
+       * explicit choice, then the single market BuildHub operates in. The
+       * project wins over the explicit field on purpose - an RFQ for work in
+       * Jeddah cannot be filed against a Cairo project by sending a different
+       * code, and the requirement's location is a property of the job rather
+       * than of the form.
+       *
+       * SNAPSHOTTED rather than read through the project on every access, so
+       * editing the project later cannot silently reinterpret an RFQ that
+       * suppliers have already quoted against.
+       */
+      let marketCode: MarketCode = DEFAULT_MARKET;
+      if (input.projectId != null) {
+        const [project] = await db.select({ marketCode: projects.marketCode })
+          .from(projects).where(eq(projects.id, input.projectId)).limit(1);
+        if (project?.marketCode && isEnabledMarket(project.marketCode)) marketCode = project.marketCode;
+      } else if (input.marketCode !== undefined) {
+        if (!isEnabledMarket(input.marketCode)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'BuildHub does not currently operate in that market.',
+          });
+        }
+        marketCode = input.marketCode;
+      }
+      const marketCurrency = currencyForMarket(marketCode);
+
+      const { attachments, productReference, items, marketCode: _requestedMarket, ...rest } = input;
 
       /**
        * EVERY CATALOGUE LINE IS RE-READ FROM THE CATALOGUE.
@@ -3689,6 +3786,11 @@ const rfqRouter = router({
         const result = await tx.insert(rfqs).values({
           ...rest,
           requesterId: ctx.user.id,
+          // NOT THE COLUMN DEFAULT. The default is Egypt, which is right
+          // today and would be a wrong number on every foreign RFQ the day it
+          // is not - so the resolved value is written explicitly.
+          marketCode,
+          currency: marketCurrency,
           budget: input.budget != null ? String(input.budget) : undefined,
           attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : undefined,
           productReference: productReference ?? undefined,
@@ -4316,7 +4418,21 @@ const rfqRouter = router({
     .input(z.object({
       rfqId: z.number().int().positive(),
       price: z.number().positive().max(9_999_999_999.99),
-      currency: z.literal(BILLING_CURRENCY).default(BILLING_CURRENCY),
+      /**
+       * NO CURRENCY FIELD, DELIBERATELY.
+       *
+       * This accepted `z.literal(BILLING_CURRENCY)` - the currency of the
+       * SUPPLIER'S SUBSCRIPTION PLAN, the amount they pay BuildHub every
+       * month - and wrote it onto the bid. Those are two different
+       * commercial relationships, and the owner's policy is that they must
+       * never be confused: a supplier billed in EGP under an Egypt contract
+       * quoting a Saudi RFQ bids in SAR, and their subscription does not
+       * change that.
+       *
+       * The quotation currency is the RFQ's currency, read from the RFQ
+       * below. It is not a client input at all, so no payload can submit a
+       * bid in a currency the buyer is not comparing in.
+       */
       timeline: z.number().int().positive().max(3650).optional(),
       warranty: z.string().max(100).optional(),
       validUntil: z.date().refine(
@@ -4355,8 +4471,11 @@ const rfqRouter = router({
       // nobody hit this through the UI. Frontend filtering is not a control;
       // the status enum and acceptQuotation's transition to 'awarded' are the
       // existing rule, and this enforces it where it is enforceable.
-      const [rfq] = await db.select({ requesterId: rfqs.requesterId, title: rfqs.title, status: rfqs.status })
-        .from(rfqs).where(eq(rfqs.id, input.rfqId));
+      const [rfq] = await db.select({
+        requesterId: rfqs.requesterId, title: rfqs.title, status: rfqs.status,
+        // THE COMMERCIAL SOURCE OF TRUTH FOR THIS BID.
+        marketCode: rfqs.marketCode, currency: rfqs.currency,
+      }).from(rfqs).where(eq(rfqs.id, input.rfqId));
       if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
       if (rfq.status !== 'open') {
         throw new TRPCError({ code: 'CONFLICT', message: 'This request is no longer accepting quotations' });
@@ -4409,6 +4528,21 @@ const rfqRouter = router({
           });
         }
       }
+
+      /**
+       * QUOTATION CURRENCY = RFQ CURRENCY, BY RULE.
+       *
+       * Resolved here, once, from the record that owns the requirement -
+       * never from the supplier's subscription, their own country, or the
+       * language their browser is set to. `currencyForMarket` is the fallback
+       * for an RFQ written before 0058 gave the column a value, and it
+       * resolves to exactly what that RFQ already meant.
+       *
+       * This is what makes comparing two bids exact: every quotation on one
+       * RFQ is denominated in the same thing, so nothing hidden decides who
+       * looks cheaper.
+       */
+      const quotationCurrency = rfq.currency || currencyForMarket(rfq.marketCode);
 
       const { attachments, ...quotationFields } = input;
 
@@ -4477,11 +4611,11 @@ const rfqRouter = router({
         const sameOffer = recent !== undefined
           // The column is a decimal string and the input a number.
           && Number(recent.price) === input.price
-          // THE EFFECTIVE CURRENCY, not the submitted one. The column defaults
-          // to EGP, so a bid sent without a currency reads back as 'EGP' and
-          // never equalled its own input - which made every such resubmission
-          // look like a revision.
-          && (recent.currency ?? null) === (input.currency ?? 'EGP')
+          // THE EFFECTIVE CURRENCY, not a submitted one - there is no longer a
+          // submitted one. Both sides are now the RFQ's currency, so this term
+          // only ever differs for a bid written before the RFQ's currency was
+          // corrected, which IS a different offer and should read as one.
+          && (recent.currency ?? null) === quotationCurrency
           && (recent.timeline ?? null) === (input.timeline ?? null)
           && (recent.warranty ?? null) === (input.warranty ?? null)
           && (recent.commercialTerms ?? null) === (input.commercialTerms ?? null)
@@ -4523,6 +4657,10 @@ const rfqRouter = router({
           ...quotationFields,
           providerId: ctx.user.id,
           price: String(input.price),
+          // FROM THE RFQ, not from the payload and not from the column
+          // default. The default is still 'EGP', which would have been a
+          // wrong number on a bid the day a second market existed.
+          currency: quotationCurrency,
           revisionNumber: current ? current.revisionNumber + 1 : 1,
           attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : null,
         });
@@ -4615,7 +4753,10 @@ const rfqRouter = router({
         // The stored price is a decimal string; the input is a number. Compared
         // as numbers so "125000.00" and 125000 are not reported as a change.
         { field: 'price', oldValue: previous ? Number(previous.price) : null, newValue: input.price },
-        { field: 'currency', oldValue: was('currency'), newValue: input.currency },
+        // The RFQ's currency, the same value that was written. A revision can
+        // only change it if the RFQ's own currency was corrected between the
+        // two bids, which is a real change and reads as one.
+        { field: 'currency', oldValue: was('currency'), newValue: quotationCurrency },
         { field: 'timeline', oldValue: was('timeline'), newValue: input.timeline },
         { field: 'warranty', oldValue: was('warranty'), newValue: input.warranty },
         { field: 'validUntil', oldValue: was('validUntil'), newValue: input.validUntil },

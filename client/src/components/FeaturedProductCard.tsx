@@ -1,3 +1,4 @@
+import { formatMoney } from '@shared/money';
 /**
  * ── A CURATED PRODUCT, PRESENTED AS A PRODUCT ─────────────────────────────
  *
@@ -97,7 +98,9 @@ export function FeaturedProductCard({
         <div className="mt-auto flex items-end justify-between gap-2 pt-2">
           {product.price ? (
             <p className="text-sm font-semibold">
-              {product.currency ?? 'EGP'} {Number(product.price).toLocaleString()}
+              {/* The product's own currency. A `?? 'EGP'` would mislabel a
+                  foreign listing rather than admit the row does not say. */}
+              {formatMoney(product.price, product.currency, lang) ?? Number(product.price).toLocaleString()}
               {product.unit ? <span className="font-normal text-muted-foreground"> / {product.unit}</span> : null}
             </p>
           ) : (

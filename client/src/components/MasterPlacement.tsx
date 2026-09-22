@@ -24,6 +24,7 @@
  */
 import { useLocation } from 'wouter';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatMoney } from '@shared/money';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -254,7 +255,7 @@ export function ProductSpotlight({ category }: { category?: string }) {
               </p>
               <p className="mt-2 text-sm">
                 {product.price != null
-                  ? <span className="font-semibold">{product.price} {product.currency ?? 'EGP'}{product.unit ? ` / ${product.unit}` : ''}</span>
+                  ? <span className="font-semibold">{formatMoney(product.price, product.currency, lang) ?? product.price}{product.unit ? ` / ${product.unit}` : ''}</span>
                   : <span className="text-muted-foreground">{ar ? 'السعر عند الطلب' : 'Price on request'}</span>}
               </p>
               <Button
@@ -352,7 +353,7 @@ export function MasterProductSlot({ category }: { category?: string }) {
                 listed without a price says so, rather than showing 0 EGP. */}
             <p className="mt-2 text-sm">
               {placed.price != null
-                ? <span className="font-semibold">{placed.price} {placed.currency ?? 'EGP'}{placed.unit ? ` / ${placed.unit}` : ''}</span>
+                ? <span className="font-semibold">{formatMoney(placed.price, placed.currency, lang) ?? placed.price}{placed.unit ? ` / ${placed.unit}` : ''}</span>
                 : <span className="text-muted-foreground">{ar ? 'السعر عند الطلب' : 'Price on request'}</span>}
             </p>
             {placed.supplierName && (

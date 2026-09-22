@@ -1865,9 +1865,9 @@
     {
       "ident": "projects",
       "name": "projects",
-      "columns": 16,
+      "columns": 19,
       "references": 2,
-      "notNull": 4,
+      "notNull": 6,
       "unique": 0
     },
     {
@@ -1969,9 +1969,9 @@
     {
       "ident": "rfqs",
       "name": "rfqs",
-      "columns": 16,
+      "columns": 19,
       "references": 2,
-      "notNull": 4,
+      "notNull": 6,
       "unique": 0
     },
     {
@@ -2145,9 +2145,9 @@
     {
       "ident": "vendorSubscriptions",
       "name": "vendorSubscriptions",
-      "columns": 28,
+      "columns": 31,
       "references": 1,
-      "notNull": 8,
+      "notNull": 10,
       "unique": 0
     },
     {
@@ -2322,142 +2322,142 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 766,
+      "line": 767,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 1572,
+      "line": 1608,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 1660,
+      "line": 1696,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2933,
+      "line": 2969,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3013,
+      "line": 3049,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3064,
+      "line": 3100,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3948,
+      "line": 4050,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4005,
+      "line": 4107,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4551,
+      "line": 4689,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4933,
+      "line": 5074,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5348,
+      "line": 5489,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5602,
+      "line": 5743,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5794,
+      "line": 5935,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5964,
+      "line": 6105,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7548,
+      "line": 7689,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7891,
+      "line": 8032,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7969,
+      "line": 8110,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8815,
+      "line": 8956,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8886,
+      "line": 9027,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9290,
+      "line": 9431,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9507,
+      "line": 9648,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9537,
+      "line": 9678,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9570,
+      "line": 9711,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9784,
+      "line": 9925,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9831,
+      "line": 9972,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9933,
+      "line": 10074,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 10015,
+      "line": 10156,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 10136,
+      "line": 10277,
       "via": "notifyUser"
     },
     {

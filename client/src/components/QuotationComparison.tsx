@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'wouter';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatMoney } from '@shared/money';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -151,7 +152,7 @@ function parseQuotationAttachments(value: string | null): { key: string; url: st
 }
 
 export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqStatus, isOwner, onClose }: Props) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [sortKey, setSortKey] = useState<SortKey>('score');
   const [sortAsc, setSortAsc] = useState(false);
   const [confirmAccept, setConfirmAccept] = useState<QuotationRow | null>(null);
@@ -349,10 +350,15 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                   {/* Price */}
                   <div className="text-center py-3 rounded-lg bg-muted/50">
                     <div className="flex items-center justify-center gap-1.5">
+                      {/* NO FALLBACK. `?? 'EGP'` on the screen a buyer picks
+                          a winner from would label a SAR bid in Egyptian
+                          pounds the day BuildHub lists a second market - and
+                          every bid here is in the RFQ's currency by rule, so
+                          a missing one means something is wrong rather than
+                          that it is Egyptian. */}
                       <span className="text-2xl font-bold text-foreground">
-                        {parseFloat(q.price).toLocaleString()}
+                        {formatMoney(q.price, q.currency, lang) ?? parseFloat(q.price).toLocaleString()}
                       </span>
-                      <span className="text-sm text-muted-foreground">{q.currency ?? 'EGP'}</span>
                       {isCheapest && (
                         <Tooltip>
                           <TooltipTrigger>
@@ -559,7 +565,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                     const cheapest = parseFloat(q.price) === lowestPrice;
                     return (
                       <td key={q.id} className={`text-center py-2.5 px-3 font-semibold ${cheapest ? 'text-emerald-600' : ''}`}>
-                        {parseFloat(q.price).toLocaleString()} {q.currency ?? 'EGP'}
+                        {formatMoney(q.price, q.currency, lang) ?? parseFloat(q.price).toLocaleString()}
                         {cheapest && <div className="text-xs font-normal text-emerald-500">{t('rfq.lowest_price')}</div>}
                       </td>
                     );

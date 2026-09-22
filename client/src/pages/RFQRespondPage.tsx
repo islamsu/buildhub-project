@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { BILLING_CURRENCY } from '@shared/billing';
+import { currencyForMarket, marketName } from '@shared/markets';
+import { formatMoney } from '@shared/money';
 import { parseRfqAttachments, type RfqAttachmentMetadata } from '@shared/rfqAttachments';
 import { toast } from 'sonner';
 import {
@@ -110,6 +111,20 @@ export default function RFQRespondPage() {
   });
 
   const rfq = summary.data;
+  /**
+   * THE CURRENCY OF THE REQUIREMENT, NOT OF THE SUPPLIER'S SUBSCRIPTION.
+   *
+   * This form used to show `BILLING_CURRENCY` - the currency the supplier
+   * pays BuildHub in - in a read-only field labelled "Currency", and sent it
+   * as the currency of the bid. They are two different commercial
+   * relationships. A supplier billed in EGP quoting a Saudi RFQ bids in SAR,
+   * and what they pay BuildHub has nothing to do with it.
+   *
+   * The server no longer accepts a currency at all; it reads the RFQ's. This
+   * is the same value, shown so the supplier knows what they are bidding in
+   * before they type a number.
+   */
+  const rfqCurrency = rfq ? (rfq.currency || currencyForMarket(rfq.marketCode)) : null;
   const closed = useMemo(() => rfq != null && rfq.status !== 'open', [rfq]);
   const requesterFiles = parseRfqAttachments(access.data?.attachments);
   const today = new Date().toISOString().slice(0, 10);
@@ -156,7 +171,6 @@ export default function RFQRespondPage() {
     submit.mutate({
       rfqId,
       price: Number(form.price),
-      currency: BILLING_CURRENCY,
       timeline: form.timeline ? Number(form.timeline) : undefined,
       warranty: form.warranty.trim() || undefined,
       validUntil: new Date(`${form.validUntil}T23:59:59`),
@@ -295,6 +309,7 @@ export default function RFQRespondPage() {
               <ReviewCard ar={ar} rfq={rfq} form={form} files={files} pending={submit.isPending} onEdit={() => setReviewing(false)} onSubmit={finalSubmit} />
             ) : (
               <QuoteFormCard
+                rfq={rfq}
                 ar={ar} form={form} setForm={setForm} files={files} setFiles={setFiles}
                 fileInput={fileInput} uploading={uploading} attachFiles={attachFiles}
                 validation={validation} onReview={() => setReviewing(true)}
@@ -353,6 +368,10 @@ export default function RFQRespondPage() {
 }
 
 function RfqBrief({ ar, rfq, projectTitle }: { ar: boolean; rfq: any; projectTitle: string | null }) {
+  // Derived from the RFQ it was handed, not passed alongside it: two sources
+  // for one fact is how they come to disagree.
+  const rfqCurrency = rfq.currency || currencyForMarket(rfq.marketCode);
+  const lang: 'en' | 'ar' = ar ? 'ar' : 'en';
   return (
     <Card data-testid="respond-brief">
       <CardHeader>
@@ -364,7 +383,7 @@ function RfqBrief({ ar, rfq, projectTitle }: { ar: boolean; rfq: any; projectTit
         <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">
           {rfq.category && <span>{rfq.category}</span>}
           {projectTitle && <span>{ar ? 'المشروع' : 'Project'}: {projectTitle}</span>}
-          {rfq.budget && <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{ar ? 'الميزانية' : 'Budget'}: {Number(rfq.budget).toLocaleString()} {BILLING_CURRENCY}</span>}
+          {rfq.budget && <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{ar ? 'الميزانية' : 'Budget'}: {formatMoney(rfq.budget, rfqCurrency, lang)}</span>}
           {rfq.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{rfq.location}</span>}
           {rfq.deadline && <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" />{new Date(rfq.deadline).toLocaleDateString(ar ? 'ar-EG' : 'en-US')}</span>}
         </div>
@@ -410,12 +429,14 @@ function RequesterCard({ ar, party }: { ar: boolean; party: any }) {
 }
 
 function QuoteFormCard(props: {
+  rfq: any;
   ar: boolean; form: QuoteForm; setForm: React.Dispatch<React.SetStateAction<QuoteForm>>;
   files: RfqAttachmentMetadata[]; setFiles: React.Dispatch<React.SetStateAction<RfqAttachmentMetadata[]>>;
   fileInput: React.RefObject<HTMLInputElement | null>; uploading: boolean;
   attachFiles: (files: FileList | null) => void; validation: string[]; onReview: () => void;
 }) {
-  const { ar, form, setForm, files, setFiles, fileInput, uploading, attachFiles, validation, onReview } = props;
+  const { rfq, ar, form, setForm, files, setFiles, fileInput, uploading, attachFiles, validation, onReview } = props;
+  const rfqCurrency = rfq.currency || currencyForMarket(rfq.marketCode);
   const field = (key: keyof QuoteForm) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm(current => ({ ...current, [key]: event.target.value }));
   return (
     <Card data-testid="respond-form">
@@ -423,7 +444,19 @@ function QuoteFormCard(props: {
       <CardContent className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-[1fr_110px]">
           <Field label={ar ? 'السعر' : 'Price'} required><Input data-testid="respond-price" type="number" min="0.01" step="0.01" value={form.price} onChange={field('price')} /></Field>
-          <Field label={ar ? 'العملة' : 'Currency'}><Input data-testid="respond-currency" value={BILLING_CURRENCY} readOnly aria-readonly="true" /></Field>
+          {/* READ-ONLY BECAUSE IT IS NOT A CHOICE. Every bid on one RFQ is
+              denominated in the same thing, which is what makes comparing
+              them exact - and the server does not accept a currency, so
+              nothing typed here could change it anyway. The market is shown
+              beside it so the supplier can see WHY it is what it is. */}
+          <Field label={ar ? 'العملة' : 'Currency'}>
+            <Input data-testid="respond-currency" value={rfqCurrency ?? ''} readOnly aria-readonly="true" />
+            <p className="mt-1 text-xs text-muted-foreground" data-testid="respond-currency-reason">
+              {ar
+                ? `عملة طلب العرض — سوق ${marketName(rfq.marketCode, 'ar')}. اشتراكك في BuildHub لا يغيّرها.`
+                : `The request's currency — ${marketName(rfq.marketCode, 'en')} market. Your BuildHub subscription does not change it.`}
+            </p>
+          </Field>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={ar ? 'مدة التنفيذ بالأيام' : 'Delivery / completion days'}><Input data-testid="respond-timeline" type="number" min="1" value={form.timeline} onChange={field('timeline')} /></Field>
@@ -453,9 +486,11 @@ function QuoteFormCard(props: {
 }
 
 function ReviewCard({ ar, rfq, form, files, pending, onEdit, onSubmit }: { ar: boolean; rfq: any; form: QuoteForm; files: RfqAttachmentMetadata[]; pending: boolean; onEdit: () => void; onSubmit: () => void }) {
+  const rfqCurrency = rfq.currency || currencyForMarket(rfq.marketCode);
+  const lang: 'en' | 'ar' = ar ? 'ar' : 'en';
   const rows = [
     [ar ? 'الطلب' : 'Request', `#${rfq.id} · ${rfq.title}`],
-    [ar ? 'السعر' : 'Price', `${Number(form.price).toLocaleString(ar ? 'ar-EG' : 'en-US')} ${BILLING_CURRENCY}`],
+    [ar ? 'السعر' : 'Price', formatMoney(form.price, rfqCurrency, lang) ?? '—'],
     [ar ? 'مدة التنفيذ' : 'Timeline', form.timeline ? `${form.timeline} ${ar ? 'يوم' : 'days'}` : '—'],
     [ar ? 'الضمان' : 'Warranty', form.warranty || '—'],
     [ar ? 'الصلاحية' : 'Valid until', new Date(`${form.validUntil}T12:00:00`).toLocaleDateString(ar ? 'ar-EG' : 'en-US')],

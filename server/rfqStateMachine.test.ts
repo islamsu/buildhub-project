@@ -170,8 +170,24 @@ describe('the machine is closed against the other two doors', () => {
   it('submitQuotation refuses any RFQ that is not open', () => {
     // So closing a request stops new bids without submitQuotation needing to
     // learn about the new state at all.
+    /*
+     * SLICED TO THE NEXT PROCEDURE, NOT TO A MAGIC NUMBER.
+     *
+     * This read `slice(start, start + 3000)`. The check is roughly 2,900
+     * characters in, so the window was one comment away from cutting it off -
+     * and when the quotation currency stopped coming from the supplier's
+     * subscription, the note explaining why pushed it past the edge. The
+     * test then failed while the guard it asserts was still exactly where it
+     * had always been.
+     */
     const start = ROUTERS.indexOf('  submitQuotation: approvedProviderProcedure');
-    const body = ROUTERS.slice(start, start + 3000);
+    expect(start, 'submitQuotation not found in routers.ts').toBeGreaterThan(-1);
+    // `withdrawRFQ` does not exist in routers.ts - the procedure after this
+    // one is `close`. The anchor is asserted so a rename cannot quietly widen
+    // the window to the whole file.
+    const end = ROUTERS.indexOf('\n  close: protectedProcedure', start);
+    expect(end, 'the end anchor is gone - this slice would run to EOF').toBeGreaterThan(start);
+    const body = ROUTERS.slice(start, end);
     expect(body).toContain("rfq.status !== 'open'");
   });
 

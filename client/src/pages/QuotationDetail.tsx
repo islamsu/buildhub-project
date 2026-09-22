@@ -3,6 +3,7 @@ import { useParams, Link } from 'wouter';
 import { OpenDisputeDialog } from '@/components/OpenDisputeDialog';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatMoney } from '@shared/money';
 import { useAuth } from '@/_core/hooks/useAuth';
 import Navbar from '@/components/Navbar';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -171,8 +172,12 @@ export default function QuotationDetail() {
   const attachments = parseAttachments(q.attachments);
   const status = q.status ?? 'pending';
   const isRequester = q.viewerRole === 'requester';
-  const currency = q.currency ?? 'EGP';
-  const money = Number(q.price).toLocaleString(ar ? 'ar-EG' : 'en-US');
+  // The bid's OWN currency, which is the RFQ's by rule. A `?? 'EGP'` here
+  // would put an Egyptian label on a foreign bid rather than admit the
+  // record does not say.
+  const currency = q.currency ?? null;
+  const money = formatMoney(q.price, currency, ar ? 'ar' : 'en')
+    ?? Number(q.price).toLocaleString(ar ? 'ar-EG' : 'en-US');
 
   return (
     <div className="min-h-screen bg-background" dir={ar ? 'rtl' : 'ltr'}>
@@ -233,7 +238,12 @@ export default function QuotationDetail() {
             <div className="rounded-xl border bg-muted/30 p-4">
               <p className="text-xs text-muted-foreground">{ar ? 'السعر المعروض' : 'Quoted price'}</p>
               <p className="text-2xl font-semibold" data-testid="quotation-detail-price">
-                {money} <span className="text-base font-normal text-muted-foreground">{currency}</span>
+                {/* `money` already carries the currency code. The separate
+                    span used to supply it because the number was formatted
+                    bare; keeping both would print it twice. It survives only
+                    for a record that does not state its currency at all. */}
+                {money}
+                {currency === null && <span className="text-base font-normal text-muted-foreground"> —</span>}
               </p>
             </div>
 

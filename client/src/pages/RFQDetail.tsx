@@ -3,6 +3,7 @@ import { useParams, Link } from 'wouter';
 import { OpenDisputeDialog } from '@/components/OpenDisputeDialog';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatMoney } from '@shared/money';
 import { useAuth } from '@/_core/hooks/useAuth';
 import RfqInvitations from '@/components/RfqInvitations';
 import { isComplianceRole } from '@shared/compliance';
@@ -433,7 +434,7 @@ export default function RFQDetail() {
                   </Badge>
                 </div>
                 <div className="mt-2 grid gap-1 text-sm text-muted-foreground sm:grid-cols-3">
-                  <span>{ar ? 'السعر' : 'Price'}: {ar ? 'ج.م' : 'EGP'} {Number(myQuotation.price).toLocaleString()}</span>
+                  <span>{ar ? 'السعر' : 'Price'}: {formatMoney(myQuotation.price, myQuotation.currency, ar ? 'ar' : 'en') ?? Number(myQuotation.price).toLocaleString()}</span>
                   <span>{ar ? 'المدة' : 'Timeline'}: {myQuotation.timeline ?? '—'}</span>
                   <span>{ar ? 'أُرسل' : 'Submitted'}: {new Date(myQuotation.createdAt).toLocaleDateString(ar ? 'ar-EG' : 'en-US')}</span>
                 </div>

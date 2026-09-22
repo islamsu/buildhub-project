@@ -407,6 +407,13 @@
       "when": 1789900000000,
       "tag": "0057_referral_code_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "5",
+      "when": 1790000000000,
+      "tag": "0058_market_context",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatMoney } from '@shared/money';
 import { useRfqBasket } from '@/hooks/useRfqBasket';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
@@ -423,7 +424,7 @@ export default function Marketplace() {
               </thead>
               <tbody>
                 {([
-                  { key: 'price', label: lang === 'ar' ? 'السعر' : 'Price', render: (p: any) => `${p.price.toLocaleString()} ${lang === 'ar' ? 'جنيه' : 'EGP'}${p.unit ? '/' + p.unit : ''}` },
+                  { key: 'price', label: lang === 'ar' ? 'السعر' : 'Price', render: (p: any) => `${formatMoney(p.price, p.currency, lang) ?? p.price.toLocaleString()}${p.unit ? '/' + p.unit : ''}` },
                   { key: 'rating', label: lang === 'ar' ? 'التقييم' : 'Rating', render: (p: any) => p.reviewCount > 0 ? `${p.rating} ★ (${p.reviewCount})` : (lang === 'ar' ? 'لا تقييمات' : 'No ratings') },
                   { key: 'brand', label: lang === 'ar' ? 'العلامة التجارية' : 'Brand', render: (p: any) => p.brand },
                   { key: 'origin', label: lang === 'ar' ? 'بلد المنشأ' : 'Origin', render: (p: any) => p.origin },

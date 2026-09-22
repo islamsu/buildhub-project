@@ -1,4 +1,6 @@
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatMoney } from '@shared/money';
+import { currencyForMarket } from '@shared/markets';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,6 +65,19 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
   const [logForm, setLogForm] = useState({ description: '', weather: '', workers: '' });
 
   const { data: project, refetch: refetchProject } = trpc.projects.get.useQuery({ id: projectId }, { enabled: isAuthenticated && projectId > 0 });
+  /**
+   * THE PROJECT'S OWN CURRENCY, which its expense log is denominated in.
+   *
+   * This page hard-coded "EGP" in three places. The expense log is the
+   * canonical source of project spend (CLAUDE.md §15), so a spend figure
+   * labelled with whatever the page happened to compile in is a number
+   * nobody can trust the moment a project is anywhere else.
+   *
+   * `currencyForMarket` is the fallback for a project written before 0058
+   * gave the column a value, and it resolves to exactly what that project
+   * already meant.
+   */
+  const projectCurrency = (project as any)?.currency || currencyForMarket((project as any)?.marketCode);
   const { data: tasks, refetch: refetchTasks } = trpc.projects.tasks.useQuery({ projectId }, { enabled: isAuthenticated && projectId > 0 });
   const { data: milestones, refetch: refetchMs } = trpc.projects.milestones.useQuery({ projectId }, { enabled: isAuthenticated && projectId > 0 });
   const { data: expenses, refetch: refetchExp } = trpc.projects.expenses.useQuery({ projectId }, { enabled: isAuthenticated && projectId > 0 });
@@ -378,7 +393,10 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                 <div className="flex justify-between items-center mb-4">
                   <div>
                     <h3 className="font-semibold">{lang === 'ar' ? 'متتبع المصروفات' : 'Expense Tracker'}</h3>
-                    <p className="text-sm text-muted-foreground">Total: EGP {totalExpenses.toLocaleString()}</p>
+                    {/* The PROJECT's currency, from the project. An expense log denominated
+    in whatever the page happened to hard-code is a spend figure nobody
+    can trust across markets. */}
+                    <p className="text-sm text-muted-foreground">Total: {formatMoney(totalExpenses, projectCurrency, lang) ?? totalExpenses.toLocaleString()}</p>
                   </div>
                   <Dialog open={expOpen} onOpenChange={setExpOpen}>
                     <DialogTrigger asChild>
@@ -389,7 +407,7 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                       <div className="space-y-3 mt-2">
                         <Input placeholder="Category (e.g. Materials, Labor)" value={expForm.category} onChange={e => setExpForm(f => ({ ...f, category: e.target.value }))} />
                         <Input placeholder={lang === 'ar' ? 'الوصف' : 'Description'} value={expForm.description} onChange={e => setExpForm(f => ({ ...f, description: e.target.value }))} />
-                        <Input type="number" placeholder="Amount (EGP)" value={expForm.amount} onChange={e => setExpForm(f => ({ ...f, amount: e.target.value }))} />
+                        <Input type="number" placeholder={lang === 'ar' ? `المبلغ (${projectCurrency})` : `Amount (${projectCurrency})`} value={expForm.amount} onChange={e => setExpForm(f => ({ ...f, amount: e.target.value }))} />
                         <Button className="w-full" onClick={() => addExpense.mutate({ projectId, ...expForm, amount: parseFloat(expForm.amount) })} disabled={addExpense.isPending || !expForm.amount}>
                           Record Expense
                         </Button>
@@ -415,7 +433,7 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                           <p className="text-xs text-muted-foreground">{exp.category} · {exp.date ? new Date(exp.date as unknown as Date).toLocaleDateString() : "Today"}</p>
                         </div>
                       </div>
-                      <p className="font-semibold text-sm">EGP {Number(exp.amount).toLocaleString()}</p>
+                      <p className="font-semibold text-sm">{formatMoney(exp.amount, exp.currency ?? projectCurrency, lang) ?? Number(exp.amount).toLocaleString()}</p>
                     </div>
                   ))}
                 </div>

@@ -322,8 +322,12 @@ const translations: Record<Language, Record<string, string>> = {
     'svc.description': 'What the service includes',
     'svc.descriptionPlaceholder': 'Scope, materials, and anything a customer should know before asking for a quote.',
     'svc.pricingBasis': 'How you price it',
-    'svc.priceMin': 'Indicative price from (EGP)',
-    'svc.priceMax': 'Indicative price to (EGP)',
+    // THE UNIT IS NOT PART OF THE LABEL. A form field whose label spells out
+    // one market's currency is a hard-code in a place nobody greps - and it
+    // becomes a wrong instruction the day a supplier prices in anything else.
+    // The currency belongs beside the input, from the record.
+    'svc.priceMin': 'Indicative price from',
+    'svc.priceMax': 'Indicative price to',
     'svc.leadTime': 'Lead time',
     'svc.warranty': 'Warranty',
     'svc.days': 'days',
@@ -519,7 +523,7 @@ const translations: Record<Language, Record<string, string>> = {
     'rfq.title_field': 'RFQ Title',
     'rfq.description': 'Describe your requirements in detail…',
     'rfq.category': 'Category',
-    'rfq.budget': 'Budget (EGP)',
+    'rfq.budget': 'Budget',
     'rfq.location': 'Location',
     'rfq.deadline': 'Deadline',
     'rfq.linkedProject': 'Link to a project (optional)',
@@ -840,7 +844,7 @@ const translations: Record<Language, Record<string, string>> = {
     'review.success': 'Review submitted!',
     'review.rating_required': 'Please select a rating',
     // ── Quotation form ───────────────────────────────────────────────────────
-    'quote.price': 'Your Price (EGP)',
+    'quote.price': 'Your Price',
     'quote.timeline': 'Timeline (days)',
     'quote.warranty': 'Warranty',
     'quote.payment_terms': 'Payment Terms',
@@ -1543,8 +1547,8 @@ const translations: Record<Language, Record<string, string>> = {
     'svc.description': 'ما تشمله الخدمة',
     'svc.descriptionPlaceholder': 'نطاق العمل والخامات وأي تفاصيل يحتاج العميل معرفتها قبل طلب عرض السعر.',
     'svc.pricingBasis': 'طريقة التسعير',
-    'svc.priceMin': 'سعر استرشادي من (ج.م)',
-    'svc.priceMax': 'سعر استرشادي إلى (ج.م)',
+    'svc.priceMin': 'سعر استرشادي من',
+    'svc.priceMax': 'سعر استرشادي إلى',
     'svc.leadTime': 'مدة التنفيذ',
     'svc.warranty': 'الضمان',
     'svc.days': 'يوم',
@@ -1738,7 +1742,7 @@ const translations: Record<Language, Record<string, string>> = {
     'rfq.title_field': 'عنوان الطلب',
     'rfq.description': 'صف متطلباتك بالتفصيل…',
     'rfq.category': 'الفئة',
-    'rfq.budget': 'الميزانية (جنيه)',
+    'rfq.budget': 'الميزانية',
     'rfq.location': 'الموقع',
     'rfq.deadline': 'الموعد النهائي',
     'rfq.linkedProject': 'ربط بمشروع (اختياري)',
@@ -2049,7 +2053,7 @@ const translations: Record<Language, Record<string, string>> = {
     'review.success': 'تم إرسال التقييم!',
     'review.rating_required': 'يرجى اختيار تقييم',
     // ── Quotation form ───────────────────────────────────────────────────────
-    'quote.price': 'سعرك (جنيه)',
+    'quote.price': 'سعرك',
     'quote.timeline': 'الجدول الزمني (أيام)',
     'quote.warranty': 'الضمان',
     'quote.payment_terms': 'شروط الدفع',
