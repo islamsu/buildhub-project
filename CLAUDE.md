@@ -1109,23 +1109,38 @@ Do not merge main without explicit owner authorization.
 
 ---
 
-## 44. Staging delivery
+## 44. Staging / owner-preview delivery
 
 Local success is not staging evidence.
 
-After owner authorizes merge:
+**Current owner direction:** the active release candidate should be continuously deployable to a safe staging / owner-preview environment while engineering continues. Do not wait for final merge to let the owner see the product.
 
-1. verify exact merged SHA
-2. recover/inspect Render deployment chain
-3. verify migrations
-4. deploy exact authorized main SHA
+Preview cadence:
+
+1. build/test the current release-candidate SHA
+2. deploy `claude/buildhub-global-release-candidate` to the isolated staging service whenever technically safe
+3. verify `/version` reports the exact expected SHA and `environment: "staging"`
+4. run pinned browser/HTTP acceptance against that exact SHA
+5. let the owner visually inspect the evolving product
+6. continue fixing and redeploying staging as work advances
+
+Staging preview must use isolated staging data/secrets and must never write to production.
+
+A preview deployment may be called **STAGING PREVIEW VERIFIED** only for the exact release-candidate SHA actually served and tested. It is not the final merged-release verification and it is not production authorization.
+
+After the owner later authorizes the final merge:
+
+1. verify exact merged `main` SHA
+2. switch/reconfirm staging tracks `main`
+3. verify migration state
+4. deploy that exact merged SHA
 5. verify `/version`
-6. run pinned staging QA
-7. produce owner acceptance checklist
+6. run the full pinned staging gate
+7. produce the owner acceptance checklist
 
-Only then can status become STAGING VERIFIED.
+Only then can the final merged release be called **STAGING VERIFIED**.
 
-Only after the owner opens the correct build and sees the expected product can status become OWNER DELIVERED.
+Only after the owner opens the correct deployed build and sees the expected product can status become **OWNER DELIVERED**.
 
 ---
 
