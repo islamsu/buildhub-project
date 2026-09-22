@@ -75,7 +75,31 @@ appears, and tighten breadth before adding a relationship gate.
 
 ---
 
-## 3. Supplier answers: editing and moderation — **OPEN — OWNER, and there is a gap**
+## 3. Supplier answers: editing and moderation — **DECIDED BY OWNER, NOW BUILT**
+
+**Owner direction given, 22 September.** Do not launch a public product Q&A
+surface with no moderation path. Both halves are now implemented.
+
+**Editing.** A supplier may correct their own answer. The previous text is
+kept in `productAnswerRevisions`, the listing carries an "Edited" marker, and
+the buyer who asked is notified that it changed — because an editable public
+answer is otherwise a way to rewrite history: answer "yes, we ship to
+Alexandria", take the order, quietly change it to "no". A hidden answer cannot
+be edited, so moderation cannot be rewritten out from under.
+
+**Moderation.** Built on the *existing* review-report architecture rather than
+as a second system: `shared/contentModeration.ts` now holds the one lifecycle
+both obey, and `shared/reviews.ts` draws its statuses and actions from it
+instead of restating them. Anyone signed in can report a question or an answer
+*separately*; nobody can report their own words; one report per person per
+target. Administrators get a queue carrying the product, the supplier, the
+reporter, the reason and which half was reported, with hide/restore per half,
+a required reason to hide, a resolution note, and an attention badge. Hiding is
+never deletion — content stops rendering publicly and stays fully auditable.
+
+**Evidence.** `evidence/zg-qamoderation.mjs` — 25/25, mutation-tested.
+
+**Superseded record of the gap, kept because it explains the shape of the fix:**
 
 **What the product does now.** A supplier answers a product question **once**.
 A second attempt is refused with `CONFLICT`. There is no edit path.

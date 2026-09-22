@@ -6,14 +6,16 @@ PASS  4. VERSION: it says WHEN it was built - "built" and "restarted" are differ
 PASS  5. VERSION: and which environment it believes it is  [development]
 PASS  6. VERSION: exactly four fields - no host, no branch, no configuration  [buildTime, commit, environment, shortCommit]
 PASS  7. VERSION: and nothing in it looks like a credential  [{"commit":"9e5faeef8bc7ccb84d99f20d29374dc3c6ab9aa9","shortCommit":"9e5faee","buildTime":"2026-09-22T09:56:39.195Z","environment":"development"}]
-PASS  8. TRUTHFUL: the running build reports the commit this tree is actually on  [serving 9e5faee, tree at 9e5faee]
-PASS  9. SETUP: an administrator to look at the console  [admin 778]
-PASS  10. CONSOLE: the build is on Admin -> Operations, without hunting for it
-PASS  11. CONSOLE: and it shows the SAME build the endpoint serves  [console "9e5faee" vs endpoint "9e5faee"]
-PASS  12. CONSOLE: with the full commit available to copy, not just the short one  [9e5faeef8bc7ccb84d99f20d29374dc3c6ab9aa9]
-PASS  13. CONSOLE: and names the environment beside it  [Deployed build |  | 9e5faee |  | development · 9/22/2026, 9:56:39 AM]
-PASS  14. HONEST: an unidentifiable build is marked as a problem, not shown in grey
-PASS  15. HONEST: and says so in words a person can act on
-PASS  16. GATE: a probe told to expect another commit refuses to report at all  [exit=3]
+PASS  8. TRUTHFUL: the running build reports the commit it was BUILT from  [serving 9e5faee, stamp 9e5faee]
+PASS  9. TRUTHFUL: and the build time it was stamped with, not the time it started  [2026-09-22T09:56:39.195Z vs 2026-09-22T09:56:39.195Z]
+PASS  10. TRUTHFUL: and that commit really exists in this repository  [9e5faee: real]
+PASS  11. SETUP: an administrator to look at the console  [admin 813]
+PASS  12. CONSOLE: the build is on Admin -> Operations, without hunting for it
+PASS  13. CONSOLE: and it shows the SAME build the endpoint serves  [console "9e5faee" vs endpoint "9e5faee"]
+PASS  14. CONSOLE: with the full commit available to copy, not just the short one  [9e5faeef8bc7ccb84d99f20d29374dc3c6ab9aa9]
+PASS  15. CONSOLE: and names the environment beside it  [Deployed build |  | 9e5faee |  | development · 9/22/2026, 9:56:39 AM]
+PASS  16. HONEST: an unidentifiable build is marked as a problem, not shown in grey
+PASS  17. HONEST: and says so in words a person can act on
+PASS  18. GATE: a probe told to expect another commit refuses to report at all  [exit=3]
 
-16/16 checks passed
+18/18 checks passed

@@ -701,6 +701,16 @@
       "indent": 2
     },
     {
+      "name": "editAnswer",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "reportQuestion",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "myProductQuestions",
       "tier": "protectedProcedure",
       "indent": 2
@@ -1551,9 +1561,29 @@
       "indent": 2
     },
     {
-      "name": "reviewReports",
+      "name": "productQuestionReports",
       "tier": "adminWith:support.manage",
       "indent": 2
+    },
+    {
+      "name": "productAnswerRevisions",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "moderateProductQuestion",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "resolveProductQuestionReport",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "reviewReports",
+      "tier": "adminWith:support.manage",
+      "indent": 3
     },
     {
       "name": "moderateReview",
@@ -1748,7 +1778,7 @@
   ],
   "procedureTiers": {
     "publicProcedure": 35,
-    "protectedProcedure": 87,
+    "protectedProcedure": 89,
     "complianceProcedure": 6,
     "approvedProviderProcedure": 31,
     "adminWith:marketplace.manage": 44,
@@ -1760,7 +1790,7 @@
     "superAdminProcedure": 10,
     "adminProcedure": 4,
     "adminWith:billing.manage": 8,
-    "adminWith:support.manage": 16,
+    "adminWith:support.manage": 20,
     "adminWith:settings.manage": 2,
     "aiChatProcedure": 1
   },
@@ -1864,9 +1894,25 @@
     {
       "ident": "productQuestions",
       "name": "productQuestions",
-      "columns": 9,
+      "columns": 17,
+      "references": 4,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "productAnswerRevisions",
+      "name": "productAnswerRevisions",
+      "columns": 7,
       "references": 2,
       "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "productQuestionReports",
+      "name": "productQuestionReports",
+      "columns": 14,
+      "references": 3,
+      "notNull": 6,
       "unique": 0
     },
     {
@@ -2233,127 +2279,142 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 695,
+      "line": 703,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 1485,
+      "line": 1493,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 1573,
+      "line": 1581,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2803,
+      "line": 2828,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2883,
+      "line": 2908,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3723,
+      "line": 2959,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3780,
+      "line": 3838,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4326,
+      "line": 3895,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4708,
+      "line": 4441,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5123,
+      "line": 4823,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5365,
+      "line": 5238,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5557,
+      "line": 5492,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5727,
+      "line": 5684,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7191,
+      "line": 5854,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7534,
+      "line": 7318,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7612,
+      "line": 7661,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8458,
+      "line": 7739,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8529,
+      "line": 8585,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8933,
+      "line": 8656,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9150,
+      "line": 9060,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9180,
+      "line": 9277,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9213,
+      "line": 9307,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9435,
+      "line": 9340,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9517,
+      "line": 9554,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9638,
+      "line": 9601,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 9703,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 9785,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 9906,
       "via": "notifyUser"
     },
     {

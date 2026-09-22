@@ -39,6 +39,7 @@ import AdminDisputes from '@/components/AdminDisputes';
 import AdminSupportTickets from '@/components/AdminSupportTickets';
 import AdminRegistrations from '@/components/AdminRegistrations';
 import AdminReviewModeration from '@/components/AdminReviewModeration';
+import AdminProductQuestionModeration from '@/components/AdminProductQuestionModeration';
 import AdminAuditTrail from '@/components/AdminAuditTrail';
 import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { ROLE_GROUPS, labelForRole, formatComplianceStatus, EmptyState } from '@/lib/adminRoleLabels';
@@ -199,6 +200,12 @@ export default function AdminDashboard() {
    */
   const attention = trpc.admin.attention.useQuery(undefined, { retry: false });
   const nameChangesWaiting = attention.data?.nameChanges;
+  const questionReportsWaiting = attention.data?.productQuestions;
+  /* `/admin/reviews?tab=questions` is what the attention badge links to, so a
+     moderator who follows the count lands on the queue it counted rather than
+     on the reviews beside it. */
+  const [moderationTab, setModerationTab] = useState(
+    new URLSearchParams(window.location.search).get('tab') === 'questions' ? 'questions' : 'reviews');
   const [includeDummyRegistrations, setIncludeDummyRegistrations] = useState(false);
   const [createAccountType, setCreateAccountType] = useState<'admin' | 'dummy' | null>(null);
   const [accountDraft, setAccountDraft] = useState({ name: '', username: '', email: '', phone: '', userRole: 'homeowner', note: '', password: '' });
@@ -885,7 +892,45 @@ export default function AdminDashboard() {
           <TabsContent value="registrations"><AdminRegistrations /></TabsContent>
 
           <TabsContent value="support"><AdminSupportTickets openRecord={adminRecord} /></TabsContent>
-          <TabsContent value="reviews"><AdminReviewModeration /></TabsContent>
+          {/* ── MODERATION: TWO QUEUES, ONE DESTINATION ────────────────────
+              Reviews and product Q&A are the same job - public content on
+              somebody's listing, judged against the same lifecycle, by the
+              same permission. Two top-level destinations would make a
+              moderator check two places to learn whether anything is waiting;
+              the badge in the sidebar counts both and lands here.
+
+              `?tab=questions` is what the attention badge links to, so the
+              count and the screen it opens are the same thing. */}
+          <TabsContent value="reviews">
+            <Tabs value={moderationTab} onValueChange={setModerationTab} className="space-y-4">
+              <TabsList>
+                <TabsTrigger value="reviews" data-testid="moderation-tab-reviews">
+                  {lang === 'ar' ? 'التقييمات' : 'Reviews'}
+                </TabsTrigger>
+                <TabsTrigger value="questions" data-testid="moderation-tab-questions" className="gap-2">
+                  {lang === 'ar' ? 'أسئلة المنتجات' : 'Product questions'}
+                  {attention.isError ? (
+                    <span
+                      data-testid="tab-attention-productQuestions"
+                      data-attention-state="unknown"
+                      title={lang === 'ar' ? 'تعذر تحميل هذا العدد' : 'This count could not be loaded'}
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-dashed px-1.5 text-[11px] font-medium text-muted-foreground"
+                    >?</span>
+                  ) : questionReportsWaiting && questionReportsWaiting.count > 0 ? (
+                    <span
+                      data-testid="tab-attention-productQuestions"
+                      data-attention-state="waiting"
+                      data-attention-count={questionReportsWaiting.count}
+                      title={questionReportsWaiting.meaning}
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground"
+                    >{questionReportsWaiting.count > 99 ? '99+' : questionReportsWaiting.count}</span>
+                  ) : null}
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="reviews"><AdminReviewModeration /></TabsContent>
+              <TabsContent value="questions"><AdminProductQuestionModeration /></TabsContent>
+            </Tabs>
+          </TabsContent>
 
           {/* Operations. The tab this replaces was "Fraud Detection", which
               rendered a permanent empty state - there is no detector and no

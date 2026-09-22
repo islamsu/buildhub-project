@@ -107,11 +107,35 @@ try {
   check(!/mysql:|postgres:|password|secret|key|token|@/i.test(body),
     'VERSION: and nothing in it looks like a credential', body);
 
-  /* ── THE COMMIT IS THE ONE THIS TREE IS ON ───────────────────────────── */
-  const head = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
-  check(version.commit.toLowerCase() === head.toLowerCase(),
-    'TRUTHFUL: the running build reports the commit this tree is actually on',
-    `serving ${version.shortCommit}, tree at ${head.slice(0, 7)}`);
+  /*
+   * ── THE COMMIT IS THE ONE IT WAS BUILT FROM ─────────────────────────────
+   *
+   * NOT the commit the working tree is on. The first version of this check
+   * compared against `git rev-parse HEAD` and failed the moment a commit
+   * landed after the last build - which was the stamp being RIGHT: a server
+   * reports the build it is running, and the tree moving on does not change
+   * what is deployed. Asserting otherwise would have meant "rebuild before
+   * every probe", and would have taught somebody to relax the stamp to make
+   * a probe pass.
+   *
+   * What must be true is narrower and is the thing that actually matters:
+   * the served identity is the one recorded in the artefact the server reads,
+   * and that identity is a REAL commit in this repository rather than a
+   * plausible-looking string.
+   */
+  const stamp = JSON.parse(execSync('cat dist/build-info.json', { encoding: 'utf8' }));
+  check(version.commit.toLowerCase() === String(stamp.commit).toLowerCase(),
+    'TRUTHFUL: the running build reports the commit it was BUILT from',
+    `serving ${version.shortCommit}, stamp ${stamp.shortCommit}`);
+  check(version.buildTime === stamp.buildTime,
+    'TRUTHFUL: and the build time it was stamped with, not the time it started',
+    `${version.buildTime} vs ${stamp.buildTime}`);
+  const known = execSync(
+    `git cat-file -e ${version.commit}^{commit} 2>&1 && echo real || echo unknown`,
+    { encoding: 'utf8', shell: '/bin/bash' }).trim();
+  check(known.endsWith('real'),
+    'TRUTHFUL: and that commit really exists in this repository',
+    `${version.shortCommit}: ${known}`);
 
   /* ── AN ADMINISTRATOR CAN SEE IT ─────────────────────────────────────── */
   const admin = `zbldA${stamp}`;

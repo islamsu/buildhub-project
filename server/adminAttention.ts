@@ -35,8 +35,10 @@
  */
 import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
-  disputes, reviewReports, supportTickets, users, vendorNameChangeRequests,
+  disputes, productQuestionReports, reviewReports, supportTickets, users,
+  vendorNameChangeRequests,
 } from '../drizzle/schema';
+import { CONTENT_REPORT_OPEN_STATUSES } from '../shared/contentModeration';
 import { requireDb } from './_core/requireDb';
 import { enquiryAttention } from './vendorEnquiryQuery';
 import { DISPUTE_OPEN_STATUSES } from '../shared/disputes';
@@ -44,6 +46,7 @@ import { DISPUTE_OPEN_STATUSES } from '../shared/disputes';
 /** The queues that can carry an attention badge. */
 export const ATTENTION_QUEUES = [
   'enquiries', 'registrations', 'disputes', 'support', 'reviews', 'nameChanges',
+  'productQuestions',
 ] as const;
 export type AttentionQueue = (typeof ATTENTION_QUEUES)[number];
 
@@ -95,6 +98,16 @@ export const ATTENTION_META: Readonly<Record<AttentionQueue, { meaning: string; 
     meaning: 'name change requests still open',
     href: '/admin/name-changes',
   },
+  /*
+   * Public Q&A had no moderation path at all until 0056, so it had nothing to
+   * count. A reported question or answer sits on a supplier's product page
+   * until somebody acts on it, which makes it exactly the kind of queue that
+   * must not depend on an administrator remembering to look.
+   */
+  productQuestions: {
+    meaning: 'reported product questions and answers not yet resolved',
+    href: '/admin/reviews?tab=questions',
+  },
 };
 
 /** Provider roles whose registration goes through compliance review. */
@@ -112,8 +125,10 @@ export async function adminAttention(): Promise<AdminAttention> {
   const one = async (query: Promise<{ total: number }[]>) =>
     Number((await query)[0]?.total ?? 0);
 
-  const [enquiries, registrations, openDisputes, openSupport, reportedReviews, nameChanges] =
-    await Promise.all([
+  const [
+    enquiries, registrations, openDisputes, openSupport, reportedReviews, nameChanges,
+    reportedQuestions,
+  ] = await Promise.all([
       enquiryAttention(db),
       one(db.select({ total: count() }).from(users).where(and(
         inArray(users.userRole, PROVIDER_ROLES),
@@ -136,6 +151,11 @@ export async function adminAttention(): Promise<AdminAttention> {
       one(db.select({ total: count() }).from(vendorNameChangeRequests).where(
         inArray(vendorNameChangeRequests.status, NAME_CHANGE_OPEN),
       ) as unknown as Promise<{ total: number }[]>),
+      // Only 'open'. An upheld or rejected report has been decided, and
+      // counting a decision as work is how a queue stops being believed.
+      one(db.select({ total: count() }).from(productQuestionReports).where(
+        inArray(productQuestionReports.status, [...CONTENT_REPORT_OPEN_STATUSES]),
+      ) as unknown as Promise<{ total: number }[]>),
     ]);
 
   const counts: Record<AttentionQueue, number> = {
@@ -145,6 +165,7 @@ export async function adminAttention(): Promise<AdminAttention> {
     support: openSupport,
     reviews: reportedReviews,
     nameChanges,
+    productQuestions: reportedQuestions,
   };
 
   return Object.fromEntries(ATTENTION_QUEUES.map(

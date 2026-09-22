@@ -217,6 +217,21 @@ const translations: Record<Language, Record<string, string>> = {
     'notif.product.question.body': 'Someone asked a question about "{productName}".',
     'notif.product.answered.title': 'Your question was answered',
     'notif.product.answered.body': 'The supplier answered your question about "{productName}".',
+    // An answer a buyer relied on can now be CORRECTED, and they are told when
+    // it is. A supplier who answers "yes, we ship to Alexandria", takes the
+    // order and quietly changes it is exactly what this notice exists to stop.
+    'notif.product.answerEdited.title': 'An answer you asked about was updated',
+    'notif.product.answerEdited.body': 'The supplier changed their answer about "{productName}".',
+    // Moderation, told to the person whose words were acted on. Content
+    // removed from a public page with no word to its author is how moderation
+    // becomes something that happens TO people rather than something they can
+    // answer.
+    'notif.product.moderated.title': 'Something you posted was hidden',
+    'notif.product.moderated.body': 'BuildHub hid a product question or answer you posted.',
+    'notif.product.restored.title': 'Something you posted was restored',
+    'notif.product.restored.body': 'BuildHub restored a product question or answer you posted.',
+    'notif.product.reportResolved.title': 'Your report about a product question was reviewed',
+    'notif.product.reportResolved.body': 'The report was {statusKey}.',
     'notif.quotation.accepted.title': 'Quotation accepted',
     'notif.quotation.accepted.body': 'Your quotation for "{rfqTitle}" was accepted.',
     'notif.quotation.notSelected.title': 'Quotation not selected',
@@ -1433,6 +1448,14 @@ const translations: Record<Language, Record<string, string>> = {
     'notif.product.question.body': 'طرح أحدهم سؤالاً عن "{productName}".',
     'notif.product.answered.title': 'تمت الإجابة على سؤالك',
     'notif.product.answered.body': 'أجاب المورد على سؤالك عن "{productName}".',
+    'notif.product.answerEdited.title': 'تم تحديث إجابة سألت عنها',
+    'notif.product.answerEdited.body': 'غيّر المورد إجابته عن "{productName}".',
+    'notif.product.moderated.title': 'تم إخفاء محتوى نشرته',
+    'notif.product.moderated.body': 'أخفت بيلدهَب سؤالًا أو إجابة عن منتج نشرتها.',
+    'notif.product.restored.title': 'تمت إعادة إظهار محتوى نشرته',
+    'notif.product.restored.body': 'أعادت بيلدهَب إظهار سؤال أو إجابة عن منتج نشرتها.',
+    'notif.product.reportResolved.title': 'تمت مراجعة بلاغك عن سؤال منتج',
+    'notif.product.reportResolved.body': 'تم {statusKey} البلاغ.',
     'notif.quotation.accepted.title': 'تم قبول عرض السعر',
     'notif.quotation.accepted.body': 'تم قبول عرض سعرك على "{rfqTitle}".',
     'notif.quotation.notSelected.title': 'لم يتم اختيار عرض السعر',

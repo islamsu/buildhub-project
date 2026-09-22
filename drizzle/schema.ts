@@ -379,9 +379,70 @@ export const productQuestions = mysqlTable('productQuestions', {
   answer:     text('answer'),
   answeredAt: timestamp('answeredAt'),
   createdAt:  timestamp('createdAt').defaultNow().notNull(),
+  // ── MODERATION (0056) ───────────────────────────────────────────────────
+  // The question and the answer are hidden SEPARATELY. They are written by
+  // different people and go wrong independently: a reasonable question can
+  // get an abusive reply, and hiding one must not silence the other.
+  // Hidden, never deleted - see drizzle/0056_product_question_moderation.sql.
+  hiddenAt:     timestamp('hiddenAt'),
+  hiddenBy:     int('hiddenBy').references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  hiddenReason: varchar('hiddenReason', { length: 500 }),
+  answerHiddenAt:     timestamp('answerHiddenAt'),
+  answerHiddenBy:     int('answerHiddenBy').references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  answerHiddenReason: varchar('answerHiddenReason', { length: 500 }),
+  /** Set when the answer has been corrected. Drives the public "Edited" marker. */
+  answerEditedAt: timestamp('answerEditedAt'),
 }, table => ({
   productIdIdx: index('productQuestions_productId_idx').on(table.productId),
   askerIdIdx: index('productQuestions_askerId_idx').on(table.askerId),
+  hiddenAtIdx: index('productQuestions_hiddenAt_idx').on(table.hiddenAt),
+}));
+
+/**
+ * What an answer USED to say.
+ *
+ * An editable public answer is a way to rewrite history - answer "yes, we
+ * ship to Alexandria", take the order, quietly change it to "no". The current
+ * text lives on productQuestions.answer; every version it replaced is kept
+ * here, so an edit is a correction and never an erasure.
+ */
+export const productAnswerRevisions = mysqlTable('productAnswerRevisions', {
+  id:         int('id').autoincrement().primaryKey(),
+  questionId: int('questionId').notNull().references(() => productQuestions.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  answer:     text('answer').notNull(),
+  /** When the superseded text was originally published. */
+  answeredAt: timestamp('answeredAt'),
+  replacedAt: timestamp('replacedAt').defaultNow().notNull(),
+  replacedBy: int('replacedBy').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+}, table => ({
+  questionIdIdx: index('productAnswerRevisions_questionId_idx').on(table.questionId),
+}));
+
+/**
+ * Reports against a question or an answer.
+ *
+ * Shaped like `reviewReports` deliberately - same states, same resolution
+ * columns - so a moderator working both queues meets one decision rather than
+ * two. The lifecycle itself lives in shared/contentModeration.ts.
+ */
+export const productQuestionReports = mysqlTable('productQuestionReports', {
+  id:         int('id').autoincrement().primaryKey(),
+  questionId: int('questionId').notNull().references(() => productQuestions.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  target:     mysqlEnum('target', ['question', 'answer']).notNull(),
+  reporterId: int('reporterId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  reason:     mysqlEnum('reason', ['abusive', 'personal_data', 'off_platform', 'competitor', 'not_a_question', 'spam', 'other']).notNull(),
+  detail:     varchar('detail', { length: 1000 }),
+  status:     mysqlEnum('status', ['open', 'upheld', 'rejected']).default('open').notNull(),
+  resolutionNote: varchar('resolutionNote', { length: 1000 }),
+  resolvedBy: int('resolvedBy').references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  resolvedAt: timestamp('resolvedAt'),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  statusIdx: index('productQuestionReports_status_idx').on(table.status),
+  questionIdIdx: index('productQuestionReports_questionId_idx').on(table.questionId),
+  // One open report per person per target: a reporter clicking twice is not
+  // two reports, and letting it become two drowns the queue it feeds.
+  uniqueReporter: uniqueIndex('productQuestionReports_unique_reporter').on(table.questionId, table.target, table.reporterId),
 }));
 
 // ── Marketplace Products ───────────────────────────────────────────────────

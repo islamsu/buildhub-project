@@ -158,6 +158,12 @@ export const ACCOUNT_AUDIT_ACTIONS = [
   'review_restored',
   'review_report_resolved',
 
+  // ── PRODUCT Q&A MODERATION ──────────────────────────────────────────────
+  // Same reasoning as reviews: what somebody reported on a public listing and
+  // what a moderator decided is account history, and it has to be answerable
+  // months later beside the rest of the record.
+  'product_question_report_resolved',
+
   // ── PLATFORM CONFIGURATION ──────────────────────────────────────────────
   // Not about an account, and recorded here anyway, because this is the trail
   // that answers "who did that" for a privileged act. Maintenance mode and

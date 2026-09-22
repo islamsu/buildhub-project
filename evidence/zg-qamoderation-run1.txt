@@ -1,0 +1,28 @@
+BUILD  9e5faee (development) built 2026-09-22T09:56:39.195Z  http://127.0.0.1:5401
+PASS  1. SETUP: a supplier with a listed product, a buyer and an administrator  [product 58]
+PASS  2. SETUP: the buyer asks and the supplier answers  [question 4]
+PASS  3. SELF: the asker cannot report their own question  [BAD_REQUEST You cannot report your own words.]
+PASS  4. SELF: and the supplier cannot report their own answer  [BAD_REQUEST You cannot report your own words.]
+PASS  5. REPORT: the buyer can report the ANSWER  [accepted]
+PASS  6. REPORT: and the supplier can report the QUESTION  [accepted]
+PASS  7. REPORT: reporting the same thing twice is refused, so the queue is not flooded  [CONFLICT]
+PASS  8. REPORT: exactly two reports were stored  [2]
+PASS  9. ADMIN: the reported-questions queue is reachable from the console
+PASS  10. ADMIN: both reports are in the queue  [2 rows]
+PASS  11. ADMIN: and each row names the product, the supplier, the reason and WHICH half  [product true, supplier true, reason true, target true]
+PASS  12. HIDE: an administrator can hide the answer  [hidden]
+PASS  13. HIDE: and cannot hide anything without recording WHY  [BAD_REQUEST]
+PASS  14. PUBLIC: the answer is gone from the listing but the QUESTION still stands  [answer null, answerHidden true]
+PASS  15. PUBLIC: and the page SAYS the answer was removed rather than looking ignored
+PASS  16. AUDITABLE: the hidden answer is still in the database, not destroyed  [answer present: 1]
+PASS  17. RESTORE: and restoring returns the answer to the listing  [answerHidden false]
+PASS  18. HIDE: hiding the question takes the whole exchange off the listing  [correctly absent]
+PASS  19. SEPARATE: upholding a report does NOT hide the content by itself  [upheld true, hidden 0]
+PASS  20. EDIT: a supplier can correct their own answer  [revisions 1]
+PASS  21. EDIT: and the answer it replaced is KEPT - an edit is a correction, not an erasure  [Yes, we deliver to Alexandria within a week.]
+PASS  22. EDIT: somebody else's answer is NOT_FOUND, not FORBIDDEN - no oracle  [NOT_FOUND]
+PASS  23. EDIT: the buyer who asked is told the answer changed  [1 notification(s)]
+PASS  24. EDIT: and the listing marks the answer as edited, publicly
+PASS  25. MODERATION HOLDS: a hidden answer cannot be edited out from under the decision  [CONFLICT]
+
+25/25 checks passed

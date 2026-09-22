@@ -110,7 +110,7 @@ import {
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems, qualifiedEnquiries,
   projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals, referralCampaigns, referralRewards,
-  reviewResponses, reviewReports,
+  reviewResponses, reviewReports, productQuestionReports,
   supportTickets, supportTicketMessages, supportTicketAttachments,
   disputeStatusHistory, disputeMessages, disputeEvidence, productCategories, serviceOfferings,
 } from '../drizzle/schema';
@@ -174,6 +174,14 @@ import {
   respondToReview, reportReview, moderateReview, resolveReviewReport,
   listReviewReports, visibleReviewsFor, visibleReviewFilter, ReviewModerationError,
 } from './reviewModeration';
+import {
+  answerRevisions, editProductAnswer, listProductQuestionReports, moderateProductQuestion,
+  ProductQuestionModerationError, publicQuestionView, reportProductQuestion,
+  resolveProductQuestionReport, visibleQuestionFilter,
+} from './productQuestionModeration';
+import {
+  PRODUCT_ANSWER_MAX_LENGTH, PRODUCT_QUESTION_REPORT_REASONS, PRODUCT_QUESTION_REPORT_TARGETS,
+} from '../shared/productQuestions';
 import { REVIEW_REPORT_REASONS, REVIEW_RESPONSE_MAX_LENGTH } from '../shared/reviews';
 import {
   publicProductFilter, transitionProduct, ProductLifecycleError,
@@ -2762,14 +2770,31 @@ const marketplaceRouter = router({
     // catalogue and collect the user id of every buyer who had asked about
     // anything. The page renders the question, the answer and the timestamps;
     // it has never needed to say who asked.
-    return db.select({
+    /*
+     * MODERATED CONTENT DOES NOT RENDER HERE. A hidden question is excluded
+     * outright; a hidden ANSWER leaves its question standing, because the
+     * question was asked in good faith and silence reads very differently
+     * from "BuildHub removed the reply" to somebody deciding whether to buy.
+     * `publicQuestionView` is the single place that distinction is made.
+     */
+    const rows = await db.select({
       id: productQuestions.id,
       productId: productQuestions.productId,
       question: productQuestions.question,
       answer: productQuestions.answer,
       answeredAt: productQuestions.answeredAt,
       createdAt: productQuestions.createdAt,
-    }).from(productQuestions).where(eq(productQuestions.productId, input.productId)).orderBy(desc(productQuestions.createdAt));
+      answerHiddenAt: productQuestions.answerHiddenAt,
+      answerEditedAt: productQuestions.answerEditedAt,
+    }).from(productQuestions)
+      .where(and(eq(productQuestions.productId, input.productId), visibleQuestionFilter()))
+      .orderBy(desc(productQuestions.createdAt));
+    return rows.map(row => {
+      // The moderation stamps are working data, never public: when an answer
+      // was hidden is nobody's business but the moderator's.
+      const { answerHiddenAt, answerEditedAt, ...rest } = publicQuestionView(row);
+      return rest;
+    });
   }),
   askQuestion: protectedProcedure.input(z.object({ productId: z.number(), question: z.string().min(2).max(2000) })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
@@ -2892,6 +2917,96 @@ const marketplaceRouter = router({
       }
       return { id: input.questionId };
     }),
+
+  /**
+   * A SUPPLIER CORRECTS THEIR OWN ANSWER.
+   *
+   * The old rule was write-once. A supplier who mistyped a dimension or quoted
+   * the wrong warranty could never fix it, and the wrong answer stayed on a
+   * public product page forever - which is a worse outcome than a visible
+   * correction.
+   *
+   * THE PREVIOUS TEXT IS KEPT. An editable public answer is otherwise a way to
+   * rewrite history: answer "yes, we ship to Alexandria", take the order,
+   * quietly change it to "no". Every superseded version goes to
+   * productAnswerRevisions and the listing carries an "Edited" marker.
+   */
+  editAnswer: protectedProcedure
+    .input(z.object({
+      questionId: z.number().int().positive(),
+      answer: z.string().trim().min(2).max(PRODUCT_ANSWER_MAX_LENGTH),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      let result;
+      try {
+        result = await editProductAnswer(db, {
+          questionId: input.questionId, supplierId: ctx.user.id, answer: input.answer,
+        });
+      } catch (error) { throw asQuestionTrpcError(error); }
+
+      // THE PERSON WHO ASKED IS TOLD. An answer they relied on changing
+      // without a word is the exact harm the revision history exists to make
+      // visible, and a record they never see is only half a remedy.
+      const [question] = await db.select({
+        askerId: productQuestions.askerId,
+        productId: productQuestions.productId,
+        productName: products.name,
+      }).from(productQuestions)
+        .innerJoin(products, eq(products.id, productQuestions.productId))
+        .where(eq(productQuestions.id, input.questionId)).limit(1);
+      if (question && question.askerId !== ctx.user.id) {
+        await notifyUser(db, {
+          userId: question.askerId,
+          title: 'An answer you asked about was updated',
+          body: `The supplier changed their answer about "${question.productName}".`,
+          type: 'product',
+          link: `/marketplace/products/${question.productId}`,
+          messageKey: 'notif.product.answerEdited',
+          messageParams: { productName: question.productName ?? '' },
+        });
+      }
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        subjectType: 'product', subjectId: question?.productId ?? 0,
+        action: 'product_answer_edited',
+        detail: `question ${input.questionId}, revision ${result.revisions}`,
+      });
+      return result;
+    }),
+
+  /**
+   * ANYBODY SIGNED IN MAY REPORT A QUESTION OR AN ANSWER.
+   *
+   * Until this existed a question carrying abuse, a third party's phone number
+   * or a competitor's contact details sat on a supplier's product page with no
+   * remedy available to anyone - not the supplier, not an administrator.
+   *
+   * The two halves are reported SEPARATELY because they are written by
+   * different people: a reasonable question can get an abusive reply, and
+   * forcing a moderator to act on both would punish whoever wrote the other
+   * half.
+   */
+  reportQuestion: protectedProcedure
+    .input(z.object({
+      questionId: z.number().int().positive(),
+      target: z.enum(PRODUCT_QUESTION_REPORT_TARGETS),
+      reason: z.enum(PRODUCT_QUESTION_REPORT_REASONS),
+      detail: z.string().trim().max(1000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await reportProductQuestion(db, {
+          questionId: input.questionId,
+          target: input.target,
+          reporterId: ctx.user.id,
+          reason: input.reason,
+          detail: input.detail ?? null,
+        });
+      } catch (error) { throw asQuestionTrpcError(error); }
+    }),
+
   /**
    * The questions on THIS supplier's own products, so they have somewhere to
    * answer from. Scoped by supplierId in the join - a supplier sees their own
@@ -5191,6 +5306,18 @@ function asReviewTrpcError(error: unknown): TRPCError {
     return new TRPCError({ code: error.code, message: error.message });
   }
   return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Review operation failed' });
+}
+
+/**
+ * The same shape for Q&A moderation, and for the same reason: a domain error
+ * that carries its own code must not be flattened into a 500, or a caller
+ * cannot tell "you already reported this" from "the database is down".
+ */
+function asQuestionTrpcError(error: unknown): TRPCError {
+  if (error instanceof ProductQuestionModerationError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Moderation operation failed' });
 }
 
 // ── Vendor Profile Router ─────────────────────────────────────────────────
@@ -9344,6 +9471,147 @@ const adminRouter = router({
    * Behind `support.manage`, beside disputes and tickets, because it is the
    * same job: somebody complained and a human has to decide.
    */
+  /**
+   * ── PRODUCT Q&A MODERATION ───────────────────────────────────────────────
+   *
+   * The same permission as review moderation, deliberately: both are public
+   * content on somebody's listing, judged against the same lifecycle, and a
+   * moderator who can act on one has no reason to be barred from the other.
+   */
+  productQuestionReports: adminWith('support.manage')
+    .input(z.object({
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(20),
+      status: z.string().max(16).optional(),
+    }).default({ page: 0, pageSize: 20 }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return listProductQuestionReports(db, input);
+    }),
+
+  /** What an answer used to say, for a moderator weighing an edit. */
+  productAnswerRevisions: adminWith('support.manage')
+    .input(z.object({ questionId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return answerRevisions(db, input.questionId);
+    }),
+
+  /**
+   * Hide or restore a question, or an answer, independently.
+   *
+   * HIDING IS NOT DELETION. The row stays, the words stay, and the decision
+   * stays reviewable - which is the only way it can be defended afterwards to
+   * the person whose words were removed.
+   */
+  moderateProductQuestion: adminWith('support.manage')
+    .input(z.object({
+      questionId: z.number().int().positive(),
+      target: z.enum(PRODUCT_QUESTION_REPORT_TARGETS),
+      action: z.enum(['hide', 'restore']),
+      reason: z.string().trim().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      let result;
+      try {
+        result = await moderateProductQuestion(db, {
+          questionId: input.questionId,
+          target: input.target,
+          actorId: ctx.user.id,
+          action: input.action,
+          reason: input.reason ?? null,
+        });
+      } catch (error) { throw asQuestionTrpcError(error); }
+
+      const [question] = await db.select({
+        productId: productQuestions.productId,
+        askerId: productQuestions.askerId,
+        supplierId: products.supplierId,
+      }).from(productQuestions)
+        .innerJoin(products, eq(products.id, productQuestions.productId))
+        .where(eq(productQuestions.id, input.questionId)).limit(1);
+
+      // WHO DID IT AND WHICH WAY. A trail that records "moderated" without the
+      // direction cannot answer the only question anybody asks of it later.
+      const action = input.target === 'question'
+        ? (result.hidden ? 'product_question_hidden' : 'product_question_restored')
+        : (result.hidden ? 'product_answer_hidden' : 'product_answer_restored');
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id,
+        ownerId: question?.supplierId ?? ctx.user.id,
+        subjectType: 'product',
+        subjectId: question?.productId ?? 0,
+        action,
+        detail: `question ${input.questionId}`,
+      });
+
+      // THE AUTHOR IS TOLD. Words removed from a public page without a word to
+      // the person who wrote them is how moderation becomes something that
+      // happens TO people rather than something they can answer.
+      const authorId = input.target === 'question' ? question?.askerId : question?.supplierId;
+      if (question && authorId && authorId !== ctx.user.id) {
+        await notifyUser(db, {
+          userId: authorId,
+          title: result.hidden
+            ? 'Something you posted was hidden'
+            : 'Something you posted was restored',
+          body: result.hidden
+            ? 'BuildHub hid a product question or answer you posted.'
+            : 'BuildHub restored a product question or answer you posted.',
+          type: 'product',
+          link: `/marketplace/products/${question.productId}`,
+          messageKey: result.hidden ? 'notif.product.moderated' : 'notif.product.restored',
+          messageParams: {},
+        });
+      }
+      return result;
+    }),
+
+  /** Resolve a report. Upholding does NOT hide - that is a separate decision. */
+  resolveProductQuestionReport: adminWith('support.manage')
+    .input(z.object({
+      reportId: z.number().int().positive(),
+      status: z.enum(['upheld', 'rejected']),
+      note: z.string().trim().max(1000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [report] = await db.select({
+        reporterId: productQuestionReports.reporterId,
+        questionId: productQuestionReports.questionId,
+      }).from(productQuestionReports)
+        .where(eq(productQuestionReports.id, input.reportId)).limit(1);
+      if (!report) throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
+      const [question] = await db.select({ productId: productQuestions.productId })
+        .from(productQuestions).where(eq(productQuestions.id, report.questionId)).limit(1);
+
+      try {
+        await resolveProductQuestionReport(db, {
+          reportId: input.reportId, actorId: ctx.user.id,
+          status: input.status, note: input.note ?? null,
+        });
+      } catch (error) { throw asQuestionTrpcError(error); }
+
+      await recordAccountEvent(db, {
+        userId: report.reporterId, actorId: ctx.user.id,
+        action: 'product_question_report_resolved', source: 'admin',
+        note: `report ${input.reportId} on question ${report.questionId}: ${input.status}`,
+      });
+      await notifyUser(db, {
+        userId: report.reporterId,
+        title: 'Your report about a product question was reviewed',
+        body: `The report was ${input.status}.`,
+        type: 'info',
+        // The product page, where the content either still stands or visibly
+        // no longer does - which is the whole question the reporter asked.
+        link: `/marketplace/products/${question?.productId ?? 0}`,
+        messageKey: 'notif.product.reportResolved',
+        messageParams: { statusKey: `reviewReport.status.${input.status}` },
+      });
+      return { ok: true };
+    }),
+
   reviewReports: adminWith('support.manage')
     .input(z.object({
       page: z.number().int().min(0).default(0),
