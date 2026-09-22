@@ -25,8 +25,7 @@ to be made by you in the Render dashboard.
 
 ## The precise owner action
 
-Render's `buildhub-staging` service currently tracks **`main`**. `main` is 41
-commits behind the release candidate, which is why staging shows old work.
+Render's `buildhub-staging` service currently tracks **`main`** rather than the active release-candidate branch, which is why staging can show old work while the release candidate continues to advance.
 
 **In the Render dashboard → `buildhub-staging` → Settings:**
 
@@ -66,14 +65,14 @@ You should see four fields and nothing else:
 
 ```json
 {
-  "commit": "72f3b17...",
-  "shortCommit": "72f3b17",
+  "commit": "<current-release-candidate-sha>",
+  "shortCommit": "<first-7-chars>",
   "buildTime": "2026-09-22T...",
   "environment": "staging"
 }
 ```
 
-- `shortCommit` must match the release-candidate head.
+- `commit` / `shortCommit` must match the exact release-candidate head you intended to preview.
 - `environment` must read **`staging`**, not `production`.
 
 The same four facts are on **Admin → Operations**, in the "Deployed build"
