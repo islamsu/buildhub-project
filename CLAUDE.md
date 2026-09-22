@@ -2315,3 +2315,17 @@ The architecture is now explicit:
 Treat this as an owner decision and do not re-open the model unless implementation uncovers a concrete contradiction.
 
 Before GCC enablement, remove the current `BILLING_CURRENCY` coupling from quotation creation and implement the additive market/currency foundations described in the scale-readiness document.
+
+
+---
+
+## 88. REGIONAL CORRECTNESS FOLLOW-UP
+
+Before calling the current multi-market foundation complete, read `GCC_SCALE_READINESS.md` §53 and correct two issues:
+
+1. the canonical money formatter must support currency-specific fractional digits; do not globally cap all currencies at 2 decimals
+2. an explicit unknown market code must never silently become Egypt; only legitimate legacy absence may use the Egypt launch default/backfill
+
+Regression-test both.
+
+These are correctness requirements, not future market features.
