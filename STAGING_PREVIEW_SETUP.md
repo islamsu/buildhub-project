@@ -53,7 +53,35 @@ Without step 3 the site still works — it will just report `environment:
 
 ---
 
-## Confirming it worked
+## Confirming it worked — and why you have to be the one to do it
+
+**`*.onrender.com` is blocked from this engineering container, not just the
+Render API.** Confirmed at the proxy:
+
+```
+connect_rejected  buildhub-staging.onrender.com:443
+```
+
+A control request to an allowed host succeeds from the same container, so this
+is the organization egress policy and not a network fault. **I cannot open the
+staging site, so I will never tell you a SHA is deployed — only you can see
+that.** What I can do is make checking it mechanical rather than a matter of
+comparing two long hex strings by eye:
+
+```
+curl -s https://buildhub-staging.onrender.com/version | node scripts/verify-staging.mjs
+```
+
+It compares against the release-candidate head in your checkout and prints one
+of two answers. It exits non-zero on any of:
+
+- staging is **behind** — it says by how many commits
+- the build reports `commit: "unknown"` — it cannot identify itself
+- `environment` reads `production` — wrong host, or `APP_ENV` is missing
+
+Paste its output to me and I will treat it as the build identity for that host.
+
+## What you should see
 
 Open:
 
