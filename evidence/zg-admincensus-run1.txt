@@ -1,0 +1,84 @@
+BUILD  72f3b17 (local) built 2026-09-22T13:44:54.143Z  http://127.0.0.1:5401
+
+BUILD 72f3b17  env=local
+
+PASS  1. the census reads the real navigation  [15 destinations]
+PASS  2. /admin does not bounce the administrator elsewhere  [landed on /admin]
+PASS  3. /admin renders real content  [1145 chars]
+PASS  4. /admin/users does not bounce the administrator elsewhere  [landed on /admin/users]
+PASS  5. /admin/users renders real content  [1894 chars]
+PASS  6. /admin/users can be searched
+PASS  7. /admin/users pages its list  [10 rows, paging true]
+PASS  8. /admin/registrations does not bounce the administrator elsewhere  [landed on /admin/registrations]
+PASS  9. /admin/registrations renders real content  [799 chars]
+PASS  10. /admin/categories does not bounce the administrator elsewhere  [landed on /admin/categories]
+PASS  11. /admin/categories renders real content  [5776 chars]
+PASS  12. /admin/categories offers a visible create action  [New category]
+PASS  13. /admin/placements does not bounce the administrator elsewhere  [landed on /admin/placements]
+PASS  14. /admin/placements renders real content  [3497 chars]
+PASS  15. /admin/placements offers a visible create action  [Grant sponsorship]
+PASS  16. /admin/enquiries does not bounce the administrator elsewhere  [landed on /admin/enquiries]
+PASS  17. /admin/enquiries renders real content  [422 chars]
+PASS  18. /admin/enquiries can be searched
+PASS  19. /admin/enquiries pages its list  [0 rows, paging false]
+PASS  20. /admin/enquiries empty state names the next legitimate action
+PASS  21. /admin/referrals does not bounce the administrator elsewhere  [landed on /admin/referrals]
+PASS  22. /admin/referrals renders real content  [3303 chars]
+PASS  23. /admin/referrals offers a visible create action  [New campaign, New campaign, Issue code, Issue code, Issue code, Issue code, Issue code, New campaign, New campaign, New campaign, New campaign]
+PASS  24. /admin/referrals can be searched
+PASS  25. /admin/referrals pages its list  [20 rows, paging true]
+PASS  26. /admin/referrals empty state names the next legitimate action
+PASS  27. /admin/disputes does not bounce the administrator elsewhere  [landed on /admin/disputes]
+PASS  28. /admin/disputes renders real content  [613 chars]
+PASS  29. /admin/disputes can be searched
+PASS  30. /admin/disputes pages its list  [1 rows, paging true]
+PASS  31. /admin/support does not bounce the administrator elsewhere  [landed on /admin/support]
+PASS  32. /admin/support renders real content  [474 chars]
+PASS  33. /admin/support can be searched
+PASS  34. /admin/support pages its list  [2 rows, paging true]
+PASS  35. /admin/reviews does not bounce the administrator elsewhere  [landed on /admin/reviews]
+PASS  36. /admin/reviews renders real content  [340 chars]
+PASS  37. /admin/billing does not bounce the administrator elsewhere  [landed on /admin/billing]
+PASS  38. /admin/billing renders real content  [209 chars]
+PASS  39. /admin/analytics does not bounce the administrator elsewhere  [landed on /admin/analytics]
+PASS  40. /admin/analytics renders real content  [1175 chars]
+PASS  41. /admin/analytics empty state names the next legitimate action
+PASS  42. /admin/operations does not bounce the administrator elsewhere  [landed on /admin/operations]
+PASS  43. /admin/operations renders real content  [5576 chars]
+PASS  44. /admin/operations empty state names the next legitimate action
+PASS  45. /admin/admins does not bounce the administrator elsewhere  [landed on /admin/admins]
+PASS  46. /admin/admins renders real content  [1470 chars]
+PASS  47. /admin/admins offers a visible create action  [Invite administrator]
+PASS  48. /admin/settings does not bounce the administrator elsewhere  [landed on /admin/settings]
+PASS  49. /admin/settings renders real content  [484 chars]
+
+── ADMIN MANAGEMENT-ACTION CENSUS ──────────────────────────────────
+
+destination                 create  search  filter  page  detail  lifecycle  history
+/admin                      -       -       -       -    yes     yes         - 
+/admin/users               yes     yes     yes     yes   yes      -         yes
+/admin/registrations        -       -      yes      -     -      yes         - 
+/admin/categories          yes     yes     yes      -    yes     yes         - 
+/admin/placements          yes     yes     yes     yes   yes     yes         - 
+/admin/enquiries            -      yes     yes      -     -       -          - 
+/admin/referrals           yes     yes     yes     yes   yes     yes        yes
+/admin/disputes             -      yes     yes     yes   yes     yes        yes
+/admin/support              -      yes     yes     yes   yes     yes         - 
+/admin/reviews              -       -      yes     yes    -       -          - 
+/admin/billing              -      yes      -       -     -       -          - 
+/admin/analytics            -       -       -       -     -       -          - 
+/admin/operations           -      yes     yes     yes   yes      -         yes
+/admin/admins              yes      -      yes      -     -      yes        yes
+/admin/settings             -       -       -       -     -       -          - 
+
+create actions found, by destination:
+  /admin/users: Create account
+  /admin/categories: New category
+  /admin/placements: Grant sponsorship
+  /admin/referrals: New campaign | Issue code
+  /admin/admins: Invite administrator
+PASS  50. the census reads the declared-exemption register  [7 declared]
+PASS  51. every Admin mutation has a client that calls it, or a written reason not to  [48 mutations, 7 declared exempt]
+
+51 passed, 0 failed
+
