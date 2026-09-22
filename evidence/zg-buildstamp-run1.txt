@@ -1,0 +1,19 @@
+BUILD  9e5faee (development) built 2026-09-22T09:56:39.195Z  http://127.0.0.1:5401
+PASS  1. VERSION: /version answers with a commit field  [{"commit":"9e5faeef8bc7ccb84d99f20d29374dc3c6ab9aa9","shortCommit":"9e5faee","buildTime":"2026-09-22T09:56:39.195Z","environment":"development"}]
+PASS  2. VERSION: and it is a COMMIT, not a branch name or a placeholder  [9e5faeef8bc7ccb84d99f20d29374dc3c6ab9aa9]
+PASS  3. VERSION: the short form is derived from it, never resolved twice  [9e5faee vs 9e5faee]
+PASS  4. VERSION: it says WHEN it was built - "built" and "restarted" are different facts  [2026-09-22T09:56:39.195Z]
+PASS  5. VERSION: and which environment it believes it is  [development]
+PASS  6. VERSION: exactly four fields - no host, no branch, no configuration  [buildTime, commit, environment, shortCommit]
+PASS  7. VERSION: and nothing in it looks like a credential  [{"commit":"9e5faeef8bc7ccb84d99f20d29374dc3c6ab9aa9","shortCommit":"9e5faee","buildTime":"2026-09-22T09:56:39.195Z","environment":"development"}]
+PASS  8. TRUTHFUL: the running build reports the commit this tree is actually on  [serving 9e5faee, tree at 9e5faee]
+PASS  9. SETUP: an administrator to look at the console  [admin 777]
+PASS  10. CONSOLE: the build is on Admin -> Operations, without hunting for it
+PASS  11. CONSOLE: and it shows the SAME build the endpoint serves  [console "9e5faee" vs endpoint "9e5faee"]
+PASS  12. CONSOLE: with the full commit available to copy, not just the short one  [9e5faeef8bc7ccb84d99f20d29374dc3c6ab9aa9]
+PASS  13. CONSOLE: and names the environment beside it  [Deployed build |  | 9e5faee |  | development · 9/22/2026, 9:56:39 AM]
+PASS  14. HONEST: an unidentifiable build is marked as a problem, not shown in grey
+PASS  15. HONEST: and says so in words a person can act on
+PASS  16. GATE: a probe told to expect another commit refuses to report at all  [exit=3]
+
+16/16 checks passed

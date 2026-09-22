@@ -89,13 +89,23 @@ export default function AdminOperationalHealth() {
         {data && (
           <div className="space-y-6" data-testid="oh-result">
             <div className="grid gap-3 sm:grid-cols-3">
+              {/* THE FIRST QUESTION ANYBODY ASKS: is what I am looking at the
+                  code that was written? The short commit is what a person
+                  compares against a branch head; the full one stays available
+                  to copy, and the build time separates "built" from
+                  "restarted", which a container that has been crash-looping
+                  otherwise hides. */}
               <Figure
                 testid="oh-commit"
                 label={ar ? 'النسخة المنشورة' : 'Deployed build'}
-                value={data.commit}
+                value={data.shortCommit}
+                title={data.commit}
                 note={data.commit === 'unknown'
                   ? (ar ? 'هذه النسخة لا تعرف رقم إصدارها' : 'this build cannot say which commit it is')
-                  : null}
+                  : [data.environment, data.buildTime
+                      ? new Date(data.buildTime).toLocaleString()
+                      : (ar ? 'وقت البناء غير معروف' : 'build time unknown')].join(' · ')}
+                bad={data.commit === 'unknown'}
               />
               <Figure
                 testid="oh-database"
@@ -210,13 +220,20 @@ function Counts({ testid, title, labels, values, ar }: {
   );
 }
 
-function Figure({ testid, label, value, note, bad }: {
+function Figure({ testid, label, value, note, bad, title }: {
   testid: string; label: string; value: string; note?: string | null; bad?: boolean;
+  /** The full value when the displayed one is deliberately abbreviated. */
+  title?: string;
 }) {
   return (
     <div className="rounded-xl border p-3" data-testid={testid}>
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`mt-1 truncate font-semibold ${bad ? 'text-destructive' : ''}`} data-testid={`${testid}-value`}>{value}</p>
+      <p
+        className={`mt-1 truncate font-semibold ${bad ? 'text-destructive' : ''}`}
+        data-testid={`${testid}-value`}
+        data-full-value={title}
+        title={title}
+      >{value}</p>
       {note && <p className="mt-1 text-xs text-muted-foreground">{note}</p>}
     </div>
   );

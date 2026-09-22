@@ -22,8 +22,14 @@
 //   AND THE PERMISSIONS HOLD: audit.read for the platform report, users.read
 //     for one account, and neither for a signed-out caller.
 import { execSync } from 'node:child_process';
+import { assertBuild } from './lib/build.mjs';
 
 const BASE = 'http://127.0.0.1:5401';
+
+/* WHICH BUILD THIS RAN AGAINST. Printed always; enforced when
+   ZG_EXPECT_COMMIT names one, so a pass can never be reported against
+   a build somebody did not mean to test. */
+await assertBuild(BASE);
 const DB = 'buildhub_prelaunch';
 const sql = q => execSync(`mysql -u root --default-character-set=utf8mb4 ${DB} -N -B -e ${JSON.stringify(q)}`).toString().trim();
 

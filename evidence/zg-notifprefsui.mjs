@@ -24,8 +24,14 @@
 import { launchBrowser } from './lib/cdp.mjs';
 import { asBrowserCookies } from './lib/session.mjs';
 import { execSync } from 'node:child_process';
+import { assertBuild } from './lib/build.mjs';
 
 const BASE = process.env.ZG_BASE ?? 'http://127.0.0.1:5401';
+
+/* WHICH BUILD THIS RAN AGAINST. Printed always; enforced when
+   ZG_EXPECT_COMMIT names one, so a pass can never be reported against
+   a build somebody did not mean to test. */
+await assertBuild(BASE);
 const DB = 'buildhub_prelaunch';
 // A PER-RUN PORT. Two probes sharing 9222 fight, and the second reports the
 // product as broken when the only thing wrong is the first one's browser.

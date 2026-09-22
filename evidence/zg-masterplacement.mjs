@@ -10,8 +10,14 @@
 // Every positive control asserts the DATABASE, and every negative control is a
 // row that EXISTS and must still not be rendered.
 import { execSync } from 'node:child_process';
+import { assertBuild } from './lib/build.mjs';
 
 const BASE = 'http://127.0.0.1:5401';
+
+/* WHICH BUILD THIS RAN AGAINST. Printed always; enforced when
+   ZG_EXPECT_COMMIT names one, so a pass can never be reported against
+   a build somebody did not mean to test. */
+await assertBuild(BASE);
 const DB = 'buildhub_prelaunch';
 /**
  * Run one SQL statement and return its output.

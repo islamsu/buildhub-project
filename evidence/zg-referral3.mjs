@@ -25,12 +25,18 @@ import { execSync } from 'node:child_process';
 import { getDb } from '../server/db.ts';
 import { qualifyReferralEvent } from '../server/referralEngine.ts';
 import { resolveVendorEntitlements } from '../server/billing/entitlements.ts';
+import { assertBuild } from './lib/build.mjs';
 import {
   reverseRewardEffect, markRewardReversed, markReferralAfterReversal,
 } from '../server/referralReversal.ts';
 
 const DB = process.env.ZG_DB ?? 'buildhub_prelaunch';
 const BASE = process.env.ZG_BASE ?? 'http://127.0.0.1:5401';
+
+/* WHICH BUILD THIS RAN AGAINST. Printed always; enforced when
+   ZG_EXPECT_COMMIT names one, so a pass can never be reported against
+   a build somebody did not mean to test. */
+await assertBuild(BASE);
 const sql = q => execSync(`mysql -u root --default-character-set=utf8mb4 ${DB} -N -B`, { input: q }).toString().trim();
 
 let pass = 0, fail = 0, step = 1;

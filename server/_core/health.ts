@@ -1,4 +1,7 @@
 import type { Express, Request, Response } from "express";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { sql } from "drizzle-orm";
 import { getDb } from "../db";
 
@@ -65,23 +68,117 @@ async function databaseReachable(): Promise<boolean> {
 }
 
 /**
- * The commit this image was built from.
+ * WHAT THIS BUILD IS, read once at startup.
  *
- * Render injects RENDER_GIT_COMMIT into every repo-backed service. BUILD_COMMIT
- * is the explicit override for anywhere that does not - a local `docker run`, or
- * the Vultr production target, which is not Render at all.
+ * The owner reported changes missing from a deployed BuildHub. The code was on
+ * the branch; the build in front of them did not contain it. Nothing running
+ * could answer "which commit is this?", so a deployment lag looked exactly
+ * like a missing feature. This is the answer, and it is release-critical for
+ * that reason rather than as an operational nicety.
  *
- * "unknown" is returned rather than omitting the field or inventing a value:
- * a deployment that cannot say what it is should say so plainly, and the
- * staging gate treats "unknown" as a failure when it was told to expect a
- * specific commit.
+ * THREE SOURCES, IN ORDER, and the order matters:
+ *
+ *   RENDER_GIT_COMMIT   injected at RUNTIME by Render into every service it
+ *                       builds. Preferred because it describes the deployment
+ *                       rather than the image, and Render can redeploy an
+ *                       image it did not just build.
+ *   BUILD_COMMIT        the explicit override, for anywhere Render is not -
+ *                       a hand-built image, CI, the Vultr production target.
+ *   dist/build-info.json  written at build time by scripts/build-info.mjs.
+ *                       `.git` is excluded from the Docker build context, so
+ *                       this file is how an image knows its own identity when
+ *                       no environment variable was set.
+ *
+ * "unknown" is returned rather than omitting the field or inventing a value. A
+ * deployment that cannot say what it is must say so plainly: the staging gate
+ * treats "unknown" as a failure when it was told to expect a specific commit,
+ * and every browser probe refuses to trust a build it cannot identify.
+ *
+ * READ ONCE. The file is read at module load, not per request, so /version
+ * cannot become a disk read on a hot path - and a file that changes under a
+ * running process would be describing a build that is no longer the one
+ * serving.
  */
+/** Only ever emit something shaped like a commit. Anything else is a
+ *  misconfiguration, not something to echo to a caller. */
+function asCommit(value: string | undefined): string | null {
+  const trimmed = (value ?? "").trim();
+  return /^[0-9a-f]{7,40}$/i.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * The build stamp written beside the bundle, read ONCE.
+ *
+ * The file read is the only expensive part of answering "which build is
+ * this?", and a file that changed under a running process would be describing
+ * a build that is no longer the one serving. The ENVIRONMENT is read per call
+ * instead: it costs nothing, and memoising it would make the resolution order
+ * untestable without restarting the process.
+ */
+const BUILD_FILE: { commit: string | null; buildTime: string | null } = (() => {
+  try {
+    // Resolved from this module rather than from cwd, because the process is
+    // started from different directories in development and in the image.
+    const here = dirname(fileURLToPath(import.meta.url));
+    for (const candidate of [
+      join(here, "build-info.json"),
+      join(here, "..", "build-info.json"),
+      join(here, "..", "..", "dist", "build-info.json"),
+    ]) {
+      if (!existsSync(candidate)) continue;
+      const parsed = JSON.parse(readFileSync(candidate, "utf8")) as {
+        commit?: string; buildTime?: string;
+      };
+      return {
+        commit: asCommit(parsed.commit),
+        buildTime: typeof parsed.buildTime === "string" ? parsed.buildTime : null,
+      };
+    }
+  } catch {
+    // A missing or malformed stamp is not worth failing startup over. It means
+    // this build cannot identify itself, which is what "unknown" says, and the
+    // staging gate refuses on that.
+  }
+  return { commit: null, buildTime: null };
+})();
+
+/**
+ * The resolution rule itself, as a pure function of its three sources.
+ *
+ * Pulled out so the case that matters most can actually be tested: NO SOURCE
+ * CAN ANSWER. That case is unreachable through `buildCommit()` in this repo,
+ * because the build stamp is always present in a built tree - and a rule whose
+ * most important branch cannot be exercised is a rule nobody has checked.
+ *
+ * A junk environment variable does not poison the answer. It is skipped, not
+ * echoed and not treated as fatal, and resolution continues to the next
+ * source: a misconfigured variable should not throw away a build stamp that
+ * is sitting right there and is correct.
+ */
+export function resolveBuildCommit(
+  renderEnv: string | undefined,
+  buildEnv: string | undefined,
+  fileCommit: string | null,
+): string {
+  return asCommit(renderEnv) ?? asCommit(buildEnv) ?? fileCommit ?? "unknown";
+}
+
 export function buildCommit(): string {
-  const raw = process.env.RENDER_GIT_COMMIT ?? process.env.BUILD_COMMIT ?? "";
-  const trimmed = raw.trim();
-  // Only ever emit something that looks like a commit SHA. An env var holding
-  // anything else is a misconfiguration, not something to echo to the internet.
-  return /^[0-9a-f]{7,40}$/i.test(trimmed) ? trimmed : "unknown";
+  return resolveBuildCommit(
+    process.env.RENDER_GIT_COMMIT,
+    process.env.BUILD_COMMIT,
+    BUILD_FILE.commit,
+  );
+}
+
+/** When the bundle was produced. Null when this build cannot say. */
+export function buildTime(): string | null {
+  return BUILD_FILE.buildTime;
+}
+
+export function buildEnvironment(): string {
+  const raw = (process.env.NODE_ENV ?? "").trim();
+  return raw.length > 0 ? raw : "unknown";
 }
 
 export function registerHealthRoutes(app: Express) {
@@ -89,8 +186,21 @@ export function registerHealthRoutes(app: Express) {
     res.status(200).json({ status: "ok" });
   });
 
+  /*
+   * IDENTITY, NOT DIAGNOSTICS. Four facts that let a person or a probe
+   * establish which build they are talking to, and nothing else: no branch,
+   * no host, no versions, no configuration. `commit` stays first and keeps
+   * its exact shape, because the staging gate and the migration-recovery
+   * runbook already read it.
+   */
   app.get("/version", (_req: Request, res: Response) => {
-    res.status(200).json({ commit: buildCommit() });
+    const commit = buildCommit();
+    res.status(200).json({
+      commit,
+      shortCommit: commit === "unknown" ? "unknown" : commit.slice(0, 7),
+      buildTime: buildTime(),
+      environment: buildEnvironment(),
+    });
   });
 
   app.get("/readyz", async (_req: Request, res: Response) => {

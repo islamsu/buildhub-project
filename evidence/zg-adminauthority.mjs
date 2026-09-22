@@ -11,8 +11,14 @@
 // endpoint exists, signed in through the REAL sign-in, and the attack is a
 // REAL authenticated HTTP call - not a unit test of a helper.
 import { execSync } from 'node:child_process';
+import { assertBuild } from './lib/build.mjs';
 
 const BASE = 'http://127.0.0.1:5401';
+
+/* WHICH BUILD THIS RAN AGAINST. Printed always; enforced when
+   ZG_EXPECT_COMMIT names one, so a pass can never be reported against
+   a build somebody did not mean to test. */
+await assertBuild(BASE);
 const DB = 'buildhub_prelaunch';
 /**
  * Run SQL by piping it to the client on STDIN.
