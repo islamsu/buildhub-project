@@ -8,6 +8,7 @@ Read this file at the start of every session and after every fresh fetch. Also r
 
 - `OWNER_DECISIONS.md` — canonical owner-policy ledger
 - `PRODUCT_NORTH_STAR.md` — owner-level marketplace, visual-quality and strategic moat blueprint
+- `GCC_SCALE_READINESS.md` — canonical Egypt-to-GCC / multi-market architecture and rollout guardrails
 - `REACHABILITY_CENSUS.md` — current reachability/dead-capability findings
 - `todo.md` — engineering ledger, after reconciling duplicates and non-engineering items
 - the latest Git history on the active release-candidate branch
@@ -2251,3 +2252,38 @@ Before moving deeper into speculative moat work, correct the obvious owner-visib
 Preserve all completed security, role-arc, migration and journey guarantees while doing so.
 
 The owner should be able to open these pages on staging and immediately see the improvement.
+
+
+---
+
+## 86. GCC / MULTI-MARKET SCALE READINESS — PREPARE NOW
+
+Read `GCC_SCALE_READINESS.md`.
+
+Owner direction:
+
+BuildHub is Egypt-first, not Egypt-locked.
+
+The platform must be architecturally ready to expand into GCC markets without a country fork or major rewrite.
+
+This does **not** authorize launching GCC markets now.
+
+CURRENT RELEASE guardrails:
+
+- stop introducing new EGP/Egypt hard-codes
+- create/use canonical market configuration
+- separate marketplace/RFQ/quotation currency from subscription billing currency
+- establish one canonical money/currency formatting layer
+- design explicit project/RFQ country/market context
+- move toward structured geography/service areas rather than free-text matching
+- make new campaign/analytics models market-aware
+- keep compliance requirements market-aware
+- add regression checks against new unauthorized Egypt-only assumptions
+
+Do not perform a risky all-at-once regional rewrite inside the current release candidate.
+
+Use additive migrations and backward compatibility.
+
+Before any GCC market is enabled, complete the multi-market readiness gate defined in `GCC_SCALE_READINESS.md`.
+
+A country appearing in a dropdown is never sufficient to call that market launched.
