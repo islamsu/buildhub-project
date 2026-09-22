@@ -299,8 +299,22 @@ describe('both buttons now do what they say', () => {
 
   it('the basket is emptied only after the RFQ exists', () => {
     // Clearing on click would lose the lines if the mutation failed.
-    const success = RFQ.slice(RFQ.indexOf('onSuccess'), RFQ.indexOf('onError'));
-    expect(success).toContain('basket.clear()');
+    //
+    // SLICED FROM THE MUTATION THAT OWNS IT, not from the first `onSuccess`
+    // in the file. The previous version cut at the first `onError`, and broke
+    // the moment `createRfq`'s success handler gained a NESTED handler pair -
+    // inviting the supplier a buyer arrived from. The rule it protects was
+    // never violated; the anchor simply stopped describing the block.
+    const start = RFQ.indexOf('const createRfq = trpc.rfq.create.useMutation(');
+    expect(start, 'the createRfq mutation has moved - rewire this test').toBeGreaterThan(-1);
+    const end = RFQ.indexOf('\n  const ', start + 1);
+    const block = RFQ.slice(start, end === -1 ? start + 3000 : end);
+    expect(block).toContain('basket.clear()');
+
+    // And the other half of the rule: it is NOT cleared on the click.
+    const submit = RFQ.slice(RFQ.indexOf('data-testid="rfq-create-submit"'));
+    const handler = submit.slice(0, submit.indexOf('</Button>'));
+    expect(handler).not.toContain('basket.clear()');
   });
 
   it('quantity and removal are reachable in the review panel', () => {

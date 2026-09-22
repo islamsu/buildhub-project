@@ -199,9 +199,47 @@ export default function RFQPage() {
   const rfqs = (rfqList.data?.rows ?? []) as any[];
   const { data: myRfqs = [] } = trpc.rfq.myList.useQuery(undefined, { enabled: isAuthenticated });
 
+  /*
+   * ── ARRIVING FROM A SUPPLIER'S STOREFRONT ────────────────────────────
+   *
+   * A buyer who has just read a supplier's page and wants a price from THEM
+   * had no way to say so: they could post a request into the open market and
+   * hope. `/rfq?invite=<id>` carries that intent, and the supplier is invited
+   * the moment the request exists.
+   *
+   * REUSES THE CANONICAL SYSTEMS. This is an RFQ and an invitation, not a
+   * second enquiry channel - `rfq.inviteSupplier` decides whether the caller
+   * may invite, exactly as it does everywhere else.
+   */
+  const invitedSupplierId = (() => {
+    const raw = new URLSearchParams(search).get('invite');
+    const id = Number(raw);
+    return raw && Number.isInteger(id) && id > 0 ? id : null;
+  })();
+  const inviteSupplier = trpc.rfq.inviteSupplier.useMutation();
+
   const createRfq = trpc.rfq.create.useMutation({
-    onSuccess: () => {
+    onSuccess: created => {
       toast.success(lang === 'ar' ? 'تم نشر طلب العرض بنجاح!' : 'RFQ posted successfully!');
+      /*
+       * THE INVITATION IS ITS OWN STEP, and its failure is reported rather
+       * than swallowed. The request is already posted and real; a supplier
+       * who could not be invited is a smaller problem than a buyer who
+       * believes they were.
+       */
+      if (invitedSupplierId && created?.id) {
+        inviteSupplier.mutate(
+          { rfqId: created.id, supplierId: invitedSupplierId },
+          {
+            onSuccess: () => toast.success(lang === 'ar'
+              ? 'تمت دعوة المورد إلى طلبك'
+              : 'The supplier was invited to your request'),
+            onError: error => toast.error(lang === 'ar'
+              ? `تم نشر الطلب، لكن تعذّرت دعوة المورد: ${error.message}`
+              : `Request posted, but the supplier could not be invited: ${error.message}`),
+          },
+        );
+      }
       setOpen(false);
       setForm({ title: '', description: '', category: '', budget: '', location: '', deadline: '' });
       setLinkedProjectId('none');

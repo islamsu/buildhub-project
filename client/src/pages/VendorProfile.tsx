@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import VendorReputation from '@/components/VendorReputation';
 import { parseProductImages } from '@shared/productImages';
 import { pricingBasisLabel, type ServicePricingBasis } from '@shared/serviceCatalogue';
-import { ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Calendar, MapPin, MessageSquare, Package, Star, Store } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Calendar, FileText, MapPin, MessageSquare, Package, Star, Store } from 'lucide-react';
 
 function initials(name: string | null | undefined) {
   if (!name) return '?';
@@ -367,17 +367,41 @@ export default function VendorProfile() {
             <h2 className="text-sm font-semibold mb-2">{t('vendor.contact')}</h2>
             {isSelf ? (
               <p className="text-sm text-muted-foreground">{t('vendor.contact.self')}</p>
-            ) : profile.contactChannel === 'message' ? (
-              <>
-                <Link href={`/messages?to=${userId}`}>
-                  <Button className="gap-2" data-testid="vendor-contact">
-                    <MessageSquare className="w-4 h-4" />{t('vendor.contact.cta')}
-                  </Button>
-                </Link>
-                <p className="mt-2 text-xs text-muted-foreground">{t('vendor.contact.note')}</p>
-              </>
             ) : (
-              <p className="text-sm text-muted-foreground" data-testid="vendor-contact-unavailable">{t('vendor.contact.unavailable')}</p>
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {profile.contactChannel === 'message' ? (
+                    <Link href={`/messages?to=${userId}`}>
+                      <Button variant="outline" className="gap-2" data-testid="vendor-contact">
+                        <MessageSquare className="w-4 h-4" />{t('vendor.contact.cta')}
+                      </Button>
+                    </Link>
+                  ) : (
+                    <p className="text-sm text-muted-foreground" data-testid="vendor-contact-unavailable">{t('vendor.contact.unavailable')}</p>
+                  )}
+
+                  {/* ── ASK THIS SUPPLIER FOR A PRICE ───────────────────────
+                      A buyer who had just read a supplier's page had no way to
+                      say "I want a quote from THEM". They could post into the
+                      open market and hope somebody relevant answered, which is
+                      not sourcing - it is a wish.
+
+                      This carries the intent to the RFQ form, which invites
+                      the supplier the moment the request exists. It is the
+                      CANONICAL RFQ and the canonical invitation, not a second
+                      enquiry channel: rfq.inviteSupplier decides whether the
+                      caller may invite, exactly as it does everywhere else. */}
+                  <Link href={`/rfq?invite=${userId}`}>
+                    <Button className="gap-2" data-testid="vendor-request-quote">
+                      <FileText className="w-4 h-4" />
+                      {ar ? 'اطلب عرض سعر' : 'Request a quote'}
+                    </Button>
+                  </Link>
+                </div>
+                {profile.contactChannel === 'message' && (
+                  <p className="mt-2 text-xs text-muted-foreground">{t('vendor.contact.note')}</p>
+                )}
+              </>
             )}
           </div>
         </CardContent>
