@@ -2047,3 +2047,207 @@ Interpret that as:
 The quality bar is horizontal across the whole product, not concentrated on a few showcase screens.
 
 If a page is part of the release, it must meet the same product-quality discipline as the rest of BuildHub.
+
+
+---
+
+## 80. OWNER CORRECTION — REFERRALS, USER MANAGEMENT, AND REAL MARKETPLACE COUNTS
+
+Read the updated `PRODUCT_NORTH_STAR.md` sections 32–38.
+
+These are **CURRENT GLOBAL RELEASE requirements**, not optional future ideas.
+
+The owner has explicitly rejected the idea that a management page is complete merely because the backend capability exists somewhere.
+
+The visible product must make creation, management, investigation and related actions obvious.
+
+---
+
+## 81. REFERRAL MANAGEMENT MUST BE A COMPLETE CONTROL PLANE
+
+The current Referral Management implementation already has:
+
+- referrals
+- rewards
+- campaigns
+- New Campaign inside the Campaigns tab
+
+Preserve those capabilities.
+
+But this is not sufficient for owner acceptance.
+
+Add/complete a first-class **Referral Codes** capability.
+
+The final referral control plane should make it obvious how referral growth is operated.
+
+Required areas:
+
+- Overview
+- Referral Codes
+- Referrals
+- Rewards
+- Campaigns
+
+A primary **New Campaign** action must be immediately discoverable.
+
+Referral Codes must support safe lifecycle management for eligible users:
+
+- code
+- owner
+- role
+- status
+- referral link
+- created date
+- attributed referrals
+- qualified count
+- rewarded count
+- copy code/link
+- issue code if missing
+- activate/deactivate
+- carefully controlled regeneration/rotation
+- deep-link to owner and attributed referrals
+
+Do not create fake referral events.
+
+Normal referral records arise from real attribution.
+
+If Admin attribution correction is required for support, name it truthfully and require reason/audit/conflict checks.
+
+Campaign detail must expose actual terms, caps, qualification logic, reward logic, lifecycle and related referrals/rewards.
+
+Referral detail should show the full timeline from attribution through reward/reversal.
+
+The user-side Referral Center must expose the user's own code/link and reward progress consistently with Admin.
+
+---
+
+## 82. USER MANAGEMENT MUST BECOME A 360° OPERATIONS CONSOLE
+
+Do not accept User Management as complete because the list and `/admin/users/:id` exist.
+
+Use the detailed model in `PRODUCT_NORTH_STAR.md`.
+
+At minimum, the final experience must provide highly discoverable:
+
+- comprehensive server-side directory search/filter/sort/pagination
+- account/person/business identity
+- role/status/source
+- onboarding/compliance status
+- verification
+- account editing with safe validation
+- suspend/reactivate
+- invitation/reset/session controls where supported
+- business/provider profile context
+- compliance context
+- marketplace activity
+- projects/RFQs/quotations
+- benefits/entitlements/referrals
+- trust/support activity
+- Admin notes
+- audit/history
+- canonical deep links
+
+The user-detail page should use a professional tab/section information architecture rather than becoming one giant scrolling support card.
+
+Role changes are authority changes and require validation, confirmation and audit.
+
+Do not casually convert user roles in a way that bypasses onboarding/compliance requirements.
+
+Administrator Management remains separate.
+
+No launch impersonation.
+
+---
+
+## 83. RESTORE THE REAL PRODUCT / ITEM COUNT
+
+The owner explicitly requires the number of marketplace products/items to be visible again.
+
+The current public `platformStats` contract does not include product count, and the Marketplace Products macro card currently substitutes category count.
+
+Correct this.
+
+Add a canonical metric such as:
+
+`publicProducts`
+
+computed using the SAME public product lifecycle/visibility predicate as the real marketplace catalogue.
+
+Use it in:
+
+- main Home proof/scale section where appropriate
+- Marketplace macro Products destination
+- other appropriate sourcing overview surfaces
+
+The primary Products scale claim should be:
+
+**X Products**
+
+not:
+
+**X Categories**.
+
+Category count may remain secondary.
+
+Never count drafts, hidden, withdrawn, archived or production-excluded QA content.
+
+Database/query failure must not become zero.
+
+---
+
+## 84. ADMIN MANAGEMENT ACTION DISCOVERABILITY CENSUS
+
+Run a rendered Admin census over every major management domain.
+
+For each domain answer:
+
+- What can Admin create?
+- Where is the create action?
+- What can Admin edit?
+- What can Admin activate/pause/suspend/restore?
+- Can Admin search/filter/page?
+- Is there a detail view?
+- Is there history/audit?
+- Are related entities linked?
+- Is reversal/undo available where legitimate?
+- Does the empty state explain the next legitimate action?
+
+Apply this to:
+
+- User Management
+- Professional Registrations
+- Categories
+- Featured
+- Sponsored / Placements
+- Vendor Enquiries
+- Referrals
+- Referral Codes
+- Referral Campaigns
+- Referral Rewards
+- Disputes
+- Support
+- Reviews / Product Q&A
+- Benefits / Entitlements
+- Administrator Management
+- Settings
+
+A backend mutation with no discoverable rendered control is a release defect.
+
+A critical action buried where a normal administrator would not reasonably find it is also a product-quality defect.
+
+---
+
+## 85. CURRENT IMMEDIATE OWNER-VISIBLE PRIORITY
+
+Before moving deeper into speculative moat work, correct the obvious owner-visible completeness gaps now:
+
+1. restore real public product count
+2. redesign Marketplace macro hierarchy per `PRODUCT_NORTH_STAR.md`
+3. complete Referral Control Plane including Referral Codes and prominent campaign creation
+4. upgrade User Management into the 360° operational model
+5. run the Admin management-action discoverability census
+6. then continue the broader Marketplace revolution / supplier growth / strategic moat sequence
+
+Preserve all completed security, role-arc, migration and journey guarantees while doing so.
+
+The owner should be able to open these pages on staging and immediately see the improvement.
