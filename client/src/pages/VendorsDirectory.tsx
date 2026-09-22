@@ -272,19 +272,45 @@ function VendorCard({
             </Badge>
           </div>
         )}
+        {/*
+          THE BUSINESS LEADS, WHERE THERE IS ONE.
+
+          This card showed `users.name` and nothing else, so a supplier
+          trading as a registered company appeared in a B2B marketplace under
+          the name of whoever opened the account - and a buyer comparing
+          suppliers was reading personal names with no way to tell which of
+          them were businesses at all.
+
+          A provider with no registered business still leads with their own
+          name, which is the honest presentation of an independent
+          professional rather than a gap. The person stays visible underneath
+          when both exist: procurement talks to people.
+        */}
         <div className="flex items-start gap-3">
           <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
-            {(vendor.name ?? '?').charAt(0).toUpperCase()}
+            {((vendor as any).businessName || vendor.name || '?').charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-semibold truncate">{vendor.name}</span>
+            {/* NO WRAP. With `flex-wrap` a long business name pushed the
+                Verified badge onto a second line, which made that one card
+                taller than the others and left the row ragged. The name
+                truncates instead and the badge holds its place, so every
+                card's header is the same height whatever it is called. */}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-semibold truncate" data-testid={`vendor-primary-name-${vendor.id}`}>
+                {(vendor as any).businessName || vendor.name}
+              </span>
               {vendor.verified && (
-                <Badge className="bg-emerald-100 text-emerald-700 border-0 text-xs">
+                <Badge className="shrink-0 bg-emerald-100 text-emerald-700 border-0 text-xs">
                   <BadgeCheck className="w-3 h-3 me-0.5" />{t('common.verified')}
                 </Badge>
               )}
             </div>
+            {(vendor as any).businessName && vendor.name && (
+              <div className="text-xs text-muted-foreground truncate" data-testid={`vendor-contact-name-${vendor.id}`}>
+                {vendor.name}
+              </div>
+            )}
             <div className="text-xs text-muted-foreground capitalize mt-0.5">
               {(vendor.userRole ?? '').replace('_', ' ')}
             </div>

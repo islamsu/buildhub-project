@@ -838,8 +838,21 @@ describe('sensitive-field leakage (Phase 4B.3 §15)', () => {
 
     const [vendor] = await appRouter.createCaller(anonCtx()).marketplace.vendors();
 
+    /*
+     * `businessName` IS AN APPROVED PUBLIC COLUMN, added deliberately.
+     *
+     * The directory returned only `users.name`, so a supplier trading as a
+     * registered company appeared in a B2B marketplace under the name of
+     * whoever opened the account. The business name is public by
+     * construction: a directory row is an APPROVED provider - the visibility
+     * filter requires it - and `profile.getPublic` already returns the same
+     * value on their storefront. This exposes nothing a buyer cannot
+     * already read one click away.
+     *
+     * The forbidden list below is the part that must not move, and has not.
+     */
     expect(Object.keys(vendor).sort()).toEqual(
-      ['averageRating', 'avatar', 'bio', 'categories', 'createdAt', 'id', 'location', 'name', 'reviewCount', 'userRole', 'verified'].sort(),
+      ['averageRating', 'avatar', 'bio', 'businessName', 'categories', 'createdAt', 'id', 'location', 'name', 'reviewCount', 'userRole', 'verified'].sort(),
     );
     for (const forbidden of ['passwordHash', 'invitationToken', 'email', 'phone', 'openId', 'accountStatus', 'frozenReason', 'isDummy', 'plan', 'providerCustomerRef']) {
       expect(vendor, forbidden).not.toHaveProperty(forbidden);
