@@ -7,6 +7,7 @@ It exists so the owner does **not** need to copy/paste long prompts between Chat
 Read this file at the start of every session and after every fresh fetch. Also read:
 
 - `OWNER_DECISIONS.md` — canonical owner-policy ledger
+- `PRODUCT_NORTH_STAR.md` — owner-level marketplace, visual-quality and strategic moat blueprint
 - `REACHABILITY_CENSUS.md` — current reachability/dead-capability findings
 - `todo.md` — engineering ledger, after reconciling duplicates and non-engineering items
 - the latest Git history on the active release-candidate branch
@@ -492,6 +493,8 @@ A self-discovered/opened eligible lead consumes the appropriate allowance exactl
 ---
 
 ## 20. Global B2B marketplace direction
+
+The current Marketplace Hub is explicitly NOT accepted as the target. Read and execute `PRODUCT_NORTH_STAR.md` as a current owner requirement. Its CURRENT GLOBAL RELEASE items are release work, not optional future ideation.
 
 BuildHub must progressively match mature B2B sourcing expectations while remaining construction-specific.
 
