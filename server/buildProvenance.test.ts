@@ -126,23 +126,75 @@ describe('buildCommit', () => {
  * label, and every safety decision downstream reads that label.
  */
 describe('buildEnvironment', () => {
-  const ORIGINAL_ENV = process.env.NODE_ENV;
+  const ORIGINAL_NODE = process.env.NODE_ENV;
+  const ORIGINAL_APP = process.env.APP_ENV;
+  const restore = (key: 'NODE_ENV' | 'APP_ENV', value: string | undefined) => {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  };
   afterEach(() => {
-    if (ORIGINAL_ENV === undefined) delete process.env.NODE_ENV;
-    else process.env.NODE_ENV = ORIGINAL_ENV;
+    restore('NODE_ENV', ORIGINAL_NODE);
+    restore('APP_ENV', ORIGINAL_APP);
+  });
+  const set = (node?: string, app?: string) => {
+    delete process.env.NODE_ENV;
+    delete process.env.APP_ENV;
+    if (node !== undefined) process.env.NODE_ENV = node;
+    if (app !== undefined) process.env.APP_ENV = app;
+  };
+
+  /**
+   * THE ONE THAT MATTERS. Every deployed environment sets NODE_ENV to
+   * "production" - staging included, because React and Vite need it - so
+   * reporting NODE_ENV as the environment made STAGING ANNOUNCE ITSELF AS
+   * PRODUCTION. The owner opens the site to check which build they are
+   * looking at; telling them the wrong deployment is worse than telling them
+   * nothing.
+   */
+  it('does NOT call staging "production" just because NODE_ENV says so', () => {
+    set('production', 'staging');
+    expect(buildEnvironment()).toBe('staging');
   });
 
-  it('reports what it was told', () => {
-    process.env.NODE_ENV = 'staging';
+  it('APP_ENV wins wherever both are set', () => {
+    set('production', 'preview');
+    expect(buildEnvironment()).toBe('preview');
+    set('development', 'staging');
     expect(buildEnvironment()).toBe('staging');
-    process.env.NODE_ENV = 'production';
+  });
+
+  it('falls back to NODE_ENV so local development needs nothing configured', () => {
+    set('development', undefined);
+    expect(buildEnvironment()).toBe('development');
+    set('production', undefined);
     expect(buildEnvironment()).toBe('production');
+    // An empty APP_ENV is not an answer either.
+    set('development', '   ');
+    expect(buildEnvironment()).toBe('development');
   });
 
   it('says "unknown" rather than assuming development', () => {
-    delete process.env.NODE_ENV;
+    set(undefined, undefined);
     expect(buildEnvironment()).toBe('unknown');
-    process.env.NODE_ENV = '   ';
+    set('   ', undefined);
     expect(buildEnvironment()).toBe('unknown');
+  });
+});
+
+/**
+ * THE DEPLOYED CONFIGURATION HAS TO AGREE WITH THE CODE.
+ *
+ * A correct `buildEnvironment()` proves nothing if the environment that runs
+ * it never sets APP_ENV. render.yaml is the staging deployment, so the claim
+ * "staging will not call itself production" is only true if that file says so.
+ */
+describe('the staging blueprint names itself', () => {
+  it('render.yaml sets APP_ENV, not just NODE_ENV', () => {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const blueprint = readFileSync(new URL('../render.yaml', import.meta.url), 'utf8');
+    expect(blueprint).toMatch(/key:\s*APP_ENV/);
+    expect(blueprint).toMatch(/key:\s*APP_ENV[\s\S]{0,80}value:\s*staging/);
+    // And NODE_ENV is still production, because it is a BUILD mode.
+    expect(blueprint).toMatch(/key:\s*NODE_ENV[\s\S]{0,80}value:\s*production/);
   });
 });

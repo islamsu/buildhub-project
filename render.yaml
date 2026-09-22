@@ -98,8 +98,19 @@ services:
     preDeployCommand: "./node_modules/.bin/drizzle-kit migrate"
 
     envVars:
+      # NODE_ENV IS A BUILD MODE, NOT A DEPLOYMENT NAME. Every deployed
+      # environment sets it to "production" so React, Vite and Express take
+      # their optimised paths - staging included.
       - key: NODE_ENV
         value: production
+      # WHICH DEPLOYMENT THIS IS, and the reason it exists as a separate
+      # variable: /version reported NODE_ENV as the environment, so STAGING
+      # ANNOUNCED ITSELF AS PRODUCTION. That is the single most dangerous
+      # thing the build stamp can say, and the exact ambiguity it was built
+      # to remove. The owner opens the site and has to be able to tell at a
+      # glance which one they are looking at.
+      - key: APP_ENV
+        value: staging
       # Render injects PORT. The app binds exactly it in production or exits,
       # rather than scanning upward and leaving health checks pointed at nothing.
       - key: PORT

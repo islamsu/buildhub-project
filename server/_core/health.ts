@@ -176,9 +176,30 @@ export function buildTime(): string | null {
   return BUILD_FILE.buildTime;
 }
 
+/**
+ * WHICH DEPLOYMENT THIS IS, as the process was told - never guessed from a
+ * hostname or a database name.
+ *
+ * APP_ENV FIRST, AND THAT IS THE WHOLE POINT. NODE_ENV is a BUILD mode: every
+ * deployed environment sets it to "production" so React, Vite and Express
+ * take their optimised paths. Staging does too - render.yaml sets it. So
+ * reporting NODE_ENV as the environment told the owner that STAGING WAS
+ * PRODUCTION, which is the single most dangerous thing this field can say and
+ * the exact ambiguity the build stamp exists to remove.
+ *
+ * APP_ENV names the deployment: "staging", "preview", "production". NODE_ENV
+ * remains the fallback so a local `pnpm dev` still reports "development"
+ * without anything configured.
+ *
+ * An unset value reads as "unknown" rather than being assumed to be
+ * development. Assuming is how a production process ends up wearing a safe
+ * label that every downstream decision then trusts.
+ */
 export function buildEnvironment(): string {
-  const raw = (process.env.NODE_ENV ?? "").trim();
-  return raw.length > 0 ? raw : "unknown";
+  const explicit = (process.env.APP_ENV ?? "").trim();
+  if (explicit.length > 0) return explicit;
+  const nodeEnv = (process.env.NODE_ENV ?? "").trim();
+  return nodeEnv.length > 0 ? nodeEnv : "unknown";
 }
 
 export function registerHealthRoutes(app: Express) {
