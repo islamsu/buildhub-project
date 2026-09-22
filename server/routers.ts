@@ -198,7 +198,7 @@ import {
   MAX_ITEM_VARIANT, MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY,
 } from '../shared/rfqBasket';
 import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shared/productImport';
-import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories } from './categoryService';
+import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories, categoryUsage } from './categoryService';
 import {
   listCategoriesForAdmin, createCategory, updateCategory, setCategoryStatus,
   addCategoryAlias, removeCategoryAlias, CategoryAdminError,
@@ -2499,14 +2499,40 @@ const marketplaceRouter = router({
    * 'public' is what may be browsed. Both are filters over the same rows.
    */
   categories: publicProcedure
-    .input(z.object({ view: z.enum(['listable', 'public']).default('listable') }).optional())
+    .input(z.object({
+      view: z.enum(['listable', 'public']).default('listable'),
+      /**
+       * HOW MANY LISTABLE PRODUCTS EACH CATEGORY ACTUALLY HOLDS.
+       *
+       * Off by default, because this endpoint also fills every category
+       * dropdown on the platform and none of those need an aggregate. The
+       * browse grid does: a category tile that says only its own name is
+       * decoration, and a buyer clicking one that holds nothing learns that
+       * the hard way. `categoryUsage` is the canonical counter - ONE grouped
+       * query, not one per tile - and its `activeProducts` is counted from
+       * the same lifecycle status the catalogue lists by.
+       */
+      withCounts: z.boolean().default(false),
+    }).optional())
     .query(async ({ input }) => {
       // An empty taxonomy would empty every category dropdown on the platform
       // and read as "BuildHub has no categories".
       const db = await requireDb();
       const index = await loadCategoryIndex(db);
       const view = input?.view ?? 'listable';
-      return { categories: view === 'public' ? publicCategories(index) : listableCategories(index) };
+      const categories = view === 'public' ? publicCategories(index) : listableCategories(index);
+      if (!input?.withCounts) return { categories };
+
+      const usage = await categoryUsage(db);
+      return {
+        categories: categories.map(category => ({
+          ...category,
+          // ABSENT FROM THE AGGREGATE MEANS NONE, not unknown: the grouped
+          // query covers the whole products table, so a category with no row
+          // in it genuinely holds nothing.
+          listedProducts: usage.get(category.id)?.activeProducts ?? 0,
+        })),
+      };
     }),
 
   /** The file a supplier fills in. Static, so it needs no authorization. */

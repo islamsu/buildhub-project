@@ -165,11 +165,12 @@ describe('the chips stay what they are', () => {
     // The defect CAT found: 33 browse chips sharing no values with the 19 the
     // write path accepted, so clicking one could never find a product.
     expect(section('products')).toBeTruthy();
-    // Matched on the call and its view rather than on one exact argument list:
-    // the query gained a `retry: false` option so a failed taxonomy fetch is
-    // reported instead of silently retried into a zero. The rule being
-    // asserted is WHICH source the chips come from, not how it is configured.
-    expect(HUB).toContain('trpc.marketplace.categories.useQuery({ view: \'public\' }');
+    // The rule being asserted is WHICH source the chips come from, not how the
+    // query is configured - and the previous spelling pinned the whole
+    // argument list despite saying so, which is why adding `withCounts` to it
+    // failed here. Matched on the call and on the view, separately.
+    expect(HUB).toContain('trpc.marketplace.categories.useQuery(');
+    expect(HUB).toMatch(/categories\.useQuery\(\{[^}]*view: 'public'/);
     expect(HUB, 'a third product-category list is back').not.toContain('PRODUCT_CATEGORIES');
   });
 });

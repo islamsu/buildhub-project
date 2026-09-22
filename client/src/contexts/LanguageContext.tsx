@@ -1136,6 +1136,16 @@ const translations: Record<Language, Record<string, string>> = {
     // stat does, from the database.
     'marketHub.sectionProductsDesc': 'Building and finishing materials from approved suppliers, listed by category and specification.',
     'marketHub.productsLabel': 'Products',
+    'marketHub.listingsCount': '{n} listings',
+    'marketHub.listingsCountOne': '1 listing',
+    // English has two forms and Arabic four; the dictionaries must still carry
+    // the same keys, so these two map onto the plural English already uses.
+    'marketHub.listingsCountTwo': '{n} listings',
+    'marketHub.listingsCountMany': '{n} listings',
+    'marketHub.noListingsYet': 'No listings yet',
+    'marketHub.rfqTitle': "Can't find it in the catalogue?",
+    'marketHub.rfqDesc': 'Describe what your project needs and send one request to the suppliers who can quote it. You compare the responses side by side.',
+    'marketHub.rfqCta': 'Request quotations',
     'marketHub.categoriesLabel': 'Categories',
     'marketHub.sectionVendorsTitle': 'Vendors',
     'marketHub.sectionVendorsDesc': 'Directory of trusted suppliers and manufacturers across Egypt',
@@ -2327,6 +2337,17 @@ const translations: Record<Language, Record<string, string>> = {
     'marketHub.sectionProductsTitle': 'المنتجات',
     'marketHub.sectionProductsDesc': 'مواد بناء وتشطيب من موردين معتمدين، مصنّفة حسب الفئة والمواصفات.',
     'marketHub.productsLabel': 'منتج',
+    // Arabic counts a noun four different ways. "1 منتج" and "2 منتج" are
+    // both wrong, and a marketplace that gets its own product noun wrong in
+    // its own language is not a first-class Arabic product.
+    'marketHub.listingsCount': '{n} منتجات',
+    'marketHub.listingsCountOne': 'منتج واحد',
+    'marketHub.listingsCountTwo': 'منتجان',
+    'marketHub.listingsCountMany': '{n} منتجًا',
+    'marketHub.noListingsYet': 'لا توجد منتجات بعد',
+    'marketHub.rfqTitle': 'لم تجد ما تبحث عنه في الكتالوج؟',
+    'marketHub.rfqDesc': 'اشرح ما يحتاجه مشروعك وأرسل طلباً واحداً إلى الموردين القادرين على تسعيره، ثم قارن العروض جنباً إلى جنب.',
+    'marketHub.rfqCta': 'اطلب عروض أسعار',
     'marketHub.categoriesLabel': 'فئة',
     'marketHub.sectionVendorsTitle': 'الموردون',
     'marketHub.sectionVendorsDesc': 'دليل الموردين والمصنعين الموثوقين في مصر',
