@@ -263,3 +263,11 @@ These are not decisions pending; they are limits being observed.
   policy, so the deployed build cannot be verified from here — that is
   reported, never routed around.
 - SMTP and S3 remain infrastructure-blocked wherever real proof needs them.
+- Migrations **0056** (product Q&A moderation) and **0057** (referral code
+  lifecycle) are applied **LOCALLY ONLY**. Both are additive — new columns and
+  new tables, nothing dropped, nothing retyped, no row rewritten — and both
+  backfill honestly: 0057 gives every existing code `status = 'active'`, which
+  is exactly how it behaved before, and a NULL issue date, because the date a
+  historic code was minted was never recorded and inventing one would be worse
+  than admitting it is unknown. They reach staging through normal integration,
+  not by hand.
