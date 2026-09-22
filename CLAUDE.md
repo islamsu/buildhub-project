@@ -2287,3 +2287,31 @@ Use additive migrations and backward compatibility.
 Before any GCC market is enabled, complete the multi-market readiness gate defined in `GCC_SCALE_READINESS.md`.
 
 A country appearing in a dropdown is never sufficient to call that market launched.
+
+
+---
+
+## 87. OWNER POLICY — MARKET CONTEXT / RFQ / QUOTATION / SUBSCRIPTION
+
+Read `GCC_SCALE_READINESS.md` sections 32–52.
+
+The architecture is now explicit:
+
+- one global user account, not one account per country
+- IP/geolocation may suggest a market but is never authoritative business truth
+- active market is a browsing/workspace preference, not the transaction source of truth
+- project country is explicit
+- standalone RFQ market is explicit
+- RFQ has an explicit currency
+- quotation currency inherits the RFQ currency
+- supplier country does not determine quotation currency
+- BuildHub subscription billing currency does not determine quotation currency
+- provider RFQ eligibility uses RFQ market + served markets/service areas + capability + compliance + entitlement
+- suppliers can receive eligible cross-market opportunities regardless of the UI market currently selected
+- one Billing Center; subscription contracts carry billing market/currency; entitlements carry explicit market/global scope
+- do not require one subscription per market by default
+- do not FX-convert one country's approved plan price and present it as another market's price
+
+Treat this as an owner decision and do not re-open the model unless implementation uncovers a concrete contradiction.
+
+Before GCC enablement, remove the current `BILLING_CURRENCY` coupling from quotation creation and implement the additive market/currency foundations described in the scale-readiness document.
