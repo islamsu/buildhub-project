@@ -51,18 +51,25 @@ thing it looks for is not evidence of anything.
 ## Result
 
 ```
-procedures = 281   called = 271   uncalled = 10
+procedures = 281   called = 273   uncalled = 8
 routes: 0 procedures whose caller no route reaches
 fields: 7 returned and never read client-side
 ```
 
-### Procedures with no caller — 10, all declared
+### Procedures with no caller — 8, all declared
 
 Every one is in `server/reachability.ts` with a written reason: the QA
-sign-in whose UI entry point was deliberately removed, and nine
+sign-in whose UI entry point was deliberately removed, and seven
 payment-provider writes that have no provider to fire them. Wiring a button to
-any of the nine would let an administrator record revenue BuildHub never
+any of the seven would let an administrator record revenue BuildHub never
 received.
+
+**The namespace is the MOUNT name, not the variable name.** `registrationRouter`
+is mounted as `compliance`, so the client calls `trpc.compliance.*`. The first
+version read the variable name and reported the two procedures a professional
+uploads their registration documents through as having no caller at all. A
+census that mislabels a namespace invents dead code, which is the one thing it
+must never do. It now agrees exactly with `server/reachability.test.ts`.
 
 ### Fields returned and never read — 7, classified
 

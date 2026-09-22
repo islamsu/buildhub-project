@@ -103,13 +103,31 @@ for (const path of parents.keys()) {
   }
 }
 
-/** Every procedure the server declares, with the tier that guards it. */
+/**
+ * Every procedure the server declares, with the tier that guards it.
+ *
+ * THE NAMESPACE IS THE MOUNT NAME, not the variable name. `registrationRouter`
+ * is mounted as `compliance`, so the client calls `trpc.compliance.*`. Reading
+ * the variable name reported two live compliance procedures - the ones a
+ * professional uploads their documents through - as having no caller at all.
+ * A census that mislabels a namespace invents dead code, which is the one
+ * thing it must never do.
+ */
+function mountNames() {
+  const start = ROUTERS.indexOf('export const appRouter = router({');
+  const body = ROUTERS.slice(start, ROUTERS.indexOf('\n});', start));
+  // mount name -> router variable
+  return new Map([...body.matchAll(/^\s{2}(\w+):\s*(\w+),/gm)].map(m => [m[2], m[1]]));
+}
+const MOUNTS = mountNames();
+
 function procedures() {
   const out = [];
   const nsRe = /^const (\w+)Router = router\(\{$/gm;
   const namespaces = [...ROUTERS.matchAll(nsRe)].map(m => m[1]);
-  for (const ns of namespaces) {
-    const start = ROUTERS.indexOf(`const ${ns}Router = router({`);
+  for (const variable of namespaces) {
+    const ns = MOUNTS.get(`${variable}Router`) ?? variable;
+    const start = ROUTERS.indexOf(`const ${variable}Router = router({`);
     const end = ROUTERS.indexOf('\n});', start);
     const body = ROUTERS.slice(start, end);
     for (const m of body.matchAll(/^\s{2}(\w+):\s*(adminWith\([^)]*\)|superAdminProcedure|adminProcedure|protectedProcedure|publicProcedure|approvedProviderProcedure|complianceProcedure|\w+Procedure)/gm)) {
