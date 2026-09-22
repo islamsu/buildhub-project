@@ -1195,3 +1195,573 @@ while a supplier can move from:
 inside the same marketplace.
 
 The deeper BuildHub connects these two journeys to real construction data, project context, specifications and trust evidence, the harder it becomes to replace.
+
+
+---
+
+# 32. ADMIN PRODUCT COMPLETENESS — OWNER CORRECTION
+
+The owner has now identified another recurring failure mode:
+
+> A management destination exists, but the important management actions are not obvious, not complete, or are buried deeply enough that the product looks unfinished.
+
+This is a **current-release product defect class**.
+
+A page named “Management” must not merely list records.
+
+For every Admin domain, ask:
+
+1. What can the administrator CREATE?
+2. What can they FIND?
+3. What can they OPEN?
+4. What can they EDIT?
+5. What can they ACTIVATE / PAUSE / SUSPEND / RESTORE?
+6. What can they REVERSE?
+7. What HISTORY can they inspect?
+8. What ANALYTICS / COUNTS explain the state?
+9. What links connect this entity to the rest of BuildHub?
+
+If the domain legitimately supports an action but the administrator cannot discover it, the feature is not complete.
+
+Do not confuse backend capability with Admin product completeness.
+
+---
+
+# 33. REFERRAL MANAGEMENT — FULL CONTROL PLANE
+
+The current Referral Management screen is not accepted as the final standard.
+
+The release candidate already contains a **New Campaign** action under the Campaigns tab. That is useful, but it is not enough.
+
+The owner expects Referral Management to feel like a complete operational and growth system.
+
+## Required information architecture
+
+Recommended top-level structure:
+
+### Overview
+
+Show real, query-backed metrics such as:
+
+- active campaigns
+- referral codes issued
+- referred signups
+- qualified referrals
+- rewarded referrals
+- active rewards
+- reversed rewards
+
+Where real event instrumentation exists, also show:
+
+- referral-link visits/clicks
+- conversion to signup
+- conversion to qualification
+
+Never invent missing funnel metrics.
+
+### Referral Codes
+
+This is currently the major missing Admin concept.
+
+An administrator should be able to manage referral-code ownership and lifecycle.
+
+Each code should show:
+
+- code
+- owner
+- owner role
+- public business identity where relevant
+- status
+- created date
+- last used date where available
+- number of attributed referrals
+- qualified count
+- rewarded count
+- active reward/benefit summary where applicable
+
+Actions where safe:
+
+- Copy code
+- Copy referral link
+- Issue/create a code for an eligible account if one does not exist
+- Activate/deactivate a code
+- Regenerate/rotate a code only with explicit confirmation and clear effect on old links
+- Open owner in User Management
+- Open referrals attributed to this code
+
+Do not allow duplicate active codes for the same account unless the architecture deliberately supports multiple campaign-scoped codes.
+
+## “Create referral” semantics
+
+Do NOT provide a button that fabricates a historical referral relationship.
+
+The normal referral record should arise from the real attribution flow:
+
+referral link/code
+→ signup
+→ attribution
+→ qualification
+→ reward.
+
+If support needs to repair attribution, implement a clearly named, highly audited capability such as:
+
+**Correct referral attribution**
+
+only where business rules allow it, preferably before qualification/reward.
+
+Require:
+
+- reason
+- actor
+- before/after values
+- audit
+- conflict checks
+- no reward duplication.
+
+Do not call that action “Create referral.”
+
+## Campaigns
+
+Campaign creation must be immediately discoverable.
+
+Referral Management should make **New Campaign** a prominent primary action, not something the owner must hunt for.
+
+Campaign builder must support the canonical fields:
+
+- name
+- status
+- start/end
+- eligible inviter roles
+- eligible referred roles
+- qualification event
+- reward type
+- reward value
+- reward duration where applicable
+- per-inviter cap
+- campaign cap
+- attribution window
+- priority where relevant
+
+Campaign detail should show:
+
+- current terms
+- lifecycle/status
+- referrals qualified under it
+- rewards granted
+- remaining cap where measurable
+- created/updated actor and timestamps
+- immutable/frozen terms once the first reward makes them non-editable
+
+## Referrals
+
+Provide full search/filter/pagination by:
+
+- code
+- inviter
+- referred party
+- status
+- campaign
+- qualification event/date
+- reward state
+
+Open a referral detail view instead of forcing every investigation into a dense row.
+
+Detail should explain the timeline:
+
+attributed
+→ registered
+→ qualified
+→ campaign bound
+→ reward granted
+→ reversed/expired if applicable.
+
+## Rewards
+
+Reward ledger must show:
+
+- recipient
+- source referral
+- campaign
+- reward terms
+- effective business benefit
+- status
+- start/end
+- reversal reason/history
+
+The Admin should be able to prove the actual effect in the entitlement/placement/subscription system, not merely trust a ledger row.
+
+## User-side Referral Center
+
+Every eligible user should have a polished self-service Referral Center showing:
+
+- own code
+- own referral link
+- copy/share
+- how it works
+- referred progress
+- benefits earned
+- benefit expiry
+- privacy-preserving referred identity
+- EN/AR
+- mobile
+
+The Admin Referral Control Plane and the user Referral Center must describe the same underlying state.
+
+---
+
+# 34. USER MANAGEMENT — 360° OPERATIONS CONSOLE
+
+The current User Management is not accepted as complete merely because:
+
+- users can be listed
+- a user detail route exists
+- verify/freeze/edit/note/audit capabilities exist somewhere.
+
+The final experience must operate as a **360° user operations console**.
+
+## Directory
+
+Server-side search, filtering, sorting and pagination must cover real operational needs.
+
+Applicable filters:
+
+- role
+- account status
+- verification
+- onboarding/compliance status
+- account source
+- public/hidden/provider state where relevant
+- date joined
+- location
+- dummy/test vs real
+- invitation/setup state
+
+Search should find by applicable:
+
+- name
+- business name
+- email
+- username
+- phone
+- human reference
+
+Do not silently cap the directory.
+
+## Directory rows
+
+A row should expose enough context to decide whether to open it:
+
+- person/business
+- role
+- account status
+- verification
+- onboarding/compliance
+- joined date
+- source
+- key operational warning
+
+Use quick actions sparingly.
+
+The primary action should open the full 360° detail view.
+
+## User 360° detail
+
+Use clear tabs/sections, not one long undifferentiated card.
+
+Recommended model:
+
+### Overview
+- identity
+- role
+- account source
+- status
+- verification
+- onboarding
+- key counts
+- important alerts
+- useful linked entities
+
+### Identity & Account
+- legal/display identity
+- email
+- phone
+- username
+- role
+- joined date
+- invitation/setup state
+- profile completeness
+
+### Business / Professional Profile
+For relevant roles:
+- business identity
+- trading name
+- specialties
+- categories
+- coverage
+- public storefront
+- portfolio
+- products/services
+- direct link to Vendor/Professional management
+
+### Verification & Compliance
+- registration status
+- document state
+- verification decisions
+- update-required state
+- expiry where applicable
+- link to Professional Registrations/Compliance record
+- history
+
+### Marketplace Activity
+Applicable:
+- products
+- services
+- saved/featured/sponsored state
+- enquiries
+- opportunity activity
+
+### Projects / RFQs / Quotations
+- owned/participating projects
+- RFQs
+- invitations
+- quotations
+- accepted work
+- authorized deep links
+
+### Commercial / Benefits / Referrals
+Applicable:
+- plan
+- entitlements
+- overrides
+- usage
+- referral code
+- attributed referrals
+- referral rewards
+- Featured/Sponsored grants
+
+### Trust & Support
+- reviews
+- disputes
+- support tickets
+- moderation issues
+
+### Security & Sessions
+Where architecture supports it:
+- password/invitation state
+- last authentication activity
+- revoke sessions / sign out all
+- password reset/invite resend
+- account suspension/reactivation
+- deactivation state
+- security-sensitive action history
+
+Do not expose raw secrets or tokens.
+
+### Internal Notes
+- authored
+- timestamped
+- permission controlled
+- never public
+
+### Audit & Field History
+- privileged actions
+- actor
+- timestamp
+- reason
+- field before/after where authorized
+- pagination
+
+## Actions
+
+Applicable privileged actions should be obvious and permission-scoped:
+
+- edit allowed account fields
+- verify/unverify
+- suspend/reactivate
+- resend invitation
+- revoke sessions
+- initiate safe password reset flow
+- deactivate/restore where the domain supports it
+- open public profile
+- open provider command centre
+- open compliance record
+- open referrals
+- open support/disputes
+
+Role changes require special care because they alter business authority.
+
+Do not allow a casual role dropdown to create invalid onboarding/compliance state.
+
+Role change must validate consequences and require confirmation/audit.
+
+## Bulk operations
+
+Support only safe, well-defined bulk actions.
+
+Possible:
+
+- export selected/filter result
+- suspend selected with reason
+- reactivate selected
+- tag/classify where a canonical concept exists
+
+Do NOT bulk:
+
+- change roles casually
+- verify providers without evidence
+- grant commercial benefits unintentionally
+- delete users destructively
+
+## Administrator Management remains separate
+
+Ordinary User Management is NOT the same security boundary as Administrator Management.
+
+Keep platform administrator authority, invitations, roles, session revocation and Super Admin survival rules in the dedicated Administrator Management surface.
+
+---
+
+# 35. CROSS-DOMAIN ADMIN LINKS
+
+A world-class control plane must behave like a graph, not isolated pages.
+
+Examples:
+
+Referral code owner
+→ User Management
+
+User
+→ referral code/referrals
+
+Provider user
+→ Vendor Command Centre
+
+User
+→ Professional Registration
+
+User
+→ Projects/RFQs/Quotations
+
+User
+→ Support/Disputes/Reviews
+
+Campaign
+→ qualifying referrals/rewards
+
+Product
+→ supplier
+
+Supplier
+→ products/placements/campaigns.
+
+Where an Admin sees an entity that is operationally related to another entity, provide the canonical deep link.
+
+Do not force the Admin to copy an ID and search another page manually.
+
+---
+
+# 36. HOME / MARKETPLACE COUNTS — RESTORE REAL PRODUCT SCALE
+
+The owner has explicitly rejected the removal of the real number of marketplace items/products.
+
+This is CURRENT GLOBAL RELEASE work.
+
+Extend the public platform statistics contract with a metric such as:
+
+`publicProducts`
+
+using the **same canonical public product visibility predicate** used by the catalogue.
+
+Definition must exclude:
+
+- drafts
+- withdrawn
+- archived
+- hidden
+- invalid/non-public
+- production-excluded QA content
+
+Use this real count in appropriate prominent places.
+
+## Main Home
+
+The homepage proof/scale strip should include the real public/listable product count when > 0.
+
+Potential real metrics:
+
+- Products
+- Approved Suppliers
+- Verified Professionals
+- Active Projects / RFQs where appropriate
+
+Do not remove a meaningful metric merely because fake historic stats were removed.
+
+Replace fake stats with real stats.
+
+## Marketplace Home
+
+The Products macro destination should primarily say:
+
+**X Products**
+
+not:
+
+**X Categories**.
+
+Category count may be secondary.
+
+Likewise Supplier/Professional macro destinations should use real relevant entity counts.
+
+Loading/error must not render as 0.
+
+---
+
+# 37. ADMIN CREATION / MANAGEMENT CENSUS
+
+Perform a dedicated Admin product census across every major Admin destination.
+
+For each domain record:
+
+- Can Admin create the domain object if creation legitimately belongs to Admin?
+- Can Admin edit it?
+- Can Admin change lifecycle/status?
+- Can Admin search/filter/page it?
+- Can Admin open a detail view?
+- Can Admin inspect history?
+- Can Admin see related entities?
+- Can Admin undo/reverse where policy allows?
+- Is the primary action visible?
+- Does an empty state tell the Admin what action is possible next?
+
+Apply this at minimum to:
+
+- Users
+- Professional Registrations
+- Categories
+- Featured placements
+- Sponsored placements
+- Vendor Enquiries
+- Referral Campaigns
+- Referral Codes
+- Referral records/rewards
+- Disputes
+- Support
+- Reviews/Q&A moderation
+- Benefits/Entitlements
+- Administrator Management
+- Settings
+
+A backend procedure with no visible action is not acceptance.
+
+An action hidden three tabs deep without a clear entry point may still fail discoverability.
+
+---
+
+# 38. OWNER-VISIBLE COMPLETENESS RULE
+
+From now on, owner acceptance must include a simple question for every management page:
+
+> If I open this page with no prior knowledge of the codebase, can I immediately understand what I can create, what I can manage, what needs attention, and where to go next?
+
+If not, the page is not world-class.
+
+BuildHub should not require the owner to know which tab contains the important capability.
