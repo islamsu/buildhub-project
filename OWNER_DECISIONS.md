@@ -271,3 +271,12 @@ These are not decisions pending; they are limits being observed.
   historic code was minted was never recorded and inventing one would be worse
   than admitting it is unknown. They reach staging through normal integration,
   not by hand.
+- Migration **0058** (market context) is applied **LOCALLY ONLY** on the same
+  terms: new columns only, backfilled `EG` / `EGP` / `GLOBAL`, which is what
+  every existing row already meant while BuildHub operated in one market.
+- **No GCC market is enabled.** `enabled: false` on all six in
+  `shared/markets.ts` is the only thing that decides, and flipping one is an
+  owner decision behind the readiness gate in `GCC_SCALE_READINESS.md`. A
+  market with no service-area vocabulary, no confirmed compliance set and no
+  approved price catalogue is a country in a dropdown, which §86 says is never
+  sufficient to call a market launched.
