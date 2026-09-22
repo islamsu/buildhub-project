@@ -1034,7 +1034,23 @@ const authRouter = router({
       username ? getUserByUsername(username) : undefined,
       email ? getUserByEmail(email) : undefined,
     ]);
-    return { usernameAvailable: !usernameUser, emailAvailable: !emailUser, hasExistingAccount: Boolean(usernameUser || emailUser) };
+    /*
+     * `emailAvailable` IS NULL WHEN NO EMAIL WAS ASKED ABOUT.
+     *
+     * It used to be `!emailUser`, which is `true` when the caller supplied no
+     * email at all - so the only caller in the product (the OAuth sign-up
+     * path, which sends a username alone) was being told every address on
+     * earth was available. Nothing read it, so nothing acted on it; the next
+     * person to wire it up would have.
+     *
+     * "I did not check" and "it is free" are different answers, and only one
+     * of them is safe to build on.
+     */
+    return {
+      usernameAvailable: !usernameUser,
+      emailAvailable: email ? !emailUser : null,
+      hasExistingAccount: Boolean(usernameUser || emailUser),
+    };
   }),
   updateRole: protectedProcedure
     .input(z.object({
@@ -3228,13 +3244,18 @@ const rfqRouter = router({
         contact = { email: row?.email ?? null, phone: row?.phone ?? null };
       }
 
-      return {
-        requester,
-        // Absent, and the client says WHY it is absent rather than rendering
-        // "N/A" as though the customer had left the field blank.
-        contact,
-        contactUnlocked: consumed,
-      };
+      /*
+       * `contact` ALONE ANSWERS IT, so `contactUnlocked` is gone.
+       *
+       * null      the lead is not unlocked - the screen says so
+       * an object the lead is unlocked; blank fields inside it mean the
+       *           customer left them blank, which the screen renders as "—"
+       *
+       * The removed flag said the same thing a second way and no client ever
+       * read it. Two signals for one fact is how they come to disagree, and
+       * the reachability census found this one had never been asked at all.
+       */
+      return { requester, contact };
     }),
 
   summary: protectedProcedure

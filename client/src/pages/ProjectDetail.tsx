@@ -11,6 +11,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { trpc } from '@/lib/trpc';
+import {
+  capabilitiesFor, isProjectRole, type ProjectCapability,
+} from '@shared/projectAccess';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { OpenDisputeDialog } from '@/components/OpenDisputeDialog';
 import { useState } from 'react';
@@ -112,6 +115,33 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
   if (loading) return null;
   if (!isAuthenticated) { window.location.href = '/auth?mode=login'; return null; }
 
+  /*
+   * ── WHAT THIS PERSON MAY ACTUALLY DO HERE ────────────────────────────
+   *
+   * The server has always sent `myProjectRole` on the project record, and its
+   * own comment says why: "the caller's own capacity travels with the record
+   * so the UI can render the right controls". Nothing read it. So a member
+   * added as a VIEWER was shown the status dropdown, the Expenses section and
+   * Add Expense - and the server refused every one, correctly. The
+   * authorization was sound; the screen was lying.
+   *
+   * Found by the reachability census (scripts/reachability-census.mjs), which
+   * looks for exactly this: a value computed for a purpose that never
+   * materialised. Same shape as `projects.spent`.
+   *
+   * ONE DERIVATION, from the shared matrix, used by every control on this
+   * page - including the team tab, which had grown its own copy from
+   * `projects.members.myCapabilities`. Two ways of asking the same question
+   * is how they come to give different answers.
+   *
+   * THIS IS NOT THE ENFORCEMENT. Every procedure still checks for itself;
+   * hiding a control the server would refuse is about not lying to the
+   * person, not about security.
+   */
+  const myCapabilities = capabilitiesFor(
+    isProjectRole(project?.myProjectRole) ? project.myProjectRole : 'viewer');
+  const can = (capability: ProjectCapability) => myCapabilities.includes(capability);
+
   const totalExpenses = expenses?.reduce((s, e) => s + Number(e.amount), 0) ?? 0;
   const doneTasks = tasks?.filter(t => t.status === 'done').length ?? 0;
   const totalTasks = tasks?.length ?? 0;
@@ -164,14 +194,18 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                 <Button variant="outline" size="sm" className="gap-1.5" data-testid="project-open-dispute" onClick={() => setDisputeOpen(true)}>
                   <Flag className="w-4 h-4" /> {lang === 'ar' ? 'فتح نزاع' : 'Open dispute'}
                 </Button>
+                {/* Changing a project's state is 'manage'. A viewer saw this
+                    dropdown, changed it, and was refused. */}
+                {can('manage') && (
                 <Select value={project.status ?? 'planning'} onValueChange={v => updateProject.mutate({ id: projectId, status: v as any })}>
-                  <SelectTrigger className="w-36 h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectTrigger data-testid="project-status-select" className="w-36 h-9 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {['planning', 'active', 'on_hold', 'completed', 'cancelled'].map(s => (
                       <SelectItem key={s} value={s} className="capitalize">{lang === 'ar' ? {'planning':'تخطيط','active':'نشط','on_hold':'متوقف','completed':'مكتمل','cancelled':'ملغي'}[s] ?? s : s.replace('_', ' ')}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                )}
               </div>
             </div>
 
@@ -203,12 +237,18 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
               <TabsList className="mb-6 flex-wrap h-auto gap-1">
                 <TabsTrigger value="tasks" className="gap-1.5"><CheckCircle2 className="w-4 h-4" /> {t('project.tasks')} ({totalTasks})</TabsTrigger>
                 <TabsTrigger value="milestones" className="gap-1.5"><Flag className="w-4 h-4" /> {t('project.milestones')} ({milestones?.length ?? 0})</TabsTrigger>
-                <TabsTrigger value="expenses" className="gap-1.5"><DollarSign className="w-4 h-4" /> {t('project.expenses')}</TabsTrigger>
+                {/* FINANCE IS NOT PART OF READ, deliberately: a contractor
+                    working on a job has no business reading what the customer
+                    paid everyone else. The tab itself is withheld, not just
+                    the button inside it. */}
+                {can('finance') && (
+                <TabsTrigger value="expenses" className="gap-1.5" data-testid="project-tab-expenses"><DollarSign className="w-4 h-4" /> {t('project.expenses')}</TabsTrigger>
+                )}
                 <TabsTrigger value="logs" className="gap-1.5"><BookOpen className="w-4 h-4" /> {t('project.daily_logs')}</TabsTrigger>
                 <TabsTrigger value="documents" className="gap-1.5"><FileText className="w-4 h-4" /> {t('project.documents')}</TabsTrigger>
                 <TabsTrigger value="operations" className="gap-1.5"><BarChart3 className="w-4 h-4" /> {lang === 'ar' ? 'عمليات المشروع' : 'Project Operations'}</TabsTrigger>
                 <TabsTrigger value="reviews" className="gap-1.5"><Star className="w-4 h-4" /> {t('review.tab_label')}</TabsTrigger>
-                <TabsTrigger value="team" className="gap-1.5"><Users className="w-4 h-4" /> {t('project.team')}</TabsTrigger>
+                <TabsTrigger value="team" className="gap-1.5" data-testid="project-tab-team"><Users className="w-4 h-4" /> {t('project.team')}</TabsTrigger>
               </TabsList>
 
               {/* Tasks */}
@@ -328,6 +368,12 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
               </TabsContent>
 
               {/* Expenses */}
+              {/* The CONTENT is gated as well as the trigger. Radix will
+                  render a TabsContent whose value is selected however it was
+                  selected - including a stale `defaultValue` or a direct
+                  manipulation - so gating the trigger alone leaves the spend
+                  one step away from somebody who may not read it. */}
+              {can('finance') && (
               <TabsContent value="expenses">
                 <div className="flex justify-between items-center mb-4">
                   <div>
@@ -374,6 +420,7 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                   ))}
                 </div>
               </TabsContent>
+              )}
 
               {/* Daily Logs */}
               <TabsContent value="logs">
@@ -444,7 +491,7 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
               <TabsContent value="team">
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <h3 className="font-semibold">{t('project.team')}</h3>
-                  {team?.myCapabilities?.includes('manage') && (
+                  {can('manage') && (
                     <div className="flex flex-wrap items-end gap-2">
                       <div>
                         <label className="text-xs text-muted-foreground" htmlFor="member-id">{lang === 'ar' ? 'رقم المستخدم' : 'User id'}</label>
