@@ -1384,3 +1384,45 @@ No conflict exists because sourcing currency and platform billing currency are
 different domains.
 
 This is the intended architecture.
+
+
+---
+
+# 53. CORRECTION — MONEY SCALE AND UNKNOWN MARKET SAFETY
+
+Two implementation details in the first regional-foundation pass must be corrected before GCC readiness can be considered strong.
+
+## A. Currency fraction digits are currency metadata
+
+The canonical money formatter must not globally cap currencies at two fractional digits.
+
+Some supported GCC currencies use three fractional digits.
+
+Therefore formatting and validation must derive the permitted fraction digits from ISO currency metadata or an explicit canonical currency table.
+
+Requirements:
+
+- EGP/SAR/AED/QAR may use their correct supported scale
+- KWD/BHD/OMR must not be rounded to two digits merely because the UI formatter was written for Egypt
+- database precision must support the maximum enabled currency scale before those markets are enabled
+- arithmetic/comparison must never silently round a stored commercial value to the wrong currency scale
+
+Do not hard-code `maximumFractionDigits: 2` as the platform-wide rule.
+
+## B. Invalid explicit market codes must not become Egypt
+
+Legacy records with no market may safely resolve through the documented Egypt launch backfill/default.
+
+But an **explicit unknown/corrupt market code** must not silently resolve to EG.
+
+Distinguish:
+
+- null/undefined legacy market → documented launch default/backfill path
+- valid known market → that market
+- invalid explicit market code → reject / return null / surface data-integrity error as appropriate
+
+Otherwise corrupted `ZZ` data can become an Egyptian RFQ, currency or compliance decision without anyone noticing.
+
+Update tests accordingly.
+
+These are release-safe correctness fixes and should be completed before regional readiness is called complete.
