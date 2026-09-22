@@ -21,7 +21,23 @@ export const users = mysqlTable('users', {
   name:        text('name'),
   email:       varchar('email', { length: 320 }),
   phone:       varchar('phone', { length: 32 }),
+  /**
+   * THE ONE ACTIVE REFERRAL CODE for this account.
+   *
+   * Single authoritative lookup for sign-up attribution, which is what stops
+   * two codes ever pointing at the same account. Its lifecycle lives on the
+   * two columns below rather than in a second table of codes; the history of
+   * what it used to be lives in `referralCodeEvents`.
+   */
   referralCode: varchar('referralCode', { length: 32 }),
+  /**
+   * A DISABLED CODE ATTRIBUTES NOTHING. The sign-up path filters on this, so
+   * a link already printed on something stops earning rather than quietly
+   * going on working after an administrator turned it off.
+   */
+  referralCodeStatus: mysqlEnum('referralCodeStatus', ['active', 'disabled']).default('active').notNull(),
+  /** When the CURRENT code was minted. Null for codes issued before 0057. */
+  referralCodeIssuedAt: timestamp('referralCodeIssuedAt'),
   loginMethod: varchar('loginMethod', { length: 64 }),
   role:        mysqlEnum('role', ['user', 'admin']).default('user').notNull(),
   // WHICH KIND of administrator, meaningful only where role = 'admin'.
@@ -1901,6 +1917,33 @@ export const referralRewards = mysqlTable('referralRewards', {
   recipientIdx: index('referralRewards_recipient_idx').on(table.recipientUserId),
   statusIdx: index('referralRewards_status_idx').on(table.status),
 }));
+
+/**
+ * WHAT A REFERRAL CODE USED TO BE, AND WHO CHANGED IT.
+ *
+ * Rotation is the reason this table exists: the point of rotating a code is
+ * that the old string is gone from `users`, and somebody investigating "this
+ * link stopped working" still needs to know what it was and when. Every
+ * issue, rotation, disable and reactivation writes one row.
+ *
+ * `previousCode` is deliberately NOT unique - a rotated-away code could in
+ * principle be minted again by chance, and the history has to hold both.
+ */
+export const referralCodeEvents = mysqlTable('referralCodeEvents', {
+  id:           int('id').autoincrement().primaryKey(),
+  userId:       int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  action:       mysqlEnum('action', ['issued', 'rotated', 'disabled', 'reactivated']).notNull(),
+  previousCode: varchar('previousCode', { length: 32 }),
+  newCode:      varchar('newCode', { length: 32 }),
+  /** Required by the mutations that change a working code; free for an issue. */
+  reason:       varchar('reason', { length: 500 }),
+  actorId:      int('actorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  createdAt:    timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  userIdx:     index('referralCodeEvents_user_idx').on(table.userId, table.createdAt),
+  previousIdx: index('referralCodeEvents_previous_idx').on(table.previousCode),
+}));
+
 
 // ── Sponsored placement in the vendors directory (migration 0028) ───────────
 //

@@ -13,7 +13,7 @@ import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { Pager } from '@/components/Pager';
 import { NewReferralCampaign } from '@/components/NewReferralCampaign';
 import { Link } from 'wouter';
-import { Gift, Megaphone, Search, UsersRound } from 'lucide-react';
+import { Activity, Gift, Megaphone, Search, Ticket, UsersRound } from 'lucide-react';
 import { DEFAULT_ATTRIBUTION_WINDOW_DAYS } from '@shared/referralRewards';
 
 /**
@@ -37,7 +37,47 @@ import { DEFAULT_ATTRIBUTION_WINDOW_DAYS } from '@shared/referralRewards';
  */
 const PAGE_SIZE = 25;
 
+/** A code lifecycle event, said in words rather than shown as an enum. */
+function codeActionLabel(action: string, ar: boolean): string {
+  const labels: Record<string, string> = ar
+    ? { issued: 'صدر الكود', rotated: 'تم تدوير الكود', disabled: 'تم تعطيل الكود', reactivated: 'تمت إعادة التفعيل' }
+    : { issued: 'Code issued', rotated: 'Code rotated', disabled: 'Code disabled', reactivated: 'Code reactivated' };
+  return labels[action] ?? action;
+}
+
+/**
+ * A ROW OF COUNTED FIGURES.
+ *
+ * `undefined` is not zero. While the query is in flight or after it failed
+ * the tile shows a dash, for the same reason the marketplace stat cards do:
+ * a confident 0 assembled from a missing response is a claim about the
+ * business, made because a request did not come back.
+ */
+function OverviewGroup({ title, tiles, loading }: {
+  title: string;
+  loading: boolean;
+  tiles: { key: string; label: string; value: number | undefined }[];
+}) {
+  return (
+    <div data-testid={`referral-overview-${title.replace(/\s+/g, '-').toLowerCase()}`}>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {tiles.map(tile => (
+          <div key={tile.key} className="rounded-lg border bg-card p-3" data-testid={`referral-stat-${tile.key}`}>
+            <p className="text-2xl font-bold tabular-nums">
+              {loading || typeof tile.value !== 'number' ? '—' : tile.value.toLocaleString()}
+            </p>
+            <p className="text-xs text-muted-foreground">{tile.label}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 type ReferralStatus = 'all' | 'registered' | 'qualified' | 'rewarded' | 'expired' | 'revoked';
+/** `missing` is a real operational state: an account that cannot invite. */
+type CodeFilter = 'all' | 'active' | 'disabled' | 'missing';
 
 export default function AdminReferrals() {
   const { lang } = useLanguage();
@@ -48,12 +88,36 @@ export default function AdminReferrals() {
   const [status, setStatus] = useState<ReferralStatus>('all');
   const [page, setPage] = useState(0);
   const [rewardPage, setRewardPage] = useState(0);
+  const [codeQuery, setCodeQuery] = useState('');
+  const [codeSearch, setCodeSearch] = useState('');
+  const [codeStatus, setCodeStatus] = useState<CodeFilter>('all');
+  const [codePage, setCodePage] = useState(0);
+  const [historyFor, setHistoryFor] = useState<number | null>(null);
+  /**
+   * CONTROLLED, so the control plane can behave like a graph.
+   *
+   * "View referrals" on a code has to be able to put the administrator on the
+   * Referrals tab with that code already searched. With an uncontrolled Tabs
+   * it could only have set the search box on a tab nobody was looking at -
+   * which is the "copy the id and go find it yourself" pattern the owner
+   * asked for cross-domain links to replace.
+   */
+  const [tab, setTab] = useState('overview');
 
   const referrals = trpc.admin.referrals.useQuery(
     { page, pageSize: PAGE_SIZE, search: search || undefined, status },
     { retry: false },
   );
   const rewards = trpc.admin.referralRewards.useQuery({ page: rewardPage, pageSize: PAGE_SIZE }, { retry: false });
+  const overview = trpc.admin.referralOverview.useQuery(undefined, { retry: false });
+  const codes = trpc.admin.referralCodes.useQuery(
+    { page: codePage, pageSize: PAGE_SIZE, search: codeSearch || undefined, status: codeStatus },
+    { retry: false, placeholderData: previous => previous },
+  );
+  const history = trpc.admin.referralCodeHistory.useQuery(
+    { userId: historyFor ?? 0 },
+    { retry: false, enabled: historyFor !== null },
+  );
   const [campaignPage, setCampaignPage] = useState(0);
   const campaigns = trpc.admin.referralCampaigns.useQuery(
     { page: campaignPage, pageSize: PAGE_SIZE },
@@ -66,10 +130,76 @@ export default function AdminReferrals() {
     void utils.admin.referrals.invalidate();
     void utils.admin.referralRewards.invalidate();
     void utils.admin.referralCampaigns.invalidate();
+    void utils.admin.referralCodes.invalidate();
+    void utils.admin.referralCodeHistory.invalidate();
+    // The Overview reads all four. Leaving it out would let the summary drift
+    // from the tables underneath it, which is worse than not having it.
+    void utils.admin.referralOverview.invalidate();
   };
   const qualify = trpc.admin.qualifyReferral.useMutation({ onSuccess: invalidate });
   const reverse = trpc.admin.reverseReferralReward.useMutation({ onSuccess: invalidate });
   const updateCampaign = trpc.admin.updateReferralCampaign.useMutation({ onSuccess: invalidate });
+  const issueCode = trpc.admin.issueReferralCode.useMutation({ onSuccess: invalidate });
+  const rotateCode = trpc.admin.rotateReferralCode.useMutation({ onSuccess: invalidate });
+  const setCodeState = trpc.admin.setReferralCodeStatus.useMutation({ onSuccess: invalidate });
+
+  /**
+   * COPYING IS THE ACTION AN ADMINISTRATOR ACTUALLY TAKES on a code, and
+   * `navigator.clipboard` is not available on an insecure origin or without
+   * permission. The fallback keeps the action working rather than failing
+   * silently, which is how a copy button most often breaks.
+   */
+  const [copied, setCopied] = useState<string | null>(null);
+  const copy = async (value: string, id: string) => {
+    try { await navigator.clipboard.writeText(value); }
+    catch {
+      const field = document.createElement('textarea');
+      field.value = value;
+      field.style.position = 'fixed';
+      field.style.opacity = '0';
+      document.body.appendChild(field);
+      field.select();
+      try { document.execCommand('copy'); } finally { field.remove(); }
+    }
+    setCopied(id);
+    window.setTimeout(() => setCopied(current => (current === id ? null : current)), 1800);
+  };
+
+  const absoluteLink = (link: string) =>
+    (typeof window === 'undefined' ? link : `${window.location.origin}${link}`);
+
+  /**
+   * ROTATION AND DEACTIVATION BOTH BREAK SOMETHING SOMEBODY IS USING, so both
+   * name the consequence before they ask, and both require a reason that goes
+   * into the code history beside the actor.
+   */
+  const runRotate = (userId: number, ownerName: string) => {
+    const reason = window.prompt(ar
+      ? `تدوير كود ${ownerName}: سيتوقف أي رابط يحمل الكود الحالي عن العمل فورًا. السبب (مطلوب):`
+      : `Rotate ${ownerName}'s code. Every link already carrying the current code stops working immediately. Reason (required):`);
+    if (reason === null) return;
+    if (reason.trim().length < 3) {
+      window.alert(ar ? 'السبب مطلوب ويُسجَّل في سجل الكود.' : 'A reason is required and is recorded in the code history.');
+      return;
+    }
+    rotateCode.mutate({ userId, reason: reason.trim() });
+  };
+
+  const runSetStatus = (userId: number, next: 'active' | 'disabled', ownerName: string) => {
+    const reason = window.prompt(next === 'disabled'
+      ? (ar
+        ? `تعطيل كود ${ownerName}: لن يُسند أي تسجيل جديد عبره. الإحالات والمكافآت السابقة لا تتأثر. السبب (مطلوب):`
+        : `Disable ${ownerName}'s code. No new sign-up will be attributed through it. Referrals and rewards already earned are untouched. Reason (required):`)
+      : (ar
+        ? `إعادة تفعيل كود ${ownerName}. السبب (مطلوب):`
+        : `Reactivate ${ownerName}'s code. Reason (required):`));
+    if (reason === null) return;
+    if (reason.trim().length < 3) {
+      window.alert(ar ? 'السبب مطلوب ويُسجَّل في سجل الكود.' : 'A reason is required and is recorded in the code history.');
+      return;
+    }
+    setCodeState.mutate({ userId, status: next, reason: reason.trim() });
+  };
 
   const statusLabel = (value: string) => {
     const labels: Record<string, string> = ar
@@ -131,14 +261,42 @@ export default function AdminReferrals() {
   return (
     <Card data-testid="admin-referrals">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <UsersRound className="h-5 w-5" />
-          {ar ? 'إدارة الإحالات' : 'Referral Management'}
-        </CardTitle>
+        {/*
+          THE PRIMARY ACTION BELONGS IN THE HEADER.
+
+          Creating a campaign was buried inside the Campaigns tab, which meant
+          the one action that makes the whole programme do anything - no reward
+          can be granted until a campaign exists - was invisible until an
+          administrator guessed which of five tabs to open. The owner named
+          this directly: a critical action buried where a normal administrator
+          would not reasonably find it is a product defect, not a layout
+          preference. It stays in the Campaigns tab too; discoverability is
+          not exclusivity.
+        */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <UsersRound className="h-5 w-5" />
+              {ar ? 'إدارة الإحالات' : 'Referral Management'}
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {ar
+                ? 'الأكواد والإحالات والمكافآت والحملات — كل ما يشغّل برنامج الإحالة.'
+                : 'Codes, referrals, rewards and campaigns — everything that runs the referral programme.'}
+            </p>
+          </div>
+          <NewReferralCampaign onCreated={invalidate} />
+        </div>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="referrals">
-          <TabsList>
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList className="flex-wrap">
+            <TabsTrigger value="overview" data-testid="tab-referral-overview">
+              <Activity className="me-1 h-4 w-4" />{ar ? 'نظرة عامة' : 'Overview'}
+            </TabsTrigger>
+            <TabsTrigger value="codes" data-testid="tab-referral-codes">
+              <Ticket className="me-1 h-4 w-4" />{ar ? 'أكواد الإحالة' : 'Referral Codes'}
+            </TabsTrigger>
             <TabsTrigger value="referrals" data-testid="tab-referrals">{ar ? 'الإحالات' : 'Referrals'}</TabsTrigger>
             <TabsTrigger value="rewards" data-testid="tab-referral-rewards">
               <Gift className="me-1 h-4 w-4" />{ar ? 'المكافآت' : 'Rewards'}
@@ -147,6 +305,310 @@ export default function AdminReferrals() {
               <Megaphone className="me-1 h-4 w-4" />{ar ? 'الحملات' : 'Campaigns'}
             </TabsTrigger>
           </TabsList>
+
+          {/*
+            ── OVERVIEW ─────────────────────────────────────────────────────
+            EVERY FIGURE HERE WAS COUNTED. There is no link-visit or
+            click-through number, because this product has no such
+            instrumentation - and a conversion rate assembled from numbers
+            nobody measured is exactly the defect the platform statistics work
+            removed from the front door.
+
+            A failed query renders as a failure, not as a programme with zero
+            of everything.
+          */}
+          <TabsContent value="overview" className="space-y-4 pt-4" data-testid="referral-overview">
+            {overview.isError ? (
+              <LoadFailed {...failedCopy} onRetry={() => void overview.refetch()} />
+            ) : (
+              <>
+                <OverviewGroup
+                  title={ar ? 'أكواد الإحالة' : 'Referral codes'}
+                  loading={overview.isLoading}
+                  tiles={[
+                    { key: 'issued', label: ar ? 'كود صادر' : 'Issued', value: overview.data?.codes.issued },
+                    { key: 'active', label: ar ? 'نشط' : 'Active', value: overview.data?.codes.active },
+                    { key: 'disabled', label: ar ? 'معطّل' : 'Disabled', value: overview.data?.codes.disabled },
+                    { key: 'missing', label: ar ? 'بدون كود' : 'No code yet', value: overview.data?.codes.missing },
+                  ]}
+                />
+                <OverviewGroup
+                  title={ar ? 'الإحالات' : 'Referrals'}
+                  loading={overview.isLoading}
+                  tiles={[
+                    { key: 'attributed', label: ar ? 'مُسنَدة' : 'Attributed', value: overview.data?.referrals.attributed },
+                    { key: 'qualified', label: ar ? 'مؤهَّلة' : 'Qualified', value: overview.data?.referrals.qualified },
+                    { key: 'rewarded', label: ar ? 'تمت مكافأتها' : 'Rewarded', value: overview.data?.referrals.rewarded },
+                  ]}
+                />
+                <OverviewGroup
+                  title={ar ? 'المكافآت' : 'Rewards'}
+                  loading={overview.isLoading}
+                  tiles={[
+                    { key: 'granted', label: ar ? 'ممنوحة' : 'Granted', value: overview.data?.rewards.granted },
+                    { key: 'pending', label: ar ? 'قيد التنفيذ' : 'Pending', value: overview.data?.rewards.pending },
+                    { key: 'expired', label: ar ? 'منتهية' : 'Expired', value: overview.data?.rewards.expired },
+                    { key: 'reversed', label: ar ? 'مسحوبة' : 'Reversed', value: overview.data?.rewards.reversed },
+                  ]}
+                />
+                {/*
+                  WHAT THIS SCREEN CANNOT TELL YOU is worth saying out loud.
+                  An administrator looking for a click-through rate should
+                  learn that it is not measured, rather than assume the figure
+                  is somewhere they have not looked.
+                */}
+                <p className="text-xs text-muted-foreground" data-testid="referral-overview-note">
+                  {ar
+                    ? 'كل رقم هنا محسوب من السجلات الفعلية. زيارات روابط الإحالة غير مُقاسة في هذا الإصدار، لذلك لا يوجد معدل تحويل — ولن يُعرض رقم لم يُقَس.'
+                    : 'Every figure here is counted from real records. Referral-link visits are not instrumented in this release, so there is no click-through or conversion rate — a number nobody measured is not shown as one.'}
+                </p>
+              </>
+            )}
+          </TabsContent>
+
+          {/*
+            ── REFERRAL CODES ───────────────────────────────────────────────
+            The concept that had no Admin surface at all. `users.referralCode`
+            was minted at sign-up and never governed: nothing could stop a code
+            that had leaked, nothing could issue one to an account that somehow
+            lacked one, and nothing recorded who changed what.
+
+            THERE IS NO "CREATE REFERRAL" HERE, deliberately. A referral
+            records that a real person followed a real link; a button that
+            writes that relationship would fabricate the one fact this ledger
+            exists to hold.
+          */}
+          <TabsContent value="codes" className="space-y-3 pt-4" data-testid="referral-codes">
+            <form
+              className="grid gap-2 sm:grid-cols-[1fr_200px_auto]"
+              onSubmit={event => { event.preventDefault(); setCodeSearch(codeQuery.trim()); setCodePage(0); }}
+            >
+              <div className="relative">
+                <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="ps-9" value={codeQuery} data-testid="referral-code-search"
+                  aria-label={ar ? 'ابحث بالكود أو الاسم أو البريد' : 'Search by code, name or email'}
+                  placeholder={ar ? 'ابحث بالكود أو الاسم أو البريد' : 'Search by code, name or email'}
+                  onChange={event => setCodeQuery(event.target.value)}
+                />
+              </div>
+              <Select value={codeStatus} onValueChange={value => { setCodeStatus(value as CodeFilter); setCodePage(0); }}>
+                <SelectTrigger data-testid="referral-code-status" aria-label={ar ? 'حالة الكود' : 'Code status'}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{ar ? 'كل الأكواد' : 'All codes'}</SelectItem>
+                  <SelectItem value="active">{ar ? 'نشط' : 'Active'}</SelectItem>
+                  <SelectItem value="disabled">{ar ? 'معطّل' : 'Disabled'}</SelectItem>
+                  <SelectItem value="missing">{ar ? 'بدون كود' : 'No code yet'}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button type="submit" variant="secondary" data-testid="referral-code-search-submit">
+                {ar ? 'بحث' : 'Search'}
+              </Button>
+            </form>
+
+            {codes.isError ? (
+              <LoadFailed {...failedCopy} onRetry={() => void codes.refetch()} />
+            ) : (codes.data?.rows ?? []).length === 0 ? (
+              /* AN EMPTY STATE THAT NAMES THE NEXT LEGITIMATE ACTION. */
+              <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground" data-testid="referral-codes-empty">
+                {codeSearch || codeStatus !== 'all'
+                  ? (ar ? 'لا توجد أكواد مطابقة لهذا البحث أو المرشِّح.' : 'No codes match this search or filter.')
+                  : (ar
+                    ? 'لا توجد حسابات تحمل أكواد إحالة بعد. يُصدَر الكود تلقائيًا عند التسجيل؛ ويمكن إصدار كود يدويًا لأي حساب لا يحمل واحدًا.'
+                    : 'No accounts hold referral codes yet. A code is issued automatically at sign-up; one can be issued by hand to any account that lacks one.')}
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="w-full text-sm">
+                  <thead className="text-xs text-muted-foreground">
+                    <tr className="border-b">
+                      <th className="p-2 text-start">{ar ? 'الكود' : 'Code'}</th>
+                      <th className="p-2 text-start">{ar ? 'صاحب الكود' : 'Owner'}</th>
+                      <th className="p-2 text-start">{ar ? 'الحالة' : 'Status'}</th>
+                      <th className="p-2 text-end">{ar ? 'مُسنَدة' : 'Attributed'}</th>
+                      <th className="p-2 text-end">{ar ? 'مؤهَّلة' : 'Qualified'}</th>
+                      <th className="p-2 text-end">{ar ? 'مكافآت' : 'Rewarded'}</th>
+                      <th className="p-2 text-start">{ar ? 'إجراءات' : 'Actions'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(codes.data?.rows ?? []).map((row: any) => (
+                      <tr key={row.userId} className="border-b last:border-0 align-top" data-testid={`referral-code-row-${row.userId}`}>
+                        <td className="p-2">
+                          {row.code ? (
+                            <>
+                              <code className="rounded bg-muted px-1.5 py-0.5 text-xs" data-testid={`referral-code-value-${row.userId}`}>{row.code}</code>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {row.issuedAt
+                                  ? `${ar ? 'صدر' : 'Issued'} ${new Date(row.issuedAt).toLocaleDateString(ar ? 'ar-EG' : 'en-GB')}`
+                                  /* Codes minted before the lifecycle existed have no
+                                     issue date. Unknown is said, not invented. */
+                                  : (ar ? 'تاريخ الإصدار غير مسجَّل' : 'Issue date not recorded')}
+                              </p>
+                            </>
+                          ) : (
+                            <span className="text-xs text-muted-foreground" data-testid={`referral-code-none-${row.userId}`}>
+                              {ar ? 'لا يوجد كود' : 'No code'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-2">
+                          {/* HUMAN NAMES ARE PRIMARY, and the link is canonical:
+                              this is the code owner's own User Management page. */}
+                          <AdminUserLink id={Number(row.userId)} name={row.ownerName ?? row.ownerEmail ?? `#${row.userId}`} />
+                          <p className="text-xs text-muted-foreground">{row.ownerEmail ?? '—'}</p>
+                          <p className="text-xs text-muted-foreground">{row.ownerRole ?? '—'}</p>
+                        </td>
+                        <td className="p-2">
+                          {/* Not colour alone: every state carries its word. */}
+                          <Badge
+                            variant={!row.code ? 'outline' : row.codeStatus === 'active' ? 'default' : 'destructive'}
+                            className="text-[10px]"
+                            data-testid={`referral-code-status-${row.userId}`}
+                          >
+                            {!row.code
+                              ? (ar ? 'بدون كود' : 'No code')
+                              : row.codeStatus === 'active' ? (ar ? 'نشط' : 'Active') : (ar ? 'معطّل' : 'Disabled')}
+                          </Badge>
+                        </td>
+                        <td className="p-2 text-end tabular-nums">{row.attributed}</td>
+                        <td className="p-2 text-end tabular-nums">{row.qualified}</td>
+                        <td className="p-2 text-end tabular-nums">{row.rewarded}</td>
+                        <td className="p-2">
+                          <div className="flex flex-wrap gap-1">
+                            {!row.code ? (
+                              <Button
+                                size="sm" variant="outline" className="h-7 text-xs"
+                                data-testid={`referral-code-issue-${row.userId}`}
+                                disabled={issueCode.isPending}
+                                onClick={() => issueCode.mutate({ userId: Number(row.userId) })}
+                              >
+                                {ar ? 'إصدار كود' : 'Issue code'}
+                              </Button>
+                            ) : (
+                              <>
+                                <Button
+                                  size="sm" variant="outline" className="h-7 text-xs"
+                                  data-testid={`referral-code-copy-${row.userId}`}
+                                  onClick={() => void copy(row.code, `code-${row.userId}`)}
+                                >
+                                  {copied === `code-${row.userId}` ? (ar ? 'تم النسخ' : 'Copied') : (ar ? 'نسخ الكود' : 'Copy code')}
+                                </Button>
+                                {/* NO LINK FOR A DISABLED CODE. Offering one would
+                                    hand somebody a URL that attributes nothing. */}
+                                {row.link && (
+                                  <Button
+                                    size="sm" variant="outline" className="h-7 text-xs"
+                                    data-testid={`referral-link-copy-${row.userId}`}
+                                    onClick={() => void copy(absoluteLink(row.link), `link-${row.userId}`)}
+                                  >
+                                    {copied === `link-${row.userId}` ? (ar ? 'تم النسخ' : 'Copied') : (ar ? 'نسخ الرابط' : 'Copy link')}
+                                  </Button>
+                                )}
+                                <Button
+                                  size="sm" variant="outline" className="h-7 text-xs"
+                                  data-testid={`referral-code-rotate-${row.userId}`}
+                                  disabled={rotateCode.isPending}
+                                  onClick={() => runRotate(Number(row.userId), String(row.ownerName ?? row.ownerEmail ?? `#${row.userId}`))}
+                                >
+                                  {ar ? 'تدوير' : 'Rotate'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant={row.codeStatus === 'active' ? 'destructive' : 'outline'}
+                                  className="h-7 text-xs"
+                                  data-testid={`referral-code-toggle-${row.userId}`}
+                                  disabled={setCodeState.isPending}
+                                  onClick={() => runSetStatus(
+                                    Number(row.userId),
+                                    row.codeStatus === 'active' ? 'disabled' : 'active',
+                                    String(row.ownerName ?? row.ownerEmail ?? `#${row.userId}`),
+                                  )}
+                                >
+                                  {row.codeStatus === 'active' ? (ar ? 'تعطيل' : 'Disable') : (ar ? 'تفعيل' : 'Reactivate')}
+                                </Button>
+                              </>
+                            )}
+                            {/* THE ATTRIBUTED REFERRALS, not a number to go and
+                                look for by hand: the search below runs on the
+                                code, which is what the referral rows carry. */}
+                            {row.code && row.attributed > 0 && (
+                              <Button
+                                size="sm" variant="ghost" className="h-7 text-xs"
+                                data-testid={`referral-code-open-referrals-${row.userId}`}
+                                onClick={() => { setQuery(row.code); setSearch(row.code); setPage(0); setTab('referrals'); }}
+                              >
+                                {ar ? 'عرض الإحالات' : 'View referrals'}
+                              </Button>
+                            )}
+                            <Button
+                              size="sm" variant="ghost" className="h-7 text-xs"
+                              data-testid={`referral-code-history-${row.userId}`}
+                              onClick={() => setHistoryFor(current => (current === Number(row.userId) ? null : Number(row.userId)))}
+                            >
+                              {ar ? 'السجل' : 'History'}
+                            </Button>
+                          </div>
+
+                          {historyFor === Number(row.userId) && (
+                            <div className="mt-2 rounded-md border bg-muted/40 p-2" data-testid={`referral-code-history-panel-${row.userId}`}>
+                              {history.isError ? (
+                                <LoadFailed {...failedCopy} onRetry={() => void history.refetch()} />
+                              ) : history.isLoading ? (
+                                <p className="text-xs text-muted-foreground">{ar ? 'جارٍ التحميل…' : 'Loading…'}</p>
+                              ) : (history.data ?? []).length === 0 ? (
+                                <p className="text-xs text-muted-foreground">
+                                  {ar
+                                    ? 'لا توجد تغييرات مسجَّلة على هذا الكود.'
+                                    : 'No recorded changes to this code.'}
+                                </p>
+                              ) : (
+                                <ul className="space-y-1.5">
+                                  {(history.data ?? []).map((event: any) => (
+                                    <li key={event.id} className="text-xs">
+                                      <span className="font-medium">{codeActionLabel(String(event.action), ar)}</span>
+                                      {' · '}
+                                      {new Date(event.createdAt).toLocaleString(ar ? 'ar-EG' : 'en-GB')}
+                                      {' · '}
+                                      {event.actorName ?? `#${event.actorId}`}
+                                      {/* THE STRING THAT STOPPED WORKING. After a
+                                          rotation this is the only record of it. */}
+                                      {event.action === 'rotated' && event.previousCode && (
+                                        <span className="text-muted-foreground">
+                                          {' '}— {ar ? 'الكود السابق' : 'was'} <code>{event.previousCode}</code>
+                                        </span>
+                                      )}
+                                      {event.reason && (
+                                        <p className="text-muted-foreground">{event.reason}</p>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {(issueCode.isError || rotateCode.isError || setCodeState.isError) && (
+              <p className="text-sm text-destructive" data-testid="referral-code-error">
+                {(issueCode.error ?? rotateCode.error ?? setCodeState.error)?.message}
+              </p>
+            )}
+
+            <Pager
+              ar={ar} page={codePage} total={codes.data?.total ?? null}
+              pageCount={pageCount(codes.data?.total ?? 0)}
+              onChange={setCodePage} testId="referral-code-pager"
+            />
+          </TabsContent>
 
           <TabsContent value="referrals" className="space-y-3 pt-4">
             <form

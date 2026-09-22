@@ -109,7 +109,7 @@ import {
   commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
   aiAttachments, rfqItems, qualifiedEnquiries,
-  projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals, referralCampaigns, referralRewards,
+  projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals, referralCampaigns, referralRewards, referralCodeEvents,
   reviewResponses, reviewReports, productQuestionReports,
   supportTickets, supportTicketMessages, supportTicketAttachments,
   disputeStatusHistory, disputeMessages, disputeEvidence, productCategories, serviceOfferings,
@@ -200,6 +200,11 @@ import {
 import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shared/productImport';
 import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories, categoryUsage } from './categoryService';
 import {
+  listReferralCodes, referralCodeHistory, issueReferralCode, rotateReferralCode,
+  setReferralCodeStatus, referralOverview, referralLinkFor, mintReferralCode,
+  canHoldReferralCode, ReferralCodeError, REFERRAL_CODE_STATUSES,
+} from './referralCodes';
+import {
   listCategoriesForAdmin, createCategory, updateCategory, setCategoryStatus,
   addCategoryAlias, removeCategoryAlias, CategoryAdminError,
   CATEGORY_SCOPES, CATEGORY_STATUSES,
@@ -259,7 +264,26 @@ const TEST_LOGIN_TTL_MINUTES_MAX = 24 * 60;
 
 const hashTestLoginToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
-const generateReferralCode = () => `BH-${randomBytes(8).toString('hex').toUpperCase()}`;
+/**
+ * ONE MINT, SHARED. This used to be a second generator sitting beside the one
+ * in server/referralCodes.ts, which meant a code issued by an administrator
+ * and a code minted at sign-up could have drifted into different shapes.
+ */
+const generateReferralCode = mintReferralCode;
+
+/**
+ * A domain refusal reaches the client as the refusal it is.
+ *
+ * Without this every ReferralCodeError would surface as an opaque 500, and
+ * "this account already has a code - use rotate to replace it" is precisely
+ * the sentence an administrator needs in order to do the right thing next.
+ */
+function asReferralCodeError(error: unknown): unknown {
+  if (error instanceof ReferralCodeError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return error;
+}
 
 /**
  * A PASSWORD RESET LINK IS A CREDENTIAL TOO.
@@ -674,10 +698,48 @@ const authRouter = router({
       throw error;
     }
 
-    const ownReferralCode = generateReferralCode();
-    await db.update(users).set({ referralCode: ownReferralCode }).where(eq(users.id, userId));
+    const ownReferralCode = mintReferralCode();
+    await db.update(users).set({
+      referralCode: ownReferralCode,
+      // The lifecycle columns 0057 added. A code minted here is active from
+      // the moment it exists, and its issue date is recorded rather than left
+      // to be inferred from the account's own join date later.
+      referralCodeStatus: 'active',
+      referralCodeIssuedAt: now,
+    }).where(eq(users.id, userId));
+    /**
+     * THE HISTORY STARTS HERE, NOT AT THE FIRST ADMIN ACTION.
+     *
+     * Admin issue and the lazy mint in `myReferral` both wrote a history row
+     * and this path did not, so the overwhelming majority of codes - every
+     * one minted at registration - had NO history at all. An administrator
+     * opening the history of an ordinary code read "No recorded changes",
+     * which is a different statement from "issued at sign-up on the 22nd"
+     * and the wrong one.
+     *
+     * The actor is the account itself: nobody administered this, the act of
+     * registering did, and naming a platform administrator would be a
+     * fabricated attribution.
+     */
+    await db.insert(referralCodeEvents).values({
+      userId, action: 'issued', newCode: ownReferralCode, actorId: userId,
+    });
     if (input.referralCode) {
-      const [referrer] = await db.select({ id: users.id }).from(users).where(eq(users.referralCode, input.referralCode)).limit(1);
+      /**
+       * A DISABLED CODE ATTRIBUTES NOTHING.
+       *
+       * This is the whole reason the status column exists: an administrator
+       * turning a code off has to stop the links already printed with it, and
+       * a lookup that ignored the status would have left them earning exactly
+       * as before. The refusal below is deliberately the SAME one an unknown
+       * code gets - "no account holds this code" - because telling a stranger
+       * that a specific code exists but has been switched off says something
+       * about another account that they have no business learning.
+       */
+      const [referrer] = await db.select({ id: users.id }).from(users).where(and(
+        eq(users.referralCode, input.referralCode),
+        eq(users.referralCodeStatus, 'active'),
+      )).limit(1);
       if (referrer && referrer.id !== userId) {
         await db.insert(referrals).values({
           referrerId: referrer.id,
@@ -6250,11 +6312,22 @@ const profileRouter = router({
    */
   myReferral: protectedProcedure.query(async ({ ctx }) => {
     const db = await requireDb();
-    const [row] = await db.select({ referralCode: users.referralCode }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
+    const [row] = await db.select({
+      referralCode: users.referralCode,
+      referralCodeStatus: users.referralCodeStatus,
+      role: users.role,
+    }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
     let code = row?.referralCode ?? null;
-    if (!code) {
+    let codeStatus = row?.referralCodeStatus ?? 'active';
+    if (!code && canHoldReferralCode(row ?? {})) {
       code = generateReferralCode();
-      await db.update(users).set({ referralCode: code }).where(eq(users.id, ctx.user.id));
+      codeStatus = 'active';
+      await db.update(users).set({
+        referralCode: code, referralCodeStatus: 'active', referralCodeIssuedAt: new Date(),
+      }).where(eq(users.id, ctx.user.id));
+      await db.insert(referralCodeEvents).values({
+        userId: ctx.user.id, action: 'issued', newCode: code, actorId: ctx.user.id,
+      });
     }
     const [counts, rewards, referred] = await Promise.all([
       myReferralCounts(db, ctx.user.id),
@@ -6270,7 +6343,16 @@ const profileRouter = router({
     ]);
     return {
       code,
-      link: `/auth?mode=signup&ref=${encodeURIComponent(code)}`,
+      /**
+       * THE ADMIN SCREEN AND THIS ONE DESCRIBE THE SAME STATE.
+       *
+       * A disabled code gets NO link. Handing somebody a URL that attributes
+       * nothing is worse than telling them the code is off: they would go on
+       * sharing it, and every sign-up through it would silently earn them
+       * nothing. The Referral Center renders the status instead.
+       */
+      codeStatus,
+      link: code && codeStatus === 'active' ? referralLinkFor(code) : null,
       referred,
       // Kept, because callers render it. It is now the sum of the breakdown
       // beside it rather than an independently counted number that could
@@ -7044,6 +7126,92 @@ const adminRouter = router({
    * actual reward sat in `referralRewards` next to it. And the query was
    * `.limit(250)` with no count, so a platform past that saw a silent subset.
    */
+  /**
+   * ── THE REFERRAL CONTROL PLANE ────────────────────────────────────────
+   *
+   * Everything below is one domain: the codes that attribute, the referrals
+   * they attribute, the rewards those earn and the campaigns that decide
+   * them. The code half had no Admin surface at all - `users.referralCode`
+   * was minted at sign-up and never governed again.
+   *
+   * NOTHING HERE FABRICATES A REFERRAL. There is deliberately no "create
+   * referral" action: a referral records that a real person followed a real
+   * link, and a button that writes the relationship would be inventing the
+   * one fact the ledger exists to hold. Attribution repair, if the business
+   * ever needs it, is a differently-named and differently-audited capability.
+   */
+  referralOverview: adminWith('marketplace.manage').query(async () => {
+    const db = await requireDb();
+    return referralOverview(db);
+  }),
+  /**
+   * The code directory. Server-side search, filter and pagination, and
+   * `missing` is a real filter because an account with no code is an action
+   * waiting to be taken rather than a row to hide.
+   */
+  referralCodes: adminWith('marketplace.manage')
+    .input(z.object({
+      page: z.number().int().min(0).max(100_000).default(0),
+      pageSize: z.number().int().min(1).max(100).default(25),
+      search: z.string().trim().max(MAX_SEARCH_LENGTH).optional(),
+      status: z.enum(['all', 'active', 'disabled', 'missing']).default('all'),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { page, pageSize, search, status } = { page: 0, pageSize: 25, status: 'all' as const, ...(input ?? {}) };
+      return listReferralCodes(db, { page, pageSize, search, status });
+    }),
+  /** What this account's code used to be, and who changed it. */
+  referralCodeHistory: adminWith('marketplace.manage')
+    .input(z.object({ userId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return referralCodeHistory(db, input.userId);
+    }),
+  issueReferralCode: adminWith('marketplace.manage')
+    .input(z.object({ userId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await issueReferralCode(db, { userId: input.userId, actorId: ctx.user.id });
+      } catch (error) {
+        throw asReferralCodeError(error);
+      }
+    }),
+  /**
+   * ROTATION BREAKS EVERY LINK ALREADY CARRYING THE OLD CODE. The reason is
+   * required for that reason, and the old string is kept in the history
+   * because after this call `users` no longer holds it.
+   */
+  rotateReferralCode: adminWith('marketplace.manage')
+    .input(z.object({
+      userId: z.number().int().positive(),
+      reason: z.string().trim().min(3).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await rotateReferralCode(db, { userId: input.userId, actorId: ctx.user.id, reason: input.reason });
+      } catch (error) {
+        throw asReferralCodeError(error);
+      }
+    }),
+  setReferralCodeStatus: adminWith('marketplace.manage')
+    .input(z.object({
+      userId: z.number().int().positive(),
+      status: z.enum(REFERRAL_CODE_STATUSES),
+      reason: z.string().trim().min(3).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await setReferralCodeStatus(db, {
+          userId: input.userId, actorId: ctx.user.id, status: input.status, reason: input.reason,
+        });
+      } catch (error) {
+        throw asReferralCodeError(error);
+      }
+    }),
   referrals: adminWith('marketplace.manage')
     .input(z.object({
       page: z.number().int().min(0).max(100_000).default(0),

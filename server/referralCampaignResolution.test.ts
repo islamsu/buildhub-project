@@ -335,12 +335,41 @@ describe('the cap query does not scan the whole ledger', () => {
 
 describe('a referral code that goes nowhere is recorded', () => {
   const ROUTERS = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-  const signup = ROUTERS.slice(ROUTERS.indexOf('const ownReferralCode = generateReferralCode();'));
-  const branch = signup.slice(0, signup.indexOf('const [created] ='));
+
+  /**
+   * A MISSING ANCHOR MUST FAIL LOUDLY, NOT SLICE FROM NOWHERE.
+   *
+   * This read `indexOf(...)` straight into `slice`, so when the sign-up path
+   * renamed its mint the search returned -1, the slice took the last
+   * character of the file and every assertion below ran against an empty
+   * string. Three of them then failed while pointing at the wrong thing, and
+   * the fourth - "the signup still succeeds" - PASSED, because an empty
+   * string contains no TRPCError either.
+   */
+  const from = (haystack: string, needle: string) => {
+    const at = haystack.indexOf(needle);
+    if (at === -1) throw new Error(`anchor not found in routers.ts: ${needle}`);
+    return haystack.slice(at);
+  };
+  const upTo = (haystack: string, needle: string) => {
+    const at = haystack.indexOf(needle);
+    if (at === -1) throw new Error(`closing anchor not found: ${needle}`);
+    return haystack.slice(0, at);
+  };
+  // Matched on the ASSIGNMENT rather than on which function is called: the
+  // mint moved into server/referralCodes.ts so sign-up and Admin issue could
+  // not drift into two shapes, and the rule this block asserts is about the
+  // branch below it, not about the generator's name.
+  const signup = from(ROUTERS, 'const ownReferralCode = ');
+  const branch = upTo(signup, 'const [created] =');
 
   it('the signup branch was actually found', () => {
     expect(branch).toContain('input.referralCode');
-    expect(branch.length).toBeLessThan(4000);
+    // A SANITY BOUND, not a size budget: it exists so a slice that ran away
+    // and swallowed half the file cannot quietly satisfy the assertions
+    // below. The branch grew when the code lifecycle 0057 added wrote its
+    // first history row here.
+    expect(branch.length).toBeLessThan(7000);
   });
 
   it('an unusable code writes an audit event instead of being dropped in silence', () => {
