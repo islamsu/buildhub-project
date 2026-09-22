@@ -1187,3 +1187,845 @@ DOES THE NEXT SYSTEM KNOW IT HAPPENED?
 CAN THE OTHER PARTY SEE THE CORRECT CONSEQUENCE?
 
 If any answer is no, it is not finished.
+
+
+---
+
+## 48. WORLD-CLASS PRODUCT EXPERIENCE BAR — OWNER REQUIREMENT
+
+The owner requires BuildHub to look and behave at a **very high global standard from top to bottom**.
+
+This is not optional polish.
+
+A technically correct page that looks generic, unfinished, internally inconsistent, visually weak, cramped, noisy, dated or obviously AI-generated is NOT release-ready.
+
+Target the level of craft expected from leading global marketplace, SaaS, fintech and premium digital-product experiences.
+
+Do not copy another company’s visual identity.
+
+Use their level of:
+
+- hierarchy
+- restraint
+- consistency
+- responsiveness
+- interaction quality
+- information architecture
+- trust
+- content quality
+- perceived speed
+- visual polish
+
+as the bar.
+
+The standard applies to **every route**, including forgotten deep pages, settings, empty states, errors and Admin — not only Home and Marketplace.
+
+---
+
+## 49. DESIGN SYSTEM QUALITY
+
+BuildHub must feel like one product designed by one excellent team.
+
+Maintain one coherent system for:
+
+- typography
+- type scale
+- spacing
+- grids
+- container widths
+- radii
+- shadows/elevation
+- borders
+- icon sizes
+- buttons
+- inputs
+- selects
+- tabs
+- tables
+- cards
+- drawers
+- dialogs
+- badges
+- tooltips
+- breadcrumbs
+- pagination
+- skeletons
+- empty states
+- alerts/toasts
+
+Avoid one-off component styling unless the experience genuinely requires it.
+
+Remove inconsistent duplicate visual patterns.
+
+Do not use arbitrary spacing, random colors or per-page button conventions.
+
+---
+
+## 50. VISUAL HIERARCHY
+
+Every page must answer visually, within seconds:
+
+1. Where am I?
+2. What is this page for?
+3. What matters most?
+4. What can I do next?
+5. What requires my attention?
+
+Use deliberate:
+
+- page titles
+- supporting copy
+- primary CTA
+- secondary actions
+- section hierarchy
+- whitespace
+- grouping
+- visual emphasis
+
+Do not make every element equally loud.
+
+Do not create dashboard walls of identical cards.
+
+---
+
+## 51. PREMIUM PUBLIC-SITE STANDARD
+
+Public BuildHub surfaces must feel credible enough for a major construction buyer,
+developer, consultant, supplier or enterprise procurement team.
+
+Review and refine:
+
+- Home
+- Marketplace
+- Category
+- Search
+- Product detail
+- Provider storefront
+- Professional profile
+- Get Quotes / RFQ entry
+- About/trust/support surfaces where present
+- navigation
+- footer
+
+The public site should communicate:
+
+- what BuildHub is
+- who it serves
+- what can be sourced
+- why the marketplace is trustworthy
+- how to start
+- how to contact/request quotes
+- clear differentiation between editorial Featured and commercial Sponsored
+
+No weak placeholder hero copy.
+No generic “Lorem ipsum” feel.
+No fabricated social proof.
+
+---
+
+## 52. PREMIUM MARKETPLACE STANDARD
+
+Marketplace UI must balance **rich B2B information density** with clarity.
+
+Cards should reveal enough to make a sourcing decision without becoming cluttered.
+
+Provider cards should emphasize applicable:
+
+- identity
+- category/specialty
+- location/coverage
+- verification
+- useful real reputation/response information
+- meaningful CTA
+
+Product cards should emphasize applicable:
+
+- imagery
+- product identity
+- supplier
+- category
+- commercial/specification summary
+- meaningful CTA
+
+Do not fill cards with low-value metadata.
+
+Featured, Sponsored and Organic must have clear but tasteful hierarchy.
+
+---
+
+## 53. PREMIUM DASHBOARD STANDARD
+
+Authenticated dashboards must feel like professional workspaces, not template admin panels.
+
+Dashboard pattern:
+
+- concise role-relevant greeting/context
+- important KPIs only
+- actionable alerts
+- compact activity/work previews
+- meaningful quick actions
+- View All links
+- role-specific next steps
+
+Full management belongs on dedicated pages.
+
+Do not use the same dashboard composition for every role merely with changed labels.
+
+---
+
+## 54. PREMIUM ADMIN STANDARD
+
+Admin should resemble a serious operational control plane.
+
+Prioritize:
+
+- excellent information density
+- clear state/status
+- fast scanning
+- strong search
+- filters that reflect real workflows
+- useful table columns
+- keyboard efficiency
+- human-readable references
+- deep links
+- audit/history
+- clear dangerous-action confirmations
+- excellent loading/error states
+
+Avoid giant cards for dense operational datasets.
+
+Use tables where tables are appropriate.
+
+Use detail panes/pages where investigation requires context.
+
+Admin must still look polished and intentionally designed.
+
+---
+
+## 55. TYPOGRAPHY & CONTENT CRAFT
+
+Typography must be deliberate in both English and Arabic.
+
+Use consistent:
+
+- heading scale
+- body size
+- line height
+- label weight
+- numeric emphasis
+- table text
+- helper text
+
+Do not rely on tiny text to fit too much information.
+
+Avoid excessive bold.
+
+Avoid ALL CAPS except where intentional and visually appropriate.
+
+Arabic typography must be visually balanced and not treated as a translated afterthought.
+
+User-facing copy must be:
+
+- concise
+- professional
+- human
+- specific
+- consistent
+- action-oriented when appropriate
+
+Remove developer language, raw enums and implementation terminology.
+
+---
+
+## 56. COLOR & BRAND DISCIPLINE
+
+Use a controlled brand palette.
+
+Color should communicate:
+
+- brand identity
+- hierarchy
+- status
+- attention
+
+not decorate randomly.
+
+Status colors must be semantically consistent across the entire product.
+
+Do not rely on color alone for meaning.
+
+Avoid excessive gradients, neon treatments, loud shadows or decorative effects that make the product look cheap.
+
+Premium means controlled, not flashy.
+
+---
+
+## 57. IMAGERY & MEDIA
+
+Images must be:
+
+- sharp
+- correctly cropped
+- aspect-ratio controlled
+- responsive
+- lazy-loaded where appropriate
+- supported by useful alt text when content-bearing
+
+Avoid distorted provider logos or product images.
+
+Use sensible fallback treatment for missing media.
+
+Do not stretch low-resolution imagery to fill large premium surfaces.
+
+Do not use irrelevant stock imagery merely to make pages look populated.
+
+---
+
+## 58. INTERACTION QUALITY
+
+Every interaction should feel intentional.
+
+Required states where applicable:
+
+- default
+- hover
+- focus
+- active
+- pressed
+- disabled
+- loading
+- success
+- error
+
+Buttons must not visually jump during loading.
+
+Forms must not double-submit.
+
+Use subtle motion only when it improves orientation/feedback.
+
+Avoid gratuitous animation.
+
+Respect reduced-motion preferences.
+
+Dialogs/drawers should open/close smoothly, trap focus correctly and restore focus.
+
+---
+
+## 59. FORM EXPERIENCE
+
+Forms must be exceptionally clear.
+
+For important forms:
+
+- logical grouping
+- clear labels
+- required indicators
+- useful helper text
+- correct defaults
+- inline validation
+- server validation
+- preservation of user-entered data after recoverable errors
+- disabled/pending submit state
+- duplicate-submit protection
+- clear success outcome
+
+Long forms should be segmented where appropriate.
+
+Do not overwhelm a user with a wall of fields.
+
+Do not collect fields the product does not use.
+
+---
+
+## 60. TABLE / DATA EXPERIENCE
+
+For professional datasets:
+
+- server-side pagination where data can grow
+- real totals
+- meaningful filters
+- useful sorting
+- search
+- responsive strategy
+- clear empty/error/loading states
+- sticky header where useful
+- horizontal overflow contained intentionally
+- row actions discoverable but not noisy
+
+Do not silently truncate.
+
+Do not force dense desktop tables into unreadable mobile layouts.
+
+---
+
+## 61. RESPONSIVE CRAFT
+
+Responsive design is not “desktop squeezed smaller.”
+
+At each key width — especially 375, 768 and 1440 — intentionally adapt:
+
+- navigation
+- card count
+- columns
+- tables
+- forms
+- dialogs
+- drawers
+- filters
+- action placement
+- sticky elements
+- typography
+- whitespace
+
+Primary actions must remain obvious.
+
+No hidden critical control.
+
+No accidental sideways page scroll.
+
+No dialog larger than the usable viewport.
+
+---
+
+## 62. ACCESSIBILITY BAR
+
+Target practical **WCAG 2.2 AA** quality across critical flows.
+
+Verify rendered behavior for:
+
+- keyboard-only use
+- visible focus
+- logical focus order
+- semantic headings
+- accessible form labels
+- error association
+- button/link semantics
+- dialog focus
+- menu/tab navigation
+- table semantics
+- useful alt text
+- sufficient contrast
+- status not communicated by color alone
+- reduced motion support
+- touch target usability
+
+Accessibility failures on critical journeys are release defects.
+
+---
+
+## 63. PERFORMANCE BAR
+
+Treat perceived speed as part of design quality.
+
+Target strong Core Web Vitals on important public pages where realistic:
+
+- LCP at or below ~2.5s at the 75th percentile
+- INP at or below ~200ms at the 75th percentile
+- CLS at or below ~0.1 at the 75th percentile
+
+Where production telemetry is unavailable, use representative lab measurements and record the limitation.
+
+Also review:
+
+- first-load JS
+- route chunking
+- image size
+- lazy loading
+- repeated network calls
+- large payloads
+- query efficiency
+- expensive rerenders
+- skeleton/loading behavior
+
+Do not chase synthetic scores by removing useful product functionality.
+
+---
+
+## 64. RELIABILITY / RESILIENCE BAR
+
+A premium site must remain understandable when something goes wrong.
+
+Every substantial data surface must distinguish:
+
+- loading
+- ready
+- empty
+- error
+- stale/refreshing where useful
+
+Users should receive actionable recovery where possible.
+
+Network/database/storage outages must not masquerade as valid business states.
+
+Retry should not duplicate effects.
+
+---
+
+## 65. SECURITY / PRIVACY BAR
+
+In addition to existing server authorization, review release posture for:
+
+- secure session/cookie configuration
+- CSRF protection where applicable
+- XSS-safe rendering
+- secure file serving
+- rate limiting / abuse controls
+- brute-force protection
+- secure password/token handling
+- sensitive-data minimization
+- safe error messages
+- security headers / CSP where architecture supports it
+- dependency risk
+- secret handling
+- auditability of privileged changes
+
+Do not expose PII merely to make a workflow look richer.
+
+Premium trust is partly what users do **not** see leaked.
+
+---
+
+## 66. SEO / DISCOVERABILITY BAR
+
+Public marketplace pages should be technically discoverable and professionally presented to search engines.
+
+For relevant public pages:
+
+- unique title
+- useful meta description
+- canonical URL
+- semantic headings
+- descriptive URL
+- crawlable meaningful content
+- sitemap participation where architecture supports it
+- robots behavior
+- structured data where accurate and useful
+- Open Graph/social metadata where appropriate
+
+Do not expose private/authenticated content for SEO.
+
+---
+
+## 67. LOCALIZATION / ARABIC QUALITY BAR
+
+Arabic is a first-class product language.
+
+Do not accept:
+
+- untranslated English fragments
+- raw enums
+- broken RTL spacing
+- mirrored-but-wrong icons
+- mixed alignment
+- awkward machine-like copy
+- English-only charts/statuses
+
+Review important Arabic screens visually, not only through translation-key coverage.
+
+Arabic copy should read naturally and professionally.
+
+---
+
+## 68. TRUST & CREDIBILITY BAR
+
+Every marketplace trust signal must be earned and explainable.
+
+Examples:
+
+- verification badges
+- review counts
+- response metrics
+- Featured
+- Sponsored
+- certification
+- project history
+
+Never imply endorsement, verification, popularity or quality that the system cannot prove.
+
+Where a metric has insufficient data, prefer omission or “Not enough data” over a misleading percentage.
+
+---
+
+## 69. OBSERVABILITY / OPERATIONS BAR
+
+Global-standard engineering includes operating the product after launch.
+
+Ensure important operations can be diagnosed through appropriate:
+
+- structured logs
+- error tracking hooks
+- build identity
+- audit trail
+- request/context correlation where practical
+- operational health indicators
+- migration state
+- failed background-action visibility
+
+Do not expose operational internals to ordinary users.
+
+A critical failure should be diagnosable without guessing which build or user flow produced it.
+
+---
+
+## 70. VISUAL QA / SCREENSHOT GATE
+
+Before final release approval, perform a page-by-page rendered visual review.
+
+At minimum capture/review critical surfaces in:
+
+- English desktop
+- English mobile
+- Arabic/RTL desktop
+- Arabic/RTL mobile
+
+For owner-critical evidence record:
+
+- route
+- role
+- build SHA
+- timestamp
+- viewport
+- language
+
+Review not only whether the page works, but whether it looks premium.
+
+Flag and fix:
+
+- poor spacing
+- inconsistent alignment
+- cramped layout
+- weak hierarchy
+- awkward blank space
+- inconsistent button sizing
+- broken wrapping
+- low-quality empty states
+- ugly tables
+- misplaced badges
+- poor mobile composition
+- inconsistent icons
+- inconsistent borders/radii
+- weak image presentation
+- visual imbalance in Arabic
+
+---
+
+## 71. DESIGN CONSISTENCY CENSUS
+
+Perform a bounded consistency census before final release.
+
+Inventory common UI patterns and detect unnecessary variants of:
+
+- primary buttons
+- secondary buttons
+- destructive actions
+- badges
+- status chips
+- page headers
+- table toolbars
+- filters
+- cards
+- empty states
+- pagination
+- modal layouts
+
+Consolidate materially inconsistent variants into shared primitives where safe.
+
+Do not launch a risky framework rewrite merely to make everything identical.
+
+---
+
+## 72. MICROCOPY / LANGUAGE CENSUS
+
+Review critical user-facing copy for:
+
+- grammar
+- spelling
+- clarity
+- consistency
+- tone
+- terminology
+- bilingual equivalence
+
+Use one term for one concept.
+
+Examples:
+
+Do not alternate between:
+Vendor / Supplier
+unless they intentionally mean different things.
+
+Do not alternate:
+Featured / Promoted / Sponsored
+when the business meaning differs.
+
+Do not expose:
+snake_case
+technical error messages
+database terminology
+internal procedure names.
+
+---
+
+## 73. NO “AI-GENERATED WEBSITE” LOOK
+
+Avoid common low-quality generated-interface patterns:
+
+- too many gradient cards
+- every section inside a rounded box
+- excessive icons
+- excessive badges
+- huge generic hero headings
+- repetitive three-card layouts
+- random decorative statistics
+- excessive animation
+- dense walls of text
+- inconsistent visual metaphors
+- decorative fake dashboards
+- generic empty-state illustrations everywhere
+
+BuildHub should look intentionally designed for construction procurement, not assembled from generic components.
+
+---
+
+## 74. CONSTRUCTION-SPECIFIC VISUAL IDENTITY
+
+Without overdecorating, the product should visually feel appropriate to:
+
+- construction
+- architecture
+- materials
+- engineering
+- procurement
+- professional B2B work
+
+This can come through:
+
+- photography/media choices
+- information architecture
+- product/spec presentation
+- project/RFQ terminology
+- supplier/profile structures
+- restrained industrial/professional visual language
+
+Do not use cliché hard-hat imagery everywhere.
+
+Domain credibility should come primarily from useful information and workflows.
+
+---
+
+## 75. HOMEPAGE QUALITY GATE
+
+The homepage must be more than attractive.
+
+It should clearly communicate:
+
+- BuildHub value proposition
+- buyer path
+- provider path
+- marketplace path
+- Get Quotes / RFQ path
+- trust signals
+- major categories
+- why to use BuildHub
+- strong next action
+
+Do not fabricate customer logos, counts or testimonials.
+
+If real proof is unavailable, use product capability and clear explanation rather than fake social proof.
+
+---
+
+## 76. FIRST-TIME USER QUALITY
+
+A fresh user should not need prior knowledge of BuildHub.
+
+For each role, verify:
+
+- clear orientation
+- obvious first action
+- explanation of empty dashboard
+- onboarding progress
+- relevant help/context
+- no dead end
+- no unexplained disabled capability
+
+Fresh-account experience is a premium-quality criterion, not just an ACC-4 test.
+
+---
+
+## 77. TRUSTED DESTRUCTIVE-ACTION UX
+
+Dangerous actions such as:
+
+- delete
+- archive
+- freeze
+- withdraw
+- reject
+- hide
+- revoke
+- deactivate
+
+must make consequences clear.
+
+Use confirmation proportional to risk.
+
+Do not use confirmation dialogs for every trivial action.
+
+Require reasons where audit/business policy needs one.
+
+After action, show the actual resulting state.
+
+---
+
+## 78. FINAL WORLD-CLASS RELEASE GATE
+
+The release gate in §42 is necessary but not sufficient.
+
+Before asking for owner merge authorization, also verify:
+
+- no critical page looks obviously unfinished
+- no major page uses inconsistent visual primitives without reason
+- no public/role/Admin journey contains dead-looking UI
+- critical mobile layouts look intentionally designed
+- Arabic screens look intentionally designed
+- critical empty/error/loading states are polished
+- public marketplace hierarchy is premium
+- provider storefront is premium
+- product detail is premium
+- RFQ and quotation flows are premium
+- role dashboards are premium
+- Admin control plane is professional
+- typography/spacing/alignment are consistent
+- important interactions have polished states
+- visual QA screenshots reviewed
+- Core Web Vitals/performance have been assessed
+- WCAG 2.2 AA-critical issues are resolved
+- SEO/discoverability is complete for public surfaces
+- security/privacy/reliability gates remain green
+
+Do not request merge merely because functionality is complete.
+
+**The website must look and feel release-worthy.**
+
+---
+
+## 79. OWNER QUALITY PRINCIPLE
+
+The owner explicitly requires a **very, very high standard from top to bottom**.
+
+Interpret that as:
+
+- no “good enough” hidden pages
+- no premium homepage with mediocre inner pages
+- no polished buyer side with weak supplier side
+- no polished public site with crude Admin
+- no strong English with weak Arabic
+- no good desktop with broken mobile
+- no attractive UI covering dishonest data
+- no secure backend behind misleading controls
+- no powerful feature that the user cannot find
+
+The quality bar is horizontal across the whole product, not concentrated on a few showcase screens.
+
+If a page is part of the release, it must meet the same product-quality discipline as the rest of BuildHub.
