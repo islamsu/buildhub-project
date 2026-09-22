@@ -199,6 +199,7 @@ import {
 } from '../shared/rfqBasket';
 import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shared/productImport';
 import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories, categoryUsage } from './categoryService';
+import { userOperationalSnapshot } from './adminUser360';
 import {
   listReferralCodes, referralCodeHistory, issueReferralCode, rotateReferralCode,
   setReferralCodeStatus, referralOverview, referralLinkFor, mintReferralCode,
@@ -7006,6 +7007,20 @@ const adminRouter = router({
     await recordAccountEvent(db, { userId, actorId: ctx.user.id, action: 'dummy_user_created', source: 'dummy', note: input.note || 'Created for testing' });
     return { success: true, userId, username, email };
   }),
+  /**
+   * ONE ACCOUNT, ACROSS THE WHOLE PRODUCT.
+   *
+   * Counts, states and a few recent headings per domain, each carrying the
+   * canonical link to the screen that owns it. Deliberately NOT the contents
+   * of anything - see server/adminUser360.ts for why that line is where it
+   * is. Behind `users.read`, the same permission the detail page itself needs.
+   */
+  userSnapshot: adminWith('users.read')
+    .input(z.object({ userId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return userOperationalSnapshot(db, input.userId);
+    }),
   userDetail: adminWith('users.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
