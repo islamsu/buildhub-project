@@ -259,5 +259,29 @@ try {
   await browser.close();
 }
 
+/* ── A CORRUPT MARKET CODE IS NOT AN EGYPTIAN ONE ────────────────────── */
+/*
+ * §53B. `currencyForMarket` used to answer EGP for anything it did not
+ * recognise, so an RFQ carrying a corrupt code would have had every bid
+ * against it denominated in Egyptian pounds - a commercial number invented
+ * from a data fault, on a document somebody signs.
+ *
+ * Forced through SQL because no write path can produce it: that is the
+ * point. The question is what the READ does when it meets one.
+ */
+sql(`UPDATE rfqs SET marketCode='ZZ', currency='' WHERE id=${rfqId}`);
+const corrupt = await call(supplierCookie, 'rfq.submitQuotation', {
+  rfqId, price: 200000,
+  validUntil: new Date(Date.now() + 30 * 86400000).toISOString(),
+}, ['validUntil']);
+check(corrupt.status !== 200,
+  'a quotation against a corrupt-market RFQ is REFUSED, not priced in EGP',
+  corrupt.body?.error?.json?.message ?? `HTTP ${corrupt.status}`);
+const afterCorrupt = sql(`SELECT IFNULL(currency,'none') FROM quotations WHERE rfqId=${rfqId} AND supersededAt IS NULL ORDER BY id DESC LIMIT 1`);
+check(afterCorrupt !== 'EGP',
+  'and no bid was stored in Egyptian pounds off the back of it',
+  `current bid currency ${afterCorrupt}`);
+sql(`UPDATE rfqs SET marketCode='EG', currency='EGP' WHERE id=${rfqId}`);
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail > 0 ? 1 : 0);

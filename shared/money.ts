@@ -28,6 +28,8 @@
  *     screen is the wrong place to be charming
  */
 
+import { fractionDigitsFor } from './markets';
+
 /**
  * Format an amount in its own currency.
  *
@@ -55,16 +57,29 @@ export function formatMoney(
   if (code.length !== 3) return value.toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US');
 
   const locale = lang === 'ar' ? 'ar-EG' : 'en-US';
+
+  /**
+   * THE CURRENCY'S OWN SCALE, NOT A PLATFORM-WIDE TWO.
+   *
+   * This read `maximumFractionDigits: 2`, which is right for EGP, SAR, AED
+   * and QAR and WRONG for half the GCC: the Kuwaiti and Bahraini dinars and
+   * the Omani rial are divided into 1,000, not 100. Capping them at two
+   * digits does not shorten a number, it CHANGES it - 1,234.567 KWD becomes
+   * 1,234.57, nearly a fil out, on a quotation that is a commercial document.
+   *
+   * `fractionDigitsFor` returns null for a currency BuildHub has no scale
+   * for, and the fallback then lets Intl use the ISO default rather than
+   * imposing Egypt's. Minimum stays 0 so a whole-unit price does not carry a
+   * trailing ".00" or ".000" through a dense table.
+   */
+  const digits = fractionDigitsFor(code);
   try {
     return new Intl.NumberFormat(locale, {
       style: 'currency',
       currency: code,
       currencyDisplay: 'code',
-      // Construction prices are whole units far more often than not, and a
-      // trailing ".00" on every figure in a table is noise. A price with real
-      // minor units still shows them.
       minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
+      ...(digits === null ? {} : { maximumFractionDigits: digits }),
     }).format(value);
   } catch {
     // An unknown ISO code reaches Intl as a RangeError. Showing the number

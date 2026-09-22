@@ -34,6 +34,54 @@
 
 export type MarketCode = 'EG' | 'SA' | 'AE' | 'QA' | 'KW' | 'BH' | 'OM';
 
+/**
+ * ── HOW MANY MINOR UNITS A CURRENCY HAS ─────────────────────────────────
+ *
+ * CURRENCY METADATA, NOT A UI PREFERENCE. The first version of the money
+ * layer capped every currency at two fractional digits, which is right for
+ * EGP, SAR, AED and QAR and WRONG for three of the six GCC currencies:
+ * the Kuwaiti dinar, the Bahraini dinar and the Omani rial are divided into
+ * 1,000 fils/baisa, not 100.
+ *
+ * A KWD figure rounded to two digits is not a display nit. It is a different
+ * amount: 1,234.567 KWD shown and stored as 1,234.57 is nearly a fil out on
+ * every line, and on a quotation that is a wrong number in a commercial
+ * document.
+ *
+ * Declared here rather than read from `Intl` at the call site because it is
+ * also what the DATABASE has to be able to hold, and a schema cannot ask the
+ * browser. See GCC_MONEY_SCALE.md for the migration that must precede
+ * enabling any three-digit market.
+ */
+export const CURRENCY_FRACTION_DIGITS: Readonly<Record<string, number>> = {
+  EGP: 2,
+  SAR: 2,
+  AED: 2,
+  QAR: 2,
+  // ── THREE MINOR DIGITS. 1 dinar = 1,000 fils; 1 rial = 1,000 baisa.
+  KWD: 3,
+  BHD: 3,
+  OMR: 3,
+};
+
+/**
+ * The scale for a currency, or null when BuildHub does not know it.
+ *
+ * NULL RATHER THAN A GUESS. Defaulting an unknown code to 2 is how KWD would
+ * have been silently rounded in the first place; a caller that does not know
+ * the scale must not pretend it does.
+ */
+export function fractionDigitsFor(currency: string | null | undefined): number | null {
+  const code = (currency ?? '').trim().toUpperCase();
+  return Object.prototype.hasOwnProperty.call(CURRENCY_FRACTION_DIGITS, code)
+    ? CURRENCY_FRACTION_DIGITS[code]
+    : null;
+}
+
+/** The largest scale any currency in the table uses. What the DB must hold. */
+export const MAX_CURRENCY_FRACTION_DIGITS =
+  Math.max(...Object.values(CURRENCY_FRACTION_DIGITS));
+
 export type Market = {
   code: MarketCode;
   /** ISO 4217. The sourcing currency for projects and RFQs in this market. */
@@ -93,23 +141,77 @@ export function isEnabledMarket(value: unknown): value is MarketCode {
   return isMarketCode(value) && MARKETS.some(market => market.code === value && market.enabled);
 }
 
-export function marketFor(code: string | null | undefined): Market {
-  const found = MARKETS.find(market => market.code === code);
-  // AN UNKNOWN MARKET IS NOT A CRASH AND NOT A GUESS. A row written before
-  // markets existed, or one carrying a code a later deployment removed, is
-  // read as Egypt - which is what it meant when it was written. Nothing
-  // fabricates a market that was never chosen.
-  return found ?? MARKETS[0];
+/**
+ * ── ABSENT IS NOT THE SAME AS WRONG ─────────────────────────────────────
+ *
+ * The first version of this function returned Egypt for ANYTHING it did not
+ * recognise, and that conflated two completely different situations:
+ *
+ *   a row written before markets existed has NO market, and Egypt is what it
+ *     meant - BuildHub operated in one market when it was written, and 0058
+ *     backfilled exactly that
+ *   a row carrying 'ZZ' is CORRUPT, and calling it Egyptian turns a data
+ *     fault into an Egyptian RFQ, an Egyptian currency and an Egyptian
+ *     compliance decision that nobody ever made
+ *
+ * The second is the dangerous one precisely because it looks like the first.
+ * So absence resolves through the documented launch default and an explicit
+ * unknown code resolves to NULL, which every caller must then handle.
+ */
+export function marketFor(code: string | null | undefined): Market | null {
+  // LEGACY ABSENCE. Null, undefined and empty are the shapes a pre-0058 row
+  // or an un-set column takes, and the backfill path is documented.
+  const trimmed = typeof code === 'string' ? code.trim() : code;
+  if (trimmed === null || trimmed === undefined || trimmed === '') {
+    return MARKETS.find(market => market.code === DEFAULT_MARKET) ?? null;
+  }
+  // AN EXPLICIT CODE MUST BE ONE BUILDHUB KNOWS. Unknown returns null rather
+  // than the launch default, so the fault surfaces where it is read.
+  return MARKETS.find(market => market.code === trimmed) ?? null;
 }
 
-/** The sourcing currency a project or RFQ in this market defaults to. */
-export function currencyForMarket(code: string | null | undefined): string {
-  return marketFor(code).currency;
+/**
+ * The sourcing currency for a market, or NULL for an unrecognised code.
+ *
+ * A caller that receives null has a corrupt record in its hands and must say
+ * so. Substituting EGP here would put an Egyptian currency on a foreign or
+ * broken row, which is the exact failure this pass exists to prevent.
+ */
+export function currencyForMarket(code: string | null | undefined): string | null {
+  return marketFor(code)?.currency ?? null;
 }
 
-export function marketName(code: string | null | undefined, lang: 'en' | 'ar'): string {
+/** The market's name, or null when the code is not one BuildHub knows. */
+export function marketName(code: string | null | undefined, lang: 'en' | 'ar'): string | null {
   const market = marketFor(code);
+  if (!market) return null;
   return lang === 'ar' ? market.nameAr : market.nameEn;
+}
+
+/**
+ * A corrupt market code, named for what it is.
+ *
+ * Thrown by server paths that cannot continue without a market - writing a
+ * quotation, say, where guessing the currency is worse than refusing.
+ */
+export class UnknownMarketError extends Error {
+  constructor(public readonly code: string) {
+    super(`Unrecognised market code "${code}" on a stored record. This is a data-integrity fault, not a missing value.`);
+    this.name = 'UnknownMarketError';
+  }
+}
+
+/**
+ * The currency for a market, REFUSING rather than guessing.
+ *
+ * For the server paths where a wrong currency would be written into a
+ * commercial record. Legacy absence still resolves to the launch default,
+ * because that is what such a row means; an explicit unknown throws.
+ */
+export function requireCurrencyForMarket(code: string | null | undefined): string {
+  const currency = currencyForMarket(code);
+  if (currency === null) throw new UnknownMarketError(String(code));
+  return currency;
 }
 
 /**

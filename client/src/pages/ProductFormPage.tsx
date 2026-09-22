@@ -28,7 +28,7 @@ import { Link, useLocation, useSearch } from 'wouter';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { currencyForMarket, DEFAULT_MARKET } from '@shared/markets';
+import { requireCurrencyForMarket, DEFAULT_MARKET } from '@shared/markets';
 import DashboardLayout from '@/components/DashboardLayout';
 import ProductImport from '@/components/ProductImport';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -67,7 +67,7 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
    * table rather than written into the label, so the day a supplier lists in
    * a second market this becomes a lookup rather than a search-and-replace.
    */
-  const sellingCurrency = currencyForMarket(DEFAULT_MARKET);
+  const sellingCurrency = requireCurrencyForMarket(DEFAULT_MARKET);
   const { isAuthenticated } = useAuth();
 
   const productId = mode === 'edit' ? (productIdProp ?? NaN) : null;

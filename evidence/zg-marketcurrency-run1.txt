@@ -3,19 +3,21 @@ BUILD  72f3b17 (local) built 2026-09-22T13:44:54.143Z  http://127.0.0.1:5401
 BUILD 72f3b17  env=local
 
 PASS  1. a buyer raises an RFQ  [HTTP 200]
-PASS  2. and it has an id  [#188]
+PASS  2. and it has an id  [#192]
 PASS  3. the RFQ states its market and currency explicitly  [EG|EGP]
 PASS  4. an RFQ in a market BuildHub does not operate in is REFUSED  [BuildHub does not currently operate in that market.]
 PASS  5. the buyer invites the supplier, making them eligible  [HTTP 200]
 PASS  6. a currency smuggled in the payload NEVER reaches the stored bid  [stored EGP]
 PASS  7. the bid follows the RFQ's currency, not the supplier's subscription  [RFQ SAR, bid SAR, subscription none]
 PASS  8. and is demonstrably NOT the subscription currency (EGP)  [bid SAR, subscription row none]
-PASS  9. a buyer creates a project  [#128]
+PASS  9. a buyer creates a project  [#130]
 PASS  10. the project states its own market and currency
 PASS  11. a project RFQ inherits the PROJECT's market, ignoring a submitted one
 PASS  12. the form shows the RFQ's currency  ["EGP"]
 PASS  13. read-only, because it is not a choice
 PASS  14. and says plainly that the subscription does not change it  [The request's currency — Egypt market. Your BuildHub subscription does not change it.]
+PASS  15. a quotation against a corrupt-market RFQ is REFUSED, not priced in EGP  [Something went wrong. Please try again.]
+PASS  16. and no bid was stored in Egyptian pounds off the back of it  [current bid currency SAR]
 
-14 passed, 0 failed
+16 passed, 0 failed
 

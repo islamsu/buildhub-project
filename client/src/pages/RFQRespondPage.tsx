@@ -453,8 +453,8 @@ function QuoteFormCard(props: {
             <Input data-testid="respond-currency" value={rfqCurrency ?? ''} readOnly aria-readonly="true" />
             <p className="mt-1 text-xs text-muted-foreground" data-testid="respond-currency-reason">
               {ar
-                ? `عملة طلب العرض — سوق ${marketName(rfq.marketCode, 'ar')}. اشتراكك في BuildHub لا يغيّرها.`
-                : `The request's currency — ${marketName(rfq.marketCode, 'en')} market. Your BuildHub subscription does not change it.`}
+                ? `عملة طلب العرض${marketName(rfq.marketCode, 'ar') ? ` — سوق ${marketName(rfq.marketCode, 'ar')}` : ''}. اشتراكك في BuildHub لا يغيّرها.`
+                : `The request's currency${marketName(rfq.marketCode, 'en') ? ` — ${marketName(rfq.marketCode, 'en')} market` : ''}. Your BuildHub subscription does not change it.`}
             </p>
           </Field>
         </div>

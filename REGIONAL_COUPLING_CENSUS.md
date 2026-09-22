@@ -69,6 +69,9 @@ was meant to be.
 | compliance keyed by market | `shared/compliance.ts` | "Engineering syndicate license" is نقابة المهندسين. A market with no confirmed set returns **empty**, never Egypt's — a wrong document list misdirects a professional, an empty one stops them. |
 | form labels lost their currency | `LanguageContext` | `'Budget (EGP)'`, `'Your Price (EGP)'`, `'Indicative price from (EGP)'` are hard-codes in a place nobody greps. |
 | regression guard | `server/marketReadiness.test.ts` | Fails on a new currency written into a string, including inside a template literal. |
+| currency-specific fraction digits | `CURRENCY_FRACTION_DIGITS` | KWD, BHD and OMR have **three** minor digits. The first formatter capped every currency at two, which does not shorten a KWD figure — it changes it, by nearly a fil, on a document somebody signs. |
+| an invalid market fails closed | `marketFor` returns `Market \| null` | Absence (a pre-0058 row) resolves through the documented Egypt backfill; an explicit `ZZ` resolves to **null**. Otherwise a corrupt code becomes an Egyptian RFQ, currency and compliance decision nobody made. |
+| money-scale migration documented | `GCC_MONEY_SCALE.md` | Money columns are `DECIMAL(n,2)`. MySQL rounds an over-scaled insert rather than refusing it, so enabling Kuwait today would destroy the third digit at write time. A test fails the build if a three-digit market is enabled before the migration runs. |
 
 ---
 

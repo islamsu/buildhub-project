@@ -3,8 +3,9 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { readSourceForAssertions } from './_testing/sourceText';
 import {
-  DEFAULT_MARKET, MARKETS, currencyForMarket, enabledMarkets,
-  isEnabledMarket, marketFor, suggestMarket,
+  CURRENCY_FRACTION_DIGITS, DEFAULT_MARKET, MARKETS, MAX_CURRENCY_FRACTION_DIGITS,
+  UnknownMarketError, currencyForMarket, enabledMarkets, fractionDigitsFor,
+  isEnabledMarket, marketFor, marketName, requireCurrencyForMarket, suggestMarket,
 } from '@shared/markets';
 import { formatMoney, formatMoneyRange } from '@shared/money';
 import {
@@ -70,12 +71,67 @@ describe('the market table is architecture, not a launch', () => {
     expect(isEnabledMarket('ZZ')).toBe(false);
   });
 
-  it('an unknown market reads as Egypt rather than crashing or inventing one', () => {
-    // A row written before markets existed means Egypt, because that is what
-    // it meant when it was written.
-    expect(marketFor(null).code).toBe('EG');
-    expect(marketFor('ZZ').code).toBe('EG');
+  /**
+   * ── ABSENT IS NOT THE SAME AS WRONG ──────────────────────────────────
+   *
+   * GCC_SCALE_READINESS.md §53B. The first version of `marketFor` returned
+   * Egypt for anything it did not recognise, which conflated two completely
+   * different situations - and the earlier version of THIS TEST asserted the
+   * conflation as though it were the requirement:
+   *
+   *     expect(marketFor('ZZ').code).toBe('EG');
+   *
+   * A row written before markets existed has NO market, and Egypt is what it
+   * meant. A row carrying 'ZZ' is CORRUPT, and calling it Egyptian turns a
+   * data fault into an Egyptian RFQ, an Egyptian currency and an Egyptian
+   * compliance decision that nobody ever made. The second is dangerous
+   * precisely because it looks like the first.
+   */
+  it('LEGACY ABSENCE resolves through the documented Egypt default', () => {
+    // Null, undefined and empty are the shapes a pre-0058 row takes, and 0058
+    // backfilled exactly this.
+    expect(marketFor(null)?.code).toBe('EG');
+    expect(marketFor(undefined)?.code).toBe('EG');
+    expect(marketFor('')?.code).toBe('EG');
     expect(currencyForMarket(undefined)).toBe('EGP');
+  });
+
+  it('but an EXPLICIT unknown code resolves to NOTHING, not to Egypt', () => {
+    expect(marketFor('ZZ')).toBeNull();
+    expect(marketFor('XX')).toBeNull();
+    expect(marketFor('eg-extra')).toBeNull();
+    expect(currencyForMarket('ZZ')).toBeNull();
+    expect(marketName('ZZ', 'en')).toBeNull();
+  });
+
+  it('a disabled-but-known code still resolves - it is data, not corruption', () => {
+    // 'SA' is a market BuildHub knows and does not operate in. That is a
+    // different fact from 'ZZ', and reading a Saudi row must not look like
+    // reading a broken one.
+    expect(marketFor('SA')?.code).toBe('SA');
+    expect(currencyForMarket('SA')).toBe('SAR');
+  });
+
+  it('and a write path REFUSES rather than guessing', () => {
+    // Where a wrong currency would be written into a commercial record,
+    // guessing is worse than failing.
+    expect(() => requireCurrencyForMarket('ZZ')).toThrow(UnknownMarketError);
+    expect(() => requireCurrencyForMarket('ZZ')).toThrow(/data-integrity/i);
+    // Legacy absence still resolves, because that row genuinely means Egypt.
+    expect(requireCurrencyForMarket(null)).toBe('EGP');
+    expect(requireCurrencyForMarket('EG')).toBe('EGP');
+  });
+
+  it('submitQuotation refuses a corrupt market instead of bidding in EGP', () => {
+    const submit = (() => {
+      const start = ROUTERS.indexOf('  submitQuotation: approvedProviderProcedure');
+      const end = ROUTERS.indexOf('\n  close: protectedProcedure', start);
+      expect(end).toBeGreaterThan(start);
+      return ROUTERS.slice(start, end);
+    })();
+    // The nullable reader, and a refusal on null - not `?? 'EGP'`.
+    expect(submit).toContain('if (!resolvedCurrency)');
+    expect(submit).toContain('has no valid market');
   });
 });
 
@@ -145,7 +201,10 @@ describe('THE QUOTATION CURRENCY IS THE RFQ\'S, NOT THE SUBSCRIPTION\'S', () => 
 
   it('it reads the currency off the RFQ instead', () => {
     expect(submit).toContain('currency: rfqs.currency');
-    expect(submit).toContain('const quotationCurrency = rfq.currency');
+    // Via the nullable reader and its refusal - see the corrupt-market test
+    // below for why the assignment is no longer a single expression.
+    expect(submit).toContain('const resolvedCurrency = rfq.currency || currencyForMarket(rfq.marketCode)');
+    expect(submit).toContain('const quotationCurrency = resolvedCurrency');
   });
 
   it('and writes THAT onto the row, not the column default', () => {
@@ -217,6 +276,104 @@ describe('RFQ and project creation establish the market explicitly', () => {
     // §49: do not make the reader guess whether a figure is EGP, SAR or AED.
     expect(ROUTERS).toContain('marketCode: rfqs.marketCode');
     expect([...ROUTERS.matchAll(/marketCode: rfqs\.marketCode/g)].length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('FRACTION DIGITS ARE CURRENCY METADATA, NOT A UI PREFERENCE', () => {
+  /*
+   * GCC_SCALE_READINESS.md §53A. The formatter capped every currency at two
+   * fractional digits, which is right for EGP, SAR, AED and QAR and WRONG for
+   * half the GCC: the Kuwaiti and Bahraini dinars and the Omani rial are
+   * divided into 1,000, not 100.
+   *
+   * Capping them does not shorten a number, it CHANGES it. 1,234.567 KWD
+   * rendered as 1,234.57 is nearly a fil out, on a quotation that is a
+   * commercial document somebody signs.
+   */
+  it('the three-digit currencies are declared as three-digit', () => {
+    for (const code of ['KWD', 'BHD', 'OMR']) {
+      expect(fractionDigitsFor(code), `${code} is not declared with 3 digits`).toBe(3);
+    }
+  });
+
+  it('and the two-digit ones as two', () => {
+    for (const code of ['EGP', 'SAR', 'AED', 'QAR']) {
+      expect(fractionDigitsFor(code), `${code} is not declared with 2 digits`).toBe(2);
+    }
+  });
+
+  it('every market\'s currency has a declared scale', () => {
+    // A market in the table whose currency has no scale would be formatted by
+    // whatever Intl decided, which is the guess this table exists to replace.
+    for (const market of MARKETS) {
+      expect(fractionDigitsFor(market.currency), `${market.code}/${market.currency} has no declared scale`)
+        .not.toBeNull();
+    }
+  });
+
+  it('an unknown currency has NO scale rather than a defaulted two', () => {
+    // Defaulting to 2 is how KWD would have been rounded in the first place.
+    expect(fractionDigitsFor('ZZZ')).toBeNull();
+    expect(fractionDigitsFor(null)).toBeNull();
+  });
+
+  it('A KWD AMOUNT KEEPS ITS THIRD DIGIT', () => {
+    const shown = formatMoney(1234.567, 'KWD');
+    expect(shown, 'the third digit was rounded away').toContain('567');
+    expect(shown).not.toContain('1,234.57');
+  });
+
+  it('while an EGP amount is still rounded to two', () => {
+    expect(formatMoney(1234.567, 'EGP')).toContain('1,234.57');
+  });
+
+  it('and a whole amount carries no trailing zeros in either', () => {
+    // The reason the cap was there at all: a dense table of ".000" is noise.
+    expect(formatMoney(1000, 'KWD')).not.toContain('.000');
+    expect(formatMoney(1000, 'EGP')).not.toContain('.00');
+  });
+
+  it('nothing hard-codes a platform-wide maximum of two digits', () => {
+    // COMMENTS STRIPPED. The note explaining why the cap was removed has to
+    // quote it, and a guard that fails on its own explanation teaches people
+    // to stop writing explanations.
+    const source = readSourceForAssertions(readFileSync(join(ROOT, 'shared/money.ts'), 'utf8'));
+    expect(source, 'the platform-wide cap is back')
+      .not.toMatch(/maximumFractionDigits:\s*2\b/);
+    // And it comes from the table rather than from a literal at all.
+    expect(source).toContain('fractionDigitsFor(code)');
+  });
+
+  it('the maximum enabled scale is published, because the DATABASE needs it', () => {
+    // Money columns are DECIMAL(n,2). A three-digit currency cannot be stored
+    // in one, so this number is what the migration in GCC_MONEY_SCALE.md has
+    // to reach before any three-digit market is enabled.
+    expect(MAX_CURRENCY_FRACTION_DIGITS).toBe(3);
+  });
+
+  it('and every three-digit market is still DISABLED, because the columns are not ready', () => {
+    /*
+     * THE GUARD THAT MATTERS MOST HERE. Enabling Kuwait against
+     * DECIMAL(12,2) columns would silently truncate every stored KWD amount
+     * at write time - which no formatter fix can undo, because the digit is
+     * gone from the database.
+     */
+    const unstorable = MARKETS.filter(market =>
+      market.enabled && (fractionDigitsFor(market.currency) ?? 0) > 2);
+    expect(
+      unstorable.map(market => `${market.code}/${market.currency}`),
+      'a market whose currency needs more decimals than the money columns hold is '
+      + 'enabled. Run the migration in GCC_MONEY_SCALE.md first - a truncated '
+      + 'amount cannot be recovered.',
+    ).toEqual([]);
+  });
+
+  it('the money-scale migration plan is documented before any such market opens', () => {
+    const plan = readFileSync(join(ROOT, 'GCC_MONEY_SCALE.md'), 'utf8');
+    expect(plan).toContain('DECIMAL');
+    for (const code of ['KWD', 'BHD', 'OMR']) {
+      expect(plan, `${code} is not named in the migration plan`).toContain(code);
+    }
   });
 });
 

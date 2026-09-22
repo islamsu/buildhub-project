@@ -199,7 +199,10 @@ import {
 } from '../shared/rfqBasket';
 import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shared/productImport';
 import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories, categoryUsage } from './categoryService';
-import { currencyForMarket, DEFAULT_MARKET, isEnabledMarket, marketFor, type MarketCode } from '@shared/markets';
+import {
+  currencyForMarket, requireCurrencyForMarket, UnknownMarketError,
+  DEFAULT_MARKET, isEnabledMarket, marketFor, type MarketCode,
+} from '@shared/markets';
 import { userOperationalSnapshot } from './adminUser360';
 import {
   listReferralCodes, referralCodeHistory, issueReferralCode, rotateReferralCode,
@@ -1475,7 +1478,11 @@ const projectsRouter = router({
         marketCode,
         // The project's sourcing currency, from its market. Written rather
         // than left to the column default for the same reason as the RFQ's.
-        currency: currencyForMarket(marketCode),
+        // `requireCurrencyForMarket`, not the nullable reader: `marketCode`
+        // has already been checked against the enabled set above, so a null
+        // here would mean the market table and the validator disagree - which
+        // is worth a loud failure rather than a silent EGP.
+        currency: requireCurrencyForMarket(marketCode),
         budget: input.budget != null ? String(input.budget) : undefined,
       });
       const id = Number(result[0].insertId);
@@ -3663,7 +3670,10 @@ const rfqRouter = router({
         }
         marketCode = input.marketCode;
       }
-      const marketCurrency = currencyForMarket(marketCode);
+      // Refuses rather than guesses, for the same reason as projects.create:
+      // `marketCode` is either the project's (validated on the way in) or one
+      // already checked against the enabled set.
+      const marketCurrency = requireCurrencyForMarket(marketCode);
 
       const { attachments, productReference, items, marketCode: _requestedMarket, ...rest } = input;
 
@@ -4534,15 +4544,32 @@ const rfqRouter = router({
        *
        * Resolved here, once, from the record that owns the requirement -
        * never from the supplier's subscription, their own country, or the
-       * language their browser is set to. `currencyForMarket` is the fallback
-       * for an RFQ written before 0058 gave the column a value, and it
-       * resolves to exactly what that RFQ already meant.
+       * language their browser is set to. `currencyForMarket` covers an RFQ
+       * written before 0058 gave the column a value, and it resolves to
+       * exactly what that RFQ already meant.
        *
        * This is what makes comparing two bids exact: every quotation on one
        * RFQ is denominated in the same thing, so nothing hidden decides who
        * looks cheaper.
        */
-      const quotationCurrency = rfq.currency || currencyForMarket(rfq.marketCode);
+      /*
+       * A CORRUPT MARKET IS NOT AN EGYPTIAN ONE.
+       *
+       * `currencyForMarket` used to answer EGP for anything it did not
+       * recognise, so an RFQ carrying a corrupt 'ZZ' would have had every bid
+       * against it denominated in Egyptian pounds - a commercial number
+       * invented from a data fault. The nullable reader distinguishes legacy
+       * absence (which legitimately means Egypt, because that is what a
+       * pre-0058 row meant) from an explicit code BuildHub does not know.
+       */
+      const resolvedCurrency = rfq.currency || currencyForMarket(rfq.marketCode);
+      if (!resolvedCurrency) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'This request has no valid market, so its currency cannot be determined. Contact support rather than quoting.',
+        });
+      }
+      const quotationCurrency = resolvedCurrency;
 
       const { attachments, ...quotationFields } = input;
 
