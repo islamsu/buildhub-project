@@ -47,6 +47,21 @@ export default function MarketplaceHub() {
   const { data: taxonomy, isLoading: taxonomyLoading, isError: taxonomyFailed } =
     trpc.marketplace.categories.useQuery({ view: 'public' }, { retry: false });
   const productCategories = taxonomy?.categories ?? [];
+  /**
+   * HOW MANY ITEMS THE CATALOGUE ACTUALLY HOLDS.
+   *
+   * The Products card's headline figure was the number of CATEGORIES - the
+   * browse vocabulary - sitting in the slot the three cards beside it use for
+   * a count of real entities. Nineteen categories and an empty catalogue read
+   * as "19 Products" to anybody scanning the row.
+   *
+   * `publicProducts` is counted server-side with the marketplace's own
+   * visibility predicate, so the headline is a promise the next page keeps.
+   * The category count stays, demoted to the secondary line where it is a
+   * true statement about the vocabulary rather than about the catalogue.
+   */
+  const { data: platformStats, isLoading: statsLoading, isError: statsFailed } =
+    trpc.marketplace.platformStats.useQuery(undefined, { retry: false });
   /*
    * A COUNT IS A CLAIM, AND SO IS A ZERO.
    *
@@ -107,8 +122,14 @@ export default function MarketplaceHub() {
       gradient: 'from-blue-600 to-cyan-500',
       title: t('marketHub.sectionProductsTitle'),
       desc: t('marketHub.sectionProductsDesc'),
-      stat: countOrUnknown(taxonomyFailed, taxonomyLoading, productCategories.length),
-      statLabel: t('marketHub.categoriesLabel'),
+      stat: countOrUnknown(statsFailed, statsLoading, platformStats?.publicProducts ?? 0),
+      statLabel: t('marketHub.productsLabel'),
+      // Secondary, and only once the taxonomy has really answered: a dash in
+      // the headline with "19 categories" underneath would be the same
+      // substitution in a smaller font.
+      secondary: taxonomyFailed || taxonomyLoading || productCategories.length === 0
+        ? null
+        : `${productCategories.length} ${t('marketHub.categoriesLabel').toLowerCase()}`,
       chips: productCategories.slice(0, 4).map(c => (ar ? c.nameAr : c.nameEn)),
     },
     {
@@ -120,6 +141,7 @@ export default function MarketplaceHub() {
       desc: t('marketHub.sectionVendorsDesc'),
       stat: countOrUnknown(directoryFailed, directoryLoading, directory.length),
       statLabel: t('marketHub.vendorsLabel'),
+      secondary: null,
       chips: directory.slice(0, 3).map(v => v.name ?? `#${v.id}`),
     },
     {
@@ -142,6 +164,7 @@ export default function MarketplaceHub() {
        */
       stat: countOrUnknown(directoryFailed, directoryLoading, designers.length),
       statLabel: t('marketHub.providersLabel'),
+      secondary: null,
       chips: DESIGN_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
     },
     {
@@ -154,6 +177,7 @@ export default function MarketplaceHub() {
       // The same correction, for the same reason.
       stat: countOrUnknown(directoryFailed, directoryLoading, finishing.length),
       statLabel: t('marketHub.providersLabel'),
+      secondary: null,
       chips: FINISHING_CATEGORIES.slice(0, 4).map(c => (ar ? c.ar : c.en)),
     },
   ];
@@ -398,6 +422,9 @@ export default function MarketplaceHub() {
                     <div className="text-end">
                       <div className="text-2xl font-bold" data-testid={`hub-stat-${s.id}`}>{s.stat}</div>
                       <div className="text-xs text-muted-foreground" data-testid={`hub-statlabel-${s.id}`}>{s.statLabel}</div>
+                      {s.secondary && (
+                        <div className="text-[11px] text-muted-foreground/70 mt-0.5" data-testid={`hub-secondary-${s.id}`}>{s.secondary}</div>
+                      )}
                     </div>
                   </div>
                   <h2 className="text-xl font-bold mb-2 group-hover:text-primary transition-colors">{s.title}</h2>

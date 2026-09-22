@@ -1131,7 +1131,11 @@ const translations: Record<Language, Record<string, string>> = {
     'marketHub.heroSubtitle': 'Discover products, evaluate suppliers, hire professionals, and request quotations — all in one connected construction ecosystem.',
     'marketHub.searchPlaceholder': 'Search products, vendors, designers, finishing companies…',
     'marketHub.sectionProductsTitle': 'Products',
-    'marketHub.sectionProductsDesc': 'Comprehensive catalog of building & finishing materials across 30+ categories',
+    // "30+ categories" was a figure nothing produced - the taxonomy holds
+    // nineteen. The description no longer counts anything; the card's own
+    // stat does, from the database.
+    'marketHub.sectionProductsDesc': 'Building and finishing materials from approved suppliers, listed by category and specification.',
+    'marketHub.productsLabel': 'Products',
     'marketHub.categoriesLabel': 'Categories',
     'marketHub.sectionVendorsTitle': 'Vendors',
     'marketHub.sectionVendorsDesc': 'Directory of trusted suppliers and manufacturers across Egypt',
@@ -2321,7 +2325,8 @@ const translations: Record<Language, Record<string, string>> = {
     'marketHub.heroSubtitle': 'اكتشف المنتجات، وقيّم الموردين، ووظف المحترفين، واطلب عروض الأسعار — كل ذلك في منظومة بناء متكاملة.',
     'marketHub.searchPlaceholder': 'ابحث عن منتجات، موردين، مصممين، شركات تشطيب…',
     'marketHub.sectionProductsTitle': 'المنتجات',
-    'marketHub.sectionProductsDesc': 'كتالوج شامل لمواد البناء والتشطيب من أكثر من 30 فئة',
+    'marketHub.sectionProductsDesc': 'مواد بناء وتشطيب من موردين معتمدين، مصنّفة حسب الفئة والمواصفات.',
+    'marketHub.productsLabel': 'منتج',
     'marketHub.categoriesLabel': 'فئة',
     'marketHub.sectionVendorsTitle': 'الموردون',
     'marketHub.sectionVendorsDesc': 'دليل الموردين والمصنعين الموثوقين في مصر',

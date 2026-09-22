@@ -71,9 +71,36 @@ describe('every headline count on the hub counts something real', () => {
     expect(hits[1], 'the Arabic label is an English fallback').toMatch(/[؀-ۿ]/);
   });
 
-  it('the other two cards were already honest and are untouched', () => {
-    expect(section('products')).toContain('productCategories.length');
+  it('the vendors card was already honest and is untouched', () => {
     expect(section('vendors')).toContain('directory.length');
+  });
+
+  /**
+   * THE PRODUCTS CARD COUNTED THE WRONG NOUN.
+   *
+   * It was honest - `productCategories.length` really was the number of
+   * categories - but it sat in the slot the cards beside it use for a count
+   * of real entities, so the row read as a catalogue size. The owner asked
+   * for the item count back. It now comes from the server, counted with the
+   * marketplace's own visibility predicate.
+   */
+  it('the products card counts PRODUCTS, from the server', () => {
+    const products = section('products');
+    expect(products).toContain('platformStats?.publicProducts');
+    expect(products, 'the headline is the category count again')
+      .not.toMatch(/stat: countOrUnknown\([^)]*productCategories\.length/);
+    expect(products).toContain("statLabel: t('marketHub.productsLabel')");
+    const hits = [...LANG.matchAll(/'marketHub\.productsLabel': '([^']+)'/g)].map(m => m[1]);
+    expect(hits, 'the label is not translated in both languages').toHaveLength(2);
+    expect(hits[1], 'the Arabic label is an English fallback').toMatch(/[؀-ۿ]/);
+  });
+
+  it('the category count survives as the SECONDARY line, and only when known', () => {
+    const products = section('products');
+    expect(products).toContain('productCategories.length');
+    // A dash in the headline over "19 categories" underneath would be the
+    // same substitution in a smaller font.
+    expect(products).toContain('taxonomyFailed || taxonomyLoading || productCategories.length === 0');
   });
 
   it('NO SECTION COUNTS A COMPILED-IN CONSTANT', () => {
@@ -92,7 +119,13 @@ describe('every headline count on the hub counts something real', () => {
     for (const expression of stats) {
       expect(expression, `${expression} is a constant, not a count of anything real`)
         .not.toMatch(/[A-Z_]{4,}\.length/);
-      expect(expression, `${expression} does not count anything`).toMatch(/\.length/);
+      // A count of a client-side array (`.length`) or a figure the server
+      // counted. What is forbidden is a literal: `stat: '30+'` is the defect
+      // this guard exists for, and it would pass a looser rule.
+      expect(expression, `${expression} does not count anything`)
+        .toMatch(/\.length|platformStats\?\.\w+/);
+      expect(expression, `${expression} is a hardcoded figure`)
+        .not.toMatch(/countOrUnknown\([^,]+,[^,]+,\s*['"`\d]/);
     }
   });
 

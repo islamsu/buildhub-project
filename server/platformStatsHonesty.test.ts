@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { readSourceForAssertions } from './_testing/sourceText';
+import { products, projects, users } from '../drizzle/schema';
 import { getPlatformStats, resetPlatformStatsCache } from './platformStats';
 
 /**
@@ -29,17 +30,34 @@ import { getPlatformStats, resetPlatformStatsCache } from './platformStats';
 const HOME = readSourceForAssertions(readFileSync(new URL('../client/src/pages/Home.tsx', import.meta.url), 'utf8'));
 const AUTH = readSourceForAssertions(readFileSync(new URL('../client/src/pages/AuthPage.tsx', import.meta.url), 'utf8'));
 
-/** A db whose four counting queries answer with the numbers given. */
-function stubDb(counts: { users: number; projects: number; providers: number; reviews: number; average?: number }) {
-  let call = 0;
+/**
+ * A db that answers BY TABLE, not by call order.
+ *
+ * It used to count calls: first answer for users, second for projects, third
+ * for anything else. Adding the product count in fifth place would have
+ * silently handed the provider figure to the products row and the test would
+ * have gone on passing while reporting the wrong number. The stub now reads
+ * the table it was handed, so a query that moves cannot take another query's
+ * answer with it.
+ */
+function stubDb(counts: {
+  users: number; projects: number; providers: number; products?: number;
+  reviews: number; average?: number;
+}) {
+  // The provider count is the SECOND query against `users`; the first is the
+  // total. Order still distinguishes those two, and only those two.
+  let userQueries = 0;
   return {
     select: () => ({
-      from: () => ({
+      from: (table: unknown) => ({
         where: () => {
-          call += 1;
-          if (call === 1) return Promise.resolve([{ n: counts.users }]);
-          if (call === 2) return Promise.resolve([{ n: counts.projects }]);
-          return Promise.resolve([{ n: counts.providers }]);
+          if (table === users) {
+            userQueries += 1;
+            return Promise.resolve([{ n: userQueries === 1 ? counts.users : counts.providers }]);
+          }
+          if (table === projects) return Promise.resolve([{ n: counts.projects }]);
+          if (table === products) return Promise.resolve([{ n: counts.products ?? 0 }]);
+          throw new Error('stubDb: unexpected table in a counting query');
         },
         // The reviews aggregate has no WHERE - it is awaited directly.
         then: (resolve: (rows: unknown[]) => unknown) =>
@@ -75,6 +93,48 @@ describe('the counters are counts', () => {
     expect(stats.registeredUsers).toBe(2);
     expect(stats.verifiedProviders).toBe(1);
     expect(stats.activeProjects).toBe(0);
+  });
+});
+
+describe('the product count is the size of the catalogue', () => {
+  beforeEach(() => resetPlatformStatsCache());
+
+  /**
+   * THE OWNER ASKED FOR THE NUMBER OF ITEMS BACK.
+   *
+   * The Marketplace Products card had been showing the CATEGORY count in the
+   * headline slot - browse vocabulary presented as catalogue size. Nineteen
+   * categories and an empty catalogue read as "19 Products".
+   */
+  it('reports the real number of listable products', async () => {
+    const stats = await getPlatformStats(stubDb({ users: 86, projects: 3, providers: 48, products: 214, reviews: 0 }));
+    expect(stats.publicProducts).toBe(214);
+  });
+
+  it('does not take another query\'s answer', async () => {
+    // Every figure distinct, so a crossed wire shows up as a wrong number
+    // rather than a coincidence.
+    const stats = await getPlatformStats(stubDb({ users: 86, projects: 3, providers: 48, products: 214, reviews: 7, average: 4.4 }));
+    expect(stats).toMatchObject({
+      registeredUsers: 86, activeProjects: 3, verifiedProviders: 48, publicProducts: 214,
+    });
+  });
+
+  it('counts with the CATALOGUE\'s visibility rule, not a second one', () => {
+    // A headline "X Products" is a promise that the marketplace lists X
+    // products. It can only be kept by counting with the predicate the
+    // marketplace lists with - so this module must not spell out its own.
+    const source = readFileSync(new URL('./platformStats.ts', import.meta.url), 'utf8');
+    expect(source).toContain('publicProductFilter()');
+    expect(source, 'a second, inline visibility rule would drift from the catalogue')
+      .not.toContain('products.status');
+    expect(source).not.toContain('products.active');
+  });
+
+  it('the marketplace Products card leads with products, not categories', () => {
+    const hub = readSourceForAssertions(readFileSync(new URL('../client/src/pages/MarketplaceHub.tsx', import.meta.url), 'utf8'));
+    expect(hub).toContain('platformStats');
+    expect(hub).toContain('publicProducts');
   });
 });
 

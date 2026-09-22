@@ -1,0 +1,20 @@
+BUILD  72f3b17 (local) built 2026-09-22T13:44:54.143Z  http://127.0.0.1:5401
+
+BUILD 72f3b17  env=local
+
+PASS  1. platformStats reports publicProducts  [= 29]
+PASS  2. the count equals what the marketplace actually lists  [listed 29 vs counted 29]
+PASS  3. nothing unpublished is in it  [statuses: active]
+PASS  4. the product figure is distinguishable from the category figure  [29 products, 55 categories]
+PASS  5. the Marketplace card RENDERS the product count  [card "29", server 29]
+PASS  6. and labels it Products  ["Products"]
+PASS  7. the headline is NOT the category count  ["29" vs 55 categories]
+PASS  8. the category count survives as the secondary line  ["55 categories"]
+PASS  9. the homepage renders the real figure beside the label  [t Your Project | Explore Marketplace |  | 29 |  | Products Listed |  | 14 |]
+PASS  10. the Arabic label is Arabic, not an English fallback  ["منتج"]
+PASS  11. and carries the same real figure  ["29"]
+PASS  12. the probe can simulate the outage
+PASS  13. an unavailable count renders as unknown, never as zero  [rendered "—"]
+
+13 passed, 0 failed
+

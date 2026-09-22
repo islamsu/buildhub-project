@@ -95,6 +95,10 @@ const ROLES = [
  * provider ratings: an absent number is shown as absent, never as a number.
  */
 const STAT_LABELS = {
+  // The owner asked for the size of the catalogue back on the front door.
+  // Counted server-side with the marketplace's own visibility rule, so the
+  // number is one a visitor can go and browse.
+  publicProducts: { en: 'Products Listed', ar: 'منتج معروض' },
   registeredUsers: { en: 'Registered Users', ar: 'مستخدم مسجل' },
   activeProjects: { en: 'Active Projects', ar: 'مشروع نشط' },
   verifiedProviders: { en: 'Verified Providers', ar: 'مزود موثق' },
@@ -143,6 +147,7 @@ export default function Home() {
    */
   const { data: stats } = trpc.marketplace.platformStats.useQuery();
   const liveStats = !stats ? [] : [
+    { key: 'publicProducts', value: stats.publicProducts.toLocaleString(), label: STAT_LABELS.publicProducts, show: stats.publicProducts > 0 },
     { key: 'registeredUsers', value: stats.registeredUsers.toLocaleString(), label: STAT_LABELS.registeredUsers, show: stats.registeredUsers > 0 },
     { key: 'activeProjects', value: stats.activeProjects.toLocaleString(), label: STAT_LABELS.activeProjects, show: stats.activeProjects > 0 },
     { key: 'verifiedProviders', value: stats.verifiedProviders.toLocaleString(), label: STAT_LABELS.verifiedProviders, show: stats.verifiedProviders > 0 },
