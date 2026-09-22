@@ -748,3 +748,639 @@ FORK CODE
 → REWRITE ADMIN.
 
 If expansion requires a country-specific code fork, this architecture has failed.
+
+
+---
+
+# 32. OWNER POLICY — HOW BUILDHUB KNOWS THE MARKET
+
+This section resolves the owner question about Egypt vs GCC identity, login, RFQs,
+quotations and subscriptions.
+
+## The governing rule
+
+**Do not use IP/geolocation as business truth.**
+
+IP/browser location may be used only to SUGGEST an initial market to a signed-out
+visitor.
+
+It must never silently determine:
+
+- legal/business country
+- project country
+- RFQ market
+- quotation currency
+- tax treatment
+- compliance eligibility
+- provider serviceability
+- subscription billing country
+
+The authoritative market comes from explicit business records.
+
+---
+
+# 33. ONE GLOBAL LOGIN, NOT ONE LOGIN PER COUNTRY
+
+A BuildHub user should have **one account**.
+
+Do not create:
+
+- Egypt account
+- Saudi account
+- UAE account
+
+for the same person.
+
+After login, BuildHub resolves an **active market context** for navigation and
+discovery.
+
+Resolution order:
+
+1. market attached to the object being worked on (project/RFQ/etc.)
+2. user's last explicitly selected active market, if still enabled
+3. user's explicit default market
+4. if exactly one market is available, use it
+5. otherwise show a market chooser
+
+IP location may preselect the chooser on first visit but never silently commit
+the selection.
+
+The header/workspace should eventually expose a market switcher for users who
+operate across more than one enabled market.
+
+Changing active market changes DISCOVERY CONTEXT.
+
+It does not rewrite existing projects/RFQs/quotations.
+
+---
+
+# 34. ACCOUNT COUNTRY VS MARKET CONTEXT
+
+Keep these facts separate.
+
+## User home/default country
+
+A profile/preference.
+
+Useful for UX defaults.
+
+Not authoritative for commercial transactions.
+
+## Business legal country
+
+Where a supplier/professional business is registered.
+
+Authoritative for that business identity and compliance profile.
+
+## Served markets
+
+Where a provider is willing and approved to work/deliver.
+
+Authoritative for marketplace/RFQ serviceability.
+
+## Active browsing market
+
+What marketplace the user is currently browsing.
+
+A session/user preference.
+
+## Project country
+
+Where the actual construction project is located.
+
+Authoritative for project workflows.
+
+## RFQ country/market
+
+Where the requirement must be delivered/performed.
+
+Authoritative for supplier matching and quotation context.
+
+A user may therefore:
+
+live in Egypt,
+run a UAE-registered company,
+browse Saudi Arabia,
+and quote a Bahrain project
+
+without those facts being confused.
+
+---
+
+# 35. SIGNUP / ONBOARDING COUNTRY QUESTIONS
+
+Do not ask one ambiguous field called "Country" and reuse it everywhere.
+
+## Buyer / homeowner
+
+Ask/default:
+
+- default browsing market
+
+When creating a project, require:
+
+- project country
+- region/admin area
+- city/location as appropriate
+
+## Supplier / professional
+
+Ask:
+
+- legal/business registration country
+- primary business location
+- markets served
+
+Compliance requirements are derived from legal/operating market, not IP.
+
+Users can later add served markets subject to applicable compliance/approval.
+
+---
+
+# 36. PROJECT MARKET — SOURCE OF TRUTH
+
+Project creation must explicitly establish:
+
+- countryCode
+- normalized geography
+- timezone
+- project/sourcing currency default
+
+The form may default these from active market but must make the country visible
+and changeable before save.
+
+Once commercial records exist, changing project market/currency must be tightly
+controlled and must never silently reinterpret historical RFQs/quotations.
+
+---
+
+# 37. STANDALONE RFQ MARKET — EXPLICIT
+
+If an RFQ belongs to a project:
+
+RFQ market defaults/inherits from the project.
+
+If an RFQ is standalone:
+
+the requester must explicitly answer a question equivalent to:
+
+**Where must this requirement be supplied/performed?**
+
+Select:
+
+- country/market
+- region/city where useful
+
+The RFQ stores a market snapshot.
+
+Do not derive RFQ country from:
+
+- requester nationality
+- requester IP
+- supplier country
+- current UI language
+
+---
+
+# 38. RFQ CURRENCY — EXPLICIT COMMERCIAL SOURCE OF TRUTH
+
+Every RFQ must have an explicit commercial currency.
+
+Resolution:
+
+1. default from the RFQ/project market configuration
+2. show it clearly to requester
+3. requester confirms it before publishing
+4. persist it on the RFQ
+
+For the first regional architecture, prefer **one currency per RFQ**.
+
+This makes quotation comparison exact and avoids hidden FX assumptions.
+
+Later, BuildHub may support multi-currency RFQs only with an explicit conversion
+policy and exchange-rate snapshot architecture.
+
+Do not introduce that complexity prematurely.
+
+---
+
+# 39. HOW BUILDHUB KNOWS THE QUOTATION CURRENCY
+
+A supplier should NOT choose quotation country/currency from scratch.
+
+The quotation belongs to an RFQ.
+
+Therefore:
+
+**Quotation currency = RFQ currency**
+
+by default and, for the initial multi-market architecture, by rule.
+
+The quotation form should display something like:
+
+Project market: Saudi Arabia
+RFQ currency: SAR
+
+and the currency field should be read-only.
+
+Example:
+
+Buyer in Egypt creates a project in Jeddah.
+
+Project:
+country = SA
+
+RFQ:
+market = SA
+currency = SAR
+
+An Egyptian supplier approved to serve Saudi Arabia responds.
+
+Quotation:
+currency = SAR
+
+The supplier's own country and BuildHub subscription currency do NOT change the
+quotation currency.
+
+This is the correct commercial model.
+
+---
+
+# 40. RFQ DISTRIBUTION / WHO RECEIVES IT
+
+Supplier eligibility for an RFQ is determined server-side from the RFQ context.
+
+Applicable signals:
+
+- RFQ market/country
+- provider served markets/service areas
+- provider category/capability
+- compliance/verification required for that market
+- invitation
+- project relationship
+- entitlement/allowance
+- RFQ visibility rules
+
+A supplier does not need to be logged into the same market at the moment the RFQ
+is created in order to receive a legitimate notification/opportunity.
+
+Example:
+
+Supplier operates in EG and SA.
+
+Active UI market today:
+EG
+
+A new eligible Saudi RFQ arrives.
+
+BuildHub may still:
+
+- create the opportunity
+- send the notification
+- show market badge SA
+- surface it in the supplier Opportunity Centre
+
+The active market selector is a browsing context, not an authorization wall.
+
+Opportunity Centre should be filterable/groupable by market.
+
+---
+
+# 41. CROSS-BORDER SUPPLIER MODEL
+
+A provider has:
+
+- legalCountryCode
+- approved/served markets
+- normalized service areas
+
+Example:
+
+Legal country: EG
+Served markets: EG, SA
+Saudi service areas: Riyadh, Jeddah
+
+That supplier can be eligible for a Saudi RFQ if:
+
+- category matches
+- geography/serviceability matches
+- Saudi compliance requirements are satisfied
+- other entitlement/security rules pass
+
+No second account is needed.
+
+---
+
+# 42. PRODUCT MARKET OFFERS
+
+Marketplace browsing follows active/project market.
+
+A product core may be global to the supplier.
+
+Market availability/pricing belongs to a market offer.
+
+Example:
+
+Product:
+Smart Light Switch
+
+EG offer:
+EGP 1,500
+serves Cairo/Alexandria
+
+SA offer:
+SAR 120
+serves Riyadh/Jeddah
+
+UAE:
+not offered
+
+A Saudi buyer should not see the Egyptian EGP offer as though it were locally
+available.
+
+Cross-border offers may be shown only when the supplier explicitly supports the
+buyer's market and delivery/commercial policy.
+
+---
+
+# 43. SUBSCRIPTION — DO NOT COUPLE IT TO RFQ/QUOTATION
+
+BuildHub subscription is a separate commercial relationship between BuildHub
+and the provider.
+
+It must never determine:
+
+- project country
+- RFQ country
+- RFQ currency
+- quotation currency
+
+The current use of `BILLING_CURRENCY` in RFQ quotation flow is launch-era debt
+and must be removed before regional enablement.
+
+---
+
+# 44. IDEAL SUBSCRIPTION ARCHITECTURE
+
+Use three layers.
+
+## A. Account / business
+
+One provider identity.
+
+## B. Subscription contract
+
+Defines:
+
+- plan
+- billingMarket
+- billingCurrency
+- billing interval
+- price/version
+- tax/invoice context
+- payment provider reference
+- lifecycle
+
+## C. Entitlement scope
+
+Defines WHERE the subscription benefit applies.
+
+An entitlement may be:
+
+- GLOBAL
+- REGION (future, e.g. GCC)
+- MARKET_SET
+- SINGLE_MARKET
+
+This prevents the architecture from forcing a business decision too early.
+
+Example:
+
+A future PRO plan may be sold in Saudi Arabia in SAR but grant:
+
+- core storefront features globally
+- 20 qualified enquiries/month in SA
+- Sponsored capability in SA only
+
+Another future commercial policy could grant GCC-wide access without changing
+the subscription engine.
+
+---
+
+# 45. OWNER-FRIENDLY DEFAULT SUBSCRIPTION POLICY
+
+Recommended product experience:
+
+**one BuildHub account and one Billing Center.**
+
+Do not force the user to maintain separate logins or disconnected billing pages
+per country.
+
+At launch in each market:
+
+- approved plan prices are explicit per billing market/currency
+- the user sees exactly what market(s) the plan covers
+- entitlements state their scope
+- market-specific add-ons/promotions remain market-scoped
+
+Do not dynamically FX-convert an Egyptian plan price into SAR/AED and call it a
+Saudi price.
+
+Each market price must be an approved catalogue price/version.
+
+---
+
+# 46. WHEN MULTIPLE SUBSCRIPTION CONTRACTS ARE ALLOWED
+
+Architect to support more than one billing contract for the same business only
+where legally/commercially necessary.
+
+Examples:
+
+- different BuildHub contracting entity
+- separate tax invoice jurisdiction
+- enterprise commercial agreement
+- separate market-specific paid package
+
+But do not REQUIRE one subscription per market by default.
+
+That would create needless customer friction.
+
+Prefer:
+
+one business
+→ one Billing Center
+→ one or more explicit contracts only when necessary
+→ scoped entitlements
+
+---
+
+# 47. QUOTA / ENQUIRY ALLOWANCE SCOPE
+
+Usage counters must eventually include entitlement scope.
+
+For example:
+
+PRO entitlement:
+20 qualified enquiries/month
+scope = SA
+
+Opening an EG opportunity must not consume SA quota.
+
+If a future plan is GLOBAL:
+
+the global allowance is shared according to that plan's terms.
+
+Never infer scope from currency.
+
+Never reset usage because a user switches active market.
+
+---
+
+# 48. REFERRALS / FEATURED / SPONSORED / MARKETING
+
+All growth benefits should be able to carry market scope.
+
+Referral reward example:
+
+Temporary Featured
+scope = SA
+duration = 30 days
+
+Sponsored campaign:
+
+entity = product 123
+market = AE
+category = Lighting
+
+Do not let a Saudi commercial grant silently promote the entity in every market.
+
+---
+
+# 49. MARKET CONTEXT IN THE UI
+
+Users should always understand the market of a commercial object.
+
+Use subtle, consistent context:
+
+- market/country name or badge
+- currency
+- project location
+
+Especially on:
+
+- RFQ cards
+- RFQ detail
+- quotation form
+- quotation comparison
+- Opportunity Centre
+- Lead Centre
+- Product offer
+- Marketing campaigns
+- Billing/entitlements
+
+Do not make the user guess whether a price is EGP, SAR or AED.
+
+---
+
+# 50. COUNTRY / MARKET CHANGE RULES
+
+Changing active browsing market:
+safe, preference only.
+
+Changing provider served markets:
+requires validation/compliance where applicable.
+
+Changing project market:
+restricted once downstream commercial records exist.
+
+Changing RFQ market/currency after publication:
+do not silently allow.
+
+Preferred policy:
+
+- before publish: editable
+- after publish with no supplier engagement: controlled correction with audit
+- after supplier engagement/quotation: immutable; cancel/reissue if necessary
+
+Changing quotation currency:
+not allowed independently of RFQ under the initial regional model.
+
+---
+
+# 51. SESSION / TOKEN DESIGN
+
+Do not encode one permanent country into authentication identity as though it were
+a security role.
+
+Authentication answers:
+
+**Who are you?**
+
+Market context answers:
+
+**Which market are you browsing/operating in?**
+
+Project/RFQ answers:
+
+**Where is this business requirement actually located?**
+
+Keep those concerns separate.
+
+A request may carry active market context, but server authorization must resolve
+the authoritative market from the domain record when acting on an existing
+project/RFQ/quotation.
+
+---
+
+# 52. GOLDEN REGIONAL EXAMPLE
+
+A supplier:
+
+Business registered:
+Egypt
+
+Serves:
+Egypt + Saudi Arabia
+
+BuildHub subscription:
+billed in EGP under an Egypt billing contract
+
+A homeowner:
+
+Lives:
+UAE
+
+Creates project:
+Jeddah, Saudi Arabia
+
+Project:
+market = SA
+
+RFQ:
+market = SA
+currency = SAR
+
+The Egyptian supplier is eligible because:
+
+- serves SA
+- serves Jeddah
+- category matches
+- Saudi compliance passes
+- entitlement allows the opportunity
+
+Supplier receives the opportunity even if their currently selected UI market is
+Egypt.
+
+Supplier submits quotation:
+
+SAR 150,000
+
+because the quotation inherits the RFQ currency.
+
+Their BuildHub subscription is still billed in EGP.
+
+No conflict exists because sourcing currency and platform billing currency are
+different domains.
+
+This is the intended architecture.
