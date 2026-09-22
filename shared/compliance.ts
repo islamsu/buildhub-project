@@ -33,6 +33,18 @@ const COMMON_REQUIREMENTS: ComplianceRequirement[] = [
   { type: 'tax_card', name: 'Tax card', nameAr: 'البطاقة الضريبية', description: 'Current tax registration document.', descriptionAr: 'مستند التسجيل الضريبي الساري.', required: true },
 ];
 
+/**
+ * ── WHAT EGYPT REQUIRES ─────────────────────────────────────────────────
+ *
+ * These are Egyptian documents. "Engineering syndicate license" is نقابة
+ * المهندسين; Saudi Arabia has the Saudi Council of Engineers and the UAE has
+ * something else again, and a commercial registration is a different object
+ * in each. The requirement list is therefore a property of the MARKET the
+ * business is registered and operating in, not of the role alone - §35:
+ * "compliance requirements are derived from legal/operating market, not IP".
+ *
+ * Keyed by market below. The name is kept for every existing caller.
+ */
 export const COMPLIANCE_REQUIREMENTS: Record<ComplianceRole, ComplianceRequirement[]> = {
   contractor: [...COMMON_REQUIREMENTS, { type: 'commercial_registration', name: 'Commercial registration', nameAr: 'السجل التجاري', description: 'Current commercial registration for the contracting entity.', descriptionAr: 'سجل تجاري ساري للمنشأة المتقدمة.', required: true }, { type: 'professional_license', name: 'Contracting license', nameAr: 'ترخيص المقاولات', description: 'Professional or construction activity license.', descriptionAr: 'ترخيص مزاولة نشاط المقاولات أو الإنشاءات.', required: true }, { type: 'insurance_certificate', name: 'Insurance certificate', nameAr: 'شهادة التأمين', description: 'Valid professional or workforce insurance certificate.', descriptionAr: 'شهادة تأمين مهني أو تأمين عمالة سارية.', required: false }],
   engineer: [...COMMON_REQUIREMENTS, { type: 'professional_license', name: 'Engineering syndicate license', nameAr: 'ترخيص نقابة المهندسين', description: 'Current professional registration or license.', descriptionAr: 'قيد أو ترخيص مهني ساري.', required: true }, { type: 'tax_registration', name: 'Professional tax registration', nameAr: 'التسجيل الضريبي المهني', description: 'Tax registration for the professional practice.', descriptionAr: 'تسجيل ضريبي للممارسة المهنية.', required: true }, { type: 'portfolio', name: 'Selected work portfolio', nameAr: 'نماذج أعمال مختارة', description: 'A PDF or archive showing relevant completed work.', descriptionAr: 'ملف PDF أو مستند يوضح الأعمال المنجزة ذات الصلة.', required: false }],
@@ -45,8 +57,44 @@ export function isComplianceRole(role: string | null | undefined): role is Compl
   return !!role && role in COMPLIANCE_REQUIREMENTS;
 }
 
-export function getComplianceRequirements(role: string | null | undefined): ComplianceRequirement[] {
-  return isComplianceRole(role) ? COMPLIANCE_REQUIREMENTS[role] : [];
+/**
+ * THE REQUIREMENTS BY MARKET, with one market populated.
+ *
+ * Egypt is the only market BuildHub operates in, so it is the only one with
+ * a list - inventing a Saudi requirement set nobody has confirmed would be
+ * exactly the fabrication this codebase refuses elsewhere, and a wrong
+ * document list is worse than an absent one because a professional would
+ * gather the wrong papers.
+ *
+ * What this shape buys is that adding Saudi Arabia is DATA, entered once
+ * against confirmed sources, rather than a search through the codebase for
+ * everywhere the Egyptian list leaked.
+ */
+export const COMPLIANCE_REQUIREMENTS_BY_MARKET: Partial<Record<string, Record<ComplianceRole, ComplianceRequirement[]>>> = {
+  EG: COMPLIANCE_REQUIREMENTS,
+};
+
+/**
+ * The documents this role must supply in this market.
+ *
+ * `market` defaults to Egypt, so every existing caller keeps its behaviour
+ * exactly. A market with no confirmed requirement set returns EMPTY rather
+ * than falling back to Egypt's: telling a Saudi engineer to file an Egyptian
+ * syndicate licence is a confident wrong answer, and an empty list is a
+ * visible gap that stops the onboarding rather than misdirecting it.
+ */
+export function getComplianceRequirements(
+  role: string | null | undefined,
+  market: string = 'EG',
+): ComplianceRequirement[] {
+  if (!isComplianceRole(role)) return [];
+  const forMarket = COMPLIANCE_REQUIREMENTS_BY_MARKET[market];
+  return forMarket ? forMarket[role] : [];
+}
+
+/** Whether BuildHub has a confirmed requirement set for this market at all. */
+export function hasComplianceRequirements(market: string): boolean {
+  return COMPLIANCE_REQUIREMENTS_BY_MARKET[market] !== undefined;
 }
 
 export function getComplianceStatusLabel(status: ComplianceStatus | ComplianceDocumentStatus, arabic = false): string {

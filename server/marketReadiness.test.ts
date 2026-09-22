@@ -7,6 +7,9 @@ import {
   isEnabledMarket, marketFor, suggestMarket,
 } from '@shared/markets';
 import { formatMoney, formatMoneyRange } from '@shared/money';
+import {
+  COMPLIANCE_REQUIREMENTS_BY_MARKET, getComplianceRequirements, hasComplianceRequirements,
+} from '@shared/compliance';
 
 /**
  * ── EGYPT-FIRST, NOT EGYPT-LOCKED ───────────────────────────────────────
@@ -253,6 +256,36 @@ describe('one money formatter, and it never guesses a currency', () => {
     expect(formatMoneyRange(100, null, 'EGP')).toContain('from');
     expect(formatMoneyRange(null, 200, 'EGP')).toContain('up to');
     expect(formatMoneyRange(null, null, 'EGP')).toBeNull();
+  });
+});
+
+describe('compliance is a property of the market, not just the role', () => {
+  it('Egypt is the only market with a confirmed requirement set', () => {
+    expect(hasComplianceRequirements('EG')).toBe(true);
+    expect(hasComplianceRequirements('SA')).toBe(false);
+  });
+
+  it('every existing caller keeps its behaviour', () => {
+    // The market defaults to Egypt, so nothing that called this before the
+    // parameter existed changed.
+    expect(getComplianceRequirements('engineer')).toEqual(getComplianceRequirements('engineer', 'EG'));
+    expect(getComplianceRequirements('engineer').length).toBeGreaterThan(0);
+  });
+
+  it('a market with no confirmed set returns EMPTY, not Egypt\'s', () => {
+    /*
+     * "Engineering syndicate license" is نقابة المهندسين - an Egyptian
+     * institution. Saudi Arabia has the Saudi Council of Engineers. Falling
+     * back to Egypt's list would tell a Saudi engineer to file the wrong
+     * papers with confidence, which is worse than an empty list: an empty
+     * list is a visible gap that stops the onboarding, a wrong list
+     * misdirects it.
+     */
+    expect(getComplianceRequirements('engineer', 'SA')).toEqual([]);
+  });
+
+  it('and nothing invents a requirement set nobody confirmed', () => {
+    expect(Object.keys(COMPLIANCE_REQUIREMENTS_BY_MARKET)).toEqual(['EG']);
   });
 });
 
