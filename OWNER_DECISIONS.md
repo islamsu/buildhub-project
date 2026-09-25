@@ -276,6 +276,7 @@ These are not decisions pending; they are limits being observed.
   | **0057** referral code lifecycle | PUSHED — applied locally, not yet staging-verified |
   | **0058** market context | PUSHED — applied locally, not yet staging-verified |
   | **0059** saved items / buyer shortlist | PUSHED — applied locally, not yet staging-verified |
+  | **0060** supplier showcase | PUSHED — applied locally, not yet staging-verified |
 
   **PUSHED** means the file is in `origin/claude/buildhub-global-release-candidate`
   and the schema change has been applied to the local database and exercised by
@@ -298,9 +299,42 @@ These are not decisions pending; they are limits being observed.
   - 0058 backfills `EG` / `EGP` / `GLOBAL`, which is what every existing row
     already meant while BuildHub operated in one market.
   - 0059 adds one table and touches nothing else.
+  - 0060 adds the supplier-owned Showcase table; it does not alter marketplace placement or sponsorship rows.
 - **No GCC market is enabled.** `enabled: false` on all six in
   `shared/markets.ts` is the only thing that decides, and flipping one is an
   owner decision behind the readiness gate in `GCC_SCALE_READINESS.md`. A
   market with no service-area vocabulary, no confirmed compliance set and no
   approved price catalogue is a country in a dropdown, which §86 says is never
   sufficient to call a market launched.
+
+
+---
+
+## 12. Staging source during final RC QA — **DECIDED BY OWNER**
+
+**Owner direction, 25 September 2026.** During final release-candidate acceptance, the isolated Render staging service should preview the canonical branch:
+
+`claude/buildhub-global-release-candidate`
+
+rather than `main`.
+
+This is a temporary QA/deployment-source decision, not permission to merge or deploy production.
+
+Repository source of truth:
+
+- `render.yaml` now declares the RC branch
+- `autoDeploy: true` remains appropriate for the isolated staging preview
+- `APP_ENV=staging` remains required
+- migrations continue through the existing `preDeployCommand`
+
+An already-provisioned Render service may still need a Blueprint sync or dashboard branch update. Therefore:
+
+**CONFIGURED IN GIT ≠ DEPLOYED.**
+
+The only acceptable deployment proof is:
+
+- `/version.commit` = exact intended RC SHA
+- `/version.environment` = `staging`
+- migration-dependent journeys render and operate against that build
+
+After owner-authorized RC → `main` merge, staging must be switched back to `main` and the exact merged SHA re-verified before any production authorization.
