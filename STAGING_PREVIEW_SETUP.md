@@ -3,8 +3,7 @@
 **What you asked for:** open BuildHub and see the release candidate while work
 continues, with production untouched.
 
-**What is blocking it:** one Render setting. Everything on the code side is
-ready.
+**Owner decision:** staging should track the active release candidate during final QA. The repository Blueprint now records that decision. An existing Render service may still require a Blueprint sync or dashboard branch change before the live service actually follows it.
 
 ---
 
@@ -23,21 +22,27 @@ to be made by you in the Render dashboard.
 
 ---
 
-## The precise owner action
+## Owner-approved staging source
 
-Render's `buildhub-staging` service currently tracks **`main`** rather than the active release-candidate branch, which is why staging can show old work while the release candidate continues to advance.
+The owner has approved using the canonical release-candidate branch for the staging preview during final QA.
 
-**In the Render dashboard → `buildhub-staging` → Settings:**
+The repository Blueprint now declares:
 
-1. **Branch** → change from `main` to
-   `claude/buildhub-global-release-candidate`
-2. **Auto-Deploy** → confirm it is **On**
-3. **Environment → Add Environment Variable:**
-   - Key: `APP_ENV`
-   - Value: `staging`
-4. **Save**, then **Manual Deploy → Deploy latest commit**
+```yaml
+branch: claude/buildhub-global-release-candidate
+autoDeploy: true
+```
 
-That is the whole change. Four fields.
+This aligns the checked-in deployment intent with the release process.
+
+**Important:** an already-provisioned Render service does not become current merely because this file changed. If Render has not synchronized the Blueprint/source setting yet, use the Render dashboard for `buildhub-staging` to:
+
+1. confirm **Branch** = `claude/buildhub-global-release-candidate`
+2. confirm **Auto-Deploy** = On
+3. confirm `APP_ENV=staging`
+4. save/sync and deploy the latest commit
+
+No deployment is considered proven until `/version` reports the exact current RC SHA and `environment: "staging"`.
 
 ### Why `APP_ENV` is on that list
 
