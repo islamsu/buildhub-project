@@ -205,6 +205,10 @@ import {
 } from '@shared/markets';
 import { userOperationalSnapshot } from './adminUser360';
 import {
+  toggleSaved, countSaved, listSaved, savedStateFor, SavedItemError,
+} from './savedItems';
+import { SAVED_ITEM_KINDS, MAX_SAVED_NOTE } from '@shared/savedItems';
+import {
   listReferralCodes, referralCodeHistory, issueReferralCode, rotateReferralCode,
   setReferralCodeStatus, referralOverview, referralLinkFor, mintReferralCode,
   canHoldReferralCode, ReferralCodeError, REFERRAL_CODE_STATUSES,
@@ -6479,6 +6483,71 @@ const profileRouter = router({
    * BuildHub granted a benefit and never told the recipient it existed beyond a
    * single notification they may have missed.
    */
+  /**
+   * ── THE BUYER'S SHORTLIST ─────────────────────────────────────────────
+   *
+   * SELF-SCOPED BY CONSTRUCTION. There is no userId in any of these inputs,
+   * so no payload can read or write another buyer's shortlist - a stronger
+   * guarantee than a check somebody has to remember to repeat.
+   *
+   * SAVING IS PRIVATE, and that is a product decision as much as a privacy
+   * one: a supplier who could see who shortlisted them without asking for a
+   * price would have a lead, and a buyer who knew that would think twice
+   * before saving anything. No procedure here exposes the saver to the
+   * saved.
+   */
+  toggleSaved: protectedProcedure
+    .input(z.object({
+      kind: z.enum(SAVED_ITEM_KINDS),
+      itemId: z.number().int().positive(),
+      note: z.string().trim().max(MAX_SAVED_NOTE).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await toggleSaved(db, {
+          userId: ctx.user.id, kind: input.kind, itemId: input.itemId, note: input.note ?? null,
+        });
+      } catch (error) {
+        if (error instanceof SavedItemError) {
+          throw new TRPCError({ code: error.code, message: error.message });
+        }
+        throw error;
+      }
+    }),
+  /** The badge. One count, so the number and the page cannot disagree. */
+  savedCount: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return { total: await countSaved(db, ctx.user.id) };
+  }),
+  /**
+   * The shortlist itself, joined so a page of twenty is one round trip.
+   * `unavailable` carries the items whose target has since been withdrawn -
+   * named rather than silently dropped, because a list that quietly shortens
+   * tells the buyer nothing.
+   */
+  savedItems: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return listSaved(db, ctx.user.id);
+  }),
+  /**
+   * WHICH OF THESE IS ALREADY SAVED, for a grid.
+   *
+   * A separate authenticated read rather than a `saved` flag on the public
+   * marketplace rows: a per-viewer fact inside a cacheable public response is
+   * how a shared cache ends up showing one buyer another's shortlist.
+   */
+  savedState: protectedProcedure
+    .input(z.object({
+      kind: z.enum(SAVED_ITEM_KINDS),
+      itemIds: z.array(z.number().int().positive()).max(100),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const saved = await savedStateFor(db, ctx.user.id, input.kind, input.itemIds);
+      return { saved: Array.from(saved) };
+    }),
+
   myReferral: protectedProcedure.query(async ({ ctx }) => {
     const db = await requireDb();
     const [row] = await db.select({

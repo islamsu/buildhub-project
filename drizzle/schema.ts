@@ -1982,6 +1982,44 @@ export const referralRewards = mysqlTable('referralRewards', {
  * `previousCode` is deliberately NOT unique - a rotated-away code could in
  * principle be minted again by chance, and the history has to hold both.
  */
+/**
+ * ── THE BUYER'S SHORTLIST ───────────────────────────────────────────────
+ *
+ * Save was the one action in CLAUDE.md §22's discovery list with no
+ * implementation. A buyer comparing suppliers over two days had nowhere to
+ * put the ones worth a second look, so the work of finding them was thrown
+ * away every time the tab closed.
+ *
+ * ONE TABLE FOR BOTH KINDS, because the shortlist is read as one list far
+ * more often than as two, and two tables would mean two counts that can
+ * disagree.
+ *
+ * NO FOREIGN KEY ON `itemId`. `itemKind` decides which table it belongs to
+ * and MySQL cannot express a conditional reference; the alternatives - two
+ * nullable columns with two keys, or two tables - are both worse. Integrity
+ * lives on the write path, which resolves the id against the right table
+ * before inserting, and the readers JOIN, so a vanished target reads as
+ * absent rather than as a broken card.
+ *
+ * SAVING IS PRIVATE. A supplier never learns who shortlisted them without
+ * going on to ask for a price: that is a commercial signal the buyer did not
+ * choose to send.
+ */
+export const savedItems = mysqlTable('savedItems', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  itemKind:  mysqlEnum('itemKind', ['product', 'provider']).notNull(),
+  itemId:    int('itemId').notNull(),
+  /** A note the buyer writes to themselves. Never shown to the saved party. */
+  note:      varchar('note', { length: 500 }),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  // THE TOGGLE IS THIS INDEX. A second save of the same thing is the same
+  // row, so a double-tap cannot produce a duplicate.
+  userItemUnique: uniqueIndex('savedItems_user_item_unique').on(table.userId, table.itemKind, table.itemId),
+  userCreatedIdx: index('savedItems_user_created_idx').on(table.userId, table.createdAt),
+}));
+
 export const referralCodeEvents = mysqlTable('referralCodeEvents', {
   id:           int('id').autoincrement().primaryKey(),
   userId:       int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),

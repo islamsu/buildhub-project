@@ -1,0 +1,37 @@
+BUILD  72f3b17 (local) built 2026-09-22T13:44:54.143Z  http://127.0.0.1:5401
+
+BUILD 72f3b17  env=local
+
+PASS  1. real targets to save  [product #88, provider #462]
+PASS  2. a buyer saves a product  [HTTP 200]
+PASS  3. and exactly one row exists
+PASS  4. a second click un-saves it
+PASS  5. and the row is gone, not merely flagged
+PASS  6. a product and a provider live in ONE list  [2 rows]
+PASS  7. the badge counts what was saved  [2]
+PASS  8. and the page lists the same two
+PASS  9. and a grid is told which of its cards are saved
+PASS  10. a DRAFT product cannot be shortlisted by id  [Product not found]
+PASS  11. nor can a product that does not exist  [Product not found]
+SKIP  12. an unapproved provider cannot be shortlisted  [none in this dataset]
+PASS  13. another buyer's shortlist is empty - lists do not leak  [0 items]
+PASS  14. and neither does the count
+PASS  15. a signed-out caller reads nothing  [HTTP 401]
+PASS  16. the saved supplier sees their OWN empty shortlist, not who saved them
+PASS  17. and nothing in their reads names the buyer who saved them
+PASS  18. a withdrawn item is reported as unavailable, not silently dropped  [1 unavailable]
+PASS  19. and is not rendered as a card with no name
+PASS  20. and the buyer can still remove it
+PASS  21. the Save control is on the card for a signed-out visitor too
+PASS  22. clicking it signed out explains and sends them to sign in  [/auth]
+PASS  23. a provider saved earlier renders as saved in the grid  [true]
+PASS  24. clicking it un-saves, in place, without navigating  [false]
+PASS  25. and the database agrees with the button
+PASS  26. the shortlist is reachable from the navbar  ["1"]
+PASS  27. and the badge opens the shortlist  [/saved]
+PASS  28. the saved provider is on the page  [Suppliers & professionals1 | Omar Khaled]
+PASS  29. the shortlist offers the next step in sourcing  [Request quotations]
+PASS  30. the empty state names the next action rather than saying "nothing here"  [Nothing saved yet. While you browse the marketplace, use Save on any supplier or product to set it a]
+
+29 passed, 0 failed
+

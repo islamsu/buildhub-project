@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Link, useLocation } from 'wouter';
-import { Building2, Menu, X, Bell, ChevronDown } from 'lucide-react';
+import { Building2, Menu, X, Bell, ChevronDown, Bookmark } from 'lucide-react';
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
@@ -25,6 +25,10 @@ export default function Navbar() {
 
   const { data: notifData } = trpc.notifications.unreadCount.useQuery(undefined, {
     enabled: isAuthenticated,
+  });
+  /** The shortlist badge. Counted server-side; hidden at zero. */
+  const { data: savedData } = trpc.profile.savedCount.useQuery(undefined, {
+    enabled: isAuthenticated, retry: false,
   });
 
   /**
@@ -115,6 +119,33 @@ export default function Navbar() {
 
             {isAuthenticated && user ? (
               <>
+                {/*
+                  THE SHORTLIST, WHERE SAVING HAPPENS.
+
+                  Placed in the navbar rather than in one role's workspace
+                  menu because ANY signed-in account can save: a contractor
+                  sourcing materials is a buyer, and a capability reachable
+                  only from the homeowner menu would be one a contractor
+                  could use and never find (§47).
+
+                  The count is hidden at zero rather than rendered as "0" -
+                  an empty shortlist is not something to badge.
+                */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={lang === 'ar' ? 'قائمتي المختصرة' : 'Saved'}
+                  className={`relative ${isTransparent ? 'text-white/80 hover:text-white hover:bg-white/10' : ''}`}
+                  onClick={() => navigate('/saved')}
+                  data-testid="navbar-saved"
+                >
+                  <Bookmark className="w-4 h-4" />
+                  {(savedData?.total ?? 0) > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-primary text-primary-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
+                      {savedData!.total > 9 ? '9+' : savedData!.total}
+                    </span>
+                  )}
+                </Button>
                 {/* Notifications.
                     aria-label because this button's only content is an icon and
                     a count badge. A screen reader announced it as "button", and

@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { SaveButton } from '@/components/SaveButton';
+import { useSavedIds } from '@/lib/useSavedIds';
 import { useLocation } from 'wouter';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -83,6 +85,23 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
   const { data: editorialFeatured = [] } = trpc.marketplace.featuredProviders.useQuery({
     category: presetCategory,
   });
+
+  /**
+   * WHICH OF THESE IS ALREADY SAVED - ONE QUERY FOR THE PAGE.
+   *
+   * Across all three strips, because the same provider can appear as an
+   * editorial pick AND organically, and two reads would let the same card
+   * show a filled bookmark in one place and an empty one in the other.
+   *
+   * Not a `saved` flag on the public directory rows: a per-viewer fact
+   * inside a cacheable public response is how a shared cache ends up showing
+   * one buyer another's shortlist.
+   */
+  const allVendorIds = useMemo(
+    () => Array.from(new Set([...vendors, ...featured, ...editorialFeatured].map(v => Number(v.id)))),
+    [vendors, featured, editorialFeatured],
+  );
+  const savedIds = useSavedIds('provider', allVendorIds);
 
   const Back = ar ? ChevronRight : ChevronLeft;
 
@@ -171,7 +190,7 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {editorialFeatured.map(vendor => (
-                <VendorCard key={`editorial-${vendor.id}`} vendor={vendor} lang={lang} t={t} onOpen={id => navigate(`/vendor/${id}`)} />
+                <VendorCard key={`editorial-${vendor.id}`} vendor={vendor} lang={lang} t={t} isSaved={savedIds.has(vendor.id)} onOpen={id => navigate(`/vendor/${id}`)} />
               ))}
             </div>
             <div className="mt-4 h-px bg-border" />
@@ -202,7 +221,7 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {featured.map(vendor => (
-                <VendorCard key={`featured-${vendor.id}`} vendor={vendor} sponsored lang={lang} t={t} onOpen={id => navigate(`/vendor/${id}`)} />
+                <VendorCard key={`featured-${vendor.id}`} vendor={vendor} sponsored lang={lang} t={t} isSaved={savedIds.has(vendor.id)} onOpen={id => navigate(`/vendor/${id}`)} />
               ))}
             </div>
             <div className="mt-4 h-px bg-border" />
@@ -221,7 +240,7 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
                   <PlacementBadge label={vendor.label} />
                 </div>
               )}
-              <VendorCard vendor={vendor} lang={lang} t={t} onOpen={id => navigate(`/vendor/${id}`)} />
+              <VendorCard vendor={vendor} lang={lang} t={t} isSaved={savedIds.has(vendor.id)} onOpen={id => navigate(`/vendor/${id}`)} />
             </div>
           ))}
         </div>
@@ -249,13 +268,15 @@ type DirectoryVendorCard = {
  * point: a paid slot must look like what it is, not like a better vendor.
  */
 function VendorCard({
-  vendor, sponsored = false, lang, t, onOpen,
+  vendor, sponsored = false, lang, t, onOpen, isSaved,
 }: {
   vendor: DirectoryVendorCard;
   sponsored?: boolean;
   lang: string;
   t: (key: string) => string;
   onOpen: (id: number) => void;
+  /** From the page's ONE batched savedState read, not a per-card query. */
+  isSaved?: boolean;
 }) {
   return (
       <Card
@@ -359,7 +380,13 @@ function VendorCard({
           </div>
         )}
 
-        <div className="mt-3 text-xs text-primary font-medium">{t('vendorsDir.viewProfile')}</div>
+        {/* THE ACTIONS A BUYER TAKES FROM DISCOVERY (§22). Opening the
+            storefront is the card itself; saving is a separate gesture and
+            must not navigate, which is why SaveButton stops the event. */}
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <span className="text-xs text-primary font-medium">{t('vendorsDir.viewProfile')}</span>
+          <SaveButton kind="provider" itemId={vendor.id} saved={isSaved} variant="icon" />
+        </div>
       </Card>
   );
 }

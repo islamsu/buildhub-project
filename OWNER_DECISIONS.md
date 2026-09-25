@@ -271,6 +271,8 @@ These are not decisions pending; they are limits being observed.
   historic code was minted was never recorded and inventing one would be worse
   than admitting it is unknown. They reach staging through normal integration,
   not by hand.
+- Migration **0059** (saved items / buyer shortlist) is applied **LOCALLY
+  ONLY**: one new table, nothing else touched.
 - Migration **0058** (market context) is applied **LOCALLY ONLY** on the same
   terms: new columns only, backfilled `EG` / `EGP` / `GLOBAL`, which is what
   every existing row already meant while BuildHub operated in one market.

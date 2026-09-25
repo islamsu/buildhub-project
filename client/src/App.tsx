@@ -18,6 +18,7 @@ import { lazy, Suspense } from "react";
  */
 const MarketplaceHub = lazy(() => import("./pages/MarketplaceHub"));
 const VendorsDirectory = lazy(() => import("./pages/VendorsDirectory"));
+const SavedPage = lazy(() => import("./pages/SavedPage"));
 const DesignersDirectory = lazy(() => import("./pages/DesignersDirectory"));
 const FinishingDirectory = lazy(() => import("./pages/FinishingDirectory"));
 const HomeownerDashboard = lazy(() => import("./pages/HomeownerDashboard"));
@@ -142,6 +143,10 @@ function Router() {
           they name instead of 404ing. */}
       <Route path={"/marketplace/vendors/:id"} component={RedirectToVendor} />
       <Route path={"/marketplace/vendors"} component={VendorsDirectory} />
+      {/* The buyer's shortlist. Any signed-in account can save - a
+          contractor sourcing materials is a buyer - so this is not gated to
+          one role's workspace. */}
+      <Route path={"/saved"} component={SavedPage} />
       <Route path={"/marketplace/designers/:id"} component={RedirectToVendor} />
       <Route path={"/marketplace/designers"} component={DesignersDirectory} />
       <Route path={"/marketplace/finishing/:id"} component={RedirectToVendor} />
