@@ -2020,6 +2020,40 @@ export const savedItems = mysqlTable('savedItems', {
   userCreatedIdx: index('savedItems_user_created_idx').on(table.userId, table.createdAt),
 }));
 
+/**
+ * ── THE SUPPLIER'S OWN EMPHASIS, ON THEIR OWN STOREFRONT (§18) ──────────
+ *
+ * FEATURED is BuildHub's editorial choice. SPONSORED is a commercial grant.
+ * A SHOWCASE is neither: it is the supplier saying "start here" on the page
+ * that is already theirs.
+ *
+ * IT IS A SEPARATE TABLE ON PURPOSE. `vendorSponsorships` carries grantedBy,
+ * grantedReason, revokedAt, revokedBy, startsAt, endsAt, priority, package
+ * and surface - every one an ADMIN decision about a SHARED surface. A
+ * showcase has none of them. Putting it in that table would leave a
+ * self-selected row sitting in the store the placement engine reads, one
+ * missing WHERE clause away from a supplier granting themselves marketplace
+ * placement with no decision, no period and no label behind it.
+ *
+ * NO FOREIGN KEY ON `itemId`: `itemKind` decides which table it belongs to
+ * and MySQL cannot express a conditional reference - the same reasoning
+ * `savedItems` records. Integrity lives on the write path, which resolves the
+ * id against the right table AND against the caller's ownership before
+ * inserting, and the readers JOIN, so a vanished target reads as absent.
+ */
+export const supplierShowcase = mysqlTable('supplierShowcase', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  itemKind:  mysqlEnum('itemKind', ['product', 'service', 'portfolio']).notNull(),
+  itemId:    int('itemId').notNull(),
+  /** The supplier's own ordering. Rewritten wholesale on save. */
+  position:  int('position').default(0).notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  userItemUnique: uniqueIndex('supplierShowcase_user_item_unique').on(table.userId, table.itemKind, table.itemId),
+  userPositionIdx: index('supplierShowcase_user_position_idx').on(table.userId, table.position),
+}));
+
 export const referralCodeEvents = mysqlTable('referralCodeEvents', {
   id:           int('id').autoincrement().primaryKey(),
   userId:       int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),

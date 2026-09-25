@@ -48,9 +48,10 @@ import BenefitsAndLimits from '@/components/BenefitsAndLimits';
 import MyActivity from '@/components/MyActivity';
 import VendorServiceCategories from '@/components/VendorServiceCategories';
 import PortfolioManager from '@/components/PortfolioManager';
+import ShowcaseManager from '@/components/ShowcaseManager';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { UserRound, CreditCard, Tags, ClipboardCheck, ArrowRight, Bell, Hammer } from 'lucide-react';
+import { UserRound, CreditCard, Tags, ClipboardCheck, ArrowRight, Bell, Hammer, Sparkles } from 'lucide-react';
 
 /** The roles that carry a vendor plan and declare service categories. */
 const PROVIDER_ROLES = ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'];
@@ -236,6 +237,27 @@ export default function SettingsPage() {
                 ar={ar}
                 en="Service categories are declared by provider accounts, so BuildHub knows which requests to route to them."
                 arabic="فئات الخدمة يعلنها مقدّمو الخدمة حتى تعرف BuildHub أي الطلبات تُوجَّه إليهم."
+              />}
+        </Section>
+
+        {/* ── Storefront highlights: the supplier's OWN emphasis (§18) ──
+            Placed directly after the service catalogue and before the
+            portfolio, because it curates BOTH of them plus the product
+            catalogue - it is the section that says which of the three a
+            visitor should look at first. It is NOT Featured (BuildHub's
+            editorial choice) and NOT Sponsored (a commercial grant), and the
+            component says so where a supplier will read it. */}
+        <Section
+          id="settings-showcase"
+          icon={<Sparkles className="h-5 w-5" />}
+          title={ar ? 'مختارات واجهتك' : 'Storefront highlights'}
+        >
+          {isProvider
+            ? <ShowcaseManager />
+            : <NotForThisAccount
+                ar={ar}
+                en="Storefront highlights apply to provider accounts, which are the accounts with a public storefront to highlight."
+                arabic="مختارات الواجهة تخص حسابات مقدّمي الخدمة، فهي الحسابات التي لديها واجهة عامة."
               />}
         </Section>
 

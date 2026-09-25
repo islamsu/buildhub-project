@@ -161,6 +161,8 @@ import {
   getEnquiryUsage, getRfqResponseAccess, getVendorCategories, openQualifiedEnquiry,
   previewQualifiedEnquiry,
 } from './billing/enquiries';
+import { listShowcase, listShowcaseCandidates, setShowcase } from './supplierShowcase';
+import { MAX_SHOWCASE_ITEMS, SHOWCASE_ITEM_KINDS } from '../shared/supplierShowcase';
 import {
   ENQUIRY_PAGE_SIZE_DEFAULT, ENQUIRY_RESPONSE_STATES, ENQUIRY_RFQ_STATUSES, ENQUIRY_SCOPES, ENQUIRY_SOURCES,
   enquiryQueueCategories, enquiryQueueSummary, listEnquiryQueue,
@@ -6543,6 +6545,56 @@ const profileRouter = router({
    * named rather than silently dropped, because a list that quietly shortens
    * tells the buyer nothing.
    */
+  /**
+   * ── SUPPLIER SHOWCASE (§18) ──────────────────────────────────────────
+   *
+   * The supplier's own emphasis on their own storefront. NOT editorial
+   * Featured and NOT commercial Sponsored: it is read by exactly one page,
+   * keyed by that supplier's id, and no shared list consumes it. See
+   * shared/supplierShowcase.ts for why that confinement is the integrity
+   * question rather than a presentational one.
+   */
+  showcase: publicProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      // PUBLIC, because a storefront is public. It returns only what a
+      // visitor could already reach by browsing that storefront - the
+      // reader re-checks ownership AND publication on every row.
+      return listShowcase(db, input.userId);
+    }),
+
+  /** Everything this supplier is ALLOWED to showcase, by the writer's own rule. */
+  showcaseCandidates: approvedProviderProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return listShowcaseCandidates(db, ctx.user.id);
+  }),
+
+  /** The owner's view: the same cards, plus what was dropped and why. */
+  myShowcase: approvedProviderProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return listShowcase(db, ctx.user.id, { includeUnavailable: true });
+  }),
+
+  /**
+   * Replace the showcase with this selection.
+   *
+   * There is NO userId parameter, deliberately: the subject is the session,
+   * so there is no id by which one supplier could write another's showcase.
+   * Ownership and publication are re-derived server-side for every entry.
+   */
+  setShowcase: approvedProviderProcedure
+    .input(z.object({
+      entries: z.array(z.object({
+        kind: z.enum(SHOWCASE_ITEM_KINDS),
+        itemId: z.number().int().positive(),
+      })).max(MAX_SHOWCASE_ITEMS * 4),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      return setShowcase(db, ctx.user.id, input.entries);
+    }),
+
   savedItems: protectedProcedure.query(async ({ ctx }) => {
     const db = await requireDb();
     return listSaved(db, ctx.user.id);

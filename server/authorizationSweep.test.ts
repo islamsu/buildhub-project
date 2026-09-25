@@ -222,6 +222,16 @@ describe('§1 every procedure is pinned to a tier', () => {
       'marketplace.vendorProducts',
       'marketplace.vendors',
       // A vendor's public reputation, shown on their profile.
+      // A supplier's own storefront emphasis (§18), addressed by the same
+      // userId the public storefront already is. Public because a storefront
+      // is public, and it discloses nothing new: the reader re-checks
+      // ownership AND publication on every row, so it returns a subset of
+      // what `marketplace.vendorProducts` and `services.forProvider` already
+      // show the same visitor. The count of rows dropped as unpublished is
+      // withheld here and returned only by the owner's `profile.myShowcase`,
+      // because it would otherwise leak how much unpublished stock a
+      // supplier holds.
+      'profile.showcase',
       'reviews.forUser',
       'reviews.statsForUser',
       // The service categories a provider may list under - the same list the

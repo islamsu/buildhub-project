@@ -80,6 +80,8 @@ function allProcedures(): Procedure[] {
 const DELIBERATELY_SHARED: Record<string, string> = {
   'marketplace.get':
     'The product catalogue is the shop window. Scoped instead by `active`: a withdrawn product is NOT_FOUND, same as an absent one.',
+  'profile.showcase':
+    "One supplier's own storefront emphasis, addressed by their userId - the same id the storefront page is already addressed by. It returns only what a visitor could reach by browsing that storefront anyway: the reader re-checks ownership AND publication on every row, so a withdrawn product is absent here exactly as it is absent from the catalogue. The count of dropped rows is withheld from the public read, because that would leak how much unpublished stock a supplier holds - only the owner's myShowcase returns it.",
   'marketplace.vendorProducts':
     'One vendor\'s shop window, addressed by vendorId. Scoped by the same `active` predicate as marketplace.list, so it shows exactly the rows the catalogue already shows anyone - and a delisted product no more than the catalogue does.',
   'marketplace.questions':

@@ -421,6 +421,13 @@
       "when": 1790100000000,
       "tag": "0059_saved_items",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "5",
+      "when": 1790200000000,
+      "tag": "0060_supplier_showcase",
+      "breakpoints": true
     }
   ]
 }

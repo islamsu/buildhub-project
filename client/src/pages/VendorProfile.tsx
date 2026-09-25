@@ -3,6 +3,7 @@ import Navbar from '@/components/Navbar';
 import { useMemo } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { SaveButton } from '@/components/SaveButton';
+import ShowcaseStrip from '@/components/ShowcaseStrip';
 import { useSavedIds } from '@/lib/useSavedIds';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
@@ -416,6 +417,13 @@ export default function VendorProfile() {
           </div>
         </CardContent>
       </Card>
+
+      {/* WHAT THE SUPPLIER THEMSELVES PUTS FIRST (§18).
+          Above the catalogue on purpose: it is the supplier's answer to
+          "where do I start", and a buyer who scrolls past it to the full
+          product grid has lost the curation it exists to provide. It renders
+          nothing at all when nothing has been chosen. */}
+      <ShowcaseStrip userId={userId} />
 
       {/* WHAT THEY SELL.
           Published rows only, from marketplace.vendorProducts. A supplier
