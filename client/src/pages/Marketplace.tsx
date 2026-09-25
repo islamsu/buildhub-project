@@ -321,15 +321,25 @@ export default function Marketplace() {
                         {categoryLabel(product.category)}
                       </Badge>
                       <div className="absolute bottom-2 right-2 flex gap-1.5">
+                        {/* THE NAME A SCREEN READER HEARS IS THE NAME ON THE
+                            CARD. These first used `product.name` while the
+                            Arabic card renders `nameAr`, so a screen-reader
+                            user was told a different product's name than the
+                            one displayed - the same mismatch the image `alt`
+                            two elements up already avoids. */}
                         <button
-                          aria-label="wishlist"
+                          aria-label={lang === 'ar'
+                            ? `${wishlist.includes(product.id) ? 'أزل' : 'أضف'} ${product.nameAr || product.name} من المفضلة`
+                            : `${wishlist.includes(product.id) ? 'Remove' : 'Add'} ${product.name} to your wishlist`}
                           onClick={e => { e.stopPropagation(); toggleWishlist(product.id); }}
                           className="h-8 w-8 rounded-full bg-white/90 shadow flex items-center justify-center hover:bg-white transition-colors"
                         >
                           <Heart className={`w-4 h-4 ${wishlist.includes(product.id) ? 'fill-rose-500 text-rose-500' : 'text-slate-500'}`} />
                         </button>
                         <button
-                          aria-label="compare"
+                          aria-label={lang === 'ar'
+                            ? `${compareIds.includes(product.id) ? 'أزل' : 'أضف'} ${product.nameAr || product.name} من المقارنة`
+                            : `${compareIds.includes(product.id) ? 'Remove' : 'Add'} ${product.name} to comparison`}
                           onClick={e => { e.stopPropagation(); toggleCompare(product.id); }}
                           className={`h-8 w-8 rounded-full shadow flex items-center justify-center transition-colors ${compareIds.includes(product.id) ? 'bg-primary text-primary-foreground' : 'bg-white/90 text-slate-500 hover:bg-white'}`}
                         >

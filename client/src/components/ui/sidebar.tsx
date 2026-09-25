@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -266,6 +267,7 @@ function SidebarTrigger({
   ...props
 }: React.ComponentProps<typeof Button>) {
   const { toggleSidebar } = useSidebar();
+  const toggleLabel = useSidebarToggleLabel();
 
   return (
     <Button
@@ -281,22 +283,40 @@ function SidebarTrigger({
       {...props}
     >
       <PanelLeftIcon />
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">{toggleLabel}</span>
     </Button>
   );
 }
 
+/**
+ * THE SIDEBAR CONTROLS NAME THEMSELVES IN THE READER'S LANGUAGE.
+ *
+ * These were hardcoded "Toggle Sidebar" in three places - an `sr-only`
+ * span, an `aria-label` and a `title`. All three are invisible to a sighted
+ * English reader and all three are the ONLY name a screen-reader user
+ * gets, so on every Arabic page the one control for opening the navigation
+ * announced itself in English (§62, §67).
+ *
+ * Found by the visual-QA sweep rather than by reading: it is not on screen,
+ * so nothing about the rendered page looks wrong.
+ */
+function useSidebarToggleLabel(): string {
+  const { lang } = useLanguage();
+  return lang === 'ar' ? 'إظهار أو إخفاء القائمة الجانبية' : 'Toggle sidebar';
+}
+
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
   const { toggleSidebar } = useSidebar();
+  const toggleLabel = useSidebarToggleLabel();
 
   return (
     <button
       data-sidebar="rail"
       data-slot="sidebar-rail"
-      aria-label="Toggle Sidebar"
+      aria-label={toggleLabel}
       tabIndex={-1}
       onClick={toggleSidebar}
-      title="Toggle Sidebar"
+      title={toggleLabel}
       className={cn(
         "hover:after:bg-sidebar-border absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] sm:flex",
         "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",

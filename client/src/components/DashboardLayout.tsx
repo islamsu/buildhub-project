@@ -432,7 +432,7 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
-  const { t, dir } = useLanguage();
+  const { t, dir, lang } = useLanguage();
   /**
    * WHICH EDGE THE NAVIGATION LIVES ON.
    *
@@ -640,7 +640,10 @@ function DashboardLayoutContent({
               <button
                 onClick={toggleSidebar}
                 className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
-                aria-label="Toggle navigation"
+                /* The ONLY name a screen-reader user gets for the one
+                   control that opens the navigation. It was English on every
+                   Arabic page (§62, §67). */
+                aria-label={lang === 'ar' ? 'إظهار أو إخفاء القائمة' : 'Toggle navigation'}
               >
                 {/* The icon points at the panel it toggles, which is not the
                     same edge in both directions. */}

@@ -1,0 +1,187 @@
+BUILD  0e7cff4 (local) built 2026-09-25T20:10:12.993Z  http://127.0.0.1:5401
+
+BUILD 0e7cff4  env=local
+
+PASS  1. Home (public) @1440: reached and rendered
+PASS  2. Home (public) @1440: exactly one H1  [h1=1]
+PASS  3. Home (public) @1440: no raw enum in visible text
+PASS  4. Home (public) @1440: every image declares alt
+PASS  5. Home (public) @1440: every control has an accessible name
+PASS  6. Marketplace hub (public) @1440: reached and rendered
+PASS  7. Marketplace hub (public) @1440: exactly one H1  [h1=1]
+PASS  8. Marketplace hub (public) @1440: no raw enum in visible text
+PASS  9. Marketplace hub (public) @1440: every image declares alt
+PASS  10. Marketplace hub (public) @1440: every control has an accessible name
+PASS  11. Provider directory (public) @1440: reached and rendered
+PASS  12. Provider directory (public) @1440: exactly one H1  [h1=1]
+PASS  13. Provider directory (public) @1440: no raw enum in visible text
+PASS  14. Provider directory (public) @1440: every image declares alt
+PASS  15. Provider directory (public) @1440: every control has an accessible name
+PASS  16. Product catalogue (public) @1440: reached and rendered
+PASS  17. Product catalogue (public) @1440: exactly one H1  [h1=1]
+PASS  18. Product catalogue (public) @1440: no raw enum in visible text
+PASS  19. Product catalogue (public) @1440: every image declares alt
+PASS  20. Product catalogue (public) @1440: every control has an accessible name
+PASS  21. Saved shortlist (buyer) @1440: reached and rendered
+PASS  22. Saved shortlist (buyer) @1440: exactly one H1  [h1=1]
+PASS  23. Saved shortlist (buyer) @1440: no raw enum in visible text
+PASS  24. Saved shortlist (buyer) @1440: every image declares alt
+PASS  25. Saved shortlist (buyer) @1440: every control has an accessible name
+PASS  26. Requests (buyer) @1440: reached and rendered
+PASS  27. Requests (buyer) @1440: exactly one H1  [h1=1]
+PASS  28. Requests (buyer) @1440: no raw enum in visible text
+PASS  29. Requests (buyer) @1440: every image declares alt
+PASS  30. Requests (buyer) @1440: every control has an accessible name
+PASS  31. Projects dashboard (buyer) @1440: reached and rendered
+PASS  32. Projects dashboard (buyer) @1440: exactly one H1  [h1=1]
+PASS  33. Projects dashboard (buyer) @1440: no raw enum in visible text
+PASS  34. Projects dashboard (buyer) @1440: every image declares alt
+PASS  35. Projects dashboard (buyer) @1440: every control has an accessible name
+PASS  36. Enquiries (supplier) @1440: reached and rendered
+PASS  37. Enquiries (supplier) @1440: exactly one H1  [h1=1]
+PASS  38. Enquiries (supplier) @1440: no raw enum in visible text
+PASS  39. Enquiries (supplier) @1440: every image declares alt
+PASS  40. Enquiries (supplier) @1440: every control has an accessible name
+PASS  41. Marketing Center (supplier) @1440: reached and rendered
+PASS  42. Marketing Center (supplier) @1440: exactly one H1  [h1=1]
+PASS  43. Marketing Center (supplier) @1440: no raw enum in visible text
+PASS  44. Marketing Center (supplier) @1440: every image declares alt
+PASS  45. Marketing Center (supplier) @1440: every control has an accessible name
+PASS  46. Settings (supplier) @1440: reached and rendered
+PASS  47. Settings (supplier) @1440: exactly one H1  [h1=1]
+PASS  48. Settings (supplier) @1440: no raw enum in visible text
+PASS  49. Settings (supplier) @1440: every image declares alt
+PASS  50. Settings (supplier) @1440: every control has an accessible name
+PASS  51. Home (public) @375: reached and rendered
+PASS  52. Home (public) @375: no sideways scroll
+PASS  53. Home (public) @375: exactly one H1  [h1=1]
+PASS  54. Home (public) @375: no raw enum in visible text
+PASS  55. Home (public) @375: every image declares alt
+PASS  56. Home (public) @375: every control has an accessible name
+PASS  57. Marketplace hub (public) @375: reached and rendered
+PASS  58. Marketplace hub (public) @375: no sideways scroll
+PASS  59. Marketplace hub (public) @375: exactly one H1  [h1=1]
+PASS  60. Marketplace hub (public) @375: no raw enum in visible text
+PASS  61. Marketplace hub (public) @375: every image declares alt
+PASS  62. Marketplace hub (public) @375: every control has an accessible name
+PASS  63. Provider directory (public) @375: reached and rendered
+PASS  64. Provider directory (public) @375: no sideways scroll
+PASS  65. Provider directory (public) @375: exactly one H1  [h1=1]
+PASS  66. Provider directory (public) @375: no raw enum in visible text
+PASS  67. Provider directory (public) @375: every image declares alt
+PASS  68. Provider directory (public) @375: every control has an accessible name
+PASS  69. Product catalogue (public) @375: reached and rendered
+PASS  70. Product catalogue (public) @375: no sideways scroll
+PASS  71. Product catalogue (public) @375: exactly one H1  [h1=1]
+PASS  72. Product catalogue (public) @375: no raw enum in visible text
+PASS  73. Product catalogue (public) @375: every image declares alt
+PASS  74. Product catalogue (public) @375: every control has an accessible name
+PASS  75. Saved shortlist (buyer) @375: reached and rendered
+PASS  76. Saved shortlist (buyer) @375: no sideways scroll
+PASS  77. Saved shortlist (buyer) @375: exactly one H1  [h1=1]
+PASS  78. Saved shortlist (buyer) @375: no raw enum in visible text
+PASS  79. Saved shortlist (buyer) @375: every image declares alt
+PASS  80. Saved shortlist (buyer) @375: every control has an accessible name
+PASS  81. Requests (buyer) @375: reached and rendered
+PASS  82. Requests (buyer) @375: no sideways scroll
+PASS  83. Requests (buyer) @375: exactly one H1  [h1=1]
+PASS  84. Requests (buyer) @375: no raw enum in visible text
+PASS  85. Requests (buyer) @375: every image declares alt
+PASS  86. Requests (buyer) @375: every control has an accessible name
+PASS  87. Projects dashboard (buyer) @375: reached and rendered
+PASS  88. Projects dashboard (buyer) @375: no sideways scroll
+PASS  89. Projects dashboard (buyer) @375: exactly one H1  [h1=1]
+PASS  90. Projects dashboard (buyer) @375: no raw enum in visible text
+PASS  91. Projects dashboard (buyer) @375: every image declares alt
+PASS  92. Projects dashboard (buyer) @375: every control has an accessible name
+PASS  93. Enquiries (supplier) @375: reached and rendered
+PASS  94. Enquiries (supplier) @375: no sideways scroll
+PASS  95. Enquiries (supplier) @375: exactly one H1  [h1=1]
+PASS  96. Enquiries (supplier) @375: no raw enum in visible text
+PASS  97. Enquiries (supplier) @375: every image declares alt
+PASS  98. Enquiries (supplier) @375: every control has an accessible name
+PASS  99. Marketing Center (supplier) @375: reached and rendered
+PASS  100. Marketing Center (supplier) @375: no sideways scroll
+PASS  101. Marketing Center (supplier) @375: exactly one H1  [h1=1]
+PASS  102. Marketing Center (supplier) @375: no raw enum in visible text
+PASS  103. Marketing Center (supplier) @375: every image declares alt
+PASS  104. Marketing Center (supplier) @375: every control has an accessible name
+PASS  105. Settings (supplier) @375: reached and rendered
+PASS  106. Settings (supplier) @375: no sideways scroll
+PASS  107. Settings (supplier) @375: exactly one H1  [h1=1]
+PASS  108. Settings (supplier) @375: no raw enum in visible text
+PASS  109. Settings (supplier) @375: every image declares alt
+PASS  110. Settings (supplier) @375: every control has an accessible name
+PASS  111. Home (public) @1440 AR: reached, rendered and genuinely RTL
+PASS  112. Home (public) @1440 AR: no untranslated UI chrome
+PASS  113. Home (public) @1440 AR: chrome was collected, so the check above is not vacuous  [15]
+PASS  114. Marketplace hub (public) @1440 AR: reached, rendered and genuinely RTL
+PASS  115. Marketplace hub (public) @1440 AR: no untranslated UI chrome
+PASS  116. Marketplace hub (public) @1440 AR: chrome was collected, so the check above is not vacuous  [16]
+PASS  117. Provider directory (public) @1440 AR: reached, rendered and genuinely RTL
+PASS  118. Provider directory (public) @1440 AR: no untranslated UI chrome
+PASS  119. Provider directory (public) @1440 AR: chrome was collected, so the check above is not vacuous  [20]
+PASS  120. Product catalogue (public) @1440 AR: reached, rendered and genuinely RTL
+PASS  121. Product catalogue (public) @1440 AR: no untranslated UI chrome
+PASS  122. Product catalogue (public) @1440 AR: chrome was collected, so the check above is not vacuous  [74]
+PASS  123. Saved shortlist (buyer) @1440 AR: reached, rendered and genuinely RTL
+PASS  124. Saved shortlist (buyer) @1440 AR: no untranslated UI chrome
+PASS  125. Saved shortlist (buyer) @1440 AR: chrome was collected, so the check above is not vacuous  [4]
+PASS  126. Requests (buyer) @1440 AR: reached, rendered and genuinely RTL
+PASS  127. Requests (buyer) @1440 AR: no untranslated UI chrome
+PASS  128. Requests (buyer) @1440 AR: chrome was collected, so the check above is not vacuous  [15]
+PASS  129. Projects dashboard (buyer) @1440 AR: reached, rendered and genuinely RTL
+PASS  130. Projects dashboard (buyer) @1440 AR: no untranslated UI chrome
+PASS  131. Projects dashboard (buyer) @1440 AR: chrome was collected, so the check above is not vacuous  [4]
+PASS  132. Enquiries (supplier) @1440 AR: reached, rendered and genuinely RTL
+PASS  133. Enquiries (supplier) @1440 AR: no untranslated UI chrome
+PASS  134. Enquiries (supplier) @1440 AR: chrome was collected, so the check above is not vacuous  [4]
+PASS  135. Marketing Center (supplier) @1440 AR: reached, rendered and genuinely RTL
+PASS  136. Marketing Center (supplier) @1440 AR: no untranslated UI chrome
+PASS  137. Marketing Center (supplier) @1440 AR: chrome was collected, so the check above is not vacuous  [4]
+PASS  138. Settings (supplier) @1440 AR: reached, rendered and genuinely RTL
+PASS  139. Settings (supplier) @1440 AR: no untranslated UI chrome
+PASS  140. Settings (supplier) @1440 AR: chrome was collected, so the check above is not vacuous  [33]
+PASS  141. Home (public) @375 AR: reached, rendered and genuinely RTL
+PASS  142. Home (public) @375 AR: no sideways scroll
+PASS  143. Home (public) @375 AR: no untranslated UI chrome
+PASS  144. Home (public) @375 AR: chrome was collected, so the check above is not vacuous  [15]
+PASS  145. Marketplace hub (public) @375 AR: reached, rendered and genuinely RTL
+PASS  146. Marketplace hub (public) @375 AR: no sideways scroll
+PASS  147. Marketplace hub (public) @375 AR: no untranslated UI chrome
+PASS  148. Marketplace hub (public) @375 AR: chrome was collected, so the check above is not vacuous  [16]
+PASS  149. Provider directory (public) @375 AR: reached, rendered and genuinely RTL
+PASS  150. Provider directory (public) @375 AR: no sideways scroll
+PASS  151. Provider directory (public) @375 AR: no untranslated UI chrome
+PASS  152. Provider directory (public) @375 AR: chrome was collected, so the check above is not vacuous  [20]
+PASS  153. Product catalogue (public) @375 AR: reached, rendered and genuinely RTL
+PASS  154. Product catalogue (public) @375 AR: no sideways scroll
+PASS  155. Product catalogue (public) @375 AR: no untranslated UI chrome
+PASS  156. Product catalogue (public) @375 AR: chrome was collected, so the check above is not vacuous  [74]
+PASS  157. Saved shortlist (buyer) @375 AR: reached, rendered and genuinely RTL
+PASS  158. Saved shortlist (buyer) @375 AR: no sideways scroll
+PASS  159. Saved shortlist (buyer) @375 AR: no untranslated UI chrome
+PASS  160. Saved shortlist (buyer) @375 AR: chrome was collected, so the check above is not vacuous  [3]
+PASS  161. Requests (buyer) @375 AR: reached, rendered and genuinely RTL
+PASS  162. Requests (buyer) @375 AR: no sideways scroll
+PASS  163. Requests (buyer) @375 AR: no untranslated UI chrome
+PASS  164. Requests (buyer) @375 AR: chrome was collected, so the check above is not vacuous  [15]
+PASS  165. Projects dashboard (buyer) @375 AR: reached, rendered and genuinely RTL
+PASS  166. Projects dashboard (buyer) @375 AR: no sideways scroll
+PASS  167. Projects dashboard (buyer) @375 AR: no untranslated UI chrome
+PASS  168. Projects dashboard (buyer) @375 AR: chrome was collected, so the check above is not vacuous  [3]
+PASS  169. Enquiries (supplier) @375 AR: reached, rendered and genuinely RTL
+PASS  170. Enquiries (supplier) @375 AR: no sideways scroll
+PASS  171. Enquiries (supplier) @375 AR: no untranslated UI chrome
+PASS  172. Enquiries (supplier) @375 AR: chrome was collected, so the check above is not vacuous  [3]
+PASS  173. Marketing Center (supplier) @375 AR: reached, rendered and genuinely RTL
+PASS  174. Marketing Center (supplier) @375 AR: no sideways scroll
+PASS  175. Marketing Center (supplier) @375 AR: no untranslated UI chrome
+PASS  176. Marketing Center (supplier) @375 AR: chrome was collected, so the check above is not vacuous  [3]
+PASS  177. Settings (supplier) @375 AR: reached, rendered and genuinely RTL
+PASS  178. Settings (supplier) @375 AR: no sideways scroll
+PASS  179. Settings (supplier) @375 AR: no untranslated UI chrome
+PASS  180. Settings (supplier) @375 AR: chrome was collected, so the check above is not vacuous  [32]
+
+ALL PASS  180 passed, 0 failed
+
