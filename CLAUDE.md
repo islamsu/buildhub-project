@@ -2329,3 +2329,117 @@ Before calling the current multi-market foundation complete, read `GCC_SCALE_REA
 Regression-test both.
 
 These are correctness requirements, not future market features.
+
+
+---
+
+## 89. FINAL CURRENT-RELEASE SEQUENCE — OWNER APPROVED
+
+The regional foundation and Supplier Showcase are accepted for the current release.
+
+Do not reopen them unless a concrete regression or contradiction is found.
+
+Continue autonomously through the remaining `PRODUCT_NORTH_STAR.md` current-release sequence:
+
+### 16. Supplier Marketing Center foundation
+
+Fresh-audit and COMPOSE the canonical systems that already exist.
+
+Do not create duplicate placement, sponsorship, analytics or entitlement domains.
+
+The supplier-facing Marketing Center should answer clearly:
+
+- how is my business/products being promoted?
+- what Featured/Sponsored/placement benefits are currently active?
+- what is their scope and expiry?
+- how are they performing using REAL recorded events?
+- what legitimate action can I take next?
+
+No payment budgets, CPC, CPM, GMV, revenue, ROI or fabricated conversions.
+
+### 17. Sponsored Product / Provider presentation
+
+Treat this primarily as a discoverability/presentation/integrity pass unless fresh audit proves a real backend gap.
+
+Preserve:
+
+- Featured = BuildHub editorial
+- Sponsored = commercial/administrative placement
+- Supplier Showcase = supplier-controlled storefront emphasis
+
+Never blur these labels or ranking causes.
+
+### 18. Real analytics foundation
+
+Reuse `analyticsEvents`, placement analytics and existing canonical readers.
+
+Metrics must be query-backed and explainable.
+
+Outage / unavailable data must not become zero.
+
+No fake traffic, CTR, inquiries, conversions, ROI, revenue or trends.
+
+### 19. Premium main homepage redesign
+
+Make the homepage communicate the connected BuildHub sourcing proposition:
+
+Discover / Source
+→ Save / Shortlist
+→ RFQ
+→ Compare Quotations
+→ Collaborate
+→ Build / Manage Project
+
+Use only real public proof.
+
+The page must visibly connect buyer, supplier, marketplace and project workflows rather than become another feature-card wall.
+
+### 20. World-class visual QA
+
+Run a systematic final visual/product-quality gate across:
+
+- public
+- buyer
+- supplier/professional
+- Admin
+- English
+- Arabic / RTL
+- desktop
+- mobile
+- loading
+- empty
+- error
+- disabled
+- destructive-action
+- first-time-user states
+
+Check typography, spacing, hierarchy, media quality, responsive behavior, accessibility, discoverability and performance.
+
+Do not ask for merge authorization until the release is visually and operationally coherent across the whole product.
+
+### Staging during this sequence
+
+Owner has approved staging to track:
+
+`claude/buildhub-global-release-candidate`
+
+during final RC QA.
+
+`render.yaml` records that source.
+
+However, repository configuration is NOT deployment proof.
+
+An existing Render service may still require Blueprint sync/dashboard confirmation.
+
+Never claim:
+
+- DEPLOYED
+- STAGING PREVIEW VERIFIED
+- STAGING VERIFIED
+- migrations applied on staging
+
+until `/version` reports the exact current RC SHA with `environment=staging` and the migration-dependent journeys are exercised.
+
+After owner-authorized merge to `main`, switch staging back to `main`, redeploy, and verify the exact merged SHA before production authorization.
+
+Continue using the delivery vocabulary in §2 exactly.
