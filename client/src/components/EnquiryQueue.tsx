@@ -1,46 +1,63 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'wouter';
+import { toast } from 'sonner';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
 import { Badge } from '@/components/ui/badge';
 import {
-  ENQUIRY_RESPONSE_STATES, enquiryStateLabel, enquiryStateTone,
-  type EnquiryResponseState,
+  ENQUIRY_LEAD_STATES, ENQUIRY_OPPORTUNITY_STATES,
+  enquiryStateLabel, enquiryStateTone,
+  type EnquiryResponseState, type EnquiryScope,
 } from '@shared/enquiryStates';
+import { formatMoney } from '@shared/money';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
 import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { rfqCategoryLabel } from '@shared/rfqCategories';
-import { Calendar, Inbox, MapPin } from 'lucide-react';
+import { Calendar, Coins, FileText, Inbox, Lock, MapPin, Paperclip, Target } from 'lucide-react';
 
 /**
- * ── THE PROVIDER'S ENQUIRY WORK QUEUE ─────────────────────────────────────
+ * ── THE PROVIDER'S ENQUIRY QUEUE, IN TWO HALVES OF ONE SYSTEM ─────────────
  *
- * What this replaces on `/enquiries`: a card titled "Qualified enquiries",
- * subtitled "The requests you have opened", rendering a list of requests the
- * provider COULD open - silently truncated at 50, with no total, no filter, no
- * search and no page. The request a provider had actually PAID for vanished
- * from it the moment the customer closed the RFQ, while the credit stayed
- * spent; there was no other list of it anywhere in the product.
+ * WHAT THIS REPLACED, TWICE OVER.
  *
- * EVERY FILTER IS APPLIED BY THE SERVER, over the whole queue. Filtering one
+ * First: a card titled "Qualified enquiries", subtitled "The requests you
+ * have opened", rendering a list of requests the provider COULD open -
+ * silently truncated at 50, with no total, no filter, no search and no page.
+ * The request a provider had actually PAID for vanished from it the moment
+ * the customer closed the RFQ, while the credit stayed spent.
+ *
+ * Then, for a while, TWO CARDS OVER THE SAME ROWS. `/enquiries` rendered the
+ * eligible list above this queue, and a screenshot of a real provider's
+ * screen showed the same six requests rendered twice, one above the other,
+ * with two different sets of words for the same state. Two lists of one
+ * thing is not two features; it is one feature the reader has to reconcile,
+ * and §71 says consolidate rather than accumulate variants.
+ *
+ * SO THERE IS ONE COMPONENT AND ONE QUERY, rendered twice with a `scope`:
+ *
+ *   OPPORTUNITIES  what can still be TAKEN - an open request matching a
+ *                  declared category, or an invitation not yet opened.
+ *                  Opening one is what spends a credit, so the allowance
+ *                  meter and the open action live here and only here.
+ *   LEADS          what HAS been taken, and how it ended. The record, which
+ *                  outlives the request: a lead stays here after the
+ *                  customer closes the file, because the credit stayed spent.
+ *
+ * THE TWO CANNOT OVERLAP. The split is `ENQUIRY_OPPORTUNITY_STATES` /
+ * `ENQUIRY_LEAD_STATES` in shared/, applied BY THE SERVER to the one queue -
+ * not two client-side filters over two queries, which is how the duplicate
+ * arose the first time. A request is in exactly one of them, and
+ * `enquiryStates.test.ts` fails if a new state is ever added to neither.
+ *
+ * EVERY FILTER IS APPLIED BY THE SERVER, over the whole scope. Filtering one
  * page in the browser answers "nothing matches" when the match is on page
  * three, with exactly the confidence it answers correctly - which is the
- * defect `server/adminList.ts` exists to end, and this screen is not going to
- * reintroduce it.
+ * defect `server/adminList.ts` exists to end.
  */
-/*
- * THE CANONICAL VOCABULARY, not a copy.
- *
- * This file held its own four-item list while the server's lived in
- * server/enquiryQueue.ts. The moment the server learned about Won the two
- * disagreed - the chips would have offered four states over a queue that can
- * return seven, so a supplier filtering for anything could never have found a
- * lead they had won. §11: one canonical domain.
- */
-const RESPONSE_STATES = ENQUIRY_RESPONSE_STATES;
-type ResponseState = EnquiryResponseState;
 
 const stateLabel = (state: string, ar: boolean) => enquiryStateLabel(state, ar ? 'ar' : 'en');
 
@@ -53,9 +70,49 @@ function rfqStatusLabel(status: string, ar: boolean): string {
   }
 }
 
-export default function EnquiryQueue({ highlightRfqId }: { highlightRfqId?: number } = {}) {
-  const { lang } = useLanguage();
+/** What each half is called and what it is for, in both languages. */
+function scopeCopy(scope: EnquiryScope, ar: boolean) {
+  if (scope === 'opportunities') {
+    return {
+      title: ar ? 'مركز الفرص' : 'Opportunity Centre',
+      blurb: ar
+        ? 'طلبات ما زال بإمكانك أخذها — مطابقة لفئاتك أو بدعوة مباشرة. فتح الطلب هو ما يستهلك من رصيدك.'
+        : 'Requests you can still take — matched to your categories, or invited directly. Opening one is what uses your allowance.',
+      empty: ar
+        ? 'لا توجد فرص مفتوحة الآن. أعلن فئات خدمتك لتصلك الطلبات المطابقة.'
+        : 'No open opportunities right now. Declare your service categories to receive matching requests.',
+      icon: Target,
+    };
+  }
+  return {
+    title: ar ? 'طلباتي' : 'My Leads',
+    blurb: ar
+      ? 'كل طلب أخذته — وما قدّمت فيه عرضاً ونتيجته. يبقى هنا حتى بعد إغلاق العميل للطلب.'
+      : 'Every request you have taken, what you quoted and how it ended. A lead stays here after the customer closes the request.',
+    empty: ar
+      ? 'لم تأخذ أي طلب بعد. افتح فرصة من مركز الفرص أعلاه ليظهر هنا.'
+      : 'You have not taken a request yet. Open one from the Opportunity Centre above and it appears here.',
+    icon: Inbox,
+  };
+}
+
+export default function EnquiryQueue({
+  scope = 'leads',
+  highlightRfqId,
+}: { scope?: EnquiryScope; highlightRfqId?: number } = {}) {
+  const { lang, t } = useLanguage();
   const ar = lang === 'ar';
+  const utils = trpc.useUtils();
+  const opportunities = scope === 'opportunities';
+  const copy = scopeCopy(scope, ar);
+  const ScopeIcon = copy.icon;
+
+  /** The chips this half offers. Never the whole vocabulary: filtering My
+   *  Leads by "Available" would always return nothing, and a control that
+   *  cannot succeed is a dead control (§13). */
+  const states: readonly EnquiryResponseState[] = opportunities
+    ? ENQUIRY_OPPORTUNITY_STATES
+    : ENQUIRY_LEAD_STATES;
 
   const [page, setPage] = useState(0);
   /**
@@ -68,10 +125,15 @@ export default function EnquiryQueue({ highlightRfqId }: { highlightRfqId?: numb
    */
   const [search, setSearch] = useState(highlightRfqId ? `#${highlightRfqId}` : '');
   const [debounced, setDebounced] = useState(search);
-  const [responseState, setResponseState] = useState<ResponseState | ''>('');
+  const [responseState, setResponseState] = useState<EnquiryResponseState | ''>('');
   const [rfqStatus, setRfqStatus] = useState('');
   const [source, setSource] = useState('');
   const [category, setCategory] = useState('');
+
+  // The RFQ the server returned when the credit was spent. Held here rather
+  // than refetched: rfq.get is requester-scoped, so a provider cannot read the
+  // detail through it, and this response IS the provider's authorized copy.
+  const [detail, setDetail] = useState<Record<string, any> | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => { setDebounced(search.trim()); setPage(0); }, 300);
@@ -80,6 +142,7 @@ export default function EnquiryQueue({ highlightRfqId }: { highlightRfqId?: numb
 
   const queue = trpc.rfq.queue.useQuery({
     page,
+    scope,
     responseState: responseState || undefined,
     rfqStatus: (rfqStatus || undefined) as any,
     source: (source || undefined) as any,
@@ -87,27 +150,59 @@ export default function EnquiryQueue({ highlightRfqId }: { highlightRfqId?: numb
     search: debounced || undefined,
   }, { retry: false });
 
+  const open = trpc.rfq.openEnquiry.useMutation({
+    onSuccess: result => {
+      toast.success(t(result.alreadyConsumed ? 'enquiries.reopenedToast' : 'enquiries.openedToast'));
+      setDetail(result.rfq as Record<string, any>);
+      // BOTH HALVES MOVE. Opening a request takes it OUT of this list and puts
+      // it into My Leads, so invalidating only the list in front of the
+      // provider would leave the other one asserting the old state.
+      utils.rfq.queue.invalidate();
+      utils.rfq.eligible.invalidate();
+      utils.billing.myEnquiryUsage.invalidate();
+    },
+    // The server owns the refusal reason - limit reached, not eligible, or not
+    // found. We show its message rather than guessing one client-side.
+    onError: error => toast.error(error.message),
+  });
+
+  // Bring the row the provider came for into view once the list has loaded.
+  const highlightRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (highlightRfqId && highlightRef.current) {
+      highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlightRfqId, queue.isLoading]);
+
   const rows = queue.data?.rows ?? [];
   const total = queue.data?.total ?? 0;
   const pageSize = queue.data?.pageSize ?? 20;
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const summary = queue.data?.summary;
+  const usage = queue.data?.usage;
   const filtering = Boolean(debounced || responseState || rfqStatus || source || category);
   const when = (value: string | Date | null) =>
     value ? new Date(value).toLocaleDateString(ar ? 'ar-EG' : 'en-US') : '—';
 
+  const allowance = usage?.allowance ?? null;
+  const unlimited = allowance === null;
+  const pct = useMemo(() => (
+    !usage || allowance === null || allowance === 0 ? 0 : Math.min(100, (usage.used / allowance) * 100)
+  ), [usage, allowance]);
+
   return (
-    <Card data-testid="enquiry-queue">
+    <Card data-testid={`enquiry-queue-${scope}`}>
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
-          <Inbox className="h-4 w-4" />
-          {ar ? 'قائمة العمل' : 'Work queue'}
+          <ScopeIcon className="h-4 w-4" />
+          {copy.title}
         </CardTitle>
+        <p className="text-sm text-muted-foreground">{copy.blurb}</p>
         {/* THE COUNTS ARE TAKEN OVER THE WHOLE QUEUE, by the same query that
             builds it - so a tile and the list it filters to cannot disagree. */}
         {summary && (
           <div className="flex flex-wrap gap-2 pt-2" data-testid="enquiry-queue-summary">
-            {RESPONSE_STATES.map(state => (
+            {states.map(state => (
               <button
                 key={state}
                 type="button"
@@ -122,6 +217,31 @@ export default function EnquiryQueue({ highlightRfqId }: { highlightRfqId?: numb
         )}
       </CardHeader>
       <CardContent>
+        {/* THE ALLOWANCE, IN THE ONLY PLACE IT CAN BE SPENT. It used to sit
+            above a list that mixed requests a credit had already been spent
+            on with requests it had not, so the meter appeared to be counting
+            the wrong things. */}
+        {opportunities && usage && (
+          <div className="rounded-lg border p-3 mb-4" data-testid="enquiry-allowance">
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <span className="text-muted-foreground flex items-center gap-1.5">
+                <Coins className="h-3.5 w-3.5" />{t('enquiries.thisMonth')}
+              </span>
+              <span className="font-semibold">
+                {unlimited ? `${usage.used} · ${t('enquiries.unlimited')}` : `${usage.used} / ${allowance}`}
+              </span>
+            </div>
+            {!unlimited && <Progress value={pct} className="h-1.5 mt-2" />}
+            <p className="text-xs text-muted-foreground mt-2">
+              {unlimited
+                ? t('enquiries.unlimitedNote')
+                : usage.limitReached
+                  ? `${t('enquiries.limitReachedNote')} ${t('enquiries.resetsOn')} ${new Date(usage.resetsAt).toLocaleDateString(ar ? 'ar-EG' : 'en-US')}`
+                  : `${t('enquiries.remaining')}: ${usage.remaining} · ${t('enquiries.resetsOn')} ${new Date(usage.resetsAt).toLocaleDateString(ar ? 'ar-EG' : 'en-US')}`}
+            </p>
+          </div>
+        )}
+
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Input
             value={search}
@@ -130,17 +250,22 @@ export default function EnquiryQueue({ highlightRfqId }: { highlightRfqId?: numb
             className="h-9 max-w-xs"
             data-testid="enquiry-queue-search"
           />
-          <select
-            className="h-9 rounded-md border bg-background px-3 text-sm"
-            value={rfqStatus}
-            onChange={event => { setRfqStatus(event.target.value); setPage(0); }}
-            data-testid="enquiry-queue-status-filter"
-          >
-            <option value="">{ar ? 'كل الحالات' : 'All statuses'}</option>
-            {['open', 'closed', 'awarded'].map(status => (
-              <option key={status} value={status}>{rfqStatusLabel(status, ar)}</option>
-            ))}
-          </select>
+          {/* Offered only where it can change the answer: an opportunity is an
+              open request by definition, so a status filter over it would have
+              one working value and two dead ones. */}
+          {!opportunities && (
+            <select
+              className="h-9 rounded-md border bg-background px-3 text-sm"
+              value={rfqStatus}
+              onChange={event => { setRfqStatus(event.target.value); setPage(0); }}
+              data-testid="enquiry-queue-status-filter"
+            >
+              <option value="">{ar ? 'كل الحالات' : 'All statuses'}</option>
+              {['open', 'closed', 'awarded'].map(status => (
+                <option key={status} value={status}>{rfqStatusLabel(status, ar)}</option>
+              ))}
+            </select>
+          )}
           <select
             className="h-9 rounded-md border bg-background px-3 text-sm"
             value={source}
@@ -180,16 +305,15 @@ export default function EnquiryQueue({ highlightRfqId }: { highlightRfqId?: numb
                    are different facts, and a provider who cannot tell them
                    apart reads a narrow filter as a quiet marketplace. */
                 ? (ar ? 'لا يوجد طلب يطابق هذه التصفية.' : 'No request matches this filter.')
-                : (ar
-                    ? 'لم يصلك أي طلب بعد. أعلن فئات خدمتك لتصلك الطلبات المطابقة.'
-                    : 'No request has reached you yet. Declare your service categories to receive matching requests.')}
+                : copy.empty}
           </p>
         ) : (
           <div className="space-y-2" data-testid="enquiry-queue-rows">
             {rows.map(row => (
               <div
                 key={row.rfqId}
-                className={`rounded-lg border p-3 ${row.rfqId === highlightRfqId ? 'ring-2 ring-primary' : ''}`}
+                ref={row.rfqId === highlightRfqId ? highlightRef : undefined}
+                className={`rounded-lg border p-3 ${row.rfqId === highlightRfqId ? 'border-primary ring-2 ring-primary/20' : ''}`}
                 data-testid={`enquiry-queue-row-${row.rfqId}`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -211,9 +335,11 @@ export default function EnquiryQueue({ highlightRfqId }: { highlightRfqId?: numb
                     >
                       {stateLabel(row.responseState, ar)}
                     </Badge>
-                    <Badge variant={row.rfqStatus === 'open' ? 'secondary' : 'outline'}>
-                      {rfqStatusLabel(row.rfqStatus, ar)}
-                    </Badge>
+                    {!opportunities && (
+                      <Badge variant={row.rfqStatus === 'open' ? 'secondary' : 'outline'}>
+                        {rfqStatusLabel(row.rfqStatus, ar)}
+                      </Badge>
+                    )}
                     {row.source === 'invitation' && (
                       <Badge variant="secondary" data-testid={`enquiry-queue-invited-${row.rfqId}`}>
                         {ar ? 'بدعوة' : 'Invited'}
@@ -223,6 +349,15 @@ export default function EnquiryQueue({ highlightRfqId }: { highlightRfqId?: numb
                 </div>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   {row.category && <span>{rfqCategoryLabel(row.category, lang)}</span>}
+                  {/* THE BUDGET IN ITS OWN CURRENCY. This read `EGP {budget}`
+                      off a translation key, which would have put an Egyptian
+                      label on a Saudi request - a wrong number in front of
+                      somebody deciding what to bid (CLAUDE.md §87). */}
+                  {formatMoney(row.budget, row.currency, lang) && (
+                    <span data-testid={`enquiry-queue-budget-${row.rfqId}`}>
+                      {formatMoney(row.budget, row.currency, lang)}
+                    </span>
+                  )}
                   {row.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{row.location}</span>}
                   <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{when(row.createdAt)}</span>
                   {/* THE RECEIPT. This is the fact the old screen destroyed: a
@@ -235,20 +370,48 @@ export default function EnquiryQueue({ highlightRfqId }: { highlightRfqId?: numb
                   )}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/rfq/${row.rfqId}`}>{ar ? 'عرض الطلب' : 'View request'}</Link>
-                  </Button>
-                  {/* Offered ONLY while the request can still be answered. A
-                      button onto the respond page for a closed request is the
-                      dead control ELIG removed from the page it points at. */}
-                  {row.rfqStatus === 'open' && row.responseState !== 'declined' && (
-                    <Button asChild size="sm" data-testid={`enquiry-queue-respond-${row.rfqId}`}>
-                      <Link href={`/rfq/${row.rfqId}/respond`}>
-                        {row.responseState === 'quoted'
-                          ? (ar ? 'مراجعة عرضك' : 'Review your quote')
-                          : (ar ? 'الرد على الطلب' : 'Respond')}
-                      </Link>
-                    </Button>
+                  {opportunities ? (
+                    <>
+                      <Button
+                        size="sm"
+                        className="gap-1.5"
+                        // Only a genuinely-blocking state disables the control:
+                        // an invitation is exempt from the allowance, so the
+                        // limit must not lock the provider out of a request the
+                        // customer named them for.
+                        disabled={open.isPending || (usage?.limitReached === true && !row.free)}
+                        onClick={() => open.mutate({ rfqId: row.rfqId })}
+                        data-testid={`enquiry-queue-open-${row.rfqId}`}
+                      >
+                        {usage?.limitReached && !row.free
+                          ? <><Lock className="h-3.5 w-3.5" />{t('enquiries.limitReached')}</>
+                          : t('enquiries.viewDetails')}
+                      </Button>
+                      {/* SAY WHAT IT COSTS BEFORE IT IS SPENT, not after. */}
+                      <span className="self-center text-xs text-muted-foreground" data-testid={`enquiry-queue-cost-${row.rfqId}`}>
+                        {row.free
+                          ? (ar ? 'بدعوة — لا يُخصم من رصيدك' : 'Invited — free, no allowance used')
+                          : (ar ? 'يُخصم طلب واحد من رصيدك' : 'Uses one of your enquiries')}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/rfq/${row.rfqId}`}>{ar ? 'عرض الطلب' : 'View request'}</Link>
+                      </Button>
+                      {/* Offered ONLY while the request can still be answered. A
+                          button onto the respond page for a closed request is the
+                          dead control ELIG removed from the page it points at. */}
+                      {row.rfqStatus === 'open' && row.responseState !== 'declined' && (
+                        <Button asChild size="sm" data-testid={`enquiry-queue-respond-${row.rfqId}`}>
+                          <Link href={`/rfq/${row.rfqId}/respond`}>
+                            {row.responseState === 'quoted'
+                              ? (ar ? 'مراجعة عرضك' : 'Review your quote')
+                              : (ar ? 'الرد على الطلب' : 'Respond')}
+                          </Link>
+                        </Button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -274,6 +437,90 @@ export default function EnquiryQueue({ highlightRfqId }: { highlightRfqId?: numb
           </div>
         )}
       </CardContent>
+
+      {/* THE DETAIL THE CREDIT BOUGHT. "View details" used to end in a TOAST:
+          the provider spent a credit, the server returned the full RFQ in the
+          same response, and the client threw it away. */}
+      <Dialog open={detail !== null} onOpenChange={openState => !openState && setDetail(null)}>
+        <DialogContent className="max-w-lg" dir={ar ? 'rtl' : 'ltr'}>
+          <DialogHeader>
+            <DialogTitle className="text-start">{detail?.title ?? ''}</DialogTitle>
+          </DialogHeader>
+          {detail && (
+            <div className="space-y-4 text-start">
+              <div className="flex flex-wrap gap-2">
+                {detail.category && <Badge variant="secondary">{rfqCategoryLabel(detail.category, lang)}</Badge>}
+                {detail.status && <Badge variant="outline">{rfqStatusLabel(String(detail.status), ar)}</Badge>}
+              </div>
+              {detail.description && (
+                <p className="whitespace-pre-wrap text-sm text-muted-foreground">{detail.description}</p>
+              )}
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                {/* THE CURRENCY COMES FROM THE RECORD (CLAUDE.md §87). */}
+                {formatMoney(detail.budget, detail.currency, lang) && (
+                  <span className="flex items-center gap-1.5" data-testid="enquiry-detail-budget">
+                    <Coins className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    {formatMoney(detail.budget, detail.currency, lang)}
+                  </span>
+                )}
+                {detail.location && (
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />{detail.location}
+                  </span>
+                )}
+                {detail.deadline && (
+                  <span className="flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    {new Date(detail.deadline).toLocaleDateString(ar ? 'ar-EG' : 'en-GB')}
+                  </span>
+                )}
+              </div>
+              {/* Attachments are authorized for a provider who has consumed the
+                  enquiry - the storage proxy resolves the key back to the RFQ
+                  and looks for that provider's qualifiedEnquiries row. */}
+              {parseAttachments(detail.attachments).length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="flex items-center gap-1.5 text-sm font-medium">
+                    <Paperclip className="h-3.5 w-3.5" />{t('enquiries.attachments')}
+                  </p>
+                  {parseAttachments(detail.attachments).map((file, index) => (
+                    <a
+                      key={file.key ?? index}
+                      href={file.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1.5 text-sm text-primary underline underline-offset-2"
+                    >
+                      <FileText className="h-3.5 w-3.5 shrink-0" />{file.name ?? file.key}
+                    </a>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">{t('enquiries.detailNote')}</p>
+              {/* WHERE IT WENT. Opening a request moves it out of this list
+                  and into My Leads, and saying so is the difference between a
+                  journey that continues and a dialog that just closes. */}
+              <Button asChild size="sm" className="w-full" data-testid="enquiry-detail-respond">
+                <Link href={`/rfq/${detail.id}/respond`}>{ar ? 'الرد على الطلب' : 'Respond to this request'}</Link>
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
+}
+
+/**
+ * `rfqs.attachments` is a JSON-encoded text column, so it can arrive as a
+ * string or already parsed depending on the driver, and it may be absent
+ * entirely. Anything that is not an array of objects yields nothing rather
+ * than throwing inside a render.
+ */
+function parseAttachments(raw: unknown): { key?: string; url?: string; name?: string }[] {
+  let value = raw;
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value); } catch { return []; }
+  }
+  return Array.isArray(value) ? value.filter(item => item && typeof item === 'object') : [];
 }

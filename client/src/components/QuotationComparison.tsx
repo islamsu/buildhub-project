@@ -131,6 +131,17 @@ interface Props {
   rfqId: number;
   rfqTitle: string;
   rfqBudget?: number;
+  /**
+   * WHAT THE BUDGET IS DENOMINATED IN. The budget was rendered as
+   * `{t('common.egp')} {rfqBudget}` - the number from the record, the
+   * currency from a translation key that cannot know the answer. Every
+   * quotation on this screen already formats through `formatMoney` with its
+   * own `currency`; the budget they are all being compared against did not,
+   * so a Saudi request showed SAR bids beneath an EGP budget line. The RFQ
+   * decides the currency and every quotation inherits it (CLAUDE.md §87),
+   * which is precisely why these must agree.
+   */
+  rfqCurrency?: string | null;
   rfqStatus?: string | null;
   isOwner: boolean;
   onClose: () => void;
@@ -151,7 +162,7 @@ function parseQuotationAttachments(value: string | null): { key: string; url: st
   }
 }
 
-export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqStatus, isOwner, onClose }: Props) {
+export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqCurrency, rfqStatus, isOwner, onClose }: Props) {
   const { t, lang } = useLanguage();
   const [sortKey, setSortKey] = useState<SortKey>('score');
   const [sortAsc, setSortAsc] = useState(false);
@@ -227,7 +238,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
           <h2 className="text-xl font-bold">{rfqTitle}</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
             {quotes.length} {t('rfq.quotations')}
-            {rfqBudget && <span className="ml-2">· {t('project.budget')}: <strong>{t('common.egp')} {rfqBudget.toLocaleString()}</strong></span>}
+            {rfqBudget != null && <span className="ml-2">· {t('project.budget')}: <strong data-testid="comparison-rfq-budget">{formatMoney(rfqBudget, rfqCurrency, lang) ?? rfqBudget.toLocaleString()}</strong></span>}
           </p>
         </div>
         {rfqAwarded && (
@@ -370,9 +381,12 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                     </div>
                     {rfqBudget && (
                       <div className={`text-xs mt-1 font-medium ${parseFloat(q.price) <= rfqBudget ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {/* THE DIFFERENCE IS IN THE SAME CURRENCY AS THE
+                            TWO NUMBERS IT SUBTRACTS - which is the RFQ's,
+                            because the bid inherits it. */}
                         {parseFloat(q.price) <= rfqBudget
-                          ? `${t('common.egp')} ${(rfqBudget - parseFloat(q.price)).toLocaleString()} ↓`
-                          : `${t('common.egp')} ${(parseFloat(q.price) - rfqBudget).toLocaleString()} ↑`}
+                          ? `${formatMoney(rfqBudget - parseFloat(q.price), rfqCurrency ?? q.currency, lang) ?? (rfqBudget - parseFloat(q.price)).toLocaleString()} ↓`
+                          : `${formatMoney(parseFloat(q.price) - rfqBudget, rfqCurrency ?? q.currency, lang) ?? (parseFloat(q.price) - rfqBudget).toLocaleString()} ↑`}
                       </div>
                     )}
                   </div>
@@ -668,7 +682,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
           <AlertDialogHeader>
             <AlertDialogTitle>{t('rfq.accept.confirm.title')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('rfq.accept.confirm.desc').replace('{name}', confirmAccept?.providerName ?? '').replace('{price}', `${t('common.egp')} ${confirmAccept ? parseFloat(confirmAccept.price).toLocaleString() : ''}`)}
+              {t('rfq.accept.confirm.desc').replace('{name}', confirmAccept?.providerName ?? '').replace('{price}', confirmAccept ? (formatMoney(confirmAccept.price, confirmAccept.currency, lang) ?? parseFloat(confirmAccept.price).toLocaleString()) : '')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -553,6 +553,7 @@ export default function RFQDetail() {
               rfqId={rfq.id}
               rfqTitle={rfq.title}
               rfqBudget={rfq.budget ? Number(rfq.budget) : undefined}
+              rfqCurrency={rfq.currency}
               rfqStatus={status}
               isOwner
               onClose={() => undefined}

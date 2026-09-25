@@ -263,19 +263,41 @@ These are not decisions pending; they are limits being observed.
   policy, so the deployed build cannot be verified from here — that is
   reported, never routed around.
 - SMTP and S3 remain infrastructure-blocked wherever real proof needs them.
-- Migrations **0056** (product Q&A moderation) and **0057** (referral code
-  lifecycle) are applied **LOCALLY ONLY**. Both are additive — new columns and
-  new tables, nothing dropped, nothing retyped, no row rewritten — and both
-  backfill honestly: 0057 gives every existing code `status = 'active'`, which
-  is exactly how it behaved before, and a NULL issue date, because the date a
-  historic code was minted was never recorded and inventing one would be worse
-  than admitting it is unknown. They reach staging through normal integration,
-  not by hand.
-- Migration **0059** (saved items / buyer shortlist) is applied **LOCALLY
-  ONLY**: one new table, nothing else touched.
-- Migration **0058** (market context) is applied **LOCALLY ONLY** on the same
-  terms: new columns only, backfilled `EG` / `EGP` / `GLOBAL`, which is what
-  every existing row already meant while BuildHub operated in one market.
+- **Migration status vocabulary — owner correction.** These migrations were
+  described as applied "LOCALLY ONLY" after they had already been pushed, which
+  understates where they are and invites somebody to push them a second time.
+  §2 of `CLAUDE.md` forbids collapsing these states, and it applies to
+  migrations exactly as it applies to features. The correct report for each is
+  its furthest **proven** state, and no further:
+
+  | Migration | Furthest proven state |
+  |---|---|
+  | **0056** product Q&A moderation | PUSHED — applied locally, not yet staging-verified |
+  | **0057** referral code lifecycle | PUSHED — applied locally, not yet staging-verified |
+  | **0058** market context | PUSHED — applied locally, not yet staging-verified |
+  | **0059** saved items / buyer shortlist | PUSHED — applied locally, not yet staging-verified |
+
+  **PUSHED** means the file is in `origin/claude/buildhub-global-release-candidate`
+  and the schema change has been applied to the local database and exercised by
+  the suite. It does **not** mean any deployed environment has run it.
+  **NOT-YET-STAGING-VERIFIED** is the honest remainder: no deployed SHA has been
+  observed applying them, because Render is `connect_rejected` to this
+  environment by organization egress policy. Nothing here may be reported as
+  `STAGING VERIFIED` until a deployed `/version` reports the exact SHA that
+  carries them and the migration state is checked against that build.
+
+  They reach staging through normal integration, not by hand.
+
+  All four are additive — new columns and new tables, nothing dropped, nothing
+  retyped, no row rewritten — and all four backfill honestly:
+
+  - 0057 gives every existing code `status = 'active'`, which is exactly how it
+    behaved before, and a NULL issue date, because the date a historic code was
+    minted was never recorded and inventing one would be worse than admitting
+    it is unknown.
+  - 0058 backfills `EG` / `EGP` / `GLOBAL`, which is what every existing row
+    already meant while BuildHub operated in one market.
+  - 0059 adds one table and touches nothing else.
 - **No GCC market is enabled.** `enabled: false` on all six in
   `shared/markets.ts` is the only thing that decides, and flipping one is an
   owner decision behind the readiness gate in `GCC_SCALE_READINESS.md`. A

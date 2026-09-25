@@ -123,7 +123,7 @@ check(Number(counts.won ?? -1) === wonRows,
 /* ── THE FILTER ACCEPTS EVERY STATE THE QUEUE CAN RETURN ─────────────── */
 // The vocabulary had drifted: the client offered four states over a queue
 // that can return seven, so filtering for a won lead was impossible.
-for (const state of ['available', 'opened', 'quoted', 'won', 'lost', 'closed', 'declined']) {
+for (const state of ['available', 'invited', 'opened', 'quoted', 'won', 'lost', 'closed', 'declined']) {
   const filtered = await query(supplierCookie, 'rfq.queue', { page: 0, pageSize: 10, responseState: state });
   if (filtered.status !== 200) { check(false, `the queue accepts the ${state} filter`, filtered.message); continue; }
   const offState = (filtered.data?.rows ?? []).filter(r => r.responseState !== state);

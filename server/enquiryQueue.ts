@@ -70,9 +70,12 @@ export type EnquirySource = (typeof ENQUIRY_SOURCES)[number];
 // The canonical vocabulary lives in shared/ so the client's filter chips and
 // this query's CASE expression cannot drift apart - which they had, the
 // client offering four states over a queue that could return seven.
-import { ENQUIRY_RESPONSE_STATES, type EnquiryResponseState } from '../shared/enquiryStates';
-export { ENQUIRY_RESPONSE_STATES };
-export type { EnquiryResponseState };
+import {
+  ENQUIRY_RESPONSE_STATES, ENQUIRY_SCOPES, statesForScope,
+  type EnquiryResponseState, type EnquiryScope,
+} from '../shared/enquiryStates';
+export { ENQUIRY_RESPONSE_STATES, ENQUIRY_SCOPES, statesForScope };
+export type { EnquiryResponseState, EnquiryScope };
 
 export const ENQUIRY_RFQ_STATUSES = ['open', 'closed', 'awarded'] as const;
 
@@ -82,6 +85,17 @@ export type EnquiryQueueRow = {
   category: string | null;
   location: string | null;
   budget: string | null;
+  /**
+   * WHAT THE BUDGET IS DENOMINATED IN, carried with the number it belongs to.
+   *
+   * The screen rendered `EGP {budget}` from a translation key, so a Saudi
+   * request would have been labelled in Egyptian pounds - a wrong number in
+   * front of somebody deciding what to bid. The currency is a property of
+   * the RFQ (CLAUDE.md §87: the RFQ decides the currency), so it travels
+   * with it rather than being supplied by the view.
+   */
+  currency: string | null;
+  marketCode: string | null;
   deadline: Date | null;
   rfqStatus: string;
   createdAt: Date;
@@ -102,6 +116,17 @@ export type EnquiryQueueRow = {
 export type EnquiryQueueFilters = {
   rfqStatus?: string | null;
   source?: EnquirySource | null;
+  /**
+   * WHICH HALF OF THE QUEUE, resolved from the shared partition rather than
+   * from a list the caller sends.
+   *
+   * The client asks for "opportunities" or "leads" and the server decides
+   * which states those are, so a caller cannot construct a pair of views
+   * that overlap - which is exactly what two independent lists on one screen
+   * did. Combined with `responseState` by AND: the scope is the view, the
+   * chip narrows within it.
+   */
+  scope?: EnquiryScope | null;
   responseState?: EnquiryResponseState | null;
   category?: string | null;
   from?: Date | null;
@@ -182,6 +207,16 @@ const sourceExpression = sql<string>`case when ${rfqSuppliers.id} is not null th
  *              went nowhere, and saying so is different from saying they
  *              were beaten.
  *   quoted     a live quotation, no decision yet.
+ *   opened     a paid `qualifiedEnquiries` row, OR an invitation the supplier
+ *              has acted on - `markInvitationViewed` moves it off 'invited'
+ *              the moment they open it.
+ *   invited    AN OFFER THEY HAVE NOT TAKEN. Checked after `opened` so that
+ *              opening an invitation leaves this state, and before the
+ *              catch-all so it is never confused with a category match. It
+ *              used to fall into `opened`, which told a supplier they had a
+ *              lead in their record that they had in fact never seen - and
+ *              put the untouched invitation on the same screen as the work
+ *              they had actually done.
  *
  * `quotations` is joined on `supersededAt IS NULL`, so this reads the
  * CURRENT revision - a superseded quote that was rejected before being
@@ -193,7 +228,9 @@ const responseStateExpression = sql<string>`case
   when ${quotations.id} is not null and ${rfqs.status} = 'awarded' then 'lost'
   when ${quotations.id} is not null and ${rfqs.status} = 'closed' then 'closed'
   when ${quotations.id} is not null then 'quoted'
-  when ${qualifiedEnquiries.id} is not null or ${rfqSuppliers.id} is not null then 'opened'
+  when ${qualifiedEnquiries.id} is not null then 'opened'
+  when ${rfqSuppliers.status} = 'invited' then 'invited'
+  when ${rfqSuppliers.id} is not null then 'opened'
   else 'available' end`;
 
 function filterClause(filters: EnquiryQueueFilters) {
@@ -206,6 +243,12 @@ function filterClause(filters: EnquiryQueueFilters) {
   // hand-written `rfqSuppliers.id is not null` here would be a copy that drifts
   // the first time either definition changes.
   if (filters.source) clauses.push(sql`${sourceExpression} = ${filters.source}`);
+  // The scope, off the SAME expression for the same reason - one definition of
+  // what state a row is in, filtered on from two directions.
+  if (filters.scope && filters.scope !== 'all') {
+    const states = statesForScope(filters.scope);
+    clauses.push(sql`${responseStateExpression} in ${states}`);
+  }
   if (filters.responseState) clauses.push(sql`${responseStateExpression} = ${filters.responseState}`);
   if (filters.search) {
     const term = filters.search.trim().slice(0, MAX_SEARCH_LENGTH);
@@ -247,6 +290,8 @@ export async function listEnquiryQueue(db: Db, params: {
       category: rfqs.category,
       location: rfqs.location,
       budget: rfqs.budget,
+      currency: rfqs.currency,
+      marketCode: rfqs.marketCode,
       deadline: rfqs.deadline,
       rfqStatus: rfqs.status,
       createdAt: rfqs.createdAt,
@@ -298,7 +343,18 @@ export async function enquiryQueueSummary(db: Db, params: {
     .where(reachableFilter(params.declaredCategories))
     .groupBy(responseStateExpression);
 
-  const counts: Record<string, number> = { available: 0, opened: 0, quoted: 0, declined: 0, total: 0 };
+  /*
+   * SEEDED FROM THE CANONICAL LIST, not from a literal.
+   *
+   * This was `{ available, opened, quoted, declined }` - four of the states a
+   * queue that can now return eight, written out by hand. Every state the
+   * literal forgot came back `undefined` from a summary typed as returning
+   * numbers, so a chip reading `summary[state] ?? 0` printed a confident 0
+   * over a pipeline that had never been counted. Seeding from
+   * ENQUIRY_RESPONSE_STATES means a new state cannot be forgotten here.
+   */
+  const counts: Record<string, number> = { total: 0 };
+  for (const state of ENQUIRY_RESPONSE_STATES) counts[state] = 0;
   for (const row of rows as Array<{ state: string; count: number }>) {
     const value = Number(row.count ?? 0);
     counts[row.state] = value;

@@ -17,6 +17,7 @@
  */
 export const ENQUIRY_RESPONSE_STATES = [
   'available',
+  'invited',
   'opened',
   'quoted',
   'won',
@@ -26,6 +27,56 @@ export const ENQUIRY_RESPONSE_STATES = [
 ] as const;
 
 export type EnquiryResponseState = (typeof ENQUIRY_RESPONSE_STATES)[number];
+
+/**
+ * ── THE ONE PLACE THAT SPLITS A QUEUE INTO TWO SCREENS ──────────────────
+ *
+ * `/enquiries` used to render two cards over the same rows: a "Qualified
+ * enquiries" list of open requests above a "Work queue" of everything, so
+ * the same six requests appeared twice on one screen. Two lists of the same
+ * thing is not two features; it is one feature the reader has to reconcile.
+ *
+ * The fix is not a second query. It is this partition, applied by the server
+ * to the ONE queue, which is why the two sets are defined here together
+ * rather than as two literals in two components that can drift apart:
+ *
+ *   OPPORTUNITY  what can still be TAKEN. An open request matching a
+ *                declared category, or an invitation not yet opened. This is
+ *                where a credit gets spent, so this is where the allowance
+ *                meter belongs.
+ *   LEAD         what HAS been taken, and how it ended. This is the record,
+ *                and it outlives the request - a lead stays here after the
+ *                customer closes the file, because the credit stayed spent.
+ *
+ * THEY MUST PARTITION `ENQUIRY_RESPONSE_STATES`: every state in exactly one
+ * set, no state in both. A gap would hide a request from a supplier
+ * completely; an overlap would put it back on the screen twice, which is the
+ * defect this exists to end. `enquiryStates.test.ts` asserts both halves,
+ * so adding a ninth state without placing it fails the suite rather than
+ * quietly losing it.
+ *
+ * `invited` exists FOR this split. Without it an untouched invitation read
+ * as `opened` - a lead the supplier had supposedly taken, sitting in their
+ * record, that they had in fact never seen. §23 names Invited as a canonical
+ * opportunity state; this is it.
+ */
+export const ENQUIRY_OPPORTUNITY_STATES = ['available', 'invited'] as const;
+
+export const ENQUIRY_LEAD_STATES = [
+  'opened', 'quoted', 'won', 'lost', 'closed', 'declined',
+] as const;
+
+export const ENQUIRY_SCOPES = ['opportunities', 'leads', 'all'] as const;
+export type EnquiryScope = (typeof ENQUIRY_SCOPES)[number];
+
+/** The states a scope covers. `all` returns every state, not an empty filter. */
+export function statesForScope(scope: EnquiryScope): readonly EnquiryResponseState[] {
+  switch (scope) {
+    case 'opportunities': return ENQUIRY_OPPORTUNITY_STATES;
+    case 'leads': return ENQUIRY_LEAD_STATES;
+    case 'all': return ENQUIRY_RESPONSE_STATES;
+  }
+}
 
 export function isEnquiryResponseState(value: unknown): value is EnquiryResponseState {
   return typeof value === 'string'
@@ -44,6 +95,7 @@ export function enquiryStateLabel(state: string, lang: 'en' | 'ar'): string {
   const ar = lang === 'ar';
   switch (state) {
     case 'available': return ar ? 'متاح للفتح' : 'Available';
+    case 'invited': return ar ? 'دعوة لم تُفتح' : 'Invited';
     case 'opened': return ar ? 'مفتوح' : 'Opened';
     case 'quoted': return ar ? 'قدّمت عرضاً' : 'Quoted';
     case 'won': return ar ? 'فزت بها' : 'Won';

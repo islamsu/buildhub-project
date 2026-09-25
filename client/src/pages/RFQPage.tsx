@@ -39,6 +39,8 @@ type RFQItem = {
   description: string | null;
   category: string | null;
   budget: string | null;
+  /** What the budget is denominated in. The feed carries it (CLAUDE.md §87). */
+  currency: string | null;
   location: string | null;
   deadline: Date | null;
   status: 'open' | 'closed' | 'awarded' | null;
@@ -711,6 +713,7 @@ export default function RFQPage() {
               rfqId={compareRfq.id}
               rfqTitle={compareRfq.title}
               rfqBudget={compareRfq.budget ? Number(compareRfq.budget) : undefined}
+              rfqCurrency={compareRfq.currency}
               rfqStatus={compareRfq.status}
               isOwner={isAuthenticated && user?.id === compareRfq.requesterId}
               onClose={() => setCompareRfq(null)}

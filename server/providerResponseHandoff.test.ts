@@ -165,14 +165,34 @@ describe('parseLinkedRfqId', () => {
 
 describe('the provider surface uses the linked id', () => {
   const PLATFORM = strip(read('../client/src/pages/RolePlatform.tsx'));
-  const ENQUIRIES = strip(read('../client/src/components/QualifiedEnquiries.tsx'));
+  const ENQUIRIES = strip(read('../client/src/pages/EnquiriesPage.tsx'));
+  const QUEUE = strip(read('../client/src/components/EnquiryQueue.tsx'));
 
   it('parses the link through the shared parser, not inline', () => {
     expect(PLATFORM).toContain('parseLinkedRfqId(useSearch())');
   });
 
-  it('passes it to the enquiry inbox so the row can be found', () => {
-    expect(PLATFORM).toMatch(/<QualifiedEnquiries highlightRfqId=\{linkedRfqId\} \/>/);
+  it('the workspace summarizes the inbox rather than rendering a second copy of it', () => {
+    // It used to mount the FULL inbox - allowance meter, rows, open action -
+    // while `/enquiries` rendered the same thing again. §33: a dashboard
+    // summarizes and the dedicated page manages. The summary must link
+    // through, or the capability becomes unreachable from the workspace.
+    expect(PLATFORM).toContain('<EnquirySummaryCard />');
+    expect(PLATFORM).not.toContain('<EnquiryQueue');
+    const SUMMARY = strip(read('../client/src/components/EnquirySummaryCard.tsx'));
+    expect(SUMMARY).toContain('data-testid="enquiry-summary-viewall"');
+    expect(SUMMARY).toMatch(/href="\/enquiries"/);
+  });
+
+  it('the linked id reaches the queue that can actually show the row', () => {
+    // `/enquiries` renders the queue twice, once per scope, and hands the
+    // highlight to WHICHEVER HALF the request is in - never to both, which
+    // would scroll two lists at once, and never to neither, which is the
+    // silent failure the parameter exists to avoid.
+    expect(ENQUIRIES).toContain('<EnquiryQueue scope="opportunities"');
+    expect(ENQUIRIES).toContain('<EnquiryQueue scope="leads"');
+    expect(ENQUIRIES).toContain('linkedIsOpportunity ? highlightRfqId : undefined');
+    expect(ENQUIRIES).toContain('linkedRow && !linkedIsOpportunity ? highlightRfqId : undefined');
   });
 
   it('forwards the linked id into the dedicated response route', () => {
@@ -189,10 +209,11 @@ describe('the provider surface uses the linked id', () => {
     // look helpful right up until a vendor's allowance drained from browsing.
     // The highlight only scrolls and marks; the vendor still presses the
     // button that spends.
-    const highlightEffect = ENQUIRIES.slice(
-      ENQUIRIES.indexOf('const highlightRef'),
-      ENQUIRIES.indexOf('}, [highlightRfqId'),
-    );
+    const start = QUEUE.indexOf('const highlightRef');
+    const end = QUEUE.indexOf('}, [highlightRfqId');
+    expect(start, 'the highlight ref must still exist').toBeGreaterThan(-1);
+    expect(end, 'the highlight effect must still exist').toBeGreaterThan(start);
+    const highlightEffect = QUEUE.slice(start, end);
     expect(highlightEffect.length).toBeGreaterThan(0);
     expect(highlightEffect).not.toContain('open.mutate');
     expect(highlightEffect).toContain('scrollIntoView');
@@ -201,8 +222,8 @@ describe('the provider surface uses the linked id', () => {
   it('the highlight marks a row that is already in the list, never adds one', () => {
     // Rendering a row for an RFQ the server did not return would be inventing
     // eligibility client-side.
-    expect(ENQUIRIES).toMatch(/items\.map\(item =>/);
-    expect(ENQUIRIES).toMatch(/item\.id === highlightRfqId \? highlightRef : undefined/);
+    expect(QUEUE).toMatch(/rows\.map\(row =>/);
+    expect(QUEUE).toMatch(/row\.rfqId === highlightRfqId \? highlightRef : undefined/);
   });
 });
 
@@ -241,14 +262,31 @@ describe('the response page names its target and its required facts', () => {
 // ══ 5. THE DEAD END IS NAMED ═══════════════════════════════════════════════
 
 describe('a request that is not eligible says so', () => {
-  const ENQUIRIES = strip(read('../client/src/components/QualifiedEnquiries.tsx'));
+  const ENQUIRIES = strip(read('../client/src/pages/EnquiriesPage.tsx'));
   const LANG = read('../client/src/contexts/LanguageContext.tsx');
 
-  it('tells a provider whose linked request is absent from the list', () => {
-    // Otherwise they scan an inbox for something that was never going to be in
-    // it, and conclude the product is broken.
+  it('tells a provider whose linked request is absent from BOTH lists', () => {
+    // Otherwise they scan two inboxes for something that was never going to be
+    // in either, and conclude the product is broken.
     expect(ENQUIRIES).toContain('data-testid="enquiry-not-eligible"');
-    expect(ENQUIRIES).toMatch(/!items\.some\(item => item\.id === highlightRfqId\)/);
+    expect(ENQUIRIES).toContain('const linkedRow = located.data?.rows.find(row => row.rfqId === highlightRfqId)');
+  });
+
+  it('AND NEVER WHILE THE LOOKUP IS STILL IN FLIGHT', () => {
+    // The absence is asserted from `located.isSuccess`, not from an empty
+    // `data`. Reading absence off a query that has not answered yet would
+    // announce "not in your list" over a request that IS in it, on every
+    // single page load, for as long as the request took - the ERROR != EMPTY
+    // rule (§10) applied to a loading state.
+    expect(ENQUIRIES).toContain('located.isSuccess && !linkedRow');
+  });
+
+  it('and says WHICH list the linked request landed in when it is there', () => {
+    // Two long lists and a notification that names one request. Telling the
+    // provider which half it is in is the difference between a deep link that
+    // completes and one that drops them somewhere to search.
+    expect(ENQUIRIES).toContain('data-testid="enquiry-linked-located"');
+    expect(ENQUIRIES).toContain('ENQUIRY_OPPORTUNITY_STATES');
   });
 
   it('AND ONLY WHEN THE SERVER HAS NOT ALREADY ANSWERED', () => {
@@ -261,8 +299,8 @@ describe('a request that is not eligible says so', () => {
     // the work queue on the same page. So the notice is now conditional on the
     // server's answer, and the other case gets its own honest line.
     expect(ENQUIRIES).toContain('trpc.rfq.responseAccess.useQuery');
-    expect(ENQUIRIES).toContain("linkedAccess.data?.canRespond !== true");
-    expect(ENQUIRIES).toContain('data-testid="enquiry-already-yours"');
+    expect(ENQUIRIES).toContain("linkedAccess.data?.canRespond === true");
+    expect(ENQUIRIES).toContain("'enquiry-already-yours'");
   });
 
   it('and offers the way to the authoritative reason, rather than ending at a guess', () => {

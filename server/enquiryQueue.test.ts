@@ -234,8 +234,17 @@ describe('the labels and the filters are the same rule', () => {
      * fabricated outcome (§68).
      */
     expect(ENQUIRY_RESPONSE_STATES).toEqual([
-      'available', 'opened', 'quoted', 'won', 'lost', 'closed', 'declined',
+      'available', 'invited', 'opened', 'quoted', 'won', 'lost', 'closed', 'declined',
     ]);
+    /*
+     * `invited` IS THE EIGHTH, and it was added for a reason, not for
+     * completeness: an invitation the supplier had never touched came back
+     * as `opened`. That told them a lead was in their record that they had
+     * in fact never seen, and it put an untaken offer on the same list as
+     * the work they had already paid for. §23 names Invited as a canonical
+     * opportunity state.
+     */
+    expect(ENQUIRY_RESPONSE_STATES).toContain('invited');
     // THE CLIENT READS THIS LIST, it does not keep its own. It had four
     // items while the server had seven; filtering for a won lead would have
     // been impossible from a chip row that never offered the state.
@@ -315,7 +324,18 @@ describe('the truncating helper it replaced is gone, not merely unused', () => {
     const eligible = between(ROUTERS, 'eligible: approvedProviderProcedure', 'queue: approvedProviderProcedure');
     expect(eligible.length, 'the slice boundaries moved').toBeGreaterThan(100);
     expect(eligible).toContain('listEnquiryQueue');
-    expect(eligible).toContain("rfqStatus: 'open'");
+    /*
+     * SCOPED TO WHAT CAN STILL BE TAKEN, which is what the procedure claims.
+     *
+     * It read `rfqStatus: 'open'`, and that is NOT the same question: an open
+     * request this provider had already opened, quoted and WON came back in a
+     * list titled "the open requests this provider can act on now". On
+     * `/enquiries` that list sat directly above the full queue, so the same
+     * requests rendered twice on one screen in two different vocabularies.
+     */
+    expect(eligible).toContain("scope: 'opportunities'");
+    expect(eligible, 'the eligible list is back to filtering on RFQ status')
+      .not.toContain("rfqStatus: 'open'");
     expect(eligible).toContain('total: page.total');
   });
 });
@@ -353,7 +373,21 @@ describe('the screen does not reintroduce what the server just fixed', () => {
     const empty = between(COMPONENT, 'data-testid="enquiry-queue-empty"', 'enquiry-queue-rows');
     expect(empty).toContain('filtering');
     expect(empty).toMatch(/No request matches this filter/);
-    expect(empty).toMatch(/No request has reached you yet/);
+    // The unfiltered sentence is now per scope - "no opportunities" and "you
+    // have taken nothing yet" are also different facts, and a provider shown
+    // the wrong one reads a full pipeline as an empty marketplace.
+    expect(empty).toContain('copy.empty');
+    expect(COMPONENT).toMatch(/No open opportunities right now/);
+    expect(COMPONENT).toMatch(/You have not taken a request yet/);
+  });
+
+  it('and each half offers only the chips that can return a row', () => {
+    // A "Available" chip over My Leads can never match: available is an
+    // opportunity state. A filter that cannot succeed is a dead control (§13).
+    expect(COMPONENT).toContain('ENQUIRY_OPPORTUNITY_STATES');
+    expect(COMPONENT).toContain('ENQUIRY_LEAD_STATES');
+    expect(COMPONENT, 'the chip row renders the whole vocabulary again')
+      .not.toMatch(/ENQUIRY_RESPONSE_STATES\.map/);
   });
 
   it('and a closed request is not offered a respond button', () => {

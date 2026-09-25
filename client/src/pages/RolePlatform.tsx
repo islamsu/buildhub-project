@@ -16,7 +16,7 @@ import VendorProfileCard from '@/components/VendorProfileCard';
 import VendorReputation from '@/components/VendorReputation';
 import VendorAnalytics from '@/components/VendorAnalytics';
 import VendorServiceCategories from '@/components/VendorServiceCategories';
-import QualifiedEnquiries from '@/components/QualifiedEnquiries';
+import EnquirySummaryCard from '@/components/EnquirySummaryCard';
 import VendorBilling from '@/components/VendorBilling';
 import { useHashSection, revealSection } from '@/hooks/useSectionAnchor';
 import type { SectionId } from '@shared/roleWorkspaceSections';
@@ -380,13 +380,14 @@ export default function RolePlatform() {
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-lg font-semibold">{lang === 'ar' ? 'الطلبات وفئات الخدمة' : 'Enquiries & service categories'}</h2>
             </div>
-            {/* The INBOX stays here and the category declaration moved to
-                Settings. Splitting them is deliberate: which categories you
-                serve is configuration, but these are your leads, and this is
-                where the `?rfq=` deep link in a notification lands. Putting a
-                notification's destination behind Settings would break the one
-                journey that notification exists to complete. */}
-            <QualifiedEnquiries highlightRfqId={linkedRfqId} />
+            {/* A SUMMARY, AND THE WAY THROUGH - not the inbox again.
+                The full inbox rendered here AND on `/enquiries`, which is two
+                copies of one list on two surfaces; §33 says a dashboard
+                summarizes and the dedicated page manages. The `?rfq=` deep
+                link is unaffected: a professional arriving here with one is
+                already redirected into `/rfq/:id/respond` above, and the
+                notification that lands on the list lands on `/enquiries`. */}
+            <EnquirySummaryCard />
           </section>
         )}
 

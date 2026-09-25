@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 
 const read = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8');
 const ROUTERS = read('./routers.ts');
-const COMPONENT_RAW = read('../client/src/components/QualifiedEnquiries.tsx');
+const COMPONENT_RAW = read('../client/src/components/EnquiryQueue.tsx');
 /** Comments stripped: an explanation naming what was removed trips a source assertion. */
 const COMPONENT = COMPONENT_RAW.split('\n').filter(line => !line.trim().startsWith('//') && !line.trim().startsWith('*')).join('\n');
 const CONTEXT = read('../client/src/contexts/LanguageContext.tsx');

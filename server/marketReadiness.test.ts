@@ -492,9 +492,135 @@ const DECLARED_CURRENCY_HARDCODES: readonly { file: string; reason: string }[] =
   {
     file: 'client/src/contexts/LanguageContext.tsx',
     reason: "'common.egp' - a currency NAME in the dictionary, which is what a "
-      + 'dictionary is for. Its callers are the ones that matter.',
+      + 'dictionary is for. Its callers are the ones that matter, and they are '
+      + 'enumerated in COMMON_EGP_CALLERS below.',
   },
 ];
+
+/**
+ * -- THE CALLERS OF `common.egp`, WRITTEN DOWN ---------------------------
+ *
+ * The census above hunts for the literal 'EGP'. It cannot see
+ * `{t('common.egp')} {amount}`, because that is a translation key in
+ * lowercase - and that spelling is the SAME defect: the digits come from the
+ * record and the currency comes from a dictionary that cannot know what the
+ * record is denominated in.
+ *
+ * Seventeen call sites were invisible to every guard in this file. They are
+ * now a closed list, so the remaining coupling is a number that can only go
+ * down. A new one fails this suite; removing one requires deleting its line.
+ *
+ * WHY EACH SURVIVOR SURVIVES:
+ *
+ * The enquiry and quotation surfaces are done - the RFQ decides the currency
+ * and both sides of the trade now read it off the record (CLAUDE.md section 87).
+ *
+ * What is left is PROJECT money, and it is not a rendering fix. A project
+ * carries a currency (migration 0058), but the dashboards SUM across
+ * projects, and a total over projects in two currencies is not a number:
+ * adding EGP to SAR produces a figure that is wrong in every currency. The
+ * honest fixes are to group the totals by currency or to show them per
+ * project, and that is a layout decision on the homeowner main screen, not a
+ * substitution. It is recorded in the ledger rather than guessed at here.
+ */
+const COMMON_EGP_CALLERS: readonly { file: string; reason: string }[] = [
+  {
+    file: 'client/src/pages/HomeownerDashboard.tsx',
+    reason: 'Budget and spend TOTALS summed across projects, plus the new-project '
+      + 'form label. A sum over mixed currencies is not a number; needs grouping '
+      + 'by currency, which is a layout change to the homeowner dashboard.',
+  },
+  {
+    file: 'client/src/pages/ProjectDetail.tsx',
+    reason: "One project's budget and expense total. Single-currency by "
+      + 'construction, so this one is a straight substitution once projects.currency '
+      + 'is threaded through the expense log reader.',
+  },
+  {
+    file: 'client/src/pages/RolePlatform.tsx',
+    reason: 'Portfolio budget/spend totals across projects (same mixed-currency '
+      + 'problem as HomeownerDashboard) and an RFQ feed row whose currency the '
+      + 'feed already carries.',
+  },
+  {
+    file: 'client/src/pages/RFQPage.tsx',
+    reason: 'The basket subtotal, labelled "not a quotation". Becomes the '
+      + "RFQ's own currency once the create form asks for a market.",
+  },
+  {
+    file: 'client/src/pages/VendorProfile.tsx',
+    reason: "The storefront's indicative price range, supplier-entered in the one "
+      + 'market BuildHub operates in. Moves with product market offers (section 42).',
+  },
+];
+
+describe('the `common.egp` coupling is a closed, shrinking list', () => {
+  function walkAll(dir: string, out: string[] = []): string[] {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) walkAll(full, out);
+      else if (/\.(ts|tsx)$/.test(entry) && !/\.test\.tsx?$/.test(entry)) out.push(full);
+    }
+    return out;
+  }
+
+  /*
+   * COMMENTS DO NOT COUNT, for the reason the census below gives: a note
+   * explaining what was removed has to quote the thing that was removed, and
+   * an assertion that fails on its own documentation teaches people to stop
+   * writing it.
+   */
+  const codeOf = (file: string) => readFileSync(file, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+
+  it('no surface labels money from the dictionary that is not written down', () => {
+    const declared = new Set(COMMON_EGP_CALLERS.map(entry => entry.file));
+    // The dictionary itself DEFINES the key; it is not a caller.
+    declared.add('client/src/contexts/LanguageContext.tsx');
+
+    const offenders: string[] = [];
+    for (const file of walkAll(join(ROOT, 'client/src'))) {
+      const relative = file.slice(ROOT.length).replace(/^\/+/, '');
+      if (declared.has(relative)) continue;
+      if (codeOf(file).includes('common.egp')) offenders.push(relative);
+    }
+    expect(offenders,
+      'a new surface labels an amount from the EGP dictionary key instead of '
+      + "formatMoney(amount, record.currency, lang). Use the record's currency; "
+      + 'if the record genuinely has none, that is the bug.',
+    ).toEqual([]);
+  });
+
+  it('and every file on the list still has the coupling it was listed for', () => {
+    // A stale entry is worse than no list: it makes the remaining work look
+    // larger than it is, and it quietly permits a regression in a file that
+    // had already been fixed.
+    for (const entry of COMMON_EGP_CALLERS) {
+      expect(codeOf(join(ROOT, entry.file)).includes('common.egp'),
+        `${entry.file} no longer uses common.egp - delete its line from COMMON_EGP_CALLERS`,
+      ).toBe(true);
+    }
+  });
+
+  it('the enquiry and quotation surfaces are NOT on it', () => {
+    // These are the ones the owner named, and they are fixed. Listing them
+    // would be declaring the defect rather than removing it.
+    const declaredFiles = COMMON_EGP_CALLERS.map(entry => entry.file);
+    for (const surface of [
+      'client/src/components/EnquiryQueue.tsx',
+      'client/src/components/EnquirySummaryCard.tsx',
+      'client/src/pages/EnquiriesPage.tsx',
+      'client/src/components/QuotationComparison.tsx',
+    ]) {
+      expect(declaredFiles, `${surface} must not be declared - it must be fixed`)
+        .not.toContain(surface);
+      expect(codeOf(join(ROOT, surface)), `${surface} still labels money from the dictionary`)
+        .not.toContain('common.egp');
+    }
+  });
+});
 
 describe('no NEW Egypt-only assumption on a commercial surface', () => {
   function walk(dir: string, out: string[] = []): string[] {

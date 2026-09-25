@@ -1,0 +1,42 @@
+BUILD  72f3b17 (local) built 2026-09-22T13:44:54.143Z  http://127.0.0.1:5401
+
+BUILD 72f3b17  env=local
+
+PASS  1. the supplier account exists  [#464]
+PASS  2. all three scopes answer  [200/200/200]
+PASS  3. BOTH halves have rows, so the disjointness claim below is not vacuous  [1 opportunities, 5 leads]
+PASS  4. NO REQUEST IS IN BOTH HALVES - the duplicate presentation is gone  [disjoint]
+PASS  5. and together they are the WHOLE queue - the split hides nothing  [6 vs 6]
+PASS  6. the totals add up too, not just the visible page  [1 + 5 = 6]
+PASS  7. the Opportunity Centre contains only opportunity states  [invited]
+PASS  8. and My Leads only lead states  [quoted]
+PASS  9. a buyer exists to raise the SAR request  [#461]
+PASS  10. a SAR request exists, is open, and this supplier is invited to it  [#197]
+PASS  11. it reaches the supplier as an OPPORTUNITY
+PASS  12. as an INVITED one - an offer not yet taken  [invited]
+PASS  13. and the queue carries its currency out of the server as SAR  [SAR]
+PASS  14. never as EGP
+PASS  15. BOTH named cards render: Opportunity Centre and My Leads
+PASS  16. the first card is titled Opportunity Centre  [Opportunity Centre]
+PASS  17. the second is titled My Leads  [My Leads]
+PASS  18. both rendered cards have rows, so the rendered check is not vacuous  [2 / 5]
+PASS  19. AND NO REQUEST NUMBER IS RENDERED IN BOTH CARDS  [none]
+PASS  20. the SAR request renders a budget at all  [SAR 500,000]
+PASS  21. THE BUDGET RENDERS IN SAR  [SAR 500,000]
+PASS  22. and never in Egyptian pounds - the common.egp coupling is gone  [SAR 500,000]
+PASS  23. with the amount from the record, unconverted  [SAR 500,000]
+PASS  24. and the ARABIC screen does not label a Saudi budget in Egyptian pounds either  [SAR 500,000]
+PASS  25. a notification deep link is located on the page  [#192]
+PASS  26. and the page names WHICH half it landed in  [Request #192 is in My Leads — Quoted.
+
+Open the request]
+PASS  27. an opportunity deep link names the other half  [Request #182 is in your Opportunity Centre — Invited.
+
+Open the request]
+PASS  28. a request in NEITHER half is named as absent, not silently dropped  [#193]
+PASS  29. and the page does not also claim to have located it
+
+(cleanup) removed probe RFQ #197: gone
+
+ALL PASS  29 passed, 0 failed
+

@@ -162,7 +162,7 @@ import {
   previewQualifiedEnquiry,
 } from './billing/enquiries';
 import {
-  ENQUIRY_PAGE_SIZE_DEFAULT, ENQUIRY_RESPONSE_STATES, ENQUIRY_RFQ_STATUSES, ENQUIRY_SOURCES,
+  ENQUIRY_PAGE_SIZE_DEFAULT, ENQUIRY_RESPONSE_STATES, ENQUIRY_RFQ_STATUSES, ENQUIRY_SCOPES, ENQUIRY_SOURCES,
   enquiryQueueCategories, enquiryQueueSummary, listEnquiryQueue,
 } from './enquiryQueue';
 import {
@@ -4149,7 +4149,12 @@ const rfqRouter = router({
       listEnquiryQueue(db, {
         userId: ctx.user.id,
         declaredCategories,
-        filters: { rfqStatus: 'open' },
+        // SCOPED TO WHAT CAN STILL BE TAKEN, which is what this procedure's
+        // own name claims. `rfqStatus: 'open'` was not that: an open request
+        // the provider had already opened, quoted and WON came back in a list
+        // titled "requests you can act on now", so the summary card and the
+        // work queue below it showed the same rows.
+        filters: { scope: 'opportunities' },
       }),
       getEnquiryUsage(ctx.user.id),
     ]);
@@ -4160,11 +4165,15 @@ const rfqRouter = router({
         category: row.category,
         location: row.location,
         budget: row.budget,
+        // The RFQ decides the currency (CLAUDE.md §87), so it travels with
+        // the amount rather than being defaulted by whatever renders it.
+        currency: row.currency,
         deadline: row.deadline,
         status: row.rfqStatus,
         createdAt: row.createdAt,
         alreadyOpened: row.openedAt !== null,
         invited: row.invitedAt !== null,
+        responseState: row.responseState,
       })),
       usage,
       /** The real number of open requests reaching this provider, not the number shown. */
@@ -4187,6 +4196,13 @@ const rfqRouter = router({
       pageSize: z.number().int().min(1).max(100).default(ENQUIRY_PAGE_SIZE_DEFAULT),
       rfqStatus: z.enum(ENQUIRY_RFQ_STATUSES).nullish(),
       source: z.enum(ENQUIRY_SOURCES).nullish(),
+      /**
+       * WHICH HALF OF THE QUEUE. The server resolves it from the shared
+       * partition, so the two views on `/enquiries` cannot be asked for in a
+       * way that makes them overlap. Defaults to the whole queue, which is
+       * what every existing caller means.
+       */
+      scope: z.enum(ENQUIRY_SCOPES).nullish(),
       responseState: z.enum(ENQUIRY_RESPONSE_STATES).nullish(),
       category: z.string().max(100).nullish(),
       search: z.string().max(200).nullish(),
@@ -4204,6 +4220,7 @@ const rfqRouter = router({
           filters: {
             rfqStatus: input.rfqStatus ?? null,
             source: input.source ?? null,
+            scope: input.scope ?? null,
             responseState: input.responseState ?? null,
             category: input.category ?? null,
             search: input.search ?? null,
