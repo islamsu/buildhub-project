@@ -120,6 +120,10 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     workspaceItem('contractor', FolderOpen, 'platform.projects', 'role-projects'),
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('contractor', BarChart3, 'platform.performance', 'role-performance'),
+    // §89 item 16: the one destination that answers "how is my business
+    // being promoted". Beside Performance because the two are read
+    // together, and a page no supplier can find is not a capability.
+    { icon: Megaphone, labelKey: 'nav.marketing', path: '/marketing' },
     DISPUTES_MENU_ITEM,
     SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
@@ -133,6 +137,10 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('engineer', BarChart3, 'platform.performance', 'role-performance'),
+    // §89 item 16: the one destination that answers "how is my business
+    // being promoted". Beside Performance because the two are read
+    // together, and a page no supplier can find is not a capability.
+    { icon: Megaphone, labelKey: 'nav.marketing', path: '/marketing' },
     DISPUTES_MENU_ITEM,
     SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
@@ -146,6 +154,10 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('architect', BarChart3, 'platform.performance', 'role-performance'),
+    // §89 item 16: the one destination that answers "how is my business
+    // being promoted". Beside Performance because the two are read
+    // together, and a page no supplier can find is not a capability.
+    { icon: Megaphone, labelKey: 'nav.marketing', path: '/marketing' },
     DISPUTES_MENU_ITEM,
     SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
@@ -168,6 +180,10 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: Inbox, labelKey: 'platform.enquiries', path: '/enquiries' },
     { icon: Tags, labelKey: 'settings.categories', path: '/service-categories' },
     workspaceItem('supplier', BarChart3, 'platform.performance', 'role-performance'),
+    // §89 item 16: the one destination that answers "how is my business
+    // being promoted". Beside Performance because the two are read
+    // together, and a page no supplier can find is not a capability.
+    { icon: Megaphone, labelKey: 'nav.marketing', path: '/marketing' },
     DISPUTES_MENU_ITEM,
     SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
@@ -192,6 +208,10 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
      */
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('project_manager', BarChart3, 'platform.performance', 'role-performance'),
+    // §89 item 16: the one destination that answers "how is my business
+    // being promoted". Beside Performance because the two are read
+    // together, and a page no supplier can find is not a capability.
+    { icon: Megaphone, labelKey: 'nav.marketing', path: '/marketing' },
     DISPUTES_MENU_ITEM,
     SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,

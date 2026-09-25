@@ -39,6 +39,7 @@ const RFQDetail = lazy(() => import("./pages/RFQDetail"));
 const QuotationDetail = lazy(() => import("./pages/QuotationDetail"));
 const MessagesPage = lazy(() => import("./pages/MessagesPage"));
 const EnquiriesPage = lazy(() => import("./pages/EnquiriesPage"));
+const MarketingCenterPage = lazy(() => import("./pages/MarketingCenterPage"));
 const MyDisputes = lazy(() => import("./pages/MyDisputes"));
 const MySupport = lazy(() => import("./pages/MySupport"));
 const SupportTicketDetail = lazy(() => import("./pages/SupportTicketDetail"));
@@ -167,6 +168,9 @@ function Router() {
           for a summary on the dashboard with a dedicated page behind it, and
           the enquiries page is where a notification's `?rfq=` deep link lands. */}
       <Route path={"/enquiries"} component={EnquiriesPage} />
+      {/* The supplier's Marketing Center (§89 item 16): a composition of
+          the canonical placement, analytics and showcase systems. */}
+      <Route path={"/marketing"} component={MarketingCenterPage} />
       {/* ORDER MATTERS: "/disputes/:id" before "/disputes" is not required by
           wouter's first-match, but keeping the specific one first matches the
           rest of this table and survives a later "/disputes/new".

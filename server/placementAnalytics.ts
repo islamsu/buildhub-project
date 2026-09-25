@@ -25,7 +25,7 @@
  * has, it is bounded by the checks above, and it is recorded here honestly
  * rather than described as prevented.
  */
-import { and, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { analyticsEvents, vendorSponsorships } from '../drizzle/schema';
 import { getDb } from './db';
 import { requireDb } from './_core/requireDb';
@@ -181,7 +181,30 @@ export type PlacementPerformanceRow = {
  * reports zeros and null rates, which is the truthful answer and the one the
  * Admin screen renders as an empty state rather than as failure.
  */
-export async function placementPerformance(now: Date = new Date()): Promise<PlacementPerformanceRow[]> {
+/**
+ * `vendorId` SCOPES THE SAME REPORT TO ONE SUPPLIER'S OWN PLACEMENTS.
+ *
+ * Added as a parameter rather than as a second function, because the moment
+ * there are two readers of placement performance they can disagree about
+ * what a CTR is - and the supplier-facing number disagreeing with the
+ * Admin-facing one is the kind of defect that surfaces in a dispute.
+ *
+ * A supplier's placements are the ones that point AT them: a PROVIDER
+ * placement carrying their vendorId, or a PRODUCT placement carrying one of
+ * their products. Both arms are required - scoping on vendorId alone hides
+ * every sponsored product a supplier has, which is most of what a supplier
+ * would come to this screen to see.
+ */
+export type PlacementPerformanceScope = {
+  vendorId?: number | null;
+  /** The supplier's own product ids, resolved by the caller. */
+  productIds?: readonly number[];
+};
+
+export async function placementPerformance(
+  now: Date = new Date(),
+  scope: PlacementPerformanceScope = {},
+): Promise<PlacementPerformanceRow[]> {
   /*
    * THE READ IN A FILE OF WRITERS, and it does not get their exemption.
    *
@@ -207,6 +230,7 @@ export async function placementPerformance(now: Date = new Date()): Promise<Plac
       productId: vendorSponsorships.productId,
     })
     .from(vendorSponsorships)
+    .where(scopeClause(scope))
     .orderBy(vendorSponsorships.id);
   if (placements.length === 0) return [];
 
@@ -251,6 +275,29 @@ export async function placementPerformance(now: Date = new Date()): Promise<Plac
       conversionRate: rate(qualifiedEnquiries, entityViews),
     };
   });
+}
+
+/**
+ * UNSCOPED MEANS EVERY PLACEMENT; SCOPED MEANS ONLY THIS SUPPLIER'S.
+ *
+ * `undefined` is returned for the unscoped case so Drizzle drops the WHERE
+ * entirely. The dangerous shape would be an empty `or()`, which Drizzle also
+ * drops - turning "this supplier owns nothing" into "every placement on the
+ * platform". So a scope that resolves to no arms returns a clause that
+ * matches NOTHING rather than one that matches everything.
+ */
+function scopeClause(scope: PlacementPerformanceScope) {
+  if (scope.vendorId == null && scope.productIds === undefined) return undefined;
+
+  const arms: any[] = [];
+  if (scope.vendorId != null) arms.push(eq(vendorSponsorships.vendorId, scope.vendorId));
+  if ((scope.productIds?.length ?? 0) > 0) {
+    arms.push(inArray(vendorSponsorships.productId, scope.productIds as number[]));
+  }
+  // FAIL CLOSED. A supplier with no products and no provider placement must
+  // see nothing, never everything.
+  if (arms.length === 0) return sql`1 = 0`;
+  return arms.length === 1 ? arms[0] : or(...arms);
 }
 
 type PlacementRowLite = {

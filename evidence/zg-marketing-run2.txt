@@ -1,0 +1,45 @@
+BUILD  36d3954 (local) built 2026-09-25T18:29:50.874Z  http://127.0.0.1:5401
+
+BUILD 36d3954  env=local
+
+PASS  1. two distinct approved suppliers  [#464 / #462]
+PASS  2. a sponsored placement for A and a featured one for B  [#68 / #69]
+PASS  3. the Marketing Center answers
+PASS  4. the supplier's own placement is listed
+PASS  5. labelled SPONSORED, from the canonical label function  [SPONSORED]
+PASS  6. and reported as active while it is running
+PASS  7. with its SCOPE - surface and taxonomy  [TYPE_CATEGORY_SPOTLIGHT / Materials]
+PASS  8. and its EXPIRY  [2026-10-25]
+PASS  9. SUPPLIER A CANNOT SEE SUPPLIER B'S PLACEMENT  [not present]
+PASS  10. POSITIVE CONTROL: supplier B DOES see their own placement
+PASS  11. and B's editorial one is labelled FEATURED  [FEATURED]
+PASS  12. and B cannot see A's either - the scoping is symmetric
+PASS  13. A: the headline counts agree with the rows they summarise  [S=1/1 F=1/1]
+PASS  14. and the new Sponsored placement is counted as Sponsored  [1]
+PASS  15. FEATURED AND SPONSORED ARE NEVER ONE TOTAL - each headline is its own label  [1 + 1 = 2]
+PASS  16. B: one active Featured, zero Sponsored - the two never merge  [F=1 S=0]
+PASS  17. a placement nobody has seen reports zero impressions  [0]
+PASS  18. and its click rate is NULL, not a decorative 0%  [null]
+PASS  19. RECORDING ONE REAL EVENT MOVES THE NUMBER BY EXACTLY ONE  [0 -> 1]
+PASS  20. a real zero over a real denominator is reported as zero, not hidden  [0]
+PASS  21. and a real click produces a real rate  [ctr=100]
+PASS  22. an administrator session is available for the comparison  [reused]
+PASS  23. the Admin placement report answers
+PASS  24. and returns rows, so the comparison below is not vacuous  [3]
+PASS  25. THE SUPPLIER AND THE ADMIN READ THE SAME IMPRESSION COUNT  [admin 1 vs supplier 1]
+PASS  26. and the same click rate - one function, not two  [admin 100 vs supplier 100]
+PASS  27. the Marketing Center page renders
+PASS  28. and shows the supplier their own placement
+PASS  29. labelled Sponsored on screen, by the canonical badge  [Sponsored]
+PASS  30. with its expiry shown  [Until 25/10/2026]
+PASS  31. NO BUDGET, CPC, CPM, ROI, GMV OR REVENUE FIGURE IS PRESENTED  [NONE]
+PASS  32. and the Showcase is labelled as the supplier's own choice, not as ranking  [Your own choice — does not change your marketplace ranking]
+PASS  33. A RATE WITH NO DENOMINATOR SAYS "Not enough data", never 0%  [Click rate: Not enough data]
+PASS  34. and an open-ended placement says so rather than reading as expired
+PASS  35. A STATISTICALLY WORTHLESS 100% IS NOT SHOWN AS A PERCENTAGE  [Click rate: Not enough data]
+PASS  36. so one impression and one click cannot become a headline click rate
+
+(cleanup) probe placements remaining: 0
+
+ALL PASS  36 passed, 0 failed
+

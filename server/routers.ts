@@ -162,6 +162,7 @@ import {
   previewQualifiedEnquiry,
 } from './billing/enquiries';
 import { listShowcase, listShowcaseCandidates, setShowcase } from './supplierShowcase';
+import { vendorMarketingOverview } from './vendorMarketing';
 import { MAX_SHOWCASE_ITEMS, SHOWCASE_ITEM_KINDS } from '../shared/supplierShowcase';
 import {
   ENQUIRY_PAGE_SIZE_DEFAULT, ENQUIRY_RESPONSE_STATES, ENQUIRY_RFQ_STATUSES, ENQUIRY_SCOPES, ENQUIRY_SOURCES,
@@ -6563,6 +6564,18 @@ const profileRouter = router({
       // reader re-checks ownership AND publication on every row.
       return listShowcase(db, input.userId);
     }),
+
+  /**
+   * ── THE SUPPLIER'S MARKETING CENTER (§89 item 16) ────────────────────
+   *
+   * One read, composed from the canonical placement, analytics and showcase
+   * systems - no new domain. Scoped to the caller's own placements by the
+   * SESSION's id, so a supplier cannot read another's commercial reach.
+   */
+  marketingOverview: approvedProviderProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return vendorMarketingOverview(db, ctx.user.id);
+  }),
 
   /** Everything this supplier is ALLOWED to showcase, by the writer's own rule. */
   showcaseCandidates: approvedProviderProcedure.query(async ({ ctx }) => {

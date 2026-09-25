@@ -379,6 +379,12 @@ describe('the capability is reachable', () => {
       'client/src/components/ShowcaseStrip.tsx',
       'server/routers.ts',
       'server/supplierShowcase.ts',
+      // The Marketing Center COUNTS the showcase and reports it beside
+      // Featured and Sponsored - explicitly as the supplier's own choice
+      // that does NOT affect ranking. It reads the count and nothing else:
+      // it never ranks by it, never merges it into a placement total, and
+      // never exposes it on a shared surface.
+      'server/vendorMarketing.ts',
     ].sort());
   });
 });

@@ -87,6 +87,31 @@ export const PLACEMENT_METRIC_FORMULAS = {
  * the truthful answer is that there is nothing to compute yet, and the screen
  * must say so rather than showing a figure that reads like failure.
  */
+/**
+ * ── A TRUE RATE IS NOT ALWAYS A MEANINGFUL ONE ──────────────────────────
+ *
+ * `rate()` answers the arithmetic: 0 clicks over 1 impression is 0.0%, and
+ * that is a true statement about what was recorded. It is not a statement a
+ * supplier should act on. §68 asks for "truthful response metrics WHERE
+ * STATISTICALLY VALID", and prefers "Not enough data" to a misleading
+ * percentage - and "0.0% click rate" over a single impression reads as
+ * "nobody clicks this", which is a claim the evidence cannot support.
+ *
+ * SO THE GATE IS ON DISPLAY, NOT ON THE DATA. The counts and the computed
+ * rate are unchanged and identical everywhere, which is what keeps a
+ * supplier's figure and an administrator's figure the same number. This only
+ * decides whether a rate is worth showing as a percentage yet.
+ *
+ * THIRTY is a deliberately modest floor: small enough that a real placement
+ * reaches it quickly, large enough that one stray impression cannot produce
+ * a headline percentage.
+ */
+export const MIN_RATE_SAMPLE = 30;
+
+export function rateIsMeaningful(denominator: number): boolean {
+  return Number.isFinite(denominator) && denominator >= MIN_RATE_SAMPLE;
+}
+
 export function rate(numerator: number, denominator: number): number | null {
   if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) return null;
   return Math.round((numerator / denominator) * 1000) / 10;
