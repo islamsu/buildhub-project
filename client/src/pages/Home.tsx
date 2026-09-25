@@ -1,4 +1,5 @@
 import { useLanguage } from '@/contexts/LanguageContext';
+import SourcingJourney from '@/components/SourcingJourney';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,63 +14,6 @@ import {
   BarChart3, MessageSquare, Sparkles, Play
 } from 'lucide-react';
 import { Home as HomeIcon } from 'lucide-react';
-
-const FEATURES = [
-  {
-    icon: ShoppingBag,
-    titleKey: 'features.marketplace.title',
-    descKey: 'features.marketplace.desc',
-    color: 'text-blue-500',
-    bg: 'bg-blue-50',
-    gradient: 'from-blue-500/10 to-blue-500/5',
-    href: '/marketplace',
-  },
-  {
-    icon: FileText,
-    titleKey: 'features.rfq.title',
-    descKey: 'features.rfq.desc',
-    color: 'text-green-500',
-    bg: 'bg-green-50',
-    gradient: 'from-green-500/10 to-green-500/5',
-    href: '/rfq',
-  },
-  {
-    icon: Bot,
-    titleKey: 'features.ai.title',
-    descKey: 'features.ai.desc',
-    color: 'text-purple-500',
-    bg: 'bg-purple-50',
-    gradient: 'from-purple-500/10 to-purple-500/5',
-    href: '/ai',
-  },
-  {
-    icon: BarChart3,
-    titleKey: 'features.pm.title',
-    descKey: 'features.pm.desc',
-    color: 'text-amber-500',
-    bg: 'bg-amber-50',
-    gradient: 'from-amber-500/10 to-amber-500/5',
-    href: '/dashboard',
-  },
-  {
-    icon: Zap,
-    titleKey: 'features.matching.title',
-    descKey: 'features.matching.desc',
-    color: 'text-orange-500',
-    bg: 'bg-orange-50',
-    gradient: 'from-orange-500/10 to-orange-500/5',
-    href: '/rfq',
-  },
-  {
-    icon: MessageSquare,
-    titleKey: 'features.messaging.title',
-    descKey: 'features.messaging.desc',
-    color: 'text-teal-500',
-    bg: 'bg-teal-50',
-    gradient: 'from-teal-500/10 to-teal-500/5',
-    href: '/messages',
-  },
-];
 
 const ROLES = [
   { id: 'homeowner', icon: HomeIcon, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', href: '/auth' },
@@ -127,13 +71,6 @@ const STAT_LABELS = {
  * OWNER DECISION: what belongs in this section before launch - real
  * testimonials with the reviewers' consent, or nothing.
  */
-
-const HOW_IT_WORKS = [
-  { step: '01', titleEn: 'Create Your Account', titleAr: 'أنشئ حسابك', descEn: 'Sign up and select your role — homeowner, contractor, engineer, or supplier.', descAr: 'سجّل واختر دورك — صاحب منزل، مقاول، مهندس، أو مورد.' },
-  { step: '02', titleEn: 'Post or Browse', titleAr: 'انشر أو تصفح', descEn: 'Create a project, post an RFQ, or browse the marketplace for materials and services.', descAr: 'أنشئ مشروعاً أو انشر طلب عرض أو تصفح السوق للمواد والخدمات.' },
-  { step: '03', titleEn: 'Connect & Collaborate', titleAr: 'تواصل وتعاون', descEn: 'Get matched with the best providers, compare quotes, and manage everything in one place.', descAr: 'تواصل مع أفضل المزودين وقارن العروض وأدر كل شيء في مكان واحد.' },
-  { step: '04', titleEn: 'Build with Confidence', titleAr: 'ابنِ بثقة', descEn: 'Track progress, manage budgets, and leave verified reviews when your project is done.', descAr: 'تتبع التقدم وأدر الميزانيات واترك تقييمات موثقة عند اكتمال مشروعك.' },
-];
 
 export default function Home() {
   const { t, lang, dir } = useLanguage();
@@ -245,63 +182,15 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── FEATURES ─────────────────────────────────────────────────────── */}
-      <section className="py-24 bg-background">
-        <div className="container">
-          <div className="text-center mb-16">
-            <Badge variant="secondary" className="mb-4 text-sm px-4 py-1">{lang === 'ar' ? 'المميزات' : 'Features'}</Badge>
-            <h2 className="text-4xl font-bold mb-4">{t('features.title')}</h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">{t('features.subtitle')}</p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {FEATURES.map((feature) => (
-              <Card
-                key={feature.titleKey}
-                className="card-hover group cursor-pointer border-border hover:border-primary/20 overflow-hidden"
-                onClick={() => navigate(feature.href)}
-              >
-                <CardContent className="p-6">
-                  <div className={`w-12 h-12 rounded-xl ${feature.bg} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-200`}>
-                    <feature.icon className={`w-6 h-6 ${feature.color}`} />
-                  </div>
-                  <h3 className="font-semibold text-lg mb-2">{t(feature.titleKey)}</h3>
-                  <p className="text-muted-foreground text-sm leading-relaxed">{t(feature.descKey)}</p>
-                  <div className={`flex items-center gap-1 mt-4 text-sm font-medium ${feature.color} opacity-0 group-hover:opacity-100 transition-opacity`}>
-                    {lang === 'ar' ? 'اعرف أكثر' : 'Learn more'} <ChevronRight className="w-4 h-4" />
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── HOW IT WORKS ─────────────────────────────────────────────────── */}
-      <section className="py-24 bg-muted/30">
-        <div className="container">
-          <div className="text-center mb-16">
-            <Badge variant="secondary" className="mb-4 text-sm px-4 py-1">{lang === 'ar' ? 'كيف يعمل' : 'How It Works'}</Badge>
-            <h2 className="text-4xl font-bold mb-4">{lang === 'ar' ? 'أربع خطوات للنجاح' : 'Four Steps to Success'}</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-            {HOW_IT_WORKS.map((step, i) => (
-              <div key={step.step} className="relative">
-                {i < HOW_IT_WORKS.length - 1 && (
-                  <div className="hidden lg:block absolute top-8 left-full w-full h-0.5 bg-gradient-to-r from-primary/30 to-transparent z-0" style={{ width: 'calc(100% - 2rem)' }} />
-                )}
-                <div className="relative z-10">
-                  <div className="w-16 h-16 rounded-2xl gradient-brand flex items-center justify-center mb-4 shadow-lg shadow-primary/20">
-                    <span className="text-white font-bold text-lg">{step.step}</span>
-                  </div>
-                  <h3 className="font-semibold text-lg mb-2">{lang === 'ar' ? step.titleAr : step.titleEn}</h3>
-                  <p className="text-muted-foreground text-sm leading-relaxed">{lang === 'ar' ? step.descAr : step.descEn}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* ── THE CONNECTED JOURNEY ────────────────────────────────────────
+          This replaced TWO card grids - a six-card "Features" wall and a
+          four-card "Four Steps to Success" wall - which between them listed
+          capabilities twice and connected none of them. A reader learned
+          that BuildHub HAS an RFQ system, not that posting one puts their
+          requirement in front of matching suppliers and brings back
+          comparable prices. §89 item 19 asks for the connected proposition;
+          §73 names two walls of equal cards as the shape to avoid. */}
+      <SourcingJourney />
 
       {/* ── USER TYPES ───────────────────────────────────────────────────── */}
       <section className="py-24 bg-background">
