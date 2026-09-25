@@ -1,0 +1,22 @@
+BUILD  72f3b17 (local) built 2026-09-22T13:44:54.143Z  http://127.0.0.1:5401
+
+BUILD 72f3b17  env=local
+
+PASS  1. a request this supplier has quoted on  [#192]
+PASS  2. a live quotation on an open request reads as QUOTED
+PASS  3. an ACCEPTED quotation reads as WON - the arc reaches its end
+PASS  4. a rival winning an AWARDED request reads as NOT SELECTED
+PASS  5. a request the customer WITHDREW is its own state, not a loss  [closed]
+PASS  6. and is never reported as one
+PASS  7. the summary count and the rows agree on WON  [summary 1, rows 1]
+PASS  8. filtering by available returns only available  [0 rows]
+PASS  9. filtering by opened returns only opened  [1 rows]
+PASS  10. filtering by quoted returns only quoted  [4 rows]
+PASS  11. filtering by won returns only won  [1 rows]
+PASS  12. filtering by lost returns only lost  [0 rows]
+PASS  13. filtering by closed returns only closed  [0 rows]
+PASS  14. filtering by declined returns only declined  [0 rows]
+PASS  15. a superseded rejected revision does not make a live accepted bid read as lost
+
+15 passed, 0 failed
+

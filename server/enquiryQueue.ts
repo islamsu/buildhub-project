@@ -67,8 +67,12 @@ export type EnquirySource = (typeof ENQUIRY_SOURCES)[number];
  * provider who said no has made a decision, and showing it as "not started"
  * would invite them to be chased for work they already refused.
  */
-export const ENQUIRY_RESPONSE_STATES = ['available', 'opened', 'quoted', 'declined'] as const;
-export type EnquiryResponseState = (typeof ENQUIRY_RESPONSE_STATES)[number];
+// The canonical vocabulary lives in shared/ so the client's filter chips and
+// this query's CASE expression cannot drift apart - which they had, the
+// client offering four states over a queue that could return seven.
+import { ENQUIRY_RESPONSE_STATES, type EnquiryResponseState } from '../shared/enquiryStates';
+export { ENQUIRY_RESPONSE_STATES };
+export type { EnquiryResponseState };
 
 export const ENQUIRY_RFQ_STATUSES = ['open', 'closed', 'awarded'] as const;
 
@@ -156,8 +160,38 @@ export function reachableFilter(declaredCategories: readonly string[]) {
 
 /** `source` and `responseState` as SQL, so the SAME rule can be filtered on and returned. */
 const sourceExpression = sql<string>`case when ${rfqSuppliers.id} is not null then 'invitation' else 'category' end`;
+/**
+ * THE END OF THE SUPPLIER'S COMMERCIAL ARC (§23).
+ *
+ * The queue could say a supplier had QUOTED and never whether they WON. That
+ * is the one outcome a supplier actually cares about, and the arc in §19 runs
+ * all the way to "buyer decision" - a pipeline that stops at "quoted" leaves
+ * its most important column blank.
+ *
+ * ORDER MATTERS, and it is decided by what is most specific rather than by
+ * what is most recent:
+ *
+ *   declined   the supplier said no. Their own act, so it outranks
+ *              everything - a declined invitation is not an open lead.
+ *   won        their CURRENT quotation was accepted.
+ *   lost       the request was AWARDED and their quotation was not the one.
+ *              Claimed only when both halves are true: an RFQ the customer
+ *              merely closed is not a competition anybody lost, and telling
+ *              a supplier they lost one would be a fabricated outcome (§68).
+ *   closed     the customer withdrew the request. The supplier's quotation
+ *              went nowhere, and saying so is different from saying they
+ *              were beaten.
+ *   quoted     a live quotation, no decision yet.
+ *
+ * `quotations` is joined on `supersededAt IS NULL`, so this reads the
+ * CURRENT revision - a superseded quote that was rejected before being
+ * revised must not make a live bid read as lost.
+ */
 const responseStateExpression = sql<string>`case
   when ${rfqSuppliers.status} = 'declined' then 'declined'
+  when ${quotations.status} = 'accepted' then 'won'
+  when ${quotations.id} is not null and ${rfqs.status} = 'awarded' then 'lost'
+  when ${quotations.id} is not null and ${rfqs.status} = 'closed' then 'closed'
   when ${quotations.id} is not null then 'quoted'
   when ${qualifiedEnquiries.id} is not null or ${rfqSuppliers.id} is not null then 'opened'
   else 'available' end`;

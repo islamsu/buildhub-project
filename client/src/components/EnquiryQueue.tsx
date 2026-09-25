@@ -3,6 +3,10 @@ import { Link } from 'wouter';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
 import { Badge } from '@/components/ui/badge';
+import {
+  ENQUIRY_RESPONSE_STATES, enquiryStateLabel, enquiryStateTone,
+  type EnquiryResponseState,
+} from '@shared/enquiryStates';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -26,18 +30,20 @@ import { Calendar, Inbox, MapPin } from 'lucide-react';
  * defect `server/adminList.ts` exists to end, and this screen is not going to
  * reintroduce it.
  */
-const RESPONSE_STATES = ['available', 'opened', 'quoted', 'declined'] as const;
-type ResponseState = (typeof RESPONSE_STATES)[number];
+/*
+ * THE CANONICAL VOCABULARY, not a copy.
+ *
+ * This file held its own four-item list while the server's lived in
+ * server/enquiryQueue.ts. The moment the server learned about Won the two
+ * disagreed - the chips would have offered four states over a queue that can
+ * return seven, so a supplier filtering for anything could never have found a
+ * lead they had won. §11: one canonical domain.
+ */
+const RESPONSE_STATES = ENQUIRY_RESPONSE_STATES;
+type ResponseState = EnquiryResponseState;
 
-function stateLabel(state: string, ar: boolean): string {
-  switch (state) {
-    case 'available': return ar ? 'متاح للفتح' : 'Available';
-    case 'opened': return ar ? 'مفتوح' : 'Opened';
-    case 'quoted': return ar ? 'قدّمت عرضاً' : 'Quoted';
-    case 'declined': return ar ? 'اعتذرت' : 'Declined';
-    default: return state;
-  }
-}
+const stateLabel = (state: string, ar: boolean) => enquiryStateLabel(state, ar ? 'ar' : 'en');
+
 function rfqStatusLabel(status: string, ar: boolean): string {
   switch (status) {
     case 'open': return ar ? 'مفتوح' : 'Open';
@@ -194,7 +200,15 @@ export default function EnquiryQueue({ highlightRfqId }: { highlightRfqId?: numb
                     <p className="mt-0.5 font-mono text-xs text-muted-foreground">#{row.rfqId}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge variant="outline" data-testid={`enquiry-queue-state-${row.rfqId}`}>
+                    {/* EMPHASIS, NEVER COLOUR ALONE (§56). Every state
+                        carries its own word; the tone only decides which one
+                        a supplier's eye lands on first when scanning a
+                        pipeline, and that is Won. */}
+                    <Badge
+                      variant={enquiryStateTone(row.responseState) === 'positive' ? 'default' : 'outline'}
+                      className={enquiryStateTone(row.responseState) === 'muted' ? 'text-muted-foreground' : undefined}
+                      data-testid={`enquiry-queue-state-${row.rfqId}`}
+                    >
                       {stateLabel(row.responseState, ar)}
                     </Badge>
                     <Badge variant={row.rfqStatus === 'open' ? 'secondary' : 'outline'}>

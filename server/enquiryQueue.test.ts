@@ -222,7 +222,28 @@ describe('the labels and the filters are the same rule', () => {
 
   it('the vocabularies are closed, and the router uses THEM', () => {
     expect(ENQUIRY_SOURCES).toEqual(['invitation', 'category']);
-    expect(ENQUIRY_RESPONSE_STATES).toEqual(['available', 'opened', 'quoted', 'declined']);
+    /*
+     * IN PIPELINE ORDER, and it grew.
+     *
+     * The queue could say a supplier had QUOTED and never whether they WON -
+     * the one outcome a supplier reads a pipeline for. `won`, `lost` and
+     * `closed` are the three ways an answer ends, and they are kept apart on
+     * purpose: a request AWARDED to somebody else is one this supplier did
+     * not win, and a request the customer WITHDREW is not a competition
+     * anybody lost. Saying the second as though it were the first would be a
+     * fabricated outcome (§68).
+     */
+    expect(ENQUIRY_RESPONSE_STATES).toEqual([
+      'available', 'opened', 'quoted', 'won', 'lost', 'closed', 'declined',
+    ]);
+    // THE CLIENT READS THIS LIST, it does not keep its own. It had four
+    // items while the server had seven; filtering for a won lead would have
+    // been impossible from a chip row that never offered the state.
+    const queueComponent = readFileSync(
+      new URL('../client/src/components/EnquiryQueue.tsx', import.meta.url), 'utf8');
+    expect(queueComponent).toContain("from '@shared/enquiryStates'");
+    expect(queueComponent, 'the client keeps a second copy of the vocabulary')
+      .not.toMatch(/const RESPONSE_STATES = \[['"]available/);
     expect(ENQUIRY_RFQ_STATUSES).toEqual(['open', 'closed', 'awarded']);
     expect(ROUTERS).toContain('z.enum(ENQUIRY_RESPONSE_STATES)');
     expect(ROUTERS).toContain('z.enum(ENQUIRY_SOURCES)');
