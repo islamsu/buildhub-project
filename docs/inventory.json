@@ -173,7 +173,7 @@
       "component": "SavedPage",
       "source": "client/src/pages/SavedPage.tsx",
       "declaresParam": false,
-      "readsParam": false,
+      "readsParam": true,
       "deadParamRoute": false
     },
     {

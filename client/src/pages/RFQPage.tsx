@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { trpc } from '@/lib/trpc';
 import { useRfqBasket } from '@/hooks/useRfqBasket';
+import { parseInviteIds } from '@shared/rfqBasket';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { Link, useSearch } from 'wouter';
 import { useEffect, useRef, useState } from 'react';
@@ -64,6 +65,7 @@ const RFQ_PAGE_SIZE = 25;
 
 export default function RFQPage() {
   const { t, lang } = useLanguage();
+  const ar = lang === 'ar';
   const { isAuthenticated, user } = useAuth();
   // The roles for whom an RFQ is an opportunity to respond to rather than
   // something they raised. Mirrors RFQ_SEEKING_ROLES on the server; the server
@@ -213,12 +215,43 @@ export default function RFQPage() {
    * second enquiry channel - `rfq.inviteSupplier` decides whether the caller
    * may invite, exactly as it does everywhere else.
    */
-  const invitedSupplierId = (() => {
-    const raw = new URLSearchParams(search).get('invite');
-    const id = Number(raw);
-    return raw && Number.isInteger(id) && id > 0 ? id : null;
-  })();
+  /*
+   * IT CARRIES A SHORTLIST NOW, NOT ONE SUPPLIER.
+   *
+   * `?invite=<id>` took exactly one, which is the wrong number for the
+   * journey: a buyer shortlists several suppliers precisely so they can ask
+   * several of them for a price. The parser is shared and BOUNDED, because
+   * this is user-controlled input and a shortlist holds up to 200.
+   */
+  const invitedSupplierIds = parseInviteIds(new URLSearchParams(search).get('invite'));
   const inviteSupplier = trpc.rfq.inviteSupplier.useMutation();
+
+  /*
+   * NAMING WHAT WAS CARRIED, BEFORE THE REQUEST IS POSTED.
+   *
+   * A form that silently carries four invitations is the same defect as a
+   * basket that silently contains things: the buyer cannot check it, and the
+   * first they learn of it is a toast after the fact.
+   *
+   * The names come from the buyer's OWN shortlist - the list they were just
+   * on - rather than from a new public lookup, so no read is added and no
+   * identity is exposed that this buyer could not already see. An id that is
+   * NOT on their shortlist is shown as its reference rather than given a
+   * name this page cannot prove, which is the honest half of §68.
+   */
+  const shortlist = trpc.profile.savedItems.useQuery(undefined, {
+    enabled: isAuthenticated && invitedSupplierIds.length > 0, retry: false,
+  });
+  const invitedSuppliers = invitedSupplierIds.map(id => {
+    const match = (shortlist.data?.items ?? []).find(
+      (item: any) => item.itemKind === 'provider' && Number(item.target?.id) === id,
+    ) as any;
+    return {
+      id,
+      label: match?.target?.businessName ?? match?.target?.name ?? `#${id}`,
+      named: Boolean(match?.target),
+    };
+  });
 
   const createRfq = trpc.rfq.create.useMutation({
     onSuccess: created => {
@@ -229,18 +262,38 @@ export default function RFQPage() {
        * who could not be invited is a smaller problem than a buyer who
        * believes they were.
        */
-      if (invitedSupplierId && created?.id) {
-        inviteSupplier.mutate(
-          { rfqId: created.id, supplierId: invitedSupplierId },
-          {
-            onSuccess: () => toast.success(lang === 'ar'
-              ? 'تمت دعوة المورد إلى طلبك'
-              : 'The supplier was invited to your request'),
-            onError: error => toast.error(lang === 'ar'
-              ? `تم نشر الطلب، لكن تعذّرت دعوة المورد: ${error.message}`
-              : `Request posted, but the supplier could not be invited: ${error.message}`),
-          },
-        );
+      /*
+       * EACH INVITATION IS ITS OWN AUTHORIZED CALL, and each outcome is
+       * reported. One provider who is not approved to receive requests must
+       * not silently take the other three down with it, and a buyer told
+       * "4 suppliers invited" when one was refused has been told something
+       * false about who is going to quote.
+       */
+      if (invitedSupplierIds.length > 0 && created?.id) {
+        const rfqId = created.id;
+        void Promise.allSettled(invitedSupplierIds.map(supplierId =>
+          inviteSupplier.mutateAsync({ rfqId, supplierId })
+            .then(() => ({ supplierId, ok: true as const }))
+            .catch((error: any) => ({ supplierId, ok: false as const, message: String(error?.message ?? '') })),
+        )).then(settled => {
+          const outcomes = settled.map(entry => entry.status === 'fulfilled'
+            ? entry.value
+            : { supplierId: 0, ok: false as const, message: '' });
+          const invited = outcomes.filter(outcome => outcome.ok).length;
+          const refused = outcomes.filter(outcome => !outcome.ok);
+          if (invited > 0) {
+            toast.success(lang === 'ar'
+              ? `تمت دعوة ${invited} من الموردين إلى طلبك`
+              : `${invited} supplier${invited === 1 ? '' : 's'} invited to your request`);
+          }
+          // THE REFUSALS ARE NAMED, not folded into the success line. The
+          // server owns the reason; it is shown rather than guessed at.
+          for (const failure of refused) {
+            toast.error(lang === 'ar'
+              ? `تم نشر الطلب، لكن تعذّرت دعوة أحد الموردين: ${failure.message}`
+              : `Request posted, but a supplier could not be invited: ${failure.message}`);
+          }
+        });
       }
       setOpen(false);
       setForm({ title: '', description: '', category: '', budget: '', location: '', deadline: '' });
@@ -358,6 +411,44 @@ export default function RFQPage() {
                           {myProjects.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.title}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                    </div>
+                  )}
+                  {/*
+                    WHO THIS REQUEST WILL BE SENT TO, NAMED BEFORE IT IS SENT.
+
+                    A form that silently carries four invitations is the same
+                    defect as a basket that silently contains things: the
+                    buyer cannot check it, and the first they learn of it is a
+                    toast after the fact. The request is still PUBLIC to every
+                    provider whose declared categories match it - these are
+                    invitations on top of that, not instead of it, and saying
+                    so is what stops a buyer thinking they have narrowed the
+                    audience when they have widened it.
+                  */}
+                  {invitedSuppliers.length > 0 && (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3" data-testid="rfq-invite-carry">
+                      <p className="text-sm font-medium">
+                        {ar
+                          ? `${invitedSuppliers.length} مورد من قائمتك المختصرة سيُدعى إلى هذا الطلب`
+                          : `${invitedSuppliers.length} supplier${invitedSuppliers.length === 1 ? '' : 's'} from your shortlist will be invited`}
+                      </p>
+                      <ul className="mt-2 flex flex-wrap gap-1.5">
+                        {invitedSuppliers.map(supplier => (
+                          <li key={supplier.id}>
+                            <Badge
+                              variant="secondary"
+                              data-testid={`rfq-invite-carry-${supplier.id}`}
+                            >
+                              {supplier.label}
+                            </Badge>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {ar
+                          ? 'يبقى الطلب مرئياً لكل مورد تطابق فئاته المعلنة — الدعوة إضافة، وليست حصراً.'
+                          : 'The request stays visible to every provider whose declared categories match it — an invitation is in addition to that, not instead of it.'}
+                      </p>
                     </div>
                   )}
                   {/*

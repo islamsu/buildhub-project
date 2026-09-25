@@ -15,6 +15,51 @@
  * one transaction on submit. Nothing commercial depends on basket state.
  */
 
+/**
+ * ── CARRYING A SHORTLIST INTO AN INVITATION ─────────────────────────────
+ *
+ * `/rfq?invite=<id>` carried exactly ONE supplier, which is the wrong number
+ * for the journey it serves. A buyer shortlists eleven suppliers precisely so
+ * they can ask several of them for a price; making them post the request,
+ * open it, and invite each one by hand afterwards is the work the shortlist
+ * existed to save.
+ *
+ * BOUNDED, because a URL is user-controlled input and a shortlist holds up to
+ * 200. Ten is the number a buyer can meaningfully compare - past that they
+ * are broadcasting, not sourcing, and the RFQ is already public to every
+ * provider whose declared categories match it.
+ *
+ * EVERY INVITATION IS STILL AUTHORIZED ONE AT A TIME by `rfq.inviteSupplier`,
+ * which checks invite rights on the request, the provider's role and their
+ * approval status. This parser decides how many ids may be CARRIED; it
+ * decides nothing about who may be invited.
+ */
+export const MAX_CARRIED_INVITATIONS = 10;
+
+export function parseInviteIds(raw: string | null | undefined): number[] {
+  if (!raw) return [];
+  const seen = new Set<number>();
+  for (const part of String(raw).split(',')) {
+    const trimmed = part.trim();
+    // Number('') is 0 and Number(' 1 ') is 1, so an empty segment from a
+    // trailing comma must be rejected before it becomes an id.
+    if (trimmed === '') continue;
+    const id = Number(trimmed);
+    if (!Number.isInteger(id) || id <= 0) continue;
+    seen.add(id);
+    if (seen.size >= MAX_CARRIED_INVITATIONS) break;
+  }
+  return Array.from(seen);
+}
+
+/** The `?invite=` value for a set of ids, bounded the same way. */
+export function inviteParam(ids: readonly number[]): string {
+  return ids
+    .filter(id => Number.isInteger(id) && id > 0)
+    .slice(0, MAX_CARRIED_INVITATIONS)
+    .join(',');
+}
+
 /** More lines than this is a bill of quantities, not a request for quotation. */
 export const MAX_BASKET_ITEMS = 30;
 
