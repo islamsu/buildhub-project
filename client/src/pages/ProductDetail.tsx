@@ -3,6 +3,8 @@ import { useMemo, useState } from 'react';
 import { Link, useParams } from 'wouter';
 import Navbar from '@/components/Navbar';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { SaveButton } from '@/components/SaveButton';
+import { useSavedIds } from '@/lib/useSavedIds';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
 import ProductQuestionThread from '@/components/ProductQuestionThread';
@@ -48,6 +50,8 @@ export default function ProductDetail() {
     { enabled: Number.isFinite(productId) && productId > 0, retry: false },
   );
   const product = storedProduct;
+  /** One id, through the same batched reader the grids use - one rule. */
+  const savedIds = useSavedIds('product', useMemo(() => (product ? [Number(product.id)] : []), [product]));
   const isOwner = Boolean(user && product?.supplier && (user as { id?: number }).id === product.supplier.id);
   const { data: questions = [], refetch: refetchQuestions } = trpc.marketplace.questions.useQuery({ productId }, { enabled: Number.isFinite(productId) && productId > 0 });
   const askQuestion = trpc.marketplace.askQuestion.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تم إرسال السؤال للمورد' : 'Question sent to supplier'); setQuestion(''); refetchQuestions(); }, onError: error => toast.error(error.message) });
@@ -112,6 +116,13 @@ export default function ProductDetail() {
     toast.success(lang === 'ar' ? `تمت إضافة المنتج (${selectedPurchaseUnit}) إلى قائمة طلب الأسعار` : `Product (${selectedPurchaseUnit}) added to RFQ list`);
   }}
 ><ShoppingCart className="h-4 w-4" />{lang === 'ar' ? 'أضف إلى طلب الأسعار' : 'Add to RFQ list'}</Button>
+{/* SAVE, ON THE DETAIL PAGE TOO. A buyer who opened a product to read its
+    specification is exactly the one deciding whether it is worth a second
+    look; sending them back to the grid to save it would be the "powerful
+    feature the user cannot find" §79 forbids. */}
+<div className="mt-2">
+  <SaveButton kind="product" itemId={product.id} saved={savedIds.has(Number(product.id))} />
+</div>
 {basket.count > 0 && (
   // ?basket=1 so the destination OPENS the list this button names. It linked
   // to a bare /rfq, where the basket sits inside a dialog that starts closed -

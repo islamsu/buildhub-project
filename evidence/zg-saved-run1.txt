@@ -31,7 +31,12 @@ PASS  26. the shortlist is reachable from the navbar  ["1"]
 PASS  27. and the badge opens the shortlist  [/saved]
 PASS  28. the saved provider is on the page  [Suppliers & professionals1 | Omar Khaled]
 PASS  29. the shortlist offers the next step in sourcing  [Request quotations]
-PASS  30. the empty state names the next action rather than saying "nothing here"  [Nothing saved yet. While you browse the marketplace, use Save on any supplier or product to set it a]
+PASS  30. Save is reachable from the product grid  [/marketplace/products]
+PASS  31. Save is reachable from the product detail page  [/marketplace/products/88]
+PASS  32. Save is reachable from the provider storefront  [/vendor/462]
+PASS  33. Save is reachable from the provider directory  [/marketplace/vendors]
+PASS  34. and saving from the detail page writes the row
+PASS  35. the empty state names the next action rather than saying "nothing here"  [Nothing saved yet. While you browse the marketplace, use Save on any supplier or product to set it a]
 
-29 passed, 0 failed
+34 passed, 0 failed
 

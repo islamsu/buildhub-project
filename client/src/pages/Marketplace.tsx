@@ -1,4 +1,6 @@
 import { useLanguage } from '@/contexts/LanguageContext';
+import { SaveButton } from '@/components/SaveButton';
+import { useSavedIds } from '@/lib/useSavedIds';
 import { formatMoney } from '@shared/money';
 import { useRfqBasket } from '@/hooks/useRfqBasket';
 import Navbar from '@/components/Navbar';
@@ -134,6 +136,18 @@ export default function Marketplace() {
     search: search.trim() || undefined,
     limit: 48,
   });
+
+  /**
+   * WHICH OF THESE IS ALREADY SAVED - one query for the grid.
+   *
+   * Not a `saved` flag on the public product rows: a per-viewer fact inside
+   * a cacheable public response is how a shared cache ends up showing one
+   * buyer another's shortlist.
+   */
+  const savedProductIds = useSavedIds(
+    'product',
+    useMemo(() => filtered.map((product: any) => Number(product.id)), [filtered]),
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -371,6 +385,12 @@ export default function Marketplace() {
                         >
                           <ShoppingCart className="w-3.5 h-3.5" /> {t('market.add_to_rfq')}
                         </Button>
+                        {/* SAVE SITS BESIDE ADD TO RFQ, because they are the
+                            two things a buyer does with a product they like
+                            and they mean different things: one sets it aside
+                            to compare, the other commits to asking for a
+                            price. §22 lists both. */}
+                        <SaveButton kind="product" itemId={product.id} saved={savedProductIds.has(product.id)} variant="icon" />
                       </div>
                     </CardContent>
                   </Card>

@@ -263,6 +263,34 @@ try {
   `);
   check(cta !== 'MISSING', 'the shortlist offers the next step in sourcing', cta);
 
+  /* ── SAVE IS ON EVERY DISCOVERY SURFACE ───────────────────────────── */
+  /*
+   * A capability wired to one of four surfaces is one the buyer meets by
+   * luck (§79: no powerful feature the user cannot find). §22 lists the
+   * actions taken FROM DISCOVERY, and discovery happens on the product grid
+   * and the storefront as much as in the provider directory.
+   */
+  for (const [where, route, selector] of [
+    ['the product grid', '/marketplace/products', `[data-testid="save-product-${liveProduct}"]`],
+    ['the product detail page', `/marketplace/products/${liveProduct}`, `[data-testid="save-product-${liveProduct}"]`],
+    ['the provider storefront', `/vendor/${provider}`, `[data-testid="save-provider-${provider}"]`],
+    ['the provider directory', '/marketplace/vendors', `[data-testid="save-provider-${provider}"]`],
+  ]) {
+    await page.goto(`${BASE}${route}`);
+    const present = await waitFor(page, `document.querySelector('${selector}') !== null`, 15000);
+    check(present, `Save is reachable from ${where}`, route);
+  }
+
+  /* AND IT WORKS THERE, not merely rendered. The grid was the surface the
+     first version wired; this proves the detail page actually saves. */
+  sql(`DELETE FROM savedItems WHERE userId=${buyerId} AND itemKind='product'`);
+  await page.goto(`${BASE}/marketplace/products/${liveProduct}`);
+  await waitFor(page, `document.querySelector('[data-testid="save-product-${liveProduct}"]') !== null`);
+  await page.evaluate(clickOn(`[data-testid="save-product-${liveProduct}"]`));
+  await settle(1800);
+  check(num(`SELECT COUNT(*) FROM savedItems WHERE userId=${buyerId} AND itemKind='product' AND itemId=${liveProduct}`) === 1,
+    'and saving from the detail page writes the row');
+
   /* THE EMPTY STATE SAYS WHERE TO START. */
   sql(`DELETE FROM savedItems WHERE userId=${buyerId}`);
   await page.goto(`${BASE}/marketplace`);

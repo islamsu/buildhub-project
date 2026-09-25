@@ -1,6 +1,9 @@
 import { Link, useLocation, useParams } from 'wouter';
 import Navbar from '@/components/Navbar';
+import { useMemo } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { SaveButton } from '@/components/SaveButton';
+import { useSavedIds } from '@/lib/useSavedIds';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -34,6 +37,8 @@ export default function VendorProfile() {
     { userId },
     { enabled: isAuthenticated && Number.isFinite(userId) && userId > 0, retry: false },
   );
+  /** The same batched reader the directory uses, for one id. */
+  const savedIds = useSavedIds('provider', useMemo(() => (Number.isFinite(userId) && userId > 0 ? [userId] : []), [userId]));
   const { data: catalogue = [] } = trpc.marketplace.vendorProducts.useQuery(
     { vendorId: userId },
     { enabled: Number.isFinite(userId) && userId > 0 },
@@ -397,6 +402,11 @@ export default function VendorProfile() {
                       {ar ? 'اطلب عرض سعر' : 'Request a quote'}
                     </Button>
                   </Link>
+                  {/* SAVE PROVIDER, beside Contact and Request a quote - the
+                      three actions §21 names for a storefront. A buyer who
+                      has just read a supplier's whole page is the one most
+                      likely to want to set them aside. */}
+                  <SaveButton kind="provider" itemId={userId} saved={savedIds.has(userId)} />
                 </div>
                 {profile.contactChannel === 'message' && (
                   <p className="mt-2 text-xs text-muted-foreground">{t('vendor.contact.note')}</p>
