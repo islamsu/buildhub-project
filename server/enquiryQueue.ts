@@ -207,9 +207,37 @@ const sourceExpression = sql<string>`case when ${rfqSuppliers.id} is not null th
  *              went nowhere, and saying so is different from saying they
  *              were beaten.
  *   quoted     a live quotation, no decision yet.
+ *
+ * ── AND THEN THE REQUEST ENDS WITHOUT THIS SUPPLIER IN IT ───────────────
+ *
+ * The four arms above all require a quotation, so a supplier who OPENED a
+ * lead and never bid on it fell straight through them to `opened` - and
+ * stayed there after the customer withdrew the request or awarded it to
+ * somebody else. An actionable-looking state over a request that can no
+ * longer be answered: the supplier's pipeline showed work waiting for them
+ * that had in fact concluded weeks ago, and an invitation they had never
+ * touched stayed in the Opportunity Centre being offered as takeable.
+ *
+ * A TERMINAL RFQ OUTCOME SUPERSEDES AN ACTIONABLE STATE. These two arms are
+ * placed AFTER every quotation arm and BEFORE `opened`/`invited`, which is
+ * the whole of the fix:
+ *
+ *   closed     the customer WITHDREW the request. True whether or not this
+ *              supplier quoted, so it is the same state either way - the
+ *              fact being reported is what the customer did.
+ *   unquoted   the request was AWARDED and this supplier has no quotation
+ *              on it. NOT `lost`: "Not selected" is a statement about a
+ *              competition, and telling a supplier they were beaten in one
+ *              they never entered is a fabricated outcome (§68). They did
+ *              not bid, and the honest label says exactly that.
+ *
+ * `declined` still outranks both, because it is the supplier's own recorded
+ * decision and a later award does not rewrite it.
+ *
  *   opened     a paid `qualifiedEnquiries` row, OR an invitation the supplier
  *              has acted on - `markInvitationViewed` moves it off 'invited'
- *              the moment they open it.
+ *              the moment they open it. Reached only while the request is
+ *              still live, now that the two arms above exist.
  *   invited    AN OFFER THEY HAVE NOT TAKEN. Checked after `opened` so that
  *              opening an invitation leaves this state, and before the
  *              catch-all so it is never confused with a category match. It
@@ -228,6 +256,8 @@ const responseStateExpression = sql<string>`case
   when ${quotations.id} is not null and ${rfqs.status} = 'awarded' then 'lost'
   when ${quotations.id} is not null and ${rfqs.status} = 'closed' then 'closed'
   when ${quotations.id} is not null then 'quoted'
+  when ${rfqs.status} = 'closed' then 'closed'
+  when ${rfqs.status} = 'awarded' then 'unquoted'
   when ${qualifiedEnquiries.id} is not null then 'opened'
   when ${rfqSuppliers.status} = 'invited' then 'invited'
   when ${rfqSuppliers.id} is not null then 'opened'

@@ -23,6 +23,7 @@ export const ENQUIRY_RESPONSE_STATES = [
   'won',
   'lost',
   'closed',
+  'unquoted',
   'declined',
 ] as const;
 
@@ -40,13 +41,24 @@ export type EnquiryResponseState = (typeof ENQUIRY_RESPONSE_STATES)[number];
  * to the ONE queue, which is why the two sets are defined here together
  * rather than as two literals in two components that can drift apart:
  *
- *   OPPORTUNITY  what can still be TAKEN. An open request matching a
- *                declared category, or an invitation not yet opened. This is
- *                where a credit gets spent, so this is where the allowance
- *                meter belongs.
- *   LEAD         what HAS been taken, and how it ended. This is the record,
- *                and it outlives the request - a lead stays here after the
- *                customer closes the file, because the credit stayed spent.
+ *   OPPORTUNITY  what can STILL BE TAKEN, which is a claim about the
+ *                request as well as about the supplier: an OPEN request
+ *                matching a declared category, or an invitation to an OPEN
+ *                request that has not been opened yet. This is where a
+ *                credit gets spent, so this is where the allowance meter
+ *                belongs.
+ *   LEAD         THE RECORD: everything that is no longer an open offer -
+ *                what the supplier took and how it ended, and also what
+ *                ended without them. It outlives the request, because a lead
+ *                stays here after the customer closes the file and the
+ *                credit stayed spent.
+ *
+ * A TERMINAL RFQ OUTCOME MOVES A ROW ACROSS THIS LINE. An invitation the
+ * supplier never touched, on a request the customer has since withdrawn, is
+ * not an opportunity - offering it as takeable is a control that cannot
+ * succeed. `closed` and `unquoted` are therefore LEAD states even though the
+ * supplier may have done nothing at all, because the question this split
+ * answers is "can this still be taken", not "did you touch it".
  *
  * THEY MUST PARTITION `ENQUIRY_RESPONSE_STATES`: every state in exactly one
  * set, no state in both. A gap would hide a request from a supplier
@@ -63,7 +75,7 @@ export type EnquiryResponseState = (typeof ENQUIRY_RESPONSE_STATES)[number];
 export const ENQUIRY_OPPORTUNITY_STATES = ['available', 'invited'] as const;
 
 export const ENQUIRY_LEAD_STATES = [
-  'opened', 'quoted', 'won', 'lost', 'closed', 'declined',
+  'opened', 'quoted', 'won', 'lost', 'closed', 'unquoted', 'declined',
 ] as const;
 
 export const ENQUIRY_SCOPES = ['opportunities', 'leads', 'all'] as const;
@@ -101,6 +113,16 @@ export function enquiryStateLabel(state: string, lang: 'en' | 'ar'): string {
     case 'won': return ar ? 'فزت بها' : 'Won';
     case 'lost': return ar ? 'ذهبت لغيرك' : 'Not selected';
     case 'closed': return ar ? 'أُغلق الطلب' : 'Request withdrawn';
+    /*
+     * "Did not quote", NOT "Not selected".
+     *
+     * The request was awarded and this supplier has no quotation on it. They
+     * were not beaten; they did not bid. Saying "Not selected" here would
+     * report the outcome of a competition they never entered, which is a
+     * fabricated outcome (§68) - and it is the kind a supplier would act on,
+     * by chasing a customer who never rejected them.
+     */
+    case 'unquoted': return ar ? 'لم تقدّم عرضاً' : 'Did not quote';
     case 'declined': return ar ? 'اعتذرت' : 'Declined';
     default: return state;
   }
@@ -115,6 +137,6 @@ export function enquiryStateLabel(state: string, lang: 'en' | 'ar'): string {
  */
 export function enquiryStateTone(state: string): 'positive' | 'muted' | 'neutral' {
   if (state === 'won') return 'positive';
-  if (state === 'lost' || state === 'closed' || state === 'declined') return 'muted';
+  if (state === 'lost' || state === 'closed' || state === 'unquoted' || state === 'declined') return 'muted';
   return 'neutral';
 }

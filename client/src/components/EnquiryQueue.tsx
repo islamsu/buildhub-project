@@ -76,8 +76,8 @@ function scopeCopy(scope: EnquiryScope, ar: boolean) {
     return {
       title: ar ? 'مركز الفرص' : 'Opportunity Centre',
       blurb: ar
-        ? 'طلبات ما زال بإمكانك أخذها — مطابقة لفئاتك أو بدعوة مباشرة. فتح الطلب هو ما يستهلك من رصيدك.'
-        : 'Requests you can still take — matched to your categories, or invited directly. Opening one is what uses your allowance.',
+        ? 'طلبات مفتوحة ما زال بإمكانك أخذها — مطابقة لفئاتك أو بدعوة مباشرة. فتح الطلب هو ما يستهلك من رصيدك.'
+        : 'Open requests you can still take — matched to your categories, or invited directly. Opening one is what uses your allowance.',
       empty: ar
         ? 'لا توجد فرص مفتوحة الآن. أعلن فئات خدمتك لتصلك الطلبات المطابقة.'
         : 'No open opportunities right now. Declare your service categories to receive matching requests.',
@@ -87,8 +87,8 @@ function scopeCopy(scope: EnquiryScope, ar: boolean) {
   return {
     title: ar ? 'طلباتي' : 'My Leads',
     blurb: ar
-      ? 'كل طلب أخذته — وما قدّمت فيه عرضاً ونتيجته. يبقى هنا حتى بعد إغلاق العميل للطلب.'
-      : 'Every request you have taken, what you quoted and how it ended. A lead stays here after the customer closes the request.',
+      ? 'سجلّك الكامل — ما أخذته، وما قدّمت فيه عرضاً، وكيف انتهى كل طلب. يبقى هنا حتى بعد إغلاق العميل للطلب.'
+      : 'Your record: what you took, what you quoted, and how each request ended. A lead stays here after the customer closes the request.',
     empty: ar
       ? 'لم تأخذ أي طلب بعد. افتح فرصة من مركز الفرص أعلاه ليظهر هنا.'
       : 'You have not taken a request yet. Open one from the Opportunity Centre above and it appears here.',

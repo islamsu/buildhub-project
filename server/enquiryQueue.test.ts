@@ -234,8 +234,17 @@ describe('the labels and the filters are the same rule', () => {
      * fabricated outcome (§68).
      */
     expect(ENQUIRY_RESPONSE_STATES).toEqual([
-      'available', 'invited', 'opened', 'quoted', 'won', 'lost', 'closed', 'declined',
+      'available', 'invited', 'opened', 'quoted', 'won', 'lost', 'closed', 'unquoted', 'declined',
     ]);
+    /*
+     * `unquoted` IS THE NINTH, and it exists because the four decision arms
+     * all require a quotation. A supplier who OPENED a lead and never bid on
+     * it fell through all of them to `opened` - and stayed there after the
+     * customer awarded the request to somebody else. It is NOT `lost`:
+     * "Not selected" is a statement about a competition, and this supplier
+     * never entered one.
+     */
+    expect(ENQUIRY_RESPONSE_STATES).toContain('unquoted');
     /*
      * `invited` IS THE EIGHTH, and it was added for a reason, not for
      * completeness: an invitation the supplier had never touched came back
