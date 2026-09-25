@@ -35,14 +35,22 @@ services:
     dockerfilePath: ./Dockerfile
     plan: starter
     region: frankfurt          # Closest of Render's regions to Egypt.
-    # `main`, not a feature branch. This tracked
-    # claude/phase4b-readiness-audit-hardening, which meant staging deployed
-    # whatever that branch happened to hold - so a push that had never been
-    # reviewed or merged went live on staging, while merging to main deployed
-    # nothing. The two were identical when it was noticed, so nothing was
-    # broken; it was a latent way for staging to stop being a test of what
-    # production would actually run.
-    branch: main
+    # OWNER-APPROVED TEMPORARY RC PREVIEW.
+    #
+    # During final pre-release acceptance, staging intentionally tracks the
+    # canonical release-candidate branch so the owner can inspect the exact
+    # build being tested while production remains untouched.
+    #
+    # This is NOT a production promotion and does NOT authorize merging main.
+    # After the release candidate is explicitly merged by the owner, switch
+    # staging back to `main` and verify the exact merged SHA before any
+    # production authorization.
+    #
+    # IMPORTANT: changing this Blueprint file records the intended source of
+    # truth, but an already-provisioned Render service may still require a
+    # Blueprint sync or dashboard branch change before the live service follows
+    # it. Never call staging current until /version proves the served SHA.
+    branch: claude/buildhub-global-release-candidate
     autoDeploy: true
 
     # Liveness, deliberately - not /readyz. A database blip must not make Render
