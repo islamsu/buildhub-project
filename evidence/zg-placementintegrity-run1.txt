@@ -1,0 +1,27 @@
+BUILD  36d3954 (local) built 2026-09-25T18:29:50.874Z  http://127.0.0.1:5401
+
+BUILD 36d3954  env=local
+
+PASS  1. the organic directory returns providers to work with  [3]
+PASS  2. and one of them can be promoted  [#464]
+PASS  3. A PROMOTED PROVIDER APPEARS EXACTLY ONCE - promotion re-ranks, never duplicates  [1 appearance(s)]
+PASS  4. and the page holds the same number of providers as before  [3 -> 3]
+PASS  5. the promotion actually moved them up, so the checks above are not vacuous  [position 2 -> 0]
+PASS  6. and promotion never exceeds a third of the page  [1 of 3]
+PASS  7. CONTROL: an unapproved provider is excluded from the directory  [#505]
+PASS  8. NO INJECTION: paying cannot put a provider on a page the directory excluded  [still absent]
+PASS  9. and they return to the directory once approved again - the exclusion was the gate, not a break
+PASS  10. the Sponsored badge renders on the directory
+PASS  11. NOT COLOUR ALONE: the badge carries its own word  [Sponsored]
+PASS  12. and its own icon, so two badges are distinguishable without hue  [1]
+PASS  13. and a PAID placement says Sponsored, never BuildHub's editorial word  [Sponsored]
+PASS  14. only one label kind is on this page, so the pair is compared in source instead  [see placementPresentation.test.ts]
+PASS  15. the page really switched to Arabic RTL before the checks below
+PASS  16. the Sponsored label is genuine Arabic under RTL  [إعلان مموّل]
+PASS  17. and the English word is not left in place beside it  [إعلان مموّل]
+PASS  18. and the page is actually in RTL while that is asserted  [rtl]
+
+(cleanup) probe placements remaining: 0
+
+ALL PASS  18 passed, 0 failed
+
