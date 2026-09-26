@@ -1,7 +1,7 @@
 # BuildHub release acceptance — status, not a merge request
 
-**RC HEAD** `9ab4783` · base `origin/main` `1b3edb8` · 90 commits
-· 7 migrations in the RC (0054–0060) · 4826 tests
+**RC HEAD** `7d04467` · base `origin/main` `1b3edb8` · 94 commits · 446 files
+· 7 migrations in the RC (0054–0060) · 4847 tests
 
 This is a STATUS document. It is deliberately **not** the merge request in
 `CLAUDE.md` §43, because §42 and §78 are not both satisfied yet and §89 says
@@ -56,7 +56,7 @@ Two things remain true regardless:
 
 - P0 known defects: **0**
 - P1 known defects: **0**
-- full test suite: **4826 passing**
+- full test suite: **4847 passing**
 - typecheck: clean
 - production build: clean
 - working tree clean, local SHA == remote SHA
@@ -67,9 +67,29 @@ Two things remain true regardless:
   (434 checks, twice, identical verdicts)
 - truthful failure and empty states, including a real database outage
 
-## §42 release gate — what is NOT yet green
+## §42 release gate — every criterion it lists is now green
 
-These are open, and none of them has evidence in the repository today:
+The seven that were open have been closed, each with evidence recorded in the
+repository and each mutation-tested so a green check cannot pass vacuously:
+
+| Gate | Evidence |
+|---|---|
+| Performance reviewed (§35, §63) | `evidence/zg-performance.mjs` 29 ×2 |
+| Reliability reviewed (§35, §64) | `evidence/zg-reliability.mjs` 20 ×2 |
+| SEO complete (§37, §66) | `server/seo.test.ts` 57 · `evidence/zg-seo.mjs` 89 ×2 |
+| AI release gate (§38) | `server/aiReleaseGate.test.ts` 14 · `evidence/zg-ai.mjs` 20 ×2 |
+| ACC-4 fresh-account cross-role | `evidence/zg-acc4.mjs` 116 ×2 |
+| Tracker reconciled (§41) | `TRACKER_RECONCILIATION.md` · `server/trackerReconciliation.test.ts` 7 |
+| Money presentation (§86–88) | `server/moneyPresentation.test.ts` 21 · `evidence/zg-money.mjs` 32 ×2 |
+
+**§34's upload master pass is not in §42's list** and remains partial for one
+reason only: a real S3 round-trip needs object-storage credentials this
+environment does not have. The writers, ownership rules and IDOR guards are
+covered by `evidence/zg-uploadfamilies.mjs`.
+
+### The detail
+
+These were the open items, and this is where each now stands:
 
 | Gate | Status |
 |---|---|
@@ -81,8 +101,18 @@ These are open, and none of them has evidence in the repository today:
 | Upload master pass (§34) | **PARTIAL — infrastructure-blocked** — `evidence/zg-uploadfamilies.mjs` (11) covers writers, ownership and IDOR guards; a real S3 round-trip needs object-storage credentials this environment does not have |
 | Tracker reconciled (§41) | **GREEN** — `TRACKER_RECONCILIATION.md` classifies all 27 open items into §41's own categories, with evidence cited for every ALREADY COMPLETE claim. `server/trackerReconciliation.test.ts` (7) fails on an unclassified new item, an unknown category, or a cited file that does not exist. No tracker line was deleted |
 
-**Therefore merge authorization is not requested.** Asking now would be asking
-the owner to accept a release whose own gate lists seven unmet criteria.
+**Therefore §42 no longer blocks merge authorization**, and §43's report can
+honestly be made. What still cannot be claimed, and is not:
+
+- **DEPLOYED / STAGING PREVIEW VERIFIED / STAGING VERIFIED** — `/version` cannot
+  be read from this container, so no build has been observed serving. §89 is
+  explicit that `render.yaml` is configuration, not proof.
+- **MERGED** — needs explicit owner authorization (§3, §45).
+- **OWNER DELIVERED** — needs the owner to open the deployed build and see the
+  expected product (§2).
+
+No pull request has been opened: that is an outward-facing action the owner has
+not asked for in this session.
 
 ---
 
