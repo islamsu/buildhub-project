@@ -78,8 +78,8 @@ These are open, and none of them has evidence in the repository today:
 | SEO complete (§37, §66) | **GREEN** — `server/seo.test.ts` (57) and `evidence/zg-seo.mjs` (89, twice, identical), five mutations verified. One finding referred to the owner: `/vendor/:id` needs a session |
 | AI release gate (§38) | **GREEN, with one item infrastructure-blocked** — `server/aiReleaseGate.test.ts` (14) maps each §38 item to the guarantee that proves it, over the 160 existing AI assertions; `evidence/zg-ai.mjs` (20, twice, identical) renders the unavailable state in EN and AR at 1440 and 375. No `OPENAI_API_KEY` here, so whether a live model obeys a correct instruction is not verified |
 | ACC-4 fresh-account cross-role acceptance | **GREEN** — `evidence/zg-acc4.mjs` (116, twice, identical): six roles created through the real sign-up, each landing where the app sends them, EN and AR |
-| Upload master pass (§34) | **PARTIAL** — `uploadfamilies` probe exists; real S3 round-trip remains infrastructure-blocked |
-| Tracker reconciled (§41) | **PARTIAL** — 27 items still open in `todo.md`, mixing engineering with owner decisions and future architecture |
+| Upload master pass (§34) | **PARTIAL — infrastructure-blocked** — `evidence/zg-uploadfamilies.mjs` (11) covers writers, ownership and IDOR guards; a real S3 round-trip needs object-storage credentials this environment does not have |
+| Tracker reconciled (§41) | **GREEN** — `TRACKER_RECONCILIATION.md` classifies all 27 open items into §41's own categories, with evidence cited for every ALREADY COMPLETE claim. `server/trackerReconciliation.test.ts` (7) fails on an unclassified new item, an unknown category, or a cited file that does not exist. No tracker line was deleted |
 
 **Therefore merge authorization is not requested.** Asking now would be asking
 the owner to accept a release whose own gate lists seven unmet criteria.
