@@ -458,7 +458,8 @@ export default function AdminDashboard() {
       <div className="min-h-screen flex items-center justify-center" dir={dir}>
         <div className="text-center">
           <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-destructive" />
-          <h2 className="text-2xl font-bold mb-2">{lang === 'ar' ? 'غير مصرح' : 'Access Denied'}</h2>
+          {/* The refusal is the whole page, so it is the page's heading. */}
+          <h1 className="text-2xl font-bold mb-2">{lang === 'ar' ? 'غير مصرح' : 'Access Denied'}</h1>
           <p className="text-muted-foreground">{lang === 'ar' ? 'ليس لديك صلاحيات المشرف.' : 'You do not have admin privileges.'}</p>
           {/* To the ADMIN door. Someone landing here is either signed out or
               signed in as a customer; /dashboard would be the right answer for
@@ -596,7 +597,14 @@ export default function AdminDashboard() {
             name in the sidebar and a different one (or none) here. */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-2xl font-bold mb-1" data-testid="admin-section-heading">{t(adminSectionLabelKey)}</h2>
+            {/* H1, NOT H2. Every Admin destination rendered with NO h1 at
+                all, so the heading outline on the whole control plane
+                started at level 2 and a screen-reader user had no page
+                landmark to jump to - on nine routes, including the ones the
+                owner operates daily (§55, §62). The section name IS the page
+                title here: the sidebar says where you are, and this says
+                what you are looking at. */}
+            <h1 className="text-2xl font-bold mb-1" data-testid="admin-section-heading">{t(adminSectionLabelKey)}</h1>
             <p className="text-muted-foreground">{adminSection === 'overview'
               ? (lang === 'ar' ? 'مراقبة وإدارة منصة BuildHub' : 'Monitor and manage the BuildHub platform')
               : t('admin.title')}</p>

@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { AlertTriangle, TrendingUp, Users } from 'lucide-react';
+import { analyticsEventLabel } from '@shared/analyticsEventLabels';
 
 /**
  * The owner's commercial and funnel view (Slice 7).
@@ -201,7 +202,11 @@ export default function AdminCommercialAnalytics({ includeDummy = false }: { inc
               <div className="flex flex-wrap gap-1.5">
                 {(product?.eventCounts ?? []).slice(0, 14).map(row => (
                   <Badge key={row.eventType} variant="outline" className="text-[11px] font-normal">
-                    {row.eventType}
+                    {/* THE EVENT'S NAME, not its identifier. This rendered
+                        `user.signed_in` and `subscription.payment_failed`
+                        straight out of the event store (§55, §72), in
+                        English regardless of the reader (§67). */}
+                    {analyticsEventLabel(row.eventType, lang === 'ar' ? 'ar' : 'en') ?? row.eventType}
                     <span className="ms-1.5 font-semibold">{number(row.count)}</span>
                   </Badge>
                 ))}

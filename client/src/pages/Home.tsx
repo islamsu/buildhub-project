@@ -233,10 +233,16 @@ export default function Home() {
           <h2 className="text-4xl sm:text-5xl font-bold mb-4">
             {lang === 'ar' ? 'جاهز لبدء مشروعك؟' : 'Ready to Start Building?'}
           </h2>
+          {/* CAPABILITY, NOT SCALE (§75).
+              This read "Join thousands of users who trust BuildHub" - a
+              claim about how many people use the platform and how they feel
+              about it, and BuildHub can evidence neither. The replacement
+              says what the product DOES, which a visitor can verify by
+              using it rather than by believing it. */}
           <p className="text-white/70 text-lg max-w-xl mx-auto mb-8">
             {lang === 'ar'
-              ? 'انضم إلى آلاف المستخدمين الذين يثقون في BuildHub لإدارة مشاريعهم.'
-              : 'Join thousands of users who trust BuildHub to manage their construction projects.'}
+              ? 'انشر متطلبك، وقارن عروض أسعار حقيقية من موردين موثّقين، وأدر المشروع بالكامل في مكان واحد.'
+              : 'Post your requirement, compare real quotations from verified suppliers, and run the whole project in one place.'}
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button
@@ -327,8 +333,12 @@ export default function Home() {
           </div>
 
           <div className="border-t border-background/10 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-background/40 text-sm">
-              © 2025 BuildHub. {lang === 'ar' ? 'جميع الحقوق محفوظة.' : 'All rights reserved.'}
+            {/* THE CURRENT YEAR, not a year that was current when this was
+                written. A stale copyright line is the cheapest possible
+                signal that a site is unmaintained, and it goes stale on a
+                fixed date with nobody watching. */}
+            <p className="text-background/40 text-sm" data-testid="footer-copyright">
+              © {new Date().getFullYear()} BuildHub. {lang === 'ar' ? 'جميع الحقوق محفوظة.' : 'All rights reserved.'}
             </p>
             <div className="flex items-center gap-4 text-sm text-background/40">
               <span className="flex items-center gap-1.5"><Shield className="w-3.5 h-3.5" /> {lang === 'ar' ? 'آمن ومشفر' : 'Secure & Encrypted'}</span>

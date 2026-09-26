@@ -1,5 +1,28 @@
 # North Star 15–20 — fresh audit before building
 
+> **SUPERSEDED IN PART — read this first.**
+>
+> This document is kept as HISTORICAL EVIDENCE of the audit that preceded
+> North Star items 15–20. It is not rewritten, because an audit that gets
+> edited after the fact stops being evidence of what was actually found.
+>
+> One statement in it is no longer true. The "Deployment status" section
+> below reports that `render.yaml` declared `branch: main` while the release
+> candidate lived on `claude/buildhub-global-release-candidate`, and that a
+> push to the RC therefore did not reach staging. **That was correct when
+> this audit was written and is now superseded:** the owner subsequently
+> approved staging tracking the RC branch, and `render.yaml` records
+> `branch: claude/buildhub-global-release-candidate` (see `CLAUDE.md` §89 and
+> `OWNER_DECISIONS.md`).
+>
+> What has NOT changed is the second half of that section. Repository
+> configuration is not deployment proof: nothing here is DEPLOYED, STAGING
+> PREVIEW VERIFIED or STAGING VERIFIED, and migrations 0056–0060 remain
+> **PUSHED — applied locally, not yet staging-verified**, until `/version`
+> reports the exact current RC SHA with `environment=staging` and the
+> migration-dependent journeys are exercised against it.
+
+
 Taken against `claude/buildhub-global-release-candidate` @ `36d3954`, by reading
 the code rather than the tracker. The instruction was "fresh-audit what already
 exists before building anything", and the answer changes what is worth building:
@@ -69,9 +92,13 @@ unlike things in one table because the columns nearly fit.
 
 ## Deployment status — unchanged and NOT claimed
 
-- `render.yaml` declares `branch: main` with `autoDeploy: true` for
+- ~~`render.yaml` declares `branch: main` with `autoDeploy: true` for
   `buildhub-staging`. The RC branch is `claude/buildhub-global-release-candidate`.
-  **These do not agree**, so a push to the RC does not reach staging.
+  **These do not agree**, so a push to the RC does not reach staging.~~
+  **SUPERSEDED** — the owner approved RC-backed staging and `render.yaml` now
+  records `branch: claude/buildhub-global-release-candidate`. Struck through
+  rather than deleted: the finding was true when made, and the record of it
+  is why the configuration changed.
 - This is reported, not fixed: changing the Render branch or source
   configuration requires owner approval and has not been made.
 - Migrations 0056–0059 remain **PUSHED — applied locally, not yet

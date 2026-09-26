@@ -44,11 +44,10 @@ import { enquiryAttention } from './vendorEnquiryQuery';
 import { DISPUTE_OPEN_STATUSES } from '../shared/disputes';
 
 /** The queues that can carry an attention badge. */
-export const ATTENTION_QUEUES = [
-  'enquiries', 'registrations', 'disputes', 'support', 'reviews', 'nameChanges',
-  'productQuestions',
-] as const;
-export type AttentionQueue = (typeof ATTENTION_QUEUES)[number];
+import { ATTENTION_QUEUES, type AttentionQueue } from '../shared/adminAttentionQueues';
+import { attentionMeaningEn } from '../shared/adminAttention';
+export { ATTENTION_QUEUES };
+export type { AttentionQueue };
 
 export type AttentionCount = {
   /** How many items are waiting. A real count. */
@@ -75,27 +74,27 @@ export type AdminAttention = Record<AttentionQueue, AttentionCount>;
  */
 export const ATTENTION_META: Readonly<Record<AttentionQueue, { meaning: string; href: string }>> = {
   enquiries: {
-    meaning: 'unassigned, on a request that is still open',
+    meaning: attentionMeaningEn('enquiries'),
     href: '/admin/enquiries?assignee=none&rfqStatus=open',
   },
   registrations: {
-    meaning: 'professional registrations awaiting a decision',
+    meaning: attentionMeaningEn('registrations'),
     href: '/admin/registrations',
   },
   disputes: {
-    meaning: 'disputes still being worked on',
+    meaning: attentionMeaningEn('disputes'),
     href: '/admin/disputes',
   },
   support: {
-    meaning: 'tickets waiting on us, not on the requester',
+    meaning: attentionMeaningEn('support'),
     href: '/admin/support',
   },
   reviews: {
-    meaning: 'reported reviews not yet resolved',
+    meaning: attentionMeaningEn('reviews'),
     href: '/admin/reviews',
   },
   nameChanges: {
-    meaning: 'name change requests still open',
+    meaning: attentionMeaningEn('nameChanges'),
     href: '/admin/name-changes',
   },
   /*
@@ -105,7 +104,7 @@ export const ATTENTION_META: Readonly<Record<AttentionQueue, { meaning: string; 
    * must not depend on an administrator remembering to look.
    */
   productQuestions: {
-    meaning: 'reported product questions and answers not yet resolved',
+    meaning: attentionMeaningEn('productQuestions'),
     href: '/admin/reviews?tab=questions',
   },
 };

@@ -259,10 +259,15 @@ export default function AdminUserDetail() {
                       <UserRound className="h-6 w-6" />
                     </div>
                     <div>
-                      <CardTitle className="flex flex-wrap items-center gap-2 text-xl">
+                      {/* AN ACTUAL H1. This page had NO heading element at
+                          all - `CardTitle` renders a div - so the 360 console
+                          an administrator investigates from had no page
+                          landmark and its outline started below level 1
+                          (§55, §62). The person's name IS the title here. */}
+                      <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold leading-none tracking-tight">
                         {detail.name || detail.email || `#${detail.id}`}
                         {detail.isDummy && <Badge className="border-violet-200 bg-violet-50 text-violet-700">{lang === 'ar' ? 'تجريبي / اختباري' : 'Dummy / Test'}</Badge>}
-                      </CardTitle>
+                      </h1>
                       <p className="mt-1 text-sm text-muted-foreground">@{detail.username || '—'} · {roleLabel(detail.userRole, lang)}</p>
                     </div>
                   </div>

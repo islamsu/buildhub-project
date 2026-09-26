@@ -263,10 +263,12 @@ export default function AuthPage() {
           <h2 className="text-4xl font-bold leading-tight mb-4">
             {lang === 'ar' ? 'ابنِ مستقبلك\nمع BuildHub' : 'Build Your Future\nwith BuildHub'}
           </h2>
+          {/* CAPABILITY, NOT SCALE (§75) - the same unsupported "join
+              thousands who trust us" claim the landing page carried. */}
           <p className="text-white/70 text-lg">
             {lang === 'ar'
-              ? 'انضم إلى آلاف المحترفين وأصحاب المنازل الذين يثقون في BuildHub لإدارة مشاريع البناء والتشطيب.'
-              : 'Join thousands of homeowners and professionals who trust BuildHub to manage their construction and finishing projects.'}
+              ? 'اطلب عروض أسعار من موردين موثّقين، وقارنها جنباً إلى جنب، وتابع مشروعك من البداية إلى التسليم.'
+              : 'Request quotations from verified suppliers, compare them side by side, and follow your project from brief to handover.'}
           </p>
         </div>
         {/*

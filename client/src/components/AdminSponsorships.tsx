@@ -9,6 +9,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Megaphone } from 'lucide-react';
 import VendorIdentitySelect from '@/components/VendorIdentitySelect';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 /**
  * SPONSORED PLACEMENT, AS AN ADMINISTRATIVE ACT.
@@ -46,6 +50,12 @@ export default function AdminSponsorships() {
   const [vendorId, setVendorId] = useState<number | null>(null);
   const [category, setCategory] = useState('');
   const [reason, setReason] = useState('');
+  /*
+   * THE ROW AWAITING CONFIRMATION, or null. Held as the ROW rather than an id
+   * so the dialog can NAME what is about to be revoked: "are you sure"
+   * without saying what is a speed bump, not a confirmation.
+   */
+  const [confirmRevoke, setConfirmRevoke] = useState<any | null>(null);
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
   const [indefinite, setIndefinite] = useState(true);
@@ -292,7 +302,14 @@ export default function AdminSponsorships() {
                           size="sm" variant="outline"
                           data-testid={`sponsor-revoke-${row.id}`}
                           disabled={revoke.isPending}
-                          onClick={() => { setNotice(''); setError(''); revoke.mutate({ sponsorshipId: Number(row.id) }); }}
+                          /* IT ASKS FIRST NOW. This called revoke.mutate()
+                             directly on click, so one misplaced click took a
+                             supplier's live placement off the marketplace
+                             immediately, with no statement of the consequence
+                             and no way back. §77 requires confirmation
+                             proportional to risk, and this is an
+                             outward-facing, commercially material act. */
+                          onClick={() => { setNotice(''); setError(''); setConfirmRevoke(row); }}
                         >
                           {ar ? 'إلغاء' : 'Revoke'}
                         </Button>
@@ -311,6 +328,41 @@ export default function AdminSponsorships() {
           </div>
         )}
       </CardContent>
+
+      {/* THE CONSEQUENCE, STATED (§77). It names the placement, says what
+          revoking does to the marketplace, and says what it does NOT do -
+          the record survives for the audit - which is the fact an
+          administrator needs in order to act without hesitating. */}
+      <AlertDialog open={confirmRevoke !== null} onOpenChange={open => !open && setConfirmRevoke(null)}>
+        <AlertDialogContent dir={ar ? 'rtl' : 'ltr'}>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-start">
+              {ar ? 'إلغاء هذه المساحة؟' : 'Revoke this placement?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-start" data-testid="sponsor-revoke-consequence">
+              {ar
+                ? `سيتوقف ظهور «${confirmRevoke?.entityName ?? confirmRevoke?.category ?? ''}» في هذه المساحة على السوق فوراً. يبقى السجل للمراجعة، ويمكن منح مساحة جديدة لاحقاً، لكن لا يمكن التراجع عن هذا الإلغاء نفسه.`
+                : `“${confirmRevoke?.entityName ?? confirmRevoke?.category ?? ''}” stops appearing in this placement on the marketplace immediately. The record is kept for the audit trail and a new placement can be granted later, but this revocation itself cannot be undone.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="sponsor-revoke-cancel">
+              {ar ? 'تراجع' : 'Cancel'}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="sponsor-revoke-confirm"
+              disabled={revoke.isPending}
+              onClick={() => {
+                if (confirmRevoke) revoke.mutate({ sponsorshipId: Number(confirmRevoke.id) });
+                setConfirmRevoke(null);
+              }}
+            >
+              {ar ? 'تأكيد الإلغاء' : 'Revoke placement'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

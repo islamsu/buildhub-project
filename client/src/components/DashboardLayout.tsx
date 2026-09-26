@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { attentionMeaning } from "@shared/adminAttention";
 import { trpc } from "@/lib/trpc";
 import { LayoutDashboard, LogOut, PanelLeft, PanelRight, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags, Megaphone, ShieldCheck, ShieldQuestion, LifeBuoy, Flag, FileSearch } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
@@ -283,25 +284,35 @@ function AttentionBadge({ queue, attention }: {
   queue?: string;
   attention: { data?: Record<string, { count: number; meaning: string }> | undefined; isError: boolean };
 }) {
+  const { lang } = useLanguage();
   if (!queue) return null;
   if (attention.isError) {
     return (
       <span
         data-testid={`attention-${queue}`}
         data-attention-state="unknown"
-        title="This count could not be loaded"
+        title={lang === 'ar' ? 'تعذّر تحميل هذا العدد' : 'This count could not be loaded'}
         className="ms-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-dashed px-1.5 text-[11px] font-medium text-muted-foreground"
       >?</span>
     );
   }
   const entry = attention.data?.[queue];
   if (!entry || entry.count <= 0) return null;
+  /*
+   * THE TOOLTIP IS IN THE READER'S LANGUAGE, not the server's.
+   *
+   * The server ships `entry.meaning` as English, and this tooltip is the ONLY
+   * explanation of what the badge number counts - so on an Arabic Admin page
+   * the one piece of the badge a reader needed was in a language they may not
+   * have (§67). Invisible to a sighted English reader, and invisible to any
+   * test that reads visible text.
+   */
   return (
     <span
       data-testid={`attention-${queue}`}
       data-attention-state="waiting"
       data-attention-count={entry.count}
-      title={entry.meaning}
+      title={attentionMeaning(queue, lang === 'ar' ? 'ar' : 'en')}
       className="ms-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground"
     >{entry.count > 99 ? '99+' : entry.count}</span>
   );

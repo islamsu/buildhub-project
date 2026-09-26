@@ -32,10 +32,22 @@ import { Badge } from '@/components/ui/badge';
 import { BarChart3 } from 'lucide-react';
 import { entityTypeLabel, formulaText, metricLabel, surfaceLabel } from '@/lib/placementLabels';
 
-/** A percentage, or an explicit dash when there is nothing to divide by. */
+/**
+ * A percentage, or an explicit dash when there is nothing to divide by.
+ *
+ * The dash's tooltip is the ONLY thing that distinguishes "no data" from a
+ * rendering glitch, and it was English-only - so on an Arabic Admin screen
+ * the one explanation of an empty cell was unreadable (§67).
+ */
 function Rate({ value }: { value: number | null }) {
+  const { lang } = useLanguage();
   if (value == null) {
-    return <span className="text-muted-foreground" title="No observations yet">—</span>;
+    return (
+      <span
+        className="text-muted-foreground"
+        title={lang === 'ar' ? 'لا توجد قياسات بعد' : 'No observations yet'}
+      >—</span>
+    );
   }
   return <span>{value}%</span>;
 }

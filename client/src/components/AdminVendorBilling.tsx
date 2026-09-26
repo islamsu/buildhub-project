@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertTriangle, CreditCard } from 'lucide-react';
 import VendorIdentitySelect from '@/components/VendorIdentitySelect';
+import { accountAuditActionLabel } from '@shared/accountAuditLabels';
 
 /**
  * Admin read-only view of one vendor's billing state.
@@ -35,8 +36,30 @@ import VendorIdentitySelect from '@/components/VendorIdentitySelect';
  * response: `ADMIN_SUBSCRIPTION_COLUMNS` excludes every `provider*Ref` by
  * construction, and BuildHub stores no card or token data anywhere.
  */
+/**
+ * THE EVENT'S NAME, NOT ITS IDENTIFIER.
+ *
+ * This table rendered `row.action` raw, so an administrator read
+ * `admin_password_reset_requested` in a badge and the filter dropdown offered
+ * the same snake_case as its options - raw enums and database terminology in
+ * user-facing text (§55, §72), in English regardless of the reader's language
+ * (§67). Found by the visual-QA sweep, which reported `signed_in` as a raw
+ * token on /admin/analytics.
+ *
+ * An UNLABELLED action falls back to the identifier deliberately and visibly:
+ * showing nothing would hide an event from an audit trail, which is worse
+ * than showing it unpolished - and `accountAuditLabels.test.ts` fails if a
+ * new action ships without a label, so the fallback should never be reached.
+ */
+function useActionLabel() {
+  const { lang } = useLanguage();
+  return (action: string) =>
+    accountAuditActionLabel(action, lang === 'ar' ? 'ar' : 'en') ?? action;
+}
+
 export default function AdminVendorBilling() {
   const { lang, t } = useLanguage();
+  const actionLabel = useActionLabel();
   const ar = lang === 'ar';
   const [userId, setUserId] = useState<number | null>(null);
 
@@ -165,7 +188,7 @@ export default function AdminVendorBilling() {
                     <tbody>
                       {billing.events.map(event => (
                         <tr key={event.id} className="border-b last:border-0">
-                          <td className="py-2 px-3 font-medium">{event.action}</td>
+                          <td className="py-2 px-3 font-medium">{actionLabel(event.action)}</td>
                           <td className="py-2 px-3 text-muted-foreground">
                             {event.fromStatus ?? '—'} → {event.toStatus ?? '—'}
                           </td>
