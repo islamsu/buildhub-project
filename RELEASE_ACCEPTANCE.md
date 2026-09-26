@@ -75,7 +75,7 @@ These are open, and none of them has evidence in the repository today:
 |---|---|
 | Performance reviewed (§35, §63) | **OPEN** — no performance test or probe exists |
 | Reliability reviewed (§35, §64) | **OPEN** — partially covered by outage/idempotency probes, no dedicated review |
-| SEO complete (§37, §66) | **OPEN** — no SEO test or probe exists |
+| SEO complete (§37, §66) | **GREEN** — `server/seo.test.ts` (57) and `evidence/zg-seo.mjs` (89, twice, identical), five mutations verified. One finding referred to the owner: `/vendor/:id` needs a session |
 | AI release gate (§38) | **PARTIAL** — AI tests exist; the §38 gate itself is not recorded as run |
 | ACC-4 fresh-account cross-role acceptance | **OPEN** — no ACC-4 probe exists |
 | Upload master pass (§34) | **PARTIAL** — `uploadfamilies` probe exists; real S3 round-trip remains infrastructure-blocked |

@@ -10,6 +10,7 @@ import { useMemo, useState } from 'react';
 import { Search, Package, Store, PenTool, HardHat, ArrowRight, ArrowLeft, Star, BadgeCheck, TrendingUp, Sparkles } from 'lucide-react';
 import { DESIGN_CATEGORIES, FINISHING_CATEGORIES } from '@/lib/marketplaceData';
 import { trpc } from '@/lib/trpc';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 /**
  * CLOSURE PASS. The three "featured" strips and the search autocomplete on this
@@ -33,6 +34,7 @@ import { trpc } from '@/lib/trpc';
  * lists against, and carry the canonical name the marketplace filter uses.
  */
 export default function MarketplaceHub() {
+  usePageTitle();
   const { lang, t } = useLanguage();
   const [, navigate] = useLocation();
   const [search, setSearch] = useState('');

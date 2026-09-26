@@ -1,5 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { robotsTxt } from '../shared/seo';
 import { readSourceForAssertions } from './_testing/sourceText';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
@@ -43,7 +45,6 @@ const read = (relative: string) => readFileSync(new URL(relative, import.meta.ur
 const readCode = (relative: string) => readSourceForAssertions(read(relative));
 const ADMIN_DASHBOARD = readCode('../client/src/pages/AdminDashboard.tsx');
 const INDEX_HTML = read('../client/index.html');
-const ROBOTS = read('../client/public/robots.txt');
 const PACKAGE_JSON = JSON.parse(read('../package.json'));
 const LOGGING_SOURCE = readCode('./_core/httpLogging.ts');
 /**
@@ -308,9 +309,37 @@ describe('§6 client/index.html', () => {
   });
 
   it('carries the metadata a shared link needs', () => {
-    for (const tag of ['og:title', 'og:description', 'og:type', 'twitter:card', 'rel="canonical"']) {
+    for (const tag of ['og:title', 'og:description', 'og:type', 'twitter:card']) {
       expect(INDEX_HTML).toContain(tag);
     }
+  });
+
+  it('carries NO hard-coded canonical link, because one file cannot canonicalise every route', () => {
+    /*
+     * This assertion used to require `rel="canonical"` HERE, and the shell
+     * satisfied it with `href="https://buildhub.eg/"` - on every route of a
+     * single-page application. A canonical link does not describe the site, it
+     * DECLARES the current URL a duplicate of the one it names, so the shell
+     * was asking crawlers to drop every product page, every directory and
+     * every storefront in favour of the homepage.
+     *
+     * The tag is now written per request by server/_core/seoHead.ts from the
+     * route table in shared/seo.ts, and the requirement here is the opposite
+     * of what it was: the static file must not carry one.
+     */
+    expect(INDEX_HTML).not.toContain('rel="canonical"');
+    expect(INDEX_HTML).not.toContain('buildhub.eg');
+  });
+
+  it('defaults to noindex, so a failure to rewrite the head cannot expose the product', () => {
+    const markup = INDEX_HTML.replace(/<!--[\s\S]*?-->/g, '');
+    expect(markup).toContain('name="robots" content="noindex, nofollow"');
+    expect(markup).not.toContain('content="index, follow"');
+  });
+
+  it('does not block pinch-zoom (WCAG 2.2 AA, 1.4.4)', () => {
+    expect(INDEX_HTML).not.toContain('maximum-scale');
+    expect(INDEX_HTML).not.toContain('user-scalable=no');
   });
 
   it('declares both languages BuildHub actually serves', () => {
@@ -321,25 +350,61 @@ describe('§6 client/index.html', () => {
 // ── §7 Crawler policy ──────────────────────────────────────────────────────
 
 describe('§7 robots.txt', () => {
-  it('lets the public marketplace be indexed — that is how vendors get found', () => {
-    expect(ROBOTS).toContain('User-agent: *');
-    expect(ROBOTS).toContain('Allow: /');
+  /*
+   * IT WAS A STATIC FILE IN client/public, AND IT COULD NOT BE CORRECT.
+   *
+   * Its answer depends on which deployment is serving it: the same commit runs
+   * on staging and in production, and staging - a public copy of the product
+   * carrying test data - must answer `Disallow: /`. The static file said
+   * `Allow: /` everywhere, so the staging preview invited indexing, and it
+   * hard-coded `Sitemap: https://buildhub.eg/sitemap.xml` for a sitemap that
+   * did not exist.
+   *
+   * It is now served by server/crawlerRoutes.ts from shared/seo.ts, ahead of
+   * the static handler, and the file is deleted rather than left shadowed:
+   * a dead file that contradicts the live answer is worse than no file.
+   */
+  it('is served by the application, ahead of the static asset handler', () => {
+    const index = readCode('./_core/index.ts');
+    expect(index).toContain('registerCrawlerRoutes(app)');
+    // Registration order IS the routing rule. Behind serveStatic or vite's
+    // middleware, the dynamic answer would never be reached.
+    expect(index.indexOf('registerCrawlerRoutes(app)')).toBeLessThan(index.indexOf('setupVite(app, server)'));
+    expect(index.indexOf('registerCrawlerRoutes(app)')).toBeLessThan(index.indexOf('serveStatic(app)'));
+  });
+
+  it('no longer ships as a static file that would contradict it', () => {
+    expect(existsSync(join(import.meta.dirname, '../client/public/robots.txt'))).toBe(false);
+  });
+
+  it('lets the public marketplace be indexed in production — that is how vendors get found', () => {
+    const body = robotsTxt('https://buildhub.eg', 'production');
+    expect(body).toContain('User-agent: *');
+    expect(body).toContain('Allow: /');
   });
 
   it('keeps every authenticated surface out of the index', () => {
+    const body = robotsTxt('https://buildhub.eg', 'production');
     for (const route of ['/admin', '/auth', '/compliance', '/dashboard', '/messages', '/platform', '/projects', '/provider']) {
-      expect(ROBOTS).toContain(`Disallow: ${route}`);
+      expect(body).toContain(`Disallow: ${route}`);
     }
   });
 
   it('keeps crawlers off the upload proxy', () => {
-    expect(ROBOTS).toContain('Disallow: /manus-storage');
+    expect(robotsTxt('https://buildhub.eg', 'production')).toContain('Disallow: /manus-storage');
   });
 
-  it('is served as a static asset by the existing publicDir', () => {
-    const viteConfig = readCode('../vite.config.ts');
-    expect(viteConfig).toContain('publicDir');
-    expect(viteConfig).toContain('"client", "public"');
+  it('refuses the whole site anywhere that is not production', () => {
+    for (const environment of ['staging', 'preview', 'development', 'local']) {
+      const body = robotsTxt('https://buildhub.eg', environment);
+      expect(body, environment).toContain('Disallow: /');
+      expect(body, environment).not.toContain('Allow: /');
+    }
+  });
+
+  it('points at a sitemap that the application really serves', () => {
+    expect(robotsTxt('https://buildhub.eg', 'production')).toContain('Sitemap: https://buildhub.eg/sitemap.xml');
+    expect(readCode('./crawlerRoutes.ts')).toContain("app.get('/sitemap.xml'");
   });
 });
 

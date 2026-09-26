@@ -14,6 +14,7 @@ import {
   BarChart3, MessageSquare, Sparkles, Play
 } from 'lucide-react';
 import { Home as HomeIcon } from 'lucide-react';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const ROLES = [
   { id: 'homeowner', icon: HomeIcon, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', href: '/auth' },
@@ -73,6 +74,7 @@ const STAT_LABELS = {
  */
 
 export default function Home() {
+  usePageTitle();
   const { t, lang, dir } = useLanguage();
   const [, navigate] = useLocation();
 

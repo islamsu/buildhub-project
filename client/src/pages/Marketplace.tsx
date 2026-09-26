@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import { useLocation } from 'wouter';
 import { MasterProductSlot, PlacementBadge, ProductSpotlight } from '@/components/MasterPlacement';
 import { FeaturedProductCard } from '@/components/FeaturedProductCard';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 /**
  * THIS FILE USED TO HOLD TWO HAND-KEPT CATEGORY MAPS.
@@ -34,6 +35,7 @@ import { FeaturedProductCard } from '@/components/FeaturedProductCard';
  */
 
 export default function Marketplace() {
+  usePageTitle();
   const { t, lang } = useLanguage();
   const basket = useRfqBasket();
   const [, navigate] = useLocation();

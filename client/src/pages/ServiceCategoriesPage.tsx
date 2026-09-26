@@ -1,6 +1,7 @@
 import { useLanguage } from '@/contexts/LanguageContext';
 import DashboardLayout from '@/components/DashboardLayout';
 import VendorServiceCategories from '@/components/VendorServiceCategories';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 /**
  * SERVICE CATEGORIES, ON THEIR OWN PAGE.
@@ -16,6 +17,7 @@ import VendorServiceCategories from '@/components/VendorServiceCategories';
  * rather than two editors that can disagree.
  */
 export default function ServiceCategoriesPage() {
+  usePageTitle();
   const { lang } = useLanguage();
   const ar = lang === 'ar';
 

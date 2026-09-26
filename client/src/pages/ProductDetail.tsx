@@ -17,6 +17,7 @@ import { ArrowLeft, ArrowRight, CheckCircle2, Package, Pencil, Send, ShoppingCar
 import { toast } from 'sonner';
 import { useRfqBasket } from '@/hooks/useRfqBasket';
 import { getProductVariants } from '@/lib/marketplaceCatalog';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 function parseList(value: string | null | undefined): string[] {
   if (!value) return [];
@@ -55,6 +56,11 @@ export default function ProductDetail() {
   const isOwner = Boolean(user && product?.supplier && (user as { id?: number }).id === product.supplier.id);
   const { data: questions = [], refetch: refetchQuestions } = trpc.marketplace.questions.useQuery({ productId }, { enabled: Number.isFinite(productId) && productId > 0 });
   const askQuestion = trpc.marketplace.askQuestion.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تم إرسال السؤال للمورد' : 'Question sent to supplier'); setQuestion(''); refetchQuestions(); }, onError: error => toast.error(error.message) });
+  /*
+   * The tab says which product this is. Null while the query is in flight, so
+   * the route's generic title holds until there is a real name to show.
+   */
+  usePageTitle(product ? ((lang === 'ar' && product.nameAr) ? product.nameAr : product.name) : null);
   const images = useMemo(() => parseList(product?.images), [product?.images]);
   const specs = useMemo(() => parseList(product?.specs), [product?.specs]);
   const BackIcon = lang === 'ar' ? ArrowRight : ArrowLeft;

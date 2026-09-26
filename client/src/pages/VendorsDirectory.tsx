@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { rfqCategoryLabel } from '@shared/rfqCategories';
 import { MasterProviderSlot, PlacementBadge, ProviderSpotlight } from '@/components/MasterPlacement';
 import { Search, Star, BadgeCheck, MapPin, Megaphone, Store, ChevronLeft, ChevronRight } from 'lucide-react';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 /**
  * Phase 4B.3: the real, database-backed vendor directory.
@@ -49,6 +50,7 @@ export type VendorsDirectoryProps = {
 
 /** The route component. wouter hands it route props, so it takes none of ours. */
 export default function VendorsDirectory() {
+  usePageTitle();
   return <VendorsDirectoryView />;
 }
 

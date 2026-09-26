@@ -590,6 +590,12 @@ describe('an outage is not an empty result, in the modules behind the routers', 
     // back the commercial change it describes. The unlocked duplicate writer
     // that was the last debt here is gone; lifecycle.ts owns that job.
     'billing/service.ts': 'swallow',
+    // A REFUSAL, NOT AN EMPTY ANSWER. `null` here means "this cannot be named",
+    // and the only caller - the HTML shell's <title> - falls back to the
+    // route's own title. Nothing is claimed about the catalogue, no page fails,
+    // and the alternative would be an error page on every public URL whenever
+    // the database blinked. evidence/zg-seo.mjs proves the degraded title.
+    'seoEntityName.ts': 'closed',
   };
 
   it('the sweep reads the real tree', () => {

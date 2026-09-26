@@ -15,6 +15,7 @@ import VendorReputation from '@/components/VendorReputation';
 import { parseProductImages } from '@shared/productImages';
 import { pricingBasisLabel, type ServicePricingBasis } from '@shared/serviceCatalogue';
 import { ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Calendar, FileText, MapPin, MessageSquare, Package, Star, Store } from 'lucide-react';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 function initials(name: string | null | undefined) {
   if (!name) return '?';
@@ -56,6 +57,17 @@ export default function VendorProfile() {
     { enabled: Number.isFinite(userId) && userId > 0 },
   );
   const isSelf = Boolean(user && (user as { id?: number }).id === userId);
+  /*
+   * The storefront's own name in the tab, preferring the trading name the
+   * vendor nominated over their account name - the same order the page's own
+   * heading uses. Null until the profile arrives.
+   */
+  usePageTitle(
+    profile
+      ? (profile.company?.tradingName || profile.company?.companyName || profile.name || null)
+      : null,
+  );
+
 
   const Shell = ({ children }: { children: React.ReactNode }) => (
     <div className="min-h-screen bg-background" dir={lang === 'ar' ? 'rtl' : 'ltr'}>

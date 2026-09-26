@@ -18,6 +18,7 @@ import { ConsoleMailer, resetMailer, setMailer } from "./mailer";
 import { resolveMailerFromEnv } from "./smtpMailer";
 import { registerSecurity } from "./security";
 import { serveStatic, setupVite } from "./vite";
+import { registerCrawlerRoutes } from "../crawlerRoutes";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -178,6 +179,9 @@ async function startServer() {
       onError,
     })
   );
+  // robots.txt and sitemap.xml, BEFORE the SPA fall-through below claims "*"
+  // and hands a crawler an HTML page where it asked for XML.
+  registerCrawlerRoutes(app);
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useLocation } from 'wouter';
 import { Check, Clock, Info, Minus, Sparkles } from 'lucide-react';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 /**
  * The public plan catalogue.
@@ -46,6 +47,7 @@ const ENTITLEMENT_ORDER = [
 type EntitlementKey = (typeof ENTITLEMENT_ORDER)[number];
 
 export default function Pricing() {
+  usePageTitle();
   const { lang, t } = useLanguage();
   const ar = lang === 'ar';
   const [, navigate] = useLocation();
