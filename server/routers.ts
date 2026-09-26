@@ -11,6 +11,7 @@ import type { TrpcContext } from './_core/context';
 import { TRPCError } from '@trpc/server';
 import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername, revokeSession } from './db';
 import { requireDb } from './_core/requireDb';
+import { isDuplicateKeyError } from './_core/dbErrors';
 import { hashPassword, verifyPassword, NO_SUCH_ACCOUNT_HASH } from './passwords';
 import { generateAIResponse, isAiConfigured, AiError, type AiFailureCategory } from './_core/ai';
 import { buildSystemPrompt, type KnowledgeLanguage } from './_core/buildhubKnowledge';
@@ -704,7 +705,14 @@ const authRouter = router({
       // Two simultaneous signups for the same username/email both pass the
       // checks above; the UNIQUE indexes settle it and the loser gets a plain
       // conflict rather than a 500.
-      if (error instanceof Error && /duplicate|ER_DUP_ENTRY/i.test(error.message)) {
+      /*
+       * THIS TEST USED TO READ error.message AND NEVER MATCH. drizzle throws
+       * "Failed query: insert into `users` ..." and leaves MySQL's ER_DUP_ENTRY
+       * on `.cause`, so the carefully worded conflict below was unreachable in
+       * the exact race the comment above describes: both simultaneous sign-ups
+       * got HTTP 500 and "Something went wrong". See server/_core/dbErrors.ts.
+       */
+      if (isDuplicateKeyError(error)) {
         throw new TRPCError({ code: 'CONFLICT', message: 'That username or email was just taken. Please try another.' });
       }
       throw error;

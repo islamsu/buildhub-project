@@ -1,7 +1,7 @@
 # BuildHub release acceptance — status, not a merge request
 
-**RC HEAD** `a3ceca6` · base `origin/main` `1b3edb8` · 88 commits · 403 files
-· 7 migrations in the RC (0054–0060) · 4730 tests
+**RC HEAD** `9ab4783` · base `origin/main` `1b3edb8` · 90 commits
+· 7 migrations in the RC (0054–0060) · 4826 tests
 
 This is a STATUS document. It is deliberately **not** the merge request in
 `CLAUDE.md` §43, because §42 and §78 are not both satisfied yet and §89 says
@@ -15,7 +15,7 @@ not to ask until the release is coherent across the whole product.
 |---|---|
 | IMPLEMENTED | yes |
 | COMMITTED | yes |
-| PUSHED | yes — `a3ceca6`, local == remote, tree clean |
+| PUSHED | yes — local == remote, tree clean |
 | IN RELEASE CANDIDATE | yes |
 | MERGED | **no** — needs owner authorization |
 | DEPLOYED | **no** |
@@ -32,7 +32,7 @@ not yet staging-verified**.
 `render.yaml` records `branch: claude/buildhub-global-release-candidate`, which
 is the owner-approved source. Per §89 that is **configuration, not proof**.
 
-Verification needs `/version` to report `a3ceca6` with
+Verification needs `/version` to report the current RC SHA with
 `environment: "staging"`. From this container that request cannot be made:
 the environment's network policy denies `buildhub-staging.onrender.com`, and
 the gateway answers 403 to CONNECT.
@@ -56,7 +56,7 @@ Two things remain true regardless:
 
 - P0 known defects: **0**
 - P1 known defects: **0**
-- full test suite: **4730 passing**
+- full test suite: **4826 passing**
 - typecheck: clean
 - production build: clean
 - working tree clean, local SHA == remote SHA
@@ -73,11 +73,11 @@ These are open, and none of them has evidence in the repository today:
 
 | Gate | Status |
 |---|---|
-| Performance reviewed (§35, §63) | **OPEN** — no performance test or probe exists |
-| Reliability reviewed (§35, §64) | **OPEN** — partially covered by outage/idempotency probes, no dedicated review |
+| Performance reviewed (§35, §63) | **GREEN** — `evidence/zg-performance.mjs` (29, twice, identical). Query count measured against result size, so an N+1 fails without a threshold; page-size caps, payload ceiling and the indexes behind every hot filter. Lab wall times recorded, not gated — §63's field data needs production telemetry |
+| Reliability reviewed (§35, §64) | **GREEN** — `evidence/zg-reliability.mjs` (20, twice, identical) plus the existing outage, flood and allowance-race probes. Found and fixed two dead duplicate-key guards |
 | SEO complete (§37, §66) | **GREEN** — `server/seo.test.ts` (57) and `evidence/zg-seo.mjs` (89, twice, identical), five mutations verified. One finding referred to the owner: `/vendor/:id` needs a session |
 | AI release gate (§38) | **PARTIAL** — AI tests exist; the §38 gate itself is not recorded as run |
-| ACC-4 fresh-account cross-role acceptance | **OPEN** — no ACC-4 probe exists |
+| ACC-4 fresh-account cross-role acceptance | **GREEN** — `evidence/zg-acc4.mjs` (116, twice, identical): six roles created through the real sign-up, each landing where the app sends them, EN and AR |
 | Upload master pass (§34) | **PARTIAL** — `uploadfamilies` probe exists; real S3 round-trip remains infrastructure-blocked |
 | Tracker reconciled (§41) | **PARTIAL** — 27 items still open in `todo.md`, mixing engineering with owner decisions and future architecture |
 
@@ -91,6 +91,32 @@ the owner to accept a release whose own gate lists seven unmet criteria.
 - Object storage: no S3 credentials, so a real upload round-trip is an honest
   SKIP rather than a pass.
 - Staging observation: network policy, as above.
+
+## Findings referred to the owner
+
+**The provider storefront is not public.** `/vendor/:id` requires a session —
+`profile.getPublic` is a `protectedProcedure`, and the code there records
+logged-out access as an unresolved decision from Phase 4A.5. §21 and §37 both
+describe that page as public and crawlable. Proven in a browser: a signed-out
+reader gets "Please sign in".
+
+It is therefore marked `session-required` in `shared/seo.ts`: real metadata for
+a signed-in reader, never indexable, never in the sitemap, and the sitemap
+states how many storefronts are withheld so the omission is visible rather
+than looking like a marketplace with no suppliers. One word changes all of it
+when the decision is made.
+
+**Service price ranges have no currency to read.** `serviceOfferings` carries
+`priceMin` and `priceMax` and no currency column. Both screens now render
+through the canonical formatter with the market's currency named by
+`requireCurrencyForMarket(DEFAULT_MARKET)`, so the coupling is one greppable
+expression; the remaining debt is the column, and it is declared in
+`server/marketReadiness.test.ts`.
+
+**Category pages have no URL of their own.** A category is a `?cat=` filter, so
+it canonicalises to its parent listing and is not separately indexable. Correct
+for a filter; a real sourcing destination per category is a NEXT MARKETPLACE
+MILESTONE item, not a defect to fix inside this RC.
 
 ## Owner decisions still open
 

@@ -1,0 +1,140 @@
+BUILD  9ab4783 (local) built 2026-09-26T06:22:37.348Z  http://127.0.0.1:5401
+
+── homeowner ──
+PASS  1. a fresh homeowner account can be created through the real sign-up  [#1040]
+PASS  2. a buyer needs no compliance to start  [approved / 1 / self_registered]
+PASS  3. and is recorded as self-registered, not seeded
+PASS  4. /platform/homeowner renders for a brand-new homeowner
+PASS  5. exactly one first-level heading on /platform/homeowner  [1: Homeowner Workspace]
+PASS  6. and it says where the user is, not just the brand  [Homeowner Workspace]
+PASS  7. there is at least one thing a new account can do  [17 enabled controls]
+PASS  8. the empty product explains itself rather than showing bare zeros  [BuildHub Overview Recent Projects My Projects Marketplace Get Quotes Messages AI Assistant]
+PASS  9. no count stands alone with nothing telling the user what it means  [2 bare zeros]
+PASS  10. no raw enum, placeholder or implementation term is shown  [clean]
+PASS  11. every disabled control has a reason a reader can find  [0 disabled, all explained]
+PASS  12. exactly one sidebar item is marked as the current page  [1 marked current]
+PASS  13. the homeowner shell offers navigation at all  [8 sidebar items, 1 links]
+PASS  14. every nav item actually navigates somewhere  [8 moved]
+PASS  15. every destination offered to a new homeowner resolves  [9 checked]
+PASS  16. /platform/homeowner renders right-to-left in Arabic for a new homeowner
+PASS  17. the Arabic heading is Arabic  [مساحة مالك المنزل]
+PASS  18. and Arabic leaks no raw enum either  [clean]
+
+── contractor ──
+PASS  19. a fresh contractor account can be created through the real sign-up  [#1041]
+PASS  20. contractor starts unverified and not yet through compliance  [not_started / 0 / self_registered]
+PASS  21. and is recorded as self-registered, not seeded
+PASS  22. /compliance renders for a brand-new contractor
+PASS  23. exactly one first-level heading on /compliance  [1: Legal document profile]
+PASS  24. and it says where the user is, not just the brand  [Legal document profile]
+PASS  25. there is at least one thing a new account can do  [14 enabled controls]
+PASS  26. the empty product explains itself rather than showing bare zeros  [Review updates will appear here.]
+PASS  27. no count stands alone with nothing telling the user what it means  [0 bare zeros]
+PASS  28. compliance tells a new professional what to do and what follows  [BuildHub Home Dashboard AI Assistant Marketplace Get Quotes Pricing العربية F Fresh · Free]
+PASS  29. and names the documents it wants in words  [Registration compliance]
+PASS  30. no raw enum, placeholder or implementation term is shown  [clean]
+PASS  31. every disabled control has a reason a reader can find  [0 disabled, all explained]
+PASS  32. the contractor shell offers navigation at all  [0 sidebar items, 6 links]
+PASS  33. every nav item actually navigates somewhere  [0 moved]
+PASS  34. every destination offered to a new contractor resolves  [6 checked]
+PASS  35. /compliance renders right-to-left in Arabic for a new contractor
+PASS  36. the Arabic heading is Arabic  [ملف المستندات القانونية]
+PASS  37. and Arabic leaks no raw enum either  [clean]
+
+── engineer ──
+PASS  38. a fresh engineer account can be created through the real sign-up  [#1042]
+PASS  39. engineer starts unverified and not yet through compliance  [not_started / 0 / self_registered]
+PASS  40. and is recorded as self-registered, not seeded
+PASS  41. /compliance renders for a brand-new engineer
+PASS  42. exactly one first-level heading on /compliance  [1: Legal document profile]
+PASS  43. and it says where the user is, not just the brand  [Legal document profile]
+PASS  44. there is at least one thing a new account can do  [14 enabled controls]
+PASS  45. the empty product explains itself rather than showing bare zeros  [Review updates will appear here.]
+PASS  46. no count stands alone with nothing telling the user what it means  [0 bare zeros]
+PASS  47. compliance tells a new professional what to do and what follows  [BuildHub Home Dashboard AI Assistant Marketplace Get Quotes Pricing العربية F Fresh · Free]
+PASS  48. and names the documents it wants in words  [Registration compliance]
+PASS  49. no raw enum, placeholder or implementation term is shown  [clean]
+PASS  50. every disabled control has a reason a reader can find  [0 disabled, all explained]
+PASS  51. the engineer shell offers navigation at all  [0 sidebar items, 6 links]
+PASS  52. every nav item actually navigates somewhere  [0 moved]
+PASS  53. every destination offered to a new engineer resolves  [6 checked]
+PASS  54. /compliance renders right-to-left in Arabic for a new engineer
+PASS  55. the Arabic heading is Arabic  [ملف المستندات القانونية]
+PASS  56. and Arabic leaks no raw enum either  [clean]
+
+── architect ──
+PASS  57. a fresh architect account can be created through the real sign-up  [#1043]
+PASS  58. architect starts unverified and not yet through compliance  [not_started / 0 / self_registered]
+PASS  59. and is recorded as self-registered, not seeded
+PASS  60. /compliance renders for a brand-new architect
+PASS  61. exactly one first-level heading on /compliance  [1: Legal document profile]
+PASS  62. and it says where the user is, not just the brand  [Legal document profile]
+PASS  63. there is at least one thing a new account can do  [14 enabled controls]
+PASS  64. the empty product explains itself rather than showing bare zeros  [Review updates will appear here.]
+PASS  65. no count stands alone with nothing telling the user what it means  [0 bare zeros]
+PASS  66. compliance tells a new professional what to do and what follows  [BuildHub Home Dashboard AI Assistant Marketplace Get Quotes Pricing العربية F Fresh · Free]
+PASS  67. and names the documents it wants in words  [Registration compliance]
+PASS  68. no raw enum, placeholder or implementation term is shown  [clean]
+PASS  69. every disabled control has a reason a reader can find  [0 disabled, all explained]
+PASS  70. the architect shell offers navigation at all  [0 sidebar items, 6 links]
+PASS  71. every nav item actually navigates somewhere  [0 moved]
+PASS  72. every destination offered to a new architect resolves  [6 checked]
+PASS  73. /compliance renders right-to-left in Arabic for a new architect
+PASS  74. the Arabic heading is Arabic  [ملف المستندات القانونية]
+PASS  75. and Arabic leaks no raw enum either  [clean]
+
+── supplier ──
+PASS  76. a fresh supplier account can be created through the real sign-up  [#1044]
+PASS  77. supplier starts unverified and not yet through compliance  [not_started / 0 / self_registered]
+PASS  78. and is recorded as self-registered, not seeded
+PASS  79. /compliance renders for a brand-new supplier
+PASS  80. exactly one first-level heading on /compliance  [1: Legal document profile]
+PASS  81. and it says where the user is, not just the brand  [Legal document profile]
+PASS  82. there is at least one thing a new account can do  [14 enabled controls]
+PASS  83. the empty product explains itself rather than showing bare zeros  [Review updates will appear here.]
+PASS  84. no count stands alone with nothing telling the user what it means  [0 bare zeros]
+PASS  85. compliance tells a new professional what to do and what follows  [BuildHub Home Dashboard AI Assistant Marketplace Get Quotes Pricing العربية F Fresh · Free]
+PASS  86. and names the documents it wants in words  [Registration compliance]
+PASS  87. no raw enum, placeholder or implementation term is shown  [clean]
+PASS  88. every disabled control has a reason a reader can find  [0 disabled, all explained]
+PASS  89. the supplier shell offers navigation at all  [0 sidebar items, 6 links]
+PASS  90. every nav item actually navigates somewhere  [0 moved]
+PASS  91. every destination offered to a new supplier resolves  [6 checked]
+PASS  92. /compliance renders right-to-left in Arabic for a new supplier
+PASS  93. the Arabic heading is Arabic  [ملف المستندات القانونية]
+PASS  94. and Arabic leaks no raw enum either  [clean]
+
+── project_manager ──
+PASS  95. a fresh project_manager account can be created through the real sign-up  [#1045]
+PASS  96. project_manager starts unverified and not yet through compliance  [not_started / 0 / self_registered]
+PASS  97. and is recorded as self-registered, not seeded
+PASS  98. /compliance renders for a brand-new project_manager
+PASS  99. exactly one first-level heading on /compliance  [1: Legal document profile]
+PASS  100. and it says where the user is, not just the brand  [Legal document profile]
+PASS  101. there is at least one thing a new account can do  [14 enabled controls]
+PASS  102. the empty product explains itself rather than showing bare zeros  [Review updates will appear here.]
+PASS  103. no count stands alone with nothing telling the user what it means  [0 bare zeros]
+PASS  104. compliance tells a new professional what to do and what follows  [BuildHub Home Dashboard AI Assistant Marketplace Get Quotes Pricing العربية F Fresh · Free]
+PASS  105. and names the documents it wants in words  [Registration compliance]
+PASS  106. no raw enum, placeholder or implementation term is shown  [clean]
+PASS  107. every disabled control has a reason a reader can find  [0 disabled, all explained]
+PASS  108. the project_manager shell offers navigation at all  [0 sidebar items, 6 links]
+PASS  109. every nav item actually navigates somewhere  [0 moved]
+PASS  110. every destination offered to a new project_manager resolves  [6 checked]
+PASS  111. /compliance renders right-to-left in Arabic for a new project_manager
+PASS  112. the Arabic heading is Arabic  [ملف المستندات القانونية]
+PASS  113. and Arabic leaks no raw enum either  [clean]
+
+── coverage ──
+PASS  114. all six roles were exercised end to end  [6/6]
+PASS  115. the roles do not all land on one identical screen  [2 distinct headings: Homeowner Workspace | Legal document profile]
+       homeowner → /platform/homeowner  "Homeowner Workspace"  9 links
+       contractor → /compliance  "Legal document profile"  6 links
+       engineer → /compliance  "Legal document profile"  6 links
+       architect → /compliance  "Legal document profile"  6 links
+       supplier → /compliance  "Legal document profile"  6 links
+       project_manager → /compliance  "Legal document profile"  6 links
+PASS  116. every account this probe created is removed  [0 left]
+
+BUILD  9ab4783 (local)
+RESULT 116 passed, 0 failed

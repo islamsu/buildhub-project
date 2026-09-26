@@ -28,6 +28,7 @@ import { products, savedItems, users, vendorProfiles } from '../drizzle/schema';
 import { MAX_SAVED_ITEMS, MAX_SAVED_NOTE, type SavedItemKind } from '../shared/savedItems';
 import { publicProductFilter } from './productLifecycle';
 import { directoryVisibilityFilter } from './vendorDirectory';
+import { isDuplicateKeyError } from './_core/dbErrors';
 
 type Db = any;
 
@@ -93,9 +94,45 @@ export async function toggleSaved(db: Db, params: {
   }
 
   const note = (params.note ?? '').trim().slice(0, MAX_SAVED_NOTE) || null;
-  await db.insert(savedItems).values({
-    userId: params.userId, itemKind: params.kind, itemId: params.itemId, note,
-  });
+  /*
+   * ── TWO SAVES AT ONCE ANSWERED 500 ─────────────────────────────────────
+   *
+   * The read above and this insert are not one atomic step. Two concurrent
+   * saves of the same item both found nothing, both inserted, and
+   * `savedItems_user_item_unique` rejected the loser - as it should. What was
+   * wrong is what the loser's caller received: the raw duplicate-key error
+   * escaped as INTERNAL_SERVER_ERROR. Measured by firing two saves with
+   * Promise.all (evidence/zg-reliability.mjs), which answered 500 and 200.
+   *
+   * The DATA was never at risk; the unique index is what guarantees that, and
+   * the shortlist held one row throughout. The defect was the answer: a 500 on
+   * a double-tap tells a buyer their shortlist is broken when it is correct,
+   * and §64 requires a retry not to look like a fault.
+   *
+   * So the duplicate is CAUGHT and reported as the state it produced: saved.
+   * That is the contract this function already documented - "returns what the
+   * item's state now IS rather than what happened" - and the losing call now
+   * honours it instead of contradicting it.
+   *
+   * A locking read would also work and is heavier: it would take a row lock on
+   * every save, including the overwhelming majority that are not racing, to
+   * avoid an error that is already impossible to get wrong in the data.
+   *
+   * `isDuplicateKeyError` walks `error.cause`, and that is not incidental: the
+   * first version of this catch read `error.code` and never matched, because
+   * drizzle throws its own "Failed query" error and leaves MySQL's on the
+   * cause. See server/_core/dbErrors.ts.
+   */
+  try {
+    await db.insert(savedItems).values({
+      userId: params.userId, itemKind: params.kind, itemId: params.itemId, note,
+    });
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) throw error;
+    // The other call won the race. The item IS saved, which is what was asked
+    // for, so the count is re-read rather than assumed.
+    return { saved: true, total: await countSaved(db, params.userId) };
+  }
   return { saved: true, total: total + 1 };
 }
 

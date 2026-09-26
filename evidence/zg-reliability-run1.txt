@@ -1,0 +1,34 @@
+BUILD  9ab4783 (local) built 2026-09-26T06:22:37.348Z  http://127.0.0.1:5401
+PASS  1. SETUP: a customer, an approved contractor and a project  [project=174]
+PASS  2. an RFQ is open  [http=200 null]
+
+── the same offer, twice, at the same moment ──
+PASS  3. the supplier opens the enquiry, consuming an allowance  [http=200 null]
+PASS  4. both calls are answered - neither is a deadlock or a 500  [200/200]
+PASS  5. exactly ONE quotation exists on the request  [1 row(s)]
+PASS  6. and both callers were handed the SAME quotation - idempotent, not an error  [106 vs 106]
+PASS  7. the customer was notified at most once about it  [1 new notification(s)]
+PASS  8. no revision was recorded for an offer that did not change  [revisionNumber=1]
+
+── a corrected offer must still get through ──
+PASS  9. a corrected bid is accepted  [http=200]
+PASS  10. and the CURRENT bid carries the corrected term, not the original  [timeline=60]
+PASS  11. the revision model kept a history rather than overwriting silently  [2 row(s) for this request]
+
+── a bid after the decision ──
+PASS  12. the customer can accept the current bid  [http=200 null]
+PASS  13. and the request is awarded
+PASS  14. a bid arriving after the award is REFUSED  [http=409]
+PASS  15. and the refusal is a sentence a supplier can read, not a validation dump  [This request is no longer accepting quotations]
+PASS  16. the late bid is not stored  [0 row(s) at the late price]
+
+── a retried save ──
+PASS  17. the shortlist starts empty for this product  [0 row(s)]
+PASS  18. two concurrent saves are both answered  [200/200]
+PASS  19. and the shortlist never holds the same product twice  [1 row(s)]
+
+── cleanup ──
+PASS  20. every fixture this probe created is removed  [0 users, 0 projects left]
+
+BUILD  9ab4783 (local)
+RESULT 20 passed, 0 failed
