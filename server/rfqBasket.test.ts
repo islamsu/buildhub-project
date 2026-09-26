@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { readSourceForAssertions } from './_testing/sourceText';
 import {
-  addToBasket, basketItemKey, basketSubtotal, clampQuantity, parseBasket,
+  addToBasket, basketItemKey, basketSubtotals, clampQuantity, parseBasket,
   removeFromBasket, setQuantity, setSpecifications,
   MAX_BASKET_ITEMS, MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY,
 } from '@shared/rfqBasket';
@@ -55,7 +55,7 @@ const ctx = (id: number): TrpcContext => ({
 
 const item = (over: Partial<Parameters<typeof addToBasket>[1]> = {}) => ({
   productId: 1, name: 'Rebar 12mm', variantLabel: null, quantity: 1,
-  unit: 'tonne', specifications: null, unitPrice: 1200, ...over,
+  unit: 'tonne', specifications: null, unitPrice: 1200, currency: 'EGP', ...over,
 });
 
 // ══ 1. THE BASKET HOLDS MORE THAN ONE THING ════════════════════════════════
@@ -133,9 +133,47 @@ describe('the customer can change what they asked for', () => {
   });
 
   it('the catalogue total is marked as reference, and absent when nothing is priced', () => {
-    expect(basketSubtotal([])).toBeNull();
-    expect(basketSubtotal(addToBasket([], item({ unitPrice: null })))).toBeNull();
-    expect(basketSubtotal(addToBasket([], item({ quantity: 3, unitPrice: 100 })))).toBe(300);
+    expect(basketSubtotals([])).toEqual([]);
+    expect(basketSubtotals(addToBasket([], item({ unitPrice: null })))).toEqual([]);
+    expect(basketSubtotals(addToBasket([], item({ quantity: 3, unitPrice: 100 }))))
+      .toEqual([{ currency: 'EGP', total: 300 }]);
+  });
+
+  it('it is ONE TOTAL PER CURRENCY, because a basket can span markets', () => {
+    /*
+     * The defect this replaced: one number, rendered as `EGP ${subtotal}`. A
+     * basket holds lines from whichever suppliers the buyer picked, each with
+     * its own products.currency, so the single number was two currencies added
+     * as one unit under a label the view chose.
+     */
+    let basket = addToBasket([], item({ productId: 1, unitPrice: 1000, currency: 'EGP' }));
+    basket = addToBasket(basket, item({ productId: 2, unitPrice: 400, currency: 'SAR' }));
+    const totals = basketSubtotals(basket);
+    expect(totals).toHaveLength(2);
+    expect(totals.map(entry => entry.currency).sort()).toEqual(['EGP', 'SAR']);
+    expect(totals.some(entry => entry.total === 1400)).toBe(false);
+  });
+
+  it('a line with no currency is kept apart rather than folded into a real one', () => {
+    // A basket written to storage before the currency field existed, or a
+    // free-text line the customer typed. Neither may borrow a label.
+    const basket = addToBasket([], item({ unitPrice: 500, currency: null }));
+    const totals = basketSubtotals(basket);
+    expect(totals).toEqual([{ currency: '', total: 500 }]);
+  });
+
+  it('carries the currency back out of storage, and only a real ISO code', () => {
+    const stored = JSON.stringify([
+      { productId: 1, name: 'A', quantity: 1, unitPrice: 100, currency: 'sar' },
+      { productId: 2, name: 'B', quantity: 1, unitPrice: 100, currency: 'RIYALS' },
+      { productId: 3, name: 'C', quantity: 1, unitPrice: 100 },
+    ]);
+    const items = parseBasket(stored);
+    expect(items[0].currency).toBe('SAR');
+    // Tampering, or a value from somewhere that is not a currency code.
+    expect(items[1].currency).toBeNull();
+    // Written before the field existed.
+    expect(items[2].currency).toBeNull();
   });
 });
 

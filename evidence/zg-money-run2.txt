@@ -1,0 +1,36 @@
+BUILD  d7ba9be (local) built 2026-09-26T05:51:05.803Z  http://127.0.0.1:5401
+PASS  1. the test buyer exists  [#461]
+PASS  2. two projects exist, one EGP and one SAR  [#163 / #164]
+PASS  3. and the SAR project really stores SAR, not the column default
+PASS  4. the buyer dashboard lists both projects
+PASS  5. SAR appears on the dashboard at all  [the label follows the record]
+PASS  6. and EGP still appears for the Egyptian project
+PASS  7. the budget tile does NOT add EGP to SAR  [no summed figure]
+PASS  8. it states one total per currency in the same tile  [SAR 4.2M · EGP 1.8MTotal Budget]
+PASS  9. with the largest total first  [SAR 4.2M · EGP 1.8MTotal Budget]
+PASS  10. the SAR project row is denominated in SAR  [Total Budget: SAR 4,200,000]
+PASS  11. and the EGP project row in EGP
+PASS  12. the Saudi project row is nowhere labelled in Egyptian pounds  [zgmoney1790403654637 Riyadh villa9/26/2026 ActiveProgress20%Total Budget: SAR 4,200,000Spent: SAR 0 (0%)]
+PASS  13. the SAR project page is denominated in SAR
+PASS  14. and says nothing about Egyptian pounds  [clean]
+PASS  15. Arabic keeps the ISO code rather than a symbol that is ambiguous across markets
+PASS  16. and never calls a riyal a pound  [clean]
+PASS  17. the trigger shows the two collected lines  [2]
+PASS  18. the seeded basket renders its catalogue value inside the dialog
+PASS  19. the basket states one catalogue value per currency  [Catalogue value: EGP 2,000 · SAR 1,500 — not a quotation]
+PASS  20. and does not add pounds to riyals  [Catalogue value: EGP 2,000 · SAR 1,500 — not a quotation]
+PASS  21. and still says it is not a quotation  [Catalogue value: EGP 2,000 · SAR 1,500 — not a quotation]
+PASS  22. a priced service offering exists to render  [#6]
+PASS  23. the storefront shows the range the provider entered
+PASS  24. and no longer uses the ambiguous pound symbol  [clean]
+PASS  25. it names the ISO currency code instead
+PASS  26. in Arabic as well, which is where it used to appear  [clean]
+PASS  27. and Arabic shows the same ISO code
+PASS  28. the service fixture is removed
+PASS  29. a genuinely fresh buyer account can be created  [HTTP 200]
+PASS  30. a fresh account is shown no zero in a currency it has never used  [no EGP figure]
+PASS  31. and the fresh account is removed again
+PASS  32. both inserted projects are removed  [0 left]
+
+BUILD  d7ba9be (local)
+RESULT 32 passed, 0 failed

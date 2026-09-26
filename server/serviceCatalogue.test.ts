@@ -475,8 +475,40 @@ describe('the screens tell the truth about price', () => {
       const body = source.slice(at, source.indexOf('\n}', at));
       expect(body, name).not.toMatch(/\?\?\s*0\b/);
       expect(body, name).not.toMatch(/\|\|\s*0\b/);
-      // And it must still be a real formatter, not an emptied one.
-      expect(body, name).toContain('toLocaleString');
+      /*
+       * AND IT MUST STILL BE A REAL FORMATTER, NOT AN EMPTIED ONE.
+       *
+       * This asked for `toLocaleString`, which was true of the two local
+       * implementations that used to live here and is no longer true of
+       * either: both now delegate to `formatMoneyRange`, so the assertion was
+       * naming a formatting detail rather than the property it cared about.
+       *
+       * What it cares about is that the function formats through the one place
+       * that knows about currencies - which is also what now enforces the rule
+       * above, because formatMoney returns null for an absent amount and never
+       * substitutes a zero (server/moneyPresentation.test.ts).
+       */
+      expect(body, name).toContain('formatMoneyRange(');
+      expect(body, name).toContain('SERVICE_PRICE_CURRENCY');
+      // A currency literal here would be the defect these two carried: both
+      // spelled it `ar ? 'ج.م' : 'EGP'`, and 'ج.م' reads as a pound in more
+      // than one market in this region.
+      expect(body, name).not.toMatch(/['"`](EGP|SAR|AED)['"`]/);
+      expect(body, name).not.toContain('ج.م');
+    }
+  });
+
+  it('the market coupling that remains is one expression, not a literal', () => {
+    /*
+     * `serviceOfferings` has priceMin and priceMax and NO currency column, so
+     * there is genuinely nothing on the record to read. Both screens name the
+     * market through the same call the server makes when it writes a project's
+     * or an RFQ's currency, so adding the column is a one-line change in two
+     * files that a single grep finds - and the debt is declared in
+     * server/marketReadiness.test.ts rather than hidden in a string.
+     */
+    for (const [name, source] of [['manager', MANAGER], ['profile', PROFILE]] as const) {
+      expect(source, name).toContain('requireCurrencyForMarket(DEFAULT_MARKET)');
     }
   });
 

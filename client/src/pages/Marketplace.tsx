@@ -391,6 +391,10 @@ export default function Marketplace() {
                               unit: product.unit ?? null,
                               specifications: null,
                               unitPrice: product.price != null ? Number(product.price) : null,
+                              // Captured WITH the price. A basket can hold lines from
+                              // suppliers in different markets, and a subtotal over a
+                              // currency nobody recorded is not a total of anything.
+                              currency: product.currency ?? null,
                             });
                             toast.success(lang === 'ar' ? 'تمت الإضافة إلى قائمة الطلبات' : 'Added to RFQ list');
                           }}

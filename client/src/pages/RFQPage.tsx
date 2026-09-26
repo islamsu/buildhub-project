@@ -1,3 +1,4 @@
+import { formatMoney, formatMoneyTotals } from '@shared/money';
 import { useLanguage } from '@/contexts/LanguageContext';
 import Navbar from '@/components/Navbar';
 import { Pager } from '@/components/Pager';
@@ -500,11 +501,11 @@ export default function RFQPage() {
                           </div>
                         ))}
                       </div>
-                      {basket.subtotal != null && (
+                      {basket.subtotals.length > 0 && (
                         <p className="mt-2 text-xs text-muted-foreground" data-testid="rfq-basket-subtotal">
                           {lang === 'ar'
-                            ? `السعر المعروض في السوق: ${basket.subtotal.toLocaleString()} ج.م — ليس عرض سعر`
-                            : `Catalogue value: EGP ${basket.subtotal.toLocaleString()} — not a quotation`}
+                            ? `السعر المعروض في السوق: ${formatMoneyTotals(basket.subtotals, 'ar') ?? ''} — ليس عرض سعر`
+                            : `Catalogue value: ${formatMoneyTotals(basket.subtotals, 'en') ?? ''} — not a quotation`}
                         </p>
                       )}
                     </div>
@@ -686,7 +687,7 @@ export default function RFQPage() {
                         )}
                         {rfq.budget && (
                           <span className="flex items-center gap-1">
-                            <DollarSign className="w-3.5 h-3.5" />{t('common.egp')} {Number(rfq.budget).toLocaleString()}
+                            <DollarSign className="w-3.5 h-3.5" />{formatMoney(rfq.budget, rfq.currency, lang)}
                           </span>
                         )}
                         {rfq.location && (

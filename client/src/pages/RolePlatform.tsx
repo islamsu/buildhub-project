@@ -20,6 +20,7 @@ import EnquirySummaryCard from '@/components/EnquirySummaryCard';
 import VendorBilling from '@/components/VendorBilling';
 import { useHashSection, revealSection } from '@/hooks/useSectionAnchor';
 import type { SectionId } from '@shared/roleWorkspaceSections';
+import { formatMoney, formatMoneyTotals, sumByCurrency } from '@shared/money';
 import {
   ArrowUpRight, BarChart3, BriefcaseBusiness, Camera, CheckCircle2, ClipboardList,
   Clock3, DollarSign, FileText, FolderKanban, KanbanSquare, Layers3, MapPin, MessageSquare,
@@ -147,8 +148,17 @@ export default function RolePlatform() {
   const metrics: Metric[] = role === 'homeowner' ? [
     { label: lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects', value: projects.length, icon: FolderKanban, tone: 'text-blue-600 bg-blue-50', section: 'role-projects' },
     { label: t('dash.active_projects'), value: activeProjects.length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50', section: 'role-projects' },
-    { label: t('project.budget'), value: `${t('common.egp')} ${compactNumber(projects.reduce((sum, project) => sum + Number(project.budget ?? 0), 0))}`, icon: DollarSign, tone: 'text-amber-600 bg-amber-50' },
-    { label: t('dash.total_spent'), value: `${t('common.egp')} ${compactNumber(projects.reduce((sum, project) => sum + Number(project.spent ?? 0), 0))}`, icon: BarChart3, tone: 'text-violet-600 bg-violet-50' },
+    /*
+     * GROUPED BY CURRENCY, NOT SUMMED ACROSS THEM. These two read
+     * `EGP ${compact(projects.reduce(...))}` - every project's budget added
+     * together under one hard-coded label. The moment a buyer runs a project
+     * in Egypt and one in Saudi Arabia that number was two currencies added
+     * as though they were one unit, and the label named whichever the view
+     * happened to hard-code. A dash when there is nothing: a fresh account has
+     * no budget, and "EGP 0" states a fact about a currency it has never used.
+     */
+    { label: t('project.budget'), value: formatMoneyTotals(sumByCurrency(projects.map(project => ({ amount: project.budget, currency: project.currency }))), lang, 2, { compact: true }) ?? '—', icon: DollarSign, tone: 'text-amber-600 bg-amber-50' },
+    { label: t('dash.total_spent'), value: formatMoneyTotals(sumByCurrency(projects.map(project => ({ amount: project.spent, currency: project.currency }))), lang, 2, { compact: true }) ?? '—', icon: BarChart3, tone: 'text-violet-600 bg-violet-50' },
   ] : role === 'supplier' ? [
     { label: lang === 'ar' ? 'المنتجات المدرجة' : 'Listed Products', value: products.length, icon: Package, tone: 'text-orange-600 bg-orange-50', section: 'role-catalogue' },
     { label: lang === 'ar' ? 'طلبات مفتوحة' : 'Open Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-blue-600 bg-blue-50', section: 'role-rfqs' },
@@ -463,7 +473,7 @@ function QuotationTiles({ quotations, t, lang, navigate }: { quotations: any[]; 
             <Badge variant={quote.status === 'accepted' ? 'default' : 'secondary'}>{localizedStatus(quote.status, t)}</Badge>
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
-            {t('common.egp')} {Number(quote.price).toLocaleString()} · {quote.timeline || '—'} {t('common.days')}
+            {formatMoney(quote.price, quote.currency, lang) ?? '—'} · {quote.timeline || '—'} {t('common.days')}
           </p>
         </div>
       ))}
@@ -475,7 +485,7 @@ function ContractorWorkspace({ rfqs, projects, quotations, t, lang, navigate, on
   return (
     <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
       <Card id="role-pipeline"><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{lang === 'ar' ? 'مسار استلام طلبات الأسعار' : 'Contractor RFQ Pipeline'}</CardTitle><Button variant="outline" size="sm" onClick={() => navigate('/rfq')}>{t('platform.view')}</Button></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 6).map(rfq => <div key={rfq.id} className="rounded-xl border p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-semibold">{rfq.title}</p>
-<Link href={`/rfq/${rfq.id}`} className="font-mono text-sm font-medium text-primary underline-offset-2 hover:underline" data-testid="rfq-number">RFQ #{rfq.id}</Link><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{rfq.description}</p><div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">{rfq.category && <span className="flex items-center gap-1"><FileText className="h-3 w-3" />{rfq.category}</span>}{rfq.budget && <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{t('common.egp')} {Number(rfq.budget).toLocaleString()}</span>}{rfq.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{rfq.location}</span>}</div></div><Button size="sm" className="shrink-0 gap-1.5" onClick={() => onQuote(rfq.id)}><Send className="h-3.5 w-3.5" />{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
+<Link href={`/rfq/${rfq.id}`} className="font-mono text-sm font-medium text-primary underline-offset-2 hover:underline" data-testid="rfq-number">RFQ #{rfq.id}</Link><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{rfq.description}</p><div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">{rfq.category && <span className="flex items-center gap-1"><FileText className="h-3 w-3" />{rfq.category}</span>}{rfq.budget && <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{formatMoney(rfq.budget, rfq.currency, lang)}</span>}{rfq.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{rfq.location}</span>}</div></div><Button size="sm" className="shrink-0 gap-1.5" onClick={() => onQuote(rfq.id)}><Send className="h-3.5 w-3.5" />{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
       <Card id="role-projects"><CardHeader><CardTitle className="flex items-center gap-2"><BriefcaseBusiness className="h-5 w-5" />{lang === 'ar' ? 'إدارة المشاريع الميدانية' : 'Active Field Projects'}</CardTitle></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{projects.slice(0, 5).map(project => <div key={project.id} className="rounded-xl border p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-medium">{project.title}</p><Badge variant="outline">{localizedStatus(project.status, t)}</Badge></div><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{project.location || (lang === 'ar' ? 'الموقع غير محدد' : 'Location not set')}</span><span>{project.progress ?? 0}%</span></div></div>)}</div>}</CardContent></Card>
       <Card id="role-quotations" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{lang === 'ar' ? 'عروض أسعار المقاول' : 'Submitted Quotations & Team Execution'}</CardTitle></CardHeader><CardContent><QuotationTiles quotations={quotations} t={t} lang={lang} navigate={navigate} /></CardContent></Card>
     </div>

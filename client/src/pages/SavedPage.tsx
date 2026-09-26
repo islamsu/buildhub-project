@@ -117,6 +117,7 @@ export default function SavedPage() {
         specifications: null,
         // Catalogue price when added. Reference only - it is not a quotation.
         unitPrice: target.price == null ? null : Number(target.price),
+        currency: target.currency ?? null,
       });
       if (accepted) added++; else refused++;
     }

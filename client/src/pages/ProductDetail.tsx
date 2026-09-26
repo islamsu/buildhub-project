@@ -118,6 +118,8 @@ export default function ProductDetail() {
       unit: product.unit ?? null,
       specifications: null,
       unitPrice: product.price != null ? Number(product.price) : null,
+      // Captured with the price, so the basket subtotal can name it.
+      currency: product.currency ?? null,
     });
     toast.success(lang === 'ar' ? `تمت إضافة المنتج (${selectedPurchaseUnit}) إلى قائمة طلب الأسعار` : `Product (${selectedPurchaseUnit}) added to RFQ list`);
   }}

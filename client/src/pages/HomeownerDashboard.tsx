@@ -1,3 +1,17 @@
+import { formatMoney, formatMoneyTotals, sumByCurrency } from '@shared/money';
+import { DEFAULT_MARKET, requireCurrencyForMarket } from '@shared/markets';
+
+/*
+ * THE UNIT THE FORM IS ASKING FOR, DERIVED FROM THE MARKET THAT WILL OWN THE
+ * PROJECT - not the literal "EGP" this label used to carry.
+ *
+ * `projects.create` resolves an absent marketCode to DEFAULT_MARKET and writes
+ * `requireCurrencyForMarket(marketCode)`, and this form sends no marketCode. So
+ * this is the same call the server makes, and it is the same answer. When a
+ * second market is enabled the coupling is visible here rather than hidden in
+ * a translation string, which is the whole point of §86.
+ */
+const NEW_PROJECT_CURRENCY = requireCurrencyForMarket(DEFAULT_MARKET);
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/_core/hooks/useAuth';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -34,8 +48,17 @@ export default function HomeownerDashboard() {
   if (loading) return null;
   if (!isAuthenticated) { window.location.href = '/auth?mode=login'; return null; }
 
-  const totalBudget = projects?.reduce((s, p) => s + Number(p.budget ?? 0), 0) ?? 0;
-  const totalSpent  = projects?.reduce((s, p) => s + Number(p.spent ?? 0), 0) ?? 0;
+  /*
+   * GROUPED BY CURRENCY, NOT SUMMED ACROSS THEM.
+   *
+   * These were `reduce((s, p) => s + Number(p.budget))` rendered under a
+   * hard-coded EGP label. Every project's budget added together is only a
+   * total while every project is in one currency; the day one is in Saudi
+   * Arabia it is two currencies added as one unit under whichever label the
+   * view happened to name. Each project carries its own `currency`.
+   */
+  const budgetTotals = sumByCurrency((projects ?? []).map(project => ({ amount: project.budget, currency: project.currency })));
+  const spentTotals = sumByCurrency((projects ?? []).map(project => ({ amount: project.spent, currency: project.currency })));
   const activeCount = projects?.filter(p => p.status === 'active').length ?? 0;
 
   const statusConfig: Record<string, { label: string; color: string; icon: React.ComponentType<any> }> = {
@@ -49,8 +72,10 @@ export default function HomeownerDashboard() {
   const statCards = [
     { label: lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects', value: projects?.length ?? 0, icon: FolderOpen, color: 'text-blue-500', bg: 'bg-blue-50' },
     { label: t('dash.active_projects'), value: activeCount, icon: TrendingUp, color: 'text-green-500', bg: 'bg-green-50' },
-    { label: t('project.budget'), value: `${t('common.egp')} ${totalBudget.toLocaleString()}`, icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-50' },
-    { label: t('dash.total_spent'), value: `${t('common.egp')} ${totalSpent.toLocaleString()}`, icon: BarChart3, color: 'text-purple-500', bg: 'bg-purple-50' },
+    // A dash, not a zero: an account with no projects has no budget, and
+    // "EGP 0" asserts a figure in a currency it has never transacted in.
+    { label: t('project.budget'), value: formatMoneyTotals(budgetTotals, lang, 2, { compact: true }) ?? '—', icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-50' },
+    { label: t('dash.total_spent'), value: formatMoneyTotals(spentTotals, lang, 2, { compact: true }) ?? '—', icon: BarChart3, color: 'text-purple-500', bg: 'bg-purple-50' },
   ];
 
   const quickActions = [
@@ -101,7 +126,7 @@ export default function HomeownerDashboard() {
                     </SelectContent>
                   </Select>
                   <div className="grid grid-cols-2 gap-3">
-                    <Input data-testid="project-budget" placeholder={`${t('project.budget')} (${t('common.egp')})`} type="number" value={form.budget} onChange={e => setForm(f => ({ ...f, budget: e.target.value }))} />
+                    <Input data-testid="project-budget" placeholder={`${t('project.budget')} (${NEW_PROJECT_CURRENCY})`} type="number" value={form.budget} onChange={e => setForm(f => ({ ...f, budget: e.target.value }))} />
                     <Input data-testid="project-location" placeholder={t('project.location')} value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
                   </div>
                   <Button className="w-full" data-testid="project-create-submit" onClick={() => createProject.mutate({ ...form, budget: form.budget ? parseFloat(form.budget) : undefined })} disabled={createProject.isPending || !form.title}>
@@ -189,8 +214,8 @@ export default function HomeownerDashboard() {
                         <Progress value={project.progress ?? 0} className="h-1.5" />
                         {project.budget && (
                           <div className="flex justify-between text-xs text-muted-foreground">
-                            <span>{t('project.budget')}: {t('common.egp')} {Number(project.budget).toLocaleString()}</span>
-                            <span>{lang === 'ar' ? 'المنفق' : 'Spent'}: {t('common.egp')} {Number(project.spent ?? 0).toLocaleString()} ({spentPct.toFixed(0)}%)</span>
+                            <span>{t('project.budget')}: {formatMoney(project.budget, project.currency, lang)}</span>
+                            <span>{lang === 'ar' ? 'المنفق' : 'Spent'}: {formatMoney(project.spent ?? 0, project.currency, lang)} ({spentPct.toFixed(0)}%)</span>
                           </div>
                         )}
                       </div>

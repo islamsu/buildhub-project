@@ -190,7 +190,7 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                 <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
                   {project.location && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{project.location}</span>}
                   <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" />{lang === 'ar' ? 'أُنشئ ' : 'Created '}{new Date(project.createdAt).toLocaleDateString()}</span>
-                  {project.budget && <span className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" />{lang === 'ar' ? 'الميزانية: ' : 'Budget: '}{t('common.egp')} {Number(project.budget).toLocaleString()}</span>}
+                  {project.budget && <span className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" />{lang === 'ar' ? 'الميزانية: ' : 'Budget: '}{formatMoney(project.budget, projectCurrency, lang)}</span>}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -229,8 +229,8 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
               {[
                 { label: t('project.progress'), value: `${project.progress ?? 0}%`, icon: TrendingUp, color: 'text-blue-500', bg: 'bg-blue-50', extra: <Progress value={project.progress ?? 0} className="h-1 mt-1" /> },
                 { label: t('project.tasks'), value: `${doneTasks}/${totalTasks}`, icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-50' },
-                { label: t('project.budget'), value: project.budget ? `${t('common.egp')} ${Number(project.budget).toLocaleString()}` : '—', icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-50' },
-                { label: t('project.budget_used'), value: `${t('common.egp')} ${totalExpenses.toLocaleString()}`, icon: BarChart3, color: 'text-purple-500', bg: 'bg-purple-50' },
+                { label: t('project.budget'), value: formatMoney(project.budget, projectCurrency, lang) ?? '—', icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-50' },
+                { label: t('project.budget_used'), value: formatMoney(totalExpenses, projectCurrency, lang) ?? '—', icon: BarChart3, color: 'text-purple-500', bg: 'bg-purple-50' },
               ].map(s => (
                 <Card key={s.label}>
                   <CardContent className="p-4 flex items-center gap-3">

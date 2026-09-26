@@ -1,3 +1,15 @@
+import { formatMoneyRange } from '@shared/money';
+import { DEFAULT_MARKET, requireCurrencyForMarket } from '@shared/markets';
+
+/**
+ * The currency a service price range is quoted in.
+ *
+ * `serviceOfferings` carries no currency column, so this is the market's, not
+ * the record's - the one case in this pass where there was nothing to read.
+ * Named through the market table rather than written as 'EGP' so the coupling
+ * is visible and one grep finds it when the column is added.
+ */
+const SERVICE_PRICE_CURRENCY = requireCurrencyForMarket(DEFAULT_MARKET);
 import { useState } from 'react';
 import { Plus, Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -196,14 +208,38 @@ export default function ServiceCatalogueManager() {
   );
 }
 
-/** "EGP 120 – 260", "from EGP 120", "up to EGP 260", or nothing at all. */
+/**
+ * ── A SERVICE PRICE RANGE, THROUGH THE ONE FORMATTER ────────────────────
+ *
+ * This was a local copy - the second of two identical ones, the other in
+ * client/src/pages/VendorProfile.tsx - built from `const currency = ar ? 'ج.م' : 'EGP'`. Two problems,
+ * both of which shared/money.ts exists to answer:
+ *
+ *   'ج.م' is AMBIGUOUS. It reads as a pound, and several markets in this
+ *   region write their currency that way. The canonical formatter shows the
+ *   ISO code for exactly this reason - a procurement screen is the wrong
+ *   place to be charming about a unit somebody transacts on.
+ *
+ *   the currency was a LITERAL, chosen by the view.
+ *
+ * THE REMAINING DEBT IS HONEST AND IT IS A COLUMN, NOT THIS VIEW.
+ * `serviceOfferings` has priceMin and priceMax and NO currency column, so
+ * there is nothing on the record to read. The market is named here through
+ * `requireCurrencyForMarket(DEFAULT_MARKET)` - the same call the server makes
+ * when it writes a project's or an RFQ's currency - so the coupling is one
+ * greppable expression instead of a string, and adding the column is what
+ * removes it. `server/marketReadiness.test.ts` records it that way.
+ */
 function formatRange(min: unknown, max: unknown, ar: boolean): string {
-  const currency = ar ? 'ج.م' : 'EGP';
-  const n = (value: unknown) => Number(value).toLocaleString(ar ? 'ar-EG' : 'en-EG');
-  if (min != null && max != null) return `${currency} ${n(min)} – ${n(max)}`;
-  if (min != null) return ar ? `من ${currency} ${n(min)}` : `from ${currency} ${n(min)}`;
-  if (max != null) return ar ? `حتى ${currency} ${n(max)}` : `up to ${currency} ${n(max)}`;
-  return ar ? 'السعر غير محدد' : 'Price not stated';
+  const range = formatMoneyRange(
+    min as number | string | null | undefined,
+    max as number | string | null | undefined,
+    SERVICE_PRICE_CURRENCY,
+    ar ? 'ar' : 'en',
+    ar ? { from: 'من', upTo: 'حتى' } : { from: 'from', upTo: 'up to' },
+  );
+  // Never a zero standing in for an unknown price.
+  return range ?? (ar ? 'السعر غير محدد' : 'Price not stated');
 }
 
 type FormValues = {

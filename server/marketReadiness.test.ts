@@ -475,25 +475,21 @@ const DECLARED_CURRENCY_HARDCODES: readonly { file: string; reason: string }[] =
   },
   {
     file: 'client/src/components/ServiceCatalogueManager.tsx',
-    reason: 'Indicative service pricing, supplier-facing, in the one market '
-      + 'BuildHub operates in. Moves to the provider\'s served-market currency '
-      + 'when market offers land (§42).',
+    reason: 'Indicative service pricing. THE DEBT IS A COLUMN, NOT THIS VIEW: '
+      + '`serviceOfferings` has priceMin and priceMax and no currency, so there '
+      + 'is nothing on the record to read. It now renders through '
+      + 'formatMoneyRange with requireCurrencyForMarket(DEFAULT_MARKET) - the '
+      + 'same call the server makes for a project or an RFQ - so the coupling '
+      + 'is one greppable expression rather than a literal, and adding the '
+      + 'column is what removes this entry.',
   },
   {
     file: 'client/src/pages/VendorProfile.tsx',
-    reason: 'The public storefront\'s indicative price range. Same source and '
-      + 'same fix as ServiceCatalogueManager above.',
-  },
-  {
-    file: 'client/src/pages/RFQPage.tsx',
-    reason: 'The basket subtotal, labelled "not a quotation". Becomes the '
-      + 'RFQ\'s own currency once the create form asks for a market.',
-  },
-  {
-    file: 'client/src/contexts/LanguageContext.tsx',
-    reason: "'common.egp' - a currency NAME in the dictionary, which is what a "
-      + 'dictionary is for. Its callers are the ones that matter, and they are '
-      + 'enumerated in COMMON_EGP_CALLERS below.',
+    reason: 'The storefront half of the same service price range, and the same '
+      + 'missing `serviceOfferings.currency` column. The two identical local '
+      + 'formatters that used to spell it \'ج.م\' are gone; both call '
+      + 'formatMoneyRange now, which shows the ISO code because \'ج.م\' reads '
+      + 'as a pound in more than one market.',
   },
 ];
 
@@ -523,36 +519,27 @@ const DECLARED_CURRENCY_HARDCODES: readonly { file: string; reason: string }[] =
  * project, and that is a layout decision on the homeowner main screen, not a
  * substitution. It is recorded in the ledger rather than guessed at here.
  */
-const COMMON_EGP_CALLERS: readonly { file: string; reason: string }[] = [
-  {
-    file: 'client/src/pages/HomeownerDashboard.tsx',
-    reason: 'Budget and spend TOTALS summed across projects, plus the new-project '
-      + 'form label. A sum over mixed currencies is not a number; needs grouping '
-      + 'by currency, which is a layout change to the homeowner dashboard.',
-  },
-  {
-    file: 'client/src/pages/ProjectDetail.tsx',
-    reason: "One project's budget and expense total. Single-currency by "
-      + 'construction, so this one is a straight substitution once projects.currency '
-      + 'is threaded through the expense log reader.',
-  },
-  {
-    file: 'client/src/pages/RolePlatform.tsx',
-    reason: 'Portfolio budget/spend totals across projects (same mixed-currency '
-      + 'problem as HomeownerDashboard) and an RFQ feed row whose currency the '
-      + 'feed already carries.',
-  },
-  {
-    file: 'client/src/pages/RFQPage.tsx',
-    reason: 'The basket subtotal, labelled "not a quotation". Becomes the '
-      + "RFQ's own currency once the create form asks for a market.",
-  },
-  {
-    file: 'client/src/pages/VendorProfile.tsx',
-    reason: "The storefront's indicative price range, supplier-entered in the one "
-      + 'market BuildHub operates in. Moves with product market offers (section 42).',
-  },
-];
+/**
+ * ── THE LIST IS EMPTY, WHICH IS WHAT IT WAS FOR ─────────────────────────
+ *
+ * It held five files, each with a reason for still labelling an amount from
+ * the `common.egp` dictionary key, and the reasons were honest about the work:
+ * two dashboards summed budgets ACROSS projects and needed grouping by
+ * currency before a label could be correct at all; the others were waiting on
+ * a currency being threaded to the view.
+ *
+ * All five are done, and the dictionary key itself is deleted, so there is no
+ * key left to reach for. `server/moneyPresentation.test.ts` holds what each
+ * surface now reads and why a mixed-currency total is grouped rather than
+ * added; `evidence/zg-money.mjs` proves it in a browser with one EGP and one
+ * SAR project on the same account.
+ *
+ * THE LIST STAYS, AT ZERO. The check below it - "no surface labels money from
+ * the dictionary that is not written down" - is what stops the coupling coming
+ * back, and it needs this list to compare against. An empty allowlist is a
+ * stronger statement than a deleted one: it says nothing is permitted.
+ */
+const COMMON_EGP_CALLERS: readonly { file: string; reason: string }[] = [];
 
 describe('the `common.egp` coupling is a closed, shrinking list', () => {
   function walkAll(dir: string, out: string[] = []): string[] {
@@ -596,12 +583,22 @@ describe('the `common.egp` coupling is a closed, shrinking list', () => {
   it('and every file on the list still has the coupling it was listed for', () => {
     // A stale entry is worse than no list: it makes the remaining work look
     // larger than it is, and it quietly permits a regression in a file that
-    // had already been fixed.
+    // had already been fixed. This is what emptied the list - each fix made
+    // its own entry fail here until the entry was removed.
     for (const entry of COMMON_EGP_CALLERS) {
       expect(codeOf(join(ROOT, entry.file)).includes('common.egp'),
         `${entry.file} no longer uses common.egp - delete its line from COMMON_EGP_CALLERS`,
       ).toBe(true);
     }
+  });
+
+  it('the list is empty, and the dictionary key is gone with it', () => {
+    // Not a tautology over an empty loop: this states the end position the
+    // list was built to reach, and it fails the moment somebody re-declares a
+    // surface instead of fixing it.
+    expect(COMMON_EGP_CALLERS).toEqual([]);
+    expect(readFileSync(join(ROOT, 'client/src/contexts/LanguageContext.tsx'), 'utf8'))
+      .not.toContain("'common.egp':");
   });
 
   it('the enquiry and quotation surfaces are NOT on it', () => {

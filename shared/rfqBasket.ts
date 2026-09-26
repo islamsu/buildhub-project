@@ -34,6 +34,8 @@
  * approval status. This parser decides how many ids may be CARRIED; it
  * decides nothing about who may be invited.
  */
+import { sumByCurrency } from './money';
+
 export const MAX_CARRIED_INVITATIONS = 10;
 
 export function parseInviteIds(raw: string | null | undefined): number[] {
@@ -85,6 +87,17 @@ export type BasketItem = {
   specifications: string | null;
   /** Catalogue price when added. Reference only - it is not a quotation. */
   unitPrice: number | null;
+  /**
+   * THE CURRENCY THAT PRICE WAS IN, captured with it.
+   *
+   * It was absent, so the subtotal was rendered as `EGP ${subtotal}` - a
+   * hard-coded label over a sum of prices from however many suppliers, each
+   * with its own `products.currency`. Null for a line the customer typed
+   * themselves, which has no catalogue price, and null for a line restored
+   * from storage written before this field existed - both render as a bare
+   * number rather than a guessed currency.
+   */
+  currency: string | null;
 };
 
 export function basketItemKey(productId: number | null, variantLabel: string | null): string {
@@ -164,6 +177,11 @@ export function parseBasket(raw: string | null): BasketItem[] {
       specifications: typeof row.specifications === 'string' && row.specifications
         ? row.specifications.slice(0, MAX_ITEM_SPECIFICATIONS) : null,
       unitPrice: typeof row.unitPrice === 'number' && Number.isFinite(row.unitPrice) ? row.unitPrice : null,
+      // A three-letter ISO code or nothing. A basket restored from before this
+      // field existed has no currency, and inventing one would put a number
+      // under a label nobody chose.
+      currency: typeof row.currency === 'string' && /^[A-Za-z]{3}$/.test(row.currency.trim())
+        ? row.currency.trim().toUpperCase() : null,
     });
   }
   // De-duplicate keys that storage tampering could have introduced.
@@ -171,9 +189,17 @@ export function parseBasket(raw: string | null): BasketItem[] {
   return items.filter(item => seen.has(item.key) ? false : (seen.add(item.key), true));
 }
 
-/** The indicative total, clearly not a price: nothing has been quoted yet. */
-export function basketSubtotal(items: BasketItem[]): number | null {
-  const priced = items.filter(item => item.unitPrice != null);
-  if (priced.length === 0) return null;
-  return priced.reduce((sum, item) => sum + (item.unitPrice ?? 0) * item.quantity, 0);
+/**
+ * The indicative total, clearly not a price: nothing has been quoted yet.
+ *
+ * ONE TOTAL PER CURRENCY, because a basket can hold lines from suppliers in
+ * different markets and adding those together produces a number that is not a
+ * total of anything. Returns [] when nothing in the basket has a price, so the
+ * caller shows no figure rather than a zero.
+ */
+export function basketSubtotals(items: BasketItem[]): { currency: string; total: number }[] {
+  return sumByCurrency(items.map(item => ({
+    amount: item.unitPrice == null ? null : item.unitPrice * item.quantity,
+    currency: item.currency,
+  })));
 }
