@@ -76,7 +76,7 @@ These are open, and none of them has evidence in the repository today:
 | Performance reviewed (§35, §63) | **GREEN** — `evidence/zg-performance.mjs` (29, twice, identical). Query count measured against result size, so an N+1 fails without a threshold; page-size caps, payload ceiling and the indexes behind every hot filter. Lab wall times recorded, not gated — §63's field data needs production telemetry |
 | Reliability reviewed (§35, §64) | **GREEN** — `evidence/zg-reliability.mjs` (20, twice, identical) plus the existing outage, flood and allowance-race probes. Found and fixed two dead duplicate-key guards |
 | SEO complete (§37, §66) | **GREEN** — `server/seo.test.ts` (57) and `evidence/zg-seo.mjs` (89, twice, identical), five mutations verified. One finding referred to the owner: `/vendor/:id` needs a session |
-| AI release gate (§38) | **PARTIAL** — AI tests exist; the §38 gate itself is not recorded as run |
+| AI release gate (§38) | **GREEN, with one item infrastructure-blocked** — `server/aiReleaseGate.test.ts` (14) maps each §38 item to the guarantee that proves it, over the 160 existing AI assertions; `evidence/zg-ai.mjs` (20, twice, identical) renders the unavailable state in EN and AR at 1440 and 375. No `OPENAI_API_KEY` here, so whether a live model obeys a correct instruction is not verified |
 | ACC-4 fresh-account cross-role acceptance | **GREEN** — `evidence/zg-acc4.mjs` (116, twice, identical): six roles created through the real sign-up, each landing where the app sends them, EN and AR |
 | Upload master pass (§34) | **PARTIAL** — `uploadfamilies` probe exists; real S3 round-trip remains infrastructure-blocked |
 | Tracker reconciled (§41) | **PARTIAL** — 27 items still open in `todo.md`, mixing engineering with owner decisions and future architecture |
@@ -91,6 +91,26 @@ the owner to accept a release whose own gate lists seven unmet criteria.
 - Object storage: no S3 credentials, so a real upload round-trip is an honest
   SKIP rather than a pass.
 - Staging observation: network policy, as above.
+- AI: no `OPENAI_API_KEY`, so every §38 item is verified at the layer that
+  decides it — the system prompt, the context builders, the authorization
+  checks — and no live answer was obtained. `evidence/zg-ai.mjs` turns the
+  absence into evidence for the item it can prove: an assistant with no engine
+  says so, disables its composer, fabricates nothing, and the endpoint refuses
+  with a sentence that names no credential.
+
+## A decision this pass tried to change, and should not have
+
+The §38 gate was first written to make the assistant answer in the language of
+the QUESTION, which is how §38 words it. `server/languageAuthority.test.ts`
+failed immediately, and its reasoning is better than the reading that replaced
+it: the person reading the answer is on an Arabic page, having chosen Arabic;
+somebody who types one English technical term has not changed languages, and an
+answer that follows the question strands them with a reply their page cannot lay
+out correctly. All four site/question combinations were already covered there.
+
+The change was reverted and the gate now asserts the rule that exists. Recorded
+here because the near-miss is the useful part: a settled decision was protected
+by its own test, which is what that test was for.
 
 ## Findings referred to the owner
 

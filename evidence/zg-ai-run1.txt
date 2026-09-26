@@ -1,0 +1,28 @@
+BUILD  9ab4783 (local) built 2026-09-26T11:03:02.915Z  http://127.0.0.1:5401
+PASS  1. a buyer session is available  [HTTP 200]
+AVAIL  aiAssistant=false
+PASS  2. the server reports the assistant as unavailable - there is no key in this environment  [false]
+PASS  3. en/1440px: the page says the assistant is unavailable  [BuildHub Home Dashboard AI Assistant Marketplace Get Quotes Pricing العربية 9+ D Dalia · Free AI Ass]
+PASS  4. en/1440px: the composer is disabled rather than accepting a question nothing will answer  [disabled=true]
+PASS  5. en/1440px: no answer is fabricated in place of the engine  [clean]
+PASS  6. en/1440px: the page is not a dead end  [18 enabled controls]
+PASS  7. ar/1440px: the page says the assistant is unavailable  [BuildHub الرئيسية لوحة التحكم مساعد الذكاء الاصطناعي السوق طلب عروض الباقات English 9+ D Dalia · مجا]
+PASS  8. ar/1440px: renders right-to-left
+PASS  9. ar/1440px: and the notice reaches an Arabic reader
+PASS  10. ar/1440px: the composer is disabled rather than accepting a question nothing will answer  [disabled=true]
+PASS  11. ar/1440px: no answer is fabricated in place of the engine  [clean]
+PASS  12. ar/1440px: the page is not a dead end  [18 enabled controls]
+PASS  13. en/375px: the page says the assistant is unavailable  [BuildHub العربية 9+ D AI Assistant Your Construction Assistant Plan the work, understand the cost, a]
+PASS  14. en/375px: the composer is disabled rather than accepting a question nothing will answer  [disabled=true]
+PASS  15. en/375px: no answer is fabricated in place of the engine  [clean]
+PASS  16. en/375px: the page is not a dead end  [18 enabled controls]
+PASS  17. the endpoint refuses a question it cannot answer  [HTTP 503]
+PASS  18. and returns no invented answer  [{"error":{"json":{"message":"The AI assistant is not available on this deploymen]
+PASS  19. the refusal is a sentence, not a stack or a code  [The AI assistant is not available on this deployment.]
+PASS  20. and it names no credential or provider - an operator detail, not a user one  [The AI assistant is not available on this deployment.]
+
+BUILD  9ab4783 (local)
+NOTE   This deployment has NO OPENAI_API_KEY, which is what makes the checks above
+NOTE   possible. The other half of §38 - whether a live model obeys a correct
+NOTE   instruction - cannot be run here and is recorded as infrastructure-blocked.
+RESULT 20 passed, 0 failed
