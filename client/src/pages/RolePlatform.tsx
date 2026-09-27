@@ -20,6 +20,8 @@ import EnquirySummaryCard from '@/components/EnquirySummaryCard';
 import VendorBilling from '@/components/VendorBilling';
 import { useHashSection, revealSection } from '@/hooks/useSectionAnchor';
 import type { SectionId } from '@shared/roleWorkspaceSections';
+import { projectOpportunities, type ProjectOpportunity } from '@shared/projectOpportunities';
+import { ManagedProjectCard, ProjectOpportunityCard } from '@/components/ProjectCards';
 import { formatMoney, formatMoneyTotals, sumByCurrency } from '@shared/money';
 import {
   ArrowUpRight, BarChart3, BriefcaseBusiness, Camera, CheckCircle2, ClipboardList,
@@ -102,7 +104,20 @@ export default function RolePlatform() {
   const isSupplier = role === 'supplier';
   const utils = trpc.useUtils();
   const copy = ROLE_PLATFORM_COPY[role];
-  const { data: projects = [] } = trpc.projects.list.useQuery(undefined, { enabled: isAuthenticated && role === 'homeowner' });
+  /*
+   * MANAGED PROJECTS, FOR EVERY ROLE.
+   *
+   * This was `enabled: role === 'homeowner'`, so a Project Manager's workspace
+   * had NO source of their own projects at all - only `projects.directory`,
+   * which is a sanitized lead directory over projects they may not belong to.
+   * That is why their Project Queue was a grid of inert cards: there was
+   * nothing safe to link them to.
+   *
+   * `projects.list` reads `readableProjectIds` - owned, or an active member
+   * with `removedAt IS NULL` - which is exactly the set `/projects/:id` will
+   * open. No authorization changes; the workspace just stops ignoring it.
+   */
+  const { data: projects = [] } = trpc.projects.list.useQuery(undefined, { enabled: isAuthenticated });
   const directoryQuery = trpc.projects.directory.useQuery(
     { page: 0, pageSize: 50 },
     { enabled: isAuthenticated && isProfessional },
@@ -141,9 +156,35 @@ export default function RolePlatform() {
 
   const activeProjects = projects.filter(project => project.status === 'active');
   const awardedQuotes = myQuotations.filter(quote => quote.status === 'accepted');
-  const averageProgress = projectDirectory.length > 0
-    ? Math.round(projectDirectory.reduce((sum, project) => sum + Number(project.progress ?? 0), 0) / projectDirectory.length)
-    : 0;
+  /*
+   * AVERAGED OVER THE PROJECTS THE READER RUNS, because that is the section the
+   * tile sits in. It averaged `projectDirectory` - every project on the platform
+   * - under "Average Progress" beside two counts that are now the manager's own,
+   * so the three numbers in one group described two different populations. §10:
+   * a figure must be what its label says it is.
+   *
+   * Averaging nothing is not 0% progress, so it reads as "no data" instead.
+   */
+  const progressOf = (rows: { progress?: number | null }[]) => rows.length > 0
+    ? Math.round(rows.reduce((sum, project) => sum + Number(project.progress ?? 0), 0) / rows.length)
+    : null;
+  const averageProgress = progressOf(projects as { progress?: number | null }[]);
+
+  /*
+   * ── MANAGED vs OPPORTUNITY, DECIDED ONCE ─────────────────────────────
+   *
+   * `shared/projectOpportunities.ts` holds the rule and the reasoning. In
+   * short: a directory row the reader belongs to is MANAGED and opens the real
+   * workspace; a row they do not belong to is an OPPORTUNITY and is only shown
+   * when it has an open request to act on, because its action is that request.
+   *
+   * A directory row that is also a managed project is not listed twice.
+   */
+  const managedProjects = projects as any[];
+  const opportunities = useMemo(
+    () => projectOpportunities(projectDirectory, managedProjects, rfqs),
+    [projectDirectory, managedProjects, rfqs],
+  );
 
   const metrics: Metric[] = role === 'homeowner' ? [
     { label: lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects', value: projects.length, icon: FolderKanban, tone: 'text-blue-600 bg-blue-50', section: 'role-projects' },
@@ -165,9 +206,14 @@ export default function RolePlatform() {
     { label: lang === 'ar' ? 'مخزون منخفض' : 'Low Stock', value: products.filter(product => Number(product.stock ?? 0) < 10).length, icon: PackagePlus, tone: 'text-rose-600 bg-rose-50', section: 'role-catalogue' },
     { label: lang === 'ar' ? 'عروض الأسعار' : 'My Quotations', value: myQuotations.length, icon: FileText, tone: 'text-violet-600 bg-violet-50', section: 'role-quotations' },
   ] : role === 'project_manager' ? [
-    { label: t('platform.projects'), value: projectDirectory.length, icon: FolderKanban, tone: 'text-cyan-600 bg-cyan-50', section: 'role-queue' },
-    { label: t('dash.active_projects'), value: projectDirectory.filter(project => project.status === 'active').length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50', section: 'role-queue' },
-    { label: lang === 'ar' ? 'متوسط الإنجاز' : 'Average Progress', value: `${averageProgress}%`, icon: BarChart3, tone: 'text-violet-600 bg-violet-50', section: 'role-queue' },
+    /*
+     * A PROJECT MANAGER'S OWN WORK, not the platform's. Both of these counted
+     * `projectDirectory` - every project that exists - under labels that read
+     * as "mine".
+     */
+    { label: t('platform.projects'), value: managedProjects.length, icon: FolderKanban, tone: 'text-cyan-600 bg-cyan-50', section: 'role-queue' },
+    { label: t('dash.active_projects'), value: managedProjects.filter(project => project.status === 'active').length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50', section: 'role-queue' },
+    { label: lang === 'ar' ? 'متوسط الإنجاز' : 'Average Progress', value: averageProgress === null ? '—' : `${averageProgress}%`, icon: BarChart3, tone: 'text-violet-600 bg-violet-50', section: 'role-queue' },
     { label: lang === 'ar' ? 'الطلبات المفتوحة' : 'Open Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-amber-600 bg-amber-50', section: 'role-rfqs' },
   ] : [
     // The contractor's requests card is the pipeline; engineer and architect
@@ -177,7 +223,14 @@ export default function RolePlatform() {
     { label: lang === 'ar' ? 'الطلبات المؤهلة' : 'Qualified Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-blue-600 bg-blue-50', section: role === 'contractor' ? 'role-pipeline' : 'role-rfqs' },
     { label: lang === 'ar' ? 'عروض الأسعار' : 'My Quotations', value: myQuotations.length, icon: FileText, tone: 'text-violet-600 bg-violet-50', section: 'role-quotations' },
     { label: lang === 'ar' ? 'العروض المقبولة' : 'Accepted Quotes', value: awardedQuotes.length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50', section: 'role-quotations' },
-    { label: lang === 'ar' ? 'مشاريع متاحة' : 'Project Opportunities', value: projectDirectory.length, icon: BriefcaseBusiness, tone: 'text-amber-600 bg-amber-50', section: 'role-projects' },
+    /*
+     * COUNTED, NOT GUESSED. This read `projectDirectory.length` - every project
+     * on the platform - and called the number this supplier's opportunities. An
+     * opportunity is a project they do not already belong to WITH an open
+     * request they can act on, which is what the card shows and therefore what
+     * the tile must count.
+     */
+    { label: lang === 'ar' ? 'مشاريع متاحة' : 'Project Opportunities', value: opportunities.length, icon: BriefcaseBusiness, tone: 'text-amber-600 bg-amber-50', section: 'role-projects' },
   ];
 
   const actions: RoleCardAction[] = role === 'homeowner' ? [
@@ -191,7 +244,7 @@ export default function RolePlatform() {
     { label: t('platform.projects'), icon: BriefcaseBusiness, onClick: () => goToSection('role-projects'), tone: 'text-cyan-600' },
     { label: t('dash.messages'), icon: MessageSquare, onClick: () => navigate('/messages'), tone: 'text-violet-600' },
   ] : role === 'project_manager' ? [
-    { label: t('platform.project_queue'), icon: KanbanSquare, onClick: () => goToSection('role-queue'), tone: 'text-cyan-600' },
+    { label: t('platform.managed_projects'), icon: KanbanSquare, onClick: () => goToSection('role-queue'), tone: 'text-cyan-600' },
     /* Was "Team", and went to Messages - the same defect the note below
        describes, two lines above the note. Team structure is an open owner
        decision; the shortcut says what it does. */
@@ -354,29 +407,51 @@ export default function RolePlatform() {
                 </p>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {products.slice(0, 6).map(product => (
+                  {products.slice(0, 6).map(product => {
+                    /*
+                     * ONE NAME FOR THE PRODUCT, used by the label and the line
+                     * a reader sees. Naming it in English inside the Arabic
+                     * label while the row shows the Arabic name tells a screen
+                     * reader about a product the page does not appear to show
+                     * (§67).
+                     */
+                    const shownName = lang === 'ar' && product.nameAr ? product.nameAr : product.name;
+                    return (
                     <div key={product.id} className="flex items-center gap-2 rounded-lg border p-2">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{lang === 'ar' && product.nameAr ? product.nameAr : product.name}</p>
+                        <p className="truncate text-sm font-medium">{shownName}</p>
                         <p className="truncate text-xs text-muted-foreground">{product.category}{product.price ? ` · ${Number(product.price).toLocaleString()}` : ''}</p>
                       </div>
-                      <Link href={`/products/${product.id}/edit`}><Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label={lang === 'ar' ? 'تعديل' : 'Edit'} data-testid="catalogue-preview-edit"><Pencil className="h-3.5 w-3.5" /></Button></Link>
+                      {/*
+                        * ONE CONTROL, NOT TWO NESTED ONES. This was
+                        * `<Link><Button aria-label=…>`, which renders an
+                        * anchor wrapping a button: two focusable elements for
+                        * one action, and the OUTER one - the one the keyboard
+                        * reaches first - had no accessible name at all. A
+                        * screen-reader user heard "link" six times down the
+                        * catalogue. `asChild` collapses them into a single
+                        * anchor that carries the label (§62).
+                        */}
+                      <Button asChild size="sm" variant="ghost" className="h-8 w-8 p-0">
+                        <Link href={`/products/${product.id}/edit`} aria-label={lang === 'ar' ? `تعديل ${shownName}` : `Edit ${shownName}`} data-testid="catalogue-preview-edit"><Pencil className="h-3.5 w-3.5" /></Link>
+                      </Button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
           </Card>
-          <SupplierWorkspace rfqs={matchingRfqs} projects={projectDirectory} t={t} lang={lang} onQuote={(rfqId) => navigate(`/rfq/${rfqId}/respond`)} />
+          <SupplierWorkspace rfqs={matchingRfqs} opportunities={opportunities} t={t} lang={lang} onQuote={(rfqId) => navigate(`/rfq/${rfqId}/respond`)} />
           </>
         ) : role === 'contractor' ? (
-          <ContractorWorkspace rfqs={matchingRfqs} projects={projectDirectory} quotations={myQuotations} t={t} lang={lang} navigate={navigate} onQuote={(rfqId: number) => navigate(`/rfq/${rfqId}/respond`)} />
+          <ContractorWorkspace rfqs={matchingRfqs} opportunities={opportunities} quotations={myQuotations} t={t} lang={lang} navigate={navigate} onQuote={(rfqId: number) => navigate(`/rfq/${rfqId}/respond`)} />
         ) : role === 'engineer' ? (
-          <EngineerWorkspace rfqs={matchingRfqs} projects={projectDirectory} quotations={myQuotations} t={t} lang={lang} navigate={navigate} onQuote={(rfqId: number) => navigate(`/rfq/${rfqId}/respond`)} />
+          <EngineerWorkspace rfqs={matchingRfqs} opportunities={opportunities} quotations={myQuotations} t={t} lang={lang} navigate={navigate} onQuote={(rfqId: number) => navigate(`/rfq/${rfqId}/respond`)} />
         ) : role === 'architect' ? (
-          <ArchitectWorkspace rfqs={matchingRfqs} projects={projectDirectory} quotations={myQuotations} t={t} lang={lang} navigate={navigate} ownProfileId={ownProfile?.id} onQuote={(rfqId: number) => navigate(`/rfq/${rfqId}/respond`)} />
+          <ArchitectWorkspace rfqs={matchingRfqs} opportunities={opportunities} quotations={myQuotations} t={t} lang={lang} navigate={navigate} ownProfileId={ownProfile?.id} onQuote={(rfqId: number) => navigate(`/rfq/${rfqId}/respond`)} />
         ) : (
-          <ProjectManagerWorkspace projects={projectDirectory} rfqs={matchingRfqs} t={t} lang={lang} navigate={navigate} />
+          <ProjectManagerWorkspace managed={managedProjects} opportunities={opportunities} rfqs={matchingRfqs} t={t} lang={lang} navigate={navigate} />
         )}
 
         {/* Phase 4B.3: service-category declaration + the qualified-enquiry
@@ -433,7 +508,7 @@ export default function RolePlatform() {
 function HomeownerWorkspace({ projects, t, lang, navigate }: { projects: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-      <Card id="role-projects"><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><FolderKanban className="h-5 w-5" />{t('dash.recent_projects')}</CardTitle><Button variant="outline" size="sm" onClick={() => navigate('/dashboard')}>{t('dash.view_all')}</Button></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('dash.no_projects')} /> : <div className="space-y-3">{projects.slice(0, 5).map(project => <div key={project.id} className="rounded-xl border p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{project.title}</p><p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><MapPin className="h-3 w-3" />{project.location || (lang === 'ar' ? 'لم يحدد الموقع' : 'Location not set')}</p></div><Badge variant="secondary">{localizedStatus(project.status, t)}</Badge></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${project.progress ?? 0}%` }} /></div><div className="mt-1 flex justify-between text-xs text-muted-foreground"><span>{t('project.progress')}</span><span>{project.progress ?? 0}%</span></div></div>)}</div>}</CardContent></Card>
+      <Card id="role-projects"><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><FolderKanban className="h-5 w-5" />{t('dash.recent_projects')}</CardTitle><Button variant="outline" size="sm" onClick={() => navigate('/dashboard')}>{t('dash.view_all')}</Button></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('dash.no_projects')} /> : <div className="space-y-3">{projects.slice(0, 5).map(project => <ManagedProjectCard key={project.id} project={project} lang={lang} progressLabel={t('project.progress')} statusLabel={localizedStatus(project.status, t)} />)}</div>}</CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-violet-500" />{t('dash.ask_ai')}</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">{lang === 'ar' ? 'احصل على تقدير أولي للتكلفة ونصائح للمواد والجدول الزمني.' : 'Get an early cost estimate and practical guidance on materials and timelines.'}</p><Button className="mt-4 w-full" onClick={() => navigate('/ai')}>{t('dash.ask_ai')}</Button></CardContent></Card>
     </div>
   );
@@ -481,18 +556,18 @@ function QuotationTiles({ quotations, t, lang, navigate }: { quotations: any[]; 
   );
 }
 
-function ContractorWorkspace({ rfqs, projects, quotations, t, lang, navigate, onQuote }: { rfqs: any[]; projects: any[]; quotations: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void }) {
+function ContractorWorkspace({ rfqs, opportunities, quotations, t, lang, navigate, onQuote }: { rfqs: any[]; opportunities: ProjectOpportunity[]; quotations: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
       <Card id="role-pipeline"><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{lang === 'ar' ? 'مسار استلام طلبات الأسعار' : 'Contractor RFQ Pipeline'}</CardTitle><Button variant="outline" size="sm" onClick={() => navigate('/rfq')}>{t('platform.view')}</Button></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 6).map(rfq => <div key={rfq.id} className="rounded-xl border p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-semibold">{rfq.title}</p>
 <Link href={`/rfq/${rfq.id}`} className="font-mono text-sm font-medium text-primary underline-offset-2 hover:underline" data-testid="rfq-number">RFQ #{rfq.id}</Link><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{rfq.description}</p><div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">{rfq.category && <span className="flex items-center gap-1"><FileText className="h-3 w-3" />{rfq.category}</span>}{rfq.budget && <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{formatMoney(rfq.budget, rfq.currency, lang)}</span>}{rfq.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{rfq.location}</span>}</div></div><Button size="sm" className="shrink-0 gap-1.5" onClick={() => onQuote(rfq.id)}><Send className="h-3.5 w-3.5" />{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
-      <Card id="role-projects"><CardHeader><CardTitle className="flex items-center gap-2"><BriefcaseBusiness className="h-5 w-5" />{lang === 'ar' ? 'إدارة المشاريع الميدانية' : 'Active Field Projects'}</CardTitle></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{projects.slice(0, 5).map(project => <div key={project.id} className="rounded-xl border p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-medium">{project.title}</p><Badge variant="outline">{localizedStatus(project.status, t)}</Badge></div><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{project.location || (lang === 'ar' ? 'الموقع غير محدد' : 'Location not set')}</span><span>{project.progress ?? 0}%</span></div></div>)}</div>}</CardContent></Card>
+      <Card id="role-projects"><CardHeader><CardTitle className="flex items-center gap-2"><BriefcaseBusiness className="h-5 w-5" />{lang === 'ar' ? 'فرص المشاريع' : 'Project Opportunities'}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'مشاريع لا تنتمي إليها ولديها طلبات مفتوحة. افتح الطلب للتقدّم.' : 'Projects you are not on that have open requests. Open the request to take part.'}</p></CardHeader><CardContent>{opportunities.length === 0 ? <EmptyState text={lang === 'ar' ? 'لا توجد فرص مطابقة الآن. ستظهر هنا المشاريع التي تُنشر لها طلبات مفتوحة.' : 'No matching opportunities right now. Projects that post an open request will appear here.'} /> : <div className="space-y-3">{opportunities.slice(0, 6).map(opportunity => (<ProjectOpportunityCard key={opportunity.project.id} opportunity={opportunity} lang={lang} progressLabel={t('project.progress')} statusLabel={localizedStatus(opportunity.project.status, t)} />))}</div>}</CardContent></Card>
       <Card id="role-quotations" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{lang === 'ar' ? 'عروض أسعار المقاول' : 'Submitted Quotations & Team Execution'}</CardTitle></CardHeader><CardContent><QuotationTiles quotations={quotations} t={t} lang={lang} navigate={navigate} /></CardContent></Card>
     </div>
   );
 }
 
-function EngineerWorkspace({ rfqs, projects, quotations, t, lang, navigate, onQuote }: { rfqs: any[]; projects: any[]; quotations: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void }) {
+function EngineerWorkspace({ rfqs, opportunities, quotations, t, lang, navigate, onQuote }: { rfqs: any[]; opportunities: ProjectOpportunity[]; quotations: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
       <Card id="role-documents"><CardHeader><CardTitle className="flex items-center gap-2"><PenTool className="h-5 w-5" />{lang === 'ar' ? 'المستندات الهندسية وجداول الكميات' : 'Technical Deliverables & BOQ Review'}</CardTitle></CardHeader><CardContent><div className="space-y-3"><div className="rounded-xl border p-4"><p className="font-medium">{lang === 'ar' ? 'مراجعة المخططات الإنشائية' : 'Structural Calculations & Drawing Review'}</p><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'أرفق المخططات أو جدول الكميات وسيقرأها المساعد الفني ويوضّح الكود الذي يحكم كل بند. البناء هنا لا يعتمد المخططات ولا يوقّع عليها.' : 'Attach a drawing or a BOQ and the technical assistant reads it, naming the code that governs each requirement. BuildHub does not approve or sign off drawings.'}</p><Button size="sm" className="mt-3 gap-2" onClick={() => navigate('/ai')}><Sparkles className="h-4 w-4" />{lang === 'ar' ? 'تحليل بالذكاء الاصطناعي' : 'Run AI Analysis'}</Button></div><div className="rounded-xl border p-4"><p className="font-medium">{lang === 'ar' ? 'مراجعة مواصفات المواد' : 'Material Specification Review'}</p><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'قارن المواصفة المعلنة من المورّد بالمعيار الذي ينطبق عليها. البناء هنا لا يفحص المواد ولا يصدر شهادات جودة - المراجعة تتم بأدوات المساعد الفني.' : "Compare a supplier's stated specification against the standard that applies to it. BuildHub does not test materials or issue quality certificates - the review happens with the technical assistant's tools."}</p><Button size="sm" variant="outline" className="mt-3 gap-2" onClick={() => navigate('/ai')}><Sparkles className="h-4 w-4" />{lang === 'ar' ? 'افتح المساعد الفني' : 'Open the technical assistant'}</Button></div></div></CardContent></Card>
@@ -507,12 +582,12 @@ function EngineerWorkspace({ rfqs, projects, quotations, t, lang, navigate, onQu
           bid vanished from the person who submitted it. Found by driving the
           whole workflow per role, not by reading the source. */}
       <Card id="role-quotations" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{t('platform.my_quotations')}</CardTitle></CardHeader><CardContent><QuotationTiles quotations={quotations} t={t} lang={lang} navigate={navigate} /></CardContent></Card>
-      <Card id="role-projects" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><BriefcaseBusiness className="h-5 w-5" />{lang === 'ar' ? 'المشاريع الهندسية النشطة' : 'Active Engineering Projects'}</CardTitle></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="grid gap-3 md:grid-cols-3">{projects.slice(0, 6).map(project => <div key={project.id} className="rounded-xl border p-3"><p className="font-medium">{project.title}</p><p className="mt-1 text-xs text-muted-foreground">{project.location || '—'}</p><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{t('project.progress')}</span><span>{project.progress ?? 0}%</span></div></div>)}</div>}</CardContent></Card>
+      <Card id="role-projects" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><BriefcaseBusiness className="h-5 w-5" />{lang === 'ar' ? 'فرص المشاريع' : 'Project Opportunities'}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'مشاريع لا تنتمي إليها ولديها طلبات مفتوحة. افتح الطلب للتقدّم.' : 'Projects you are not on that have open requests. Open the request to take part.'}</p></CardHeader><CardContent>{opportunities.length === 0 ? <EmptyState text={lang === 'ar' ? 'لا توجد فرص مطابقة الآن. ستظهر هنا المشاريع التي تُنشر لها طلبات مفتوحة.' : 'No matching opportunities right now. Projects that post an open request will appear here.'} /> : <div className="grid gap-3 md:grid-cols-3">{opportunities.slice(0, 6).map(opportunity => (<ProjectOpportunityCard key={opportunity.project.id} opportunity={opportunity} lang={lang} progressLabel={t('project.progress')} statusLabel={localizedStatus(opportunity.project.status, t)} />))}</div>}</CardContent></Card>
     </div>
   );
 }
 
-function ArchitectWorkspace({ rfqs, projects, quotations, t, lang, navigate, onQuote, ownProfileId }: { rfqs: any[]; projects: any[]; quotations: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void; ownProfileId?: number }) {
+function ArchitectWorkspace({ rfqs, opportunities, quotations, t, lang, navigate, onQuote, ownProfileId }: { rfqs: any[]; opportunities: ProjectOpportunity[]; quotations: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void; onQuote: (rfqId: number) => void; ownProfileId?: number }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
       <Card id="role-portfolio"><CardHeader><CardTitle className="flex items-center gap-2"><PenTool className="h-5 w-5" />{lang === 'ar' ? 'معرض التصاميم وتقديم الأفكار' : 'Design Portfolio & Concept Presentation'}</CardTitle></CardHeader><CardContent><div className="space-y-3"><div className="rounded-xl border p-4"><p className="font-medium">{lang === 'ar' ? 'تطوير الفكرة التصميمية' : 'Developing the design concept'}</p><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'ناقش الفكرة والمواد والتشطيبات مع مساعد التصميم، أو أرفق مخططاً ليقرأه.' : 'Work through concept, materials and finishes with the design assistant, or attach a drawing for it to read.'}</p><Button size="sm" className="mt-3 gap-2" onClick={() => navigate('/ai')}><Sparkles className="h-4 w-4" />{lang === 'ar' ? 'افتح مساعد التصميم' : 'Open the design assistant'}</Button></div><PortfolioManager /><Button size="sm" variant="outline" className="mt-3 gap-2" data-testid="architect-public-profile" onClick={() => { if (ownProfileId) navigate(`/vendor/${ownProfileId}`); else revealSection('role-performance'); }}>{lang === 'ar' ? 'اذهب إلى ملفي العام' : 'Go to my public profile'}</Button></div></CardContent></Card>
@@ -527,27 +602,93 @@ function ArchitectWorkspace({ rfqs, projects, quotations, t, lang, navigate, onQ
           bid vanished from the person who submitted it. Found by driving the
           whole workflow per role, not by reading the source. */}
       <Card id="role-quotations" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />{t('platform.my_quotations')}</CardTitle></CardHeader><CardContent><QuotationTiles quotations={quotations} t={t} lang={lang} navigate={navigate} /></CardContent></Card>
-      <Card id="role-projects" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FolderKanban className="h-5 w-5" />{lang === 'ar' ? 'مشاريع التصميم المعماري' : 'Active Architectural Projects'}</CardTitle></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="grid gap-3 md:grid-cols-3">{projects.slice(0, 6).map(project => <div key={project.id} className="rounded-xl border p-3"><p className="font-medium">{project.title}</p><p className="mt-1 text-xs text-muted-foreground">{project.location || '—'}</p><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{t('project.progress')}</span><span>{project.progress ?? 0}%</span></div></div>)}</div>}</CardContent></Card>
+      <Card id="role-projects" className="lg:col-span-2"><CardHeader><CardTitle className="flex items-center gap-2"><FolderKanban className="h-5 w-5" />{lang === 'ar' ? 'فرص المشاريع' : 'Project Opportunities'}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'مشاريع لا تنتمي إليها ولديها طلبات مفتوحة. افتح الطلب للتقدّم.' : 'Projects you are not on that have open requests. Open the request to take part.'}</p></CardHeader><CardContent>{opportunities.length === 0 ? <EmptyState text={lang === 'ar' ? 'لا توجد فرص مطابقة الآن. ستظهر هنا المشاريع التي تُنشر لها طلبات مفتوحة.' : 'No matching opportunities right now. Projects that post an open request will appear here.'} /> : <div className="grid gap-3 md:grid-cols-3">{opportunities.slice(0, 6).map(opportunity => (<ProjectOpportunityCard key={opportunity.project.id} opportunity={opportunity} lang={lang} progressLabel={t('project.progress')} statusLabel={localizedStatus(opportunity.project.status, t)} />))}</div>}</CardContent></Card>
     </div>
   );
 }
 
-function SupplierWorkspace({ rfqs, projects, t, lang, onQuote }: { rfqs: any[]; projects: any[]; t: (key: string) => string; lang: 'en' | 'ar'; onQuote: (rfqId: number) => void }) {
+function SupplierWorkspace({ rfqs, opportunities, t, lang, onQuote }: { rfqs: any[]; opportunities: ProjectOpportunity[]; t: (key: string) => string; lang: 'en' | 'ar'; onQuote: (rfqId: number) => void }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <Card id="role-rfqs"><CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{t('platform.review_requests')}</CardTitle></CardHeader><CardContent>{rfqs.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="space-y-3">{rfqs.slice(0, 5).map(rfq => <div key={rfq.id} className="rounded-xl border p-3"><p className="truncate text-sm font-medium">{rfq.title}</p>
 <Link href={`/rfq/${rfq.id}`} className="font-mono text-sm font-medium text-primary underline-offset-2 hover:underline" data-testid="rfq-number">RFQ #{rfq.id}</Link><div className="mt-2 flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{rfq.category || (lang === 'ar' ? 'عام' : 'General')}</span><Button size="sm" onClick={() => onQuote(rfq.id)} className="gap-1.5"><Send className="h-3 w-3" />{t('platform.create_quote')}</Button></div></div>)}</div>}</CardContent></Card>
       {/* A supplier who bids had a "My Quotations" count and nowhere to see
           what it counted. Same record, same destination as the contractor's. */}
-      <Card id="role-projects"><CardHeader><CardTitle className="flex items-center gap-2"><BriefcaseBusiness className="h-5 w-5" />{t('platform.projects')}</CardTitle></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="grid gap-3 md:grid-cols-2">{projects.slice(0, 6).map(project => <div key={project.id} className="rounded-xl border p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-medium">{project.title}</p><Badge variant="outline">{localizedStatus(project.status, t)}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{project.location || (lang === 'ar' ? 'الموقع غير محدد' : 'Location not set')}</p><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{t('project.progress')}</span><span>{project.progress ?? 0}%</span></div></div>)}</div>}</CardContent></Card>
+      <Card id="role-projects"><CardHeader><CardTitle className="flex items-center gap-2"><BriefcaseBusiness className="h-5 w-5" />{lang === 'ar' ? 'فرص المشاريع' : 'Project Opportunities'}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'مشاريع لا تنتمي إليها ولديها طلبات مفتوحة. افتح الطلب للتقدّم.' : 'Projects you are not on that have open requests. Open the request to take part.'}</p></CardHeader><CardContent>{opportunities.length === 0 ? <EmptyState text={lang === 'ar' ? 'لا توجد فرص مطابقة الآن. ستظهر هنا المشاريع التي تُنشر لها طلبات مفتوحة.' : 'No matching opportunities right now. Projects that post an open request will appear here.'} /> : <div className="grid gap-3 md:grid-cols-2">{opportunities.slice(0, 6).map(opportunity => (<ProjectOpportunityCard key={opportunity.project.id} opportunity={opportunity} lang={lang} progressLabel={t('project.progress')} statusLabel={localizedStatus(opportunity.project.status, t)} />))}</div>}</CardContent></Card>
     </div>
   );
 }
 
-function ProjectManagerWorkspace({ projects, rfqs, t, lang, navigate }: { projects: any[]; rfqs: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void }) {
+function ProjectManagerWorkspace({ managed, opportunities, rfqs, t, lang, navigate }: { managed: any[]; opportunities: ProjectOpportunity[]; rfqs: any[]; t: (key: string) => string; lang: 'en' | 'ar'; navigate: (path: string) => void }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
-      <Card id="role-queue"><CardHeader><CardTitle className="flex items-center gap-2"><KanbanSquare className="h-5 w-5" />{t('platform.project_queue')}</CardTitle></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('platform.no_items')} /> : <div className="grid gap-3 md:grid-cols-2">{projects.slice(0, 8).map(project => <div key={project.id} className="rounded-xl border p-4"><div className="flex items-start justify-between gap-2"><p className="font-medium">{project.title}</p><Badge variant="outline">{localizedStatus(project.status, t)}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{project.location || (lang === 'ar' ? 'الموقع غير محدد' : 'Location not set')}</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-cyan-500" style={{ width: `${project.progress ?? 0}%` }} /></div><div className="mt-1 flex justify-between text-xs text-muted-foreground"><span>{t('project.progress')}</span><span>{project.progress ?? 0}%</span></div></div>)}</div>}</CardContent></Card>
+      {/*
+          ── ONE QUEUE BECAME TWO, BECAUSE IT WAS TWO THINGS ──────────────
+          "Project Queue" was fed by `projects.directory` and read as "the
+          projects I manage". It was every project on the platform, and none of
+          its cards did anything. Managed and Opportunity are different records
+          with different destinations and different authorization, so they are
+          different sections with names that say which.
+      */}
+      <div className="space-y-6">
+        <Card id="role-queue">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <KanbanSquare className="h-5 w-5" />
+              {lang === 'ar' ? 'المشاريع التي أديرها' : 'Managed Projects'}
+            </CardTitle>
+            <Link href="/dashboard"><Button variant="outline" size="sm">{t('dash.view_all')}</Button></Link>
+          </CardHeader>
+          <CardContent>
+            {managed.length === 0
+              ? <EmptyState text={lang === 'ar'
+                  ? 'لا توجد مشاريع تديرها بعد. ستظهر هنا المشاريع التي تملكها أو التي أُضفت إليها كعضو.'
+                  : 'No managed projects yet. Projects you own, or are added to as a member, will appear here.'} />
+              : <div className="grid gap-3 md:grid-cols-2">
+                  {managed.slice(0, 8).map(project => (
+                    <ManagedProjectCard
+                      key={project.id}
+                      project={project}
+                      lang={lang}
+                      progressLabel={t('project.progress')}
+                      statusLabel={localizedStatus(project.status, t)}
+                    />
+                  ))}
+                </div>}
+          </CardContent>
+        </Card>
+
+        <Card id="role-projects">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BriefcaseBusiness className="h-5 w-5" />
+              {lang === 'ar' ? 'فرص المشاريع' : 'Project Opportunities'}
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {lang === 'ar'
+                ? 'مشاريع لا تنتمي إليها ولديها طلبات مفتوحة. افتح الطلب للتقدّم؛ تفاصيل المشروع تبقى خاصة بفريقه.'
+                : 'Projects you are not on that have open requests. Open the request to take part — the project itself stays private to its team.'}
+            </p>
+          </CardHeader>
+          <CardContent>
+            {opportunities.length === 0
+              ? <EmptyState text={lang === 'ar'
+                  ? 'لا توجد فرص مطابقة الآن. ستظهر هنا المشاريع التي تُنشر لها طلبات مفتوحة.'
+                  : 'No matching opportunities right now. Projects that post an open request will appear here.'} />
+              : <div className="grid gap-3 md:grid-cols-2">
+                  {opportunities.slice(0, 8).map(opportunity => (
+                    <ProjectOpportunityCard
+                      key={opportunity.project.id}
+                      opportunity={opportunity}
+                      lang={lang}
+                      progressLabel={t('project.progress')}
+                      statusLabel={localizedStatus(opportunity.project.status, t)}
+                    />
+                  ))}
+                </div>}
+          </CardContent>
+        </Card>
+      </div>
       <Card id="role-rfqs"><CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />{lang === 'ar' ? 'نظرة على الطلبات' : 'Request Overview'}</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">{rfqs.length}</p><p className="mt-1 text-sm text-muted-foreground">{lang === 'ar' ? 'طلبات مفتوحة يمكن متابعتها مع الفرق' : 'open requests to coordinate with delivery teams'}</p><Button size="sm" variant="outline" className="mt-4 gap-2" onClick={() => navigate('/messages')}><Users className="h-4 w-4" />{lang === 'ar' ? 'راسل أصحاب المصلحة' : 'Message stakeholders'}</Button></CardContent></Card>
     </div>
   );

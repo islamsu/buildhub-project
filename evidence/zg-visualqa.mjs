@@ -156,6 +156,53 @@ const someSupplier = sqlOne("SELECT id FROM users WHERE userRole='supplier' ORDE
 const someProduct = sqlOne("SELECT id FROM products WHERE status='active' ORDER BY id LIMIT 1");
 const someRfq = sqlOne("SELECT id FROM rfqs ORDER BY id DESC LIMIT 1");
 
+/*
+ * ── THE SIX ROLE WORKSPACES WERE ABSENT FROM THIS SWEEP ─────────────────
+ *
+ * This gate covered the public site, the buyer, the supplier's settings and
+ * the Admin control plane - and not one `/platform/:role` workspace, which is
+ * where a contractor, an engineer, an architect and a Project Manager do all
+ * of their work. That is how six inert project grids reached the owner: the
+ * final visual gate never opened the pages they were on.
+ *
+ * The database holds homeowners, suppliers and administrators only, so the
+ * four professional roles are CREATED here and removed in the `finally` at
+ * the bottom. `zg-projectcards.mjs` proves the journey in depth; these
+ * accounts are here so the workspaces join the ordinary route sweep - one H1,
+ * no raw enum, no nameless control, no sideways scroll at 375, real RTL and
+ * translated chrome in Arabic - and the census below.
+ */
+const WORKSPACE_PASSWORD = 'VisualQaRole!2026';
+const roleFixtures = [];
+async function professional(userRole) {
+  const username = `vq${userRole.replace(/_/g, '')}${Date.now() % 100000000}`;
+  const res = await fetch(`${BASE}/api/trpc/auth.signUp`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ json: {
+      username, email: `${username}@example.test`, password: WORKSPACE_PASSWORD,
+      name: `QA ${userRole.replace(/_/g, ' ')}`, userRole,
+    } }),
+  });
+  if (res.status !== 200) throw new Error(`signUp ${userRole}: ${res.status} ${await res.text()}`);
+  const cookie = (res.headers.getSetCookie?.() ?? []).map(c => c.split(';')[0]).join('; ');
+  const id = sqlOne(`SELECT id FROM users WHERE email='${username}@example.test'`);
+  roleFixtures.push(Number(id));
+  /*
+   * APPROVED, because the product is RIGHT to refuse otherwise. A fresh
+   * professional is sent to /compliance until onboarding is approved, and the
+   * first version of this sweep read that redirect as four broken workspaces.
+   * The gate under test here is what the workspace LOOKS like; the redirect
+   * itself is proved where it belongs, in the compliance arc.
+   */
+  execSync(`mysql -u root ${DB} -N -B`,
+    { input: `UPDATE users SET onboardingStatus='approved', verified=1 WHERE id=${id}` });
+  return cookie;
+}
+const contractor = await professional('contractor');
+const engineer = await professional('engineer');
+const architect = await professional('architect');
+const projectManager = await professional('project_manager');
+
 const ROUTES = [
   { path: '/',                    who: null,     name: 'Home (public)' },
   { path: '/marketplace',         who: null,     name: 'Marketplace hub (public)' },
@@ -184,6 +231,14 @@ const ROUTES = [
   { path: '/admin/disputes',      who: admin, name: 'Admin Disputes' },
   { path: '/admin/support',       who: admin, name: 'Admin Support' },
   { path: '/admin/analytics',     who: admin, name: 'Admin Insights' },
+
+  /* ── THE ROLE WORKSPACES (§33, §53, §79) ──────────────────────────── */
+  { path: '/platform/homeowner',      who: buyer,          name: 'Homeowner workspace' },
+  { path: '/platform/supplier',       who: supplier,       name: 'Supplier workspace' },
+  { path: '/platform/contractor',     who: contractor,     name: 'Contractor workspace' },
+  { path: '/platform/engineer',       who: engineer,       name: 'Engineer workspace' },
+  { path: '/platform/architect',      who: architect,      name: 'Architect workspace' },
+  { path: '/platform/project_manager',who: projectManager, name: 'Project Manager workspace' },
 ];
 
 const browser = await launchBrowser({ port: CDP_PORT });
@@ -275,6 +330,84 @@ try {
         String((a.chrome || []).length));
     }
   }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * ACTIONABLE-RECORD CENSUS (§47, §50, §58, §62)
+   *
+   * THE DEFECT THIS EXISTS FOR was not a missing feature. Every role
+   * workspace rendered project rows as a bordered tile with a title, a status
+   * badge and a progress bar - the exact shape BuildHub uses for records you
+   * open everywhere else - and the tile did nothing. No href, no button, no
+   * tab stop, no focus ring. The owner clicked one and the product ignored
+   * them. Six workspaces had it, because the markup was copied six times.
+   *
+   * So this does not look for project cards. It looks for the PATTERN: any
+   * tile that has adopted the visual language of an actionable record and is
+   * inert. A tile is card-shaped if it carries the rounded border the design
+   * system gives records, and it is a RECORD rather than a container if it
+   * holds a status badge or a progress readout. That is the signature of the
+   * thing a user reaches for.
+   *
+   * §62 is why "clickable" is not the bar: a `div onClick` satisfies a mouse
+   * and strands a keyboard. Only a real anchor or button counts.
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  const CENSUS = `
+    const shells = Array.from(document.querySelectorAll('main a, main div, main li, main article'));
+    const cardish = shells.filter(node => {
+      const cls = (node.className || '').toString();
+      if (!/rounded-(xl|lg|2xl)/.test(cls) || !/border/.test(cls)) return false;
+      const rect = node.getBoundingClientRect();
+      if (rect.width < 120 || rect.height < 60) return false;
+      const text = (node.innerText || '').trim();
+      if (text.length < 12) return false;
+      /* A RECORD, not a panel: it shows a state or a progress readout. */
+      return node.querySelector('[class*="badge"], [data-slot="badge"]') !== null
+        || /\\b(Progress|التقدم)\\b/.test(text);
+    });
+    /*
+     * KEEP THE INNERMOST, WHICH IS THE RECORD. The first version kept the
+     * outermost and reported the supplier's "Submitted Quotations" PANEL as an
+     * inert record - the panel is rounded and bordered and contains its
+     * children's badges, so it looked like one - while the real tiles inside
+     * it, which are keyboard-operable, were filtered out. A panel CONTAINS
+     * cards; a record contains none. Two badges is the same tell, so a
+     * bordered group of plain rows cannot be mistaken for one record either.
+     */
+    const outer = cardish.filter(node => !cardish.some(other => other !== node && node.contains(other)))
+      .filter(node => node.querySelectorAll('[data-slot="badge"]').length <= 1);
+    const actionable = node =>
+      node.closest('a[href]') !== null || node.closest('button') !== null
+      || node.querySelector('a[href], button') !== null
+      || node.getAttribute('role') === 'button' || node.tabIndex >= 0;
+    const inert = outer.filter(node => !actionable(node));
+    return {
+      total: outer.length,
+      inert: inert.map(node => (node.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 60)),
+    };
+  `;
+
+  await page.setViewport({ width: 1440, height: 1000 });
+  await page.evaluate(`localStorage.setItem('buildhub_lang', 'en'); return true;`);
+  let censusSeen = 0;
+  for (const route of ROUTES.filter(r => r.path.startsWith('/platform/'))) {
+    await page.setCookies(asBrowserCookies(route.who));
+    await page.goto(`${BASE}${route.path}`);
+    await waitFor(page, `(document.body.innerText || '').trim().length > 200`);
+    await settle(900);
+    const c = await page.evaluate(CENSUS);
+    censusSeen += c?.total ?? 0;
+    check((c?.inert?.length ?? 1) === 0,
+      `CENSUS: ${route.name} has no record-shaped tile that does nothing`,
+      (c?.inert ?? []).slice(0, 2).join(' | ') || `${c?.total ?? 0} scanned`);
+  }
+  /*
+   * NON-VACUITY. A selector that matched nothing would report six clean
+   * workspaces and prove nothing at all - which is the failure mode of every
+   * census. It has to have SEEN records to say they are all actionable.
+   */
+  check(censusSeen > 0, 'CENSUS: record-shaped tiles were actually found to inspect',
+    `${censusSeen} scanned across six workspaces`);
 
   /* ══════════════════════════════════════════════════════════════════════
    * THE STATE CLASSES §89 NAMES, which normal rendered pages do not show.
@@ -475,6 +608,26 @@ try {
 
 } finally {
   await browser.close().catch(() => {});
+  /* The four professional accounts this gate created, and the rows a signup
+     leaves behind. The removal is PROVED, because a probe that quietly leaks
+     fixtures poisons every later run's data. */
+  for (const id of roleFixtures) {
+    for (const stmt of [
+      `DELETE FROM referralCodeEvents WHERE actorId=${id} OR userId=${id}`,
+      `DELETE FROM vendorCategories WHERE userId=${id}`,
+      `DELETE FROM notifications WHERE userId=${id}`,
+      `DELETE FROM savedItems WHERE userId=${id}`,
+      `DELETE FROM qualifiedEnquiries WHERE userId=${id}`,
+      `DELETE FROM projectMembers WHERE userId=${id}`,
+      `DELETE FROM vendorProfiles WHERE userId=${id}`,
+      `DELETE FROM users WHERE id=${id}`,
+    ]) {
+      try { execSync(`mysql -u root ${DB} -N -B`, { input: stmt }); } catch { /* nothing of that kind */ }
+    }
+  }
+  const leaked = roleFixtures.length === 0 ? 0
+    : Number(sqlOne(`SELECT COUNT(*) FROM users WHERE id IN (${roleFixtures.join(',')})`) || '0');
+  check(leaked === 0, 'the role fixtures this gate created are removed', `${leaked} left`);
 }
 
 console.log(`\n${fail === 0 ? 'ALL PASS' : 'FINDINGS'}  ${pass} passed, ${fail} failed`);

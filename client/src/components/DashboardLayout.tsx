@@ -118,7 +118,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     workspaceItem('contractor', ClipboardList, 'platform.pipeline', 'role-pipeline'),
     workspaceItem('contractor', FileText, 'platform.my_quotations', 'role-quotations'),
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
-    workspaceItem('contractor', FolderOpen, 'platform.projects', 'role-projects'),
+    workspaceItem('contractor', FolderOpen, 'platform.project_opportunities', 'role-projects'),
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('contractor', BarChart3, 'platform.performance', 'role-performance'),
     // §89 item 16: the one destination that answers "how is my business
@@ -134,7 +134,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     COMPLIANCE_MENU_ITEM,
     workspaceItem('engineer', PenTool, 'platform.documents', 'role-documents'),
     workspaceItem('engineer', FileText, 'platform.my_quotations', 'role-quotations'),
-    workspaceItem('engineer', BriefcaseBusiness, 'platform.project_queue', 'role-projects'),
+    workspaceItem('engineer', BriefcaseBusiness, 'platform.project_opportunities', 'role-projects'),
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('engineer', BarChart3, 'platform.performance', 'role-performance'),
@@ -151,7 +151,7 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     COMPLIANCE_MENU_ITEM,
     workspaceItem('architect', PenTool, 'platform.portfolio', 'role-portfolio'),
     workspaceItem('architect', FileText, 'platform.my_quotations', 'role-quotations'),
-    workspaceItem('architect', FolderOpen, 'platform.projects', 'role-projects'),
+    workspaceItem('architect', FolderOpen, 'platform.project_opportunities', 'role-projects'),
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('architect', BarChart3, 'platform.performance', 'role-performance'),
@@ -193,7 +193,8 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
   project_manager: [
     workspaceItem('project_manager', LayoutDashboard, 'dash.overview', 'role-overview'),
     COMPLIANCE_MENU_ITEM,
-    workspaceItem('project_manager', KanbanSquare, 'platform.project_queue', 'role-queue'),
+    workspaceItem('project_manager', KanbanSquare, 'platform.managed_projects', 'role-queue'),
+    workspaceItem('project_manager', BriefcaseBusiness, 'platform.project_opportunities', 'role-projects'),
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     /*
      * IT SAYS MESSAGES BECAUSE IT GOES TO MESSAGES.

@@ -147,11 +147,29 @@ describe('the workspace section registry', () => {
     expect(hasSection('contractor', 'role-rfqs')).toBe(false);
   });
 
-  it('the project manager has a queue rather than a second projects entry', () => {
-    // Project Queue and Projects both pointed at role-projects: two labels,
-    // one destination, and one of them therefore always lied.
+  it('the project manager has TWO project sections, with two real destinations', () => {
+    /*
+     * ORIGINALLY THIS ASSERTED `role-projects` WAS ABSENT. Project Queue and
+     * Projects both pointed at role-projects: two labels, one destination, and
+     * one of them therefore always lied, so dropping the second entry was the
+     * fix at the time.
+     *
+     * The queue then turned out to be lying in a second way. It was fed by
+     * `projects.directory`, a lead directory with no membership filter, so one
+     * section mixed the projects a manager RUNS with opportunities they have no
+     * access to - and rendered both as tiles that did nothing when clicked.
+     *
+     * Those are two different things with two different destinations, so the
+     * manager now has both sections: `role-queue` is Managed Projects and
+     * `role-projects` is Project Opportunities. What the original test was
+     * really protecting - no two menu entries sharing one destination - is
+     * asserted for every role in "no two workspace entries share a
+     * destination" below, which is where it belongs.
+     */
     expect(hasSection('project_manager', 'role-queue')).toBe(true);
-    expect(hasSection('project_manager', 'role-projects')).toBe(false);
+    expect(hasSection('project_manager', 'role-projects')).toBe(true);
+    expect(workspaceHref('project_manager', 'role-queue'))
+      .not.toBe(workspaceHref('project_manager', 'role-projects'));
   });
 });
 

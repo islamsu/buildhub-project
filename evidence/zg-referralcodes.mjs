@@ -306,5 +306,36 @@ check(selfIssue.status !== 200,
   'an administrator cannot issue themselves a referral code',
   selfIssue.body?.error?.json?.message ?? `HTTP ${selfIssue.status}`);
 
+/* ── CLEANUP ─────────────────────────────────────────────────────────────
+ *
+ * THERE WAS NONE. This probe signed five accounts up per run and removed
+ * none of them, so a database census found fifteen of its leftovers from three
+ * runs days earlier - accounts that then counted towards directory totals and
+ * towards every other probe's idea of what the platform contains. A gate that
+ * pollutes the data the other gates read is not a neutral observer.
+ *
+ * The order is the foreign keys' order: referralCodeEvents references users
+ * twice (actorId and userId) and will refuse the user delete otherwise, which
+ * is exactly how the leak stayed invisible.
+ */
+const fixtureIds = sql(`SELECT id FROM users WHERE email LIKE 'zrc${stamp}%@example.test'`)
+  .split('\n').map(Number).filter(Boolean);
+for (const id of fixtureIds) {
+  for (const statement of [
+    `DELETE FROM referralCodeEvents WHERE actorId=${id} OR userId=${id}`,
+    `DELETE FROM referralRewards WHERE userId=${id}`,
+    `DELETE FROM referrals WHERE referrerId=${id} OR referredId=${id}`,
+    `DELETE FROM notifications WHERE userId=${id}`,
+    `DELETE FROM savedItems WHERE userId=${id}`,
+    `DELETE FROM userAccountAuditEvents WHERE actorId=${id} OR userId=${id}`,
+    `DELETE FROM users WHERE id=${id}`,
+  ]) {
+    try { sql(statement); } catch { /* nothing of that kind for this id */ }
+  }
+}
+const leftBehind = Number(
+  sql(`SELECT COUNT(*) FROM users WHERE email LIKE 'zrc${stamp}%@example.test'`) || '0');
+check(leftBehind === 0, 'every account this probe created is removed', `${leftBehind} left`);
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail > 0 ? 1 : 0);

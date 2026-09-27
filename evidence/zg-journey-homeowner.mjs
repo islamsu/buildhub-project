@@ -131,6 +131,13 @@ function cleanUp() {
     `delete from analyticsEvents where userId in ${ids}`,
     `delete from commercialAuditEvents where actorId in ${ids} or ownerId in ${ids}`,
     `delete from userAccountAuditEvents where actorId in ${ids} or userId in ${ids}`,
+    /* referralCodeEvents was MISSING and its foreign key refused the user
+       delete, so every run of this probe left its accounts behind while
+       reporting 24/24. A leaked fixture is other runs' bad data. */
+    `delete from referralCodeEvents where actorId in ${ids} or userId in ${ids}`,
+    `delete from savedItems where userId in ${ids}`,
+    `delete from vendorProfiles where userId in ${ids}`,
+    `delete from projectMembers where userId in ${ids}`,
     `delete from rfqs where requesterId in ${ids}`,
     `delete from projects where ownerId in ${ids}`,
     `delete from users where username like 'zjrn%'`,
@@ -139,6 +146,10 @@ function cleanUp() {
       console.log(`  (teardown: ${String(error).split('\n')[0].slice(0, 90)})`);
     }
   }
+  /* PROVED, not assumed. The swallowed refusal above is why this line exists. */
+  const left = Number(sql(`select count(*) from users where username like 'zjrn%'`) || '0');
+  if (left > 0) console.log(`  (teardown: ${left} fixture accounts NOT removed)`);
+  return left;
 }
 
 const CATEGORY = 'Materials';
@@ -234,16 +245,38 @@ try {
     const text = (document.querySelector('main') || document.body).innerText;
     return JSON.stringify({
       projectCards: document.querySelectorAll('[data-testid^="project-card-"]').length,
-      spentZero: /Total Spent/.test(text) && /EGP\\s*0\\b/.test(text),
+      /*
+       * NO PROJECTS MEANS NO CURRENCY TO STATE. This asserted "EGP 0", which
+       * the dashboard did show - and that was the Egypt default §88 removed:
+       * a total over no rows has no market, so printing EGP 0 asserts Egypt
+       * for an account that has declared nothing. formatMoneyTotals returns
+       * null for nothing and the KPI shows an em dash beside a truthful
+       * "0 Total Projects", which is the honest empty state.
+       * (No backticks in here: this comment lives inside a template literal.)
+       *
+       * The check is now that nothing was INVENTED: a no-data marker, and no
+       * money amount anywhere near the label.
+       */
+      /*
+       * THE EXACT KPI, not a text window. Two earlier versions of this check
+       * were wrong in instructive ways: one looked only FORWARD from the label
+       * while the value renders above it, and the replacement then passed a
+       * mutation that fabricated "EGP 12,400" - the em dash it accepted
+       * belonged to the Total Budget card 20 characters away, and its money
+       * pattern wanted "12,400 EGP" while the product writes the code first.
+       * Reading the element by its own test id cannot drift like that.
+       */
+      spent: (document.querySelector('[data-testid="kpi-spent"]')?.innerText || '').trim(),
+      spentPresent: document.querySelector('[data-testid="kpi-spent"]') !== null,
       sample: text.slice(0, 200).split(String.fromCharCode(10)).join(' | '),
     });
   `));
   check(empty.projectCards === 0,
     'EMPTY: a brand-new account has NO projects - none are invented for it',
     `${empty.projectCards} cards`);
-  check(empty.spentZero,
-    'EMPTY: and nothing has been spent, truthfully rather than decoratively',
-    empty.sample);
+  check(empty.spentPresent && /^[\u2014\u2013-]$/.test(empty.spent),
+    'EMPTY: and no spend is invented, and no currency is asserted for a market-less account',
+    `kpi-spent=${JSON.stringify(empty.spent)}`);
 
   /* ── 3. CREATE A PROJECT, AND SEE IT ─────────────────────────────────── */
   await page.evaluate(clickOn('[data-testid="project-new-trigger"]'));
@@ -455,7 +488,7 @@ try {
     'CLOSED: and reads "Quotation accepted" on their own screen, in words',
     read.accepted ? '' : read.sample);
 } finally {
-  cleanUp();
+  check(cleanUp() === 0, 'and every fixture this probe created is removed');
   await browser.close();
 }
 

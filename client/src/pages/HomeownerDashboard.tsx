@@ -30,7 +30,7 @@ import {
   CheckCircle2, Clock, AlertCircle, FileText, Bot, ShoppingCart,
   BarChart3, Building2
 } from 'lucide-react';
-import { useLocation } from 'wouter';
+import { useLocation, Link } from 'wouter';
 
 export default function HomeownerDashboard() {
   const { t, lang, dir } = useLanguage();
@@ -69,13 +69,21 @@ export default function HomeownerDashboard() {
     cancelled: { label: t('common.status.cancelled'), color: 'badge-error',   icon: AlertCircle },
   };
 
+  /*
+   * `id` IS THE STABLE HANDLE. The labels are localized, so a probe that wants
+   * to read one KPI had to search the page text near a translated string - and
+   * a check written that way passed a mutation that fabricated a spend total,
+   * because the em dash it was looking for belonged to the card NEXT to it.
+   * These ids let a gate read the exact value it means to read, in either
+   * language.
+   */
   const statCards = [
-    { label: lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects', value: projects?.length ?? 0, icon: FolderOpen, color: 'text-blue-500', bg: 'bg-blue-50' },
-    { label: t('dash.active_projects'), value: activeCount, icon: TrendingUp, color: 'text-green-500', bg: 'bg-green-50' },
+    { id: 'projects', label: lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects', value: projects?.length ?? 0, icon: FolderOpen, color: 'text-blue-500', bg: 'bg-blue-50' },
+    { id: 'active', label: t('dash.active_projects'), value: activeCount, icon: TrendingUp, color: 'text-green-500', bg: 'bg-green-50' },
     // A dash, not a zero: an account with no projects has no budget, and
     // "EGP 0" asserts a figure in a currency it has never transacted in.
-    { label: t('project.budget'), value: formatMoneyTotals(budgetTotals, lang, 2, { compact: true }) ?? '—', icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-50' },
-    { label: t('dash.total_spent'), value: formatMoneyTotals(spentTotals, lang, 2, { compact: true }) ?? '—', icon: BarChart3, color: 'text-purple-500', bg: 'bg-purple-50' },
+    { id: 'budget', label: t('project.budget'), value: formatMoneyTotals(budgetTotals, lang, 2, { compact: true }) ?? '—', icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-50' },
+    { id: 'spent', label: t('dash.total_spent'), value: formatMoneyTotals(spentTotals, lang, 2, { compact: true }) ?? '—', icon: BarChart3, color: 'text-purple-500', bg: 'bg-purple-50' },
   ];
 
   const quickActions = [
@@ -147,7 +155,7 @@ export default function HomeownerDashboard() {
                   <s.icon className={`w-6 h-6 ${s.color}`} />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-lg font-bold truncate">{s.value}</p>
+                  <p className="text-lg font-bold truncate" data-testid={`kpi-${s.id}`}>{s.value}</p>
                   <p className="text-xs text-muted-foreground">{s.label}</p>
                 </div>
               </CardContent>
@@ -193,7 +201,30 @@ export default function HomeownerDashboard() {
                   const StatusIcon = sc.icon;
                   const spentPct = project.budget ? Math.min(100, (Number(project.spent) / Number(project.budget)) * 100) : 0;
                   return (
-                    <div key={project.id} data-testid={`project-card-${project.id}`} className="p-4 rounded-xl border border-border hover:border-primary/30 hover:bg-muted/30 transition-all cursor-pointer" onClick={() => navigate(`/projects/${project.id}`)}>
+                    /*
+                     * A LINK, NOT A `div onClick`.
+                     *
+                     * This navigated, so it was not one of the dead cards - but
+                     * it was MOUSE ONLY: no role, no tabIndex, no key handler,
+                     * and `cursor-pointer` as the entire affordance. It was not
+                     * in the tab order, did not respond to Enter, showed no
+                     * focus ring and could not be opened in a new tab. §62
+                     * counts that as a failure on a critical journey.
+                     *
+                     * An <a> gets all of it from the platform. The visible
+                     * content is unchanged, including the budget and spend a
+                     * homeowner legitimately sees on their OWN project - which
+                     * is also why this is not the shared ManagedProjectCard:
+                     * that component is used on provider surfaces, and money
+                     * belongs on neither by accident.
+                     */
+                    <Link
+                      key={project.id}
+                      href={`/projects/${project.id}`}
+                      data-testid={`project-card-${project.id}`}
+                      aria-label={`${t('dash.view_all')}: ${project.title}`}
+                      className="block p-4 rounded-xl border border-border text-start hover:border-primary/30 hover:bg-muted/30 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                    >
                       <div className="flex items-start justify-between gap-3 mb-3">
                         <div className="min-w-0">
                           <h3 className="font-semibold truncate">{project.title}</h3>
@@ -219,7 +250,7 @@ export default function HomeownerDashboard() {
                           </div>
                         )}
                       </div>
-                    </div>
+                    </Link>
                   );
                 })}
               </div>

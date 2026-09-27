@@ -1254,7 +1254,15 @@ const translations: Record<Language, Record<string, string>> = {
     'platform.new_project': 'New Project',
     'platform.portfolio': 'Portfolio',
     'platform.add_service': 'Add Service',
-    'platform.project_queue': 'Project Queue',
+    /*
+       "Project Queue" LABELLED TWO DIFFERENT SECTIONS. The project manager's
+       nav pointed it at their own projects and the engineer's at the lead
+       directory, so one word promised two things - and neither section's cards
+       did anything. The sections are now Managed Projects and Project
+       Opportunities, and the labels say which.
+    */
+    'platform.managed_projects': 'Managed Projects',
+    'platform.project_opportunities': 'Project Opportunities',
     'platform.recent_activity': 'Recent Activity',
     'platform.no_items': 'No items yet',
     'platform.open': 'Open',
@@ -2445,7 +2453,8 @@ const translations: Record<Language, Record<string, string>> = {
     'platform.new_project': 'مشروع جديد',
     'platform.portfolio': 'معرض الأعمال',
     'platform.add_service': 'إضافة خدمة',
-    'platform.project_queue': 'قائمة المشاريع',
+    'platform.managed_projects': 'المشاريع التي أديرها',
+    'platform.project_opportunities': 'فرص المشاريع',
     'platform.recent_activity': 'النشاط الأخير',
     'platform.no_items': 'لا توجد عناصر بعد',
     'platform.open': 'مفتوح',

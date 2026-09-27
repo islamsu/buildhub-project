@@ -1,7 +1,7 @@
 # BuildHub release acceptance — status, not a merge request
 
 **RC HEAD** the tip of `claude/buildhub-global-release-candidate` · base
-`origin/main` `1b3edb8` · 8 migrations in the RC (0054–0061) · 4887 tests
+`origin/main` `1b3edb8` · 8 migrations in the RC (0054–0061) · 4914 tests
 
 **The tip is the SHA for staging acceptance**, and it is named here as the tip
 rather than written out: a document cannot state the SHA of the commit that
@@ -12,9 +12,13 @@ git rev-parse origin/claude/buildhub-global-release-candidate
 ```
 
 and `/version` must report that exact commit with `environment: "staging"` before
-anything beyond PUSHED is claimed. The last code change is `e271b1e`; anything
-after it is this document. No pull request is open, and none will be until
-staging is verified.
+anything beyond PUSHED is claimed.
+
+The tip now carries a code change again: the owner-found project-card defect
+recorded below was fixed after the earlier acceptance pass, so the SHA for
+staging acceptance is the tip as read by the command above, not any SHA named
+in an earlier report. No pull request is open, and none will be until staging is
+verified.
 
 This is a STATUS document. It is deliberately **not** the merge request in
 `CLAUDE.md` §43, because §42 and §78 are not both satisfied yet and §89 says
@@ -97,6 +101,8 @@ repository and each mutation-tested so a green check cannot pass vacuously:
 | ACC-4 fresh-account cross-role | `evidence/zg-acc4.mjs` 116 ×2 |
 | Tracker reconciled (§41) | `TRACKER_RECONCILIATION.md` · `server/trackerReconciliation.test.ts` 7 |
 | Money presentation (§86–88) | `server/moneyPresentation.test.ts` 21 · `evidence/zg-money.mjs` 32 ×2 |
+| Project-card journey (§47, §62) | `server/projectCards.test.ts` 25 · `evidence/zg-projectcards.mjs` 59 ×2 |
+| Visual/role-arc gate (§70, §89·20) | `evidence/zg-visualqa.mjs` **550 ×2**, all six role workspaces + actionable-record census |
 
 **§34's upload master pass is not in §42's list** and remains partial for one
 reason only: a real S3 round-trip needs object-storage credentials this
@@ -129,6 +135,134 @@ honestly be made. What still cannot be claimed, and is not:
 
 No pull request has been opened: that is an outward-facing action the owner has
 not asked for in this session.
+
+---
+
+## An owner-found defect that stopped acceptance, and what it exposed
+
+The owner clicked a card in the Project Manager's Project Queue and the product
+did nothing. Six role workspaces rendered project rows as a bordered tile with a
+title, a status badge and a progress bar — visually identical to every record
+BuildHub lets you open — and every one of them was a plain `<div>`: no href, no
+button, no tab stop, no focus ring. §47's first two questions, unanswered.
+
+**The obvious fix would have been worse than the defect.** Those grids were fed
+by `projects.directory`, a sanitized LEAD directory with no membership filter at
+all. Linking each row to `/projects/:id` would have sent a provider into
+`requireProjectAccess`, which correctly refuses, and replaced a dead card with a
+NOT_FOUND. The owner said so explicitly, and the code agreed.
+
+So the fix is the split, and `requireProjectAccess` is untouched:
+
+| | Managed Projects | Project Opportunities |
+|---|---|---|
+| Source | `projects.list` — owned, or an active `projectMembers` row | `projects.directory` minus the managed rows, and only where an OPEN request exists |
+| Destination | `/projects/:id`, the real workspace | `/rfq/:id`, the open request |
+| Grants project access? | yes, as it always did | no — following it grants nothing |
+| Renders | the project | title, type, status, location, progress and nothing else |
+
+`shared/projectOpportunities.ts` decides which row earns which, from the managed
+list alone — membership is never inferred from the directory. The Project
+Manager's one mixed "Project Queue" is now two sections whose names describe what
+each holds. A root cause sat beside it: `projects.list` was gated on
+`role === 'homeowner'`, so no professional was ever told which projects were
+theirs.
+
+`client/src/components/ProjectCards.tsx` is now the only project card in the
+product — two components rather than one with a `variant`, so a later edit cannot
+hand an opportunity card the managed card's link.
+
+### Proof, positive and negative, in a real browser
+
+`evidence/zg-projectcards.mjs` — **59 checks ×2, EN and AR**: a project the
+manager owns and one they are an active member of each open the real workspace;
+an opportunity card opens the request; the stranger's project stays refused and
+its budget never renders; every card is an anchor in the tab order with an
+accessible name and a CTA in both languages. `server/projectCards.test.ts` — 25.
+
+### Mutation-tested, and one gate hole found
+
+Seven mutations, each applied to the real product and reverted:
+
+| Mutation | Caught by |
+|---|---|
+| Managed card reverts to an inert `div` | 2 unit tests · **8 browser checks** (`DIV/false`, "card not found", URL unchanged) |
+| Opportunity card links at the project | 1 unit test · **11 browser checks** across 2 languages and 5 roles |
+| Membership inferred from the directory | 5 unit tests |
+| Opportunity card starts rendering the budget | 1 unit test — **after the hole below was fixed** |
+| `projects.list` gated on homeowner again | 1 unit test |
+
+The budget mutation **survived the first attempt**. The assertion read
+`not.toContain('project.budget')`, and `(opportunity.project as any).budget`
+renders the same private field by another spelling. It now matches the field name
+as a word anywhere in the card body, comments stripped. A gate that only catches
+the spelling you thought of is not a gate.
+
+### The journey is now in the final visual gate (§70, §89 item 20)
+
+`evidence/zg-visualqa.mjs` covered the public site, the buyer, supplier settings
+and Admin — and **not one `/platform/:role` workspace**. That is how six inert
+grids reached the owner: the final visual gate never opened the pages they were
+on. All six workspaces now join the sweep at 1440 and 375, in English and
+Arabic, and the gate went from 434 checks to **550, twice, with no failure**.
+
+Beside them is an **actionable-record census** that looks for the PATTERN rather
+than for project cards: any tile that has adopted the visual language of a
+record — the design system's rounded border, plus a status badge or a progress
+readout — and is inert. It is mutation-proved in both directions: with the inert
+card restored it reports 5 of 5 inert on the homeowner workspace, and it reports
+none once the fix is back. Its first version was wrong in a way worth recording:
+it kept the OUTERMOST card-shaped node and so reported the supplier's "Submitted
+Quotations" *panel* as an inert record while the keyboard-operable tiles inside
+it were filtered out. A panel contains cards; a record contains none.
+
+### A third number that described the wrong population
+
+Reviewing the diff caught one more: the Project Manager's **Average Progress**
+tile sat in the Managed Projects group, beside two counts that are now the
+manager's own, and averaged `projectDirectory` — every project on the platform.
+Three figures in one group, two populations. It now averages the projects they
+run, and a manager with none reads `—`, because averaging nothing is not 0%
+progress. `server/projectCards.test.ts` covers both.
+
+### Two real defects the extended sweep found on its first run
+
+1. **Six nameless controls in the supplier catalogue (§62).** Each row's edit
+   control was `<Link><Button aria-label=…>` — an anchor wrapping a button, two
+   focusable elements for one action, and the outer one, the one the keyboard
+   reaches first, had no accessible name at all. `asChild` collapses them into a
+   single anchor carrying the label. It is the only instance in the product.
+2. **The label then named the product in the wrong language.** The first fix
+   wrote `Edit ${product.name}`, while the Arabic row shows `nameAr` — so a
+   screen reader was told about a product the page did not appear to show. Label
+   and row now use one name.
+
+### Probe hygiene, found while running these gates
+
+Three probes were polluting the database the other gates read.
+`evidence/zg-referralcodes.mjs` had **no teardown at all** and had left fifteen
+accounts behind over three runs; `evidence/zg-journey-homeowner.mjs` swallowed a
+`referralCodeEvents` foreign-key refusal and leaked six while reporting 24/24.
+Both now delete in foreign-key order and **prove** the removal as a check. All
+stale fixtures were purged; the nine `zid…`/`zsearch…` accounts that remain are
+the deliberate persistent fixtures other probes sign in as.
+
+`zg-errorstates`, `zg-a11y` and `zg-responsive` sweep the *previous* run's
+account on entry rather than removing their own on exit, so exactly one row of
+each lingers between runs. Not fixed here, to keep this pass to the defect and
+its gates; the fix is the same shape as the two above.
+
+### A stale assertion this exposed, replaced and mutation-proved
+
+`zg-journey-homeowner` asserted a fresh homeowner's dashboard shows
+`EGP 0` for Total Spent. That was the Egypt default §88 removed: a total over no
+rows has no market, so `formatMoneyTotals` returns null and the KPI shows an em
+dash beside a truthful "0 Total Projects". The replacement was **vacuous on its
+first two attempts** — one looked only forward from a label whose value renders
+above it, and the next accepted the em dash from the card 20 characters away
+while its money pattern wanted "12,400 EGP" where the product writes
+"EGP 12,400". The KPIs now carry stable `data-testid`s and the check reads the
+exact element; fabricating a spend total fails it, naming the value.
 
 ---
 
