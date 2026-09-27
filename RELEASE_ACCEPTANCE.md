@@ -1,10 +1,20 @@
 # BuildHub release acceptance — status, not a merge request
 
-**RC HEAD** `e271b1e` · base `origin/main` `1b3edb8` · 96 commits
-· 8 migrations in the RC (0054–0061) · 4887 tests
+**RC HEAD** the tip of `claude/buildhub-global-release-candidate` · base
+`origin/main` `1b3edb8` · 8 migrations in the RC (0054–0061) · 4887 tests
 
-**This is the SHA for staging acceptance.** Code changes stop here; no pull
-request is open, and none will be until staging is verified.
+**The tip is the SHA for staging acceptance**, and it is named here as the tip
+rather than written out: a document cannot state the SHA of the commit that
+contains it. Read it with
+
+```
+git rev-parse origin/claude/buildhub-global-release-candidate
+```
+
+and `/version` must report that exact commit with `environment: "staging"` before
+anything beyond PUSHED is claimed. The last code change is `e271b1e`; anything
+after it is this document. No pull request is open, and none will be until
+staging is verified.
 
 This is a STATUS document. It is deliberately **not** the merge request in
 `CLAUDE.md` §43, because §42 and §78 are not both satisfied yet and §89 says
