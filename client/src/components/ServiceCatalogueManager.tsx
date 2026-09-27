@@ -1,15 +1,5 @@
 import { formatMoneyRange } from '@shared/money';
-import { DEFAULT_MARKET, requireCurrencyForMarket } from '@shared/markets';
 
-/**
- * The currency a service price range is quoted in.
- *
- * `serviceOfferings` carries no currency column, so this is the market's, not
- * the record's - the one case in this pass where there was nothing to read.
- * Named through the market table rather than written as 'EGP' so the coupling
- * is visible and one grep finds it when the column is added.
- */
-const SERVICE_PRICE_CURRENCY = requireCurrencyForMarket(DEFAULT_MARKET);
 import { useState } from 'react';
 import { Plus, Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -153,7 +143,7 @@ export default function ServiceCatalogueManager() {
                         would be worse than the honest sentence. */}
                     {row.pricingBasis === 'quote_on_request'
                       ? pricingBasisLabel('quote_on_request', lang)
-                      : `${formatRange(row.priceMin, row.priceMax, ar)} · ${pricingBasisLabel(row.pricingBasis as ServicePricingBasis, lang)}`}
+                      : `${formatRange(row.priceMin, row.priceMax, row.currency, ar)} · ${pricingBasisLabel(row.pricingBasis as ServicePricingBasis, lang)}`}
                   </p>
                   {(row.leadTimeDays != null || row.warrantyMonths != null) && (
                     <p className="mt-1 text-sm text-muted-foreground">
@@ -209,32 +199,33 @@ export default function ServiceCatalogueManager() {
 }
 
 /**
- * ── A SERVICE PRICE RANGE, THROUGH THE ONE FORMATTER ────────────────────
+ * ── A SERVICE PRICE RANGE, IN THE CURRENCY THE RECORD STATES ────────────
  *
- * This was a local copy - the second of two identical ones, the other in
- * client/src/pages/VendorProfile.tsx - built from `const currency = ar ? 'ج.م' : 'EGP'`. Two problems,
- * both of which shared/money.ts exists to answer:
+ * Two things were wrong here and 0061 fixed the second, which was the cause of
+ * the first.
  *
- *   'ج.م' is AMBIGUOUS. It reads as a pound, and several markets in this
- *   region write their currency that way. The canonical formatter shows the
- *   ISO code for exactly this reason - a procurement screen is the wrong
- *   place to be charming about a unit somebody transacts on.
+ * This was a local copy of a formatter - the second of two identical ones, the
+ * other in client/src/pages/VendorProfile.tsx -
+ * built from `const currency = ar ? 'ج.م' : 'EGP'`. Both
+ * problems are what shared/money.ts exists to answer: 'ج.م' reads as a pound
+ * and several markets in this region write their currency that way, which is
+ * why the canonical formatter shows the ISO code; and the currency was a
+ * LITERAL chosen by the view.
  *
- *   the currency was a LITERAL, chosen by the view.
+ * The view chose it because `serviceOfferings` had `priceMin`, `priceMax` and
+ * no currency column - there was genuinely nothing on the record to read. That
+ * was declared debt, with the reason stated: the debt was the column.
  *
- * THE REMAINING DEBT IS HONEST AND IT IS A COLUMN, NOT THIS VIEW.
- * `serviceOfferings` has priceMin and priceMax and NO currency column, so
- * there is nothing on the record to read. The market is named here through
- * `requireCurrencyForMarket(DEFAULT_MARKET)` - the same call the server makes
- * when it writes a project's or an RFQ's currency - so the coupling is one
- * greppable expression instead of a string, and adding the column is what
- * removes it. `server/marketReadiness.test.ts` records it that way.
+ * 0061 added it, backfilled to EGP because that is what every existing row
+ * already meant, and `services.create` writes it from the market. So this now
+ * reads `row.currency` like every other money surface in the product, and the
+ * market constant this used to need is gone.
  */
-function formatRange(min: unknown, max: unknown, ar: boolean): string {
+function formatRange(min: unknown, max: unknown, currency: string | null | undefined, ar: boolean): string {
   const range = formatMoneyRange(
     min as number | string | null | undefined,
     max as number | string | null | undefined,
-    SERVICE_PRICE_CURRENCY,
+    currency,
     ar ? 'ar' : 'en',
     ar ? { from: 'من', upTo: 'حتى' } : { from: 'from', upTo: 'up to' },
   );

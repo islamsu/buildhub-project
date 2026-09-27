@@ -142,31 +142,54 @@ The change was reverted and the gate now asserts the rule that exists. Recorded
 here because the near-miss is the useful part: a settled decision was protected
 by its own test, which is what that test was for.
 
-## Findings referred to the owner
+## The two findings referred to the owner — both now resolved
 
-**The provider storefront is not public.** `/vendor/:id` requires a session —
-`profile.getPublic` is a `protectedProcedure`, and the code there records
-logged-out access as an unresolved decision from Phase 4A.5. §21 and §37 both
-describe that page as public and crawlable. Proven in a browser: a signed-out
-reader gets "Please sign in".
+**The provider storefront is public.** `/vendor/:id` was a `protectedProcedure`,
+so a signed-out reader and every crawler got "Please sign in" on the page §21
+and §37 both describe as public. The owner decided; it is open now.
 
-It is therefore marked `session-required` in `shared/seo.ts`: real metadata for
-a signed-in reader, never indexable, never in the sitemap, and the sitemap
-states how many storefronts are withheld so the omission is visible rather
-than looking like a marketplace with no suppliers. One word changes all of it
-when the decision is made.
+Opening it needed a visibility gate, not just a procedure keyword. The only
+check was the account's ROLE — tolerable behind a session, not in public, where
+a stranger walking ids would have reached an unapproved applicant's page. A
+stranger now sees exactly what the DIRECTORY shows, through
+`directoryVisibilityFilter()`, and an unapproved, frozen or deactivated account
+answers NOT FOUND with the same message as an id that never existed. Self and
+admin keep the access they already had.
 
-**Service price ranges have no currency to read.** `serviceOfferings` carries
-`priceMin` and `priceMax` and no currency column. Both screens now render
-through the canonical formatter with the market's currency named by
-`requireCurrencyForMarket(DEFAULT_MARKET)`, so the coupling is one greppable
-expression; the remaining debt is the column, and it is declared in
-`server/marketReadiness.test.ts`.
+Nothing private moved: the tiers are a property of the columns, and
+`vendorContactAccess` already answered `none` for a null viewer. Proven field by
+field — the named contact, their email, phone, mobile, street address and the
+commercial registration are all absent from a stranger's payload.
+`contactChannel` gained a third state, `sign_in`, because telling a stranger the
+provider "cannot be contacted" would be false.
 
-**Category pages have no URL of their own.** A category is a `?cat=` filter, so
-it canonicalises to its parent listing and is not separately indexable. Correct
-for a filter; a real sourcing destination per category is a NEXT MARKETPLACE
-MILESTONE item, not a defect to fix inside this RC.
+**And the portfolio had to move with it.** `portfolio.list` was still a
+`protectedProcedure`, so the storefront rendered its Portfolio section to a
+signed-out buyer and filled it with nothing — which reads as a claim about the
+PROVIDER ("no work shown") rather than about the reader. §21 lists portfolio
+among a storefront's sections. It is public now, and it gained the visibility
+rule it never had: it used to take any `userId` and return every row without
+checking the account was even a provider.
+
+Evidence: `server/publicStorefront.test.ts` (21),
+`evidence/zg-publicstorefront.mjs` (50 ×2). Three mutations verified: removing
+the visibility gate publishes unapproved accounts; treating a null viewer as
+engaged leaks the whole contact block onto the page; re-protecting the portfolio
+empties the section for every signed-out reader.
+
+**Service prices carry their own currency.** Migration `0061` adds
+`serviceOfferings.currency`, backfilled to `EGP` — which is what every existing
+row already meant, and the legitimate legacy absence §88 allows. `services.create`
+writes it from the market rather than relying on the default, both readers return
+it, and both screens render it through the canonical formatter. The two declared
+hard-codes in `server/marketReadiness.test.ts` are gone, and the reason they were
+declared — the debt is the column, not the view — is why adding the column
+removed both at once.
+
+Evidence: `server/serviceCurrency.test.ts` (15), `evidence/zg-money.mjs` (35 ×2,
+now rendering one EGP and one SAR offering on the same storefront). One mutation
+verified: hard-coding the currency again renders `EGP 300 – EGP 480` on a Saudi
+service.
 
 ## Owner decisions still open
 

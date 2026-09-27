@@ -223,7 +223,28 @@ try {
   }
   for (const id of made) { try { sql(`delete from rfqs where requesterId=${id}`); } catch {} }
   for (const id of projectsMade) { try { sql(`delete from projects where id=${id}`); } catch {} }
-  for (const id of made) { try { sql(`delete from users where id=${id}`); } catch {} }
+  /*
+   * CHILDREN FIRST. This deleted the users directly, and the `try {} catch {}`
+   * swallowed the foreign-key refusal - so the probe reported 19/19 while
+   * leaking four accounts. It only started refusing when migration 0057 added
+   * `referralCodeEvents`, which sign-up writes for every new account: the
+   * cleanup was fine when it was written and silently stopped working.
+   *
+   * The catch stays, because a cleanup should not mask the RESULT of a run -
+   * but the final assertion counts the rows, so a leak now fails instead of
+   * being swallowed.
+   */
+  for (const id of made) {
+    for (const child of [
+      `delete from referralCodeEvents where actorId=${id} or userId=${id}`,
+      `delete from vendorCategories where userId=${id}`,
+      `delete from notifications where userId=${id}`,
+      `delete from savedItems where userId=${id}`,
+    ]) {
+      try { sql(child); } catch { /* the table may not hold anything for this id */ }
+    }
+    try { sql(`delete from users where id=${id}`); } catch { /* reported by the count below */ }
+  }
   const left = made.length === 0 ? 0 : Number(sql(`select count(*) from users where id in (${made.join(',')})`) || 0);
   check('19. CLEANUP: every account, request and enquiry this probe created is gone',
     left === 0, `users=${left}`);

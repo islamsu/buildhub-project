@@ -785,6 +785,12 @@ const translations: Record<Language, Record<string, string>> = {
     'vendor.contact.note': 'Messages are exchanged on BuildHub. Direct phone numbers and email addresses are not published on vendor profiles.',
     'vendor.contact.self': 'This is your own public profile. This is the page clients see.',
     'vendor.contact.unavailable': 'This vendor is not accepting messages at the moment.',
+    /* A STOREFRONT IS PUBLIC; ACTING ON IT IS NOT. These say which, so a
+       signed-out reader is told what an account is for rather than being shown
+       a button that answers 401. */
+    'vendor.signedout.title': 'Sign in to contact this provider',
+    'vendor.signedout.body': 'Anyone can read this storefront. Messaging the provider, requesting a quote and saving them to a shortlist need a BuildHub account.',
+    'vendor.signedout.cta': 'Sign in or create an account',
     'vendor.catalogue': 'Published products',
     'profile.bio_placeholder': 'Tell customers about your business…',
     'profile.location_label': 'Location',
@@ -1983,6 +1989,9 @@ const translations: Record<Language, Record<string, string>> = {
     'vendor.contact.note': 'تتم المراسلة داخل BuildHub. أرقام الهاتف والبريد الإلكتروني المباشرة غير منشورة في ملفات المزودين.',
     'vendor.contact.self': 'هذا ملفك العام. هذه هي الصفحة التي يراها العملاء.',
     'vendor.contact.unavailable': 'هذا المورد لا يستقبل الرسائل حالياً.',
+    'vendor.signedout.title': 'سجّل الدخول للتواصل مع هذا المزود',
+    'vendor.signedout.body': 'يمكن لأي شخص قراءة هذا المتجر. أما مراسلة المزود وطلب عرض سعر وإضافته إلى قائمتك فتتطلب حساباً في بيلد هَب.',
+    'vendor.signedout.cta': 'سجّل الدخول أو أنشئ حساباً',
     'vendor.catalogue': 'المنتجات المنشورة',
     'profile.bio_placeholder': 'أخبر العملاء عن نشاطك التجاري…',
     'profile.location_label': 'الموقع',

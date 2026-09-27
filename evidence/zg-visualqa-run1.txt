@@ -1,6 +1,6 @@
-BUILD  e87f447 (local) built 2026-09-25T20:32:04.310Z  http://127.0.0.1:5401
+BUILD  9be1c7d (local) built 2026-09-27T12:21:40.917Z  http://127.0.0.1:5401
 
-BUILD e87f447  env=local
+BUILD 9be1c7d  env=local
 
 PASS  1. Home (public) @1440: reached and rendered
 PASS  2. Home (public) @1440: exactly one H1  [h1=1]
@@ -422,7 +422,7 @@ PASS  417. and it explains what to do, not just that nothing is there  [Nothing 
 PASS  418. DISABLED STATE: the showcase save control renders
 PASS  419. and is disabled until there is an actual change to save  [true]
 PASS  420. while still carrying its own label, so it is not a mystery control  [Save highlights]
-PASS  421. DESTRUCTIVE ACTIONS: a live placement offers a Revoke control  [#87]
+PASS  421. DESTRUCTIVE ACTIONS: a live placement offers a Revoke control  [#90]
 PASS  422. A RISKY ACTION ASKS BEFORE IT ACTS rather than firing immediately (§77)
 PASS  423. and STATES THE CONSEQUENCE rather than only "are you sure"  [“Materials” stops appearing in this placement on the marketplace immediately. The record i]
 PASS  424. naming what happens on the marketplace, and when

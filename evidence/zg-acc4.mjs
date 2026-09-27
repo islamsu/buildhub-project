@@ -82,7 +82,16 @@ async function signUp(role) {
       username,
       email: `${username}@example.test`,
       password: PASSWORD,
-      name: `Fresh ${role}`,
+      /*
+       * NO UNDERSCORE IN THE NAME. This was `Fresh ${role}`, so a
+       * project_manager fixture was called "Fresh project_manager" - and while
+       * it sat in the Admin registrations queue, evidence/zg-visualqa.mjs
+       * reported `project_manager` as a raw enum in visible text. The page was
+       * right: it was rendering a person's NAME. One probe's fixture was
+       * failing another probe's check, which is a worse kind of false finding
+       * than a vacuous pass, because somebody goes looking for the bug.
+       */
+      name: `Fresh ${role.replace(/_/g, ' ')}`,
       userRole: role,
     } }),
   });

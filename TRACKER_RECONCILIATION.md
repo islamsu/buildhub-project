@@ -96,15 +96,22 @@ blocker is named rather than implied.
 
 ---
 
-## Two findings this reconciliation also records
+## Two findings this reconciliation recorded — both now closed
 
-Neither is a `todo.md` line; both came out of closing the gates above and belong
-somewhere a reader will find them.
+Neither was a `todo.md` line; both came out of closing the release gates, which
+is how a finding gets lost. Both have since been resolved by owner decision and
+are kept here as the record.
 
-- **The provider storefront needs a session.** `/vendor/:id` is not public,
-  while §21 and §37 describe it as public and crawlable. Referred to the owner
-  in `RELEASE_ACCEPTANCE.md`; `shared/seo.ts` marks it `session-required` so
-  nothing advertises it in the meantime.
-- **`serviceOfferings` has no currency column.** The two service price surfaces
-  now name the market's currency through `requireCurrencyForMarket`, so the
-  remaining debt is the column. Declared in `server/marketReadiness.test.ts`.
+- **The provider storefront needed a session.** `/vendor/:id` was a
+  `protectedProcedure` while §21 and §37 described it as public. It is now public
+  for approved, directory-visible providers, with every private and
+  relationship-gated field unchanged — `server/publicStorefront.test.ts` and
+  `evidence/zg-publicstorefront.mjs`. Opening it surfaced a second one:
+  `portfolio.list` was still protected, so the storefront's Portfolio section
+  rendered empty to a signed-out buyer, and it had no visibility rule at all.
+  Both fixed together.
+- **`serviceOfferings` had no currency column.** Migration `0061` adds it,
+  backfilled honestly to EGP, written from the market on create, and read through
+  the canonical formatter — `server/serviceCurrency.test.ts` and
+  `evidence/zg-money.mjs`. The declared hard-codes in
+  `server/marketReadiness.test.ts` are retired.

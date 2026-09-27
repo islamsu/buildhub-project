@@ -170,6 +170,7 @@ import {
   enquiryQueueCategories, enquiryQueueSummary, listEnquiryQueue,
 } from './enquiryQueue';
 import {
+  directoryVisibilityFilter,
   getVendorTargetingDiagnostics, listDirectoryCategories,
   listDirectoryVendors, listFeaturedProviders, listSponsoredVendors,
 } from './vendorDirectory';
@@ -5297,6 +5298,9 @@ const servicesRouter = router({
       pricingBasis: serviceOfferings.pricingBasis,
       priceMin: serviceOfferings.priceMin,
       priceMax: serviceOfferings.priceMax,
+      // The supplier's own catalogue reads the same column the storefront does,
+      // so the two cannot disagree about what a price is denominated in.
+      currency: serviceOfferings.currency,
       leadTimeDays: serviceOfferings.leadTimeDays,
       warrantyMonths: serviceOfferings.warrantyMonths,
       status: serviceOfferings.status,
@@ -5353,6 +5357,16 @@ const servicesRouter = router({
           priceMax: pricing.priceMax === null ? null : String(pricing.priceMax),
           leadTimeDays: input.leadTimeDays ?? null,
           warrantyMonths: input.warrantyMonths ?? null,
+          /*
+           * WRITTEN, NOT LEFT TO THE COLUMN DEFAULT. 0061 gave this table a
+           * currency and backfilled it to EGP, which is honest for rows written
+           * before the column existed. A NEW row relying on that default would
+           * be the same assumption again, one migration later - so the currency
+           * is resolved here through the same call projects.create and
+           * rfq.create make, and `requireCurrencyForMarket` throws on a market
+           * it has no currency for rather than falling back to Egypt (§88).
+           */
+          currency: requireCurrencyForMarket(DEFAULT_MARKET),
           status: 'draft',
         });
         const serviceId = Number((result as any)[0].insertId);
@@ -6274,10 +6288,47 @@ const disputesRouter = router({
 // every write is scoped to ctx.user.id, and reads of someone else's portfolio
 // are public showcase data only.
 const portfolioRouter = router({
-  list: protectedProcedure
+  /**
+   * ── A STOREFRONT'S PORTFOLIO IS PART OF THE STOREFRONT ─────────────────
+   *
+   * This was a `protectedProcedure`, which was consistent while the storefront
+   * itself needed a session. Now that `/vendor/:id` is public it would have
+   * been the worse kind of inconsistency: the page renders, the Portfolio
+   * section renders, and it is EMPTY - so a signed-out buyer reads "this
+   * provider has shown no work" about a provider whose portfolio is full. §21
+   * lists portfolio among the sections a storefront has, and a silently missing
+   * section is a claim about the provider rather than about the reader.
+   *
+   * ── AND IT HAD NO VISIBILITY RULE AT ALL ───────────────────────────────
+   *
+   * It took any `userId` and returned every row for it, without checking that
+   * the account was even a provider. Behind a session that was loose; in public
+   * it is the same exposure the storefront itself had to close, so it applies
+   * the same gate - `directoryVisibilityFilter()`, with self and admin exempt,
+   * and NOT_FOUND rather than FORBIDDEN so ids cannot be enumerated.
+   *
+   * An EMPTY LIST and a REFUSAL are deliberately different answers: a provider
+   * with no portfolio yet returns `[]`, and a provider the directory does not
+   * publish returns NOT_FOUND. The page can then say which.
+   */
+  list: publicProcedure
     .input(z.object({ userId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await requireDb();
+
+      const viewerIsSelf = ctx.user?.id === input.userId;
+      const viewerIsAdmin = ctx.user?.role === 'admin' && Boolean(ctx.user?.adminRole);
+      if (!viewerIsSelf && !viewerIsAdmin) {
+        const [listable] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.id, input.userId), directoryVisibilityFilter()))
+          .limit(1);
+        if (!listable) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Portfolio not found' });
+        }
+      }
+
       return db.select().from(portfolioItems)
         .where(eq(portfolioItems.userId, input.userId))
         .orderBy(desc(portfolioItems.createdAt));
@@ -6384,13 +6435,52 @@ const portfolioRouter = router({
 });
 
 const profileRouter = router({
-  // Public vendor profile. Requires authentication (the safer of the two options
-  // left open by Phase 4A.5 - fully logged-out access was explicitly flagged as
-  // an unresolved owner decision and is deliberately NOT chosen here; see
-  // BUILDHUB_PHASE4A61_VENDOR_PROFILE_IMPLEMENTATION.md). Scoped to provider-role
-  // accounts only - this endpoint answers "what does this vendor look like,"
-  // not "what does any BuildHub user look like."
-  getPublic: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ ctx, input }) => {
+  /**
+   * ── THE PROVIDER STOREFRONT, NOW PUBLIC ────────────────────────────────
+   *
+   * This was a `protectedProcedure`, and the comment here recorded why: Phase
+   * 4A.5 left logged-out access as an unresolved owner decision and this took
+   * the safer side of it. The owner has now decided, and §21 and §37 were
+   * always the direction - a provider storefront is a public page and the
+   * marketplace's most important destination. A signed-out reader, and every
+   * crawler, used to get "Please sign in".
+   *
+   * ── OPENING IT NEEDED A VISIBILITY GATE, NOT JUST A PROCEDURE CHANGE ────
+   *
+   * The only check here was the account's ROLE. That was tolerable behind a
+   * session and is not tolerable in public: a stranger walking ids would have
+   * reached the page of an applicant BuildHub has not approved, or one whose
+   * account is frozen or deactivated - accounts the directory deliberately
+   * does not list. Approval is server-authoritative (§9), and a storefront is
+   * the most visible thing approval controls.
+   *
+   * So a stranger may see exactly what the DIRECTORY would show them:
+   * `directoryVisibilityFilter()`, the same canonical predicate the listing and
+   * the placement readers use (§11), never a second rule that can drift.
+   *
+   * TWO VIEWERS ARE EXEMPT, and both were already able to see this page:
+   *
+   *   SELF   a provider opens their own storefront to check it - including
+   *          before approval, which is exactly when they most want to look.
+   *          The workspace links them straight here.
+   *   ADMIN  reviewing an applicant is the job.
+   *
+   * Everyone else, signed in or not, gets the same answer, so "can I see this
+   * provider" no longer depends on merely holding an account.
+   *
+   * ── AND NOTHING PRIVATE MOVED ──────────────────────────────────────────
+   *
+   * The tiers below are a property of the COLUMNS, not of the reader
+   * (server/vendorProfile.ts), and `vendorContactAccess` already returned
+   * 'none' for a null viewer. So a signed-out reader receives precisely the
+   * PUBLIC tier - company, description, city, country, website - and the
+   * named contact, their email, phone, mobile and address stay locked behind
+   * the same engagement rule as before: the provider quoted on this reader's
+   * RFQ, or is a live member of their project. The commercial registration
+   * number remains admin-only. `users.email` and `users.phone` are not in
+   * PUBLIC_PROFILE_COLUMNS and are still not added.
+   */
+  getPublic: publicProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     // accountStatus is read here and DELIBERATELY not returned: it decides
@@ -6401,6 +6491,26 @@ const profileRouter = router({
       .from(users).where(eq(users.id, input.userId));
     if (!target || !providerRoles.includes(target.userRole as typeof providerRoles[number])) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor profile not found' });
+    }
+
+    /*
+     * NOT FOUND, NOT FORBIDDEN. §9: not-yours and not-found must not become an
+     * enumeration oracle. A stranger who walks ids learns only which
+     * storefronts are published - which is what a directory is for - and
+     * nothing about which accounts exist but are unapproved, frozen or
+     * deactivated.
+     */
+    const viewerIsSelf = ctx.user?.id === target.id;
+    const viewerIsAdmin = ctx.user?.role === 'admin' && Boolean(ctx.user?.adminRole);
+    if (!viewerIsSelf && !viewerIsAdmin) {
+      const [listable] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, target.id), directoryVisibilityFilter()))
+        .limit(1);
+      if (!listable) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor profile not found' });
+      }
     }
     const { accountStatus, ...publicFields } = target;
     // THE CONTACT MODEL, DERIVED - NOT INVENTED.
@@ -6438,7 +6548,7 @@ const profileRouter = router({
     // What unlocks is the PRIMARY CONTACT the vendor themselves nominated as
     // their business contact, which is a different field and a different
     // consent.
-    const company = await readVendorProfile(db, target.id, ctx.user);
+    const company = await readVendorProfile(db, target.id, ctx.user ?? null);
 
     return {
       ...publicFields,
@@ -6446,7 +6556,25 @@ const profileRouter = router({
       completedProjects: await completedProjectCount(db, target.id),
       // A frozen or deactivated vendor cannot receive messages - messages.send
       // refuses them - so the page must not offer a button that will fail.
-      contactChannel: accountStatus === 'active' ? 'message' as const : 'none' as const,
+      /*
+       * THREE STATES, BECAUSE TWO WOULD LIE TO A STRANGER.
+       *
+       * This was `active ? 'message' : 'none'`, which was complete while every
+       * reader held a session. To a signed-out reader 'none' would say "this
+       * provider cannot be contacted" - and they can be, by anyone with an
+       * account. §10: UNKNOWN AUTH is not the same as unavailable.
+       *
+       *   message    the reader can open the channel now
+       *   sign_in    the channel exists and needs an account
+       *   none       the provider genuinely cannot receive messages -
+       *              messages.send refuses a frozen or deactivated account, so
+       *              the page must not offer a button that will fail
+       */
+      contactChannel: accountStatus !== 'active'
+        ? 'none' as const
+        : ctx.user
+          ? 'message' as const
+          : 'sign_in' as const,
       // Null when the vendor has filled in nothing. The page says so rather
       // than inventing a company name out of their personal name.
       company: company.profile,

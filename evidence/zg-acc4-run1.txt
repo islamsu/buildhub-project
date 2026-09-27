@@ -1,7 +1,7 @@
-BUILD  9ab4783 (local) built 2026-09-26T06:22:37.348Z  http://127.0.0.1:5401
+BUILD  9be1c7d (local) built 2026-09-27T12:21:40.917Z  http://127.0.0.1:5401
 
 ── homeowner ──
-PASS  1. a fresh homeowner account can be created through the real sign-up  [#1040]
+PASS  1. a fresh homeowner account can be created through the real sign-up  [#1152]
 PASS  2. a buyer needs no compliance to start  [approved / 1 / self_registered]
 PASS  3. and is recorded as self-registered, not seeded
 PASS  4. /platform/homeowner renders for a brand-new homeowner
@@ -21,7 +21,7 @@ PASS  17. the Arabic heading is Arabic  [مساحة مالك المنزل]
 PASS  18. and Arabic leaks no raw enum either  [clean]
 
 ── contractor ──
-PASS  19. a fresh contractor account can be created through the real sign-up  [#1041]
+PASS  19. a fresh contractor account can be created through the real sign-up  [#1153]
 PASS  20. contractor starts unverified and not yet through compliance  [not_started / 0 / self_registered]
 PASS  21. and is recorded as self-registered, not seeded
 PASS  22. /compliance renders for a brand-new contractor
@@ -42,7 +42,7 @@ PASS  36. the Arabic heading is Arabic  [ملف المستندات القانو�
 PASS  37. and Arabic leaks no raw enum either  [clean]
 
 ── engineer ──
-PASS  38. a fresh engineer account can be created through the real sign-up  [#1042]
+PASS  38. a fresh engineer account can be created through the real sign-up  [#1154]
 PASS  39. engineer starts unverified and not yet through compliance  [not_started / 0 / self_registered]
 PASS  40. and is recorded as self-registered, not seeded
 PASS  41. /compliance renders for a brand-new engineer
@@ -63,7 +63,7 @@ PASS  55. the Arabic heading is Arabic  [ملف المستندات القانو�
 PASS  56. and Arabic leaks no raw enum either  [clean]
 
 ── architect ──
-PASS  57. a fresh architect account can be created through the real sign-up  [#1043]
+PASS  57. a fresh architect account can be created through the real sign-up  [#1155]
 PASS  58. architect starts unverified and not yet through compliance  [not_started / 0 / self_registered]
 PASS  59. and is recorded as self-registered, not seeded
 PASS  60. /compliance renders for a brand-new architect
@@ -84,7 +84,7 @@ PASS  74. the Arabic heading is Arabic  [ملف المستندات القانو�
 PASS  75. and Arabic leaks no raw enum either  [clean]
 
 ── supplier ──
-PASS  76. a fresh supplier account can be created through the real sign-up  [#1044]
+PASS  76. a fresh supplier account can be created through the real sign-up  [#1156]
 PASS  77. supplier starts unverified and not yet through compliance  [not_started / 0 / self_registered]
 PASS  78. and is recorded as self-registered, not seeded
 PASS  79. /compliance renders for a brand-new supplier
@@ -105,7 +105,7 @@ PASS  93. the Arabic heading is Arabic  [ملف المستندات القانو�
 PASS  94. and Arabic leaks no raw enum either  [clean]
 
 ── project_manager ──
-PASS  95. a fresh project_manager account can be created through the real sign-up  [#1045]
+PASS  95. a fresh project_manager account can be created through the real sign-up  [#1157]
 PASS  96. project_manager starts unverified and not yet through compliance  [not_started / 0 / self_registered]
 PASS  97. and is recorded as self-registered, not seeded
 PASS  98. /compliance renders for a brand-new project_manager
@@ -136,5 +136,5 @@ PASS  115. the roles do not all land on one identical screen  [2 distinct headin
        project_manager → /compliance  "Legal document profile"  6 links
 PASS  116. every account this probe created is removed  [0 left]
 
-BUILD  9ab4783 (local)
+BUILD  9be1c7d (local)
 RESULT 116 passed, 0 failed

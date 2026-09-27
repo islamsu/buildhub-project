@@ -1,15 +1,5 @@
 import { formatMoneyRange } from '@shared/money';
-import { DEFAULT_MARKET, requireCurrencyForMarket } from '@shared/markets';
 
-/**
- * The currency a service price range is quoted in.
- *
- * `serviceOfferings` carries no currency column, so this is the market's, not
- * the record's - the one case in this pass where there was nothing to read.
- * Named through the market table rather than written as 'EGP' so the coupling
- * is visible and one grep finds it when the column is added.
- */
-const SERVICE_PRICE_CURRENCY = requireCurrencyForMarket(DEFAULT_MARKET);
 import { formatMoney } from '@shared/money';
 import { Link, useLocation, useParams } from 'wouter';
 import Navbar from '@/components/Navbar';
@@ -48,9 +38,16 @@ export default function VendorProfile() {
   // the safer of the two options Phase 4A.5 left as an open owner decision.
   // See BUILDHUB_PHASE4A61_VENDOR_PROFILE_IMPLEMENTATION.md for the unresolved
   // "should this be viewable while logged out" decision.
+  /*
+   * NO SESSION REQUIRED. `enabled` waited on `isAuthenticated`, which is why a
+   * signed-out reader saw a sign-in wall instead of a storefront. The server
+   * decides what this reader may see - approved and directory-visible for a
+   * stranger, the contact block only once the provider has engaged - so the
+   * page asks for the profile and renders whatever tier comes back.
+   */
   const { data: profile, isLoading, error } = trpc.profile.getPublic.useQuery(
     { userId },
-    { enabled: isAuthenticated && Number.isFinite(userId) && userId > 0, retry: false },
+    { enabled: Number.isFinite(userId) && userId > 0, retry: false },
   );
   /** The same batched reader the directory uses, for one id. */
   const savedIds = useSavedIds('provider', useMemo(() => (Number.isFinite(userId) && userId > 0 ? [userId] : []), [userId]));
@@ -109,20 +106,16 @@ export default function VendorProfile() {
     </div>
   );
 
-  if (authLoading) return <Shell><div className="text-center py-16 text-muted-foreground">{t('common.loading')}</div></Shell>;
-
-  if (!isAuthenticated) {
-    return (
-      <Shell>
-        <Card><CardContent className="py-16 text-center text-muted-foreground">
-          <Store className="w-10 h-10 mx-auto mb-3 opacity-30" />
-          <p>{lang === 'ar' ? 'يرجى تسجيل الدخول لعرض الملف الشخصي للمزود' : 'Please sign in to view this vendor profile'}</p>
-          <Link href="/auth?mode=login"><Button className="mt-4">{lang === 'ar' ? 'تسجيل الدخول' : 'Sign in'}</Button></Link>
-        </CardContent></Card>
-      </Shell>
-    );
-  }
-
+  /*
+   * THE SIGN-IN WALL IS GONE. It used to render here for every signed-out
+   * reader - so the marketplace's most important destination, and the one §21
+   * and §37 describe as public, answered a buyer and a crawler with "Please
+   * sign in to view this vendor profile".
+   *
+   * `authLoading` is no longer waited on either: the storefront does not depend
+   * on knowing who the reader is, and blocking on it made a public page wait
+   * for a session check that may resolve to nobody.
+   */
   if (isLoading) return <Shell><div className="text-center py-16 text-muted-foreground">{t('common.loading')}</div></Shell>;
 
   if (error || !profile) {
@@ -339,7 +332,7 @@ export default function VendorProfile() {
                           worse than saying so. */}
                       {service.pricingBasis === 'quote_on_request'
                         ? pricingBasisLabel('quote_on_request', lang)
-                        : `${publicPriceRange(service.priceMin, service.priceMax, ar)} · ${pricingBasisLabel(service.pricingBasis as ServicePricingBasis, lang)}`}
+                        : `${publicPriceRange(service.priceMin, service.priceMax, service.currency, ar)} · ${pricingBasisLabel(service.pricingBasis as ServicePricingBasis, lang)}`}
                     </p>
                     {(service.leadTimeDays != null || service.warrantyMonths != null) && (
                       <p className="mt-1 text-sm text-muted-foreground">
@@ -398,6 +391,26 @@ export default function VendorProfile() {
             <h2 className="text-sm font-semibold mb-2">{t('vendor.contact')}</h2>
             {isSelf ? (
               <p className="text-sm text-muted-foreground">{t('vendor.contact.self')}</p>
+            ) : !isAuthenticated ? (
+              /*
+               * ── READING IS PUBLIC; ACTING NEEDS AN ACCOUNT ──────────────
+               *
+               * All three actions below are session-bound: messaging, the RFQ
+               * invitation and the shortlist are all protected procedures. So a
+               * signed-out reader is given ONE honest control instead of three
+               * that answer 401 - §58 and §77: a page must not offer a button
+               * that will fail, and the reason must be visible rather than
+               * discovered by clicking.
+               */
+              <div className="rounded-xl border bg-muted/30 p-4" data-testid="vendor-signedout-actions">
+                <p className="font-medium">{t('vendor.signedout.title')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{t('vendor.signedout.body')}</p>
+                <Link href="/auth?mode=login">
+                  <Button className="mt-3 gap-2" data-testid="vendor-signin-cta">
+                    <MessageSquare className="h-4 w-4" />{t('vendor.signedout.cta')}
+                  </Button>
+                </Link>
+              </div>
             ) : (
               <>
                 <div className="flex flex-wrap gap-2">
@@ -488,32 +501,33 @@ export default function VendorProfile() {
 }
 
 /**
- * ── A SERVICE PRICE RANGE, THROUGH THE ONE FORMATTER ────────────────────
+ * ── A SERVICE PRICE RANGE, IN THE CURRENCY THE RECORD STATES ────────────
  *
- * This was a local copy - the second of two identical ones, the other in
- * client/src/components/ServiceCatalogueManager.tsx - built from `const currency = ar ? 'ج.م' : 'EGP'`. Two problems,
- * both of which shared/money.ts exists to answer:
+ * Two things were wrong here and 0061 fixed the second, which was the cause of
+ * the first.
  *
- *   'ج.م' is AMBIGUOUS. It reads as a pound, and several markets in this
- *   region write their currency that way. The canonical formatter shows the
- *   ISO code for exactly this reason - a procurement screen is the wrong
- *   place to be charming about a unit somebody transacts on.
+ * This was a local copy of a formatter - the second of two identical ones, the
+ * other in client/src/components/ServiceCatalogueManager.tsx -
+ * built from `const currency = ar ? 'ج.م' : 'EGP'`. Both
+ * problems are what shared/money.ts exists to answer: 'ج.م' reads as a pound
+ * and several markets in this region write their currency that way, which is
+ * why the canonical formatter shows the ISO code; and the currency was a
+ * LITERAL chosen by the view.
  *
- *   the currency was a LITERAL, chosen by the view.
+ * The view chose it because `serviceOfferings` had `priceMin`, `priceMax` and
+ * no currency column - there was genuinely nothing on the record to read. That
+ * was declared debt, with the reason stated: the debt was the column.
  *
- * THE REMAINING DEBT IS HONEST AND IT IS A COLUMN, NOT THIS VIEW.
- * `serviceOfferings` has priceMin and priceMax and NO currency column, so
- * there is nothing on the record to read. The market is named here through
- * `requireCurrencyForMarket(DEFAULT_MARKET)` - the same call the server makes
- * when it writes a project's or an RFQ's currency - so the coupling is one
- * greppable expression instead of a string, and adding the column is what
- * removes it. `server/marketReadiness.test.ts` records it that way.
+ * 0061 added it, backfilled to EGP because that is what every existing row
+ * already meant, and `services.create` writes it from the market. So this now
+ * reads `row.currency` like every other money surface in the product, and the
+ * market constant this used to need is gone.
  */
-function publicPriceRange(min: unknown, max: unknown, ar: boolean): string {
+function publicPriceRange(min: unknown, max: unknown, currency: string | null | undefined, ar: boolean): string {
   const range = formatMoneyRange(
     min as number | string | null | undefined,
     max as number | string | null | undefined,
-    SERVICE_PRICE_CURRENCY,
+    currency,
     ar ? 'ar' : 'en',
     ar ? { from: 'من', upTo: 'حتى' } : { from: 'from', upTo: 'up to' },
   );

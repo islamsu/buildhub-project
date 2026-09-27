@@ -799,6 +799,17 @@ export const serviceOfferings = mysqlTable('serviceOfferings', {
   /** Both NULL when the basis is quote_on_request - refused, not merely ignored. */
   priceMin:    decimal('priceMin', { precision: 12, scale: 2 }),
   priceMax:    decimal('priceMax', { precision: 12, scale: 2 }),
+  /**
+   * WHAT THE TWO PRICES ABOVE ARE DENOMINATED IN. 0061.
+   *
+   * They had no currency, so the two screens that render them hard-coded one -
+   * `ar ? 'ج.م' : 'EGP'` - and a Saudi provider's indicative rate would have
+   * been shown in Egyptian pounds. Written from the market on create, exactly
+   * as projects.currency and rfqs.currency are; the DEFAULT is the honest
+   * backfill for rows written before the column existed, not the rule for new
+   * ones.
+   */
+  currency:    varchar('currency', { length: 3 }).default('EGP').notNull(),
   leadTimeDays:   int('leadTimeDays'),
   warrantyMonths: int('warrantyMonths'),
   status:      mysqlEnum('status', ['draft', 'active', 'inactive', 'archived']).default('draft').notNull(),

@@ -26,7 +26,7 @@
  * may act on that for as long as it caches. So an unreachable database throws,
  * the route answers 503, and the crawler retries later with nothing learned.
  */
-import { desc, sql } from 'drizzle-orm';
+import { desc } from 'drizzle-orm';
 import { products, users } from '../drizzle/schema';
 import { requireDb } from './_core/requireDb';
 import { publicProductFilter } from './productLifecycle';
@@ -91,26 +91,34 @@ export async function collectSitemapEntries(origin: string): Promise<SitemapColl
   }
 
   /*
-   * ── THE PROVIDER STOREFRONTS ARE NOT HERE, AND THAT IS THE FINDING ──────
+   * ── THE PROVIDER STOREFRONTS, NOW PUBLISHED ────────────────────────────
    *
-   * `/vendor/:id` is the marketplace's most important destination and §21 and
-   * §37 both describe it as public. It is not: `profile.getPublic` is a
-   * protectedProcedure, so a logged-out reader - every crawler - gets a
-   * sign-in wall. Listing thousands of those URLs would publish a claim this
-   * product does not honour.
+   * This was a COUNT and a withheld note, because `/vendor/:id` sat behind a
+   * protectedProcedure while §21 and §37 described it as public - so listing
+   * those URLs would have published a claim the product did not honour, and
+   * the document said how many were being held back rather than looking like a
+   * marketplace with no suppliers.
    *
-   * `directoryVisibilityFilter` is still read below - ONLY to count how many
-   * storefronts this deployment would publish the moment that access decision
-   * changes. The number is reported in the document, nothing is advertised,
-   * and when `access` flips to 'public' in shared/seo.ts this count becomes
-   * the loop.
+   * The owner decided, the procedure is public, and the count became the loop
+   * exactly as the note said it would.
+   *
+   * `directoryVisibilityFilter()` is the SAME predicate the procedure now gates
+   * on, so the sitemap cannot advertise a storefront the page would refuse: an
+   * unapproved applicant, a frozen account, a deactivated one.
    */
-  const [withheld] = await db
-    .select({ total: sql<number>`count(*)` })
+  const providerRows = await db
+    .select({ id: users.id, updatedAt: users.updatedAt })
     .from(users)
-    .where(directoryVisibilityFilter());
+    .where(directoryVisibilityFilter())
+    .orderBy(desc(users.updatedAt))
+    .limit(SITEMAP_URL_LIMIT);
 
-  return { entries, withheldStorefronts: Number(withheld?.total ?? 0) };
+  for (const row of providerRows) {
+    const loc = canonicalUrl(origin, `/vendor/${row.id}`);
+    if (loc) entries.push({ loc, lastmod: isoDay(row.updatedAt), priority: '0.7' });
+  }
+
+  return { entries, withheldStorefronts: 0 };
 }
 
 /** Date only. A sitemap does not need the minute, and an invalid date is omitted. */

@@ -464,6 +464,22 @@ describe('compliance is a property of the market, not just the role', () => {
  */
 const CURRENCY_HARDCODE = /(['"`][^'"`]*\b(?:EGP|SAR|AED|QAR|KWD|BHD|OMR)\b[^'"`]*['"`])|(['"`][^'"`]*(?:ج\.م|جنيه)[^'"`]*['"`])/;
 
+/**
+ * ── THE LIST IS DOWN TO THE ONE PLACE A CURRENCY BELONGS ────────────────
+ *
+ * It held five files. Four are gone: RFQPage and LanguageContext when the
+ * `common.egp` coupling was retired, and the two SERVICE PRICE screens when
+ * migration 0061 gave `serviceOfferings` a currency column.
+ *
+ * Those last two are the useful entry in this list's history. Their declared
+ * reason was not "we will get to it" - it was that the RECORD HAD NOTHING TO
+ * READ: `priceMin`, `priceMax` and no currency. The debt was the column, the
+ * declaration said so, and adding the column removed both files at once.
+ *
+ * `shared/billing.ts` remains, and legitimately: it holds the currency
+ * BuildHub bills its own subscriptions in, which is a different commercial
+ * relationship from anything a buyer or supplier transacts in (§87).
+ */
 const DECLARED_CURRENCY_HARDCODES: readonly { file: string; reason: string }[] = [
   {
     file: 'shared/billing.ts',
@@ -472,24 +488,6 @@ const DECLARED_CURRENCY_HARDCODES: readonly { file: string; reason: string }[] =
       + 'no payment provider. It is no longer read by any sourcing surface, '
       + 'which was the defect; a second billing market needs an approved '
       + 'catalogue price per market (§45), not an FX conversion of this one.',
-  },
-  {
-    file: 'client/src/components/ServiceCatalogueManager.tsx',
-    reason: 'Indicative service pricing. THE DEBT IS A COLUMN, NOT THIS VIEW: '
-      + '`serviceOfferings` has priceMin and priceMax and no currency, so there '
-      + 'is nothing on the record to read. It now renders through '
-      + 'formatMoneyRange with requireCurrencyForMarket(DEFAULT_MARKET) - the '
-      + 'same call the server makes for a project or an RFQ - so the coupling '
-      + 'is one greppable expression rather than a literal, and adding the '
-      + 'column is what removes this entry.',
-  },
-  {
-    file: 'client/src/pages/VendorProfile.tsx',
-    reason: 'The storefront half of the same service price range, and the same '
-      + 'missing `serviceOfferings.currency` column. The two identical local '
-      + 'formatters that used to spell it \'ج.م\' are gone; both call '
-      + 'formatMoneyRange now, which shows the ISO code because \'ج.م\' reads '
-      + 'as a pound in more than one market.',
   },
 ];
 

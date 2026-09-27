@@ -428,6 +428,13 @@
       "when": 1790200000000,
       "tag": "0060_supplier_showcase",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "5",
+      "when": 1790200100000,
+      "tag": "0061_service_offering_currency",
+      "breakpoints": true
     }
   ]
 }

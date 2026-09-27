@@ -225,6 +225,14 @@ export type PublicServiceOffering = {
   pricingBasis: ServicePricingBasis;
   priceMin: string | null;
   priceMax: string | null;
+  /**
+   * WHAT THOSE TWO NUMBERS ARE DENOMINATED IN (0061).
+   *
+   * Returned so the view can read it instead of choosing one. The two screens
+   * that render a service price each carried `ar ? 'ج.م' : 'EGP'` because there
+   * was nothing here to read.
+   */
+  currency: string;
   leadTimeDays: number | null;
   warrantyMonths: number | null;
 };
@@ -245,6 +253,7 @@ export async function visibleServicesFor(db: Db, providerId: number): Promise<Pu
     pricingBasis: serviceOfferings.pricingBasis,
     priceMin: serviceOfferings.priceMin,
     priceMax: serviceOfferings.priceMax,
+    currency: serviceOfferings.currency,
     leadTimeDays: serviceOfferings.leadTimeDays,
     warrantyMonths: serviceOfferings.warrantyMonths,
   })

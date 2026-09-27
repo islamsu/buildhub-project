@@ -158,11 +158,27 @@ describe('the robots directive', () => {
     expect(robotsDirective(marketplace, ' Production ')).toBe('index, follow');
   });
 
-  it('refuses to index a route that needs a session, even in production', () => {
-    // /vendor/:id: §21 wants it public, profile.getPublic is protected. Until
-    // that is resolved, publishing it would advertise a sign-in wall.
-    expect(storefront?.access).toBe('session-required');
-    expect(robotsDirective(storefront, 'production')).toBe('noindex, nofollow');
+  it('the storefront is now public, and indexable in production', () => {
+    /*
+     * This asserted the opposite - `session-required`, noindex - because
+     * `profile.getPublic` was a protectedProcedure while §21 and §37 described
+     * the page as public. The owner resolved it: the procedure is public for an
+     * approved, directory-visible provider, so the marketplace's most important
+     * destination is finally crawlable.
+     */
+    expect(storefront?.access).toBe('public');
+    expect(robotsDirective(storefront, 'production')).toBe('index, follow');
+    // And still not outside production - the staging preview stays out of an index.
+    expect(robotsDirective(storefront, 'staging')).toBe('noindex, nofollow');
+  });
+
+  it('still refuses to index a session-required route, if one is ever declared', () => {
+    /*
+     * Nothing carries that tier today. The RULE must survive that, or the next
+     * page to need it would be published by a check nobody was running.
+     */
+    const hypothetical = { ...PUBLIC_SEO_ROUTES[0], access: 'session-required' as const };
+    expect(robotsDirective(hypothetical, 'production')).toBe('noindex, nofollow');
   });
 
   it('refuses to index anything not in the table, in production', () => {
@@ -435,14 +451,25 @@ describe('the id at the end of a path', () => {
 });
 
 describe('which routes may be titled from the database', () => {
-  it('is only the public product page', () => {
-    expect([...NAMED_PUBLIC_ROUTES]).toEqual(['/marketplace/products/:id']);
+  it('is the two entity pages a stranger may open', () => {
+    // It was the product alone, because the storefront needed a session.
+    expect([...NAMED_PUBLIC_ROUTES]).toEqual(['/marketplace/products/:id', '/vendor/:id']);
   });
 
-  it('answers null for a route that needs a session, without reading anything', async () => {
-    // /vendor/:id is session-required, so its name is not read for the shell.
-    const storefront = matchPublicSeoRoute('/vendor/464');
-    expect(await publicEntityName(storefront, '/vendor/464')).toBeNull();
+  it('reads a storefront name through the SAME predicate the page gates on', () => {
+    /*
+     * A looser rule here would put an unapproved applicant's name into a
+     * <title> for a page that answers NOT FOUND - and a crawler would have the
+     * name. The page and the title must agree about who is published.
+     */
+    const source = readFileSync(join(import.meta.dirname, 'seoEntityName.ts'), 'utf8');
+    expect(source).toContain('directoryVisibilityFilter()');
+    // The trading name the provider nominated leads, as the page's heading does.
+    expect(source).toContain('row.tradingName ?? row.companyName ?? row.name');
+  });
+
+  it('still answers null for a route it does not cover', async () => {
+    expect(await publicEntityName(matchPublicSeoRoute('/marketplace'), '/marketplace')).toBeNull();
   });
 
   it('answers null for an unknown route and for a missing id', async () => {

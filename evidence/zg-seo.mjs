@@ -124,7 +124,13 @@ const approvedProviders = Number(sql(
   "select count(*) from users where accountStatus = 'active' and deactivatedAt is null and onboardingStatus = 'approved'"
   + " and userRole in ('supplier','contractor','engineer','designer','project_manager','vendor')"
 ));
-console.log(`DATA   ${activeProducts} active products, sample #${sampleId} "${sampleName}", ${approvedProviders} approved providers`);
+const approvedProviderId = Number(sql(
+  "select id from users where accountStatus = 'active' and deactivatedAt is null and onboardingStatus = 'approved'"
+  + " and userRole in ('supplier','contractor','engineer','architect','project_manager','vendor') order by id limit 1"
+) || '0');
+console.log(`DATA   ${activeProducts} active products, sample #${sampleId} "${sampleName}", `
+  + `${approvedProviders} approved providers, storefront #${approvedProviderId}`);
+check(approvedProviderId > 0, 'there is a published storefront to reason about', `#${approvedProviderId}`);
 check(activeProducts > 0, 'the catalogue has public products to reason about', `${activeProducts}`);
 
 /* ═══ PART 1. THIS DEPLOYMENT IS NOT PRODUCTION, SO NOTHING IS INDEXABLE ═══ */
@@ -218,11 +224,22 @@ try {
     check(h.robots.value === 'noindex, nofollow', 'an unlisted path is noindex by default');
   }
 
-  /* ── the storefront: session-required, so not advertised ── */
+  /* ── the storefront: PUBLIC now, so indexable and advertised ──
+   *
+   * This asserted the opposite. `profile.getPublic` was a protectedProcedure
+   * while §21 and §37 described the storefront as public, so publishing its URL
+   * would have advertised a sign-in wall. The owner resolved it; the procedure
+   * is public for an approved, directory-visible provider, and
+   * evidence/zg-publicstorefront.mjs proves a stranger can read one and cannot
+   * read anything the directory would not list.
+   */
   {
-    const h = await head(prod.base, '/vendor/464');
-    check(h.robots.value === 'noindex, nofollow',
-      '/vendor/:id is noindex because it needs a session (§21 finding)', h.robots.value ?? 'absent');
+    const h = await head(prod.base, `/vendor/${approvedProviderId}`);
+    check(h.robots.value === 'index, follow',
+      '/vendor/:id is indexable in production now that the storefront is public',
+      h.robots.value ?? 'absent');
+    check(h.canonical.value === `${ORIGIN}/vendor/${approvedProviderId}`,
+      'and its canonical is that storefront', h.canonical.value ?? 'absent');
   }
 
   /* ── robots.txt ── */
@@ -260,11 +277,23 @@ try {
     check(leaked.length === 0, 'and no draft, withdrawn or archived product does',
       leaked.length ? `leaked ${leaked.join(',')}` : `${hidden.length} non-active checked`);
 
-    check(!locs.some(loc => loc.includes('/vendor/')),
-      'no storefront URL is published while the page needs a session');
-    check(sitemap.body.includes(`${approvedProviders} provider storefront(s) are withheld`),
-      'and the document says how many are withheld instead of looking empty',
-      `expected ${approvedProviders}`);
+    const storefrontLocs = locs.filter(loc => loc.includes('/vendor/'));
+    check(storefrontLocs.length === approvedProviders,
+      'every directory-visible storefront is published, and only those',
+      `${storefrontLocs.length} listed vs ${approvedProviders} visible`);
+    check(!sitemap.body.includes('withheld'),
+      'and nothing is withheld any more - the note that counted them is gone');
+
+    /* The sitemap must not advertise a storefront the PAGE refuses. Both read
+       directoryVisibilityFilter(), and this is what proves they agree. */
+    const hiddenProviders = sql(
+      "select id from users where userRole in ('supplier','contractor','engineer','architect','project_manager','vendor')"
+      + " and (onboardingStatus <> 'approved' or accountStatus <> 'active' or deactivatedAt is not null) limit 5"
+    ).split('\n').filter(Boolean);
+    const leakedProviders = hiddenProviders.filter(id => locs.includes(`${ORIGIN}/vendor/${id}`));
+    check(leakedProviders.length === 0,
+      'and no unapproved, frozen or deactivated provider is listed',
+      leakedProviders.length ? `leaked ${leakedProviders.join(',')}` : `${hiddenProviders.length} hidden checked`);
 
     /* Every listed URL must be one the SEO table calls public, or the sitemap
        and the meta tags are two different opinions. */

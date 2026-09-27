@@ -55,8 +55,30 @@ function sub(overrides: Partial<VendorSubscription> = {}): VendorSubscription {
   } as VendorSubscription;
 }
 
+/**
+ * AN ACTIVE SUBSCRIPTION, AND ACTIVE MEANS NOW.
+ *
+ * `currentPeriodEnd` was `addMonths(NOW, 1)` - a month after the frozen `NOW`
+ * above, which is 2026-08-20. On 2026-09-21 that quietly became a subscription
+ * whose period had ENDED, and three §10 tests started failing with "There is no
+ * active paid subscription to cancel". The product was right every time: the
+ * entitlement resolver read an expired period and said so. The fixture had
+ * expired, silently, a month after it was written.
+ *
+ * A frozen NOW is still the right choice for the stored timestamps these tests
+ * assert on. What cannot be frozen is the END OF A LIVE PERIOD, because whether
+ * it is live is decided against the real clock. So the start stays at NOW - it
+ * is a historical fact about the row - and the end is a month from today.
+ *
+ * Tests that need an EXPIRED period pass `currentPeriodEnd` themselves, and
+ * `...extra` comes last so they still win.
+ */
 const paidActive = (plan: 'professional' | 'premium' = 'professional', extra: Partial<VendorSubscription> = {}) =>
-  sub({ plan, status: 'active', billingInterval: 'month', currentPeriodStart: NOW, currentPeriodEnd: addMonths(NOW, 1), ...extra });
+  sub({
+    plan, status: 'active', billingInterval: 'month',
+    currentPeriodStart: NOW, currentPeriodEnd: addMonths(new Date(), 1),
+    ...extra,
+  });
 
 // ── Fake database ──────────────────────────────────────────────────────────
 // One vendor subscription row, mutated in place, plus an append-only event log

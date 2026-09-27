@@ -62,19 +62,23 @@ export type SeoRoute = {
    * CAN A READER WITH NO SESSION SEE THIS PAGE?
    *
    * `session-required` is not a variation of `public` - it changes what may
-   * truthfully be said about the page. The route still gets a real title and
-   * description, because a signed-in reader's browser tab deserves them, but
-   * it is never indexable and never appears in the sitemap: advertising a URL
-   * that answers with a sign-in wall wastes a crawl and, worse, publishes a
-   * claim that a page is readable when it is not.
+   * truthfully be said about the page. Such a route still gets a real title
+   * and description, because a signed-in reader's browser tab deserves them,
+   * but it is never indexable and never appears in the sitemap: advertising a
+   * URL that answers with a sign-in wall wastes a crawl and, worse, publishes
+   * a claim that a page is readable when it is not.
    *
-   * THE ONE ROUTE THAT CARRIES IT IS `/vendor/:id`, and that is a finding, not
-   * a design: §21 and §37 both describe the provider storefront as a public
-   * page, and `profile.getPublic` is a `protectedProcedure`. The code there
-   * records logged-out access as an unresolved owner decision, so this field
-   * states the situation truthfully rather than quietly resolving it in a
-   * sitemap. When the owner decides, one word here moves the title, the meta
-   * robots tag and the sitemap together.
+   * `/vendor/:id` CARRIED IT AND NO LONGER DOES. The storefront sat behind a
+   * `protectedProcedure` while §21 and §37 both described it as public. This
+   * field stated that contradiction rather than resolving it in a sitemap, and
+   * said one word here would move the title, the robots tag and the sitemap
+   * together the moment the owner decided. The owner decided; the procedure is
+   * public for approved, directory-visible providers; this is that word.
+   *
+   * NOTHING IS `session-required` TODAY. The tier stays, because the next page
+   * that needs it should have to declare it rather than quietly appear in a
+   * sitemap - and because `robotsDirective` and the sitemap both still honour
+   * it, which server/seo.test.ts holds.
    */
   readonly access: 'public' | 'session-required';
   readonly titleEn: string;
@@ -171,7 +175,7 @@ export const PUBLIC_SEO_ROUTES: readonly SeoRoute[] = [
   },
   {
     path: '/vendor/:id',
-    access: 'session-required',
+    access: 'public',
     titleEn: 'Supplier storefront',
     titleAr: 'متجر المورد',
     descriptionEn:

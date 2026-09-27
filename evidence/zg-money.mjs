@@ -240,11 +240,25 @@ try {
       if (providerId > 0 && categoryId > 0) {
         /* A PRICED SERVICE, created for this check because the database had
            none. Removed below, and the removal is proved. */
+        /*
+         * TWO OFFERINGS, IN TWO CURRENCIES. Migration 0061 gave this table a
+         * `currency` column; before it, both screens hard-coded
+         * `ar ? 'ج.م' : 'EGP'` because there was nothing on the record to read.
+         * A second currency is the case that column exists for, so it is the
+         * case rendered here.
+         */
         sql(`INSERT INTO serviceOfferings (providerId, categoryId, title, description,
-               pricingBasis, priceMin, priceMax, status)
+               pricingBasis, priceMin, priceMax, currency, status)
              VALUES (${providerId}, ${categoryId}, '${TAG} waterproofing', 'probe fixture',
-               'per_square_metre', 120.00, 260.00, 'active')`);
+               'per_square_metre', 120.00, 260.00, 'EGP', 'active')`);
         offeringId = num(`SELECT id FROM serviceOfferings WHERE title='${TAG} waterproofing'`);
+        sql(`INSERT INTO serviceOfferings (providerId, categoryId, title, description,
+               pricingBasis, priceMin, priceMax, currency, status)
+             VALUES (${providerId}, ${categoryId}, '${TAG} riyadh cladding', 'probe fixture',
+               'per_square_metre', 300.00, 480.00, 'SAR', 'active')`);
+        check(num(`SELECT COUNT(*) FROM serviceOfferings WHERE title LIKE '${TAG}%' AND currency='SAR'`) === 1,
+          'a service offering can be stored in a currency that is not EGP',
+          'the column migration 0061 added');
       }
       check(offeringId > 0, 'a priced service offering exists to render', `#${offeringId}`);
 
@@ -258,6 +272,27 @@ try {
         storefront.match(/.{0,25}ج\.م.{0,15}/)?.[0] ?? 'clean');
       check(/EGP/.test(storefront), 'it names the ISO currency code instead');
 
+      /* THE ONE THAT PROVES THE COLUMN. Each offering is denominated in its own
+         currency, so the SAR service reads SAR while the EGP one reads EGP -
+         which no view-level constant could produce. */
+      check(/SAR/.test(storefront), 'and the SAR offering is denominated in SAR',
+        storefront.match(/.{0,20}SAR.{0,20}/)?.[0] ?? 'absent');
+      /*
+       * The smallest element holding the title AND a price. Filtering on the
+       * title alone found the heading - which carries neither currency, so the
+       * check read "no SAR here" about an element that was never going to have
+       * one.
+       */
+      const sarRow = await page.evaluate(`
+        const node = Array.from(document.querySelectorAll('div,li,article'))
+          .filter(element => (element.textContent || '').includes('${TAG} riyadh cladding'))
+          .filter(element => /SAR|EGP/.test(element.textContent || ''))
+          .sort((a, b) => (a.textContent || '').length - (b.textContent || '').length)[0];
+        return node ? node.textContent.trim().slice(0, 140) : null;
+      `);
+      check(sarRow !== null && /SAR/.test(sarRow) && !/EGP/.test(sarRow),
+        'and the SAR row is nowhere labelled in Egyptian pounds', sarRow ?? 'row not found');
+
       /* Arabic too: the old formatter swapped in 'ج.م' for Arabic only, so
          English alone would not have caught it. */
       await page.evaluate(`localStorage.setItem('buildhub_lang', 'ar'); return true;`);
@@ -270,7 +305,7 @@ try {
       check(/EGP/.test(arabicStorefront), 'and Arabic shows the same ISO code');
       await page.evaluate(`localStorage.setItem('buildhub_lang', 'en'); return true;`);
     } finally {
-      if (offeringId) sql(`DELETE FROM serviceOfferings WHERE id=${offeringId}`);
+      sql(`DELETE FROM serviceOfferings WHERE title LIKE '${TAG}%'`);
       check(num(`SELECT COUNT(*) FROM serviceOfferings WHERE title LIKE '${TAG}%'`) === 0,
         'the service fixture is removed');
     }

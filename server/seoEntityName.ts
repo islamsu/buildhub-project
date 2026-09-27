@@ -7,11 +7,10 @@
  *
  * ── THREE RULES, ALL OF THEM ABOUT NOT MAKING THINGS WORSE ──────────────
  *
- * ONLY WHERE IT IS ALREADY PUBLIC. The lookup runs for the product page and
- * nothing else. `/vendor/:id` needs a session (see `access` in shared/seo.ts),
- * so its name is not read here - a page that is not indexable does not need
- * its title in the first response, and not reading is the simplest way to be
- * sure nothing is published early.
+ * ONLY WHERE IT IS ALREADY PUBLIC. The lookup runs for the two entity pages a
+ * stranger may open - a product and a provider storefront - and for nothing
+ * else. It used to run for the product alone, because `/vendor/:id` needed a
+ * session; now that it does not, a storefront's own name reaches the shell too.
  *
  * ONLY WHAT THE CATALOGUE ITSELF WOULD SHOW. `publicProductFilter()` - the
  * same predicate the marketplace reads through. Without it a draft's or a
@@ -24,13 +23,14 @@
  * own honest error state.
  */
 import { and, eq } from 'drizzle-orm';
-import { products } from '../drizzle/schema';
+import { products, users, vendorProfiles } from '../drizzle/schema';
 import { getDb } from './db';
 import { publicProductFilter } from './productLifecycle';
+import { directoryVisibilityFilter } from './vendorDirectory';
 import type { SeoRoute } from '../shared/seo';
 
 /** The route patterns this can answer for. Anything else returns null. */
-export const NAMED_PUBLIC_ROUTES = ['/marketplace/products/:id'] as const;
+export const NAMED_PUBLIC_ROUTES = ['/marketplace/products/:id', '/vendor/:id'] as const;
 
 export async function publicEntityName(route: SeoRoute | null, pathname: string): Promise<string | null> {
   if (!route || route.access !== 'public') return null;
@@ -42,6 +42,33 @@ export async function publicEntityName(route: SeoRoute | null, pathname: string)
   try {
     const db = await getDb();
     if (!db) return null;
+
+    if (route.path === '/vendor/:id') {
+      /*
+       * THE SAME PREDICATE THE PAGE GATES ON. `profile.getPublic` refuses a
+       * provider who is not directory-visible, so titling the shell from a
+       * looser rule would put an unapproved applicant's name in a <title> for
+       * a page that answers NOT FOUND - and a crawler would have the name.
+       *
+       * The trading name the provider nominated is preferred over their account
+       * name, which is the order the page's own heading uses; a provider who has
+       * filled in no company falls back to the account name rather than to a gap.
+       */
+      const [row] = await db
+        .select({
+          name: users.name,
+          companyName: vendorProfiles.companyName,
+          tradingName: vendorProfiles.tradingName,
+        })
+        .from(users)
+        .leftJoin(vendorProfiles, eq(vendorProfiles.userId, users.id))
+        .where(and(eq(users.id, id), directoryVisibilityFilter()))
+        .limit(1);
+      if (!row) return null;
+      const name = (row.tradingName ?? row.companyName ?? row.name ?? '').trim();
+      return name.length > 0 ? name : null;
+    }
+
     const [row] = await db
       .select({ name: products.name })
       .from(products)

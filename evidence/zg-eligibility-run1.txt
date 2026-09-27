@@ -1,3 +1,4 @@
+BUILD  9be1c7d (local) built 2026-09-27T12:21:40.917Z  http://127.0.0.1:5401
 PASS  1. SETUP: three approved providers with declared categories
 PASS  2. an open Renovation request exists  [http=200]
 PASS  3. THE MISMATCHED PROVIDER IS NOT OFFERED THE ACTION  [canOpen=false reason=category_mismatch]

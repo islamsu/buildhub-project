@@ -1,4 +1,4 @@
-BUILD  9ab4783 (local) built 2026-09-26T06:22:37.348Z  http://127.0.0.1:5401
+BUILD  9be1c7d (local) built 2026-09-27T12:53:04.139Z  http://127.0.0.1:5401
 
 DATA   30 products, 32 users, 12 RFQs
 PASS  1. the query counter responds to a real request - measurements are not zeros  [+5]
@@ -7,10 +7,10 @@ PASS  2. an administrator session is available for the admin-scoped measurements
 ── query count vs result size ──
 PASS  3. marketplace.list answers both sizes  [200/200]
 PASS  4. marketplace.list does not issue a query per row  [2 selects for 3 rows, 2 for 29 (0.00/row)]
-       marketplace.list: 10ms/2019B → 9ms/19140B
+       marketplace.list: 7ms/2019B → 12ms/19140B
 PASS  5. admin.users answers both sizes  [200/200]
 PASS  6. admin.users does not issue a query per row  [6 selects for 3 rows, 6 for 30 (0.00/row)]
-       admin.users: 11ms/1317B → 10ms/10650B
+       admin.users: 10ms/1317B → 11ms/10650B
 PASS  7. marketplace.vendors answers both sizes  [200/200]
 SKIP   marketplace.vendors: the larger page returned no more rows (3 → 3) - nothing to compare
 
@@ -25,15 +25,15 @@ PASS  14. rfq.list exists and answers a sane request  [HTTP 200]
 PASS  15. rfq.list refuses or clamps an absurd page size  [HTTP 400, null rows, 336B]
 
 ── measured, not gated (lab numbers on this container) ──
-       /version                 HTTP 200    0 selects     12ms      138B
-       marketplace.platformStats HTTP 200    0 selects      5ms      132B
+       /version                 HTTP 200    0 selects     14ms      138B
+       marketplace.platformStats HTTP 200    0 selects      4ms      132B
        marketplace.vendors      HTTP 200    5 selects     10ms      831B  3 rows
-       marketplace.list         HTTP 200    2 selects      8ms     7928B  12 rows
-       auth.me                  HTTP 200    3 selects     10ms      166B
-       projects.list            HTTP 200    7 selects     12ms     3194B  8 rows
-       rfq.list                 HTTP 200    5 selects     11ms     3983B  12 rows
+       marketplace.list         HTTP 200    2 selects      7ms     7928B  12 rows
+       auth.me                  HTTP 200    3 selects      9ms      166B
+       projects.list            HTTP 200    7 selects     13ms     3194B  8 rows
+       rfq.list                 HTTP 200    5 selects     12ms     3983B  12 rows
        notifications.list       HTTP 200    4 selects     10ms     3470B  10 rows
-       admin.users              HTTP 200    6 selects     12ms     7237B  20 rows
+       admin.users              HTTP 200    6 selects     13ms     7237B  20 rows
 PASS  16. every measured endpoint answered 200 - a 4xx measures nothing  [9 endpoints]
 PASS  17. no measured endpoint issues more than 30 SELECTs for one request  [max 7]
 PASS  18. no measured endpoint returns more than 2MB for one request  [max 7928B]
@@ -51,7 +51,7 @@ PASS  27. analyticsEvents.eventType is indexed  [2 index(es)]
 PASS  28. qualifiedEnquiries.userId is indexed  [2 index(es)]
 PASS  29. qualifiedEnquiries.rfqId is indexed  [2 index(es)]
 
-BUILD  9ab4783 (local)
+BUILD  9be1c7d (local)
 NOTE   wall times and payload sizes above are LAB measurements on a single-user dev
 NOTE   container with the database on the same disk. They are recorded for comparison,
 NOTE   not as Core Web Vitals - §63 asks for field data at the 75th percentile, which
