@@ -1,7 +1,10 @@
 # BuildHub release acceptance — status, not a merge request
 
-**RC HEAD** `7d04467` · base `origin/main` `1b3edb8` · 94 commits · 446 files
-· 7 migrations in the RC (0054–0060) · 4847 tests
+**RC HEAD** `e271b1e` · base `origin/main` `1b3edb8` · 96 commits
+· 8 migrations in the RC (0054–0061) · 4887 tests
+
+**This is the SHA for staging acceptance.** Code changes stop here; no pull
+request is open, and none will be until staging is verified.
 
 This is a STATUS document. It is deliberately **not** the merge request in
 `CLAUDE.md` §43, because §42 and §78 are not both satisfied yet and §89 says
@@ -22,8 +25,11 @@ not to ask until the release is coherent across the whole product.
 | STAGING VERIFIED | **no** |
 | OWNER DELIVERED | **no** |
 
-Migrations **0056, 0057, 0058, 0059, 0060** are **PUSHED — applied locally,
-not yet staging-verified**.
+Migrations **0056, 0057, 0058, 0059, 0060, 0061** are **PUSHED — applied
+locally, not yet staging-verified**. `0061` was additionally verified two ways
+that matter for a backfill: every migration applied to an EMPTY database (64
+tables, the column present), and `0061` applied ALONE to a table already holding
+rows, where both legacy offerings read `EGP` and none read null.
 
 ---
 
@@ -56,7 +62,7 @@ Two things remain true regardless:
 
 - P0 known defects: **0**
 - P1 known defects: **0**
-- full test suite: **4847 passing**
+- full test suite: **4887 passing**
 - typecheck: clean
 - production build: clean
 - working tree clean, local SHA == remote SHA
