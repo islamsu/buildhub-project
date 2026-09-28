@@ -169,6 +169,43 @@ try {
   const currency = sql(`select currency from rfqs where id=${rfqId}`);
   check(currency === 'EGP', 'denominated in the market\'s currency, not a hard-coded SAR', currency);
 
+  /* ═══ 1b. THE BRIEF READS BACK, UNKNOWNS INTACT ═══════════════════════
+   *
+   * It was WRITE-ONLY: stored on create and returned by nothing. The requester
+   * could not reopen what they had written and the contractor could not see the
+   * property type, the area or the finishing level - most of what a finishing
+   * quotation depends on.
+   */
+  const readBack = await owner.s.get('rfq.summary', { id: rfqId });
+  check(readBack.status === 200 && readBack.data?.finishingBrief != null,
+    'the requester can read their own brief back',
+    readBack.status === 200 ? 'present' : `HTTP ${readBack.status}`);
+  const brief = readBack.data?.finishingBrief ?? {};
+  check(typeof brief === 'object' && !Array.isArray(brief),
+    'AND IT ARRIVES AS AN OBJECT, not the raw JSON string mysql2 returns',
+    typeof brief);
+  check(brief.level === 'unknown' && brief.areaSqm === 'unknown'
+    && brief.currentCondition === 'unknown' && brief.materialPreferences === 'unknown',
+    'every "I don\'t know" survives the round trip as itself',
+    JSON.stringify({ level: brief.level, area: brief.areaSqm }));
+  check(brief.kind === 'full' && brief.propertyType === 'apartment',
+    'and the answers they DID give are unchanged',
+    `${brief.kind}/${brief.propertyType}`);
+  check(Array.isArray(brief.areas) && brief.areas.length === 3,
+    'including the multi-select rooms', JSON.stringify(brief.areas));
+  check(readBack.data?.pricingPreference === 'provider_choice',
+    'and the pricing preference reads back as the decision it was');
+
+  /* THE CONTRACTOR SEES IT TOO - that is the point of storing it. */
+  const contractorPreview = await (async () => {
+    const scout = await account('fnsct', 'contractor');
+    sql(`update users set onboardingStatus='approved', verified=1 where id=${scout.id}`);
+    return scout.s.get('rfq.summary', { id: rfqId });
+  })();
+  check(contractorPreview.status === 200 && contractorPreview.data?.finishingBrief?.level === 'unknown',
+    'AN APPROVED CONTRACTOR SEES THE BRIEF, unknowns included, so they know what to ask',
+    contractorPreview.status === 200 ? 'visible' : `HTTP ${contractorPreview.status}`);
+
   /* ═══ 2. THREE CONTRACTORS, THREE PRICING METHODS ═════════════════════ */
   const pct = await readyProvider('fnpct', rfqId);
   const pkg = await readyProvider('fnpkg', rfqId);
@@ -294,6 +331,16 @@ try {
   const strangerQuotes = await stranger.s.get('rfq.quotations', { rfqId });
   check(strangerQuotes.status !== 200, 'nor read the quotations themselves',
     `HTTP ${strangerQuotes.status}`);
+
+  /*
+   * AND NOT THE BRIEF EITHER. `rfq.summary` opens to the requester and to
+   * APPROVED PROVIDERS - a homeowner who is neither gets NOT_FOUND, which does
+   * not confirm the id exists.
+   */
+  const strangerBrief = await stranger.s.get('rfq.summary', { id: rfqId });
+  check(strangerBrief.status !== 200,
+    'an unrelated homeowner cannot read the finishing brief',
+    `HTTP ${strangerBrief.status} ${strangerBrief.code ?? ''}`);
 
   /* ═══ 6. AI SUGGESTIONS ARE DERIVED, AND SCOPED ═══════════════════════ */
   const ownerSuggestions = await owner.s.get('ai.suggestions', { subject: 'request', subjectId: rfqId });

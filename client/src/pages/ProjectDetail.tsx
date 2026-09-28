@@ -1,5 +1,6 @@
 import { useLanguage } from '@/contexts/LanguageContext';
 import { formatMoney } from '@shared/money';
+import AskAiAbout from '@/components/AskAiAbout';
 import { currencyForMarket } from '@shared/markets';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
@@ -203,9 +204,14 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                     re-derives what this account may see and picks among that,
                     so naming a project here cannot reach one the session does
                     not already permit. */}
-                <Button variant="outline" size="sm" className="gap-1.5" data-testid="project-ai-help" onClick={() => window.open(`/ai?project=${projectId}`, '_blank')}>
-                  <Bot className="w-4 h-4" /> {lang === 'ar' ? 'مساعدة AI' : 'AI Help'}
-                </Button>
+                {/* MOVED TO THE CANONICAL AFFORDANCE. This opened a new tab on
+                    `/ai?project=`, which the assistant still honours; the shared
+                    component uses the one `?subject=&id=` contract every other
+                    surface now uses, and navigates in place so the reader keeps
+                    their history. */}
+                <AskAiAbout
+                  subject="project" id={projectId} lang={lang === 'ar' ? 'ar' : 'en'}
+                  label={lang === 'ar' ? 'مساعدة AI' : 'AI Help'} />
                 <Button variant="outline" size="sm" className="gap-1.5" data-testid="project-open-dispute" onClick={() => setDisputeOpen(true)}>
                   <Flag className="w-4 h-4" /> {lang === 'ar' ? 'فتح نزاع' : 'Open dispute'}
                 </Button>

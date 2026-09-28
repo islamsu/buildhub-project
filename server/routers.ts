@@ -3352,6 +3352,24 @@ const rfqRouter = router({
       productReference: rfqs.productReference,
       status: rfqs.status,
       createdAt: rfqs.createdAt,
+      /*
+       * THE FINISHING BRIEF TRAVELS WITH THE FEED. 0062.
+       *
+       * Same class as `description`, `budget` and `location`, which are already
+       * here: it is WHAT IS BEING ASKED FOR, and a provider scanning the feed
+       * for finishing work needs the level and the area to judge whether to
+       * spend a credit opening it. The requester's uploaded files remain what
+       * the credit buys, and this feed still never selects them - the word for
+       * them is left out of this comment on purpose, because the authorization
+       * sweep greps this procedure's body for it and a blunt guard is the right
+       * kind here.
+       *
+       * It is here as well as on `summary` deliberately - the two must return
+       * the same allowlist, or `summary` becomes a way around the feed's
+       * narrowing, which is the drift `rfqDetailAccess.test.ts` guards.
+       */
+      finishingBrief: rfqs.finishingBrief,
+      pricingPreference: rfqs.pricingPreference,
     };
     /*
      * PAGED, with a real total.
@@ -3515,6 +3533,22 @@ const rfqRouter = router({
         productReference: rfqs.productReference,
         status: rfqs.status,
         createdAt: rfqs.createdAt,
+        /**
+         * THE FINISHING BRIEF WAS WRITE-ONLY. 0062.
+         *
+         * It was stored on create and read by nothing: the requester could not
+         * reopen what they had written, and a contractor pricing the job could
+         * not see the property type, the area, the finishing level or which
+         * questions the customer had said they did not know - which is most of
+         * what a finishing quotation depends on.
+         *
+         * It belongs to the same class as `description`, `budget` and the
+         * request's lines, and the gate below already decides that class
+         * correctly: the requester, or an approved provider. No new
+         * authorization surface.
+         */
+        finishingBrief: rfqs.finishingBrief,
+        pricingPreference: rfqs.pricingPreference,
       }).from(rfqs).where(eq(rfqs.id, input.id));
       if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
       /**
@@ -3541,7 +3575,16 @@ const rfqRouter = router({
         unit: rfqItems.unit, specifications: rfqItems.specifications,
         unitPriceSnapshot: rfqItems.unitPriceSnapshot,
       }).from(rfqItems).where(eq(rfqItems.rfqId, input.id)).orderBy(rfqItems.position, rfqItems.id);
-      return { ...rfq, items };
+      /*
+       * PARSED, because mysql2 hands a `json` column back as a STRING and a
+       * cast does not make it an object. The comparison screen lost every scope
+       * difference to exactly this, so the reader is explicit here too.
+       */
+      return {
+        ...rfq,
+        finishingBrief: parseJsonColumn<FinishingBrief>(rfq.finishingBrief),
+        items,
+      };
     }),
   /**
    * The server-side gate for the dedicated response page.

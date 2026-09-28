@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link } from 'wouter';
+import AskAiAbout from '@/components/AskAiAbout';
 import { OpenDisputeDialog } from '@/components/OpenDisputeDialog';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -187,12 +188,17 @@ export default function QuotationDetail() {
           underneath it - elementFromPoint returns the navbar and the click
           never lands. RFQDetail shipped with exactly that defect. */}
       <div className="mx-auto max-w-4xl px-4 pt-24 pb-16">
-        <Link href={`/rfq/${q.rfqId}`}>
-          <Button variant="ghost" size="sm" className="mb-4 gap-2" data-testid="quotation-detail-back">
-            <ArrowLeft className="h-4 w-4" />
-            {ar ? 'العودة إلى الطلب' : 'Back to the request'}
-          </Button>
-        </Link>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <Link href={`/rfq/${q.rfqId}`}>
+            <Button variant="ghost" size="sm" className="gap-2" data-testid="quotation-detail-back">
+              <ArrowLeft className="h-4 w-4" />
+              {ar ? 'العودة إلى الطلب' : 'Back to the request'}
+            </Button>
+          </Link>
+          {/* The quotation is the subject. The server decides which of the two
+              parties is reading it and offers each the right suggestions. */}
+          <AskAiAbout subject="quotation" id={q.id} lang={ar ? 'ar' : 'en'} />
+        </div>
 
         <Card>
           <CardHeader>

@@ -9,6 +9,7 @@ import { SaveButton } from '@/components/SaveButton';
 import ShowcaseStrip from '@/components/ShowcaseStrip';
 import { useSavedIds } from '@/lib/useSavedIds';
 import { useAuth } from '@/_core/hooks/useAuth';
+import AskAiAbout from '@/components/AskAiAbout';
 import { trpc } from '@/lib/trpc';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -146,6 +147,9 @@ export default function VendorProfile() {
                 {profile.verified && (
                   <Badge variant="secondary" className="gap-1"><BadgeCheck className="w-3.5 h-3.5" />{t('profile.verified_badge')}</Badge>
                 )}
+                {/* The provider is the subject. A signed-out reader still gets
+                    the general list - the server never treats an id as proof. */}
+                <AskAiAbout subject="provider" id={userId} lang={ar ? 'ar' : 'en'} />
               </div>
               {roleLabel && <p className="text-sm text-muted-foreground capitalize">{roleLabel}</p>}
             </div>

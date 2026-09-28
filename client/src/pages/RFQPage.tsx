@@ -23,7 +23,7 @@ import {
   FileText, Plus, Clock, MapPin, DollarSign, Send,
   BarChart3, Users, Paperclip, X, FileUp, Loader2,
 } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import QuotationComparison from '@/components/QuotationComparison';
 import { parseProductReference, parseRfqAttachments } from '@shared/rfqAttachments';
 import { RFQ_CATEGORIES as rfqCategories, rfqCategoryLabel, type RfqCategory } from '@shared/rfqCategories';
@@ -362,11 +362,24 @@ export default function RFQPage() {
                   )}
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-lg">
+              {/*
+                * ── HEADER, SCROLLING BODY, REACHABLE ACTIONS ──────────────
+                *
+                * `scrollBody` is the canonical shape for a long form: the title
+                * stays put, the fields scroll, and Submit never leaves the
+                * screen. This form outgrew a laptop's height the moment تشطيب
+                * was selected and the finishing brief appeared - the remaining
+                * fields and the submit button became unreachable, so a finishing
+                * request could not be published at all.
+                *
+                * The bound itself lives in DialogContent, where thirty-three
+                * other dialogs were one long form away from the same dead end.
+                */}
+              <DialogContent className="max-w-lg" scrollBody data-testid="rfq-post-dialog">
                 <DialogHeader>
                   <DialogTitle>{t('rfq.post.title')}</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-4 mt-2">
+                <DialogBody className="space-y-4 mt-2" data-testid="rfq-post-body">
                   <Input
                     data-testid="rfq-title"
                     placeholder={t('rfq.title.placeholder')}
@@ -615,6 +628,17 @@ export default function RFQPage() {
                     )}
                   </div>
 
+                </DialogBody>
+
+                {/*
+                  * THE ACTIONS, OUTSIDE THE SCROLL REGION.
+                  *
+                  * A submit button that is the last child of a long scrolling
+                  * form is only reachable by scrolling to the end of it. Here it
+                  * is the dialog's third grid row, so it is on screen from the
+                  * moment the dialog opens however tall the form grows.
+                  */}
+                <DialogFooter className="flex-col gap-2 sm:flex-col sm:justify-start">
                   <Button
                     className="w-full gap-2"
                     data-testid="rfq-create-submit"
@@ -665,7 +689,7 @@ export default function RFQPage() {
                         : 'Choose a category so matching suppliers can see your request and respond to it.'}
                     </p>
                   )}
-                </div>
+                </DialogFooter>
               </DialogContent>
             </Dialog>
           ) : (

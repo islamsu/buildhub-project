@@ -172,8 +172,15 @@ base = applicable material cost × agreed percentage
   and any exclusions.
 - **VAT, discounts, contingency, overhead/markup and unrelated charges never
   enter the base** and are never counted twice.
-- Whole-scope or per-trade percentages are supported by stating the base that
-  the percentage applies to.
+- **The percentage is QUOTATION-LEVEL. There is no per-trade percentage
+  table, and that is the decided contract, not a gap.** A quotation carries one
+  `percentageRate` against one `materialBaseAmount`; which trades that base
+  covers, and which are excluded from it, is what the required
+  `percentageBasisNote` states. A contractor who needs genuinely different rates
+  per trade uses the **detailed/BOQ** method, where `quotationItems.tradeGroup`
+  gives every line its own trade and its own rate. Two mechanisms for
+  trade-level pricing would be two answers to what the job costs, which §5
+  exists to prevent.
 - Recalculation after a material change is **deterministic and
   server-authoritative**.
 
@@ -357,6 +364,47 @@ Both are mutation-tested: compounding overhead on contingency, coercing an
 unstated VAT rate to zero, and letting a rival open the comparison are each
 caught by the probe.
 
+### The owner-found release blocker, and what it exposed
+
+**The Post RFQ dialog could not be scrolled.** `DialogContent` is `fixed`,
+centred with a translate, and carried **no maximum height and no overflow at
+all**. A dialog taller than the viewport ran off both edges, and because it is
+fixed the page behind it could not be scrolled to reach the rest. Selecting
+تشطيب renders the finishing brief, the form outgrew the screen, and the
+remaining fields and the submit button became unreachable — so a finishing
+request could not be published at all.
+
+Measured on the real page with the bound removed: `top -756` to `bottom 1357`
+in a 600px viewport, submit at `top 1296`. At an ordinary **1440×900** it was
+`top -606` to `bottom 1507` — this was never only a short-screen bug; a 1080p
+screenshot simply hid it.
+
+Four of the product's thirty-seven dialogs had already hand-patched
+`max-h-[90vh] overflow-y-auto` onto themselves. **The fix is therefore shared,
+not local**: `DialogContent` is bounded with `max-h-[calc(100dvh-2rem)]`
+(`dvh`, not `vh`, so the mobile keyboard is accounted for) and scrolls by
+default, and a new `DialogBody` gives long forms the header / scrolling body /
+reachable actions shape with exactly one scroll container.
+
+Two layout causes sat beside it, both in the finishing brief:
+`Button` is `whitespace-nowrap shrink-0`, so the long
+`لا أعرف / ساعدني في الاختيار` chip could neither wrap nor shrink and pushed its
+row sideways; and the two-column pairs used `sm:grid-cols-2`, which asks about
+the **viewport** — inside a `max-w-lg` dialog on a 1440px desktop that condition
+is satisfied, so two columns were rendered into ~230px each however much screen
+there was. Chips now wrap with a real touch target; the pairs use a
+**container** query against the dialog's own width.
+
+### The finishing brief was write-only
+
+Stored on create and returned by nothing. The requester could not reopen what
+they had written, and the contractor pricing the job could not see the property
+type, the area, the finishing level, or which questions the customer had said
+they did not know — most of what a finishing quotation depends on. It is now
+returned by `rfq.summary` **and** `rfq.list`, which must carry the same
+allowlist or `summary` becomes a way around the feed's narrowing, and rendered
+to both parties with unknowns shown **as** unknowns.
+
 ### Deferred, with reasons
 
 - **The composer-fill path is proved at source level, not in a browser.** This
@@ -364,9 +412,13 @@ caught by the probe.
   and the tool cards are correctly inert. The probe **skips** that assertion and
   proves the stronger half instead — that a click appends no user message and
   raises no error. It is a real infrastructure skip, not a pass.
-- **Per-trade percentages** are expressible by stating the base the percentage
-  applies to (`percentageBasisNote`, which is required). A structured
-  per-trade percentage table is not built: the canonical quotation model has one
-  base per quotation, and a contractor who needs per-trade rates has the BOQ.
+- **Per-trade percentages: decided, not deferred.** See §4.1. The percentage
+  method is quotation-level by contract; trade-level rates are the BOQ's job.
+  The earlier wording here read as a deferral of something promised elsewhere,
+  which was the mismatch: §4.1 said "whole-scope or per-trade percentages are
+  supported" while the schema has one percentage per quotation and the form
+  offers one. The claim is gone, the contract is stated, and the quotation form
+  now says the same thing where a contractor would otherwise go looking for a
+  per-trade table.
 - **Staging verification** remains blocked by the environment's network policy,
   unchanged by this work.

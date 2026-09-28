@@ -177,15 +177,37 @@ describe('the page renders the authenticated role, and keeps the general compose
     expect(PAGE).not.toMatch(/experienceFor\([^)]*(search|param|query)/i);
   });
 
-  it('reads EXACTLY ONE thing from the query string, and it is not the role', () => {
-    // This used to be a blanket ban on useSearch(), which was a proxy for the
-    // real rule rather than the rule. The project page's "AI Help" now hands
-    // the project over as /ai?project=<id> - context that was being lost
-    // between two correct screens - so the ban had to become specific: name
-    // every key read from the query string, and require that set to be exactly
-    // {project}. A ?role= or ?mode= appearing here fails this.
-    const keys = [...PAGE.matchAll(/URLSearchParams\([^)]*\)\.get\('([^']+)'\)/g)].map(m => m[1]);
-    expect(keys.sort()).toEqual(['project']);
+  it('reads a NAMED SET from the query string, and the role is not in it', () => {
+    /*
+     * This used to be a blanket ban on useSearch(), which was a proxy for the
+     * real rule rather than the rule. The project page's "AI Help" handed the
+     * project over as /ai?project=<id> - context that was being lost between
+     * two correct screens - so the ban became specific: name every key read
+     * from the query string, and require the set to be exactly what the
+     * hand-off needs. A ?role= or ?mode= appearing here fails this.
+     *
+     * THE SET GREW WHEN THE HAND-OFF BECAME GENERAL. Every surface that can
+     * select a subject - a request, a quotation, a provider, a BOQ line - now
+     * hands it over the same way, so `subject`, `id` and `subtype` joined
+     * `project`. They are all SELECTORS: the server re-derives what this
+     * account may see and falls back to the general list when it may not, so
+     * none of them is an authorization claim and none of them can name a role.
+     *
+     * Both spellings are collected, because the page reads `params.get(...)`
+     * after assigning the URLSearchParams once. A regex that only knew the
+     * inline form silently collected nothing and passed an empty set.
+     */
+    const keys = [
+      ...[...PAGE.matchAll(/URLSearchParams\([^)]*\)\.get\('([^']+)'\)/g)].map(m => m[1]),
+      ...[...PAGE.matchAll(/\bparams\.get\('([^']+)'\)/g)].map(m => m[1]),
+    ];
+    expect(keys.length, 'nothing was collected - the matcher has drifted').toBeGreaterThan(0);
+    expect([...new Set(keys)].sort()).toEqual(['id', 'project', 'subject', 'subtype']);
+
+    // And the rule the set exists to protect, stated directly.
+    for (const forbidden of ['role', 'userRole', 'mode', 'experience', 'admin']) {
+      expect(keys, `the query string can name ${forbidden}`).not.toContain(forbidden);
+    }
   });
 
   it('and that one thing is a selector, checked against what the server returned', () => {

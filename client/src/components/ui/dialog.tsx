@@ -89,15 +89,55 @@ function DialogOverlay({
 
 DialogOverlay.displayName = "DialogOverlay";
 
+/**
+ * ── A DIALOG TALLER THAN THE SCREEN HAD NO WAY OUT ──────────────────────
+ *
+ * This content box is `fixed` and centred with a translate, and it carried no
+ * maximum height and no overflow at all. A dialog whose content grew past the
+ * viewport therefore extended off BOTH edges - and because it is fixed, the
+ * page behind it could not be scrolled to reveal the rest. The owner hit this
+ * on the Post RFQ form: selecting تشطيب renders the finishing brief, the form
+ * outgrew a laptop's height, and the remaining fields and the submit button
+ * became permanently unreachable. Not merely awkward - the journey could not
+ * be completed at all.
+ *
+ * Four dialogs had already hand-patched `max-h-[90vh] overflow-y-auto` onto
+ * themselves. Four out of thirty-seven, which is the signature of a defect in
+ * the shared component rather than in any one screen: the other thirty-three
+ * were one long form away from the same dead end.
+ *
+ * ── SO THE BOUND LIVES HERE, AND IT USES dvh ────────────────────────────
+ *
+ * `100dvh` rather than `100vh` because on mobile `vh` is the tallest the
+ * viewport ever gets - it ignores the browser's own chrome and the on-screen
+ * keyboard, so a keyboard opening over a `90vh` dialog pushes the submit
+ * button back under it. `dvh` tracks the space actually available.
+ *
+ * ── TWO SHAPES, AND NEVER BOTH AT ONCE ──────────────────────────────────
+ *
+ * DEFAULT: the whole dialog scrolls. Every existing dialog gets this for free
+ * and becomes reachable, with no change at its call site.
+ *
+ * `scrollBody`: the header stays put, a single `DialogBody` scrolls, and the
+ * footer stays reachable at the bottom - which is what a long form wants. When
+ * it is set the content box itself stops scrolling, so there is exactly one
+ * scroll container and never two fighting each other.
+ */
 function DialogContent({
   className,
   children,
   showCloseButton = true,
+  scrollBody = false,
   onEscapeKeyDown,
   onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
+  /**
+   * Header and footer stay put; a single `DialogBody` child scrolls.
+   * Requires exactly one `DialogBody`. Without it the dialog clips.
+   */
+  scrollBody?: boolean;
 }) {
   const { isComposing } = useDialogComposition();
 
@@ -222,6 +262,15 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg",
+          // BOUNDED TO THE VIEWPORT, ALWAYS. See the header.
+          "max-h-[calc(100dvh-2rem)]",
+          scrollBody
+            // One scroll container, and it is the DialogBody. `minmax(0,1fr)`
+            // is what lets the middle row actually shrink - a bare `1fr` floors
+            // at the content's height and the overflow never engages.
+            ? "grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden"
+            // The default: the dialog itself scrolls, header and all.
+            : "overflow-y-auto",
           className
         )}
         ref={captureOpener}
@@ -241,6 +290,33 @@ function DialogContent({
         )}
       </DialogPrimitive.Content>
     </DialogPortal>
+  );
+}
+
+/**
+ * THE SCROLLING REGION OF A `scrollBody` DIALOG.
+ *
+ * `min-h-0` is not decoration: a grid item's default `min-height: auto` refuses
+ * to shrink below its content, so without it this element is as tall as the
+ * form and the overflow never engages - the dialog grows instead, which is the
+ * original defect with extra steps.
+ *
+ * The negative margin plus matching padding pulls the scrollbar out to the
+ * dialog's edge while keeping the content aligned with the header above it.
+ */
+function DialogBody({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="dialog-body"
+      className={cn(
+        "min-h-0 overflow-y-auto overscroll-contain -mx-6 px-6",
+        // Room for a focus ring on the first and last controls, which a flush
+        // edge clips.
+        "py-1",
+        className
+      )}
+      {...props}
+    />
   );
 }
 
@@ -295,6 +371,7 @@ function DialogDescription({
 
 export {
   Dialog,
+  DialogBody,
   DialogClose,
   DialogContent,
   DialogDescription,

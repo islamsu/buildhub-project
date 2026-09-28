@@ -281,16 +281,28 @@ describe('context travels with the click', () => {
   const ai = read('../client/src/pages/AIAssistantPage.tsx');
 
   it('AI Help from a project names that project', () => {
-    // It opened a bare /ai, so the assistant's project selector read "No
-    // specific project" for someone who had clicked from a project page.
-    // Confirmed in a browser before and after.
-    expect(projectDetail).toContain('window.open(`/ai?project=${projectId}`');
+    /*
+     * It opened a bare /ai, so the assistant's project selector read "No
+     * specific project" for someone who had clicked from a project page.
+     * Confirmed in a browser before and after.
+     *
+     * THE LINK SHAPE MOVED, THE REQUIREMENT DID NOT. The page now uses the
+     * shared `AskAiAbout` affordance, which writes `?subject=project&id=` -
+     * the one contract every surface that hands over context uses. What must
+     * stay true is that the id travels, and that the assistant still applies
+     * it to the project selector; the test below holds that half.
+     */
+    expect(projectDetail).toContain('<AskAiAbout');
+    expect(projectDetail).toContain('subject="project"');
+    expect(projectDetail).toContain('id={projectId}');
   });
 
   it('the assistant honours it only for a project the account can already see', () => {
     // The id is a selector, not an authorization. It is applied only if it is
     // in the list the server already returned for this session.
-    expect(ai).toContain("new URLSearchParams(search).get('project')");
+    // Either spelling of the hand-off, applied by the same rule.
+    expect(ai).toContain("params.get('project')");
+    expect(ai).toContain("params.get('subject') === 'project' ? params.get('id') : null");
     expect(ai).toContain('selectableProjects.some(project => String(project.id) === requestedProjectId)');
   });
 

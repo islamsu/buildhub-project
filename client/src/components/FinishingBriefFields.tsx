@@ -30,6 +30,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import AskAiAbout from '@/components/AskAiAbout';
 import {
   UNKNOWN, UNKNOWN_LABEL, isUnknown,
   FINISHING_KINDS, finishingKindLabel,
@@ -71,6 +72,21 @@ export function briefPayload(draft: BriefDraft): Record<string, unknown> | undef
  * IS a real answer. Making it look like a skip link teaches people it is a
  * failure to answer, and they invent something instead.
  */
+/**
+ * ── WHY THESE CHIPS NEED THEIR OWN CLASSES ──────────────────────────────
+ *
+ * `Button` is `whitespace-nowrap shrink-0`, which is right for a toolbar and
+ * wrong here: "لا أعرف / ساعدني في الاختيار" and "Core and shell — nothing
+ * finished" are sentences, and a chip that can neither wrap nor shrink pushes
+ * its row sideways out of the dialog. That is what the owner's screenshot
+ * shows.
+ *
+ * So the chip is allowed to wrap onto a second line and to shrink, and gets an
+ * auto height with real vertical padding so a wrapped label still has a
+ * comfortable touch target rather than a squashed one.
+ */
+const CHIP = 'h-auto min-w-0 max-w-full whitespace-normal py-2 text-start leading-snug';
+
 function ChoiceRow<T extends string>({
   label, values, labelOf, value, onChange, lang, testId, help,
 }: {
@@ -96,6 +112,7 @@ function ChoiceRow<T extends string>({
             aria-checked={chosen === option}
             variant={chosen === option ? 'default' : 'outline'}
             size="sm"
+            className={CHIP}
             data-testid={`${testId}-${option}`}
             /* Choosing the same option again clears it: a person who clicked by
                accident should not have to know which chip means "actually, no". */
@@ -110,7 +127,7 @@ function ChoiceRow<T extends string>({
           aria-checked={isUnknown(chosen)}
           variant={isUnknown(chosen) ? 'secondary' : 'ghost'}
           size="sm"
-          className="border border-dashed"
+          className={`border border-dashed ${CHIP}`}
           data-testid={`${testId}-unknown`}
           onClick={() => onChange(isUnknown(chosen) ? null : UNKNOWN)}
         >
@@ -158,6 +175,7 @@ function MultiRow<T extends string>({
             <Button
               key={option} type="button" size="sm"
               variant={on ? 'default' : 'outline'}
+              className={CHIP}
               aria-pressed={on}
               data-testid={`${testId}-${option}`}
               onClick={() => {
@@ -203,7 +221,7 @@ function NumberOrUnknown({
         <Button
           type="button" size="sm"
           variant={isUnknown(value) ? 'secondary' : 'ghost'}
-          className="border border-dashed"
+          className={`border border-dashed ${CHIP}`}
           aria-pressed={isUnknown(value)}
           data-testid={`${testId}-unknown`}
           onClick={() => onChange(isUnknown(value) ? null : UNKNOWN)}
@@ -237,7 +255,7 @@ function TextOrUnknown({
         onChange={event => onChange(event.target.value || null)}
       />
       <Button
-        type="button" size="sm" className="mt-1.5 border border-dashed"
+        type="button" size="sm" className={`mt-1.5 border border-dashed ${CHIP}`}
         variant={isUnknown(value) ? 'secondary' : 'ghost'}
         aria-pressed={isUnknown(value)}
         data-testid={`${testId}-unknown`}
@@ -266,12 +284,32 @@ export function FinishingBriefFields({
   const professional = isProfessionalParty(draft.requestingParty as never);
 
   return (
-    <div className="space-y-5" data-testid="finishing-brief">
-      <p className="text-xs text-muted-foreground" data-testid="finishing-brief-intro">
-        {ar
-          ? 'أجب عمّا تعرفه فقط. كل سؤال هنا اختياري، ويمكنك النشر مع ترك أي منها بلا إجابة.'
-          : 'Answer only what you know. Every question here is optional, and you can publish with any of them unanswered.'}
-      </p>
+    /*
+     * ── @container, NOT sm: ──────────────────────────────────────────────
+     *
+     * The pairs below were `sm:grid-cols-2`, and `sm:` asks about the VIEWPORT.
+     * Inside a max-w-lg dialog on a 1440px desktop that condition is satisfied,
+     * so two columns were rendered into roughly 230px each however much screen
+     * there was - the cramped Materials / Site constraints pair in the owner's
+     * screenshot. A container query asks the question that actually matters:
+     * how wide is THIS box.
+     */
+    <div className="@container/brief space-y-5" data-testid="finishing-brief">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <p className="min-w-0 flex-1 text-xs text-muted-foreground" data-testid="finishing-brief-intro">
+          {ar
+            ? 'أجب عمّا تعرفه فقط. كل سؤال هنا اختياري، ويمكنك النشر مع ترك أي منها بلا إجابة.'
+            : 'Answer only what you know. Every question here is optional, and you can publish with any of them unanswered.'}
+        </p>
+        {/* THE HELP IS HERE, WHERE THE QUESTIONS ARE. A homeowner who does not
+            know what a finishing level is should not have to leave the form to
+            find out - and this opens the assistant on the تشطيب category, so it
+            offers the four finishing actions rather than six generic prompts.
+            It asks nothing; the person chooses. */}
+        <AskAiAbout
+          subject="category" subtype="Renovation" lang={lang} variant="ghost"
+          label={ar ? 'ساعدني في الإجابة' : 'Help me answer these'} />
+      </div>
 
       <ChoiceRow
         label={ar ? 'من يقدّم الطلب؟' : 'Who is asking?'}
@@ -285,7 +323,7 @@ export function FinishingBriefFields({
         value={draft.kind as never} onChange={set('kind') as never}
         lang={lang} testId="brief-kind" />
 
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-5 @[30rem]/brief:grid-cols-2">
         <ChoiceRow
           label={ar ? 'نوع العقار' : 'Property type'}
           values={PROPERTY_TYPES} labelOf={propertyTypeLabel}
@@ -323,7 +361,7 @@ export function FinishingBriefFields({
           lang={lang} testId="brief-areas" />
       )}
 
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-5 @[30rem]/brief:grid-cols-2">
         <TextOrUnknown
           label={ar ? 'خامات أو ماركات تفضّلها' : 'Materials or brands you prefer'}
           value={draft.materialPreferences as never} onChange={set('materialPreferences') as never}
@@ -360,6 +398,7 @@ export function FinishingBriefFields({
           {PRICING_PREFERENCES.map(preference => (
             <Button
               key={preference} type="button" role="radio" size="sm"
+              className={CHIP}
               aria-checked={draft.pricingPreference === preference}
               variant={draft.pricingPreference === preference ? 'default' : 'outline'}
               data-testid={`brief-preference-${preference}`}

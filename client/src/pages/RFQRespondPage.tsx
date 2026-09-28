@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'wouter';
+import AskAiAbout from '@/components/AskAiAbout';
+import FinishingBriefSummary from '@/components/FinishingBriefSummary';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -224,6 +226,10 @@ export default function RFQRespondPage() {
           </Button>
         </Link>
         <span className="font-mono text-sm text-muted-foreground" data-testid="respond-rfq-number">#{rfqId}</span>
+        {/* The contractor's own context hand-off. The server sees a PROVIDER on
+            this request and offers bid actions - prepare a quotation, find the
+            missing information, draft a clarification - not the requester's. */}
+        <AskAiAbout subject="request" id={rfqId} subtype={rfq?.category ?? null} lang={ar ? 'ar' : 'en'} />
       </div>
 
       {(summary.isLoading || access.isLoading) && <p className="text-sm text-muted-foreground">…</p>}
@@ -419,6 +425,18 @@ function RfqBrief({ ar, rfq, projectTitle }: { ar: boolean; rfq: any; projectTit
           {rfq.deadline && <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" />{new Date(rfq.deadline).toLocaleDateString(ar ? 'ar-EG' : 'en-US')}</span>}
         </div>
       </CardHeader>
+      {rfq.finishingBrief && (
+        <CardContent className="@container/brief-summary border-t pt-4">
+          {/* MOST OF WHAT A FINISHING QUOTATION DEPENDS ON. Without this the
+              contractor was pricing a title and a paragraph. The unknowns are
+              shown as unknowns, so they know what to ask. */}
+          <p className="mb-2 text-sm font-medium">{ar ? 'تفاصيل التشطيب المطلوبة' : 'Finishing brief'}</p>
+          <FinishingBriefSummary
+            brief={rfq.finishingBrief}
+            pricingPreference={rfq.pricingPreference}
+            lang={ar ? 'ar' : 'en'} />
+        </CardContent>
+      )}
       {Array.isArray(rfq.items) && rfq.items.length > 0 && (
         <CardContent>
           <p className="mb-2 text-sm font-medium">{ar ? 'البنود المطلوبة' : 'Requested items'}</p>

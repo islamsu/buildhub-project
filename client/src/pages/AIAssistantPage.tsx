@@ -90,7 +90,20 @@ export default function AIAssistantPage() {
   // re-derives permission on every request regardless.
   const search = useSearch();
   const requestedProjectId = (() => {
-    const raw = new URLSearchParams(search).get('project');
+    const params = new URLSearchParams(search);
+    /*
+     * TWO SPELLINGS, ONE MEANING.
+     *
+     * `?project=` is the original hand-off from the project page. The shared
+     * AskAiAbout affordance writes `?subject=project&id=` instead, which is the
+     * one contract every other surface now uses - and when the project page
+     * moved to it, the SELECTOR stopped being preselected, so `ai.chat` lost
+     * the project context even though the suggestions still had it. Both are
+     * read here so the link shape can be uniform without losing the thing the
+     * link was for.
+     */
+    const raw = params.get('project')
+      ?? (params.get('subject') === 'project' ? params.get('id') : null);
     const id = Number(raw);
     return raw && Number.isInteger(id) && id > 0 ? String(id) : null;
   })();

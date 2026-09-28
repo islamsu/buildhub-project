@@ -292,6 +292,21 @@ export function QuotationPricingFields({
               onChange={event => set('percentageRate')(event.target.value)} />
           </Row>
           <div className="sm:col-span-2">
+            {/*
+              * ONE PERCENTAGE PER QUOTATION, SAID OUT LOUD.
+              *
+              * A contractor who prices different trades at different rates will
+              * look for a per-trade table and not find one, because there is
+              * not one: that is what the detailed/BOQ method is for, where
+              * every line carries its own trade and its own rate. Saying so
+              * here costs a sentence and saves them the hunt.
+              */}
+            <p className="mb-2 rounded-lg border border-dashed p-2 text-xs text-muted-foreground"
+              data-testid="pricing-percentage-scope">
+              {ar
+                ? 'النسبة تُطبّق على العرض كله. إذا كانت نسبتك تختلف من بند لآخر، استخدم التسعير التفصيلي حيث لكل بند سعره الخاص.'
+                : 'The percentage applies to the whole quotation. If your rate differs by trade, use detailed pricing, where every line carries its own rate.'}
+            </p>
             <Row
               label={ar ? 'ما يدخل في أساس الحساب وما يُستثنى' : 'What is in the base, and what is excluded'}
               /* REQUIRED, not optional. A percentage of a base nobody described

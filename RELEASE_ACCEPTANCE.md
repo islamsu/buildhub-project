@@ -1,7 +1,7 @@
 # BuildHub release acceptance — status, not a merge request
 
 **RC HEAD** the tip of `claude/buildhub-global-release-candidate` · base
-`origin/main` `1b3edb8` · 8 migrations in the RC (0054–0062) · 5018 tests
+`origin/main` `1b3edb8` · 8 migrations in the RC (0054–0062) · 5048 tests
 
 **The tip is the SHA for staging acceptance**, and it is named here as the tip
 rather than written out: a document cannot state the SHA of the commit that
@@ -305,6 +305,64 @@ was an id oracle for every signed-in account. Details in
 environment does not have, so the probe skips it and proves instead that a click
 appends no user message; per-trade percentage tables are not built, because the
 canonical model has one base per quotation and the BOQ serves that case.
+
+---
+
+## An owner-found release blocker: the Post RFQ dialog could not be scrolled
+
+`DialogContent` is `fixed`, centred with a translate, and carried **no maximum
+height and no overflow**. A dialog taller than the viewport ran off both edges,
+and being fixed, the page behind it could not be scrolled to reach the rest.
+Selecting تشطيب renders the finishing brief, the form outgrew the screen, and
+the submit button became unreachable — a finishing request could not be
+published at all.
+
+Measured with the bound removed: `top -756 → bottom 1357` in a 600px viewport,
+submit at `1296`; and `top -606 → bottom 1507` at **1440×900**, so this was
+never only a short-screen defect.
+
+**Fixed in the shared component**, because four of thirty-seven dialogs had
+already hand-patched `max-h-[90vh]` onto themselves — the signature of a defect
+one level down. `DialogContent` is bounded with `max-h-[calc(100dvh-2rem)]` and
+scrolls by default; `DialogBody` gives long forms header / scrolling body /
+reachable actions with exactly one scroll container.
+
+| Gate | Evidence |
+|---|---|
+| Constrained-height regression | `evidence/zg-rfqmodal.mjs` **111 ×2** — 5 viewports × EN/AR, keyboard, and an unrelated dialog |
+| Contract held in source | `server/dialogScrolling.test.ts` 30 |
+| Mutation | removing the bound fails **23** checks, reproducing the owner's geometry |
+
+**Responsive causes fixed beside it:** `Button` is `whitespace-nowrap shrink-0`
+so the long `لا أعرف` chip could not wrap; and `sm:grid-cols-2` is a *viewport*
+query, so a `max-w-lg` dialog was split into two ~230px columns on any desktop.
+Chips wrap with a real touch target; the pairs use a **container** query.
+
+**The finishing brief was write-only** — stored on create, returned by nothing.
+Now on `rfq.summary` *and* `rfq.list` (they must carry the same allowlist) and
+rendered to both parties with unknowns shown as unknowns.
+`evidence/zg-finishing.mjs` is **49 ×2**, proving the round trip.
+
+**AI context is now wired everywhere it is needed**: one `AskAiAbout` affordance
+on RFQ detail, the contractor's respond page, quotation detail, provider
+storefront, project detail and the finishing brief itself. Every one carries
+`?subject=&id=`; none of them asks anything.
+
+**Per-trade percentage — decided, not deferred.** The percentage method is
+**quotation-level**: one `percentageRate` against one `materialBaseAmount`, with
+the required `percentageBasisNote` stating which trades the base covers.
+Trade-level rates are the **BOQ's** job, where every `quotationItems` line has
+its own `tradeGroup` and `rate`. The MD's ambiguous "whole-scope or per-trade
+percentages are supported" is gone and the quotation form now says the same
+thing where a contractor would otherwise go hunting.
+
+**Five platform guards fired and were answered, none weakened:** a real project-
+context regression (the AI hand-off stopped preselecting the project, breaking
+`ai.chat`'s context), a real `summary`/`list` allowlist drift, one guard whose
+marker matched the wrong `list:` and now anchors correctly, one blunt
+`attachments` grep tripped by my own prose (reworded — the guard stays blunt),
+and the AI query-string allowlist widened to the four selectors with the rule it
+protects stated directly.
 
 ---
 

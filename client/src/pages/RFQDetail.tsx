@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link } from 'wouter';
+import AskAiAbout from '@/components/AskAiAbout';
+import FinishingBriefSummary from '@/components/FinishingBriefSummary';
 import { OpenDisputeDialog } from '@/components/OpenDisputeDialog';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -216,6 +218,9 @@ export default function RFQDetail() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {/* Carries THIS request across, so the assistant opens knowing
+                    what the reader was looking at. It asks nothing. */}
+                <AskAiAbout subject="request" id={rfq.id} subtype={rfq.category} lang={ar ? 'ar' : 'en'} />
                 <span
                   className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${STATUS_TONE[status] ?? STATUS_TONE.open}`}
                   data-testid="rfq-detail-status"
@@ -236,6 +241,21 @@ export default function RFQDetail() {
               <p className="whitespace-pre-wrap text-sm text-muted-foreground" data-testid="rfq-detail-description">
                 {rfq.description}
               </p>
+            )}
+
+            {/* THE REQUESTER READING BACK WHAT THEY ASKED FOR, including the
+                questions they said they did not know - which is how they can
+                tell that nothing was filled in on their behalf. */}
+            {rfq.finishingBrief && (
+              <div className="@container/brief-summary rounded-xl border p-4">
+                <p className="mb-2 text-sm font-medium">
+                  {ar ? 'تفاصيل التشطيب' : 'Finishing brief'}
+                </p>
+                <FinishingBriefSummary
+                  brief={rfq.finishingBrief}
+                  pricingPreference={rfq.pricingPreference}
+                  lang={ar ? 'ar' : 'en'} />
+              </div>
             )}
 
             {/*
