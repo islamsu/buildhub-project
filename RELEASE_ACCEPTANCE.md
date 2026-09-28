@@ -1,7 +1,7 @@
 # BuildHub release acceptance — status, not a merge request
 
 **RC HEAD** the tip of `claude/buildhub-global-release-candidate` · base
-`origin/main` `1b3edb8` · 8 migrations in the RC (0054–0061) · 4914 tests
+`origin/main` `1b3edb8` · 8 migrations in the RC (0054–0062) · 5018 tests
 
 **The tip is the SHA for staging acceptance**, and it is named here as the tip
 rather than written out: a document cannot state the SHA of the commit that
@@ -263,6 +263,48 @@ above it, and the next accepted the em dash from the card 20 characters away
 while its money pattern wanted "12,400 EGP" where the product writes
 "EGP 12,400". The KPIs now carry stable `data-testid`s and the check reads the
 exact element; fabricating a spend total fails it, naming the value.
+
+---
+
+## Finishing, quotation pricing strategies and the AI click contract
+
+`FINISHING_AND_AI_CONTEXT.md` is the authoritative behaviour; `CLAUDE.md` §90
+points at it. Implemented by composing the canonical request, quotation, money,
+role and AI architecture — no parallel workflow was created.
+
+**The defect that started it.** Clicking an AI suggestion or a tool card wrote
+the product's own text into the transcript as `role: 'user'` and submitted it in
+the same tick (`onSendMessage(prompt)`, `handleSend(t(mode.promptKey))`). A
+transcript is the record of what somebody asked; writing into it on their behalf
+makes that record untrue. A click now establishes context only: choosing a
+suggestion fills the composer, focused and editable, and sending stays a
+deliberate act. Suggestions are derived server-side from object, subtype,
+session role, workflow stage and the viewer's permitted projection.
+
+**Three pricing strategies inside one quotation.** Percentage of material cost,
+package, and detailed/BOQ, plus the existing `custom` behaviour as the default.
+`shared/quotationPricing.ts` holds the only implementation of the arithmetic;
+`quotations.price` remains the single authoritative total and the server derives
+it — a submitted total for a derived method is refused, not ignored.
+
+| Gate | Evidence |
+|---|---|
+| Calculation engine | `server/quotationPricing.test.ts` 40 |
+| AI click contract | `server/aiSuggestionContract.test.ts` 25 |
+| Finishing request | `server/finishingRequest.test.ts` 37 |
+| End-to-end journey | `evidence/zg-finishing.mjs` **41 ×2**, one honest SKIP |
+| Migration 0062 | empty DB + populated upgrade, lossless `price` widening verified |
+
+**Two defects the probe caught that types could not**, both now fixed and
+mutation-tested: a `json` column read back as a string (so the comparison
+silently reported no scope differences at all), and a suggestions endpoint that
+was an id oracle for every signed-in account. Details in
+`FINISHING_AND_AI_CONTEXT.md` §11.
+
+**Deferred and stated**: the composer-fill assertion needs an AI credential this
+environment does not have, so the probe skips it and proves instead that a click
+appends no user message; per-trade percentage tables are not built, because the
+canonical model has one base per quotation and the BOQ serves that case.
 
 ---
 

@@ -10,6 +10,7 @@ Read this file at the start of every session and after every fresh fetch. Also r
 - `PRODUCT_NORTH_STAR.md` — owner-level marketplace, visual-quality and strategic moat blueprint
 - `GCC_SCALE_READINESS.md` — canonical Egypt-to-GCC / multi-market architecture and rollout guardrails
 - `REACHABILITY_CENSUS.md` — current reachability/dead-capability findings
+- `FINISHING_AND_AI_CONTEXT.md` — canonical AI click/suggestion contract, finishing-request behaviour and the three quotation pricing strategies
 - `todo.md` — engineering ledger, after reconciling duplicates and non-engineering items
 - the latest Git history on the active release-candidate branch
 
@@ -2443,3 +2444,57 @@ until `/version` reports the exact current RC SHA with `environment=staging` and
 After owner-authorized merge to `main`, switch staging back to `main`, redeploy, and verify the exact merged SHA before production authorization.
 
 Continue using the delivery vocabulary in §2 exactly.
+
+---
+
+## 90. FINISHING, QUOTATION PRICING STRATEGIES AND THE AI CLICK CONTRACT
+
+Read `FINISHING_AND_AI_CONTEXT.md`. It is CURRENT RELEASE authoritative product
+behaviour, not future ideation, and the implementation and that document must
+agree.
+
+The rules that must not be re-litigated:
+
+**An AI click gives CONTEXT. It never asks a question.**
+
+Clicking a service, category, request, quotation, provider, BOQ item, project
+object or AI affordance selects a subject and stops there. The assistant offers
+suggested questions and actions and waits for an explicit selection, edit or
+typed prompt. No generated text may enter the conversation as a user message
+without a deliberate submit, and no suggestion may auto-submit. A fabricated
+question attributed to the user is indistinguishable from a real one afterwards,
+and every later answer is grounded on something nobody asked.
+
+Suggestions derive from canonical context — object, subtype/service, session
+role, workflow stage, permissions and the viewer's permitted projection of the
+object — so they differ by context by construction. AI context obeys the same
+authorization boundary as the viewer's own read: a field being present on the
+server object is not a reason to send it to the model.
+
+**تشطيب / Finishing has three pricing strategies inside ONE quotation
+architecture** — percentage of applicable material cost, package, and
+detailed/BOQ — plus the existing generic/custom behaviour. They are not three
+quotation systems. `shared/quotationPricing.ts` owns the only implementation of
+the arithmetic; `quotations.price` remains the single authoritative payable
+total and no second total column exists.
+
+VAT, discount, contingency and overhead never enter a percentage base and are
+never double-counted. An unstated VAT rate is NULL, not zero.
+
+**A finishing request is an `rfqs` row**, valid from every requesting party the
+account and relationship model already represents. A homeowner needs no BOQ and
+no construction knowledge: `لا أعرف / ساعدني في الاختيار` is a stored state that
+never blocks publication and is never silently replaced with a value. A pricing
+preference is a preference, never a gate.
+
+**Comparison compares scope and commercial meaning**, not totals alone. Missing
+information renders as missing. Equivalence is never fabricated where scopes
+differ.
+
+**SAR is not hard-coded.** Saudi Arabia remains `enabled: false` in
+`shared/markets.ts`, and `enabled` is the only thing that decides. A per-square-
+metre package is denominated in the RFQ's currency.
+
+Reuse the canonical lifecycle, statuses, authorization, money layer and AI
+pipeline. Do not introduce a parallel finishing, RFQ, quotation, provider or AI
+workflow.

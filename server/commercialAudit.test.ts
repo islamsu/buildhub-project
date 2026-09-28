@@ -319,7 +319,13 @@ describe('the events that matter are recorded', () => {
   it('the RFQ behind a quotation or enquiry is kept, as CONTEXT not as identity', () => {
     // Losing it entirely would be the opposite mistake: a quotation audit row
     // that cannot be traced back to what was quoted on.
-    expect(ROUTERS).toMatch(/detail: `rfq \$\{input\.rfqId\}, price/);
+    //
+    // WHAT FOLLOWS THE RFQ ID IS NOT PART OF THE RULE. This matched
+    // "rfq ${input.rfqId}, price" until a quotation stopped being one number
+    // and started recording its pricing method and derived total. The invariant
+    // is that the RFQ is in `detail` and not in `subjectId`; pinning the rest of
+    // the sentence made an unrelated change look like a breach.
+    expect(ROUTERS).toMatch(/detail: `rfq \$\{input\.rfqId\}, /);
     // The enquiry side is asserted against the RECORDED DETAIL STRING in
     // server/enquiryInvitationExemption.test.ts - all three outcomes, including
     // an invited open, which must never claim a credit was charged.

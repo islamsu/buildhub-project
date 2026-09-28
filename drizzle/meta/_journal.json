@@ -435,6 +435,13 @@
       "when": 1790200100000,
       "tag": "0061_service_offering_currency",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "5",
+      "when": 1790400000000,
+      "tag": "0062_finishing_pricing",
+      "breakpoints": true
     }
   ]
 }

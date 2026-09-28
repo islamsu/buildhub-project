@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import CrossMethodComparison from '@/components/CrossMethodComparison';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -247,6 +248,15 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqCur
           </Badge>
         )}
       </div>
+
+      {/*
+        * ── HOW EACH NUMBER WAS REACHED, AND WHAT IT COVERS ──────────────
+        *
+        * Above the cards because it answers the question the cards cannot: the
+        * cheaper bid is usually the one that left more out. It renders nothing
+        * for a single quotation, and nothing until the data has loaded.
+        */}
+      <CrossMethodComparison rfqId={rfqId} lang={lang === 'ar' ? 'ar' : 'en'} />
 
       {/* Sort controls */}
       {quotes.length > 1 && (

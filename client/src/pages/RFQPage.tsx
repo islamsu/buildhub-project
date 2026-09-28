@@ -17,6 +17,9 @@ import { Link, useSearch } from 'wouter';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
+  FinishingBriefFields, EMPTY_BRIEF, briefPayload, type BriefDraft,
+} from '@/components/FinishingBriefFields';
+import {
   FileText, Plus, Clock, MapPin, DollarSign, Send,
   BarChart3, Users, Paperclip, X, FileUp, Loader2,
 } from 'lucide-react';
@@ -84,6 +87,15 @@ export default function RFQPage() {
   }>({
     title: '', description: '', category: '', budget: '', location: '', deadline: '',
   });
+  /**
+   * THE FINISHING BRIEF, held apart from the request's own fields.
+   *
+   * It only reaches the server for a تشطيب request, and only when something in
+   * it was actually answered - see `briefPayload`. Keeping it separate means a
+   * person who switches category away from Renovation does not silently send a
+   * finishing brief with a materials request.
+   */
+  const [brief, setBrief] = useState<BriefDraft>(EMPTY_BRIEF);
   const [linkedProjectId, setLinkedProjectId] = useState<string>('none');
   const { data: myProjects = [] } = trpc.projects.list.useQuery(undefined, { enabled: isAuthenticated });
   const [marketplaceProduct, setMarketplaceProduct] = useState<{ productId: number; variantId: string; variantLabel: string } | null>(null);
@@ -381,6 +393,26 @@ export default function RFQPage() {
                       {CATEGORIES.map(c => <SelectItem key={c} value={c}>{rfqCategoryLabel(c, lang)}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                  {/*
+                    * ── طلب تشطيب ────────────────────────────────────────
+                    *
+                    * Shown only for the finishing category, because these are
+                    * finishing questions - asking a materials buyer about their
+                    * finishing level would be noise. It is the same `rfqs` row
+                    * either way; this is a brief that hangs off it, not a
+                    * second kind of request.
+                    *
+                    * Every question in it is optional and every one of them
+                    * accepts "لا أعرف", so it can never stop a publication.
+                    */}
+                  {form.category === 'Renovation' && (
+                    <div className="rounded-xl border p-4" data-testid="rfq-finishing-brief">
+                      <p className="mb-3 text-sm font-semibold">
+                        {lang === 'ar' ? 'تفاصيل طلب التشطيب' : 'Finishing details'}
+                      </p>
+                      <FinishingBriefFields draft={brief} onChange={setBrief} lang={lang === 'ar' ? 'ar' : 'en'} />
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <Input
                       placeholder={t('rfq.budget')}
@@ -595,6 +627,15 @@ export default function RFQPage() {
                       createRfq.mutate({
                       ...form,
                       category: form.category,
+                      /*
+                       * THE BRIEF AND THE PREFERENCE. Both optional, both
+                       * omitted entirely when nothing was answered - an empty
+                       * object would read as "asked and answered with nothing",
+                       * which is a different claim from "not asked".
+                       */
+                      finishingBrief: form.category === 'Renovation' ? briefPayload(brief) : undefined,
+                      pricingPreference: form.category === 'Renovation'
+                        ? (brief.pricingPreference ?? undefined) : undefined,
                       budget: form.budget ? parseFloat(form.budget) : undefined,
                       deadline: form.deadline ? new Date(form.deadline) : undefined,
                       projectId: linkedProjectId !== 'none' ? Number(linkedProjectId) : undefined,

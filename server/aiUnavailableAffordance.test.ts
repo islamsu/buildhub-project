@@ -35,8 +35,16 @@ describe('when no AI provider is configured', () => {
 
   it('the handler refuses too, so the affordance is not the only guard', () => {
     // A CSS class is a presentation choice; a real user with a stylesheet
-    // blocked, or an automated click, must still send nothing.
-    expect(PAGE).toContain('onClick={() => { if (!aiUnavailable) handleSend(');
+    // blocked, or an automated click, must still get nothing.
+    //
+    // THE HANDLER IS `offer`, NOT `handleSend`, AND THAT IS THE POINT. A tool
+    // card used to submit its canned prompt as the user's own question; it now
+    // only places text in the composer. The guard this test protects is
+    // unchanged - the click is still refused when the assistant is
+    // unavailable - so it is the name that moved, not the rule.
+    expect(PAGE).toContain('onClick={() => { if (!aiUnavailable) offer(');
+    // And the keyboard path is guarded by the same flag, not only the mouse.
+    expect(PAGE).toContain('if (aiUnavailable) return;');
   });
 
   it('the composer is disabled as well, not just the cards', () => {

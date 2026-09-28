@@ -19,8 +19,16 @@ import {
   Trash2, UserRound,
 } from 'lucide-react';
 
+import {
+  QuotationPricingFields, EMPTY_PRICING, pricingPayload, pricingErrors, previewTotals,
+  type PricingDraft,
+} from '@/components/QuotationPricingFields';
+import { PRICING_METHOD_LABELS } from '@shared/quotationPricing';
+import {
+  QuotationScopeFields, EMPTY_SCOPE, scopePayload, type ScopeDraft,
+} from '@/components/QuotationScopeFields';
+
 type QuoteForm = {
-  price: string;
   timeline: string;
   warranty: string;
   validUntil: string;
@@ -30,7 +38,7 @@ type QuoteForm = {
 };
 
 const EMPTY_FORM: QuoteForm = {
-  price: '', timeline: '', warranty: '', validUntil: '',
+  timeline: '', warranty: '', validUntil: '',
   commercialTerms: '', paymentTerms: '', notes: '',
 };
 
@@ -55,6 +63,18 @@ export default function RFQRespondPage() {
   const party = trpc.rfq.requesterContact.useQuery({ rfqId }, { enabled: isAuthenticated && valid, retry: false });
 
   const [form, setForm] = useState<QuoteForm>(EMPTY_FORM);
+  /**
+   * HOW THE PRICE WAS ARRIVED AT, and WHAT IT COVERS.
+   *
+   * Held apart from the rest of the form because they are different kinds of
+   * statement: the commercial terms are what the contractor promises, the
+   * pricing draft is how they got to the number, and the scope is what the
+   * number buys. `EMPTY_PRICING` starts on `custom` - the single-figure form
+   * that was here before - so nothing changes for a contractor who wants none
+   * of it.
+   */
+  const [pricing, setPricing] = useState<PricingDraft>(EMPTY_PRICING);
+  const [scopeDraft, setScopeDraft] = useState<ScopeDraft>(EMPTY_SCOPE);
   const [files, setFiles] = useState<RfqAttachmentMetadata[]>([]);
   const [uploading, setUploading] = useState(false);
   const [reviewing, setReviewing] = useState(false);
@@ -130,16 +150,16 @@ export default function RFQRespondPage() {
   const today = new Date().toISOString().slice(0, 10);
 
   const validation = useMemo(() => {
-    const errors: string[] = [];
-    const price = Number(form.price);
-    if (!Number.isFinite(price) || price <= 0) errors.push(ar ? 'أدخل سعراً صالحاً أكبر من صفر.' : 'Enter a valid price greater than zero.');
+    // The pricing half is validated by the same module that computes the total,
+    // so this form and the server agree about what is missing.
+    const errors: string[] = [...pricingErrors(pricing, ar)];
     if (!form.validUntil) errors.push(ar ? 'حدّد تاريخ صلاحية عرض السعر.' : 'Choose a quotation validity date.');
     if (form.validUntil && form.validUntil < today) errors.push(ar ? 'لا يمكن أن تكون الصلاحية في الماضي.' : 'Validity cannot be in the past.');
     if (form.timeline && (!Number.isInteger(Number(form.timeline)) || Number(form.timeline) <= 0)) {
       errors.push(ar ? 'يجب أن تكون مدة التنفيذ عدداً صحيحاً موجباً.' : 'Timeline must be a positive whole number.');
     }
     return errors;
-  }, [ar, form.price, form.timeline, form.validUntil, today]);
+  }, [ar, pricing, form.timeline, form.validUntil, today]);
 
   async function attachFiles(selected: FileList | null) {
     if (!selected?.length) return;
@@ -168,9 +188,18 @@ export default function RFQRespondPage() {
 
   function finalSubmit() {
     if (validation.length > 0 || !form.validUntil) return;
+    const scope = scopePayload(scopeDraft);
     submit.mutate({
       rfqId,
-      price: Number(form.price),
+      /*
+       * THE INPUTS, NOT A TOTAL. `pricingPayload` sends a `price` only for the
+       * `custom` method, where it IS the stated amount; for the other three the
+       * server computes the total from these inputs and REFUSES a submitted
+       * one. The preview on screen runs the same shared function the server
+       * does, which is the only reason showing a number here is safe.
+       */
+      ...pricingPayload(pricing),
+      ...(scope ? { scope } : {}),
       timeline: form.timeline ? Number(form.timeline) : undefined,
       warranty: form.warranty.trim() || undefined,
       validUntil: new Date(`${form.validUntil}T23:59:59`),
@@ -306,11 +335,13 @@ export default function RFQRespondPage() {
                 </CardContent>
               </Card>
             ) : reviewing ? (
-              <ReviewCard ar={ar} rfq={rfq} form={form} files={files} pending={submit.isPending} onEdit={() => setReviewing(false)} onSubmit={finalSubmit} />
+              <ReviewCard ar={ar} rfq={rfq} form={form} pricing={pricing} files={files} pending={submit.isPending} onEdit={() => setReviewing(false)} onSubmit={finalSubmit} />
             ) : (
               <QuoteFormCard
                 rfq={rfq}
                 ar={ar} form={form} setForm={setForm} files={files} setFiles={setFiles}
+                pricing={pricing} setPricing={setPricing}
+                scopeDraft={scopeDraft} setScopeDraft={setScopeDraft}
                 fileInput={fileInput} uploading={uploading} attachFiles={attachFiles}
                 validation={validation} onReview={() => setReviewing(true)}
               />
@@ -432,18 +463,36 @@ function QuoteFormCard(props: {
   rfq: any;
   ar: boolean; form: QuoteForm; setForm: React.Dispatch<React.SetStateAction<QuoteForm>>;
   files: RfqAttachmentMetadata[]; setFiles: React.Dispatch<React.SetStateAction<RfqAttachmentMetadata[]>>;
+  pricing: PricingDraft; setPricing: React.Dispatch<React.SetStateAction<PricingDraft>>;
+  scopeDraft: ScopeDraft; setScopeDraft: React.Dispatch<React.SetStateAction<ScopeDraft>>;
   fileInput: React.RefObject<HTMLInputElement | null>; uploading: boolean;
   attachFiles: (files: FileList | null) => void; validation: string[]; onReview: () => void;
 }) {
-  const { rfq, ar, form, setForm, files, setFiles, fileInput, uploading, attachFiles, validation, onReview } = props;
+  const { rfq, ar, form, setForm, files, setFiles, pricing, setPricing,
+    scopeDraft, setScopeDraft, fileInput, uploading, attachFiles, validation, onReview } = props;
   const rfqCurrency = rfq.currency || currencyForMarket(rfq.marketCode);
   const field = (key: keyof QuoteForm) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm(current => ({ ...current, [key]: event.target.value }));
   return (
     <Card data-testid="respond-form">
       <CardHeader><CardTitle className="text-base">{ar ? 'إعداد عرض السعر' : 'Prepare your quotation'}</CardTitle></CardHeader>
       <CardContent className="space-y-4">
+        {/*
+          * ── HOW THIS IS PRICED ──────────────────────────────────────────
+          *
+          * Three methods plus the original single figure. The `custom` method
+          * renders exactly the one Price box that used to be here, so a
+          * contractor who does not price by percentage or package sees no
+          * change at all.
+          */}
+        <QuotationPricingFields
+          draft={pricing}
+          onChange={setPricing}
+          currency={rfqCurrency}
+          ar={ar}
+          requestedPreference={rfq.pricingPreference ?? null}
+        />
         <div className="grid gap-3 sm:grid-cols-[1fr_110px]">
-          <Field label={ar ? 'السعر' : 'Price'} required><Input data-testid="respond-price" type="number" min="0.01" step="0.01" value={form.price} onChange={field('price')} /></Field>
+          <div />
           {/* READ-ONLY BECAUSE IT IS NOT A CHOICE. Every bid on one RFQ is
               denominated in the same thing, which is what makes comparing
               them exact - and the server does not accept a currency, so
@@ -467,6 +516,19 @@ function QuoteFormCard(props: {
         <Field label={ar ? 'شروط الدفع' : 'Payment terms'}><Textarea data-testid="respond-payment-terms" rows={2} maxLength={2000} value={form.paymentTerms} onChange={field('paymentTerms')} /></Field>
         <Field label={ar ? 'ملاحظات المورّد' : 'Supplier notes'}><Textarea data-testid="respond-notes" rows={3} maxLength={4000} value={form.notes} onChange={field('notes')} /></Field>
 
+        {/*
+          * ── WHAT THE PRICE COVERS ───────────────────────────────────────
+          *
+          * Structured, not prose, because the comparison screen diffs these
+          * lists and reports what one bid includes that another excludes. An
+          * exclusion buried in free-text notes is invisible to the customer
+          * deciding between two numbers.
+          */}
+        <div>
+          <p className="mb-2 text-sm font-semibold">{ar ? 'نطاق العرض' : 'Scope of this quotation'}</p>
+          <QuotationScopeFields draft={scopeDraft} onChange={setScopeDraft} ar={ar} />
+        </div>
+
         <div>
           <input ref={fileInput} type="file" className="hidden" multiple accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" onChange={event => void attachFiles(event.target.files)} data-testid="respond-file-input" />
           <Button type="button" variant="outline" className="w-full gap-2" disabled={uploading || files.length >= MAX_FILES} onClick={() => fileInput.current?.click()} data-testid="respond-attach">
@@ -485,12 +547,23 @@ function QuoteFormCard(props: {
   );
 }
 
-function ReviewCard({ ar, rfq, form, files, pending, onEdit, onSubmit }: { ar: boolean; rfq: any; form: QuoteForm; files: RfqAttachmentMetadata[]; pending: boolean; onEdit: () => void; onSubmit: () => void }) {
+function ReviewCard({ ar, rfq, form, pricing, files, pending, onEdit, onSubmit }: { ar: boolean; rfq: any; form: QuoteForm; pricing: PricingDraft; files: RfqAttachmentMetadata[]; pending: boolean; onEdit: () => void; onSubmit: () => void }) {
   const rfqCurrency = rfq.currency || currencyForMarket(rfq.marketCode);
   const lang: 'en' | 'ar' = ar ? 'ar' : 'en';
+  /*
+   * THE SAME SHARED FUNCTION THE SERVER WILL RUN. The review step used to read
+   * a single typed figure; now it shows what the declared method produces, so
+   * the number a contractor confirms is the number that gets stored.
+   */
+  const preview = previewTotals(pricing, rfqCurrency);
   const rows = [
     [ar ? 'الطلب' : 'Request', `#${rfq.id} · ${rfq.title}`],
-    [ar ? 'السعر' : 'Price', formatMoney(form.price, rfqCurrency, lang) ?? '—'],
+    [ar ? 'طريقة التسعير' : 'Pricing method', PRICING_METHOD_LABELS[pricing.method][lang]],
+    [ar ? 'السعر' : 'Price', formatMoney(preview?.total, rfqCurrency, lang) ?? '—'],
+    // UNSTATED IS NOT ZERO, here as everywhere else.
+    [ar ? 'ضريبة القيمة المضافة' : 'VAT', preview == null || preview.vatRate === null
+      ? (ar ? 'غير محددة' : 'Not stated')
+      : (formatMoney(preview.vatAmount, rfqCurrency, lang) ?? '—')],
     [ar ? 'مدة التنفيذ' : 'Timeline', form.timeline ? `${form.timeline} ${ar ? 'يوم' : 'days'}` : '—'],
     [ar ? 'الضمان' : 'Warranty', form.warranty || '—'],
     [ar ? 'الصلاحية' : 'Valid until', new Date(`${form.validUntil}T12:00:00`).toLocaleDateString(ar ? 'ar-EG' : 'en-US')],

@@ -109,7 +109,7 @@ import {
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
   commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
-  aiAttachments, rfqItems, qualifiedEnquiries,
+  aiAttachments, rfqItems, quotationItems, qualifiedEnquiries,
   projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals, referralCampaigns, referralRewards, referralCodeEvents,
   reviewResponses, reviewReports, productQuestionReports,
   supportTickets, supportTicketMessages, supportTicketAttachments,
@@ -206,8 +206,29 @@ import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shar
 import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories, categoryUsage } from './categoryService';
 import {
   currencyForMarket, requireCurrencyForMarket, UnknownMarketError,
-  DEFAULT_MARKET, isEnabledMarket, marketFor, type MarketCode,
+  DEFAULT_MARKET, isEnabledMarket, marketFor, fractionDigitsFor, type MarketCode,
 } from '@shared/markets';
+import {
+  PRICING_METHODS, COST_COMPONENTS, computeQuotationTotals, roundToScale,
+  normalizeForComparison, scopeDifferences, UnknownCurrencyScaleError,
+  type PricingMethod, type ComparableQuotation,
+} from '@shared/quotationPricing';
+import {
+  methodAllowedByPreference, PRICING_PREFERENCES, HELPABLE_BRIEF_FIELDS,
+  UNKNOWN, FINISHING_KINDS, PROPERTY_TYPES, CURRENT_CONDITIONS, FINISHING_LEVELS,
+  FINISHING_AREAS, FINISHING_TRADES, REQUESTING_PARTIES, briefArea, unknownFields,
+  type PricingPreference, type FinishingBrief,
+} from '@shared/finishing';
+import { suggestionsFor, SUGGESTION_SUBJECTS, type SuggestionContext } from '@shared/aiSuggestions';
+
+/**
+ * A BOQ CEILING, not a business rule.
+ *
+ * A finishing bill of quantities for an apartment runs to tens of lines, not
+ * thousands; this stops one request writing an unbounded number of rows in one
+ * transaction, which is a denial-of-service shape rather than a quotation.
+ */
+const MAX_QUOTATION_LINES = 200;
 import { userOperationalSnapshot } from './adminUser360';
 import {
   toggleSaved, countSaved, listSaved, savedStateFor, SavedItemError,
@@ -3196,6 +3217,61 @@ const marketplaceRouter = router({
 });
 
 // ── RFQ Router ─────────────────────────────────────────────────────────────
+/**
+ * THE FINISHING BRIEF, VALIDATED.
+ *
+ * `statable` is the whole idea: every field below accepts its own values OR the
+ * explicit 'unknown' sentinel - لا أعرف / ساعدني في الاختيار. That is not a
+ * missing value and it is not a default. It is a person saying they do not
+ * know, stored as such, rendered as "not stated", and read by the suggestion
+ * engine so it can offer to explain exactly that field.
+ *
+ * Nothing here is required, and `briefBlocksPublication` in shared/finishing.ts
+ * says so as code: a homeowner with six unknowns has written a real request,
+ * and a contractor reading it knows precisely which questions to ask.
+ */
+const statable = <T extends readonly [string, ...string[]]>(values: T) =>
+  z.union([z.enum(values), z.literal(UNKNOWN)]);
+
+/**
+ * A `json` COLUMN COMES BACK AS A STRING, and a cast does not make it an object.
+ *
+ * `mysql2` hands JSON columns to drizzle as the raw text. Writing
+ * `row.scopeDetail as Scope` compiles, reads `.inclusions` off a string, gets
+ * `undefined`, and produces a comparison with no differences at all - which
+ * looks exactly like two quotations that happen to agree. A browser probe found
+ * it; nothing in the type system could have.
+ *
+ * Returns null rather than throwing on malformed text: a comparison that omits
+ * one quotation's scope is recoverable, one that 500s is not.
+ */
+function parseJsonColumn<T>(value: unknown): T | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'object') return value as T;
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? (parsed as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+const finishingBriefSchema = z.object({
+  requestingParty: statable(REQUESTING_PARTIES).optional(),
+  kind: statable(FINISHING_KINDS).optional(),
+  propertyType: statable(PROPERTY_TYPES).optional(),
+  currentCondition: statable(CURRENT_CONDITIONS).optional(),
+  areaSqm: z.union([z.number().positive().max(1_000_000), z.literal(UNKNOWN)]).optional(),
+  level: statable(FINISHING_LEVELS).optional(),
+  areas: z.array(z.enum(FINISHING_AREAS)).max(FINISHING_AREAS.length).optional(),
+  trades: z.array(z.enum(FINISHING_TRADES)).max(FINISHING_TRADES.length).optional(),
+  materialPreferences: z.union([z.string().max(1000), z.literal(UNKNOWN)]).optional(),
+  siteConstraints: z.union([z.string().max(1000), z.literal(UNKNOWN)]).optional(),
+  specialRequirements: z.string().max(1000).optional(),
+  scopeNotes: z.string().max(4000).optional(),
+});
+
 const rfqRouter = router({
   // Slice 9. This was `publicProcedure` and returned `select().from(rfqs)` -
   // every column of the 50 most recent RFQs, to anyone on the internet with no
@@ -3646,6 +3722,20 @@ const rfqRouter = router({
         type: z.string(),
         size: z.number(),
       })).max(6).optional(),
+      /**
+       * A PREFERENCE, NEVER A GATE.
+       *
+       * Optional, and its absence is a distinct stored state from
+       * `provider_choice`: "nothing was said" is not the same decision as
+       * "you decide". Both permit any method; only one of them was chosen, and
+       * a customer who chose deserves to have that recorded.
+       *
+       * A homeowner is never required to understand pricing mechanics in order
+       * to publish.
+       */
+      pricingPreference: z.enum(PRICING_PREFERENCES).optional(),
+      /** The structured finishing brief. See finishingBriefSchema above. */
+      finishingBrief: finishingBriefSchema.optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       enforceRfqRateLimit(ctx.user.id);
@@ -3691,7 +3781,8 @@ const rfqRouter = router({
       // already checked against the enabled set.
       const marketCurrency = requireCurrencyForMarket(marketCode);
 
-      const { attachments, productReference, items, marketCode: _requestedMarket, ...rest } = input;
+      const { attachments, productReference, items, marketCode: _requestedMarket,
+        pricingPreference, finishingBrief, ...rest } = input;
 
       /**
        * EVERY CATALOGUE LINE IS RE-READ FROM THE CATALOGUE.
@@ -3820,6 +3911,17 @@ const rfqRouter = router({
           budget: input.budget != null ? String(input.budget) : undefined,
           attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : undefined,
           productReference: productReference ?? undefined,
+          /**
+           * WRITTEN EXPLICITLY, not swept in by the spread above.
+           *
+           * They would have landed in `rest` and worked by name coincidence,
+           * which is how a renamed column starts silently dropping a
+           * customer's brief. `undefined` leaves the column NULL - the state
+           * that means "not asked", distinct from the stored 'unknown'
+           * sentinel that means "asked, and they said they do not know".
+           */
+          pricingPreference: pricingPreference ?? undefined,
+          finishingBrief: finishingBrief ?? undefined,
         });
         const id = Number(result[0].insertId);
         if (resolvedItems.length > 0) {
@@ -3949,6 +4051,29 @@ const rfqRouter = router({
         status:           quotations.status,
         revisionNumber:   quotations.revisionNumber,
         createdAt:        quotations.createdAt,
+        /**
+         * HOW THE PRICE WAS ARRIVED AT. 0062.
+         *
+         * Read by the same requester-only query that already returns the
+         * price, because these ARE the price - a total whose derivation the
+         * customer cannot see is the defect this column set exists to remove.
+         * No new authorization surface: whoever could see `price` sees these.
+         */
+        pricingMethod:      quotations.pricingMethod,
+        baseAmount:         quotations.baseAmount,
+        discountAmount:     quotations.discountAmount,
+        contingencyRate:    quotations.contingencyRate,
+        overheadRate:       quotations.overheadRate,
+        vatRate:            quotations.vatRate,
+        vatAmount:          quotations.vatAmount,
+        percentageRate:     quotations.percentageRate,
+        materialBaseAmount: quotations.materialBaseAmount,
+        percentageBasisNote: quotations.percentageBasisNote,
+        packageTier:        quotations.packageTier,
+        packageBasis:       quotations.packageBasis,
+        packageRate:        quotations.packageRate,
+        packageQuantity:    quotations.packageQuantity,
+        scopeDetail:        quotations.scopeDetail,
         providerName:     users.name,
         providerEmail:    users.email,
         providerVerified: users.verified,
@@ -4009,6 +4134,205 @@ const rfqRouter = router({
       };
     });
   }),
+
+  /**
+   * ── COMPARING BIDS THAT WERE PRICED DIFFERENTLY ─────────────────────────
+   *
+   * A percentage quotation, a package quotation and a bill of quantities are
+   * three different commercial statements, and a customer has to choose between
+   * them. Comparing the three totals is the one comparison that is almost
+   * always misleading: the cheapest is usually the one that left the most out.
+   *
+   * So this returns the NORMALIZED shape - base, discount, contingency,
+   * overhead, VAT, payable, duration, validity - plus the FACTUAL scope
+   * differences between the bids, and a rate per unit area ONLY where an area
+   * is genuinely known.
+   *
+   * ── WHAT IT REFUSES TO DO ───────────────────────────────────────────────
+   *
+   * It does not rank, it does not name a winner, and it does not reconcile two
+   * different scopes into a pretend equivalence. Where a quotation is silent
+   * about an item, it is reported as SILENT - not as excluded, which would
+   * invent a difference, and not as included, which would invent an agreement.
+   *
+   * AUTHORIZATION IS THE SAME ONE `quotations` USES, deliberately: the RFQ's
+   * requester and nobody else. A rival supplier cannot reach this, which is
+   * the whole reason a sealed bid is worth submitting.
+   */
+  comparison: protectedProcedure
+    .input(z.object({ rfqId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [rfq] = await db.select({
+        requesterId: rfqs.requesterId,
+        currency: rfqs.currency,
+        marketCode: rfqs.marketCode,
+        finishingBrief: rfqs.finishingBrief,
+        pricingPreference: rfqs.pricingPreference,
+      }).from(rfqs).where(eq(rfqs.id, input.rfqId));
+      if (!rfq || rfq.requesterId !== ctx.user.id) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this RFQ' });
+      }
+
+      const rows = await db.select({
+        id: quotations.id,
+        providerId: quotations.providerId,
+        providerName: users.name,
+        pricingMethod: quotations.pricingMethod,
+        currency: quotations.currency,
+        price: quotations.price,
+        baseAmount: quotations.baseAmount,
+        discountAmount: quotations.discountAmount,
+        contingencyRate: quotations.contingencyRate,
+        overheadRate: quotations.overheadRate,
+        vatRate: quotations.vatRate,
+        vatAmount: quotations.vatAmount,
+        packageTier: quotations.packageTier,
+        packageBasis: quotations.packageBasis,
+        packageQuantity: quotations.packageQuantity,
+        percentageRate: quotations.percentageRate,
+        materialBaseAmount: quotations.materialBaseAmount,
+        percentageBasisNote: quotations.percentageBasisNote,
+        scopeDetail: quotations.scopeDetail,
+        timeline: quotations.timeline,
+        validUntil: quotations.validUntil,
+        status: quotations.status,
+      })
+        .from(quotations)
+        .leftJoin(users, eq(quotations.providerId, users.id))
+        .where(and(eq(quotations.rfqId, input.rfqId), isNull(quotations.supersededAt)));
+
+      // The BOQ lines of every quotation in one read, then grouped - rather
+      // than one query per quotation, which is the N+1 this screen would
+      // otherwise run every time a customer opened it.
+      const ids = rows.map(row => row.id);
+      const lineRows = ids.length === 0 ? [] : await db.select({
+        quotationId: quotationItems.quotationId,
+        component: quotationItems.component,
+        tradeGroup: quotationItems.tradeGroup,
+        description: quotationItems.description,
+        quantity: quotationItems.quantity,
+        unit: quotationItems.unit,
+        rate: quotationItems.rate,
+        lineTotal: quotationItems.lineTotal,
+      }).from(quotationItems)
+        .where(inArray(quotationItems.quotationId, ids))
+        .orderBy(quotationItems.quotationId, quotationItems.position);
+      const linesByQuotation = new Map<number, typeof lineRows>();
+      for (const line of lineRows) {
+        const bucket = linesByQuotation.get(line.quotationId) ?? [];
+        bucket.push(line);
+        linesByQuotation.set(line.quotationId, bucket);
+      }
+
+      /**
+       * THE AREA A RATE MAY BE DIVIDED BY, or null.
+       *
+       * The requester's OWN stated area, from their brief. Where they marked it
+       * unknown - or never said - `briefArea` returns null and no per-metre
+       * rate is produced for any quotation that is not itself priced per metre.
+       * An invented denominator is the one number a customer would act on.
+       */
+      const requestArea = briefArea(parseJsonColumn<FinishingBrief>(rfq.finishingBrief));
+
+      /**
+       * THE COMPONENTS, REBUILT THROUGH THE SAME FUNCTION THAT PRODUCED THEM.
+       *
+       * `contingencyRate` and `overheadRate` are stored as RATES, so the
+       * AMOUNTS have to be derived to be shown. Deriving them here with a
+       * second expression is how a comparison screen starts disagreeing with
+       * the quotation page about what the contingency was.
+       *
+       * So the stored base is fed back through `computeQuotationTotals` as a
+       * `custom` statedAmount - which makes every step after the base identical
+       * to the one that wrote the row - and the result is checked against the
+       * stored total. A mismatch means the row and the formula have diverged,
+       * and it is REPORTED rather than papered over: `total` stays the stored,
+       * agreed figure, and `reconciles: false` says the breakdown beside it
+       * cannot be trusted.
+       */
+      const comparable: ComparableQuotation[] = [];
+      const extras = new Map<number, {
+        reconciles: boolean;
+        contingencyRate: string | null;
+        overheadRate: string | null;
+        percentageRate: string | null;
+        materialBaseAmount: string | null;
+        percentageBasisNote: string | null;
+        status: string | null;
+      }>();
+
+      for (const row of rows) {
+        const currency = row.currency ?? rfq.currency;
+        const storedTotal = Number(row.price);
+        let totals;
+        try {
+          totals = computeQuotationTotals({
+            method: 'custom',
+            currency,
+            statedAmount: Number(row.baseAmount ?? 0),
+            discountAmount: Number(row.discountAmount ?? 0),
+            contingencyRate: row.contingencyRate === null ? null : Number(row.contingencyRate),
+            overheadRate: row.overheadRate === null ? null : Number(row.overheadRate),
+            vatRate: row.vatRate === null ? null : Number(row.vatRate),
+          });
+        } catch {
+          // An unknown currency scale. The stored total is still the agreed
+          // number; only the breakdown is unavailable.
+          totals = null;
+        }
+        const reconciles = totals !== null && totals.total === storedTotal;
+        comparable.push({
+          id: row.id,
+          providerId: row.providerId,
+          providerName: row.providerName,
+          method: (row.pricingMethod ?? 'custom') as PricingMethod,
+          currency,
+          totals: {
+            base: Number(row.baseAmount ?? 0),
+            discount: Number(row.discountAmount ?? 0),
+            contingency: totals?.contingency ?? 0,
+            overhead: totals?.overhead ?? 0,
+            netBeforeVat: storedTotal - Number(row.vatAmount ?? 0),
+            vatRate: row.vatRate === null ? null : Number(row.vatRate),
+            vatAmount: Number(row.vatAmount ?? 0),
+            // THE STORED, AGREED FIGURE. Never a recomputed one: a bid is what
+            // the contractor submitted, not what today's code would make of it.
+            total: storedTotal,
+            scale: totals?.scale ?? fractionDigitsFor(currency) ?? 2,
+          },
+          timelineDays: row.timeline,
+          validUntil: row.validUntil,
+          packageTier: row.packageTier,
+          packageBasis: row.packageBasis,
+          packageQuantity: row.packageQuantity === null ? null : Number(row.packageQuantity),
+          scope: parseJsonColumn<NonNullable<ComparableQuotation['scope']>>(row.scopeDetail),
+        });
+        extras.set(row.id, {
+          reconciles,
+          contingencyRate: row.contingencyRate,
+          overheadRate: row.overheadRate,
+          percentageRate: row.percentageRate,
+          materialBaseAmount: row.materialBaseAmount,
+          percentageBasisNote: row.percentageBasisNote,
+          status: row.status ?? null,
+        });
+      }
+
+      return {
+        currency: rfq.currency,
+        pricingPreference: rfq.pricingPreference,
+        requestArea,
+        quotations: comparable.map(quotation => ({
+          ...normalizeForComparison(quotation, requestArea),
+          ...(extras.get(quotation.id) ?? {}),
+          lines: linesByQuotation.get(quotation.id) ?? [],
+        })),
+        /** Factual, three-state, and never reconciled into an equivalence. */
+        differences: scopeDifferences(comparable),
+      };
+    }),
+
   // ── RFQ targeting (Phase 4B.3) ──────────────────────────────────────────
   // Which open RFQs this vendor is eligible for, by declared-category match.
   // Listing is free: no credit is consumed here, only by openEnquiry below.
@@ -4460,7 +4784,64 @@ const rfqRouter = router({
     // business rule somebody has to decide.
     .input(z.object({
       rfqId: z.number().int().positive(),
-      price: z.number().positive().max(9_999_999_999.99),
+      /**
+       * OPTIONAL, AND REFUSED FOR A DERIVED METHOD.
+       *
+       * For `custom` - the pre-existing behaviour - this IS the stated amount
+       * and is required, exactly as before. For percentage, package and
+       * detailed the total is DERIVED by `computeQuotationTotals` from the
+       * inputs below, and sending one here is a BAD_REQUEST rather than a
+       * value that is quietly ignored.
+       *
+       * A client-supplied total for a derived method is precisely the
+       * competing source of truth FINISHING_AND_AI_CONTEXT.md §5 forbids: it
+       * would be accepted, stored, and would disagree with its own components
+       * the moment either side rounded differently.
+       */
+      price: z.number().positive().max(9_999_999_999.99).optional(),
+      /** custom | percentage | package | detailed. Defaults to the old behaviour. */
+      pricingMethod: z.enum(PRICING_METHODS).optional(),
+      /** percentage: the material cost the rate applies to, and the rate. */
+      materialBaseAmount: z.number().nonnegative().max(9_999_999_999.999).optional(),
+      percentageRate: z.number().positive().max(999).optional(),
+      /** Which material values are in the base, and what is excluded from it. */
+      percentageBasisNote: z.string().max(2000).optional(),
+      /** package: a tier name (free text), a canonical basis, a rate, a quantity. */
+      packageTier: z.string().max(60).optional(),
+      packageBasis: z.enum(SERVICE_PRICING_BASES).optional(),
+      packageRate: z.number().positive().max(9_999_999_999.999).optional(),
+      packageQuantity: z.number().positive().max(9_999_999.99).optional(),
+      /** detailed: the BOQ. `lineTotal` is NOT an input - the server computes it. */
+      lines: z.array(z.object({
+        component: z.enum(COST_COMPONENTS).optional(),
+        tradeGroup: z.string().max(80).optional(),
+        description: z.string().min(1).max(255),
+        quantity: z.number().positive().max(9_999_999.999),
+        unit: z.string().max(40).optional(),
+        rate: z.number().nonnegative().max(9_999_999_999.999),
+      })).max(MAX_QUOTATION_LINES).optional(),
+      /** Shared commercial fields. An amount, then three rates. */
+      discountAmount: z.number().nonnegative().max(9_999_999_999.999).optional(),
+      contingencyRate: z.number().nonnegative().max(100).optional(),
+      overheadRate: z.number().nonnegative().max(100).optional(),
+      /**
+       * UNSTATED IS NOT ZERO. Omitting this stores NULL - "no VAT rate was
+       * given" - which reads differently to a customer than a stated 0%.
+       */
+      vatRate: z.number().nonnegative().max(100).optional(),
+      /** The scope statements that make a comparison mean something. */
+      scope: z.object({
+        inclusions: z.array(z.string().min(1).max(200)).max(50).optional(),
+        exclusions: z.array(z.string().min(1).max(200)).max(50).optional(),
+        allowances: z.array(z.string().min(1).max(200)).max(50).optional(),
+        upgrades: z.array(z.string().min(1).max(200)).max(50).optional(),
+        assumptions: z.array(z.string().min(1).max(300)).max(50).optional(),
+        milestones: z.array(z.string().min(1).max(200)).max(20).optional(),
+        specifications: z.array(z.string().min(1).max(200)).max(50).optional(),
+        materialLevel: z.string().max(80).optional(),
+        includedTrades: z.array(z.string().min(1).max(80)).max(30).optional(),
+        laborIncluded: z.boolean().optional(),
+      }).optional(),
       /**
        * NO CURRENCY FIELD, DELIBERATELY.
        *
@@ -4497,6 +4878,57 @@ const rfqRouter = router({
         type: z.string().max(128),
         size: z.number().int().nonnegative(),
       })).max(6).optional(),
+    })
+    /**
+     * EACH METHOD NEEDS ITS OWN INPUTS, AND ONLY ITS OWN.
+     *
+     * Validated here rather than in the mutation so a malformed submission is
+     * refused before it reaches a transaction, and so the CONTRACT states which
+     * fields belong to which method instead of that living in prose.
+     *
+     * The rule that matters most is the first one: a total may be SENT only
+     * for `custom`, and must be DERIVED for the other three. Accepting both
+     * would create two answers to what the bid costs.
+     */
+    .superRefine((value, context) => {
+      const method = value.pricingMethod ?? 'custom';
+      const require = (ok: boolean, path: string, message: string) => {
+        if (!ok) context.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+      };
+      if (method === 'custom') {
+        require(value.price !== undefined, 'price',
+          'A quoted total is required when no pricing method is declared.');
+      } else {
+        require(value.price === undefined, 'price',
+          'The total is calculated from the pricing inputs and must not be submitted.');
+      }
+      if (method === 'percentage') {
+        require(typeof value.materialBaseAmount === 'number', 'materialBaseAmount',
+          'State the material cost the percentage applies to.');
+        require(typeof value.percentageRate === 'number', 'percentageRate',
+          'State the agreed percentage.');
+        // THE DISCLOSURE IS NOT OPTIONAL. A percentage of a base nobody
+        // described is not a price a customer can check.
+        require(Boolean(value.percentageBasisNote?.trim()), 'percentageBasisNote',
+          'Say which material values are in the base, and what is excluded.');
+      }
+      if (method === 'package') {
+        require(typeof value.packageRate === 'number', 'packageRate',
+          'State the package rate or fixed price.');
+        require(value.packageBasis !== undefined, 'packageBasis',
+          'State what the package rate is charged on.');
+        // A fixed-project package is rate x 1, so a quantity is required for
+        // every OTHER basis - which is what keeps a displayed total traceable
+        // to its stored inputs.
+        require(value.packageBasis === 'fixed_project' || typeof value.packageQuantity === 'number',
+          'packageQuantity', 'State the area or quantity the rate applies to.');
+        require(value.packageBasis !== 'quote_on_request', 'packageBasis',
+          'A package quotation states a price; "quote on request" is not a package basis.');
+      }
+      if (method === 'detailed') {
+        require((value.lines?.length ?? 0) > 0, 'lines',
+          'A detailed quotation needs at least one line.');
+      }
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -4518,6 +4950,8 @@ const rfqRouter = router({
         requesterId: rfqs.requesterId, title: rfqs.title, status: rfqs.status,
         // THE COMMERCIAL SOURCE OF TRUTH FOR THIS BID.
         marketCode: rfqs.marketCode, currency: rfqs.currency,
+        // What the customer asked to be priced on, if they said.
+        pricingPreference: rfqs.pricingPreference,
       }).from(rfqs).where(eq(rfqs.id, input.rfqId));
       if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
       if (rfq.status !== 'open') {
@@ -4604,7 +5038,99 @@ const rfqRouter = router({
       }
       const quotationCurrency = resolvedCurrency;
 
-      const { attachments, ...quotationFields } = input;
+      /**
+       * THE REQUESTER'S STATED METHOD IS A CONSTRAINT, NOT A HINT.
+       *
+       * Absent and `provider_choice` both permit any method - the first
+       * because nothing was said, the second because "you decide" was said.
+       * A STATED method is enforced, which is the only thing that makes
+       * stating one worth anything to the customer who did.
+       */
+      const pricingMethod: PricingMethod = input.pricingMethod ?? 'custom';
+      if (!methodAllowedByPreference(rfq.pricingPreference as PricingPreference | null, pricingMethod)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This request asked to be priced a different way. Quote using the method it specifies, or ask the customer to change it.',
+        });
+      }
+
+      /**
+       * THE ONE AUTHORITATIVE CALCULATION, run on the server.
+       *
+       * `computeQuotationTotals` is the only implementation of this arithmetic
+       * in the product. The client may call the same pure function to preview a
+       * number; what is PERSISTED is only ever what this call returns, so a
+       * client total can never become truth by being submitted.
+       *
+       * It throws for a currency with no known scale rather than guessing two
+       * decimals, which is what would have silently rounded a Kuwaiti dinar.
+       */
+      const pricingInput = {
+        method: pricingMethod,
+        currency: quotationCurrency,
+        statedAmount: input.price ?? null,
+        materialBaseAmount: input.materialBaseAmount ?? null,
+        percentageRate: input.percentageRate ?? null,
+        packageRate: input.packageRate ?? null,
+        packageQuantity: pricingMethod === 'package' && input.packageBasis === 'fixed_project'
+          // A fixed-project package is its amount times one, so the stored
+          // inputs reproduce the stored total for every basis alike.
+          ? 1
+          : (input.packageQuantity ?? null),
+        lines: input.lines?.map(line => ({ quantity: line.quantity, rate: line.rate })) ?? null,
+        discountAmount: input.discountAmount ?? null,
+        contingencyRate: input.contingencyRate ?? null,
+        overheadRate: input.overheadRate ?? null,
+        vatRate: input.vatRate ?? null,
+      };
+      let totals;
+      try {
+        totals = computeQuotationTotals(pricingInput);
+      } catch (error) {
+        if (error instanceof UnknownCurrencyScaleError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'This request is denominated in a currency BuildHub cannot price in. Contact support rather than quoting.',
+          });
+        }
+        throw error;
+      }
+      if (!(totals.total > 0)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'These pricing inputs do not produce a payable total.',
+        });
+      }
+
+      const { attachments, scope, lines, price: _submittedPrice, ...rest } = input;
+      void _submittedPrice;   // refused above for a derived method; never stored
+      void rest;
+      /**
+       * THE COLUMNS, WRITTEN FROM THE SERVER'S OWN FIGURES.
+       *
+       * Note what is NOT spread from the input: the total. `price` is
+       * `totals.total` on every path, including `custom`, where it is the
+       * stated amount put through the same shared commercial fields as
+       * everything else. One column, one formula, one answer.
+       */
+      const pricingColumns = {
+        pricingMethod,
+        baseAmount: String(totals.base),
+        discountAmount: String(totals.discount),
+        contingencyRate: input.contingencyRate === undefined ? null : String(input.contingencyRate),
+        overheadRate: input.overheadRate === undefined ? null : String(input.overheadRate),
+        // NULL, not '0'. See the column comment: unstated is not zero.
+        vatRate: totals.vatRate === null ? null : String(totals.vatRate),
+        vatAmount: String(totals.vatAmount),
+        percentageRate: input.percentageRate === undefined ? null : String(input.percentageRate),
+        materialBaseAmount: input.materialBaseAmount === undefined ? null : String(input.materialBaseAmount),
+        percentageBasisNote: input.percentageBasisNote ?? null,
+        packageTier: input.packageTier ?? null,
+        packageBasis: input.packageBasis ?? null,
+        packageRate: input.packageRate === undefined ? null : String(input.packageRate),
+        packageQuantity: pricingInput.packageQuantity === null ? null : String(pricingInput.packageQuantity),
+        scopeDetail: scope ? scope : null,
+      };
 
       /**
        * ACCIDENTAL DOUBLE-SUBMIT, and only that.
@@ -4669,8 +5195,15 @@ const rfqRouter = router({
         // which is how a SQL `=` treats it and why five of these terms could
         // not have been added to the WHERE clause above.
         const sameOffer = recent !== undefined
-          // The column is a decimal string and the input a number.
-          && Number(recent.price) === input.price
+          // The column is a decimal string and the total a number. THE SERVER'S
+          // total, not a submitted one - for three of the four methods there is
+          // no submitted one.
+          && Number(recent.price) === totals.total
+          // A DIFFERENT METHOD IS A DIFFERENT OFFER even at the same total. A
+          // contractor who re-priced the same job as a package rather than a
+          // percentage has changed what they are selling, and swallowing that
+          // as a duplicate would discard the change the customer needs to see.
+          && (recent.pricingMethod ?? 'custom') === pricingMethod
           // THE EFFECTIVE CURRENCY, not a submitted one - there is no longer a
           // submitted one. Both sides are now the RFQ's currency, so this term
           // only ever differs for a bid written before the RFQ's currency was
@@ -4714,9 +5247,18 @@ const rfqRouter = router({
         }
 
         const inserted = await tx.insert(quotations).values({
-          ...quotationFields,
+          rfqId: input.rfqId,
+          timeline: input.timeline,
+          warranty: input.warranty,
+          validUntil: input.validUntil,
+          commercialTerms: input.commercialTerms,
+          paymentTerms: input.paymentTerms,
+          notes: input.notes,
+          ...pricingColumns,
           providerId: ctx.user.id,
-          price: String(input.price),
+          // THE SERVER'S FIGURE, on every path including `custom`. Never the
+          // submitted one.
+          price: String(totals.total),
           // FROM THE RFQ, not from the payload and not from the column
           // default. The default is still 'EGP', which would have been a
           // wrong number on a bid the day a second market existed.
@@ -4724,10 +5266,35 @@ const rfqRouter = router({
           revisionNumber: current ? current.revisionNumber + 1 : 1,
           attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : null,
         });
+        const newId = Number(inserted?.[0]?.insertId ?? 0);
+        /**
+         * THE BOQ LINES, IN THE SAME TRANSACTION AS THE BID.
+         *
+         * A quotation whose lines failed to write is a total with no
+         * derivation - exactly the record this whole change exists to stop -
+         * so they either both land or neither does.
+         *
+         * `lineTotal` is RECOMPUTED here, at the currency's scale, and is not
+         * an input at all. A client that could post its own line totals could
+         * post lines that do not add up to the subtotal it is shown beside.
+         */
+        if (lines && lines.length > 0 && newId > 0) {
+          await tx.insert(quotationItems).values(lines.map((line, index) => ({
+            quotationId: newId,
+            component: line.component ?? 'material',
+            tradeGroup: line.tradeGroup ?? null,
+            description: line.description,
+            quantity: String(line.quantity),
+            unit: line.unit ?? null,
+            rate: String(line.rate),
+            lineTotal: String(roundToScale(line.quantity * line.rate, totals.scale)),
+            position: index,
+          })));
+        }
         // The QUOTATION's own id, because that is what the audit trail records.
         // See the note beside recordCommercialEvent below.
         return {
-          id: Number(inserted?.[0]?.insertId ?? 0),
+          id: newId,
           deduplicated: false,
           // The version this one supersedes, or null for a first bid. Carried
           // out of the transaction so the change trail can name what moved.
@@ -4770,7 +5337,7 @@ const rfqRouter = router({
         subjectType: 'quotation',
         subjectId: quotationId,
         action: 'quotation_submitted',
-        detail: `rfq ${input.rfqId}, price ${input.price}`
+        detail: `rfq ${input.rfqId}, ${pricingMethod} ${totals.total}`
           + `${input.timeline ? `, ${input.timeline} days` : ''}`
           + `${attachments?.length ? `, ${attachments.length} attachment(s)` : ''}`,
       });
@@ -11222,6 +11789,186 @@ function aiErrorMessage(category: AiFailureCategory): string {
 }
 
 const aiRouter = router({
+  /**
+   * ── WHAT A CLICK GIVES YOU: CONTEXT, AND A LIST OF OFFERS ───────────────
+   *
+   * THE DEFECT THIS REPLACES. Clicking a suggested prompt or a tool card wrote
+   * the PRODUCT's text into the transcript as `role: 'user'` and submitted it in
+   * the same tick. The person never typed it and could not edit it, and
+   * afterwards the conversation held a question attributed to them that was
+   * indistinguishable from a real one - with every later answer grounded on it.
+   *
+   * So this endpoint returns SUGGESTIONS and nothing else. It does not call the
+   * model, it does not append a message, and there is no field in its output
+   * that means "send this". `ai.chat` remains the only way to ask anything, and
+   * it is reached only when a person submits.
+   *
+   * ── AUTHORIZATION IS THE POINT, NOT A FORMALITY ─────────────────────────
+   *
+   * The context handed to the suggestion engine is built HERE, from the
+   * viewer's PERMITTED PROJECTION of the object - the same projection their own
+   * read returns. The engine is deliberately given a poor, small context so it
+   * cannot leak what it was never given: no budget, no owner identity, no
+   * contact detail, no rival's price.
+   *
+   * The ROLE comes from the session. The RELATION - are you this request's
+   * requester, or a provider looking at it - is re-derived from the database,
+   * because a contractor IS the requester of a request they raised and must be
+   * offered the requester's actions on it.
+   *
+   * A subject the caller may not see resolves to the GENERAL suggestions, not
+   * to an error: the list is not an oracle for which ids exist.
+   */
+  suggestions: protectedProcedure
+    .input(z.object({
+      subject: z.enum(SUGGESTION_SUBJECTS),
+      subjectId: z.number().int().positive().optional(),
+      /** A category or service name the click carried. Display data only. */
+      subtype: z.string().max(120).optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const role = ctx.user.userRole ?? null;
+      // READ FROM THE SESSION, INLINE. Going through the local `role` above
+      // made the same statement, but the cross-role isolation guard reads the
+      // line to check that every provider gate is decided by the session and
+      // not by a request field - and an indirection it cannot follow is a
+      // guard that silently stops guarding.
+      const isProvider = providerRoles.includes(
+        (ctx.user.userRole ?? '') as typeof providerRoles[number]);
+
+      /**
+       * THE DEFAULT, AND WHAT IT DELIBERATELY IS NOT.
+       *
+       * A subject that names an id is only kept once the id has been RESOLVED
+       * against something this caller may see. Until then the subject is
+       * `general`, because keeping `subject: 'request'` for an unresolved id
+       * hands back the request-shaped suggestion list - which is how a stranger
+       * who guessed an id learned that it existed. Found by probe.
+       *
+       * A subject that carries no id - a category, a service - is safe to keep:
+       * it names a public taxonomy, not a record.
+       */
+      const namesARecord = input.subjectId !== undefined;
+      let context: SuggestionContext = {
+        subject: namesARecord ? 'general' : input.subject,
+        subjectId: null,
+        subtype: input.subtype ?? null,
+        role,
+        relation: isProvider ? 'provider' : 'requester',
+      };
+
+      if (input.subject === 'request' && input.subjectId) {
+        const [rfq] = await db.select({
+          requesterId: rfqs.requesterId,
+          category: rfqs.category,
+          status: rfqs.status,
+          pricingPreference: rfqs.pricingPreference,
+          finishingBrief: rfqs.finishingBrief,
+        }).from(rfqs).where(eq(rfqs.id, input.subjectId));
+
+        if (rfq) {
+          const isRequester = rfq.requesterId === ctx.user.id;
+          /**
+           * MAY THIS CALLER SEE THIS REQUEST AT ALL?
+           *
+           * THE FIRST VERSION OF THIS WAS AN ID ORACLE. It read
+           * `access !== null`, and `getRfqResponseAccess` never returns null -
+           * it answers `canRespond: false` for anybody, including a homeowner
+           * who has nothing to do with the request. So every signed-in account
+           * that named a real id got the provider's suggestion list back, and
+           * learned the request existed. A probe caught it; the types could
+           * not.
+           *
+           * The rule is the one the product already applies to its own request
+           * board: the REQUESTER sees their request, and an APPROVED PROVIDER
+           * sees an OPEN one, because that is what `rfq.eligible` lists. Anyone
+           * else falls through to the general list and learns nothing about the
+           * id they named.
+           */
+          const visibleToProvider = isProvider && rfq.status === 'open';
+          const access = visibleToProvider
+            ? await getRfqResponseAccess(db, ctx.user.id, input.subjectId).catch(() => null)
+            : null;
+          const visible = isRequester || visibleToProvider;
+
+          if (visible) {
+            const brief = parseJsonColumn<FinishingBrief>(rfq.finishingBrief);
+            // COUNTED ONLY FOR THE REQUESTER. How many rivals have bid is
+            // commercial intelligence a provider is not entitled to, and it
+            // would change their suggestions if they had it.
+            let quotationCount = 0;
+            if (isRequester) {
+              const [counted] = await db.select({ count: sql<number>`count(*)` })
+                .from(quotations)
+                .where(and(eq(quotations.rfqId, input.subjectId), isNull(quotations.supersededAt)));
+              quotationCount = Number(counted?.count ?? 0);
+            }
+            context = {
+              subject: 'request',
+              subjectId: input.subjectId,
+              // The request's OWN category, not a client-supplied subtype.
+              subtype: rfq.category,
+              role,
+              relation: isRequester ? 'requester' : 'provider',
+              status: rfq.status,
+              quotationCount,
+              isFinishing: rfq.category === 'Renovation',
+              // ONLY THE REQUESTER'S OWN unknowns drive field help: they are
+              // the only person who can answer them, and the list is a
+              // statement about their brief.
+              unknownFields: isRequester ? unknownFields(brief) : [],
+              canRespond: isRequester ? undefined : access?.canRespond === true,
+              pricingPreference: rfq.pricingPreference,
+            };
+          }
+        }
+      }
+
+      if (input.subject === 'quotation' && input.subjectId) {
+        const [row] = await db.select({
+          providerId: quotations.providerId,
+          status: quotations.status,
+          pricingMethod: quotations.pricingMethod,
+          requesterId: rfqs.requesterId,
+        }).from(quotations)
+          .innerJoin(rfqs, eq(quotations.rfqId, rfqs.id))
+          .where(eq(quotations.id, input.subjectId));
+        // THE TWO PARTIES TO THE BID AND NOBODY ELSE. A rival supplier naming
+        // this id gets the general list, exactly as if it did not exist.
+        if (row && (row.providerId === ctx.user.id || row.requesterId === ctx.user.id)) {
+          context = {
+            subject: 'quotation',
+            subjectId: input.subjectId,
+            subtype: row.pricingMethod,
+            role,
+            relation: row.providerId === ctx.user.id ? 'provider' : 'requester',
+            status: row.status,
+          };
+        }
+      }
+
+      if (input.subject === 'project' && input.subjectId) {
+        // The canonical project gate, unchanged and not weakened: owned or an
+        // active member. A directory lead is not project access.
+        const permitted = await readableProjectIds(db, ctx.user.id).catch(() => [] as number[]);
+        if (permitted.includes(input.subjectId)) {
+          context = { ...context, subject: 'project', subjectId: input.subjectId, relation: 'member' };
+        }
+        // else: the default above is already `general` with no id.
+      }
+
+      return {
+        context: {
+          subject: context.subject,
+          subjectId: context.subjectId ?? null,
+          relation: context.relation,
+          stage: context.status ?? null,
+        },
+        suggestions: suggestionsFor(context),
+      };
+    }),
+
   chat: aiChatProcedure
     .input(z.object({
       messages: z.array(z.object({

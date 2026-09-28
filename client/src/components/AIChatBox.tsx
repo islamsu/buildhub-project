@@ -61,10 +61,44 @@ export type AIChatBoxProps = {
   emptyStateMessage?: string;
 
   /**
-   * Suggested prompts to display in empty state
-   * Click to send directly
+   * Suggested prompts offered in the empty state.
+   *
+   * ── CHOOSING ONE FILLS THE COMPOSER. IT DOES NOT SEND. ────────────────
+   *
+   * This used to be `onClick={() => onSendMessage(prompt)}`: the product's own
+   * text went into the transcript as a `user` message and was submitted in the
+   * same tick. The person never typed it, never read it and could not edit it,
+   * and the conversation then held a question attributed to them that was
+   * indistinguishable from a real one.
+   *
+   * A transcript is the record of what somebody asked. Writing into it on their
+   * behalf makes that record untrue, so the only thing a suggestion may do is
+   * offer itself. Sending stays a deliberate act - Enter, or the send button.
    */
   suggestedPrompts?: string[];
+
+  /**
+   * Called when a suggestion is chosen, INSTEAD of sending it.
+   *
+   * Optional: when absent the chat box fills its own composer, which is the
+   * behaviour every caller wants. A page that needs to know - to record which
+   * suggestion was taken, say - passes this and still gets the fill.
+   */
+  onSuggestionChosen?: (prompt: string) => void;
+
+  /**
+   * Text a control OUTSIDE the chat box wants placed in the composer.
+   *
+   * The tool cards on the AI page are the reason this exists: they also used to
+   * submit their own canned prompt as the user's question. They are not children
+   * of this component, so they need a way to fill the composer - and filling it
+   * is the only thing they are allowed to do.
+   *
+   * It is a REQUEST, not a value: the object identity changes each time so
+   * choosing the same suggestion twice fills twice, and the person's own typing
+   * is never overwritten by a re-render.
+   */
+  draft?: { text: string; nonce: number } | null;
 
   /**
    * Rendered directly above the composer. The chat box stays generic - it does
@@ -119,7 +153,7 @@ export type AIChatBoxProps = {
  *       suggestedPrompts={[
  *         "Explain quantum computing",
  *         "Write a hello world in Python"
- *       ]}
+ *       ]}   // offered; choosing one FILLS the composer, it does not send
  *     />
  *   );
  * };
@@ -135,6 +169,8 @@ export function AIChatBox({
   height = "600px",
   emptyStateMessage = "Start a conversation with AI",
   suggestedPrompts,
+  onSuggestionChosen,
+  draft,
   composerSlot,
 }: AIChatBoxProps) {
   const { t } = useLanguage();
@@ -143,6 +179,23 @@ export function AIChatBox({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputAreaRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  /**
+   * FILL THE COMPOSER FROM OUTSIDE, and focus it.
+   *
+   * Keyed on the nonce, not the text, so choosing the same suggestion twice
+   * fills twice and an unrelated re-render never clobbers what the person has
+   * typed since. Nothing here submits - see the `draft` prop's documentation.
+   */
+  useEffect(() => {
+    if (!draft) return;
+    setInput(draft.text);
+    const field = textareaRef.current;
+    if (!field) return;
+    field.focus();
+    const end = draft.text.length;
+    requestAnimationFrame(() => field.setSelectionRange(end, end));
+  }, [draft?.nonce]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filter out system messages
   const displayMessages = messages.filter((msg) => msg.role !== "system");
@@ -229,9 +282,23 @@ export function AIChatBox({
                   {suggestedPrompts.map((prompt, index) => (
                     <button
                       key={index}
-                      onClick={() => onSendMessage(prompt)}
+                      type="button"
+                      /* FILLS, NEVER SENDS. See the prop's documentation. The
+                         composer is focused so the person can edit it before
+                         they decide to ask, and the caret goes to the end. */
+                      onClick={() => {
+                        setInput(prompt);
+                        onSuggestionChosen?.(prompt);
+                        const field = textareaRef.current;
+                        if (field) {
+                          field.focus();
+                          const end = prompt.length;
+                          requestAnimationFrame(() => field.setSelectionRange(end, end));
+                        }
+                      }}
                       disabled={isLoading || disabled}
-                      className="rounded-lg border border-border bg-card px-4 py-2 text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      data-testid="ai-suggestion"
+                      className="rounded-lg border border-border bg-card px-4 py-2 text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {prompt}
                     </button>
@@ -242,7 +309,9 @@ export function AIChatBox({
           </div>
         ) : (
           <ScrollArea className="h-full">
-            <div className="flex flex-col space-y-4 p-4">
+            {/* Named so a probe can count what is in the TRANSCRIPT without
+                counting the suggestion strip, the tool cards or a toast. */}
+            <div className="flex flex-col space-y-4 p-4" data-testid="ai-transcript">
               {displayMessages.map((message, index) => {
                 // Apply min-height to last message only if NOT loading (when loading, the loading indicator gets it)
                 const isLastMessage = index === displayMessages.length - 1;
@@ -252,6 +321,12 @@ export function AIChatBox({
                 return (
                   <div
                     key={index}
+                    /* The ROLE, in the DOM. A probe asserting that no question
+                       was put in the person's mouth needs to count user
+                       messages, and inferring the role from a CSS alignment
+                       class is the kind of check that passes for the wrong
+                       reason after a restyle. */
+                    data-testid={`ai-message-${message.role}`}
                     className={cn(
                       "flex gap-3",
                       message.role === "user"

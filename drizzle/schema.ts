@@ -582,6 +582,25 @@ export const rfqs = mysqlTable('rfqs', {
   attachments: text('attachments'),
   productReference: json('productReference'),
   status:      mysqlEnum('status', ['open', 'closed', 'awarded']).default('open'),
+  /**
+   * WHAT THE REQUESTER WOULD LIKE, NOT WHAT THEY MUST UNDERSTAND. 0062.
+   *
+   * percentage | package | detailed | provider_choice. NULL is a real and
+   * distinct state: "nothing was said" is not the same decision as "let the
+   * contractor propose", and publication never requires either. A STATED
+   * method is a constraint submitQuotation enforces - which is what makes
+   * stating one worth anything.
+   */
+  pricingPreference: varchar('pricingPreference', { length: 20 }),
+  /**
+   * THE STRUCTURED FINISHING BRIEF. 0062.
+   *
+   * JSON because the form is progressive disclosure: every field is optional
+   * and several legitimately hold the explicit 'unknown' sentinel - لا أعرف /
+   * ساعدني في الاختيار - rather than a value. Validated against
+   * shared/finishing.ts on write; never a value the server invented.
+   */
+  finishingBrief: json('finishingBrief'),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
   updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
 }, table => ({
@@ -639,8 +658,50 @@ export const quotations = mysqlTable('quotations', {
   id:           int('id').autoincrement().primaryKey(),
   rfqId:        int('rfqId').notNull().references(() => rfqs.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   providerId:   int('providerId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
-  price:        decimal('price', { precision: 12, scale: 2 }).notNull(),
+  /**
+   * THE ONE AUTHORITATIVE PAYABLE TOTAL. 0062.
+   *
+   * Widened from decimal(12,2), which could not represent a Kuwaiti dinar,
+   * Bahraini dinar or Omani rial - all three minor digits. Those markets are
+   * `enabled: false` and this does not change that; it removes a rounding
+   * defect that would have appeared on the day one was enabled.
+   *
+   * No SECOND total column was added beside it. The components below EXPLAIN
+   * this number; `computeQuotationTotals` produces it; the server writes it.
+   * Two totals is how two totals disagree.
+   */
+  price:        decimal('price', { precision: 14, scale: 3 }).notNull(),
   currency:     varchar('currency', { length: 10 }).default('EGP'),
+  /**
+   * HOW THE BASE WAS ARRIVED AT. custom | percentage | package | detailed.
+   *
+   * `custom` is the pre-existing behaviour - a stated total with no declared
+   * derivation - and it is the default, so every quotation written before this
+   * column existed remains exactly as truthful as it was.
+   */
+  pricingMethod: varchar('pricingMethod', { length: 20 }).default('custom').notNull(),
+  /** The computed base, before discount, contingency, overhead and VAT. */
+  baseAmount:    decimal('baseAmount', { precision: 14, scale: 3 }),
+  discountAmount: decimal('discountAmount', { precision: 14, scale: 3 }).default('0').notNull(),
+  /** RATES. Both apply to (base - discount), never to each other. */
+  contingencyRate: decimal('contingencyRate', { precision: 6, scale: 3 }),
+  overheadRate:    decimal('overheadRate', { precision: 6, scale: 3 }),
+  /** NULL means no rate was STATED. That is not the claim that it is zero. */
+  vatRate:      decimal('vatRate', { precision: 6, scale: 3 }),
+  vatAmount:    decimal('vatAmount', { precision: 14, scale: 3 }).default('0').notNull(),
+  /** percentage: نسبة من تكلفة المواد */
+  percentageRate:     decimal('percentageRate', { precision: 6, scale: 3 }),
+  materialBaseAmount: decimal('materialBaseAmount', { precision: 14, scale: 3 }),
+  /** Which material values participate in the base, and what is excluded. */
+  percentageBasisNote: text('percentageBasisNote'),
+  /** package: باقة تشطيب. Free text - the suggested tiers are not a closed set. */
+  packageTier:     varchar('packageTier', { length: 60 }),
+  /** A SERVICE_PRICING_BASES value. fixed_project stores rate x quantity 1. */
+  packageBasis:    varchar('packageBasis', { length: 30 }),
+  packageRate:     decimal('packageRate', { precision: 14, scale: 3 }),
+  packageQuantity: decimal('packageQuantity', { precision: 12, scale: 2 }),
+  /** Inclusions, exclusions, allowances, upgrades, assumptions, milestones. */
+  scopeDetail:  json('scopeDetail'),
   timeline:     int('timeline'),
   warranty:     varchar('warranty', { length: 100 }),
   paymentTerms: text('paymentTerms'),
@@ -684,6 +745,46 @@ export const quotations = mysqlTable('quotations', {
 }, table => ({
   rfqIdIdx: index('quotations_rfqId_idx').on(table.rfqId),
   providerIdIdx: index('quotations_providerId_idx').on(table.providerId),
+}));
+
+/**
+ * THE LINES OF A QUOTATION - the BOQ. 0062.
+ *
+ * `rfqItems` is the REQUEST side and is deliberately not reused: what a
+ * customer asked to be priced and what a contractor priced are different
+ * records, and a contractor regularly prices work the customer did not itemize.
+ *
+ * Authorization is the quotation's, exactly. There is no separate rule and no
+ * separate read - a line is visible to whoever may see the quotation it belongs
+ * to, and cascades away with it.
+ */
+export const quotationItems = mysqlTable('quotationItems', {
+  id:          int('id').autoincrement().primaryKey(),
+  quotationId: int('quotationId').notNull().references(() => quotations.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  /**
+   * material | labor | equipment | subcontract | other.
+   *
+   * DIRECT COSTS ONLY. Overhead and profit are a rate on the whole, never a
+   * line: a markup inside the lines and again on the total is the same markup
+   * charged twice.
+   */
+  component:   varchar('component', { length: 20 }).default('material').notNull(),
+  /** The trade this line groups under, in the contractor's own words. */
+  tradeGroup:  varchar('tradeGroup', { length: 80 }),
+  description: varchar('description', { length: 255 }).notNull(),
+  quantity:    decimal('quantity', { precision: 12, scale: 3 }).notNull(),
+  unit:        varchar('unit', { length: 40 }),
+  rate:        decimal('rate', { precision: 14, scale: 3 }).notNull(),
+  /**
+   * quantity x rate at the currency's scale. Persisted so the printed lines add
+   * up to the printed subtotal - and RECOMPUTED server-side on every write,
+   * never accepted from a client, so it cannot drift from its own inputs.
+   */
+  lineTotal:   decimal('lineTotal', { precision: 14, scale: 3 }).notNull(),
+  position:    int('position').notNull().default(0),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  quotationIdIdx: index('quotationItems_quotationId_idx').on(table.quotationId),
 }));
 
 // ── Messages ───────────────────────────────────────────────────────────────
