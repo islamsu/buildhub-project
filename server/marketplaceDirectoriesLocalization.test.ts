@@ -111,10 +111,22 @@ describe('translation dictionary integrity', () => {
 
   it('the four directory pages\' new translation keys are present with non-empty English and Arabic values', () => {
     const source = readClientFile('contexts/LanguageContext.tsx');
+    /*
+     * THE SPOT-CHECK NO LONGER NAMES THE FABRICATED BADGES.
+     *
+     * It pinned `vendorsDir.badgeTopRated`, `designersDir.badgeAwardWinning`
+     * and `finishingDir.badgeFastResponse` - three unprovable trust claims
+     * (§68) that were never rendered by any component. The truthfulness
+     * census removed them, and pinning their EXISTENCE here would have made
+     * this file require the claims to come back.
+     *
+     * `badgeNew` replaces them: same shape, same directories, and a claim
+     * the product can actually make from a creation date.
+     */
     const spotCheckKeys = [
-      'vendorsDir.title', 'vendorsDir.searchPlaceholder', 'vendorsDir.badgeTopRated',
-      'designersDir.title', 'designersDir.requestDesign', 'designersDir.badgeAwardWinning',
-      'finishingDir.title', 'finishingDir.servicesLabel', 'finishingDir.badgeFastResponse',
+      'vendorsDir.title', 'vendorsDir.searchPlaceholder', 'vendorsDir.badgeNew',
+      'designersDir.title', 'designersDir.requestDesign',
+      'finishingDir.title', 'finishingDir.servicesLabel', 'finishingDir.badgeNew',
       'marketHub.exploreTitle', 'marketHub.featuredVendors', 'marketHub.suggestionVendor',
       'common.back_to_marketplace', 'common.message', 'common.request_quote',
     ];

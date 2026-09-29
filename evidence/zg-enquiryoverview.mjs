@@ -18,8 +18,14 @@
 // is all removed at the end. The counts under test are the platform's own.
 import { execSync } from 'node:child_process';
 import { adminSession } from './lib/session.mjs';
+import { assertBuild } from './lib/build.mjs';
 
 const BASE = 'http://127.0.0.1:5401';
+
+/* WHICH BUILD THIS RAN AGAINST. Printed always; enforced when
+   ZG_EXPECT_COMMIT names one, so a pass can never be reported against
+   a build somebody did not mean to test. */
+await assertBuild(BASE);
 const DB = 'buildhub_prelaunch';
 
 // SQL over STDIN: a shell-quoted -e argument silently corrupts anything

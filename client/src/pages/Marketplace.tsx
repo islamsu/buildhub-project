@@ -1,4 +1,7 @@
 import { useLanguage } from '@/contexts/LanguageContext';
+import { SaveButton } from '@/components/SaveButton';
+import { useSavedIds } from '@/lib/useSavedIds';
+import { formatMoney } from '@shared/money';
 import { useRfqBasket } from '@/hooks/useRfqBasket';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
@@ -9,10 +12,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { trpc } from '@/lib/trpc';
 import { useMemo, useState } from 'react';
-import { Search, SlidersHorizontal, Star, Package, ShoppingCart, Zap, ArrowLeft, ArrowRight, Heart, Scale, X } from 'lucide-react';
+import { Search, SlidersHorizontal, Star, Package, ShoppingCart, Zap, ArrowLeft, ArrowRight, Heart, Scale, X, BadgeCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
 import { MasterProductSlot, PlacementBadge, ProductSpotlight } from '@/components/MasterPlacement';
+import { FeaturedProductCard } from '@/components/FeaturedProductCard';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 /**
  * THIS FILE USED TO HOLD TWO HAND-KEPT CATEGORY MAPS.
@@ -30,6 +35,7 @@ import { MasterProductSlot, PlacementBadge, ProductSpotlight } from '@/component
  */
 
 export default function Marketplace() {
+  usePageTitle();
   const { t, lang } = useLanguage();
   const basket = useRfqBasket();
   const [, navigate] = useLocation();
@@ -50,6 +56,14 @@ export default function Marketplace() {
     } catch { return 'All'; }
   })();
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
+  /*
+   * THE CURATED PICKS FOR THIS CATEGORY. Scoped server-side, so a Lighting
+   * pick cannot appear under Tiles - the same rule the paid slots follow.
+   */
+  const { data: editorialProducts = [] } = trpc.marketplace.featuredProducts.useQuery(
+    { category: selectedCategory === 'All' ? undefined : selectedCategory, limit: 3 },
+    { retry: false },
+  );
   const [sortBy, setSortBy] = useState('featured');
   const [wishlist, setWishlist] = useState<number[]>(() => {
     try { return JSON.parse(localStorage.getItem('bh-wishlist') || '[]'); } catch { return []; }
@@ -124,6 +138,18 @@ export default function Marketplace() {
     search: search.trim() || undefined,
     limit: 48,
   });
+
+  /**
+   * WHICH OF THESE IS ALREADY SAVED - one query for the grid.
+   *
+   * Not a `saved` flag on the public product rows: a per-viewer fact inside
+   * a cacheable public response is how a shared cache ends up showing one
+   * buyer another's shortlist.
+   */
+  const savedProductIds = useSavedIds(
+    'product',
+    useMemo(() => filtered.map((product: any) => Number(product.id)), [filtered]),
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -202,10 +228,57 @@ export default function Marketplace() {
                 ))}
               </div>
 
-              {/* MASTER DISCOVERY for products, above the organic grid. Scoped
-                  to the selected category, or platform-wide on "All" - which is
-                  what a visitor sees before choosing a category. Collapses when
-                  nothing eligible is booked. */}
+              {/*
+                EDITORIAL FEATURED PRODUCTS, first.
+
+                The provider directory has had a curated block for a long time
+                and the catalogue never did: `products.featured` existed and
+                only nudged the ORDER BY, so a product BuildHub had chosen sat
+                somewhere in the grid with a small badge and nothing else.
+
+                FEATURED BEFORE SPONSORED, by the owner's decision. A curated
+                pick is BuildHub vouching for a product; a visitor who meets a
+                paid slot first has been shown an advertisement before a
+                recommendation. Sponsored keeps its slot and its label directly
+                below.
+
+                Scoped to the chosen category, so a Lighting pick cannot appear
+                under Tiles - the same rule the paid slots follow.
+              */}
+              {editorialProducts.length > 0 && (
+                <section
+                  className="mb-8"
+                  aria-label={lang === 'ar' ? 'منتجات مختارة' : 'Featured products'}
+                  data-testid="products-editorial-featured"
+                  data-placement-kind="featured"
+                >
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+                      <BadgeCheck className="h-4 w-4 text-emerald-600" />
+                      {lang === 'ar' ? 'منتجات مختارة' : 'Featured products'}
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      {lang === 'ar' ? 'اختيار من BuildHub، غير مدفوع' : 'Chosen by BuildHub, not paid for'}
+                    </p>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {editorialProducts.map(product => (
+                      <FeaturedProductCard
+                        key={`editorial-${product.id}`}
+                        product={product as any}
+                        lang={lang}
+                        onOpen={() => navigate(`/marketplace/products/${product.id}`)}
+                      />
+                    ))}
+                  </div>
+                  <div className="mt-4 h-px bg-border" />
+                </section>
+              )}
+
+              {/* MASTER DISCOVERY for products. Scoped to the selected
+                  category, or platform-wide on "All" - which is what a visitor
+                  sees before choosing a category. Collapses when nothing
+                  eligible is booked. */}
               <MasterProductSlot category={selectedCategory === 'All' ? undefined : selectedCategory} />
 
               {/* SPOTLIGHT, once a category is chosen. A Tiles placement cannot
@@ -250,15 +323,25 @@ export default function Marketplace() {
                         {categoryLabel(product.category)}
                       </Badge>
                       <div className="absolute bottom-2 right-2 flex gap-1.5">
+                        {/* THE NAME A SCREEN READER HEARS IS THE NAME ON THE
+                            CARD. These first used `product.name` while the
+                            Arabic card renders `nameAr`, so a screen-reader
+                            user was told a different product's name than the
+                            one displayed - the same mismatch the image `alt`
+                            two elements up already avoids. */}
                         <button
-                          aria-label="wishlist"
+                          aria-label={lang === 'ar'
+                            ? `${wishlist.includes(product.id) ? 'أزل' : 'أضف'} ${product.nameAr || product.name} من المفضلة`
+                            : `${wishlist.includes(product.id) ? 'Remove' : 'Add'} ${product.name} to your wishlist`}
                           onClick={e => { e.stopPropagation(); toggleWishlist(product.id); }}
                           className="h-8 w-8 rounded-full bg-white/90 shadow flex items-center justify-center hover:bg-white transition-colors"
                         >
                           <Heart className={`w-4 h-4 ${wishlist.includes(product.id) ? 'fill-rose-500 text-rose-500' : 'text-slate-500'}`} />
                         </button>
                         <button
-                          aria-label="compare"
+                          aria-label={lang === 'ar'
+                            ? `${compareIds.includes(product.id) ? 'أزل' : 'أضف'} ${product.nameAr || product.name} من المقارنة`
+                            : `${compareIds.includes(product.id) ? 'Remove' : 'Add'} ${product.name} to comparison`}
                           onClick={e => { e.stopPropagation(); toggleCompare(product.id); }}
                           className={`h-8 w-8 rounded-full shadow flex items-center justify-center transition-colors ${compareIds.includes(product.id) ? 'bg-primary text-primary-foreground' : 'bg-white/90 text-slate-500 hover:bg-white'}`}
                         >
@@ -308,12 +391,22 @@ export default function Marketplace() {
                               unit: product.unit ?? null,
                               specifications: null,
                               unitPrice: product.price != null ? Number(product.price) : null,
+                              // Captured WITH the price. A basket can hold lines from
+                              // suppliers in different markets, and a subtotal over a
+                              // currency nobody recorded is not a total of anything.
+                              currency: product.currency ?? null,
                             });
                             toast.success(lang === 'ar' ? 'تمت الإضافة إلى قائمة الطلبات' : 'Added to RFQ list');
                           }}
                         >
                           <ShoppingCart className="w-3.5 h-3.5" /> {t('market.add_to_rfq')}
                         </Button>
+                        {/* SAVE SITS BESIDE ADD TO RFQ, because they are the
+                            two things a buyer does with a product they like
+                            and they mean different things: one sets it aside
+                            to compare, the other commits to asking for a
+                            price. §22 lists both. */}
+                        <SaveButton kind="product" itemId={product.id} saved={savedProductIds.has(product.id)} variant="icon" />
                       </div>
                     </CardContent>
                   </Card>
@@ -367,7 +460,7 @@ export default function Marketplace() {
               </thead>
               <tbody>
                 {([
-                  { key: 'price', label: lang === 'ar' ? 'السعر' : 'Price', render: (p: any) => `${p.price.toLocaleString()} ${lang === 'ar' ? 'جنيه' : 'EGP'}${p.unit ? '/' + p.unit : ''}` },
+                  { key: 'price', label: lang === 'ar' ? 'السعر' : 'Price', render: (p: any) => `${formatMoney(p.price, p.currency, lang) ?? p.price.toLocaleString()}${p.unit ? '/' + p.unit : ''}` },
                   { key: 'rating', label: lang === 'ar' ? 'التقييم' : 'Rating', render: (p: any) => p.reviewCount > 0 ? `${p.rating} ★ (${p.reviewCount})` : (lang === 'ar' ? 'لا تقييمات' : 'No ratings') },
                   { key: 'brand', label: lang === 'ar' ? 'العلامة التجارية' : 'Brand', render: (p: any) => p.brand },
                   { key: 'origin', label: lang === 'ar' ? 'بلد المنشأ' : 'Origin', render: (p: any) => p.origin },

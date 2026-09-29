@@ -1,0 +1,41 @@
+BUILD  6701c58 (local) built 2026-09-25T09:48:03.493Z  http://127.0.0.1:5401
+
+BUILD 6701c58  env=local
+
+PASS  1. a buyer and an approved supplier exist  [#461 / #464]
+PASS  2. the supplier is approved, so an invitation to them can be answered
+PASS  3. two live products to shortlist  [116, 115]
+PASS  4. both products and the supplier are on the shortlist  [2 products]
+PASS  5. the shortlist renders with its primary action
+PASS  6. a product can be left out of the request  [#115]
+PASS  7. and the action reports the narrowed selection, not the whole list  [1 product · 1 supplier]
+PASS  8. pressing it reaches the request form  [/rfq?basket=1&invite=464]
+PASS  9. CARRYING BOTH: the basket flag and the invitation  [?basket=1&invite=464]
+PASS  10. and the invitation names the supplier that was ticked  [?basket=1&invite=464]
+PASS  11. the form opens and NAMES the invitation it will send
+PASS  12. by name, not by raw id - it is on the buyer's own shortlist  [1 supplier from your shortlist will be invited
+
+Aziz Trading mud3u29z
+
+The request stays visible to every provider whose declared categories match it — an invitation is in addition to that, not instead of it.]
+PASS  13. and does not let the buyer think it narrows who can see the request
+PASS  14. the two products have distinct names, so the control below can tell them apart  [Split Air Conditioner 1.5HP Inverter / PVC Insulated Cable 3x2.5mm]
+PASS  15. the ticked product arrived as a basket line, BY NAME  [Split Air Conditioner 1.5HP Inverter]
+PASS  16. AND THE UNTICKED ONE DID NOT - the checkbox means something  [PVC Insulated Cable 3x2.5mm]
+PASS  17. and the basket holds exactly one line  [1]
+PASS  18. a category can be chosen  [Materials]
+PASS  19. the request can be posted from the carried form  [CLICKED]
+PASS  20. a real request row exists  [#203]
+PASS  21. with exactly the ONE line that was ticked  [1 rfqItems]
+PASS  22. and it is the product the buyer kept  [product #116]
+PASS  23. the unticked product is genuinely absent from the record
+PASS  24. A REAL INVITATION ROW EXISTS - not a toast  [1 rfqSuppliers]
+PASS  25. THE SUPPLIER SEES IT IN THEIR OPPORTUNITY CENTRE - the journey completes
+PASS  26. as an invitation they have not yet taken  [invited]
+PASS  27. and it says WHY it reached them  [invitation]
+PASS  28. opening it costs them nothing, because an invitation is allowance-exempt  [true]
+
+(cleanup) removed probe RFQ #203: gone
+
+ALL PASS  28 passed, 0 failed
+

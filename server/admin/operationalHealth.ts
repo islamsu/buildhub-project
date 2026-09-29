@@ -33,7 +33,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
-import { buildCommit } from '../_core/health';
+import { buildCommit, buildEnvironment, buildTime } from '../_core/health';
 import { isMailerConfigured } from '../_core/mailer';
 import { isObjectStorageConfigured } from '../_core/objectStorage';
 import { isAiConfigured } from '../_core/ai';
@@ -61,6 +61,14 @@ export type DependencyState = {
 
 export type OperationalHealth = {
   commit: string;
+  /**
+   * The same four facts /version serves, from the same functions - so the
+   * console, the endpoint and the staging gate can never disagree about which
+   * build is running. The owner's complaint began with exactly that ambiguity.
+   */
+  shortCommit: string;
+  buildTime: string | null;
+  environment: string;
   database: { reachable: boolean; probeMs: number | null };
   migrations: { recorded: number | null; expected: number | null; atHead: boolean | null };
   dependencies: DependencyState[];
@@ -204,8 +212,12 @@ export async function readOperationalHealth(db: Db): Promise<OperationalHealth> 
     ? await Promise.all([readMigrationState(db, expected), readCounts(db)])
     : [{ recorded: null, expected, atHead: null }, { volumes: {}, backlogs: {} }];
 
+  const commit = buildCommit();
   return {
-    commit: buildCommit(),
+    commit,
+    shortCommit: commit === 'unknown' ? 'unknown' : commit.slice(0, 7),
+    buildTime: buildTime(),
+    environment: buildEnvironment(),
     database,
     migrations,
     dependencies: [

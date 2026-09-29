@@ -78,7 +78,13 @@ export const ROLE_SECTIONS: Record<WorkspaceRole, SectionId[]> = {
   // ^ This order is RENDERED, not merely declared: RolePlatform hoists the
   //   quotations card ahead of the catalogue to match it. A live probe reading
   //   document order proved the two had drifted apart.
-  project_manager: ['role-overview', 'role-queue', 'role-rfqs', ...PROFESSIONAL_TAIL],
+  /*
+   * A PROJECT MANAGER HAS BOTH. `role-queue` held one mixed "Project Queue" fed
+   * by the lead directory; it is now Managed Projects, and `role-projects` is
+   * the Opportunities section beside it. `workspaceHref` refuses an anchor for a
+   * section a role does not render, so the nav entry for it needs this line.
+   */
+  project_manager: ['role-overview', 'role-queue', 'role-projects', 'role-rfqs', ...PROFESSIONAL_TAIL],
 };
 
 export function hasSection(role: WorkspaceRole, section: SectionId): boolean {

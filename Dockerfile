@@ -26,6 +26,21 @@ COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 
 COPY . .
+
+# ── WHICH COMMIT THIS IMAGE IS ───────────────────────────────────────────────
+#
+# `.git` is excluded from the build context (see .dockerignore), so the build
+# cannot ask git what it is building. Without this argument the generated
+# build-info records "unknown", and an image that cannot identify itself is
+# exactly what let a deployment lag masquerade as a missing feature.
+#
+# Render sets RENDER_GIT_COMMIT at RUNTIME, so a Render deploy identifies
+# itself even when this argument is not passed. Pass it anyway wherever the
+# builder knows - `docker build --build-arg BUILD_COMMIT=$(git rev-parse HEAD)`
+# - so the image is self-describing regardless of where it later runs.
+ARG BUILD_COMMIT=""
+ENV BUILD_COMMIT=$BUILD_COMMIT
+
 RUN pnpm run build
 
 # Drop devDependencies from the tree that will be copied forward. Doing it here

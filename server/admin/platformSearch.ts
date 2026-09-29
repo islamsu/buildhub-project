@@ -26,8 +26,9 @@
 
 import { desc, eq, like, or, type SQL } from 'drizzle-orm';
 import { hasAdminPermission, type AdminPermission } from '../../shared/adminRoles';
-import { products, projects, quotations, rfqs, users } from '../../drizzle/schema';
+import { disputes, products, projects, quotations, rfqs, supportTickets, users, vendorProfiles } from '../../drizzle/schema';
 import { containsTerm } from '../_core/searchTerms';
+import { enquiryList } from '../vendorEnquiryQuery';
 import { getDb } from '../db';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -35,7 +36,9 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 /** Rows per segment. A search result is a way in, not a report. */
 export const SEARCH_LIMIT = 10;
 
-export type SearchSegmentKey = 'users' | 'rfqs' | 'quotations' | 'products' | 'projects';
+export type SearchSegmentKey =
+  | 'users' | 'rfqs' | 'quotations' | 'products' | 'projects'
+  | 'disputes' | 'tickets' | 'enquiries';
 
 /**
  * Which permission governs which record type - the same one that governs it
@@ -48,20 +51,54 @@ export const SEARCH_SEGMENT_PERMISSION: Record<SearchSegmentKey, AdminPermission
   quotations: 'audit.read',
   products: 'marketplace.manage',
   projects: 'audit.read',
+  // Read off the procedures that already serve these records - admin.disputes
+  // and admin.supportTickets are adminWith('support.manage'), admin.enquiryList
+  // is adminWith('marketplace.manage'). Searching a record type must not be an
+  // easier door into it than opening it.
+  disputes: 'support.manage',
+  tickets: 'support.manage',
+  enquiries: 'marketplace.manage',
 };
 
 /**
- * Where the console sends the administrator when they pick a result.
+ * WHERE THE CONSOLE SENDS THE ADMINISTRATOR, as a kind rather than a URL.
  *
  * A quotation has no admin-only page, so it resolves to the request it was bid
  * on - which is the record an investigator actually wants, and is the link the
  * investigation panel opens.
+ *
+ * The console used to recover a bid's destination by running a regex over its
+ * DISPLAY STRING - `hit.detail?.match(/#(\d+)\)?$/)` - so re-wording one
+ * label silently unlinked every bid in the search. The server knows which
+ * record a hit resolves against; it says so, and the client owns the single
+ * map from kind to route. Routes stay a client concern, destinations stop
+ * being a formatting accident.
  */
+export const SEARCH_LINK_KINDS = [
+  'user', 'rfq', 'product', 'project', 'dispute', 'ticket', 'enquiry',
+] as const;
+
+export type SearchLinkKind = (typeof SEARCH_LINK_KINDS)[number];
+
+export type SearchLink = { kind: SearchLinkKind; key: string };
+
 export type SearchHit = {
   id: number;
+  /**
+   * THE HUMAN REFERENCE, when the record has one.
+   *
+   * A dispute is DSP-2026-000012 to everyone who has ever discussed it, a
+   * ticket is its own reference, and an enquiry is ENQ-<rfq>-<vendor>. Those
+   * are what an administrator has been given on the phone and what the console
+   * addresses the record by; the row id is technical metadata underneath.
+   * `null` for the record types that genuinely have no reference.
+   */
+  ref: string | null;
   label: string;
   detail: string | null;
   status: string | null;
+  /** The record this result opens. A bid opens the request it was bid on. */
+  link: SearchLink;
 };
 
 export type PlatformSearchResult = {
@@ -105,7 +142,18 @@ export async function runPlatformSearch(
   const segments: PlatformSearchResult['segments'] = [];
   const omitted: SearchSegmentKey[] = [];
 
-  // ── People ───────────────────────────────────────────────────────────────
+  // ── People, AND the businesses they are ──────────────────────────────────
+  //
+  // ONE SEGMENT, NOT TWO. A vendor is a user row with a business identity
+  // beside it, so a separate "vendors" segment would return the same rows under
+  // a second heading and leave an administrator wondering which of the two is
+  // the real record. Instead the one segment reaches the business identity:
+  // searching a company name finds the account, and a provider is LABELLED by
+  // its company with the person named underneath - which is how an
+  // administrator was given it, and the order this console owes them.
+  //
+  // LEFT JOIN, not inner: a homeowner has no vendorProfiles row and must still
+  // be findable.
   if (allowed('users')) {
     const rows = await db.select({
       id: users.id,
@@ -114,20 +162,32 @@ export async function runPlatformSearch(
       email: users.email,
       userRole: users.userRole,
       accountStatus: users.accountStatus,
+      companyName: vendorProfiles.companyName,
+      tradingName: vendorProfiles.tradingName,
     }).from(users)
+      .leftJoin(vendorProfiles, eq(vendorProfiles.userId, users.id))
       .where(numeric !== null
         ? eq(users.id, numeric)
-        : anyOf([like(users.name, term), like(users.email, term), like(users.username, term)]))
+        : anyOf([
+          like(users.name, term), like(users.email, term), like(users.username, term),
+          like(vendorProfiles.companyName, term), like(vendorProfiles.tradingName, term),
+        ]))
       .orderBy(desc(users.id))
       .limit(SEARCH_LIMIT);
     segments.push({
       key: 'users',
-      hits: rows.map(row => ({
-        id: row.id,
-        label: row.name ?? row.username ?? row.email ?? `#${row.id}`,
-        detail: row.userRole ?? null,
-        status: row.accountStatus ?? null,
-      })),
+      hits: rows.map(row => {
+        const business = row.companyName ?? row.tradingName ?? null;
+        const person = row.name ?? row.username ?? row.email ?? `#${row.id}`;
+        return {
+          id: row.id,
+          ref: null,
+          link: { kind: 'user' as const, key: String(row.id) },
+          label: business ?? person,
+          detail: business ? `${person} · ${row.userRole ?? ''}`.trim() : (row.userRole ?? null),
+          status: row.accountStatus ?? null,
+        };
+      }),
     });
   } else omitted.push('users');
 
@@ -146,7 +206,7 @@ export async function runPlatformSearch(
       .limit(SEARCH_LIMIT);
     segments.push({
       key: 'rfqs',
-      hits: rows.map(row => ({ id: row.id, label: row.title, detail: row.category, status: row.status ?? null })),
+      hits: rows.map(row => ({ id: row.id, ref: null, link: { kind: 'rfq' as const, key: String(row.id) }, label: row.title, detail: row.category, status: row.status ?? null })),
     });
   } else omitted.push('rfqs');
 
@@ -173,6 +233,9 @@ export async function runPlatformSearch(
       key: 'quotations',
       hits: rows.map(row => ({
         id: row.id,
+        ref: null,
+        // The REQUEST, named by the server. Not recovered from `detail`.
+        link: { kind: 'rfq' as const, key: String(row.rfqId) },
         label: `${row.price} ${row.currency ?? ''}`.trim(),
         detail: `${row.title} (#${row.rfqId})`,
         status: row.status ?? null,
@@ -198,6 +261,8 @@ export async function runPlatformSearch(
       key: 'products',
       hits: rows.map(row => ({
         id: row.id,
+        ref: null,
+        link: { kind: 'product' as const, key: String(row.id) },
         label: row.name,
         detail: row.category,
         // The real lifecycle state, not a boolean flattening of it: a
@@ -223,9 +288,95 @@ export async function runPlatformSearch(
       .limit(SEARCH_LIMIT);
     segments.push({
       key: 'projects',
-      hits: rows.map(row => ({ id: row.id, label: row.title, detail: row.type ?? null, status: row.status ?? null })),
+      hits: rows.map(row => ({ id: row.id, ref: null, link: { kind: 'project' as const, key: String(row.id) }, label: row.title, detail: row.type ?? null, status: row.status ?? null })),
     });
   } else omitted.push('projects');
+
+  // ── Cases ────────────────────────────────────────────────────────────────
+  //
+  // ADDRESSED BY REFERENCE. A dispute is DSP-2026-000012 to the parties, to
+  // the notification that announced it and to the administrator holding the
+  // phone; nobody has its row id. The reference is matched first-class, and it
+  // is what the result is labelled with.
+  if (allowed('disputes')) {
+    const rows = await db.select({
+      id: disputes.id,
+      reference: disputes.reference,
+      title: disputes.title,
+      category: disputes.category,
+      status: disputes.status,
+    }).from(disputes)
+      .where(numeric !== null
+        ? eq(disputes.id, numeric)
+        : anyOf([like(disputes.reference, term), like(disputes.title, term)]))
+      .orderBy(desc(disputes.id))
+      .limit(SEARCH_LIMIT);
+    segments.push({
+      key: 'disputes',
+      hits: rows.map(row => ({
+        id: row.id,
+        ref: row.reference ?? null,
+        link: { kind: 'dispute' as const, key: String(row.id) },
+        label: row.reference ?? `#${row.id}`,
+        detail: row.title,
+        status: row.status ?? null,
+      })),
+    });
+  } else omitted.push('disputes');
+
+  // ── Support ──────────────────────────────────────────────────────────────
+  if (allowed('tickets')) {
+    const rows = await db.select({
+      id: supportTickets.id,
+      reference: supportTickets.reference,
+      subject: supportTickets.subject,
+      category: supportTickets.category,
+      status: supportTickets.status,
+    }).from(supportTickets)
+      .where(numeric !== null
+        ? eq(supportTickets.id, numeric)
+        : anyOf([like(supportTickets.reference, term), like(supportTickets.subject, term)]))
+      .orderBy(desc(supportTickets.id))
+      .limit(SEARCH_LIMIT);
+    segments.push({
+      key: 'tickets',
+      hits: rows.map(row => ({
+        id: row.id,
+        ref: row.reference ?? null,
+        link: { kind: 'ticket' as const, key: String(row.id) },
+        label: row.reference ?? `#${row.id}`,
+        detail: row.subject,
+        status: row.status ?? null,
+      })),
+    });
+  } else omitted.push('tickets');
+
+  // ── Vendor enquiries ─────────────────────────────────────────────────────
+  //
+  // THROUGH THE CANONICAL QUERY, not a second one. `enquiryList` already
+  // resolves an enquiry's state from the pair, already parses a pasted
+  // ENQ-501-10, already matches the RFQ title and the vendor's name and
+  // company, and already escapes the term through the shared helper. A
+  // hand-rolled search here would be a second definition of what an enquiry IS
+  // - which is exactly how the two of them drift.
+  //
+  // An enquiry has no table and therefore no id. Its reference IS its identity,
+  // so `id` carries the RFQ - the record the reference resolves against - and
+  // every consumer addresses the enquiry by `ref`.
+  if (allowed('enquiries')) {
+    const page = await enquiryList(db, { search: query, limit: SEARCH_LIMIT });
+    segments.push({
+      key: 'enquiries',
+      hits: page.rows.map(row => ({
+        id: row.rfqId,
+        ref: row.reference,
+        link: { kind: 'enquiry' as const, key: row.reference },
+        label: row.reference,
+        detail: [row.vendorCompany ?? row.vendorName, row.rfqTitle].filter(Boolean).join(' · ') || null,
+        status: row.state,
+      })),
+    });
+  } else omitted.push('enquiries');
 
   return { query, segments, omitted };
 }

@@ -1,0 +1,26 @@
+PASS  1. SETUP: the probe is pointed at a live server  [http://127.0.0.1:5401 {"commit":"unknown"}]
+PASS  2. and three real administrators exist, one per job  [SUPER_ADMIN, MARKETPLACE_ADMIN, SUPPORT_ADMIN]
+PASS  3. and a real dispute, support ticket and vendor exist to be found  [dispute #24 DSP-2026-044457, ticket #24 TCK-61044457, vendor #96]
+PASS  4. SUPER ADMIN: the platform search renders in Operations, its canonical home
+PASS  5. and there is NO second search box inside Disputes  [search-input present: false]
+PASS  6. searching the dispute REFERENCE finds the dispute, labelled by that reference  [DSP-2026-044457 DSP-2026-044457 · ZSEARCH marble slab colour mismatch ]
+PASS  7. and the result links to the CASE, not to the queue  [/admin/disputes/24]
+PASS  8. and following it OPENS THAT DISPUTE, not an unfiltered list  [dispute-detail panel showing DSP-2026-044457]
+PASS  9. searching the ticket REFERENCE finds it and links to the case  [/admin/support/24]
+PASS  10. and following it OPENS THAT TICKET  [admin-support-detail panel showing TCK-61044457]
+PASS  11. searching the BUSINESS NAME finds the account, labelled by the business  [#96 Zenith Marble Works 61044457 · Karim Habib · supplier active]
+PASS  12. and the person behind it is named underneath, not lost  [person shown]
+PASS  13. and it opens that user record  [/admin/users/96]
+PASS  14. MARKETPLACE ADMIN: the case segments are reported as WITHHELD  [omitted: rfqs, quotations, projects, disputes, tickets]
+PASS  15. and NOT rendered as an empty segment - "none" and "not yours" are different answers
+PASS  16. and the dispute reference appears in NO segment they can read
+PASS  17. and the server REFUSES admin.disputes directly, menu or no menu  [HTTP 403]
+PASS  18. and the search API returns the reference in NO hit, with the case segments withheld  [HTTP 200, in a hit: false, omitted: rfqs,quotations,projects,disputes,tickets]
+PASS  18b. POSITIVE CONTROL: the same call DOES return it to an administrator who may read cases  [in a hit: true]
+PASS  19. SUPPORT ADMIN: finds the same dispute, because cases ARE their job
+PASS  20. and is told the marketplace segments are not theirs  [omitted: rfqs, quotations, products, projects, enquiries]
+PASS  21. ARABIC: the three new segments are translated, not left in English  [الأشخاص والشركات 0 لا نتائج الطلبات 0 لا نتائج العروض 0 لا نتائج المنتجات 0 لا نتائج المشاريع 0 لا نتائج النزاعات 1 تذاك]
+PASS  22. and the console is right-to-left  [dir=rtl]
+PASS  23. and the same dispute is still found in Arabic
+
+24/24 checks passed

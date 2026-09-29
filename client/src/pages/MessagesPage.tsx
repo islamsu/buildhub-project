@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useLanguage } from '@/contexts/LanguageContext';
 import Navbar from '@/components/Navbar';
 import { Card, CardContent } from '@/components/ui/card';
@@ -47,7 +48,15 @@ export default function MessagesPage() {
   const { t, lang, dir } = useLanguage();
   const { user, isAuthenticated } = useAuth();
   const { data: notifications } = trpc.notifications.list.useQuery(undefined, { enabled: isAuthenticated });
-  const { data: persistedConversations = [] } = trpc.messages.conversations.useQuery(undefined, { enabled: isAuthenticated });
+  /*
+   * "No conversations yet" IS SOMEBODY'S CORRESPONDENCE, REPORTED AS ABSENT.
+   *
+   * The list defaulted to `[]`, so a failed request told a user with an inbox
+   * full of quotations that they have never spoken to anyone - and there is no
+   * second signal on this screen to contradict it.
+   */
+  const conversationsQuery = trpc.messages.conversations.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const persistedConversations = conversationsQuery.data ?? [];
   const markRead = trpc.notifications.markAllRead.useMutation({
     onSuccess: () => {
       toast.success(lang === 'ar' ? 'تم تحديد الكل كمقروء' : 'All marked as read');
@@ -74,12 +83,29 @@ export default function MessagesPage() {
   // Was `useState(1)`. A default of 1 is a real user id, and combined with the
   // fabricated conversation list it aimed the composer at that account.
   const search = useSearch();
-  const [tab, setTab] = useState<string>('messages');
+  /*
+   * WHICH TAB A VISITOR LANDS ON IS DECIDED BY WHY THEY CAME.
+   *
+   * The bell in the navbar carries the UNREAD NOTIFICATION count and sent
+   * everybody here with no tab named, so this page opened on Messages. A
+   * supplier whose quotation had just been accepted clicked a bell reading
+   * "1" and was shown "No conversations yet" - the count and the destination
+   * were answering different questions. Proven in a browser before it was
+   * changed (evidence/zg-journey-homeowner.mjs).
+   *
+   * `?tab=notifications` is read here and the bell now sends it. Anything
+   * else, including no parameter at all, keeps the old default, so every
+   * other way in is unchanged.
+   */
+  const requestedTab = new URLSearchParams(search).get('tab');
+  const [tab, setTab] = useState<string>(requestedTab === 'notifications' ? 'notifications' : 'messages');
   const [selectedConv, setSelectedConv] = useState<number | null>(null);
   const [messageText, setMessageText] = useState('');
   const [searchConv, setSearchConv] = useState('');
   const [quotationId, setQuotationId] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  /* Once, on arrival. A reader who then picks a tab keeps it. */
+  const tabDecided = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
   const { data: thread, refetch: refetchMessages } = trpc.messages.list.useQuery(
@@ -149,8 +175,39 @@ export default function MessagesPage() {
     // Arriving with a recipient in the URL means "show me this conversation",
     // whichever tab was last open.
     if (requestedRecipientId !== null) { setSelectedConv(requestedRecipientId); setTab('messages'); return; }
+    // The route does not remount between notification links, so a second
+    // arrival with ?tab=notifications has to be honoured rather than leaving
+    // the reader on whichever tab they happened to be looking at.
+    if (requestedTab === 'notifications') { setTab('notifications'); return; }
+    /*
+     * NOBODY NAMED A TAB, so open the one that actually has something in it.
+     *
+     * The badge beside this page's entry - in the workspace sidebar and on
+     * the navbar bell alike - counts unread NOTIFICATIONS as well as unread
+     * messages, and it used to open on Conversations regardless. A supplier
+     * whose quotation had just been accepted followed a badge reading "1" and
+     * was shown "No conversations yet".
+     *
+     * Messages win when both have something: a person waiting on a reply
+     * comes before a system notice. This runs only on the first settle, and
+     * never once the reader has chosen a tab for themselves.
+     */
+    /*
+     * ONLY ONCE BOTH ANSWERS ARE IN. The first version latched on the first
+     * effect run, which happens while both queries are still loading - so it
+     * decided "no unread notifications" from an empty list and then refused
+     * to look again. Waiting for the data is the difference between a rule
+     * and a race.
+     */
+    if (!requestedTab && !tabDecided.current
+        && notifications !== undefined && conversationsQuery.data !== undefined) {
+      tabDecided.current = true;
+      const unreadMessages = persistedConversations.reduce((sum, c) => sum + (c.unread ?? 0), 0);
+      const unreadNotifications = (notifications ?? []).filter(n => !n.read).length;
+      if (unreadMessages === 0 && unreadNotifications > 0) setTab('notifications');
+    }
     if (persistedConversations.length > 0 && !persistedConversations.some(conversation => conversation.id === selectedConv)) setSelectedConv(persistedConversations[0].id);
-  }, [persistedConversations, selectedConv, requestedRecipientId]);
+  }, [persistedConversations, selectedConv, requestedRecipientId, requestedTab, notifications, conversationsQuery.data]);
 
   if (!isAuthenticated) {
     return (
@@ -250,7 +307,13 @@ export default function MessagesPage() {
                   </div>
                 </div>
                 <div className="flex-1 overflow-y-auto">
-                  {filteredConvs.length === 0 && (
+                  {conversationsQuery.isError && (
+                    <LoadFailed
+                      {...loadFailedCopy(lang === 'ar')}
+                      onRetry={() => void conversationsQuery.refetch()}
+                    />
+                  )}
+                  {!conversationsQuery.isError && filteredConvs.length === 0 && (
                     <p className="p-4 text-xs text-muted-foreground text-center">
                       {searchConv
                         ? (lang === 'ar' ? 'لا توجد محادثات مطابقة' : 'No conversations match that search')

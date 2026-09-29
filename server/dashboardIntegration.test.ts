@@ -117,7 +117,7 @@ describe('role boundary regression (items 3-5)', () => {
       expect(before, `${vendorOnly} must be gated on isProfessional`).toContain('{isProfessional && (');
     }
     // And the vendor-only components are never mounted outside that gate.
-    for (const vendorComponent of ['<VendorAnalytics', '<QualifiedEnquiries']) {
+    for (const vendorComponent of ['<VendorAnalytics', '<EnquirySummaryCard']) {
       expect(rolePlatform.split(vendorComponent).length - 1, `${vendorComponent} is mounted more than once`).toBe(1);
     }
     // These two moved to Settings and must be gone from here entirely - a

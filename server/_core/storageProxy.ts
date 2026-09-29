@@ -2,6 +2,7 @@ import type { Express, Request } from "express";
 import { and, eq } from "drizzle-orm";
 import { getObjectStorage, isObjectStorageConfigured } from "./objectStorage";
 import { sdk, type AuthenticatedUser } from "./sdk";
+import { HttpError } from "@shared/_core/errors";
 import { getDb } from "../db";
 import { aiAttachments, disputeEvidence, disputes, documents, messages, projects, qualifiedEnquiries, quotations, registrationDocumentSubmissions, rfqs, supportTicketAttachments } from "../../drizzle/schema";
 import { canAccessProject } from '../projectMembership';
@@ -9,11 +10,35 @@ import { canReadDispute } from "../disputeEligibility";
 import { requireTicketAccess } from "../supportTickets";
 import { parseRfqAttachments } from "../../shared/rfqAttachments";
 
-async function authenticateStorageRequest(req: Request): Promise<AuthenticatedUser | null> {
+/**
+ * WHO IS ASKING - or an admission that we could not find out.
+ *
+ * This caught EVERY error and returned null, which the caller turns into 401
+ * "Authentication required". A signed-in person whose own files could not be
+ * checked - because the user store was unreachable, not because their session
+ * was bad - was told they were not signed in. They see a broken image and, if
+ * they act on the message at all, they sign in again and it happens again.
+ *
+ * THE SAME DISCRIMINATOR THE tRPC CONTEXT USES, deliberately, rather than a
+ * second rule that could drift from it: `HttpError` is what the authenticator
+ * raises for a genuine authentication failure - no session, a bad token, an
+ * expired one. Anything else is the CHECK failing, which is not a statement
+ * about the caller at all.
+ *
+ * Nothing is granted by this. An unavailable check still returns no user and
+ * still serves no file; it just says 503 instead of 401, which is the code the
+ * rest of this proxy already uses for "the storage layer cannot answer".
+ */
+type StorageAuth =
+  | { user: AuthenticatedUser }
+  | { user: null; unavailable: boolean };
+
+async function authenticateStorageRequest(req: Request): Promise<StorageAuth> {
   try {
-    return await sdk.authenticateRequest(req);
-  } catch {
-    return null;
+    const user = await sdk.authenticateRequest(req);
+    return user ? { user } : { user: null, unavailable: false };
+  } catch (error) {
+    return { user: null, unavailable: !(error instanceof HttpError) };
   }
 }
 
@@ -188,6 +213,25 @@ export async function authorizeStorageKey(key: string, user: AuthenticatedUser |
     return true;
   }
 
+  // Category B2: PORTFOLIO images - a provider's showcase, read by anyone
+  // signed in, for exactly the reasons above.
+  //
+  // THIS BRANCH WAS MISSING, and the consequence was not a boundary: it was a
+  // dead feature. `portfolio.uploadImage` writes `portfolio-images/user-<id>/`,
+  // PortfolioManager renders the returned `/manus-storage/...` URL in an <img>,
+  // and every one of those requests fell through to the closing `return false`
+  // - so a provider uploaded work samples that NOBODY could see, including
+  // themselves. The same omission had already happened once to `avatars/`,
+  // which is why the note above it exists; this is the third image family and
+  // the second time the classifier has been the thing left behind.
+  //
+  // The ownership rule lives on the write side, in
+  // server/_core/ownedUpload.ts, shared with the product catalogue: reading a
+  // portfolio photograph is not sensitive, claiming one as your own work is.
+  if (key.startsWith('portfolio-images/')) {
+    return true;
+  }
+
   // Category D: compliance/registration documents - owner only (+ admin above).
   if (key.startsWith('registration/')) {
     const [row] = await db.select({ userId: registrationDocumentSubmissions.userId })
@@ -295,11 +339,19 @@ export function registerStorageProxy(app: Express) {
       return;
     }
 
-    const user = await authenticateStorageRequest(req);
-    if (!user) {
+    const auth = await authenticateStorageRequest(req);
+    if (!auth.user) {
+      if ('unavailable' in auth && auth.unavailable) {
+        // 503, like the not-configured branch below: the request may well be
+        // perfectly valid and we cannot tell. Saying 401 blames the caller for
+        // our outage.
+        res.status(503).send("File storage is temporarily unavailable");
+        return;
+      }
       res.status(401).send("Authentication required");
       return;
     }
+    const user = auth.user;
 
     const authorized = await authorizeStorageKey(key, user);
     if (!authorized) {

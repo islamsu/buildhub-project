@@ -28,7 +28,7 @@ vi.mock('./db', () => ({ getDb: vi.fn() }));
 
 import { getDb } from './db';
 import { listFeaturedProviders, listSponsoredVendors } from './vendorDirectory';
-import { users, vendorSponsorships, reviews, vendorCategories } from '../drizzle/schema';
+import { users, vendorSponsorships, reviews, vendorCategories, vendorProfiles } from '../drizzle/schema';
 import { stripComments } from './_testing/sourceText';
 
 const read = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8');
@@ -107,9 +107,16 @@ function stubDb(world: {
           if (table === users) {
             return joined ? (world.candidates ?? []) : (world.visible ?? []);
           }
-          // enrichVendorRows: no reputation and no categories seeded. Both are
-          // additive, and neither can change WHICH vendors appear.
-          if (table === reviews || table === vendorCategories) return [];
+          // enrichVendorRows: no reputation, no categories and no business
+          // profiles seeded. All three are additive - they decorate a row -
+          // and none can change WHICH vendors appear, which is what every
+          // assertion in this file is about.
+          //
+          // The stub THROWS on a table it does not know rather than returning
+          // [], which is why adding the business-name read to enrichVendorRows
+          // failed here loudly instead of silently handing the wrong rows to
+          // a query that would have gone on passing.
+          if (table === reviews || table === vendorCategories || table === vendorProfiles) return [];
           throw new Error(`unstubbed table in query: ${String(table)}`);
         };
         const builder: Record<string, unknown> = {

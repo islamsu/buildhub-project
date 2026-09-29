@@ -1,0 +1,10 @@
+PASS  1. SETUP: a homeowner with two projects and nothing spent yet  [owner 537, projects 62/63]
+PASS  2. EMPTY: with no expenses logged the dashboard says zero  [EGP 0]
+PASS  3. PROJECT: the project page reports the expense log exactly  [EGP 2,000 (expected 2000)]
+PASS  4. DASHBOARD: and the dashboard reports the same money, summed over projects  [EGP 2,500 (expected 2500)]
+PASS  5. CONSISTENT: the dashboard total is never LESS than one project inside it  [dashboard 2500 vs project A 2000]
+PASS  6. LIVE: a new expense moves the dashboard figure  [EGP 2,800 (expected 2800)]
+PASS  7. DERIVED: writing the stored column directly does NOT change what is shown  [EGP 2,800 (expected 2800)]
+PASS  8. TRUTHFUL EMPTY: removing every expense returns the figure to zero  [EGP 0 (expected 0)]
+
+8/8 checks passed

@@ -1,0 +1,15 @@
+PASS  1. SETUP: a supplier has a pending bid  [quotation 16]
+PASS  2. the supplier can open their own quotation
+PASS  3. and is offered the control on it  [Withdraw quotation]
+PASS  4. and it is live while the bid is pending  [disabled=false]
+PASS  5. pressing it asks for confirmation rather than acting at once
+PASS  6. and the dialog is about withdrawing, not about disputes  [Withdraw this quotation? |  | This cannot be undone. You can submit a ]
+PASS  7. confirming closes the dialog
+PASS  8. AND THE BID IS WITHDRAWN IN THE DATABASE  [withdrawn]
+PASS  9. with the reason the supplier typed, not an empty one  [Capacity went to another job]
+PASS  10. and the control will not fire twice  [disabled=true]
+PASS  11. and the page says so  [withdrawn]
+PASS  12. POSITIVE: the customer can open the same quotation
+PASS  13. NEGATIVE: and is NOT offered the withdraw control  [panel present: false]
+
+13/13 checks passed

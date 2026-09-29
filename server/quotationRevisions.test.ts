@@ -13,10 +13,21 @@ const ROUTERS = readSourceForAssertions(readFileSync(new URL('./routers.ts', imp
 const SCHEMA = readSourceForAssertions(readFileSync(new URL('../drizzle/schema.ts', import.meta.url), 'utf8'));
 const MIGRATION = readFileSync(new URL('../drizzle/0033_quotation_revisions.sql', import.meta.url), 'utf8');
 
+/**
+ * THE PROCEDURE, AND NOT THE REST OF THE FILE.
+ *
+ * The end anchor was `withdrawRFQ:`, which does not exist in routers.ts - the
+ * procedure after this one is `close`. indexOf returned -1, the slice ran to
+ * the end of an 11,000-line file, and every `not.toContain` in this file was
+ * a statement about the whole router. Both anchors are now checked, so a
+ * rename fails loudly instead of quietly widening the window.
+ */
 function submitBlock(): string {
   const start = ROUTERS.indexOf('submitQuotation: approvedProviderProcedure');
-  const end = ROUTERS.indexOf('withdrawRFQ:', start);
-  return ROUTERS.slice(start, end === -1 ? undefined : end);
+  if (start === -1) throw new Error('submitQuotation not found in routers.ts');
+  const end = ROUTERS.indexOf('\n  close: protectedProcedure', start);
+  if (end === -1) throw new Error('the end anchor after submitQuotation is gone');
+  return ROUTERS.slice(start, end);
 }
 
 describe('quotation revision model', () => {
@@ -164,11 +175,25 @@ describe('de-duplication compares the whole offer', () => {
     expect(lookup).not.toContain('eq(quotations.price');
   });
 
-  it('the CURRENCY is compared against its column default', () => {
-    // The column defaults to EGP, so a bid sent without one reads back as
-    // 'EGP' and never equalled its own input - which made every such
-    // resubmission look like a revision.
-    expect(SUBMIT).toContain("(input.currency ?? 'EGP')");
+  it('the CURRENCY is compared against the RFQ\'s, not against an input', () => {
+    /*
+     * THE DEFECT THIS GUARDED IS NOW IMPOSSIBLE, AND A BIGGER ONE WITH IT.
+     *
+     * It used to read `(input.currency ?? 'EGP')`, because the column
+     * defaulted to EGP and a bid sent without a currency read back as 'EGP'
+     * and never equalled its own input - so every such resubmission looked
+     * like a revision.
+     *
+     * There is no `input.currency` any more. It was `z.literal(
+     * BILLING_CURRENCY)` - the currency of the SUPPLIER'S SUBSCRIPTION, what
+     * they pay BuildHub every month - written onto the bid as though it were
+     * the currency of the work. The quotation currency is the RFQ's, resolved
+     * server-side, so both sides of this comparison are now the same
+     * authoritative value.
+     */
+    expect(SUBMIT).toContain('=== quotationCurrency');
+    expect(SUBMIT, 'the supplier can submit a currency again')
+      .not.toContain('input.currency');
   });
 
   it('and validUntil TO THE SECOND, because MySQL has no milliseconds', () => {

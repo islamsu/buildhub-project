@@ -24,6 +24,11 @@
  * providers to report every three-star rating. Each reason below describes a
  * review that should not have been publishable at all.
  */
+import {
+  CONTENT_MODERATION_ACTIONS, CONTENT_REPORT_STATUSES, CONTENT_REPORT_STATUS_LABELS,
+  type ContentModerationAction, type ContentReportStatus,
+} from './contentModeration';
+
 export const REVIEW_REPORT_REASONS = [
   'abusive',        // insults, harassment, threats
   'off_topic',      // not about the work that was done
@@ -34,9 +39,16 @@ export const REVIEW_REPORT_REASONS = [
 ] as const;
 export type ReviewReportReason = (typeof REVIEW_REPORT_REASONS)[number];
 
-/** Where a report is in the moderation queue. */
-export const REVIEW_REPORT_STATUSES = ['open', 'upheld', 'rejected'] as const;
-export type ReviewReportStatus = (typeof REVIEW_REPORT_STATUSES)[number];
+/**
+ * Where a report is in the moderation queue.
+ *
+ * DRAWN FROM THE SHARED LIFECYCLE, not restated. Product questions now have a
+ * moderation queue too, and two literal copies of these three states is how
+ * "upheld" comes to mean something different in two places. The reasons below
+ * stay review-specific, because they genuinely are.
+ */
+export const REVIEW_REPORT_STATUSES = CONTENT_REPORT_STATUSES;
+export type ReviewReportStatus = ContentReportStatus;
 
 /**
  * ── HIDDEN, NEVER DELETED ─────────────────────────────────────────────────
@@ -53,8 +65,8 @@ export type ReviewReportStatus = (typeof REVIEW_REPORT_STATUSES)[number];
  * A hidden review is excluded from the public list AND from the average, so
  * hiding is a real remedy rather than a cosmetic one.
  */
-export const REVIEW_MODERATION_ACTIONS = ['hide', 'restore'] as const;
-export type ReviewModerationAction = (typeof REVIEW_MODERATION_ACTIONS)[number];
+export const REVIEW_MODERATION_ACTIONS = CONTENT_MODERATION_ACTIONS;
+export type ReviewModerationAction = ContentModerationAction;
 
 /**
  * THE RIGHT OF REPLY, and its limits.
@@ -75,11 +87,9 @@ export const REVIEW_VOCABULARY = {
     spam:           { en: 'Spam or advertising', ar: 'رسائل مزعجة أو إعلانات' },
     other:          { en: 'Something else', ar: 'سبب آخر' },
   },
-  reportStatus: {
-    open:     { en: 'Awaiting review', ar: 'قيد المراجعة' },
-    upheld:   { en: 'Upheld', ar: 'تم قبول البلاغ' },
-    rejected: { en: 'Rejected', ar: 'تم رفض البلاغ' },
-  },
+  // The same words wherever a report is shown. A moderator who works both
+  // queues must not have to learn two vocabularies for one decision.
+  reportStatus: CONTENT_REPORT_STATUS_LABELS,
 } as const;
 
 export function reviewLabel(

@@ -14,6 +14,8 @@
 // copy it. That is the point of hashing it, not an oversight.
 
 import { useState } from 'react';
+import DashboardLayout from '@/components/DashboardLayout';
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import {
@@ -32,14 +34,24 @@ import { ADMIN_ROLES, ADMIN_ROLE_LABELS, ADMIN_PASSWORD_MIN_LENGTH, type AdminRo
 
 export default function AdminAdmins() {
   const { lang, dir } = useLanguage();
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, authUnknown, retryAuth } = useAuth();
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
 
   const t = (en: string, ar: string) => (lang === 'ar' ? ar : en);
 
-  const { data: me } = trpc.admin.me.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const { data: me, isError: meFailed } = trpc.admin.me.useQuery(undefined, { enabled: isAuthenticated, retry: false });
   const canManage = me?.permissions.includes('admins.manage') ?? false;
+  /*
+   * "COULD NOT CHECK" IS NOT "NOT ALLOWED".
+   *
+   * `canManage` is false during an outage, which is correct - it is not a
+   * claim that anyone IS allowed - but the refusal screen below states a
+   * PERMISSIONS VERDICT, and during an outage that verdict is a fabrication.
+   * An administrator who holds the permission was told they do not, which is
+   * the kind of thing that gets a working account reported as broken.
+   */
+  const permissionUnknown = authUnknown || meFailed;
 
   const { data: admins = [], isLoading } = trpc.admin.admins.useQuery(undefined, { enabled: canManage });
 
@@ -130,6 +142,16 @@ export default function AdminAdmins() {
     return <div className="min-h-screen flex items-center justify-center" dir={dir}><Loader2 className="h-6 w-6 animate-spin" /></div>;
   }
 
+  if (permissionUnknown) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-8" dir={dir}>
+        <div className="w-full max-w-md" data-testid="admin-auth-unavailable">
+          <LoadFailed {...loadFailedCopy(lang === 'ar')} onRetry={retryAuth} />
+        </div>
+      </div>
+    );
+  }
+
   // Not a Super Admin - including a perfectly valid Sub-Admin who simply lacks
   // this permission. Says so plainly rather than pretending the page is missing.
   if (!canManage) {
@@ -155,9 +177,23 @@ export default function AdminAdmins() {
   const roleLabel = (role: string | null) =>
     role && role in ADMIN_ROLE_LABELS ? ADMIN_ROLE_LABELS[role as AdminRole][lang === 'ar' ? 'ar' : 'en'] : '—';
 
+  /*
+   * INSIDE THE CONSOLE SHELL, like every other admin destination.
+   *
+   * This page and Product categories were routed straight to a full-screen
+   * layout of their own, so the two entries the sidebar offers for them led
+   * to pages with no sidebar: an administrator arrived and had a single
+   * "Dashboard" button to get back with - not even a link, so it could not be
+   * opened in a new tab. AdminUserDetail already renders inside
+   * DashboardLayout; these two were the outliers, not the design.
+   *
+   * Found by measuring where the navigation sits in each language: eleven
+   * admin surfaces reported navigation and these two reported none at all, in
+   * English as well as Arabic.
+   */
   return (
-    <div className="min-h-screen bg-muted/20 px-4 py-8" dir={dir}>
-      <div className="mx-auto max-w-6xl">
+    <DashboardLayout>
+      <div className="space-y-6" dir={dir}>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <Button variant="ghost" size="sm" className="mb-2 gap-1.5" onClick={() => navigate('/admin')}>
@@ -270,7 +306,6 @@ export default function AdminAdmins() {
             )}
           </CardContent>
         </Card>
-      </div>
 
       {/* ── OUTSTANDING LINKS FOR ONE ADMINISTRATOR ─────────────────────── */}
       <Dialog open={linksFor !== null} onOpenChange={open => !open && setLinksFor(null)}>
@@ -425,5 +460,6 @@ export default function AdminAdmins() {
         </DialogContent>
       </Dialog>
     </div>
+    </DashboardLayout>
   );
 }

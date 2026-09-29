@@ -1,0 +1,16 @@
+PASS  1. SETUP: three real accounts exist  [owner=2273 member=2274]
+PASS  2. and a real project the owner created  [project=134 status=200]
+PASS  3. with the second account a LIVE member of it  [addMember http 200]
+PASS  4. and links a REAL RFQ to it, stored as rfqs.projectId  [rfq=494 projectId=134 http=200 ]
+PASS  5. THE BUYER SEES WHICH PROJECT the request was raised for  [Project: Probe Project 29553335]
+PASS  6. and it is a real link to that project, not a dead label  [/projects/134]
+PASS  7. and following it ARRIVES at the project, rendered  [/projects/134]
+PASS  8. the owner REMOVES them from the project  [removeMember http 200]
+PASS  9. THE NAME IS GONE, and the page says so plainly instead of going blank  [Raised for a project you no longer have access to.]
+PASS  10. and the project NAME appears nowhere on the page — revocation held  [absent]
+PASS  11. THE API AGREES — the boundary is server-side, not a hidden element  [project=null linked=true]
+PASS  12. A SUPPLIER SEES NO PROJECT LINE AT ALL — not even that one exists  [absent]
+PASS  13. and rfq.get refuses them outright — it is the owner's record  [http 404 NOT_FOUND]
+PASS  CLEANUP: every account this probe created is gone  [users=0]
+
+14/14 checks passed

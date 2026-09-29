@@ -85,19 +85,40 @@ describe('A1 - boot configuration is validated (Phase 4B audit)', () => {
 // ── A2: session revocation must fail closed ────────────────────────────────
 
 describe('A2 - session revocation fails CLOSED (Phase 4B audit)', () => {
-  it('REGRESSION: an unreachable database treats the session as revoked', async () => {
+  it('REGRESSION: an unreachable database never re-validates a revoked session', async () => {
     // No DATABASE_URL is configured in the test environment, so getDb() really
     // does return null here - this exercises the outage path for real rather
-    // than through a mock. Before the fix it returned false, so a database blip
-    // silently re-validated every revoked session.
-    await expect(isSessionRevoked('any-jti')).resolves.toBe(true);
+    // than through a mock. Before the original fix it returned false, so a
+    // database blip silently re-validated every revoked session.
+    //
+    // IT NOW THROWS INSTEAD OF RETURNING `true`, AND THAT IS THE SAME
+    // CLOSED-NESS. The property this test defends is that no caller may
+    // proceed as if the session were valid; an exception enforces that at
+    // least as firmly as `true` did - more so, because `true` is a value a
+    // caller can ignore and an exception is not.
+    //
+    // What changed is the SENTENCE it produced. `true` means "this session was
+    // signed out", and the authenticator said exactly that to the browser: an
+    // administrator mid-investigation was told their session had ended and was
+    // sent to a sign-in screen where the same outage made signing in
+    // impossible. Failing closed was right. Claiming a sign-out was not.
+    await expect(isSessionRevoked('any-jti')).rejects.toThrow(/unavailable|cannot be reached/i);
+  });
+
+  it('IT MUST NOT RESOLVE FALSE, WHICH IS THE ACTUAL SECURITY PROPERTY', async () => {
+    // Stated separately and positively, so the rule survives a future change
+    // of mechanism: whatever this does when the store is unreachable, it must
+    // never be the answer "no, that session is fine".
+    await expect(isSessionRevoked('any-jti').then(() => 'resolved', () => 'refused'))
+      .resolves.toBe('refused');
   });
 
   it('the reachable path still answers from the revocation table', () => {
     const source = readSource('./db.ts');
     const fn = source.slice(source.indexOf('export async function isSessionRevoked'), source.indexOf('export async function revokeSession'));
-    // Fail-closed must be the DB-missing branch only - not a blanket `return true`.
-    expect(fn).toContain('if (!db) return true;');
+    // Fail-closed must be the DB-missing branch only - not a blanket refusal
+    // that never consults the table at all.
+    expect(fn).toMatch(/if \(!db\) \{[\s\S]*throw new Error/);
     expect(fn).toContain('revokedSessions.jti');
     expect(fn).toContain('return result.length > 0;');
   });

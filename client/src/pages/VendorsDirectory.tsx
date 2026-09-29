@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { SaveButton } from '@/components/SaveButton';
+import { useSavedIds } from '@/lib/useSavedIds';
 import { useLocation } from 'wouter';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -11,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { rfqCategoryLabel } from '@shared/rfqCategories';
 import { MasterProviderSlot, PlacementBadge, ProviderSpotlight } from '@/components/MasterPlacement';
 import { Search, Star, BadgeCheck, MapPin, Megaphone, Store, ChevronLeft, ChevronRight } from 'lucide-react';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 /**
  * Phase 4B.3: the real, database-backed vendor directory.
@@ -47,6 +50,7 @@ export type VendorsDirectoryProps = {
 
 /** The route component. wouter hands it route props, so it takes none of ours. */
 export default function VendorsDirectory() {
+  usePageTitle();
   return <VendorsDirectoryView />;
 }
 
@@ -83,6 +87,23 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
   const { data: editorialFeatured = [] } = trpc.marketplace.featuredProviders.useQuery({
     category: presetCategory,
   });
+
+  /**
+   * WHICH OF THESE IS ALREADY SAVED - ONE QUERY FOR THE PAGE.
+   *
+   * Across all three strips, because the same provider can appear as an
+   * editorial pick AND organically, and two reads would let the same card
+   * show a filled bookmark in one place and an empty one in the other.
+   *
+   * Not a `saved` flag on the public directory rows: a per-viewer fact
+   * inside a cacheable public response is how a shared cache ends up showing
+   * one buyer another's shortlist.
+   */
+  const allVendorIds = useMemo(
+    () => Array.from(new Set([...vendors, ...featured, ...editorialFeatured].map(v => Number(v.id)))),
+    [vendors, featured, editorialFeatured],
+  );
+  const savedIds = useSavedIds('provider', allVendorIds);
 
   const Back = ar ? ChevronRight : ChevronLeft;
 
@@ -150,36 +171,45 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
           </div>
         )}
 
-        {/* MASTER DISCOVERY, above everything. The scope is whichever category
-            is selected; with no category chosen it is the platform-wide slot,
-            which is what a visitor sees before they narrow to a provider type.
-            Renders nothing at all when no eligible Master is booked. */}
-        <MasterProviderSlot category={category === 'all' ? undefined : category} />
+        {/*
+          FEATURED FIRST, then sponsored, then organic.
 
-        {/* SPOTLIGHT, once a provider type is chosen. Master belongs to root
-            discovery and Spotlight to the chosen type; only one of the two ever
-            renders, because each asks for a different scope. Prime position,
-            capped at three, with the organic list immediately below rather than
-            an advertising wall. */}
-        <ProviderSpotlight category={category === 'all' ? undefined : category} />
+          This block used to sit BELOW the Master and Spotlight slots, which
+          are the placements BuildHub sells. The owner's decision is that
+          editorial Featured is PRIME and must never be pushed below a
+          commercial row: a curated pick is BuildHub vouching for a provider,
+          and a visitor who sees a paid slot first has been shown an
+          advertisement before a recommendation.
 
-        {/* Editorial Featured: platform-curated recognition, distinct from paid
-            sponsorship. Shown before sponsored and organic so the strongest
-            providers are immediately visible. */}
+          Sponsored is not hidden or weakened by this - it keeps its slot, its
+          label and its position above the organic list, immediately below.
+        */}
         {editorialFeatured.length > 0 && (
-          <section className="mb-8" aria-label={t('market.featured')}>
+          <section className="mb-8" aria-label={t('market.featured')} data-testid="vendors-editorial-featured" data-placement-kind="featured">
             <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
               <h2 className="text-sm font-semibold">{t('market.featured')}</h2>
               <p className="text-xs text-muted-foreground">{t('vendorsDir.editorialNote')}</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {editorialFeatured.map(vendor => (
-                <VendorCard key={`editorial-${vendor.id}`} vendor={vendor} lang={lang} t={t} onOpen={id => navigate(`/vendor/${id}`)} />
+                <VendorCard key={`editorial-${vendor.id}`} vendor={vendor} lang={lang} t={t} isSaved={savedIds.has(vendor.id)} onOpen={id => navigate(`/vendor/${id}`)} />
               ))}
             </div>
             <div className="mt-4 h-px bg-border" />
           </section>
         )}
+
+        {/* MASTER DISCOVERY. The scope is whichever category is selected; with
+            none chosen it is the platform-wide slot, which is what a visitor
+            sees before they narrow to a provider type. Renders nothing at all
+            when no eligible Master is booked. */}
+        <MasterProviderSlot category={category === 'all' ? undefined : category} />
+
+        {/* SPOTLIGHT, once a provider type is chosen. Master belongs to root
+            discovery and Spotlight to the chosen type; only one of the two ever
+            renders, because each asks for a different scope. Capped at three,
+            with the organic list below rather than an advertising wall. */}
+        <ProviderSpotlight category={category === 'all' ? undefined : category} />
 
         {/* Sponsored strip (Slice 8). A SEPARATE, labelled section - never a
             reordering of the organic list below, which still ranks by
@@ -193,7 +223,7 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {featured.map(vendor => (
-                <VendorCard key={`featured-${vendor.id}`} vendor={vendor} sponsored lang={lang} t={t} onOpen={id => navigate(`/vendor/${id}`)} />
+                <VendorCard key={`featured-${vendor.id}`} vendor={vendor} sponsored lang={lang} t={t} isSaved={savedIds.has(vendor.id)} onOpen={id => navigate(`/vendor/${id}`)} />
               ))}
             </div>
             <div className="mt-4 h-px bg-border" />
@@ -212,7 +242,7 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
                   <PlacementBadge label={vendor.label} />
                 </div>
               )}
-              <VendorCard vendor={vendor} lang={lang} t={t} onOpen={id => navigate(`/vendor/${id}`)} />
+              <VendorCard vendor={vendor} lang={lang} t={t} isSaved={savedIds.has(vendor.id)} onOpen={id => navigate(`/vendor/${id}`)} />
             </div>
           ))}
         </div>
@@ -240,13 +270,15 @@ type DirectoryVendorCard = {
  * point: a paid slot must look like what it is, not like a better vendor.
  */
 function VendorCard({
-  vendor, sponsored = false, lang, t, onOpen,
+  vendor, sponsored = false, lang, t, onOpen, isSaved,
 }: {
   vendor: DirectoryVendorCard;
   sponsored?: boolean;
   lang: string;
   t: (key: string) => string;
   onOpen: (id: number) => void;
+  /** From the page's ONE batched savedState read, not a per-card query. */
+  isSaved?: boolean;
 }) {
   return (
       <Card
@@ -263,19 +295,45 @@ function VendorCard({
             </Badge>
           </div>
         )}
+        {/*
+          THE BUSINESS LEADS, WHERE THERE IS ONE.
+
+          This card showed `users.name` and nothing else, so a supplier
+          trading as a registered company appeared in a B2B marketplace under
+          the name of whoever opened the account - and a buyer comparing
+          suppliers was reading personal names with no way to tell which of
+          them were businesses at all.
+
+          A provider with no registered business still leads with their own
+          name, which is the honest presentation of an independent
+          professional rather than a gap. The person stays visible underneath
+          when both exist: procurement talks to people.
+        */}
         <div className="flex items-start gap-3">
           <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
-            {(vendor.name ?? '?').charAt(0).toUpperCase()}
+            {((vendor as any).businessName || vendor.name || '?').charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-semibold truncate">{vendor.name}</span>
+            {/* NO WRAP. With `flex-wrap` a long business name pushed the
+                Verified badge onto a second line, which made that one card
+                taller than the others and left the row ragged. The name
+                truncates instead and the badge holds its place, so every
+                card's header is the same height whatever it is called. */}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-semibold truncate" data-testid={`vendor-primary-name-${vendor.id}`}>
+                {(vendor as any).businessName || vendor.name}
+              </span>
               {vendor.verified && (
-                <Badge className="bg-emerald-100 text-emerald-700 border-0 text-xs">
+                <Badge className="shrink-0 bg-emerald-100 text-emerald-700 border-0 text-xs">
                   <BadgeCheck className="w-3 h-3 me-0.5" />{t('common.verified')}
                 </Badge>
               )}
             </div>
+            {(vendor as any).businessName && vendor.name && (
+              <div className="text-xs text-muted-foreground truncate" data-testid={`vendor-contact-name-${vendor.id}`}>
+                {vendor.name}
+              </div>
+            )}
             <div className="text-xs text-muted-foreground capitalize mt-0.5">
               {(vendor.userRole ?? '').replace('_', ' ')}
             </div>
@@ -324,7 +382,13 @@ function VendorCard({
           </div>
         )}
 
-        <div className="mt-3 text-xs text-primary font-medium">{t('vendorsDir.viewProfile')}</div>
+        {/* THE ACTIONS A BUYER TAKES FROM DISCOVERY (§22). Opening the
+            storefront is the card itself; saving is a separate gesture and
+            must not navigate, which is why SaveButton stops the event. */}
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <span className="text-xs text-primary font-medium">{t('vendorsDir.viewProfile')}</span>
+          <SaveButton kind="provider" itemId={vendor.id} saved={isSaved} variant="icon" />
+        </div>
       </Card>
   );
 }

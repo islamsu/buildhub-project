@@ -1,9 +1,13 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'wouter';
 import Navbar from '@/components/Navbar';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { SaveButton } from '@/components/SaveButton';
+import { useSavedIds } from '@/lib/useSavedIds';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
+import ProductQuestionThread from '@/components/ProductQuestionThread';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +17,7 @@ import { ArrowLeft, ArrowRight, CheckCircle2, Package, Pencil, Send, ShoppingCar
 import { toast } from 'sonner';
 import { useRfqBasket } from '@/hooks/useRfqBasket';
 import { getProductVariants } from '@/lib/marketplaceCatalog';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 function parseList(value: string | null | undefined): string[] {
   if (!value) return [];
@@ -34,19 +39,34 @@ export default function ProductDetail() {
   // hardcoded boundary where ids 1 to 10 were fictional products and anything
   // above was real. A real product that happened to be assigned a low id would
   // have rendered as whichever invented item shared its number.
-  const { data: storedProduct, isLoading } = trpc.marketplace.get.useQuery(
+  /*
+   * "Product not found" IS A CLAIM ABOUT THE CATALOGUE, on a public page.
+   *
+   * A failed request left `product` undefined and fell into the same arm as a
+   * genuinely absent product - so an outage told a buyer that a listing they
+   * had been sent a link to does not exist.
+   */
+  const { data: storedProduct, isLoading, isError: productFailed, refetch: refetchProduct } = trpc.marketplace.get.useQuery(
     { id: productId },
     { enabled: Number.isFinite(productId) && productId > 0, retry: false },
   );
   const product = storedProduct;
+  /** One id, through the same batched reader the grids use - one rule. */
+  const savedIds = useSavedIds('product', useMemo(() => (product ? [Number(product.id)] : []), [product]));
   const isOwner = Boolean(user && product?.supplier && (user as { id?: number }).id === product.supplier.id);
   const { data: questions = [], refetch: refetchQuestions } = trpc.marketplace.questions.useQuery({ productId }, { enabled: Number.isFinite(productId) && productId > 0 });
   const askQuestion = trpc.marketplace.askQuestion.useMutation({ onSuccess: () => { toast.success(lang === 'ar' ? 'تم إرسال السؤال للمورد' : 'Question sent to supplier'); setQuestion(''); refetchQuestions(); }, onError: error => toast.error(error.message) });
+  /*
+   * The tab says which product this is. Null while the query is in flight, so
+   * the route's generic title holds until there is a real name to show.
+   */
+  usePageTitle(product ? ((lang === 'ar' && product.nameAr) ? product.nameAr : product.name) : null);
   const images = useMemo(() => parseList(product?.images), [product?.images]);
   const specs = useMemo(() => parseList(product?.specs), [product?.specs]);
   const BackIcon = lang === 'ar' ? ArrowRight : ArrowLeft;
 
   if (isLoading) return <div className="min-h-screen bg-background"><Navbar /><div className="container pt-32 text-center text-muted-foreground">{lang === 'ar' ? 'جاري تحميل المنتج…' : 'Loading product…'}</div></div>;
+  if (productFailed) return <div className="min-h-screen bg-background"><Navbar /><div className="container pt-32"><LoadFailed {...loadFailedCopy(lang === 'ar')} onRetry={() => void refetchProduct()} /></div></div>;
   if (!product) return <div className="min-h-screen bg-background"><Navbar /><div className="container pt-32 text-center text-muted-foreground">{lang === 'ar' ? 'المنتج غير موجود' : 'Product not found'}</div></div>;
 
   const name = lang === 'ar' && product.nameAr ? product.nameAr : product.name;
@@ -98,10 +118,19 @@ export default function ProductDetail() {
       unit: product.unit ?? null,
       specifications: null,
       unitPrice: product.price != null ? Number(product.price) : null,
+      // Captured with the price, so the basket subtotal can name it.
+      currency: product.currency ?? null,
     });
     toast.success(lang === 'ar' ? `تمت إضافة المنتج (${selectedPurchaseUnit}) إلى قائمة طلب الأسعار` : `Product (${selectedPurchaseUnit}) added to RFQ list`);
   }}
 ><ShoppingCart className="h-4 w-4" />{lang === 'ar' ? 'أضف إلى طلب الأسعار' : 'Add to RFQ list'}</Button>
+{/* SAVE, ON THE DETAIL PAGE TOO. A buyer who opened a product to read its
+    specification is exactly the one deciding whether it is worth a second
+    look; sending them back to the grid to save it would be the "powerful
+    feature the user cannot find" §79 forbids. */}
+<div className="mt-2">
+  <SaveButton kind="product" itemId={product.id} saved={savedIds.has(Number(product.id))} />
+</div>
 {basket.count > 0 && (
   // ?basket=1 so the destination OPENS the list this button names. It linked
   // to a bare /rfq, where the basket sits inside a dialog that starts closed -
@@ -135,7 +164,8 @@ export default function ProductDetail() {
   </Link>
 )}</div>
         </div>
-        <div className="mt-8 grid gap-6 lg:grid-cols-2"><Card><CardHeader><CardTitle>{lang === 'ar' ? 'المواصفات' : 'Specifications'}</CardTitle></CardHeader><CardContent>{specs.length ? <div className="space-y-2">{specs.map(spec => <div key={spec} className="flex items-start gap-2 border-b py-2 text-sm last:border-0"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />{spec}</div>)}</div> : <p className="text-sm text-muted-foreground">{lang === 'ar' ? 'لم يضف المورد مواصفات لهذا المنتج بعد.' : 'The supplier has not added specifications yet.'}</p>}</CardContent></Card><Card><CardHeader><CardTitle>{lang === 'ar' ? 'أسئلة حول المنتج' : 'Product Q&A'}</CardTitle></CardHeader><CardContent><Textarea rows={4} placeholder={lang === 'ar' ? 'اكتب سؤالك للمورد…' : 'Ask the supplier a question…'} value={question} onChange={event => setQuestion(event.target.value)} /><Button className="mt-3 gap-2" onClick={() => { if (!question.trim()) return; askQuestion.mutate({ productId, question: question.trim() }); }} disabled={!question.trim() || askQuestion.isPending}><Send className="h-4 w-4" />{askQuestion.isPending ? (lang === 'ar' ? 'جاري الإرسال…' : 'Sending…') : (lang === 'ar' ? 'إرسال السؤال' : 'Send question')}</Button>{questions.length > 0 && <div className="mt-5 space-y-3">{questions.map(item => <div key={item.id} className="rounded-lg bg-muted/40 p-3"><p className="text-sm font-medium">{item.question}</p>{item.answer && <p className="mt-2 border-s-2 border-primary ps-3 text-sm text-muted-foreground">{item.answer}</p>}</div>)}</div>}</CardContent></Card></div>
+        <div className="mt-8 grid gap-6 lg:grid-cols-2"><Card><CardHeader><CardTitle>{lang === 'ar' ? 'المواصفات' : 'Specifications'}</CardTitle></CardHeader><CardContent>{specs.length ? <div className="space-y-2">{specs.map(spec => <div key={spec} className="flex items-start gap-2 border-b py-2 text-sm last:border-0"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />{spec}</div>)}</div> : <p className="text-sm text-muted-foreground">{lang === 'ar' ? 'لم يضف المورد مواصفات لهذا المنتج بعد.' : 'The supplier has not added specifications yet.'}</p>}</CardContent></Card><Card><CardHeader><CardTitle>{lang === 'ar' ? 'أسئلة حول المنتج' : 'Product Q&A'}</CardTitle></CardHeader><CardContent><Textarea rows={4} placeholder={lang === 'ar' ? 'اكتب سؤالك للمورد…' : 'Ask the supplier a question…'} value={question} onChange={event => setQuestion(event.target.value)} /><Button className="mt-3 gap-2" onClick={() => { if (!question.trim()) return; askQuestion.mutate({ productId, question: question.trim() }); }} disabled={!question.trim() || askQuestion.isPending}><Send className="h-4 w-4" />{askQuestion.isPending ? (lang === 'ar' ? 'جاري الإرسال…' : 'Sending…') : (lang === 'ar' ? 'إرسال السؤال' : 'Send question')}</Button>{/* THE THREAD, WITH SOMEWHERE TO COMPLAIN. It used to be a read-only list: a question carrying abuse or a third party's phone number was published here and nobody could act on it. ProductQuestionThread carries the report controls, the supplier's right to correct their own answer, and the "Edited" marker that keeps a correction from being a quiet rewrite. */}
+<ProductQuestionThread questions={questions as any} productId={productId} isSupplier={isOwner} onChanged={() => { void refetchQuestions(); }} /></CardContent></Card></div>
       </main>
     </div>
   );

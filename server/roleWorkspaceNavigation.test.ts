@@ -147,11 +147,29 @@ describe('the workspace section registry', () => {
     expect(hasSection('contractor', 'role-rfqs')).toBe(false);
   });
 
-  it('the project manager has a queue rather than a second projects entry', () => {
-    // Project Queue and Projects both pointed at role-projects: two labels,
-    // one destination, and one of them therefore always lied.
+  it('the project manager has TWO project sections, with two real destinations', () => {
+    /*
+     * ORIGINALLY THIS ASSERTED `role-projects` WAS ABSENT. Project Queue and
+     * Projects both pointed at role-projects: two labels, one destination, and
+     * one of them therefore always lied, so dropping the second entry was the
+     * fix at the time.
+     *
+     * The queue then turned out to be lying in a second way. It was fed by
+     * `projects.directory`, a lead directory with no membership filter, so one
+     * section mixed the projects a manager RUNS with opportunities they have no
+     * access to - and rendered both as tiles that did nothing when clicked.
+     *
+     * Those are two different things with two different destinations, so the
+     * manager now has both sections: `role-queue` is Managed Projects and
+     * `role-projects` is Project Opportunities. What the original test was
+     * really protecting - no two menu entries sharing one destination - is
+     * asserted for every role in "no two workspace entries share a
+     * destination" below, which is where it belongs.
+     */
     expect(hasSection('project_manager', 'role-queue')).toBe(true);
-    expect(hasSection('project_manager', 'role-projects')).toBe(false);
+    expect(hasSection('project_manager', 'role-projects')).toBe(true);
+    expect(workspaceHref('project_manager', 'role-queue'))
+      .not.toBe(workspaceHref('project_manager', 'role-projects'));
   });
 });
 
@@ -243,5 +261,95 @@ describe('the workspace page', () => {
   it('every section id in the source is a registered one', () => {
     const ids = [...workspace.matchAll(/id="(role-[a-z]+)"/g)].map(m => m[1]);
     for (const id of ids) expect(SECTION_IDS as readonly string[]).toContain(id);
+  });
+});
+
+/*
+ * ── A SHORTCUT THAT LANDS SOMEWHERE ELSE IS THE SAME DEFECT AS ONE THAT
+ *    LANDS NOWHERE ─────────────────────────────────────────────────────────
+ *
+ * RolePlatform's own comment says exactly that, about a "Documents" shortcut
+ * fixed a pass ago. Two more survived beside it, because the checks above
+ * measure ROLE_SECTIONS - the registry - and the shortcut array calls
+ * goToSection directly, so a shortcut naming a section its role does not
+ * render was invisible to every test in this file.
+ *
+ *   PROJECT MANAGER  "Team" navigated to /messages, in the sidebar AND in the
+ *             shortcut row. Team structure is an OPEN OWNER DECISION and
+ *             nothing is built - so the word promised a feature, and the one
+ *             role with no Messages entry was the one whose Messages entry was
+ *             wearing another name.
+ *
+ * I ALSO REPORTED A SUPPLIER DEFECT HERE THAT WAS NOT ONE. Its "Projects"
+ * shortcut scrolls to id="role-projects", and a grep that landed on
+ * HomeownerWorkspace made it look as though only the homeowner rendered that
+ * id - SupplierWorkspace renders it too, and the registry is right. The
+ * shortcut was removed and then restored. The rule below is what should have
+ * answered the question in the first place, and it answers it for every role
+ * rather than for the one I happened to be reading.
+ */
+describe('every role shortcut goes where its label says', () => {
+  /**
+   * EVERY per-role array in the page, concatenated.
+   *
+   * There is more than one: the stat TILES carry a `section:` that scrolls,
+   * and the SHORTCUTS call goToSection. Both are destinations, and the first
+   * version of this helper took only the first array it found - which is the
+   * tiles - so the shortcut it existed to check was never read.
+   */
+  function roleArrays(role: string): string {
+    const marker = `role === '${role}' ? [`;
+    const parts: string[] = [];
+    let at = workspace.indexOf(marker);
+    while (at !== -1) {
+      const end = workspace.indexOf('] :', at);
+      parts.push(workspace.slice(at, end === -1 ? at + 1500 : end));
+      at = workspace.indexOf(marker, at + marker.length);
+    }
+    return parts.join('\n');
+  }
+
+  it('the slicer finds BOTH arrays for a role', () => {
+    // POSITIVE CONTROL - an empty or partial slice passes everything below.
+    for (const role of ['homeowner', 'supplier', 'project_manager']) {
+      expect(roleArrays(role).length, role).toBeGreaterThan(200);
+    }
+    const supplier = roleArrays('supplier');
+    expect(supplier, 'the shortcut array was not read').toContain("navigate('/products/new')");
+    expect(supplier, 'the tile array was not read').toContain("section: 'role-catalogue'");
+  });
+
+  it.each(WORKSPACE_ROLES)('%s: every scroll destination is a section THAT role renders', role => {
+    const body = roleArrays(role);
+    if (!body) return;
+    const targets = [
+      ...[...body.matchAll(/goToSection\('(role-[a-z]+)'\)/g)].map(m => m[1]),
+      ...[...body.matchAll(/section: '(role-[a-z]+)'/g)].map(m => m[1]),
+    ];
+    expect(targets.length, `${role} offers no scroll destination at all`).toBeGreaterThan(0);
+    for (const target of targets) {
+      expect(
+        ROLE_SECTIONS[role] as readonly string[],
+        `${role}'s shortcut scrolls to ${target}, which ${role} does not render`,
+      ).toContain(target);
+    }
+  });
+
+  it('NO SHORTCUT NAMES A FEATURE THAT DOES NOT EXIST', () => {
+    // Team / organization structure is an open owner decision. Until it is
+    // made, nothing may be labelled as it - a label is not the place to
+    // prototype an unbuilt feature.
+    expect(workspace, 'a shortcut is labelled Team again').not.toContain("t('platform.team')");
+    const layout = readFileSync(new URL('../client/src/components/DashboardLayout.tsx', import.meta.url), 'utf8');
+    expect(layout, 'a menu entry is labelled Team again').not.toContain("labelKey: 'platform.team'");
+  });
+
+  it('and the project manager can find their messages under that name', () => {
+    // The role that had no Messages entry was the one whose Messages entry was
+    // disguised. Every other role names it plainly; so does this one now.
+    const layout = readFileSync(new URL('../client/src/components/DashboardLayout.tsx', import.meta.url), 'utf8');
+    const pm = layout.slice(layout.indexOf('project_manager: ['), layout.indexOf('};', layout.indexOf('project_manager: [')));
+    expect(pm.length).toBeGreaterThan(100);
+    expect(pm).toContain("labelKey: 'dash.messages', path: '/messages'");
   });
 });

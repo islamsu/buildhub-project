@@ -27,9 +27,32 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Search, AlertTriangle, X } from 'lucide-react';
+import { accountAuditActionLabel } from '@shared/accountAuditLabels';
+
+/**
+ * THE EVENT'S NAME, NOT ITS IDENTIFIER.
+ *
+ * This table rendered `row.action` raw, so an administrator read
+ * `admin_password_reset_requested` in a badge and the filter dropdown offered
+ * the same snake_case as its options - raw enums and database terminology in
+ * user-facing text (§55, §72), in English regardless of the reader's language
+ * (§67). Found by the visual-QA sweep, which reported `signed_in` as a raw
+ * token on /admin/analytics.
+ *
+ * An UNLABELLED action falls back to the identifier deliberately and visibly:
+ * showing nothing would hide an event from an audit trail, which is worse
+ * than showing it unpolished - and `accountAuditLabels.test.ts` fails if a
+ * new action ships without a label, so the fallback should never be reached.
+ */
+function useActionLabel() {
+  const { lang } = useLanguage();
+  return (action: string) =>
+    accountAuditActionLabel(action, lang === 'ar' ? 'ar' : 'en') ?? action;
+}
 
 export default function AdminRfqInvestigation() {
   const { lang } = useLanguage();
+  const actionLabel = useActionLabel();
   const ar = lang === 'ar';
   const [searchText, setSearchText] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -252,7 +275,7 @@ export default function AdminRfqInvestigation() {
                 ? <Empty ar={ar} />
                 : data.audit.map(event => (
                   <div key={event.id} className="border-t p-2 text-sm" data-testid="investigation-audit-row">
-                    <span className="font-medium">{event.action}</span>
+                    <span className="font-medium">{actionLabel(event.action)}</span>
                     <span className="text-muted-foreground"> · {event.subjectType} #{event.subjectId} · {partyName(event.actorId)} · {when(event.createdAt)}</span>
                     {event.detail && <span className="text-muted-foreground"> · {event.detail}</span>}
                   </div>

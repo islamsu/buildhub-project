@@ -1,0 +1,28 @@
+BUILD  9e5faee (development) built 2026-09-22T09:56:39.195Z  http://127.0.0.1:5401
+PASS  1. SIGNUP: Supplier is one of the roles a visitor can choose
+PASS  2. SIGNUP: the business can give the details the form asks for
+PASS  3. SIGNUP: the account exists afterwards  [user 855]
+PASS  4. SIGNUP: created as an UNVERIFIED supplier awaiting registration - not approved by signing up  [role supplier, onboarding not_started, verified 0]
+PASS  5. ONBOARDING: the supplier is told exactly which documents are required  [Registration compliance | Not started | Legal document profile |  | Submit your business or professional documents for BuildHub review before professional tools are activated. |  | Required documents complete |  | 0%]
+PASS  6. ONBOARDING: and their status is in words, never a raw database enum  [no raw enum]
+PASS  7. SELF-VERIFY: a supplier cannot mark themselves verified  [FORBIDDEN FORBIDDEN]
+PASS  8. SELF-VERIFY: nor approve their own registration document  [FORBIDDEN]
+PASS  9. PUBLIC: an unapproved supplier does not carry a public Verified badge  [not in the public directory yet]
+PASS  10. STORAGE: with object storage unconfigured the upload REFUSES and stores no orphan row  [SERVICE_UNAVAILABLE · 0 rows]
+SKIP  11. STORAGE: a real document upload end to end  [object storage is not configured in this environment - infrastructure block, not a code gap]
+PASS  12. ATTENTION: a registration awaiting a decision shows up in the admin count  [1 waiting — "professional registrations awaiting a decision"]
+PASS  13. ATTENTION: and the console SHOWS it - the count is rendered, not computed into a void  [1 — professional registrations awaiting a decision]
+PASS  14. IA: Professional Registrations sits immediately after User Management  [users at 1, registrations at 2]
+PASS  15. IA: and Name Changes is NOT a top-level destination - it lives inside User Management  [absent, correctly]
+PASS  16. QUEUE: the badged entry opens the registrations queue  [/admin/registrations]
+PASS  17. QUEUE: and the applicant is in it, by BUSINESS NAME rather than an id
+PASS  18. DECISION: the administrator can approve each required document  [ok, ok, ok, ok]
+PASS  19. DECISION: approving every required document approves the SUPPLIER  [onboarding approved, verified 1]
+PASS  20. AUDIT: every decision is recorded against the applicant AND the administrator  [4 review events]
+PASS  21. OUTCOME: the supplier is notified of the decision  [4 notification(s)]
+PASS  22. OUTCOME: and their own screen says so, in words  [Registration compliance | Approved | Legal document profile |  | Submit your business or professional documents for BuildHub review before professional tools are activated. |  | Required docum]
+PASS  23. ELIGIBLE: an APPROVED supplier sees the open request in their opportunity feed  [1 in feed]
+PASS  24. ELIGIBLE: while an UNAPPROVED supplier sees nothing - APPROVAL is what changed  [0 rows for the unapproved account]
+
+BUILD 9e5faee · development · 1440x900 · en
+23/23 checks passed

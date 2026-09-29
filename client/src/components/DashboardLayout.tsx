@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -21,15 +22,16 @@ import {
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { attentionMeaning } from "@shared/adminAttention";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags, Megaphone, ShieldCheck, ShieldQuestion, LifeBuoy, Flag, FileSearch } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, PanelRight, Users, UserRound, UsersRound, FolderOpen, FolderKanban, ShoppingBag, FileText, MessageSquare, Bot, Settings, BarChart3, Shield, Building2, Package, BriefcaseBusiness, ClipboardList, PenTool, Truck, KanbanSquare, CreditCard, Activity, Inbox, Tags, Megaphone, ShieldCheck, ShieldQuestion, LifeBuoy, Flag, FileSearch } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import LanguageToggle from "./LanguageToggle";
 import { workspaceHref, type SectionId, type WorkspaceRole } from "@shared/roleWorkspaceSections";
-import { adminMenuFor } from "@/lib/adminNavigation";
+import { ADMIN_ATTENTION_QUEUE, adminMenuFor } from "@/lib/adminNavigation";
 import { useHashSection, revealSection } from "@/hooks/useSectionAnchor";
 
 /**
@@ -54,6 +56,8 @@ type MenuItem = {
   labelKey: string;
   path: string;
   section?: SectionId;
+  /** The admin queue whose waiting count this entry shows, if it shows one. */
+  attentionQueue?: string;
 };
 
 const COMPLIANCE_MENU_ITEM = { icon: Shield, labelKey: 'platform.compliance', path: '/compliance' } as const;
@@ -114,9 +118,13 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     workspaceItem('contractor', ClipboardList, 'platform.pipeline', 'role-pipeline'),
     workspaceItem('contractor', FileText, 'platform.my_quotations', 'role-quotations'),
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
-    workspaceItem('contractor', FolderOpen, 'platform.projects', 'role-projects'),
+    workspaceItem('contractor', FolderOpen, 'platform.project_opportunities', 'role-projects'),
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('contractor', BarChart3, 'platform.performance', 'role-performance'),
+    // §89 item 16: the one destination that answers "how is my business
+    // being promoted". Beside Performance because the two are read
+    // together, and a page no supplier can find is not a capability.
+    { icon: Megaphone, labelKey: 'nav.marketing', path: '/marketing' },
     DISPUTES_MENU_ITEM,
     SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
@@ -126,10 +134,14 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     COMPLIANCE_MENU_ITEM,
     workspaceItem('engineer', PenTool, 'platform.documents', 'role-documents'),
     workspaceItem('engineer', FileText, 'platform.my_quotations', 'role-quotations'),
-    workspaceItem('engineer', BriefcaseBusiness, 'platform.project_queue', 'role-projects'),
+    workspaceItem('engineer', BriefcaseBusiness, 'platform.project_opportunities', 'role-projects'),
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('engineer', BarChart3, 'platform.performance', 'role-performance'),
+    // §89 item 16: the one destination that answers "how is my business
+    // being promoted". Beside Performance because the two are read
+    // together, and a page no supplier can find is not a capability.
+    { icon: Megaphone, labelKey: 'nav.marketing', path: '/marketing' },
     DISPUTES_MENU_ITEM,
     SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
@@ -139,10 +151,14 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     COMPLIANCE_MENU_ITEM,
     workspaceItem('architect', PenTool, 'platform.portfolio', 'role-portfolio'),
     workspaceItem('architect', FileText, 'platform.my_quotations', 'role-quotations'),
-    workspaceItem('architect', FolderOpen, 'platform.projects', 'role-projects'),
+    workspaceItem('architect', FolderOpen, 'platform.project_opportunities', 'role-projects'),
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
     { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('architect', BarChart3, 'platform.performance', 'role-performance'),
+    // §89 item 16: the one destination that answers "how is my business
+    // being promoted". Beside Performance because the two are read
+    // together, and a page no supplier can find is not a capability.
+    { icon: Megaphone, labelKey: 'nav.marketing', path: '/marketing' },
     DISPUTES_MENU_ITEM,
     SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
@@ -165,6 +181,10 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
     { icon: Inbox, labelKey: 'platform.enquiries', path: '/enquiries' },
     { icon: Tags, labelKey: 'settings.categories', path: '/service-categories' },
     workspaceItem('supplier', BarChart3, 'platform.performance', 'role-performance'),
+    // §89 item 16: the one destination that answers "how is my business
+    // being promoted". Beside Performance because the two are read
+    // together, and a page no supplier can find is not a capability.
+    { icon: Megaphone, labelKey: 'nav.marketing', path: '/marketing' },
     DISPUTES_MENU_ITEM,
     SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
@@ -173,10 +193,27 @@ const ROLE_MENU_KEYS: Record<WorkspaceRole, MenuItem[]> = {
   project_manager: [
     workspaceItem('project_manager', LayoutDashboard, 'dash.overview', 'role-overview'),
     COMPLIANCE_MENU_ITEM,
-    workspaceItem('project_manager', KanbanSquare, 'platform.project_queue', 'role-queue'),
+    workspaceItem('project_manager', KanbanSquare, 'platform.managed_projects', 'role-queue'),
+    workspaceItem('project_manager', BriefcaseBusiness, 'platform.project_opportunities', 'role-projects'),
     { icon: FileText, labelKey: 'provider.open_rfqs', path: '/rfq' },
-    { icon: Users, labelKey: 'platform.team', path: '/messages' },
+    /*
+     * IT SAYS MESSAGES BECAUSE IT GOES TO MESSAGES.
+     *
+     * This read "Team" and navigated to /messages - a destination labelled as
+     * a feature BuildHub does not have. Team / organization structure is an
+     * OPEN OWNER DECISION (todo.md), so there is nothing behind the word; a
+     * project manager clicking it arrived at their inbox, and the one role
+     * that had no Messages entry at all was the one whose Messages entry was
+     * disguised as something else.
+     *
+     * The label is not the place to prototype an unbuilt feature.
+     */
+    { icon: MessageSquare, labelKey: 'dash.messages', path: '/messages' },
     workspaceItem('project_manager', BarChart3, 'platform.performance', 'role-performance'),
+    // §89 item 16: the one destination that answers "how is my business
+    // being promoted". Beside Performance because the two are read
+    // together, and a page no supplier can find is not a capability.
+    { icon: Megaphone, labelKey: 'nav.marketing', path: '/marketing' },
     DISPUTES_MENU_ITEM,
     SUPPORT_MENU_ITEM,
     SETTINGS_MENU_ITEM,
@@ -212,12 +249,100 @@ const ADMIN_ICONS: Record<string, typeof LayoutDashboard> = {
   '/admin/settings': Settings,
 };
 
+/**
+ * WHICH SIDEBAR ENTRY CARRIES WHICH QUEUE'S COUNT.
+ *
+ * Only queues with a genuine pending-action state appear here. A sidebar
+ * where everything is decorated tells you nothing, so Categories, Placements,
+ * Billing, Analytics and Operations deliberately carry no badge - none of
+ * them has a "waiting for you" state that is true rather than merely
+ * non-empty.
+ */
 const adminMenuItems = (permissions: readonly string[]): MenuItem[] =>
   adminMenuFor(permissions).map(entry => ({
     icon: ADMIN_ICONS[entry.path] ?? LayoutDashboard,
     labelKey: entry.labelKey,
     path: entry.path,
+    attentionQueue: ADMIN_ATTENTION_QUEUE[entry.path],
   }));
+
+/**
+ * THE COUNT BESIDE A QUEUE, or an honest mark that it could not be read.
+ *
+ * Three states, and the third is the point:
+ *
+ *   a number   work is waiting, and how much
+ *   nothing    the queue is genuinely clear
+ *   "?"        the count could not be loaded
+ *
+ * Without the third, a failed query renders as no badge, which is
+ * indistinguishable from "nothing is waiting" - and an administrator acts on
+ * that by not looking. The title attribute carries what the number MEANS,
+ * taken from the server rather than restated here, so the badge and the queue
+ * it opens cannot come to describe different things.
+ */
+function AttentionBadge({ queue, attention }: {
+  queue?: string;
+  attention: { data?: Record<string, { count: number; meaning: string }> | undefined; isError: boolean };
+}) {
+  const { lang } = useLanguage();
+  if (!queue) return null;
+  if (attention.isError) {
+    return (
+      <span
+        data-testid={`attention-${queue}`}
+        data-attention-state="unknown"
+        title={lang === 'ar' ? 'تعذّر تحميل هذا العدد' : 'This count could not be loaded'}
+        className="ms-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-dashed px-1.5 text-[11px] font-medium text-muted-foreground"
+      >?</span>
+    );
+  }
+  const entry = attention.data?.[queue];
+  if (!entry || entry.count <= 0) return null;
+  /*
+   * THE TOOLTIP IS IN THE READER'S LANGUAGE, not the server's.
+   *
+   * The server ships `entry.meaning` as English, and this tooltip is the ONLY
+   * explanation of what the badge number counts - so on an Arabic Admin page
+   * the one piece of the badge a reader needed was in a language they may not
+   * have (§67). Invisible to a sighted English reader, and invisible to any
+   * test that reads visible text.
+   */
+  return (
+    <span
+      data-testid={`attention-${queue}`}
+      data-attention-state="waiting"
+      data-attention-count={entry.count}
+      title={attentionMeaning(queue, lang === 'ar' ? 'ar' : 'en')}
+      className="ms-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground"
+    >{entry.count > 99 ? '99+' : entry.count}</span>
+  );
+}
+
+/**
+ * UNREAD NOTIFICATIONS, BESIDE THE ENTRY THAT OPENS THEM.
+ *
+ * Deliberately quieter than AttentionBadge and deliberately NOT a "?" on
+ * error. The admin queues are shared operational work and a count that
+ * failed to load has to say so, because an administrator acts on its absence.
+ * This is one person's own unread mail: a momentary blank while a query
+ * retries is ordinary, and decorating it with an error mark would train
+ * people to ignore the one place a mark means something.
+ */
+function UnreadBadge({ show, unread }: {
+  show: boolean;
+  unread: { data?: { count: number } | undefined };
+}) {
+  const count = unread.data?.count ?? 0;
+  if (!show || count <= 0) return null;
+  return (
+    <span
+      data-testid="nav-unread-notifications"
+      data-unread-count={count}
+      className="ms-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold text-destructive-foreground"
+    >{count > 99 ? '99+' : count}</span>
+  );
+}
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
@@ -233,7 +358,7 @@ export default function DashboardLayout({
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
-  const { loading, user } = useAuth();
+  const { loading, user, authUnknown, retryAuth } = useAuth();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
@@ -243,7 +368,33 @@ export default function DashboardLayout({
     return <DashboardLayoutSkeleton />
   }
 
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+
+  /*
+   * EVERY SIGNED-IN SCREEN IN THE PRODUCT PASSES THROUGH HERE, so this is the
+   * single place a session outage decided to say "Sign In".
+   *
+   * `!user` was being read as "this person is not signed in". It is also true
+   * when the session could not be CHECKED, and the two need different words:
+   * an administrator mid-investigation was shown a sign-in screen during a
+   * database outage, and the button on it led somewhere that could not sign
+   * them in either, because the same outage was underneath both.
+   *
+   * NOTHING IS GRANTED HERE. The person is still not authenticated and every
+   * protected procedure still refuses them server-side; they are simply told
+   * the truth about why the screen is empty, and offered the one action that
+   * can help.
+   */
+  if (authUnknown) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-8">
+        <div className="w-full max-w-md">
+          <LoadFailed {...loadFailedCopy(lang === 'ar')} onRetry={retryAuth} />
+        </div>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -293,7 +444,23 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
-  const { t } = useLanguage();
+  const { t, dir, lang } = useLanguage();
+  /**
+   * WHICH EDGE THE NAVIGATION LIVES ON.
+   *
+   * The Sidebar primitive has always taken a side and always defaulted to the
+   * left, and nothing passed one - so the Arabic console was an RTL page with
+   * its navigation still pinned to the left edge. Every word had been
+   * translated and the layout had not moved at all, which is the difference
+   * between a supported interface and mirrored English. Measured rather than
+   * eyeballed: the mean horizontal centre of the navigation entries was 0.10
+   * of the screen in BOTH languages, across eleven admin surfaces.
+   *
+   * The primitive already handles the rest - it pins to right-0 and moves its
+   * border to the inline edge that faces the content - so this is the prop it
+   * was waiting for, not a second layout.
+   */
+  const rtl = dir === 'rtl';
   /**
    * The effective plan, from the billing system - never the role, never a
    * constant. `billing.mySubscription` is the same server-resolved state the
@@ -332,6 +499,64 @@ function DashboardLayoutContent({
    */
   const isAdminViewer = user?.role === 'admin';
   const { data: adminMe } = trpc.admin.me.useQuery(undefined, { enabled: isAdminViewer, retry: false });
+  /*
+   * WHAT IS WAITING, for the badges beside the admin queues.
+   *
+   * Fetched only for administrators, so an ordinary role never calls a
+   * procedure it cannot use. Refetched on an interval because an operations
+   * console left open all afternoon should not keep showing this morning's
+   * count.
+   *
+   * AN ERROR IS NOT A ZERO - see AttentionBadge. A console that quietly shows
+   * no badges when the query failed is telling an administrator every queue
+   * is clear, which is the one thing it must never say untruthfully.
+   */
+  const attention = trpc.admin.attention.useQuery(undefined, {
+    enabled: isAdminViewer,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+  /*
+   * UNREAD NOTIFICATIONS, FOR EVERY ROLE.
+   *
+   * This layout is where a supplier, a contractor, an engineer and a project
+   * manager all WORK, and it carried no notification indicator at all - the
+   * bell lives in the marketing/marketplace Navbar, which a person inside
+   * their workspace never sees. A supplier whose quotation had just been
+   * accepted had nothing on screen to tell them. Found by walking the whole
+   * journey rather than by testing the capability
+   * (evidence/zg-journey-homeowner.mjs).
+   *
+   * The count sits on the Messages entry, which is the destination that
+   * holds notifications, so the badge and the page it opens are the same
+   * thing. Refetched on an interval for the same reason the admin counts
+   * are: a workspace left open all afternoon should not show this morning's
+   * state.
+   */
+  const unreadNotifications = trpc.notifications.unreadCount.useQuery(undefined, {
+    enabled: !!user,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+  const unreadMessages = trpc.messages.unreadCount.useQuery(undefined, {
+    enabled: !!user,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+  /*
+   * BOTH, because the entry is one destination holding both. A badge that
+   * counted only notifications would send somebody to a page that opens on
+   * conversations; one that counted only messages would hide the notice
+   * telling a supplier they had won the job. The page opens on whichever tab
+   * has the unread thing, so the number and the landing agree.
+   */
+  const unread = {
+    data: (unreadNotifications.data || unreadMessages.data)
+      ? { count: (unreadNotifications.data?.count ?? 0) + (unreadMessages.data?.count ?? 0) }
+      : undefined,
+  };
   const menuKeys = isAdminViewer
     ? adminMenuItems(adminMe?.permissions ?? [])
     : ROLE_MENU_KEYS[userRole as keyof typeof ROLE_MENU_KEYS] ?? HOMEOWNER_MENU_KEYS;
@@ -414,8 +639,12 @@ function DashboardLayoutContent({
     <>
       <div className="relative" ref={sidebarRef}>
         <Sidebar
+          side={rtl ? 'right' : 'left'}
           collapsible="icon"
-          className="border-r-0"
+          /* The INLINE-END border, so the seam faces the content in both
+             directions - border-r-0 removed a border the RTL sidebar does not
+             have, and left the one it does. */
+          className="border-e-0"
           disableTransition={isResizing}
         >
           <SidebarHeader className="h-16 justify-center">
@@ -423,9 +652,16 @@ function DashboardLayoutContent({
               <button
                 onClick={toggleSidebar}
                 className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
-                aria-label="Toggle navigation"
+                /* The ONLY name a screen-reader user gets for the one
+                   control that opens the navigation. It was English on every
+                   Arabic page (§62, §67). */
+                aria-label={lang === 'ar' ? 'إظهار أو إخفاء القائمة' : 'Toggle navigation'}
               >
-                <PanelLeft className="h-4 w-4 text-muted-foreground" />
+                {/* The icon points at the panel it toggles, which is not the
+                    same edge in both directions. */}
+                {rtl
+                  ? <PanelRight className="h-4 w-4 text-muted-foreground" />
+                  : <PanelLeft className="h-4 w-4 text-muted-foreground" />}
               </button>
               {/* THE BRAND IS THE WAY HOME, on every signed-in page.
                   This was a bare <div>: the one element a person instinctively
@@ -464,6 +700,8 @@ function DashboardLayoutContent({
                         className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
                       />
                       <span>{item.label}</span>
+                      <AttentionBadge queue={item.attentionQueue} attention={attention} />
+                      <UnreadBadge show={item.path === '/messages'} unread={unread} />
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

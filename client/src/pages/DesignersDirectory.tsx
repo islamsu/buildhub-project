@@ -1,4 +1,5 @@
 import { VendorsDirectoryView } from './VendorsDirectory';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 /**
  * The designers directory, reading REAL provider accounts.
@@ -16,6 +17,7 @@ import { VendorsDirectoryView } from './VendorsDirectory';
  * designer has joined yet the page is empty, which is the true answer.
  */
 export default function DesignersDirectory() {
+  usePageTitle();
   return (
     <VendorsDirectoryView
       presetCategory="Design"

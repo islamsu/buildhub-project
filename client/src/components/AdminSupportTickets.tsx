@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { AdminUserLink } from '@/components/AdminEntityLink';
+import { useEffect, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
 import { Badge } from '@/components/ui/badge';
@@ -32,7 +33,7 @@ import {
  */
 const PAGE_SIZE = 20;
 
-export default function AdminSupportTickets() {
+export default function AdminSupportTickets({ openRecord = null }: { openRecord?: string | null }) {
   const { lang } = useLanguage();
   const ar = lang === 'ar';
   const utils = trpc.useUtils();
@@ -44,6 +45,23 @@ export default function AdminSupportTickets() {
   const [priority, setPriority] = useState('all');
   const [assignee, setAssignee] = useState<'all' | 'mine' | 'unassigned'>('all');
   const [openId, setOpenId] = useState<number | null>(null);
+  /**
+   * OPENING A CASE FROM THE URL.
+   *
+   * `/admin/support/<id>` is a real address: the console's search, a notification
+   * and an administrator pasting a link all reach the case itself rather than
+   * the queue it sits in. Without this the record in the path was parsed and
+   * then dropped, and every one of those links landed on an unfiltered list -
+   * which reads as a broken link, because it is one.
+   *
+   * An EFFECT rather than a seeded initial state, so arriving at a second case
+   * while already on this screen opens that one. It runs on the prop, so closing
+   * the panel does not immediately re-open it.
+   */
+  useEffect(() => {
+    const parsed = Number(openRecord);
+    if (openRecord != null && Number.isSafeInteger(parsed) && parsed > 0) setOpenId(parsed);
+  }, [openRecord]);
   const [reply, setReply] = useState('');
   const [resolution, setResolution] = useState('');
   const [note, setNote] = useState('');
@@ -175,8 +193,16 @@ export default function AdminSupportTickets() {
                   <tr key={row.id} className="border-b last:border-0" data-testid={`admin-support-row-${row.id}`}>
                     <td className="p-2 font-mono text-xs">{row.reference}</td>
                     <td className="p-2">{row.subject}</td>
-                    {/* THE PERSON, not the id - the admin human-first rule. */}
-                    <td className="p-2">{row.requesterName ?? <span className="text-muted-foreground">{ar ? 'غير متاح' : 'Not available'}</span>}</td>
+                    {/* THE PERSON, not the id - and the name is the way IN to
+                        their record. `requesterId` has been on this row since
+                        the queue was written and nothing used it, so an
+                        administrator reading a ticket had the name in front of
+                        them and went back to User Management to search for it. */}
+                    <td className="p-2">
+                      {row.requesterName || row.requesterId
+                        ? <AdminUserLink id={row.requesterId} name={row.requesterName} />
+                        : <span className="text-muted-foreground">{ar ? 'غير متاح' : 'Not available'}</span>}
+                    </td>
                     <td className="p-2">
                       <Badge variant="outline">{supportLabel('status', row.status, lang)}</Badge>
                       {row.awaitingParty === 'support' && (

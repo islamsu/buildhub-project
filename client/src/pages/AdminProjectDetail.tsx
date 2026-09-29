@@ -1,3 +1,5 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -23,9 +25,19 @@ export default function AdminProjectDetail() {
   const [, navigate] = useLocation();
   const projectId = Number(params.id);
   const valid = Number.isInteger(projectId) && projectId > 0;
-  const { data: project, isLoading } = trpc.admin.projectDetail.useQuery(
+  /*
+   * `isError` MATTERS HERE MORE THAN ALMOST ANYWHERE.
+   *
+   * This destructured only `isLoading`, so a failed fetch fell through to
+   * "Project not found." - a statement of FACT about the record, made on no
+   * evidence. An administrator investigating a dispute was told the project
+   * does not exist when the query merely failed, and there is no way to tell
+   * the two apart by looking. "Not found" is a claim; only a successful
+   * response can support it.
+   */
+  const { data: project, isLoading, isError, refetch } = trpc.admin.projectDetail.useQuery(
     { projectId },
-    { enabled: valid },
+    { enabled: valid, retry: false },
   );
 
   const statusLabel = (status: string | null | undefined) => {
@@ -47,6 +59,10 @@ export default function AdminProjectDetail() {
 
         {isLoading ? (
           <p className="py-12 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
+        ) : isError ? (
+          <Card><CardContent className="py-8">
+            <LoadFailed {...loadFailedCopy(lang === 'ar')} onRetry={() => void refetch()} />
+          </CardContent></Card>
         ) : !project ? (
           <Card><CardContent className="py-16 text-center text-sm text-muted-foreground">{lang === 'ar' ? 'المشروع غير موجود.' : 'Project not found.'}</CardContent></Card>
         ) : (
@@ -80,9 +96,11 @@ export default function AdminProjectDetail() {
               <section className="space-y-2">
                 <p className="text-sm font-medium">{lang === 'ar' ? 'المالك' : 'Owner'}</p>
                 {project.owner ? (
-                  <Link href={`/admin/users/${project.owner.id}`} className="text-sm font-medium underline-offset-2 hover:underline">
-                    {project.owner.name || project.owner.email || `#${project.owner.id}`}
-                  </Link>
+                  <AdminUserLink
+                    id={project.owner.id}
+                    name={project.owner.name || project.owner.email}
+                    className="text-sm font-medium"
+                  />
                 ) : '—'}
               </section>
 
@@ -97,10 +115,10 @@ export default function AdminProjectDetail() {
                   <div className="overflow-hidden rounded-xl border">
                     {project.members.map(member => (
                       <div key={member.id} className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5 last:border-0">
-                        <Link href={`/admin/users/${member.userId}`} className="flex min-w-0 items-center gap-2 text-sm font-medium underline-offset-2 hover:underline">
+                        <AdminUserLink id={member.userId} className="flex min-w-0 items-center gap-2 text-sm font-medium">
                           <UserRound className="h-4 w-4 text-muted-foreground" />
                           <span className="truncate">{member.name || `#${member.userId}`}</span>
-                        </Link>
+                        </AdminUserLink>
                         <Badge variant="outline">{member.projectRole || member.userRole || '—'}</Badge>
                       </div>
                     ))}

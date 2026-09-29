@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 /**
  * ── PLACEMENT PERFORMANCE ─────────────────────────────────────────────────
  *
@@ -29,11 +30,24 @@ import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { BarChart3 } from 'lucide-react';
+import { entityTypeLabel, formulaText, metricLabel, surfaceLabel } from '@/lib/placementLabels';
 
-/** A percentage, or an explicit dash when there is nothing to divide by. */
+/**
+ * A percentage, or an explicit dash when there is nothing to divide by.
+ *
+ * The dash's tooltip is the ONLY thing that distinguishes "no data" from a
+ * rendering glitch, and it was English-only - so on an Arabic Admin screen
+ * the one explanation of an empty cell was unreadable (§67).
+ */
 function Rate({ value }: { value: number | null }) {
+  const { lang } = useLanguage();
   if (value == null) {
-    return <span className="text-muted-foreground" title="No observations yet">—</span>;
+    return (
+      <span
+        className="text-muted-foreground"
+        title={lang === 'ar' ? 'لا توجد قياسات بعد' : 'No observations yet'}
+      >—</span>
+    );
   }
   return <span>{value}%</span>;
 }
@@ -57,7 +71,18 @@ function KindBadge({ kind, ar }: { kind: string; ar: boolean }) {
 export default function PlacementPerformance() {
   const { lang } = useLanguage();
   const ar = lang === 'ar';
-  const { data, isLoading } = trpc.admin.placementPerformance.useQuery();
+  /*
+   * A FAILED FETCH IS NOT A COMMERCIAL FACT.
+   *
+   * This destructured only `isLoading`, so an outage rendered "No placements
+   * booked yet" under a heading about reach and revenue - a figure of zero,
+   * stated as the platform's own record, on no evidence at all. The empty
+   * state below is careful not to invent numbers; it was equally careful to
+   * claim there are none, which is the same mistake pointing the other way.
+   */
+  const { data, isLoading, isError, refetch } = trpc.admin.placementPerformance.useQuery(
+    undefined, { retry: false },
+  );
   const rows = data?.rows ?? [];
 
   // Counted separately, on purpose. One combined impression total would read
@@ -78,7 +103,7 @@ export default function PlacementPerformance() {
       <CardContent>
         {/* Editorial and commercial totals, side by side and never added
             together. Rendered only when there is something to count. */}
-        {!isLoading && rows.length > 0 && (
+        {!isLoading && !isError && rows.length > 0 && (
           <div className="mb-4 flex flex-wrap gap-4 text-xs">
             <span>
               <KindBadge kind="featured" ar={ar} />
@@ -97,9 +122,9 @@ export default function PlacementPerformance() {
 
         {/* The formulas, stated on the screen rather than left implicit. */}
         <div className="mb-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline">CTR = {data?.formulas.ctr ?? 'CTA actions ÷ impressions'}</Badge>
-          <Badge variant="outline">View rate = {data?.formulas.viewRate ?? 'entity views ÷ impressions'}</Badge>
-          <Badge variant="outline">Conversion = {data?.formulas.conversionRate ?? 'attributed qualified enquiries ÷ entity views'}</Badge>
+          <Badge variant="outline">{metricLabel('ctr', lang)} = {formulaText('ctr', data?.formulas.ctr ?? 'CTA actions ÷ impressions', lang)}</Badge>
+          <Badge variant="outline">{metricLabel('viewRate', lang)} = {formulaText('viewRate', data?.formulas.viewRate ?? 'entity views ÷ impressions', lang)}</Badge>
+          <Badge variant="outline">{metricLabel('conversionRate', lang)} = {formulaText('conversionRate', data?.formulas.conversionRate ?? 'attributed qualified enquiries ÷ entity views', lang)}</Badge>
         </div>
 
         {isLoading && (
@@ -108,9 +133,15 @@ export default function PlacementPerformance() {
           </p>
         )}
 
+        {!isLoading && isError && (
+          <LoadFailed {...loadFailedCopy(ar)} onRetry={() => void refetch()} />
+        )}
+
         {/* A REAL empty state. No placements means no rows - not a demonstration
-            table with plausible-looking numbers in it. */}
-        {!isLoading && rows.length === 0 && (
+            table with plausible-looking numbers in it. Guarded on `isError` as
+            well as on `isLoading`, because "none booked" is as much a claim
+            about the business as a number would be. */}
+        {!isLoading && !isError && rows.length === 0 && (
           <div className="rounded-xl border border-dashed py-10 text-center">
             <p className="font-medium">{ar ? 'لا توجد مساحات إعلانية بعد' : 'No placements booked yet'}</p>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -121,7 +152,7 @@ export default function PlacementPerformance() {
           </div>
         )}
 
-        {!isLoading && rows.length > 0 && (
+        {!isLoading && !isError && rows.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -133,9 +164,9 @@ export default function PlacementPerformance() {
                   <th className="p-2 text-right">{ar ? 'المشاهدات' : 'Entity views'}</th>
                   <th className="p-2 text-right">{ar ? 'الإجراءات' : 'CTA actions'}</th>
                   <th className="p-2 text-right">{ar ? 'طلبات مؤهلة' : 'Qualified enquiries'}</th>
-                  <th className="p-2 text-right">CTR</th>
-                  <th className="p-2 text-right">{ar ? 'معدل المشاهدة' : 'View rate'}</th>
-                  <th className="p-2 text-right">{ar ? 'معدل التحويل' : 'Conversion'}</th>
+                  <th className="p-2 text-right">{metricLabel('ctr', lang)}</th>
+                  <th className="p-2 text-right">{metricLabel('viewRate', lang)}</th>
+                  <th className="p-2 text-right">{metricLabel('conversionRate', lang)}</th>
                 </tr>
               </thead>
               <tbody>
@@ -144,10 +175,10 @@ export default function PlacementPerformance() {
                     <td className="p-2 font-medium">
                       {/* The business, not the row id - the Admin human-first rule. */}
                       {row.entityName ?? <span className="text-muted-foreground">{ar ? 'غير متاح' : 'Not available'}</span>}
-                      <span className="ms-2 text-xs text-muted-foreground">{row.entityType}</span>
+                      <span className="ms-2 text-xs text-muted-foreground">{entityTypeLabel(row.entityType, lang)}</span>
                     </td>
                     <td className="p-2"><KindBadge kind={row.kind} ar={ar} /></td>
-                    <td className="p-2 text-muted-foreground">{row.surface ?? '—'}</td>
+                    <td className="p-2 text-muted-foreground">{surfaceLabel(row.surface, lang)}</td>
                     <td className="p-2 text-right tabular-nums">{row.impressions}</td>
                     <td className="p-2 text-right tabular-nums">{row.entityViews}</td>
                     <td className="p-2 text-right tabular-nums">{row.ctaActions}</td>

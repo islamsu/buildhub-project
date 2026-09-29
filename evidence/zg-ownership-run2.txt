@@ -1,0 +1,18 @@
+PASS  1. SETUP: two unrelated homeowners exist  [263 and 264]
+PASS  2. both are signed in, as themselves
+PASS  3. the first homeowner has a project  [id 45]
+PASS  4. and the second is not a member of it  [0 membership rows]
+PASS  5. NEGATIVE: projects.addMilestone by a stranger is refused  [HTTP 404 NOT_FOUND]
+PASS  6. and projects.addMilestone changed nothing  [0 then 0]
+PASS  7. POSITIVE: projects.addMilestone by the owner succeeds  [HTTP 200]
+PASS  8. NEGATIVE: projects.addTask by a stranger is refused  [HTTP 404 NOT_FOUND]
+PASS  9. and projects.addTask changed nothing  [0 then 0]
+PASS  10. POSITIVE: projects.addTask by the owner succeeds  [HTTP 200]
+PASS  11. NEGATIVE: projects.update by a stranger is refused  [HTTP 404 NOT_FOUND]
+PASS  12. and projects.update changed nothing  [Probe villa then Probe villa]
+PASS  13. POSITIVE: projects.update by the owner succeeds  [HTTP 200]
+PASS  14. NEGATIVE: the stranger cannot read the project either  [HTTP 404]
+PASS  15. POSITIVE: the owner can, and sees their own project  [HTTP 200, title "Renamed by a stranger"]
+PASS  16. NEGATIVE: with no session it is refused  [HTTP 401]
+
+16/16 checks passed

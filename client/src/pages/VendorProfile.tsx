@@ -1,7 +1,15 @@
+import { formatMoneyRange } from '@shared/money';
+
+import { formatMoney } from '@shared/money';
 import { Link, useLocation, useParams } from 'wouter';
 import Navbar from '@/components/Navbar';
+import { useMemo } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { SaveButton } from '@/components/SaveButton';
+import ShowcaseStrip from '@/components/ShowcaseStrip';
+import { useSavedIds } from '@/lib/useSavedIds';
 import { useAuth } from '@/_core/hooks/useAuth';
+import AskAiAbout from '@/components/AskAiAbout';
 import { trpc } from '@/lib/trpc';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import VendorReputation from '@/components/VendorReputation';
 import { parseProductImages } from '@shared/productImages';
 import { pricingBasisLabel, type ServicePricingBasis } from '@shared/serviceCatalogue';
-import { ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Calendar, MapPin, MessageSquare, Package, Star, Store } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Calendar, FileText, MapPin, MessageSquare, Package, Star, Store } from 'lucide-react';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 function initials(name: string | null | undefined) {
   if (!name) return '?';
@@ -30,10 +39,19 @@ export default function VendorProfile() {
   // the safer of the two options Phase 4A.5 left as an open owner decision.
   // See BUILDHUB_PHASE4A61_VENDOR_PROFILE_IMPLEMENTATION.md for the unresolved
   // "should this be viewable while logged out" decision.
+  /*
+   * NO SESSION REQUIRED. `enabled` waited on `isAuthenticated`, which is why a
+   * signed-out reader saw a sign-in wall instead of a storefront. The server
+   * decides what this reader may see - approved and directory-visible for a
+   * stranger, the contact block only once the provider has engaged - so the
+   * page asks for the profile and renders whatever tier comes back.
+   */
   const { data: profile, isLoading, error } = trpc.profile.getPublic.useQuery(
     { userId },
-    { enabled: isAuthenticated && Number.isFinite(userId) && userId > 0, retry: false },
+    { enabled: Number.isFinite(userId) && userId > 0, retry: false },
   );
+  /** The same batched reader the directory uses, for one id. */
+  const savedIds = useSavedIds('provider', useMemo(() => (Number.isFinite(userId) && userId > 0 ? [userId] : []), [userId]));
   const { data: catalogue = [] } = trpc.marketplace.vendorProducts.useQuery(
     { vendorId: userId },
     { enabled: Number.isFinite(userId) && userId > 0 },
@@ -50,6 +68,17 @@ export default function VendorProfile() {
     { enabled: Number.isFinite(userId) && userId > 0 },
   );
   const isSelf = Boolean(user && (user as { id?: number }).id === userId);
+  /*
+   * The storefront's own name in the tab, preferring the trading name the
+   * vendor nominated over their account name - the same order the page's own
+   * heading uses. Null until the profile arrives.
+   */
+  usePageTitle(
+    profile
+      ? (profile.company?.tradingName || profile.company?.companyName || profile.name || null)
+      : null,
+  );
+
 
   const Shell = ({ children }: { children: React.ReactNode }) => (
     <div className="min-h-screen bg-background" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
@@ -78,20 +107,16 @@ export default function VendorProfile() {
     </div>
   );
 
-  if (authLoading) return <Shell><div className="text-center py-16 text-muted-foreground">{t('common.loading')}</div></Shell>;
-
-  if (!isAuthenticated) {
-    return (
-      <Shell>
-        <Card><CardContent className="py-16 text-center text-muted-foreground">
-          <Store className="w-10 h-10 mx-auto mb-3 opacity-30" />
-          <p>{lang === 'ar' ? 'يرجى تسجيل الدخول لعرض الملف الشخصي للمزود' : 'Please sign in to view this vendor profile'}</p>
-          <Link href="/auth?mode=login"><Button className="mt-4">{lang === 'ar' ? 'تسجيل الدخول' : 'Sign in'}</Button></Link>
-        </CardContent></Card>
-      </Shell>
-    );
-  }
-
+  /*
+   * THE SIGN-IN WALL IS GONE. It used to render here for every signed-out
+   * reader - so the marketplace's most important destination, and the one §21
+   * and §37 describe as public, answered a buyer and a crawler with "Please
+   * sign in to view this vendor profile".
+   *
+   * `authLoading` is no longer waited on either: the storefront does not depend
+   * on knowing who the reader is, and blocking on it made a public page wait
+   * for a session check that may resolve to nobody.
+   */
   if (isLoading) return <Shell><div className="text-center py-16 text-muted-foreground">{t('common.loading')}</div></Shell>;
 
   if (error || !profile) {
@@ -122,6 +147,9 @@ export default function VendorProfile() {
                 {profile.verified && (
                   <Badge variant="secondary" className="gap-1"><BadgeCheck className="w-3.5 h-3.5" />{t('profile.verified_badge')}</Badge>
                 )}
+                {/* The provider is the subject. A signed-out reader still gets
+                    the general list - the server never treats an id as proof. */}
+                <AskAiAbout subject="provider" id={userId} lang={ar ? 'ar' : 'en'} />
               </div>
               {roleLabel && <p className="text-sm text-muted-foreground capitalize">{roleLabel}</p>}
             </div>
@@ -308,7 +336,7 @@ export default function VendorProfile() {
                           worse than saying so. */}
                       {service.pricingBasis === 'quote_on_request'
                         ? pricingBasisLabel('quote_on_request', lang)
-                        : `${publicPriceRange(service.priceMin, service.priceMax, ar)} · ${pricingBasisLabel(service.pricingBasis as ServicePricingBasis, lang)}`}
+                        : `${publicPriceRange(service.priceMin, service.priceMax, service.currency, ar)} · ${pricingBasisLabel(service.pricingBasis as ServicePricingBasis, lang)}`}
                     </p>
                     {(service.leadTimeDays != null || service.warrantyMonths != null) && (
                       <p className="mt-1 text-sm text-muted-foreground">
@@ -367,21 +395,77 @@ export default function VendorProfile() {
             <h2 className="text-sm font-semibold mb-2">{t('vendor.contact')}</h2>
             {isSelf ? (
               <p className="text-sm text-muted-foreground">{t('vendor.contact.self')}</p>
-            ) : profile.contactChannel === 'message' ? (
-              <>
-                <Link href={`/messages?to=${userId}`}>
-                  <Button className="gap-2" data-testid="vendor-contact">
-                    <MessageSquare className="w-4 h-4" />{t('vendor.contact.cta')}
+            ) : !isAuthenticated ? (
+              /*
+               * ── READING IS PUBLIC; ACTING NEEDS AN ACCOUNT ──────────────
+               *
+               * All three actions below are session-bound: messaging, the RFQ
+               * invitation and the shortlist are all protected procedures. So a
+               * signed-out reader is given ONE honest control instead of three
+               * that answer 401 - §58 and §77: a page must not offer a button
+               * that will fail, and the reason must be visible rather than
+               * discovered by clicking.
+               */
+              <div className="rounded-xl border bg-muted/30 p-4" data-testid="vendor-signedout-actions">
+                <p className="font-medium">{t('vendor.signedout.title')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{t('vendor.signedout.body')}</p>
+                <Link href="/auth?mode=login">
+                  <Button className="mt-3 gap-2" data-testid="vendor-signin-cta">
+                    <MessageSquare className="h-4 w-4" />{t('vendor.signedout.cta')}
                   </Button>
                 </Link>
-                <p className="mt-2 text-xs text-muted-foreground">{t('vendor.contact.note')}</p>
-              </>
+              </div>
             ) : (
-              <p className="text-sm text-muted-foreground" data-testid="vendor-contact-unavailable">{t('vendor.contact.unavailable')}</p>
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {profile.contactChannel === 'message' ? (
+                    <Link href={`/messages?to=${userId}`}>
+                      <Button variant="outline" className="gap-2" data-testid="vendor-contact">
+                        <MessageSquare className="w-4 h-4" />{t('vendor.contact.cta')}
+                      </Button>
+                    </Link>
+                  ) : (
+                    <p className="text-sm text-muted-foreground" data-testid="vendor-contact-unavailable">{t('vendor.contact.unavailable')}</p>
+                  )}
+
+                  {/* ── ASK THIS SUPPLIER FOR A PRICE ───────────────────────
+                      A buyer who had just read a supplier's page had no way to
+                      say "I want a quote from THEM". They could post into the
+                      open market and hope somebody relevant answered, which is
+                      not sourcing - it is a wish.
+
+                      This carries the intent to the RFQ form, which invites
+                      the supplier the moment the request exists. It is the
+                      CANONICAL RFQ and the canonical invitation, not a second
+                      enquiry channel: rfq.inviteSupplier decides whether the
+                      caller may invite, exactly as it does everywhere else. */}
+                  <Link href={`/rfq?invite=${userId}`}>
+                    <Button className="gap-2" data-testid="vendor-request-quote">
+                      <FileText className="w-4 h-4" />
+                      {ar ? 'اطلب عرض سعر' : 'Request a quote'}
+                    </Button>
+                  </Link>
+                  {/* SAVE PROVIDER, beside Contact and Request a quote - the
+                      three actions §21 names for a storefront. A buyer who
+                      has just read a supplier's whole page is the one most
+                      likely to want to set them aside. */}
+                  <SaveButton kind="provider" itemId={userId} saved={savedIds.has(userId)} />
+                </div>
+                {profile.contactChannel === 'message' && (
+                  <p className="mt-2 text-xs text-muted-foreground">{t('vendor.contact.note')}</p>
+                )}
+              </>
             )}
           </div>
         </CardContent>
       </Card>
+
+      {/* WHAT THE SUPPLIER THEMSELVES PUTS FIRST (§18).
+          Above the catalogue on purpose: it is the supplier's answer to
+          "where do I start", and a buyer who scrolls past it to the full
+          product grid has lost the curation it exists to provide. It renders
+          nothing at all when nothing has been chosen. */}
+      <ShowcaseStrip userId={userId} />
 
       {/* WHAT THEY SELL.
           Published rows only, from marketplace.vendorProducts. A supplier
@@ -398,7 +482,7 @@ export default function VendorProfile() {
                   <div className="rounded-xl border p-3 hover:border-primary/40 transition-colors cursor-pointer">
                     <p className="font-medium text-sm truncate">{lang === 'ar' ? (product.nameAr || product.name) : product.name}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {t('common.egp')} {Number(product.price).toLocaleString()}{product.unit ? ` / ${product.unit}` : ''}
+                      {formatMoney(product.price, product.currency, lang) ?? '—'}{product.unit ? ` / ${product.unit}` : ''}
                     </p>
                   </div>
                 </Link>
@@ -421,14 +505,36 @@ export default function VendorProfile() {
 }
 
 /**
- * "EGP 120 – 260", "from EGP 120", "up to EGP 260" - or a plain sentence when
- * neither bound was given. Never a zero standing in for an unknown price.
+ * ── A SERVICE PRICE RANGE, IN THE CURRENCY THE RECORD STATES ────────────
+ *
+ * Two things were wrong here and 0061 fixed the second, which was the cause of
+ * the first.
+ *
+ * This was a local copy of a formatter - the second of two identical ones, the
+ * other in client/src/components/ServiceCatalogueManager.tsx -
+ * built from `const currency = ar ? 'ج.م' : 'EGP'`. Both
+ * problems are what shared/money.ts exists to answer: 'ج.م' reads as a pound
+ * and several markets in this region write their currency that way, which is
+ * why the canonical formatter shows the ISO code; and the currency was a
+ * LITERAL chosen by the view.
+ *
+ * The view chose it because `serviceOfferings` had `priceMin`, `priceMax` and
+ * no currency column - there was genuinely nothing on the record to read. That
+ * was declared debt, with the reason stated: the debt was the column.
+ *
+ * 0061 added it, backfilled to EGP because that is what every existing row
+ * already meant, and `services.create` writes it from the market. So this now
+ * reads `row.currency` like every other money surface in the product, and the
+ * market constant this used to need is gone.
  */
-function publicPriceRange(min: unknown, max: unknown, ar: boolean): string {
-  const currency = ar ? 'ج.م' : 'EGP';
-  const n = (value: unknown) => Number(value).toLocaleString(ar ? 'ar-EG' : 'en-EG');
-  if (min != null && max != null) return `${currency} ${n(min)} – ${n(max)}`;
-  if (min != null) return ar ? `من ${currency} ${n(min)}` : `from ${currency} ${n(min)}`;
-  if (max != null) return ar ? `حتى ${currency} ${n(max)}` : `up to ${currency} ${n(max)}`;
-  return ar ? 'السعر غير محدد' : 'Price not stated';
+function publicPriceRange(min: unknown, max: unknown, currency: string | null | undefined, ar: boolean): string {
+  const range = formatMoneyRange(
+    min as number | string | null | undefined,
+    max as number | string | null | undefined,
+    currency,
+    ar ? 'ar' : 'en',
+    ar ? { from: 'من', upTo: 'حتى' } : { from: 'from', upTo: 'up to' },
+  );
+  // Never a zero standing in for an unknown price.
+  return range ?? (ar ? 'السعر غير محدد' : 'Price not stated');
 }

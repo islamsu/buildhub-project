@@ -379,6 +379,69 @@
       "when": 1789500000000,
       "tag": "0053_project_membership_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "5",
+      "when": 1789600000000,
+      "tag": "0054_quotation_withdrawal",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "5",
+      "when": 1789700000000,
+      "tag": "0055_message_pair_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "5",
+      "when": 1789800000000,
+      "tag": "0056_product_question_moderation",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "5",
+      "when": 1789900000000,
+      "tag": "0057_referral_code_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "5",
+      "when": 1790000000000,
+      "tag": "0058_market_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "5",
+      "when": 1790100000000,
+      "tag": "0059_saved_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "5",
+      "when": 1790200000000,
+      "tag": "0060_supplier_showcase",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "5",
+      "when": 1790200100000,
+      "tag": "0061_service_offering_currency",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "5",
+      "when": 1790400000000,
+      "tag": "0062_finishing_pricing",
+      "breakpoints": true
     }
   ]
 }

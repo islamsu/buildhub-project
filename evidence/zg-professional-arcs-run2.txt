@@ -1,0 +1,25 @@
+BUILD  72f3b17 (development) built 2026-09-22T13:44:54.143Z  http://127.0.0.1:5401
+PASS  1. SETUP: a fresh account for each of the four professions  [contractor:971 engineer:972 architect:973 project_manager:974]
+PASS  2. CONTRACTOR: is asked for documents specific to this profession  [Government-issued ID, Tax card, Commercial registration, Contracting license, Insurance certificate]
+PASS  3. ENGINEER: is asked for documents specific to this profession  [Government-issued ID, Tax card, Engineering syndicate license, Professional tax registration, Selected work portfolio]
+PASS  4. ARCHITECT: is asked for documents specific to this profession  [Government-issued ID, Tax card, Architecture license, Professional tax registration, Design portfolio]
+PASS  5. PROJECT_MANAGER: is asked for documents specific to this profession  [Government-issued ID, Tax card, Project management certificate, Experience record, Professional insurance certificate]
+PASS  6. PARITY: all four professions are asked for genuinely DIFFERENT documents  [4 distinct checklists across 4 professions]
+PASS  7. CONTRACTOR: the workspace is addressed to this profession and no other  [Contractor Workspace]
+PASS  8. ENGINEER: the workspace is addressed to this profession and no other  [Engineering Workspace]
+PASS  9. ARCHITECT: the workspace is addressed to this profession and no other  [Architecture Workspace]
+PASS  10. PROJECT_MANAGER: the workspace is addressed to this profession and no other  [Project Management Workspace]
+PASS  11. PARITY: the four workspaces are genuinely distinct, not one page with four labels  [4/4 — Contractor Workspace / Engineering Workspace / Architecture Workspace / Project Management Workspace]
+PASS  12. CONTRACTOR: starting a project makes them its MANAGER, never its owner  [projectRole manager]
+PASS  13. ENGINEER: starting a project makes them its MANAGER, never its owner  [projectRole manager]
+PASS  14. ARCHITECT: starting a project makes them its MANAGER, never its owner  [projectRole manager]
+PASS  15. PROJECT_MANAGER: starting a project makes them its MANAGER, never its owner  [projectRole manager]
+PASS  16. FORBIDDEN: a supplier cannot start a project - they deliver against one  [FORBIDDEN Suppliers sell into projects rather than commissioning them. Ask the customer or]
+PASS  17. FORBIDDEN: an unapproved professional cannot browse the provider lead directory  [FORBIDDEN Professional registration approval is required. Visit /compliance.]
+PASS  18. APPROVAL: and can once they are approved - approval is what changed  [reachable]
+PASS  19. ONBOARDING: an unapproved professional is told what to finish, not left at a dead end
+PASS  20. FORBIDDEN: a professional cannot verify themselves  [FORBIDDEN]
+PASS  21. FORBIDDEN: nor read another professional's registration record  [FORBIDDEN]
+
+BUILD 72f3b17 · development · 1440x900 · en
+21/21 checks passed

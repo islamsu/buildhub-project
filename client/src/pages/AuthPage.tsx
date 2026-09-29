@@ -263,10 +263,12 @@ export default function AuthPage() {
           <h2 className="text-4xl font-bold leading-tight mb-4">
             {lang === 'ar' ? 'ابنِ مستقبلك\nمع BuildHub' : 'Build Your Future\nwith BuildHub'}
           </h2>
+          {/* CAPABILITY, NOT SCALE (§75) - the same unsupported "join
+              thousands who trust us" claim the landing page carried. */}
           <p className="text-white/70 text-lg">
             {lang === 'ar'
-              ? 'انضم إلى آلاف المحترفين وأصحاب المنازل الذين يثقون في BuildHub لإدارة مشاريع البناء والتشطيب.'
-              : 'Join thousands of homeowners and professionals who trust BuildHub to manage their construction and finishing projects.'}
+              ? 'اطلب عروض أسعار من موردين موثّقين، وقارنها جنباً إلى جنب، وتابع مشروعك من البداية إلى التسليم.'
+              : 'Request quotations from verified suppliers, compare them side by side, and follow your project from brief to handover.'}
           </p>
         </div>
         {/*
@@ -365,6 +367,7 @@ export default function AuthPage() {
             {ROLES.map(role => (
               <button
                 key={role.id}
+                data-testid={`auth-role-${role.id}`}
                 onClick={() => setSelectedRole(role.id)}
                 className={`p-4 rounded-xl border-2 text-left transition-all ${
                   selectedRole === role.id
@@ -407,6 +410,7 @@ export default function AuthPage() {
           {!isLoginMode && !isOAuthMode && <Button
             className="w-full gap-2"
             size="lg"
+            data-testid="auth-signup-submit"
             disabled={!selectedRole || updateRole.isPending || signUp.isPending
               || (!isAuthenticated && (username.trim().length < 3 || !email.trim() || password.length < 8))}
             onClick={handleContinue}

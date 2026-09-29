@@ -1,0 +1,40 @@
+-- ── A SERVICE PRICE SAYS WHAT IT IS DENOMINATED IN ──────────────────────
+--
+-- CLAUDE.md §86 and §88, GCC_SCALE_READINESS.md §53.
+--
+-- `serviceOfferings` had `priceMin` and `priceMax` and NO currency. It was the
+-- last money column in the schema with nothing beside it saying what the number
+-- meant, and the two screens that render it - the supplier's catalogue manager
+-- and the public storefront - therefore could not read one. Both spelled it
+--
+--   const currency = ar ? 'ج.م' : 'EGP';
+--
+-- in identical local formatters. That was recorded as declared debt in
+-- server/marketReadiness.test.ts with the reason stated plainly: the debt is
+-- this column, not the view. This is the column.
+--
+-- ── THE BACKFILL IS HONEST, AND THAT IS THE WHOLE POINT ────────────────
+--
+-- `DEFAULT 'EGP'` writes down what every existing row ALREADY MEANT. Every
+-- service offering in the database was created by a provider in the one market
+-- BuildHub operates, priced in Egyptian pounds, and displayed with a hard-coded
+-- EGP label. So the default records an existing fact; it does not decide a new
+-- one, and no row's meaning changes.
+--
+-- This is the LEGITIMATE LEGACY ABSENCE that §88 allows: "an explicit unknown
+-- market code must never silently become Egypt; only legitimate legacy absence
+-- may use the Egypt launch default/backfill." These rows have no market code to
+-- contradict, because the column did not exist when they were written.
+--
+-- NEW ROWS DO NOT RELY ON THE DEFAULT. server/serviceCatalogue.ts writes the
+-- currency explicitly from the market, the same way projects.create and
+-- rfq.create do, so the column default is a backfill for history rather than a
+-- rule for the future. A column whose default is the only thing setting it is
+-- the assumption this migration exists to remove.
+--
+-- NOT NULLABLE, deliberately. A nullable currency would let a new row be
+-- written without one and render as a bare number - which is the state this
+-- replaces, reachable again through an omission rather than a decision.
+
+ALTER TABLE `serviceOfferings`
+  ADD COLUMN `currency` VARCHAR(3) NOT NULL DEFAULT 'EGP';

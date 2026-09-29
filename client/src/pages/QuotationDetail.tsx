@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useParams, Link } from 'wouter';
+import AskAiAbout from '@/components/AskAiAbout';
 import { OpenDisputeDialog } from '@/components/OpenDisputeDialog';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatMoney } from '@shared/money';
 import { useAuth } from '@/_core/hooks/useAuth';
 import Navbar from '@/components/Navbar';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -10,8 +12,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   ArrowLeft, BadgeCheck, CalendarClock, DollarSign, FileText, Lock,
-  MapPin, Paperclip, ShieldCheck, Wallet, Flag,
+  MapPin, Paperclip, ShieldCheck, Wallet, Flag, Undo2,
 } from 'lucide-react';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from 'sonner';
 
 /**
  * THE QUOTATION DETAIL PAGE.
@@ -51,11 +58,15 @@ const STATUS_TONE: Record<string, string> = {
   pending: 'bg-amber-50 text-amber-700 border-amber-200',
   accepted: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   rejected: 'bg-rose-50 text-rose-700 border-rose-200',
+  // Neutral, not red: withdrawn is the supplier's own decision rather than a
+  // verdict on their bid, and colouring it like a rejection would say
+  // something about them that is not true.
+  withdrawn: 'bg-muted text-muted-foreground border-border',
 };
 
 function statusLabel(status: string, ar: boolean): string {
   if (!ar) return status;
-  return { pending: 'قيد المراجعة', accepted: 'مقبول', rejected: 'مرفوض' }[status] ?? status;
+  return { pending: 'قيد المراجعة', accepted: 'مقبول', rejected: 'مرفوض', withdrawn: 'مسحوب' }[status] ?? status;
 }
 
 function Detail({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
@@ -78,6 +89,26 @@ export default function QuotationDetail() {
   const { isAuthenticated } = useAuth();
   const valid = Number.isFinite(quotationId) && quotationId > 0;
   const [disputeOpen, setDisputeOpen] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawReason, setWithdrawReason] = useState('');
+  const utils = trpc.useUtils();
+  /*
+   * CONFIRMED BEFORE IT HAPPENS, and it cannot be undone.
+   *
+   * Withdrawing is terminal - the bid cannot be put back, only submitted
+   * again as a new one - so it asks first, and the reason it collects is what
+   * the customer is shown instead of a price silently disappearing.
+   */
+  const withdraw = trpc.rfq.withdrawQuotation.useMutation({
+    onSuccess: () => {
+      setWithdrawOpen(false);
+      setWithdrawReason('');
+      void utils.rfq.quotation.invalidate();
+      void utils.rfq.myQuotations.invalidate();
+      toast.success(ar ? 'تم سحب العرض' : 'Quotation withdrawn');
+    },
+    onError: error => toast.error(error.message),
+  });
 
   const query = trpc.rfq.quotation.useQuery(
     { id: quotationId },
@@ -142,8 +173,12 @@ export default function QuotationDetail() {
   const attachments = parseAttachments(q.attachments);
   const status = q.status ?? 'pending';
   const isRequester = q.viewerRole === 'requester';
-  const currency = q.currency ?? 'EGP';
-  const money = Number(q.price).toLocaleString(ar ? 'ar-EG' : 'en-US');
+  // The bid's OWN currency, which is the RFQ's by rule. A `?? 'EGP'` here
+  // would put an Egyptian label on a foreign bid rather than admit the
+  // record does not say.
+  const currency = q.currency ?? null;
+  const money = formatMoney(q.price, currency, ar ? 'ar' : 'en')
+    ?? Number(q.price).toLocaleString(ar ? 'ar-EG' : 'en-US');
 
   return (
     <div className="min-h-screen bg-background" dir={ar ? 'rtl' : 'ltr'}>
@@ -153,12 +188,17 @@ export default function QuotationDetail() {
           underneath it - elementFromPoint returns the navbar and the click
           never lands. RFQDetail shipped with exactly that defect. */}
       <div className="mx-auto max-w-4xl px-4 pt-24 pb-16">
-        <Link href={`/rfq/${q.rfqId}`}>
-          <Button variant="ghost" size="sm" className="mb-4 gap-2" data-testid="quotation-detail-back">
-            <ArrowLeft className="h-4 w-4" />
-            {ar ? 'العودة إلى الطلب' : 'Back to the request'}
-          </Button>
-        </Link>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <Link href={`/rfq/${q.rfqId}`}>
+            <Button variant="ghost" size="sm" className="gap-2" data-testid="quotation-detail-back">
+              <ArrowLeft className="h-4 w-4" />
+              {ar ? 'العودة إلى الطلب' : 'Back to the request'}
+            </Button>
+          </Link>
+          {/* The quotation is the subject. The server decides which of the two
+              parties is reading it and offers each the right suggestions. */}
+          <AskAiAbout subject="quotation" id={q.id} lang={ar ? 'ar' : 'en'} />
+        </div>
 
         <Card>
           <CardHeader>
@@ -204,7 +244,12 @@ export default function QuotationDetail() {
             <div className="rounded-xl border bg-muted/30 p-4">
               <p className="text-xs text-muted-foreground">{ar ? 'السعر المعروض' : 'Quoted price'}</p>
               <p className="text-2xl font-semibold" data-testid="quotation-detail-price">
-                {money} <span className="text-base font-normal text-muted-foreground">{currency}</span>
+                {/* `money` already carries the currency code. The separate
+                    span used to supply it because the number was formatted
+                    bare; keeping both would print it twice. It survives only
+                    for a record that does not state its currency at all. */}
+                {money}
+                {currency === null && <span className="text-base font-normal text-muted-foreground"> —</span>}
               </p>
             </div>
 
@@ -353,6 +398,43 @@ export default function QuotationDetail() {
               nothing to dispute against: `disputes.create` could only name a
               project.
             */}
+            {/*
+              THE SUPPLIER'S OWN EXIT.
+              Offered only to the author of the bid, and only while it is still
+              pending - an accepted quotation is an agreement, and the dispute
+              control below is the way out of one. Shown as disabled rather
+              than hidden once it is too late, because a control that vanishes
+              teaches nothing about why.
+            */}
+            {!isRequester && (
+              <div className="rounded-xl border border-dashed p-4" data-testid="quotation-withdraw-panel">
+                <p className="text-sm font-medium">
+                  {ar ? 'هل تغيّرت ظروفك؟' : 'Changed your mind about this price?'}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {status === 'pending'
+                    ? (ar
+                      ? 'يمكنك سحب عرضك ما دام لم يُقبل بعد. سيُبلَّغ العميل.'
+                      : 'You can withdraw it while it is still pending. The customer is told.')
+                    : status === 'accepted'
+                      ? (ar
+                        ? 'تم قبول هذا العرض، فأصبح اتفاقًا. افتح نزاعًا بدلًا من سحبه.'
+                        : 'This quotation was accepted, so it is an agreement. Raise a dispute rather than withdrawing it.')
+                      : (ar
+                        ? 'لم يعد هذا العرض قائمًا، فلا شيء لسحبه.'
+                        : 'This quotation is no longer live, so there is nothing to withdraw.')}
+                </p>
+                <Button
+                  variant="outline" size="sm" className="mt-3 gap-2"
+                  data-testid="quotation-withdraw"
+                  disabled={status !== 'pending' || withdraw.isPending}
+                  onClick={() => setWithdrawOpen(true)}
+                >
+                  <Undo2 className="h-4 w-4" />{ar ? 'سحب العرض' : 'Withdraw quotation'}
+                </Button>
+              </div>
+            )}
+
             <div className="rounded-xl border border-dashed p-4">
               <p className="text-sm font-medium">{ar ? 'مشكلة بشأن هذا العرض؟' : 'A problem with this quotation?'}</p>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -371,6 +453,42 @@ export default function QuotationDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
+        <DialogContent dir={ar ? 'rtl' : 'ltr'}>
+          <DialogHeader>
+            <DialogTitle>{ar ? 'سحب هذا العرض؟' : 'Withdraw this quotation?'}</DialogTitle>
+            <DialogDescription>
+              {ar
+                ? 'لا يمكن التراجع عن السحب. يمكنك تقديم عرض جديد لاحقًا، وسيُبلَّغ العميل الآن.'
+                : 'This cannot be undone. You can submit a new quotation later, and the customer is told now.'}
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            data-testid="quotation-withdraw-reason"
+            value={withdrawReason}
+            maxLength={500}
+            onChange={event => setWithdrawReason(event.target.value)}
+            placeholder={ar ? 'السبب (اختياري) — يراه العميل' : 'Reason (optional) — the customer sees this'}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setWithdrawOpen(false)}>
+              {ar ? 'إلغاء' : 'Cancel'}
+            </Button>
+            <Button
+              variant="destructive"
+              data-testid="quotation-withdraw-confirm"
+              disabled={withdraw.isPending}
+              onClick={() => withdraw.mutate({
+                quotationId,
+                reason: withdrawReason.trim() || undefined,
+              })}
+            >
+              {ar ? 'تأكيد السحب' : 'Withdraw it'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <OpenDisputeDialog
         subjectType="quotation" subjectId={quotationId}

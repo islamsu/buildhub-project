@@ -1,0 +1,14 @@
+PASS  1. SETUP: two real, APPROVED provider accounts  [provider=2285 other=2286 approved=2]
+PASS  2. an unauthenticated request is refused 401 before any prefix is read
+PASS  3. and an UNCLASSIFIED prefix still fails closed with 403 — the default holds  [http 403]
+PASS  4. a traversal key is refused even inside a served family  [http 403]
+PASS  5. EVERY PUBLIC IMAGE FAMILY IS AUTHORIZED for a signed-in viewer (503 = allowed, no bucket)  [avatars, product-images, portfolio-images all 503]
+PASS  6. including ANOTHER provider viewing it — a portfolio is a showcase, not a secret  [http 503]
+PASS  7. but CLAIMING another provider photograph is refused on the write  [http 403 You may only use images you uploaded.]
+PASS  8. and nothing was written — the refusal is not cosmetic  [rows=0]
+PASS  9. nor a reference that STARTS in their own prefix and climbs out of it  [http 403 You may only use images you uploaded.]
+PASS  10. THE POSITIVE CONTROL — a provider may still use their OWN image  [http 200 ]
+BLOCKED  object storage is unconfigured (S3_* unset), so a real bucket round-trip is NOT verified here and is NOT claimed as passing.
+PASS  CLEANUP: every account this probe created is gone  [users=0]
+
+11/11 checks passed

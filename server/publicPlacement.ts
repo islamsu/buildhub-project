@@ -29,6 +29,7 @@ import { and, asc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
 import { products, users, vendorSponsorships } from '../drizzle/schema';
 import { publicProductFilter } from './productLifecycle';
 import { getDb } from './db';
+import { requireDb } from './_core/requireDb';
 import {
   DIRECTORY_VENDOR_COLUMNS,
   directoryVisibilityFilter,
@@ -309,8 +310,10 @@ export async function placedProducts(params: {
  * to fill it.
  */
 export async function masterProvider(category?: string, now?: Date): Promise<PlacedProvider | null> {
-  const db = await getDb();
-  if (!db) return null;
+  // No master slot filled is a commercial fact about this surface. Each of
+  // these is its own publicProcedure, so refusing fails that slot and not
+  // the page around it.
+  const db = await requireDb();
   const found = await placedProviders({
     db, surface: 'MASTER_DISCOVERY', scope: scopeFor(category), now, limit: 1,
   });
@@ -496,8 +499,8 @@ export async function spotlightProducts(category: string, now?: Date): Promise<P
 
 /** The Master product slot. Same rule, same honesty about emptiness. */
 export async function masterProduct(category?: string, now?: Date): Promise<PlacedProduct | null> {
-  const db = await getDb();
-  if (!db) return null;
+  // Same rule as masterProvider above.
+  const db = await requireDb();
   const found = await placedProducts({
     db, surface: 'MASTER_DISCOVERY', scope: scopeFor(category), now, limit: 1,
   });

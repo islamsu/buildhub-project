@@ -1,0 +1,35 @@
+BUILD  42edac9 (local) built 2026-09-25T10:45:05.979Z  http://127.0.0.1:5401
+
+BUILD 42edac9  env=local
+
+PASS  1. two distinct approved suppliers  [#464 / #462]
+PASS  2. the supplier can read what they may showcase
+PASS  3. and there is something to choose from  [15 candidates]
+PASS  4. including published products of their own  [88,89,90]
+PASS  5. and every candidate genuinely belongs to them  [all owned]
+PASS  6. the cross-supplier attempt is ACCEPTED as a request, not a crash  [200]
+PASS  7. SUPPLIER A CANNOT SHOWCASE SUPPLIER B'S PRODUCT - nothing stored  [[]]
+PASS  8. and the refusal is reported rather than silently dropped
+PASS  9. AND NO ROW REACHED THE DATABASE  [verified in SQL, not from the response]
+PASS  10. POSITIVE CONTROL: the same call with their OWN product succeeds  [[{"kind":"product","itemId":88}]]
+PASS  11. an UNPUBLISHED product is refused - it would 404 for every visitor  [[{"kind":"product","itemId":117}]]
+PASS  12. the cap of six holds on the server, not only in the browser  [6]
+PASS  13. the directory has enough rows for a ranking comparison to mean anything  [3 providers]
+PASS  14. the supplier saves a real showcase  [3 stored]
+PASS  15. THE PROVIDER DIRECTORY ORDER IS UNCHANGED - no self-granted placement  [identical, 3 rows]
+PASS  16. AND THE MARKETPLACE PRODUCT ORDER IS UNCHANGED  [identical, 29 rows]
+PASS  17. and no placement row was created by saving a showcase
+PASS  18. the showcase renders on the storefront for a visitor
+PASS  19. LABELLED AS THE SUPPLIER'S OWN CHOICE  [Selected by this supplier]
+PASS  20. and explicitly NOT a BuildHub recommendation or a paid slot
+PASS  21. and renders exactly what the supplier chose  [3 of 3]
+PASS  22. a product withdrawn AFTER showcasing leaves the public page at once  [GONE]
+PASS  23. and the OWNER is told it was dropped, with a count  [1]
+PASS  24. while a VISITOR is not - it would leak unpublished stock  [0]
+PASS  25. the supplier can find the editor in Settings
+PASS  26. and is told plainly that it does NOT affect marketplace ranking  [This affects your own public page only. It does not change your position in the ]
+
+(cleanup) showcase rows for #464: 0
+
+ALL PASS  26 passed, 0 failed
+

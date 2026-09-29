@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useMemo, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -9,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Link } from 'wouter';
 import { Megaphone, Search } from 'lucide-react';
 import { Pager } from '@/components/Pager';
+import { PLACEMENT_ENTITY_TYPES, PLACEMENT_PACKAGES, PLACEMENT_SURFACES, entityTypeLabel, packageLabel, surfaceLabel } from '@/lib/placementLabels';
 import VendorIdentitySelect from '@/components/VendorIdentitySelect';
 import ProductIdentitySelect from '@/components/ProductIdentitySelect';
 
@@ -75,7 +77,7 @@ export default function AdminPlacements() {
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Select value={entityType} onValueChange={value => setEntityType(value as typeof entityType)}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="PROVIDER">Provider</SelectItem><SelectItem value="PRODUCT">Product</SelectItem></SelectContent>
+              <SelectContent>{PLACEMENT_ENTITY_TYPES.map(value => <SelectItem key={value} value={value}>{entityTypeLabel(value, lang)}</SelectItem>)}</SelectContent>
             </Select>
             {entityType === 'PROVIDER' ? (
               <VendorIdentitySelect value={vendorId} onChange={setVendorId} label={ar ? 'المورّد' : 'Provider'} testId="placement-vendor" />
@@ -84,11 +86,11 @@ export default function AdminPlacements() {
             )}
             <Select value={packageValue} onValueChange={value => setPackageValue(value as typeof packageValue)}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="BOOST">BOOST</SelectItem><SelectItem value="SPOTLIGHT">SPOTLIGHT</SelectItem><SelectItem value="PREMIER">PREMIER</SelectItem></SelectContent>
+              <SelectContent>{PLACEMENT_PACKAGES.map(value => <SelectItem key={value} value={value}>{packageLabel(value, lang)}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={surface} onValueChange={value => setSurface(value as typeof surface)}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="SEARCH_RESULTS_BOOST">SEARCH_RESULTS_BOOST</SelectItem><SelectItem value="TYPE_CATEGORY_SPOTLIGHT">TYPE_CATEGORY_SPOTLIGHT</SelectItem><SelectItem value="MASTER_DISCOVERY">MASTER_DISCOVERY</SelectItem></SelectContent>
+              <SelectContent>{PLACEMENT_SURFACES.map(value => <SelectItem key={value} value={value}>{surfaceLabel(value, lang)}</SelectItem>)}</SelectContent>
             </Select>
             <Input className="h-9" value={category} onChange={event => setCategory(event.target.value)} placeholder={ar ? 'الفئة' : 'Category'} />
             <Input className="h-9" type="date" value={startsAt} onChange={event => setStartsAt(event.target.value)} />
@@ -116,7 +118,14 @@ export default function AdminPlacements() {
           {notice && <p className="mt-2 text-sm text-emerald-700">{notice}</p>}
           {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
         </div>
-        {filtered.length === 0 ? (
+        {/* AN OUTAGE IS NOT AN EMPTY BOARD. `filtered` is derived from a
+            `?? []` default, so a failed request said the platform has no
+            commercial placements - a claim about the business, made because a
+            request did not come back. The filter's own empty result is a
+            different sentence and keeps its own arm below. */}
+        {list.isError ? (
+          <LoadFailed {...loadFailedCopy(ar)} onRetry={() => void list.refetch()} />
+        ) : filtered.length === 0 ? (
           <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
             {ar ? 'لا توجد مساحات تجارية مطابقة.' : 'No matching placements.'}
           </p>
@@ -152,8 +161,8 @@ export default function AdminPlacements() {
                         )}
                       </td>
                       <td className="p-2 text-muted-foreground">{row.kind}</td>
-                      <td className="p-2"><Badge variant="outline">{row.package || '—'}</Badge></td>
-                      <td className="p-2 text-muted-foreground">{row.surface || '—'}</td>
+                      <td className="p-2"><Badge variant="outline">{packageLabel(row.package, lang)}</Badge></td>
+                      <td className="p-2 text-muted-foreground">{surfaceLabel(row.surface, lang)}</td>
                       <td className="p-2 text-muted-foreground">{sourceLabel(row.source)}</td>
                       <td className="p-2 text-muted-foreground">{row.category}</td>
                       <td className="p-2 text-muted-foreground">{row.priority}</td>

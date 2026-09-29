@@ -167,6 +167,14 @@ describe('§1 every procedure is pinned to a tier', () => {
       // state - those stay behind marketplace.manage. It reached the public
       // surface without being written down here, which is exactly the drift
       // this list exists to catch.
+      // THE EDITORIAL PRODUCT PICKS, the mirror of featuredProviders below and
+      // public for the same reason: the marketplace home and the category
+      // pages that render them are public. It exposes strictly LESS than the
+      // catalogue already does - the fields on a product card, resolved
+      // through publicProductFilter, so an archived or draft product cannot
+      // appear in a premium slot after vanishing from the list beneath it. No
+      // supplier contact, no stock position, no margin.
+      'marketplace.featuredProducts',
       'marketplace.featuredProviders',
       'marketplace.get',
       'marketplace.importTemplate',
@@ -213,7 +221,55 @@ describe('§1 every procedure is pinned to a tier', () => {
       // for the same reason marketplace.list is: it is the shop window.
       'marketplace.vendorProducts',
       'marketplace.vendors',
+      /*
+       * THE STOREFRONT'S PORTFOLIO. Public for the same reason the storefront
+       * is, and it had to move with it: while this stayed protected, a
+       * signed-out buyer saw the Portfolio section render EMPTY, which reads as
+       * "this provider has shown no work" rather than "you cannot see this".
+       *
+       * It also had no visibility rule at all - any userId, every row, no check
+       * that the account was even a provider - so it now applies the same
+       * `directoryVisibilityFilter()` gate, with NOT_FOUND for anything the
+       * directory does not publish. An empty portfolio and a refusal stay
+       * different answers.
+       */
+      'portfolio.list',
+      /*
+       * THE PROVIDER STOREFRONT ITSELF. It was a protectedProcedure, so this
+       * roster did not list it and a signed-out reader - every crawler - got
+       * "Please sign in" on the page §21 and §37 both describe as public. The
+       * owner resolved it; this entry is that decision being deliberate, which
+       * is what this list is for.
+       *
+       * WHAT MAKES IT SAFE TO BE PUBLIC is not the tier, it is two rules the
+       * procedure applies underneath:
+       *
+       *   a stranger sees only what the DIRECTORY would list, through
+       *   `directoryVisibilityFilter()` - so an unapproved applicant, a frozen
+       *   account and a deactivated one all answer NOT FOUND, identically, and
+       *   walking ids reveals nothing about which accounts exist;
+       *
+       *   the tiers are a property of the COLUMNS, not of the reader
+       *   (server/vendorProfile.ts), and `vendorContactAccess` returns 'none'
+       *   for a null viewer - so the named contact, their email, phone, mobile
+       *   and address stay behind the same engagement rule as before, and the
+       *   commercial registration stays admin-only.
+       *
+       * server/publicStorefront.test.ts and evidence/zg-publicstorefront.mjs
+       * hold both, field by field.
+       */
+      'profile.getPublic',
       // A vendor's public reputation, shown on their profile.
+      // A supplier's own storefront emphasis (§18), addressed by the same
+      // userId the public storefront already is. Public because a storefront
+      // is public, and it discloses nothing new: the reader re-checks
+      // ownership AND publication on every row, so it returns a subset of
+      // what `marketplace.vendorProducts` and `services.forProvider` already
+      // show the same visitor. The count of rows dropped as unpublished is
+      // withheld here and returned only by the owner's `profile.myShowcase`,
+      // because it would otherwise leak how much unpublished stock a
+      // supplier holds.
+      'profile.showcase',
       'reviews.forUser',
       'reviews.statsForUser',
       // The service categories a provider may list under - the same list the

@@ -19,8 +19,18 @@
  * turn a withdrawn reward into a lapsed one.
  */
 import { and, desc, eq, inArray, like, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/mysql-core';
 import { containsTerm } from './_core/searchTerms';
 import { referralCampaigns, referralRewards, referrals, users } from '../drizzle/schema';
+
+/**
+ * `users` a second time, as the REFERRED party.
+ *
+ * One query already joins `users` as the referrer; naming the second join is
+ * what lets both identities come back in one read rather than a lookup per
+ * row.
+ */
+const referredUser = alias(users, 'referredUser');
 
 export type DerivedRewardStatus = 'PENDING' | 'GRANTED' | 'EXPIRED' | 'REVERSED' | 'REJECTED';
 
@@ -234,8 +244,22 @@ export async function listAdminReferrals(
     createdAt: referrals.createdAt,
     referrerName: users.name,
     referrerEmail: users.email,
+    /*
+     * THE REFERRED PARTY'S NAME, for the same reason as the campaign's above -
+     * and it was the one identity on this row that the rule had missed. The
+     * admin ledger could only print `#4127` for the person who was referred,
+     * so an administrator investigating an attribution dispute had a number
+     * and no way to tell whose account it was without leaving the screen.
+     *
+     * LEFT joined even though `referredId` is NOT NULL and RESTRICTed: this
+     * read must not silently drop a referral row because of a join, and a
+     * missing name is a dash rather than a disappeared record.
+     */
+    referredName: referredUser.name,
+    referredEmail: referredUser.email,
   }).from(referrals)
     .innerJoin(users, eq(users.id, referrals.referrerId))
+    .leftJoin(referredUser, eq(referredUser.id, referrals.referredId))
     .leftJoin(referralCampaigns, eq(referralCampaigns.id, referrals.campaignId));
   const rows = await (where ? baseRows.where(where) : baseRows)
     .orderBy(desc(referrals.createdAt))
@@ -270,3 +294,117 @@ export async function listAdminReferrals(
     pageSize: query.pageSize,
   };
 }
+
+/**
+ * ── WHO ACCEPTED THE INVITATION, AND WHERE IT GOT TO ──────────────────────
+ *
+ * The invite screen showed three counts and nothing else, so an inviter could
+ * see that four people had signed up and had no way to tell which of them had
+ * done anything, what any of them still needed to do, or why one had earned a
+ * reward and three had not.
+ *
+ * A DELIBERATE PRIVACY DECISION SITS HERE, and it is narrowed rather than
+ * reversed. listMyReferralRewards above refuses to name anybody at all, on the
+ * grounds that a referral code can be posted publicly and a stranger who signs
+ * up through it did not agree to be named to whoever posted it. That reasoning
+ * is sound and the risk is real.
+ *
+ * The owner's requirement is that an inviter can see the people and businesses
+ * they referred. Both are satisfied by disclosing only what the marketplace
+ * ALREADY SHOWS about that account to anybody:
+ *
+ *   A PROVIDER who is live in the public directory is named, because their
+ *   business name is on their public profile and in search results already.
+ *   Naming them here discloses nothing new.
+ *
+ *   ANYBODY ELSE - a homeowner, an unapproved or hidden provider - is NOT
+ *   named. They are described by what they are and when they joined, which is
+ *   what the inviter needs in order to understand their own programme, and
+ *   nothing that identifies a private individual to whoever posted a code.
+ *
+ * So the row always answers "how is my referral doing" and never turns a
+ * publicly posted link into a list of strangers' names.
+ */
+export type MyReferredParty = {
+  id: number;
+  /** The business name, when it is already public. Null when it is not. */
+  name: string | null;
+  /** What they are, always - "Supplier", "Homeowner" - for the rows with no name. */
+  role: string | null;
+  status: string;
+  qualificationType: string | null;
+  qualifiedAt: Date | null;
+  createdAt: Date;
+  /** What this particular referral earned, if anything has been granted yet. */
+  rewardType: string | null;
+  rewardValue: string | number | null;
+  rewardStatus: string | null;
+  rewardExpiresAt: Date | null;
+};
+
+export async function listMyReferredParties(
+  db: any,
+  userId: number,
+  limit = 50,
+): Promise<MyReferredParty[]> {
+  const referred = alias(users, 'referredParty');
+  const rows = await db.select({
+    id: referrals.id,
+    referredId: referrals.referredId,
+    name: referred.name,
+    role: referred.userRole,
+    accountStatus: referred.accountStatus,
+    onboardingStatus: referred.onboardingStatus,
+    status: referrals.status,
+    qualificationType: referrals.qualificationType,
+    qualifiedAt: referrals.qualifiedAt,
+    createdAt: referrals.createdAt,
+    /*
+     * THE REWARD COMES FROM THE REWARD TABLE, not from referrals.rewardType.
+     *
+     * That column exists and NOTHING HAS EVER WRITTEN IT - the engine records
+     * the grant in referralRewards and only moves referrals.status to
+     * 'rewarded'. Reading it here compiled, typechecked and returned null for
+     * every row, so the list would have shown a reward column that was always
+     * empty and nobody would have known why.
+     */
+    rewardType: referralRewards.rewardType,
+    rewardValue: referralRewards.rewardValue,
+    rewardStatus: referralRewards.status,
+    rewardExpiresAt: referralRewards.expiresAt,
+  }).from(referrals)
+    .leftJoin(referred, eq(referred.id, referrals.referredId))
+    .leftJoin(referralRewards, eq(referralRewards.referralId, referrals.id))
+    .where(eq(referrals.referrerId, userId))
+    .orderBy(desc(referrals.createdAt))
+    .limit(Math.min(Math.max(limit, 1), 100));
+
+  return rows.map((row: any) => {
+    /*
+     * PUBLIC MEANS PUBLIC. The same two conditions the vendor directory uses
+     * to decide whether an account appears at all: an active account and an
+     * approved registration. Anything else keeps its name to itself.
+     */
+    const publiclyListed = PROVIDER_ROLES_FOR_DIRECTORY.includes(String(row.role))
+      && row.accountStatus === 'active'
+      && row.onboardingStatus === 'approved';
+    return {
+      id: Number(row.id),
+      name: publiclyListed ? (row.name ?? null) : null,
+      role: row.role ?? null,
+      status: String(row.status),
+      qualificationType: row.qualificationType ?? null,
+      qualifiedAt: row.qualifiedAt ?? null,
+      createdAt: row.createdAt,
+      rewardType: row.rewardType ?? null,
+      rewardValue: row.rewardValue ?? null,
+      rewardStatus: row.rewardStatus ?? null,
+      rewardExpiresAt: row.rewardExpiresAt ?? null,
+    };
+  });
+}
+
+/** The roles the public vendor directory lists. Kept beside its one use. */
+const PROVIDER_ROLES_FOR_DIRECTORY = [
+  'contractor', 'engineer', 'architect', 'supplier', 'project_manager',
+];

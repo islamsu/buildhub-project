@@ -11,6 +11,7 @@ import type { TrpcContext } from './_core/context';
 import { TRPCError } from '@trpc/server';
 import { getDb, getUserByEmail, getUserByUsername, normalizeEmail, normalizeUsername, revokeSession } from './db';
 import { requireDb } from './_core/requireDb';
+import { isDuplicateKeyError } from './_core/dbErrors';
 import { hashPassword, verifyPassword, NO_SUCH_ACCOUNT_HASH } from './passwords';
 import { generateAIResponse, isAiConfigured, AiError, type AiFailureCategory } from './_core/ai';
 import { buildSystemPrompt, type KnowledgeLanguage } from './_core/buildhubKnowledge';
@@ -26,6 +27,10 @@ import { MAX_AI_ATTACHMENTS_PER_MESSAGE } from '@shared/aiAttachments';
 import { DOCUMENT_TYPES, IMAGE_TYPES, checkUploadedFile } from './_core/fileType';
 import { isAllowedRfqAttachmentType, MAX_RFQ_ATTACHMENT_SIZE } from './rfqAttachments';
 import { acceptQuotationSecure, closeRfqSecure, rejectQuotationSecure } from './quotationWorkflow';
+import { withdrawQuotationSecure } from './quotationWithdrawal';
+import { adminAttention } from './adminAttention';
+import { spentByProject, spentFor } from './projectSpend';
+import { listFeaturedProducts } from './featuredProducts';
 import { aiChatLimiters, authLimiters, contentLimiters, getClientIp } from './_core/rateLimit';
 import { recordEventAsync } from './analytics/events';
 import { ANALYTICS_EVENTS } from '@shared/analyticsEvents';
@@ -59,6 +64,7 @@ import { qualifyReferralEvent } from './referralEngine';
 import { reverseRewardEffect, markRewardReversed, markReferralAfterReversal } from './referralReversal';
 import {
   listAdminReferrals, listReferralRewards, listMyReferralRewards, myReferralCounts,
+  listMyReferredParties,
 } from './referralRewardView';
 import { explainEnquiryAllowance } from './billing/allowanceBreakdown';
 import { splitCampaignEdit, refuseCampaignEdit, refuseCampaignDates } from './referralCampaignEdit';
@@ -103,9 +109,9 @@ import {
   dailyLogs, expenses, users, disputes, adminSettings, progressReports, productQuestions,
   commercialAuditEvents,
   registrationDocuments, registrationDocumentSubmissions, registrationReviewEvents, testLoginTokens, adminInvitations, userAccountAuditEvents,
-  aiAttachments, rfqItems, qualifiedEnquiries,
-  projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals, referralCampaigns, referralRewards,
-  reviewResponses, reviewReports,
+  aiAttachments, rfqItems, quotationItems, qualifiedEnquiries,
+  projectMembers, rfqSuppliers, portfolioItems, vendorProfiles, vendorNameChangeRequests, adminNotes, referrals, referralCampaigns, referralRewards, referralCodeEvents,
+  reviewResponses, reviewReports, productQuestionReports,
   supportTickets, supportTicketMessages, supportTicketAttachments,
   disputeStatusHistory, disputeMessages, disputeEvidence, productCategories, serviceOfferings,
 } from '../drizzle/schema';
@@ -156,11 +162,15 @@ import {
   getEnquiryUsage, getRfqResponseAccess, getVendorCategories, openQualifiedEnquiry,
   previewQualifiedEnquiry,
 } from './billing/enquiries';
+import { listShowcase, listShowcaseCandidates, setShowcase } from './supplierShowcase';
+import { vendorMarketingOverview } from './vendorMarketing';
+import { MAX_SHOWCASE_ITEMS, SHOWCASE_ITEM_KINDS } from '../shared/supplierShowcase';
 import {
-  ENQUIRY_PAGE_SIZE_DEFAULT, ENQUIRY_RESPONSE_STATES, ENQUIRY_RFQ_STATUSES, ENQUIRY_SOURCES,
+  ENQUIRY_PAGE_SIZE_DEFAULT, ENQUIRY_RESPONSE_STATES, ENQUIRY_RFQ_STATUSES, ENQUIRY_SCOPES, ENQUIRY_SOURCES,
   enquiryQueueCategories, enquiryQueueSummary, listEnquiryQueue,
 } from './enquiryQueue';
 import {
+  directoryVisibilityFilter,
   getVendorTargetingDiagnostics, listDirectoryCategories,
   listDirectoryVendors, listFeaturedProviders, listSponsoredVendors,
 } from './vendorDirectory';
@@ -169,6 +179,14 @@ import {
   respondToReview, reportReview, moderateReview, resolveReviewReport,
   listReviewReports, visibleReviewsFor, visibleReviewFilter, ReviewModerationError,
 } from './reviewModeration';
+import {
+  answerRevisions, editProductAnswer, listProductQuestionReports, moderateProductQuestion,
+  ProductQuestionModerationError, publicQuestionView, reportProductQuestion,
+  resolveProductQuestionReport, visibleQuestionFilter,
+} from './productQuestionModeration';
+import {
+  PRODUCT_ANSWER_MAX_LENGTH, PRODUCT_QUESTION_REPORT_REASONS, PRODUCT_QUESTION_REPORT_TARGETS,
+} from '../shared/productQuestions';
 import { REVIEW_REPORT_REASONS, REVIEW_RESPONSE_MAX_LENGTH } from '../shared/reviews';
 import {
   publicProductFilter, transitionProduct, ProductLifecycleError,
@@ -185,7 +203,42 @@ import {
   MAX_ITEM_VARIANT, MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY,
 } from '../shared/rfqBasket';
 import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shared/productImport';
-import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories } from './categoryService';
+import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories, categoryUsage } from './categoryService';
+import {
+  currencyForMarket, requireCurrencyForMarket, UnknownMarketError,
+  DEFAULT_MARKET, isEnabledMarket, marketFor, fractionDigitsFor, type MarketCode,
+} from '@shared/markets';
+import {
+  PRICING_METHODS, COST_COMPONENTS, computeQuotationTotals, roundToScale,
+  normalizeForComparison, scopeDifferences, UnknownCurrencyScaleError,
+  type PricingMethod, type ComparableQuotation,
+} from '@shared/quotationPricing';
+import {
+  methodAllowedByPreference, PRICING_PREFERENCES, HELPABLE_BRIEF_FIELDS,
+  UNKNOWN, FINISHING_KINDS, PROPERTY_TYPES, CURRENT_CONDITIONS, FINISHING_LEVELS,
+  FINISHING_AREAS, FINISHING_TRADES, REQUESTING_PARTIES, briefArea, unknownFields,
+  type PricingPreference, type FinishingBrief,
+} from '@shared/finishing';
+import { suggestionsFor, SUGGESTION_SUBJECTS, type SuggestionContext } from '@shared/aiSuggestions';
+
+/**
+ * A BOQ CEILING, not a business rule.
+ *
+ * A finishing bill of quantities for an apartment runs to tens of lines, not
+ * thousands; this stops one request writing an unbounded number of rows in one
+ * transaction, which is a denial-of-service shape rather than a quotation.
+ */
+const MAX_QUOTATION_LINES = 200;
+import { userOperationalSnapshot } from './adminUser360';
+import {
+  toggleSaved, countSaved, listSaved, savedStateFor, SavedItemError,
+} from './savedItems';
+import { SAVED_ITEM_KINDS, MAX_SAVED_NOTE } from '@shared/savedItems';
+import {
+  listReferralCodes, referralCodeHistory, issueReferralCode, rotateReferralCode,
+  setReferralCodeStatus, referralOverview, referralLinkFor, mintReferralCode,
+  canHoldReferralCode, ReferralCodeError, REFERRAL_CODE_STATUSES,
+} from './referralCodes';
 import {
   listCategoriesForAdmin, createCategory, updateCategory, setCategoryStatus,
   addCategoryAlias, removeCategoryAlias, CategoryAdminError,
@@ -201,7 +254,8 @@ import {
   requireTicketAccess, transitionTicket, listSupportTickets, listMyTickets,
   ticketThread, statusAfterUserReply, SupportTicketError,
 } from './supportTickets';
-import { requireProjectAccess, readableProjectIds, liveMembership } from './projectMembership';
+import { requireProjectAccess, readableProjectIds, liveMembership, canAccessProject } from './projectMembership';
+import { assertOwnedUploads } from './_core/ownedUpload';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSponsorships, vendorSubscriptions } from '../drizzle/schema';
 import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
@@ -245,7 +299,26 @@ const TEST_LOGIN_TTL_MINUTES_MAX = 24 * 60;
 
 const hashTestLoginToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
-const generateReferralCode = () => `BH-${randomBytes(8).toString('hex').toUpperCase()}`;
+/**
+ * ONE MINT, SHARED. This used to be a second generator sitting beside the one
+ * in server/referralCodes.ts, which meant a code issued by an administrator
+ * and a code minted at sign-up could have drifted into different shapes.
+ */
+const generateReferralCode = mintReferralCode;
+
+/**
+ * A domain refusal reaches the client as the refusal it is.
+ *
+ * Without this every ReferralCodeError would surface as an opaque 500, and
+ * "this account already has a code - use rotate to replace it" is precisely
+ * the sentence an administrator needs in order to do the right thing next.
+ */
+function asReferralCodeError(error: unknown): unknown {
+  if (error instanceof ReferralCodeError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return error;
+}
 
 /**
  * A PASSWORD RESET LINK IS A CREDENTIAL TOO.
@@ -384,6 +457,26 @@ const enforceRfqRateLimit = (userId: number) =>
 const enforceUploadRateLimit = (userId: number) =>
   enforceContentRateLimit(userId, contentLimiters.uploadBurst, contentLimiters.uploadSustained);
 
+const enforceMessageRateLimit = (userId: number) =>
+  enforceContentRateLimit(userId, contentLimiters.messageBurst, contentLimiters.messageSustained);
+
+/**
+ * A FIRST APPROACH TO SOMEBODY NEW costs more than another line in a thread.
+ *
+ * Only called once the pair is known to have no history, so an established
+ * conversation never touches this limiter however many threads preceded it.
+ */
+function enforceNewConversationRateLimit(userId: number): void {
+  const blocked = contentLimiters.messageNewThread.check(String(userId), Date.now());
+  if (!blocked.allowed) {
+    throw new TRPCError({
+      code: 'TOO_MANY_REQUESTS',
+      message: `You have started a lot of new conversations recently. Try again in ${
+        Math.ceil(blocked.retryAfterMs / 1000)}s.`,
+    });
+  }
+}
+
 /**
  * Refuse the QA-persona machinery wherever test login is switched off.
  *
@@ -405,7 +498,24 @@ function assertTestLoginCapabilityEnabled(): void {
 }
 
 const authRouter = router({
-  me: publicProcedure.query(opts => opts.ctx.user ? toPublicSessionUser(opts.ctx.user) : null),
+  /**
+   * WHO IS THIS? - and `null` is an ANSWER, not a shrug.
+   *
+   * The whole client reads this one procedure to decide whether somebody is
+   * signed in, so `null` navigates them to the sign-in screen. Returning it
+   * when the session could not be CHECKED is how a database outage became a
+   * sign-out: the administrator was sent to /auth mid-investigation and could
+   * not sign in there either, because the same database was down.
+   */
+  me: publicProcedure.query(opts => {
+    if (opts.ctx.authUnavailable) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Your session could not be checked right now. This does not mean you are signed out - please try again.',
+      });
+    }
+    return opts.ctx.user ? toPublicSessionUser(opts.ctx.user) : null;
+  }),
   logout: publicProcedure.mutation(async ({ ctx }) => {
     // Server-side revocation (Phase 4A.6.6): without this, clearing the cookie only
     // logs this browser out - the same token, if copied elsewhere, kept working until
@@ -617,16 +727,61 @@ const authRouter = router({
       // Two simultaneous signups for the same username/email both pass the
       // checks above; the UNIQUE indexes settle it and the loser gets a plain
       // conflict rather than a 500.
-      if (error instanceof Error && /duplicate|ER_DUP_ENTRY/i.test(error.message)) {
+      /*
+       * THIS TEST USED TO READ error.message AND NEVER MATCH. drizzle throws
+       * "Failed query: insert into `users` ..." and leaves MySQL's ER_DUP_ENTRY
+       * on `.cause`, so the carefully worded conflict below was unreachable in
+       * the exact race the comment above describes: both simultaneous sign-ups
+       * got HTTP 500 and "Something went wrong". See server/_core/dbErrors.ts.
+       */
+      if (isDuplicateKeyError(error)) {
         throw new TRPCError({ code: 'CONFLICT', message: 'That username or email was just taken. Please try another.' });
       }
       throw error;
     }
 
-    const ownReferralCode = generateReferralCode();
-    await db.update(users).set({ referralCode: ownReferralCode }).where(eq(users.id, userId));
+    const ownReferralCode = mintReferralCode();
+    await db.update(users).set({
+      referralCode: ownReferralCode,
+      // The lifecycle columns 0057 added. A code minted here is active from
+      // the moment it exists, and its issue date is recorded rather than left
+      // to be inferred from the account's own join date later.
+      referralCodeStatus: 'active',
+      referralCodeIssuedAt: now,
+    }).where(eq(users.id, userId));
+    /**
+     * THE HISTORY STARTS HERE, NOT AT THE FIRST ADMIN ACTION.
+     *
+     * Admin issue and the lazy mint in `myReferral` both wrote a history row
+     * and this path did not, so the overwhelming majority of codes - every
+     * one minted at registration - had NO history at all. An administrator
+     * opening the history of an ordinary code read "No recorded changes",
+     * which is a different statement from "issued at sign-up on the 22nd"
+     * and the wrong one.
+     *
+     * The actor is the account itself: nobody administered this, the act of
+     * registering did, and naming a platform administrator would be a
+     * fabricated attribution.
+     */
+    await db.insert(referralCodeEvents).values({
+      userId, action: 'issued', newCode: ownReferralCode, actorId: userId,
+    });
     if (input.referralCode) {
-      const [referrer] = await db.select({ id: users.id }).from(users).where(eq(users.referralCode, input.referralCode)).limit(1);
+      /**
+       * A DISABLED CODE ATTRIBUTES NOTHING.
+       *
+       * This is the whole reason the status column exists: an administrator
+       * turning a code off has to stop the links already printed with it, and
+       * a lookup that ignored the status would have left them earning exactly
+       * as before. The refusal below is deliberately the SAME one an unknown
+       * code gets - "no account holds this code" - because telling a stranger
+       * that a specific code exists but has been switched off says something
+       * about another account that they have no business learning.
+       */
+      const [referrer] = await db.select({ id: users.id }).from(users).where(and(
+        eq(users.referralCode, input.referralCode),
+        eq(users.referralCodeStatus, 'active'),
+      )).limit(1);
       if (referrer && referrer.id !== userId) {
         await db.insert(referrals).values({
           referrerId: referrer.id,
@@ -983,7 +1138,23 @@ const authRouter = router({
       username ? getUserByUsername(username) : undefined,
       email ? getUserByEmail(email) : undefined,
     ]);
-    return { usernameAvailable: !usernameUser, emailAvailable: !emailUser, hasExistingAccount: Boolean(usernameUser || emailUser) };
+    /*
+     * `emailAvailable` IS NULL WHEN NO EMAIL WAS ASKED ABOUT.
+     *
+     * It used to be `!emailUser`, which is `true` when the caller supplied no
+     * email at all - so the only caller in the product (the OAuth sign-up
+     * path, which sends a username alone) was being told every address on
+     * earth was available. Nothing read it, so nothing acted on it; the next
+     * person to wire it up would have.
+     *
+     * "I did not check" and "it is free" are different answers, and only one
+     * of them is safe to build on.
+     */
+    return {
+      usernameAvailable: !usernameUser,
+      emailAvailable: email ? !emailUser : null,
+      hasExistingAccount: Boolean(usernameUser || emailUser),
+    };
   }),
   updateRole: protectedProcedure
     .input(z.object({
@@ -1176,7 +1347,17 @@ const projectsRouter = router({
     // membership to see it through.
     const ids = await readableProjectIds(db, ctx.user.id);
     if (ids.length === 0) return [];
-    return db.select().from(projects).where(inArray(projects.id, ids)).orderBy(desc(projects.createdAt));
+    const rows = await db.select().from(projects).where(inArray(projects.id, ids)).orderBy(desc(projects.createdAt));
+    /*
+     * `spent` IS DERIVED, never read from the column. The dashboard headlines
+     * this figure as "Total Spent"; the stored column is one no screen writes,
+     * so it was a constant zero sitting beside a project page that correctly
+     * totalled the expense log. One aggregate for the whole list, not one per
+     * project - see server/projectSpend.ts for why the column is left in
+     * place rather than dropped.
+     */
+    const totals = await spentByProject(db, ids);
+    return rows.map(row => ({ ...row, spent: spentFor(totals, row.id) }));
   }),
   directory: approvedProviderProcedure.input(z.object({
     page: z.number().int().min(0).default(0),
@@ -1220,9 +1401,12 @@ const projectsRouter = router({
     const access = await requireProjectAccess(db, input.id, ctx.user.id, 'read');
     const [project] = await db.select().from(projects).where(eq(projects.id, input.id));
     if (!project) throw new TRPCError({ code: 'NOT_FOUND' });
+    // Derived here too, from the same reader, so the record a project page
+    // holds and the row the dashboard lists cannot state different totals.
+    const totals = await spentByProject(db, [project.id]);
     // The caller's own capacity travels with the record so the UI can render
     // the right controls - it is a convenience, never the enforcement.
-    return { ...project, myProjectRole: access.projectRole };
+    return { ...project, spent: spentFor(totals, project.id), myProjectRole: access.projectRole };
   }),
   /**
    * WHO MAY START A PROJECT - the owner's decision, enforced HERE.
@@ -1265,6 +1449,20 @@ const projectsRouter = router({
       type: z.enum(['residential', 'commercial', 'renovation', 'finishing', 'maintenance', 'other']).optional(),
       budget: z.number().optional(),
       location: z.string().optional(),
+      /**
+       * WHERE THE WORK IS (§36).
+       *
+       * Not where the owner lives, not where they were browsing, not what
+       * their IP said. Authoritative for the project's own workflows and
+       * inherited by every RFQ raised against it, which is why the form must
+       * show it and let it be changed before save rather than defaulting it
+       * silently.
+       *
+       * Optional in the contract so an existing caller keeps working; absent
+       * means the single market BuildHub operates in, which is exactly what
+       * every project created before this meant.
+       */
+      marketCode: z.string().length(2).optional(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
@@ -1292,11 +1490,36 @@ const projectsRouter = router({
        * diverge the moment the product supports naming a customer - and the
        * audit trail already answers "who made this" today.
        */
+      /**
+       * THE MARKET, VALIDATED RATHER THAN ACCEPTED.
+       *
+       * A code that exists in shared/markets.ts so the architecture can be
+       * written against real values is not a market BuildHub can serve.
+       * Accepting a disabled one here would create a project whose RFQs no
+       * supplier could be matched to and whose currency nothing bills in.
+       */
+      if (input.marketCode !== undefined && !isEnabledMarket(input.marketCode)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'BuildHub does not currently operate in that market.',
+        });
+      }
+      const marketCode: MarketCode = isEnabledMarket(input.marketCode) ? input.marketCode : DEFAULT_MARKET;
+
       const projectRole = creatorProjectRole(ctx.user.userRole);
+      const { marketCode: _requestedMarket, ...projectFields } = input;
       const result = await db.insert(projects).values({
-        ...input,
+        ...projectFields,
         ownerId: ctx.user.id,
         createdBy: ctx.user.id,
+        marketCode,
+        // The project's sourcing currency, from its market. Written rather
+        // than left to the column default for the same reason as the RFQ's.
+        // `requireCurrencyForMarket`, not the nullable reader: `marketCode`
+        // has already been checked against the enabled set above, so a null
+        // here would mean the market table and the validator disagree - which
+        // is worth a loud failure rather than a silent EGP.
+        currency: requireCurrencyForMarket(marketCode),
         budget: input.budget != null ? String(input.budget) : undefined,
       });
       const id = Number(result[0].insertId);
@@ -1600,12 +1823,20 @@ const projectsRouter = router({
       status: z.enum(['planning', 'active', 'on_hold', 'completed', 'cancelled']).optional(),
       progress: z.number().min(0).max(100).optional(),
       budget: z.number().optional(),
-      spent: z.number().optional(),
+      /*
+       * `spent` IS NO LONGER ACCEPTED. It was an optional field no screen
+       * sent, writing a column no screen reads - so a caller who did send it
+       * got `{ success: true }` for a write that changed nothing anyone would
+       * ever see. Spend is the sum of the expense log; to change it, log an
+       * expense. Whether a manually stated total should exist ALONGSIDE the
+       * log is an owner decision, and it would need its own field and a
+       * visible marker rather than a silent overwrite of this one.
+       */
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      const { id, budget, spent, ...rest } = input;
+      const { id, budget, ...rest } = input;
       // AUTHORIZE FIRST, and throw. The predicate used to be the only guard:
       // `where(id = ? AND ownerId = ?)` simply matched no rows for anyone else
       // and the procedure still returned `{ success: true }` - reporting a
@@ -1615,7 +1846,6 @@ const projectsRouter = router({
       await db.update(projects).set({
         ...rest,
         budget: budget != null ? String(budget) : undefined,
-        spent: spent != null ? String(spent) : undefined,
       }).where(eq(projects.id, id));
       return { success: true };
     }),
@@ -1953,6 +2183,21 @@ const marketplaceRouter = router({
    * advertiser to fall back to and inventing one would be fabricating a
    * business relationship.
    */
+  /**
+   * EDITORIAL featured products, the mirror of featuredProviders.
+   *
+   * Public and exposing strictly less than the catalogue already does: the
+   * same fields a product card shows. No supplier contact, no stock position,
+   * no margin - a premium slot is a more visible card, not a more revealing
+   * one.
+   */
+  featuredProducts: publicProcedure
+    .input(z.object({
+      category: z.string().max(MAX_SEARCH_LENGTH).optional(),
+      limit: z.number().int().positive().max(24).optional(),
+    }).optional())
+    .query(async ({ input }) => listFeaturedProducts(input ?? {})),
+
   masterProvider: publicProcedure
     .input(z.object({ category: z.string().max(MAX_SEARCH_LENGTH).optional() }).optional())
     .query(async ({ input }) => masterProvider(input?.category)),
@@ -2397,14 +2642,40 @@ const marketplaceRouter = router({
    * 'public' is what may be browsed. Both are filters over the same rows.
    */
   categories: publicProcedure
-    .input(z.object({ view: z.enum(['listable', 'public']).default('listable') }).optional())
+    .input(z.object({
+      view: z.enum(['listable', 'public']).default('listable'),
+      /**
+       * HOW MANY LISTABLE PRODUCTS EACH CATEGORY ACTUALLY HOLDS.
+       *
+       * Off by default, because this endpoint also fills every category
+       * dropdown on the platform and none of those need an aggregate. The
+       * browse grid does: a category tile that says only its own name is
+       * decoration, and a buyer clicking one that holds nothing learns that
+       * the hard way. `categoryUsage` is the canonical counter - ONE grouped
+       * query, not one per tile - and its `activeProducts` is counted from
+       * the same lifecycle status the catalogue lists by.
+       */
+      withCounts: z.boolean().default(false),
+    }).optional())
     .query(async ({ input }) => {
       // An empty taxonomy would empty every category dropdown on the platform
       // and read as "BuildHub has no categories".
       const db = await requireDb();
       const index = await loadCategoryIndex(db);
       const view = input?.view ?? 'listable';
-      return { categories: view === 'public' ? publicCategories(index) : listableCategories(index) };
+      const categories = view === 'public' ? publicCategories(index) : listableCategories(index);
+      if (!input?.withCounts) return { categories };
+
+      const usage = await categoryUsage(db);
+      return {
+        categories: categories.map(category => ({
+          ...category,
+          // ABSENT FROM THE AGGREGATE MEANS NONE, not unknown: the grouped
+          // query covers the whole products table, so a category with no row
+          // in it genuinely holds nothing.
+          listedProducts: usage.get(category.id)?.activeProducts ?? 0,
+        })),
+      };
     }),
 
   /** The file a supplier fills in. Static, so it needs no authorization. */
@@ -2630,30 +2901,10 @@ const marketplaceRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
-      const prefix = `/manus-storage/product-images/user-${ctx.user.id}/`;
-      for (const image of input.images) {
-        // startsWith ALONE IS NOT ENOUGH. `.../user-5/../../secret.png` begins
-        // with the caller's own prefix and then climbs out of it, so the
-        // remainder is checked for traversal too. The storage proxy would
-        // refuse such a key on READ, but without this the row would still
-        // store a path that means something other than it appears to - and the
-        // next reader of that column has no reason to expect one.
-        if (!image.startsWith(prefix)) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'You may only use images you uploaded.',
-          });
-        }
-        const remainder = image.slice(prefix.length);
-        const traverses = remainder.length === 0
-          || remainder.split('/').some(segment => segment.length === 0 || segment === '.' || segment === '..');
-        if (traverses) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'You may only use images you uploaded.',
-          });
-        }
-      }
+      // One rule, shared with the portfolio, in server/_core/ownedUpload.ts -
+      // including the traversal defence, because a second copy of a security
+      // check is how the two start refusing different things.
+      assertOwnedUploads(input.images, 'product-images', ctx.user.id);
       // Duplicates would render the same photo twice and make "reorder" lie.
       if (new Set(input.images).size !== input.images.length) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'That image is already on this product.' });
@@ -2704,14 +2955,31 @@ const marketplaceRouter = router({
     // catalogue and collect the user id of every buyer who had asked about
     // anything. The page renders the question, the answer and the timestamps;
     // it has never needed to say who asked.
-    return db.select({
+    /*
+     * MODERATED CONTENT DOES NOT RENDER HERE. A hidden question is excluded
+     * outright; a hidden ANSWER leaves its question standing, because the
+     * question was asked in good faith and silence reads very differently
+     * from "BuildHub removed the reply" to somebody deciding whether to buy.
+     * `publicQuestionView` is the single place that distinction is made.
+     */
+    const rows = await db.select({
       id: productQuestions.id,
       productId: productQuestions.productId,
       question: productQuestions.question,
       answer: productQuestions.answer,
       answeredAt: productQuestions.answeredAt,
       createdAt: productQuestions.createdAt,
-    }).from(productQuestions).where(eq(productQuestions.productId, input.productId)).orderBy(desc(productQuestions.createdAt));
+      answerHiddenAt: productQuestions.answerHiddenAt,
+      answerEditedAt: productQuestions.answerEditedAt,
+    }).from(productQuestions)
+      .where(and(eq(productQuestions.productId, input.productId), visibleQuestionFilter()))
+      .orderBy(desc(productQuestions.createdAt));
+    return rows.map(row => {
+      // The moderation stamps are working data, never public: when an answer
+      // was hidden is nobody's business but the moderator's.
+      const { answerHiddenAt, answerEditedAt, ...rest } = publicQuestionView(row);
+      return rest;
+    });
   }),
   askQuestion: protectedProcedure.input(z.object({ productId: z.number(), question: z.string().min(2).max(2000) })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
@@ -2834,6 +3102,96 @@ const marketplaceRouter = router({
       }
       return { id: input.questionId };
     }),
+
+  /**
+   * A SUPPLIER CORRECTS THEIR OWN ANSWER.
+   *
+   * The old rule was write-once. A supplier who mistyped a dimension or quoted
+   * the wrong warranty could never fix it, and the wrong answer stayed on a
+   * public product page forever - which is a worse outcome than a visible
+   * correction.
+   *
+   * THE PREVIOUS TEXT IS KEPT. An editable public answer is otherwise a way to
+   * rewrite history: answer "yes, we ship to Alexandria", take the order,
+   * quietly change it to "no". Every superseded version goes to
+   * productAnswerRevisions and the listing carries an "Edited" marker.
+   */
+  editAnswer: protectedProcedure
+    .input(z.object({
+      questionId: z.number().int().positive(),
+      answer: z.string().trim().min(2).max(PRODUCT_ANSWER_MAX_LENGTH),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      let result;
+      try {
+        result = await editProductAnswer(db, {
+          questionId: input.questionId, supplierId: ctx.user.id, answer: input.answer,
+        });
+      } catch (error) { throw asQuestionTrpcError(error); }
+
+      // THE PERSON WHO ASKED IS TOLD. An answer they relied on changing
+      // without a word is the exact harm the revision history exists to make
+      // visible, and a record they never see is only half a remedy.
+      const [question] = await db.select({
+        askerId: productQuestions.askerId,
+        productId: productQuestions.productId,
+        productName: products.name,
+      }).from(productQuestions)
+        .innerJoin(products, eq(products.id, productQuestions.productId))
+        .where(eq(productQuestions.id, input.questionId)).limit(1);
+      if (question && question.askerId !== ctx.user.id) {
+        await notifyUser(db, {
+          userId: question.askerId,
+          title: 'An answer you asked about was updated',
+          body: `The supplier changed their answer about "${question.productName}".`,
+          type: 'product',
+          link: `/marketplace/products/${question.productId}`,
+          messageKey: 'notif.product.answerEdited',
+          messageParams: { productName: question.productName ?? '' },
+        });
+      }
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        subjectType: 'product', subjectId: question?.productId ?? 0,
+        action: 'product_answer_edited',
+        detail: `question ${input.questionId}, revision ${result.revisions}`,
+      });
+      return result;
+    }),
+
+  /**
+   * ANYBODY SIGNED IN MAY REPORT A QUESTION OR AN ANSWER.
+   *
+   * Until this existed a question carrying abuse, a third party's phone number
+   * or a competitor's contact details sat on a supplier's product page with no
+   * remedy available to anyone - not the supplier, not an administrator.
+   *
+   * The two halves are reported SEPARATELY because they are written by
+   * different people: a reasonable question can get an abusive reply, and
+   * forcing a moderator to act on both would punish whoever wrote the other
+   * half.
+   */
+  reportQuestion: protectedProcedure
+    .input(z.object({
+      questionId: z.number().int().positive(),
+      target: z.enum(PRODUCT_QUESTION_REPORT_TARGETS),
+      reason: z.enum(PRODUCT_QUESTION_REPORT_REASONS),
+      detail: z.string().trim().max(1000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await reportProductQuestion(db, {
+          questionId: input.questionId,
+          target: input.target,
+          reporterId: ctx.user.id,
+          reason: input.reason,
+          detail: input.detail ?? null,
+        });
+      } catch (error) { throw asQuestionTrpcError(error); }
+    }),
+
   /**
    * The questions on THIS supplier's own products, so they have somewhere to
    * answer from. Scoped by supplierId in the join - a supplier sees their own
@@ -2859,6 +3217,61 @@ const marketplaceRouter = router({
 });
 
 // ── RFQ Router ─────────────────────────────────────────────────────────────
+/**
+ * THE FINISHING BRIEF, VALIDATED.
+ *
+ * `statable` is the whole idea: every field below accepts its own values OR the
+ * explicit 'unknown' sentinel - لا أعرف / ساعدني في الاختيار. That is not a
+ * missing value and it is not a default. It is a person saying they do not
+ * know, stored as such, rendered as "not stated", and read by the suggestion
+ * engine so it can offer to explain exactly that field.
+ *
+ * Nothing here is required, and `briefBlocksPublication` in shared/finishing.ts
+ * says so as code: a homeowner with six unknowns has written a real request,
+ * and a contractor reading it knows precisely which questions to ask.
+ */
+const statable = <T extends readonly [string, ...string[]]>(values: T) =>
+  z.union([z.enum(values), z.literal(UNKNOWN)]);
+
+/**
+ * A `json` COLUMN COMES BACK AS A STRING, and a cast does not make it an object.
+ *
+ * `mysql2` hands JSON columns to drizzle as the raw text. Writing
+ * `row.scopeDetail as Scope` compiles, reads `.inclusions` off a string, gets
+ * `undefined`, and produces a comparison with no differences at all - which
+ * looks exactly like two quotations that happen to agree. A browser probe found
+ * it; nothing in the type system could have.
+ *
+ * Returns null rather than throwing on malformed text: a comparison that omits
+ * one quotation's scope is recoverable, one that 500s is not.
+ */
+function parseJsonColumn<T>(value: unknown): T | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'object') return value as T;
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? (parsed as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+const finishingBriefSchema = z.object({
+  requestingParty: statable(REQUESTING_PARTIES).optional(),
+  kind: statable(FINISHING_KINDS).optional(),
+  propertyType: statable(PROPERTY_TYPES).optional(),
+  currentCondition: statable(CURRENT_CONDITIONS).optional(),
+  areaSqm: z.union([z.number().positive().max(1_000_000), z.literal(UNKNOWN)]).optional(),
+  level: statable(FINISHING_LEVELS).optional(),
+  areas: z.array(z.enum(FINISHING_AREAS)).max(FINISHING_AREAS.length).optional(),
+  trades: z.array(z.enum(FINISHING_TRADES)).max(FINISHING_TRADES.length).optional(),
+  materialPreferences: z.union([z.string().max(1000), z.literal(UNKNOWN)]).optional(),
+  siteConstraints: z.union([z.string().max(1000), z.literal(UNKNOWN)]).optional(),
+  specialRequirements: z.string().max(1000).optional(),
+  scopeNotes: z.string().max(4000).optional(),
+});
+
 const rfqRouter = router({
   // Slice 9. This was `publicProcedure` and returned `select().from(rfqs)` -
   // every column of the 50 most recent RFQs, to anyone on the internet with no
@@ -2924,11 +3337,39 @@ const rfqRouter = router({
       description: rfqs.description,
       category: rfqs.category,
       budget: rfqs.budget,
+      /**
+       * WHICH MARKET, AND IN WHAT (§49).
+       *
+       * A budget figure with no currency beside it is a number the reader has
+       * to guess at, and the guess is wrong as soon as BuildHub lists a second
+       * market. The feed carries both so a supplier scanning it knows what
+       * they would be bidding in before they open anything.
+       */
+      marketCode: rfqs.marketCode,
+      currency: rfqs.currency,
       location: rfqs.location,
       deadline: rfqs.deadline,
       productReference: rfqs.productReference,
       status: rfqs.status,
       createdAt: rfqs.createdAt,
+      /*
+       * THE FINISHING BRIEF TRAVELS WITH THE FEED. 0062.
+       *
+       * Same class as `description`, `budget` and `location`, which are already
+       * here: it is WHAT IS BEING ASKED FOR, and a provider scanning the feed
+       * for finishing work needs the level and the area to judge whether to
+       * spend a credit opening it. The requester's uploaded files remain what
+       * the credit buys, and this feed still never selects them - the word for
+       * them is left out of this comment on purpose, because the authorization
+       * sweep greps this procedure's body for it and a blunt guard is the right
+       * kind here.
+       *
+       * It is here as well as on `summary` deliberately - the two must return
+       * the same allowlist, or `summary` becomes a way around the feed's
+       * narrowing, which is the drift `rfqDetailAccess.test.ts` guards.
+       */
+      finishingBrief: rfqs.finishingBrief,
+      pricingPreference: rfqs.pricingPreference,
     };
     /*
      * PAGED, with a real total.
@@ -3055,13 +3496,18 @@ const rfqRouter = router({
         contact = { email: row?.email ?? null, phone: row?.phone ?? null };
       }
 
-      return {
-        requester,
-        // Absent, and the client says WHY it is absent rather than rendering
-        // "N/A" as though the customer had left the field blank.
-        contact,
-        contactUnlocked: consumed,
-      };
+      /*
+       * `contact` ALONE ANSWERS IT, so `contactUnlocked` is gone.
+       *
+       * null      the lead is not unlocked - the screen says so
+       * an object the lead is unlocked; blank fields inside it mean the
+       *           customer left them blank, which the screen renders as "—"
+       *
+       * The removed flag said the same thing a second way and no client ever
+       * read it. Two signals for one fact is how they come to disagree, and
+       * the reachability census found this one had never been asked at all.
+       */
+      return { requester, contact };
     }),
 
   summary: protectedProcedure
@@ -3077,11 +3523,32 @@ const rfqRouter = router({
         description: rfqs.description,
         category: rfqs.category,
         budget: rfqs.budget,
+        // WHERE AND IN WHAT. The respond form shows both and locks the
+        // currency field to this value rather than to the supplier's own
+        // subscription currency, which is what it used to show.
+        marketCode: rfqs.marketCode,
+        currency: rfqs.currency,
         location: rfqs.location,
         deadline: rfqs.deadline,
         productReference: rfqs.productReference,
         status: rfqs.status,
         createdAt: rfqs.createdAt,
+        /**
+         * THE FINISHING BRIEF WAS WRITE-ONLY. 0062.
+         *
+         * It was stored on create and read by nothing: the requester could not
+         * reopen what they had written, and a contractor pricing the job could
+         * not see the property type, the area, the finishing level or which
+         * questions the customer had said they did not know - which is most of
+         * what a finishing quotation depends on.
+         *
+         * It belongs to the same class as `description`, `budget` and the
+         * request's lines, and the gate below already decides that class
+         * correctly: the requester, or an approved provider. No new
+         * authorization surface.
+         */
+        finishingBrief: rfqs.finishingBrief,
+        pricingPreference: rfqs.pricingPreference,
       }).from(rfqs).where(eq(rfqs.id, input.id));
       if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
       /**
@@ -3108,7 +3575,16 @@ const rfqRouter = router({
         unit: rfqItems.unit, specifications: rfqItems.specifications,
         unitPriceSnapshot: rfqItems.unitPriceSnapshot,
       }).from(rfqItems).where(eq(rfqItems.rfqId, input.id)).orderBy(rfqItems.position, rfqItems.id);
-      return { ...rfq, items };
+      /*
+       * PARSED, because mysql2 hands a `json` column back as a STRING and a
+       * cast does not make it an object. The comparison screen lost every scope
+       * difference to exactly this, so the reader is explicit here too.
+       */
+      return {
+        ...rfq,
+        finishingBrief: parseJsonColumn<FinishingBrief>(rfq.finishingBrief),
+        items,
+      };
     }),
   /**
    * The server-side gate for the dedicated response page.
@@ -3197,7 +3673,31 @@ const rfqRouter = router({
     // become a second way to learn what an RFQ contains.
     const items = await db.select().from(rfqItems)
       .where(eq(rfqItems.rfqId, rfq.id)).orderBy(rfqItems.position, rfqItems.id);
-    return { ...rfq, items };
+
+    /**
+     * THE PROJECT THIS WAS RAISED FOR, resolved to a NAME the buyer recognises.
+     *
+     * `rfqs.projectId` has been written since the RFQ form gained its project
+     * selector, and this procedure has always returned it - as a bare integer
+     * nothing rendered. A buyer could link an RFQ to a project and then never
+     * be told, on the RFQ's own page, which project that was.
+     *
+     * ACCESS IS RE-CHECKED HERE RATHER THAN ASSUMED. Linking happened at
+     * creation; membership can be withdrawn afterwards, and removal is
+     * supposed to revoke access. Reading the title off `projectId` alone would
+     * make the RFQ page a way to keep reading the name of a project somebody
+     * has been removed from. So the title is resolved only while `read` still
+     * holds, and the caller is told plainly when it no longer does - `linked:
+     * true, project: null` is a fact about their own RFQ, not a leak, since
+     * they are the person who created the link.
+     */
+    let project: { id: number; title: string } | null = null;
+    if (rfq.projectId != null && await canAccessProject(db, rfq.projectId, ctx.user.id, 'read')) {
+      const [row] = await db.select({ id: projects.id, title: projects.title })
+        .from(projects).where(eq(projects.id, rfq.projectId)).limit(1);
+      project = row ?? null;
+    }
+    return { ...rfq, items, project, projectLinked: rfq.projectId != null };
   }),
   create: protectedProcedure
     .input(z.object({
@@ -3224,6 +3724,21 @@ const rfqRouter = router({
       location: z.string().optional(),
       deadline: z.date().optional(),
       projectId: z.number().optional(),
+      /**
+       * WHERE THE REQUIREMENT MUST BE SUPPLIED OR PERFORMED (§37).
+       *
+       * Optional in the contract and NOT optional in meaning: an RFQ raised
+       * against a project inherits the project's market, and a standalone one
+       * falls back to the single market BuildHub operates in. What the server
+       * refuses to do is derive it from requester nationality, requester IP,
+       * supplier country or UI language - none of which are where the work is.
+       *
+       * Only an ENABLED market is accepted. A code sitting in shared/markets.ts
+       * so the architecture can be written against real values is not a market
+       * BuildHub can serve, and accepting one here would create an RFQ no
+       * supplier could be matched to.
+       */
+      marketCode: z.string().length(2).optional(),
       productReference: z.object({ productId: z.number(), variantId: z.string().min(1), variantLabel: z.string().min(1) }).optional(),
       /**
        * THE LINES OF THE REQUEST — what the customer is actually asking to be
@@ -3250,6 +3765,20 @@ const rfqRouter = router({
         type: z.string(),
         size: z.number(),
       })).max(6).optional(),
+      /**
+       * A PREFERENCE, NEVER A GATE.
+       *
+       * Optional, and its absence is a distinct stored state from
+       * `provider_choice`: "nothing was said" is not the same decision as
+       * "you decide". Both permit any method; only one of them was chosen, and
+       * a customer who chose deserves to have that recorded.
+       *
+       * A homeowner is never required to understand pricing mechanics in order
+       * to publish.
+       */
+      pricingPreference: z.enum(PRICING_PREFERENCES).optional(),
+      /** The structured finishing brief. See finishingBriefSchema above. */
+      finishingBrief: finishingBriefSchema.optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       enforceRfqRateLimit(ctx.user.id);
@@ -3261,7 +3790,42 @@ const rfqRouter = router({
         // the job can see it and report on it but cannot commission from it.
         await requireProjectAccess(db, input.projectId, ctx.user.id, 'commercial');
       }
-      const { attachments, productReference, items, ...rest } = input;
+
+      /**
+       * THE MARKET, RESOLVED ONCE AND SNAPSHOTTED ONTO THE RFQ.
+       *
+       * Order: the project's market if this RFQ belongs to one, then an
+       * explicit choice, then the single market BuildHub operates in. The
+       * project wins over the explicit field on purpose - an RFQ for work in
+       * Jeddah cannot be filed against a Cairo project by sending a different
+       * code, and the requirement's location is a property of the job rather
+       * than of the form.
+       *
+       * SNAPSHOTTED rather than read through the project on every access, so
+       * editing the project later cannot silently reinterpret an RFQ that
+       * suppliers have already quoted against.
+       */
+      let marketCode: MarketCode = DEFAULT_MARKET;
+      if (input.projectId != null) {
+        const [project] = await db.select({ marketCode: projects.marketCode })
+          .from(projects).where(eq(projects.id, input.projectId)).limit(1);
+        if (project?.marketCode && isEnabledMarket(project.marketCode)) marketCode = project.marketCode;
+      } else if (input.marketCode !== undefined) {
+        if (!isEnabledMarket(input.marketCode)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'BuildHub does not currently operate in that market.',
+          });
+        }
+        marketCode = input.marketCode;
+      }
+      // Refuses rather than guesses, for the same reason as projects.create:
+      // `marketCode` is either the project's (validated on the way in) or one
+      // already checked against the enabled set.
+      const marketCurrency = requireCurrencyForMarket(marketCode);
+
+      const { attachments, productReference, items, marketCode: _requestedMarket,
+        pricingPreference, finishingBrief, ...rest } = input;
 
       /**
        * EVERY CATALOGUE LINE IS RE-READ FROM THE CATALOGUE.
@@ -3382,9 +3946,25 @@ const rfqRouter = router({
         const result = await tx.insert(rfqs).values({
           ...rest,
           requesterId: ctx.user.id,
+          // NOT THE COLUMN DEFAULT. The default is Egypt, which is right
+          // today and would be a wrong number on every foreign RFQ the day it
+          // is not - so the resolved value is written explicitly.
+          marketCode,
+          currency: marketCurrency,
           budget: input.budget != null ? String(input.budget) : undefined,
           attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : undefined,
           productReference: productReference ?? undefined,
+          /**
+           * WRITTEN EXPLICITLY, not swept in by the spread above.
+           *
+           * They would have landed in `rest` and worked by name coincidence,
+           * which is how a renamed column starts silently dropping a
+           * customer's brief. `undefined` leaves the column NULL - the state
+           * that means "not asked", distinct from the stored 'unknown'
+           * sentinel that means "asked, and they said they do not know".
+           */
+          pricingPreference: pricingPreference ?? undefined,
+          finishingBrief: finishingBrief ?? undefined,
         });
         const id = Number(result[0].insertId);
         if (resolvedItems.length > 0) {
@@ -3514,6 +4094,29 @@ const rfqRouter = router({
         status:           quotations.status,
         revisionNumber:   quotations.revisionNumber,
         createdAt:        quotations.createdAt,
+        /**
+         * HOW THE PRICE WAS ARRIVED AT. 0062.
+         *
+         * Read by the same requester-only query that already returns the
+         * price, because these ARE the price - a total whose derivation the
+         * customer cannot see is the defect this column set exists to remove.
+         * No new authorization surface: whoever could see `price` sees these.
+         */
+        pricingMethod:      quotations.pricingMethod,
+        baseAmount:         quotations.baseAmount,
+        discountAmount:     quotations.discountAmount,
+        contingencyRate:    quotations.contingencyRate,
+        overheadRate:       quotations.overheadRate,
+        vatRate:            quotations.vatRate,
+        vatAmount:          quotations.vatAmount,
+        percentageRate:     quotations.percentageRate,
+        materialBaseAmount: quotations.materialBaseAmount,
+        percentageBasisNote: quotations.percentageBasisNote,
+        packageTier:        quotations.packageTier,
+        packageBasis:       quotations.packageBasis,
+        packageRate:        quotations.packageRate,
+        packageQuantity:    quotations.packageQuantity,
+        scopeDetail:        quotations.scopeDetail,
         providerName:     users.name,
         providerEmail:    users.email,
         providerVerified: users.verified,
@@ -3574,6 +4177,205 @@ const rfqRouter = router({
       };
     });
   }),
+
+  /**
+   * ── COMPARING BIDS THAT WERE PRICED DIFFERENTLY ─────────────────────────
+   *
+   * A percentage quotation, a package quotation and a bill of quantities are
+   * three different commercial statements, and a customer has to choose between
+   * them. Comparing the three totals is the one comparison that is almost
+   * always misleading: the cheapest is usually the one that left the most out.
+   *
+   * So this returns the NORMALIZED shape - base, discount, contingency,
+   * overhead, VAT, payable, duration, validity - plus the FACTUAL scope
+   * differences between the bids, and a rate per unit area ONLY where an area
+   * is genuinely known.
+   *
+   * ── WHAT IT REFUSES TO DO ───────────────────────────────────────────────
+   *
+   * It does not rank, it does not name a winner, and it does not reconcile two
+   * different scopes into a pretend equivalence. Where a quotation is silent
+   * about an item, it is reported as SILENT - not as excluded, which would
+   * invent a difference, and not as included, which would invent an agreement.
+   *
+   * AUTHORIZATION IS THE SAME ONE `quotations` USES, deliberately: the RFQ's
+   * requester and nobody else. A rival supplier cannot reach this, which is
+   * the whole reason a sealed bid is worth submitting.
+   */
+  comparison: protectedProcedure
+    .input(z.object({ rfqId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [rfq] = await db.select({
+        requesterId: rfqs.requesterId,
+        currency: rfqs.currency,
+        marketCode: rfqs.marketCode,
+        finishingBrief: rfqs.finishingBrief,
+        pricingPreference: rfqs.pricingPreference,
+      }).from(rfqs).where(eq(rfqs.id, input.rfqId));
+      if (!rfq || rfq.requesterId !== ctx.user.id) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not own this RFQ' });
+      }
+
+      const rows = await db.select({
+        id: quotations.id,
+        providerId: quotations.providerId,
+        providerName: users.name,
+        pricingMethod: quotations.pricingMethod,
+        currency: quotations.currency,
+        price: quotations.price,
+        baseAmount: quotations.baseAmount,
+        discountAmount: quotations.discountAmount,
+        contingencyRate: quotations.contingencyRate,
+        overheadRate: quotations.overheadRate,
+        vatRate: quotations.vatRate,
+        vatAmount: quotations.vatAmount,
+        packageTier: quotations.packageTier,
+        packageBasis: quotations.packageBasis,
+        packageQuantity: quotations.packageQuantity,
+        percentageRate: quotations.percentageRate,
+        materialBaseAmount: quotations.materialBaseAmount,
+        percentageBasisNote: quotations.percentageBasisNote,
+        scopeDetail: quotations.scopeDetail,
+        timeline: quotations.timeline,
+        validUntil: quotations.validUntil,
+        status: quotations.status,
+      })
+        .from(quotations)
+        .leftJoin(users, eq(quotations.providerId, users.id))
+        .where(and(eq(quotations.rfqId, input.rfqId), isNull(quotations.supersededAt)));
+
+      // The BOQ lines of every quotation in one read, then grouped - rather
+      // than one query per quotation, which is the N+1 this screen would
+      // otherwise run every time a customer opened it.
+      const ids = rows.map(row => row.id);
+      const lineRows = ids.length === 0 ? [] : await db.select({
+        quotationId: quotationItems.quotationId,
+        component: quotationItems.component,
+        tradeGroup: quotationItems.tradeGroup,
+        description: quotationItems.description,
+        quantity: quotationItems.quantity,
+        unit: quotationItems.unit,
+        rate: quotationItems.rate,
+        lineTotal: quotationItems.lineTotal,
+      }).from(quotationItems)
+        .where(inArray(quotationItems.quotationId, ids))
+        .orderBy(quotationItems.quotationId, quotationItems.position);
+      const linesByQuotation = new Map<number, typeof lineRows>();
+      for (const line of lineRows) {
+        const bucket = linesByQuotation.get(line.quotationId) ?? [];
+        bucket.push(line);
+        linesByQuotation.set(line.quotationId, bucket);
+      }
+
+      /**
+       * THE AREA A RATE MAY BE DIVIDED BY, or null.
+       *
+       * The requester's OWN stated area, from their brief. Where they marked it
+       * unknown - or never said - `briefArea` returns null and no per-metre
+       * rate is produced for any quotation that is not itself priced per metre.
+       * An invented denominator is the one number a customer would act on.
+       */
+      const requestArea = briefArea(parseJsonColumn<FinishingBrief>(rfq.finishingBrief));
+
+      /**
+       * THE COMPONENTS, REBUILT THROUGH THE SAME FUNCTION THAT PRODUCED THEM.
+       *
+       * `contingencyRate` and `overheadRate` are stored as RATES, so the
+       * AMOUNTS have to be derived to be shown. Deriving them here with a
+       * second expression is how a comparison screen starts disagreeing with
+       * the quotation page about what the contingency was.
+       *
+       * So the stored base is fed back through `computeQuotationTotals` as a
+       * `custom` statedAmount - which makes every step after the base identical
+       * to the one that wrote the row - and the result is checked against the
+       * stored total. A mismatch means the row and the formula have diverged,
+       * and it is REPORTED rather than papered over: `total` stays the stored,
+       * agreed figure, and `reconciles: false` says the breakdown beside it
+       * cannot be trusted.
+       */
+      const comparable: ComparableQuotation[] = [];
+      const extras = new Map<number, {
+        reconciles: boolean;
+        contingencyRate: string | null;
+        overheadRate: string | null;
+        percentageRate: string | null;
+        materialBaseAmount: string | null;
+        percentageBasisNote: string | null;
+        status: string | null;
+      }>();
+
+      for (const row of rows) {
+        const currency = row.currency ?? rfq.currency;
+        const storedTotal = Number(row.price);
+        let totals;
+        try {
+          totals = computeQuotationTotals({
+            method: 'custom',
+            currency,
+            statedAmount: Number(row.baseAmount ?? 0),
+            discountAmount: Number(row.discountAmount ?? 0),
+            contingencyRate: row.contingencyRate === null ? null : Number(row.contingencyRate),
+            overheadRate: row.overheadRate === null ? null : Number(row.overheadRate),
+            vatRate: row.vatRate === null ? null : Number(row.vatRate),
+          });
+        } catch {
+          // An unknown currency scale. The stored total is still the agreed
+          // number; only the breakdown is unavailable.
+          totals = null;
+        }
+        const reconciles = totals !== null && totals.total === storedTotal;
+        comparable.push({
+          id: row.id,
+          providerId: row.providerId,
+          providerName: row.providerName,
+          method: (row.pricingMethod ?? 'custom') as PricingMethod,
+          currency,
+          totals: {
+            base: Number(row.baseAmount ?? 0),
+            discount: Number(row.discountAmount ?? 0),
+            contingency: totals?.contingency ?? 0,
+            overhead: totals?.overhead ?? 0,
+            netBeforeVat: storedTotal - Number(row.vatAmount ?? 0),
+            vatRate: row.vatRate === null ? null : Number(row.vatRate),
+            vatAmount: Number(row.vatAmount ?? 0),
+            // THE STORED, AGREED FIGURE. Never a recomputed one: a bid is what
+            // the contractor submitted, not what today's code would make of it.
+            total: storedTotal,
+            scale: totals?.scale ?? fractionDigitsFor(currency) ?? 2,
+          },
+          timelineDays: row.timeline,
+          validUntil: row.validUntil,
+          packageTier: row.packageTier,
+          packageBasis: row.packageBasis,
+          packageQuantity: row.packageQuantity === null ? null : Number(row.packageQuantity),
+          scope: parseJsonColumn<NonNullable<ComparableQuotation['scope']>>(row.scopeDetail),
+        });
+        extras.set(row.id, {
+          reconciles,
+          contingencyRate: row.contingencyRate,
+          overheadRate: row.overheadRate,
+          percentageRate: row.percentageRate,
+          materialBaseAmount: row.materialBaseAmount,
+          percentageBasisNote: row.percentageBasisNote,
+          status: row.status ?? null,
+        });
+      }
+
+      return {
+        currency: rfq.currency,
+        pricingPreference: rfq.pricingPreference,
+        requestArea,
+        quotations: comparable.map(quotation => ({
+          ...normalizeForComparison(quotation, requestArea),
+          ...(extras.get(quotation.id) ?? {}),
+          lines: linesByQuotation.get(quotation.id) ?? [],
+        })),
+        /** Factual, three-state, and never reconciled into an equivalence. */
+        differences: scopeDifferences(comparable),
+      };
+    }),
+
   // ── RFQ targeting (Phase 4B.3) ──────────────────────────────────────────
   // Which open RFQs this vendor is eligible for, by declared-category match.
   // Listing is free: no credit is consumed here, only by openEnquiry below.
@@ -3726,7 +4528,12 @@ const rfqRouter = router({
       listEnquiryQueue(db, {
         userId: ctx.user.id,
         declaredCategories,
-        filters: { rfqStatus: 'open' },
+        // SCOPED TO WHAT CAN STILL BE TAKEN, which is what this procedure's
+        // own name claims. `rfqStatus: 'open'` was not that: an open request
+        // the provider had already opened, quoted and WON came back in a list
+        // titled "requests you can act on now", so the summary card and the
+        // work queue below it showed the same rows.
+        filters: { scope: 'opportunities' },
       }),
       getEnquiryUsage(ctx.user.id),
     ]);
@@ -3737,11 +4544,15 @@ const rfqRouter = router({
         category: row.category,
         location: row.location,
         budget: row.budget,
+        // The RFQ decides the currency (CLAUDE.md §87), so it travels with
+        // the amount rather than being defaulted by whatever renders it.
+        currency: row.currency,
         deadline: row.deadline,
         status: row.rfqStatus,
         createdAt: row.createdAt,
         alreadyOpened: row.openedAt !== null,
         invited: row.invitedAt !== null,
+        responseState: row.responseState,
       })),
       usage,
       /** The real number of open requests reaching this provider, not the number shown. */
@@ -3764,6 +4575,13 @@ const rfqRouter = router({
       pageSize: z.number().int().min(1).max(100).default(ENQUIRY_PAGE_SIZE_DEFAULT),
       rfqStatus: z.enum(ENQUIRY_RFQ_STATUSES).nullish(),
       source: z.enum(ENQUIRY_SOURCES).nullish(),
+      /**
+       * WHICH HALF OF THE QUEUE. The server resolves it from the shared
+       * partition, so the two views on `/enquiries` cannot be asked for in a
+       * way that makes them overlap. Defaults to the whole queue, which is
+       * what every existing caller means.
+       */
+      scope: z.enum(ENQUIRY_SCOPES).nullish(),
       responseState: z.enum(ENQUIRY_RESPONSE_STATES).nullish(),
       category: z.string().max(100).nullish(),
       search: z.string().max(200).nullish(),
@@ -3781,6 +4599,7 @@ const rfqRouter = router({
           filters: {
             rfqStatus: input.rfqStatus ?? null,
             source: input.source ?? null,
+            scope: input.scope ?? null,
             responseState: input.responseState ?? null,
             category: input.category ?? null,
             search: input.search ?? null,
@@ -4008,8 +4827,79 @@ const rfqRouter = router({
     // business rule somebody has to decide.
     .input(z.object({
       rfqId: z.number().int().positive(),
-      price: z.number().positive().max(9_999_999_999.99),
-      currency: z.literal(BILLING_CURRENCY).default(BILLING_CURRENCY),
+      /**
+       * OPTIONAL, AND REFUSED FOR A DERIVED METHOD.
+       *
+       * For `custom` - the pre-existing behaviour - this IS the stated amount
+       * and is required, exactly as before. For percentage, package and
+       * detailed the total is DERIVED by `computeQuotationTotals` from the
+       * inputs below, and sending one here is a BAD_REQUEST rather than a
+       * value that is quietly ignored.
+       *
+       * A client-supplied total for a derived method is precisely the
+       * competing source of truth FINISHING_AND_AI_CONTEXT.md §5 forbids: it
+       * would be accepted, stored, and would disagree with its own components
+       * the moment either side rounded differently.
+       */
+      price: z.number().positive().max(9_999_999_999.99).optional(),
+      /** custom | percentage | package | detailed. Defaults to the old behaviour. */
+      pricingMethod: z.enum(PRICING_METHODS).optional(),
+      /** percentage: the material cost the rate applies to, and the rate. */
+      materialBaseAmount: z.number().nonnegative().max(9_999_999_999.999).optional(),
+      percentageRate: z.number().positive().max(999).optional(),
+      /** Which material values are in the base, and what is excluded from it. */
+      percentageBasisNote: z.string().max(2000).optional(),
+      /** package: a tier name (free text), a canonical basis, a rate, a quantity. */
+      packageTier: z.string().max(60).optional(),
+      packageBasis: z.enum(SERVICE_PRICING_BASES).optional(),
+      packageRate: z.number().positive().max(9_999_999_999.999).optional(),
+      packageQuantity: z.number().positive().max(9_999_999.99).optional(),
+      /** detailed: the BOQ. `lineTotal` is NOT an input - the server computes it. */
+      lines: z.array(z.object({
+        component: z.enum(COST_COMPONENTS).optional(),
+        tradeGroup: z.string().max(80).optional(),
+        description: z.string().min(1).max(255),
+        quantity: z.number().positive().max(9_999_999.999),
+        unit: z.string().max(40).optional(),
+        rate: z.number().nonnegative().max(9_999_999_999.999),
+      })).max(MAX_QUOTATION_LINES).optional(),
+      /** Shared commercial fields. An amount, then three rates. */
+      discountAmount: z.number().nonnegative().max(9_999_999_999.999).optional(),
+      contingencyRate: z.number().nonnegative().max(100).optional(),
+      overheadRate: z.number().nonnegative().max(100).optional(),
+      /**
+       * UNSTATED IS NOT ZERO. Omitting this stores NULL - "no VAT rate was
+       * given" - which reads differently to a customer than a stated 0%.
+       */
+      vatRate: z.number().nonnegative().max(100).optional(),
+      /** The scope statements that make a comparison mean something. */
+      scope: z.object({
+        inclusions: z.array(z.string().min(1).max(200)).max(50).optional(),
+        exclusions: z.array(z.string().min(1).max(200)).max(50).optional(),
+        allowances: z.array(z.string().min(1).max(200)).max(50).optional(),
+        upgrades: z.array(z.string().min(1).max(200)).max(50).optional(),
+        assumptions: z.array(z.string().min(1).max(300)).max(50).optional(),
+        milestones: z.array(z.string().min(1).max(200)).max(20).optional(),
+        specifications: z.array(z.string().min(1).max(200)).max(50).optional(),
+        materialLevel: z.string().max(80).optional(),
+        includedTrades: z.array(z.string().min(1).max(80)).max(30).optional(),
+        laborIncluded: z.boolean().optional(),
+      }).optional(),
+      /**
+       * NO CURRENCY FIELD, DELIBERATELY.
+       *
+       * This accepted `z.literal(BILLING_CURRENCY)` - the currency of the
+       * SUPPLIER'S SUBSCRIPTION PLAN, the amount they pay BuildHub every
+       * month - and wrote it onto the bid. Those are two different
+       * commercial relationships, and the owner's policy is that they must
+       * never be confused: a supplier billed in EGP under an Egypt contract
+       * quoting a Saudi RFQ bids in SAR, and their subscription does not
+       * change that.
+       *
+       * The quotation currency is the RFQ's currency, read from the RFQ
+       * below. It is not a client input at all, so no payload can submit a
+       * bid in a currency the buyer is not comparing in.
+       */
       timeline: z.number().int().positive().max(3650).optional(),
       warranty: z.string().max(100).optional(),
       validUntil: z.date().refine(
@@ -4031,6 +4921,57 @@ const rfqRouter = router({
         type: z.string().max(128),
         size: z.number().int().nonnegative(),
       })).max(6).optional(),
+    })
+    /**
+     * EACH METHOD NEEDS ITS OWN INPUTS, AND ONLY ITS OWN.
+     *
+     * Validated here rather than in the mutation so a malformed submission is
+     * refused before it reaches a transaction, and so the CONTRACT states which
+     * fields belong to which method instead of that living in prose.
+     *
+     * The rule that matters most is the first one: a total may be SENT only
+     * for `custom`, and must be DERIVED for the other three. Accepting both
+     * would create two answers to what the bid costs.
+     */
+    .superRefine((value, context) => {
+      const method = value.pricingMethod ?? 'custom';
+      const require = (ok: boolean, path: string, message: string) => {
+        if (!ok) context.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+      };
+      if (method === 'custom') {
+        require(value.price !== undefined, 'price',
+          'A quoted total is required when no pricing method is declared.');
+      } else {
+        require(value.price === undefined, 'price',
+          'The total is calculated from the pricing inputs and must not be submitted.');
+      }
+      if (method === 'percentage') {
+        require(typeof value.materialBaseAmount === 'number', 'materialBaseAmount',
+          'State the material cost the percentage applies to.');
+        require(typeof value.percentageRate === 'number', 'percentageRate',
+          'State the agreed percentage.');
+        // THE DISCLOSURE IS NOT OPTIONAL. A percentage of a base nobody
+        // described is not a price a customer can check.
+        require(Boolean(value.percentageBasisNote?.trim()), 'percentageBasisNote',
+          'Say which material values are in the base, and what is excluded.');
+      }
+      if (method === 'package') {
+        require(typeof value.packageRate === 'number', 'packageRate',
+          'State the package rate or fixed price.');
+        require(value.packageBasis !== undefined, 'packageBasis',
+          'State what the package rate is charged on.');
+        // A fixed-project package is rate x 1, so a quantity is required for
+        // every OTHER basis - which is what keeps a displayed total traceable
+        // to its stored inputs.
+        require(value.packageBasis === 'fixed_project' || typeof value.packageQuantity === 'number',
+          'packageQuantity', 'State the area or quantity the rate applies to.');
+        require(value.packageBasis !== 'quote_on_request', 'packageBasis',
+          'A package quotation states a price; "quote on request" is not a package basis.');
+      }
+      if (method === 'detailed') {
+        require((value.lines?.length ?? 0) > 0, 'lines',
+          'A detailed quotation needs at least one line.');
+      }
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -4048,8 +4989,13 @@ const rfqRouter = router({
       // nobody hit this through the UI. Frontend filtering is not a control;
       // the status enum and acceptQuotation's transition to 'awarded' are the
       // existing rule, and this enforces it where it is enforceable.
-      const [rfq] = await db.select({ requesterId: rfqs.requesterId, title: rfqs.title, status: rfqs.status })
-        .from(rfqs).where(eq(rfqs.id, input.rfqId));
+      const [rfq] = await db.select({
+        requesterId: rfqs.requesterId, title: rfqs.title, status: rfqs.status,
+        // THE COMMERCIAL SOURCE OF TRUTH FOR THIS BID.
+        marketCode: rfqs.marketCode, currency: rfqs.currency,
+        // What the customer asked to be priced on, if they said.
+        pricingPreference: rfqs.pricingPreference,
+      }).from(rfqs).where(eq(rfqs.id, input.rfqId));
       if (!rfq) throw new TRPCError({ code: 'NOT_FOUND', message: 'RFQ not found' });
       if (rfq.status !== 'open') {
         throw new TRPCError({ code: 'CONFLICT', message: 'This request is no longer accepting quotations' });
@@ -4103,7 +5049,131 @@ const rfqRouter = router({
         }
       }
 
-      const { attachments, ...quotationFields } = input;
+      /**
+       * QUOTATION CURRENCY = RFQ CURRENCY, BY RULE.
+       *
+       * Resolved here, once, from the record that owns the requirement -
+       * never from the supplier's subscription, their own country, or the
+       * language their browser is set to. `currencyForMarket` covers an RFQ
+       * written before 0058 gave the column a value, and it resolves to
+       * exactly what that RFQ already meant.
+       *
+       * This is what makes comparing two bids exact: every quotation on one
+       * RFQ is denominated in the same thing, so nothing hidden decides who
+       * looks cheaper.
+       */
+      /*
+       * A CORRUPT MARKET IS NOT AN EGYPTIAN ONE.
+       *
+       * `currencyForMarket` used to answer EGP for anything it did not
+       * recognise, so an RFQ carrying a corrupt 'ZZ' would have had every bid
+       * against it denominated in Egyptian pounds - a commercial number
+       * invented from a data fault. The nullable reader distinguishes legacy
+       * absence (which legitimately means Egypt, because that is what a
+       * pre-0058 row meant) from an explicit code BuildHub does not know.
+       */
+      const resolvedCurrency = rfq.currency || currencyForMarket(rfq.marketCode);
+      if (!resolvedCurrency) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'This request has no valid market, so its currency cannot be determined. Contact support rather than quoting.',
+        });
+      }
+      const quotationCurrency = resolvedCurrency;
+
+      /**
+       * THE REQUESTER'S STATED METHOD IS A CONSTRAINT, NOT A HINT.
+       *
+       * Absent and `provider_choice` both permit any method - the first
+       * because nothing was said, the second because "you decide" was said.
+       * A STATED method is enforced, which is the only thing that makes
+       * stating one worth anything to the customer who did.
+       */
+      const pricingMethod: PricingMethod = input.pricingMethod ?? 'custom';
+      if (!methodAllowedByPreference(rfq.pricingPreference as PricingPreference | null, pricingMethod)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This request asked to be priced a different way. Quote using the method it specifies, or ask the customer to change it.',
+        });
+      }
+
+      /**
+       * THE ONE AUTHORITATIVE CALCULATION, run on the server.
+       *
+       * `computeQuotationTotals` is the only implementation of this arithmetic
+       * in the product. The client may call the same pure function to preview a
+       * number; what is PERSISTED is only ever what this call returns, so a
+       * client total can never become truth by being submitted.
+       *
+       * It throws for a currency with no known scale rather than guessing two
+       * decimals, which is what would have silently rounded a Kuwaiti dinar.
+       */
+      const pricingInput = {
+        method: pricingMethod,
+        currency: quotationCurrency,
+        statedAmount: input.price ?? null,
+        materialBaseAmount: input.materialBaseAmount ?? null,
+        percentageRate: input.percentageRate ?? null,
+        packageRate: input.packageRate ?? null,
+        packageQuantity: pricingMethod === 'package' && input.packageBasis === 'fixed_project'
+          // A fixed-project package is its amount times one, so the stored
+          // inputs reproduce the stored total for every basis alike.
+          ? 1
+          : (input.packageQuantity ?? null),
+        lines: input.lines?.map(line => ({ quantity: line.quantity, rate: line.rate })) ?? null,
+        discountAmount: input.discountAmount ?? null,
+        contingencyRate: input.contingencyRate ?? null,
+        overheadRate: input.overheadRate ?? null,
+        vatRate: input.vatRate ?? null,
+      };
+      let totals;
+      try {
+        totals = computeQuotationTotals(pricingInput);
+      } catch (error) {
+        if (error instanceof UnknownCurrencyScaleError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'This request is denominated in a currency BuildHub cannot price in. Contact support rather than quoting.',
+          });
+        }
+        throw error;
+      }
+      if (!(totals.total > 0)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'These pricing inputs do not produce a payable total.',
+        });
+      }
+
+      const { attachments, scope, lines, price: _submittedPrice, ...rest } = input;
+      void _submittedPrice;   // refused above for a derived method; never stored
+      void rest;
+      /**
+       * THE COLUMNS, WRITTEN FROM THE SERVER'S OWN FIGURES.
+       *
+       * Note what is NOT spread from the input: the total. `price` is
+       * `totals.total` on every path, including `custom`, where it is the
+       * stated amount put through the same shared commercial fields as
+       * everything else. One column, one formula, one answer.
+       */
+      const pricingColumns = {
+        pricingMethod,
+        baseAmount: String(totals.base),
+        discountAmount: String(totals.discount),
+        contingencyRate: input.contingencyRate === undefined ? null : String(input.contingencyRate),
+        overheadRate: input.overheadRate === undefined ? null : String(input.overheadRate),
+        // NULL, not '0'. See the column comment: unstated is not zero.
+        vatRate: totals.vatRate === null ? null : String(totals.vatRate),
+        vatAmount: String(totals.vatAmount),
+        percentageRate: input.percentageRate === undefined ? null : String(input.percentageRate),
+        materialBaseAmount: input.materialBaseAmount === undefined ? null : String(input.materialBaseAmount),
+        percentageBasisNote: input.percentageBasisNote ?? null,
+        packageTier: input.packageTier ?? null,
+        packageBasis: input.packageBasis ?? null,
+        packageRate: input.packageRate === undefined ? null : String(input.packageRate),
+        packageQuantity: pricingInput.packageQuantity === null ? null : String(pricingInput.packageQuantity),
+        scopeDetail: scope ? scope : null,
+      };
 
       /**
        * ACCIDENTAL DOUBLE-SUBMIT, and only that.
@@ -4168,13 +5238,20 @@ const rfqRouter = router({
         // which is how a SQL `=` treats it and why five of these terms could
         // not have been added to the WHERE clause above.
         const sameOffer = recent !== undefined
-          // The column is a decimal string and the input a number.
-          && Number(recent.price) === input.price
-          // THE EFFECTIVE CURRENCY, not the submitted one. The column defaults
-          // to EGP, so a bid sent without a currency reads back as 'EGP' and
-          // never equalled its own input - which made every such resubmission
-          // look like a revision.
-          && (recent.currency ?? null) === (input.currency ?? 'EGP')
+          // The column is a decimal string and the total a number. THE SERVER'S
+          // total, not a submitted one - for three of the four methods there is
+          // no submitted one.
+          && Number(recent.price) === totals.total
+          // A DIFFERENT METHOD IS A DIFFERENT OFFER even at the same total. A
+          // contractor who re-priced the same job as a package rather than a
+          // percentage has changed what they are selling, and swallowing that
+          // as a duplicate would discard the change the customer needs to see.
+          && (recent.pricingMethod ?? 'custom') === pricingMethod
+          // THE EFFECTIVE CURRENCY, not a submitted one - there is no longer a
+          // submitted one. Both sides are now the RFQ's currency, so this term
+          // only ever differs for a bid written before the RFQ's currency was
+          // corrected, which IS a different offer and should read as one.
+          && (recent.currency ?? null) === quotationCurrency
           && (recent.timeline ?? null) === (input.timeline ?? null)
           && (recent.warranty ?? null) === (input.warranty ?? null)
           && (recent.commercialTerms ?? null) === (input.commercialTerms ?? null)
@@ -4213,16 +5290,54 @@ const rfqRouter = router({
         }
 
         const inserted = await tx.insert(quotations).values({
-          ...quotationFields,
+          rfqId: input.rfqId,
+          timeline: input.timeline,
+          warranty: input.warranty,
+          validUntil: input.validUntil,
+          commercialTerms: input.commercialTerms,
+          paymentTerms: input.paymentTerms,
+          notes: input.notes,
+          ...pricingColumns,
           providerId: ctx.user.id,
-          price: String(input.price),
+          // THE SERVER'S FIGURE, on every path including `custom`. Never the
+          // submitted one.
+          price: String(totals.total),
+          // FROM THE RFQ, not from the payload and not from the column
+          // default. The default is still 'EGP', which would have been a
+          // wrong number on a bid the day a second market existed.
+          currency: quotationCurrency,
           revisionNumber: current ? current.revisionNumber + 1 : 1,
           attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : null,
         });
+        const newId = Number(inserted?.[0]?.insertId ?? 0);
+        /**
+         * THE BOQ LINES, IN THE SAME TRANSACTION AS THE BID.
+         *
+         * A quotation whose lines failed to write is a total with no
+         * derivation - exactly the record this whole change exists to stop -
+         * so they either both land or neither does.
+         *
+         * `lineTotal` is RECOMPUTED here, at the currency's scale, and is not
+         * an input at all. A client that could post its own line totals could
+         * post lines that do not add up to the subtotal it is shown beside.
+         */
+        if (lines && lines.length > 0 && newId > 0) {
+          await tx.insert(quotationItems).values(lines.map((line, index) => ({
+            quotationId: newId,
+            component: line.component ?? 'material',
+            tradeGroup: line.tradeGroup ?? null,
+            description: line.description,
+            quantity: String(line.quantity),
+            unit: line.unit ?? null,
+            rate: String(line.rate),
+            lineTotal: String(roundToScale(line.quantity * line.rate, totals.scale)),
+            position: index,
+          })));
+        }
         // The QUOTATION's own id, because that is what the audit trail records.
         // See the note beside recordCommercialEvent below.
         return {
-          id: Number(inserted?.[0]?.insertId ?? 0),
+          id: newId,
           deduplicated: false,
           // The version this one supersedes, or null for a first bid. Carried
           // out of the transaction so the change trail can name what moved.
@@ -4265,7 +5380,7 @@ const rfqRouter = router({
         subjectType: 'quotation',
         subjectId: quotationId,
         action: 'quotation_submitted',
-        detail: `rfq ${input.rfqId}, price ${input.price}`
+        detail: `rfq ${input.rfqId}, ${pricingMethod} ${totals.total}`
           + `${input.timeline ? `, ${input.timeline} days` : ''}`
           + `${attachments?.length ? `, ${attachments.length} attachment(s)` : ''}`,
       });
@@ -4308,7 +5423,10 @@ const rfqRouter = router({
         // The stored price is a decimal string; the input is a number. Compared
         // as numbers so "125000.00" and 125000 are not reported as a change.
         { field: 'price', oldValue: previous ? Number(previous.price) : null, newValue: input.price },
-        { field: 'currency', oldValue: was('currency'), newValue: input.currency },
+        // The RFQ's currency, the same value that was written. A revision can
+        // only change it if the RFQ's own currency was corrected between the
+        // two bids, which is a real change and reads as one.
+        { field: 'currency', oldValue: was('currency'), newValue: quotationCurrency },
         { field: 'timeline', oldValue: was('timeline'), newValue: input.timeline },
         { field: 'warranty', oldValue: was('warranty'), newValue: input.warranty },
         { field: 'validUntil', oldValue: was('validUntil'), newValue: input.validUntil },
@@ -4334,6 +5452,37 @@ const rfqRouter = router({
   close: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => closeRfqSecure(input.id, ctx.user.id)),
+  /**
+   * A SUPPLIER WITHDRAWING THEIR OWN BID.
+   *
+   * approvedProviderProcedure, like submitQuotation - the same standing is
+   * needed to take a price back as to put one up. The rules themselves live
+   * in quotationWithdrawal.ts beside the acceptance they mirror, so the two
+   * take their row locks in the same order and cannot deadlock each other.
+   */
+  withdrawQuotation: approvedProviderProcedure
+    .input(z.object({
+      quotationId: z.number().int().positive(),
+      /**
+       * Optional, and bounded like every other free-text reason. The customer
+       * is told either way - a price vanishing from a comparison with no
+       * explanation reads as a broken product rather than a decision.
+       */
+      reason: z.string().trim().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await withdrawQuotationSecure(
+        input.quotationId, ctx.user.id, input.reason?.trim() || null,
+      );
+      recordEventAsync({
+        type: ANALYTICS_EVENTS.QUOTATION_WITHDRAWN,
+        userId: ctx.user.id,
+        subjectType: 'quotation',
+        subjectId: input.quotationId,
+      });
+      return { success: true, rfqId: result.rfqId };
+    }),
+
   acceptQuotation: protectedProcedure
     .input(z.object({ quotationId: z.number(), rfqId: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -4499,6 +5648,14 @@ const messagesRouter = router({
   // sender's own id from the session being required to match, which is a
   // different thing: it stops a sender naming a key that is not theirs.
   send: protectedProcedure.input(z.object({ receiverId: z.number().int().positive(), projectId: z.number().int().positive().optional(), content: z.string().min(1).max(4000), type: z.enum(['text', 'file', 'quotation']).default('text'), fileUrl: z.string().max(512).regex(/^\/manus-storage\/message-attachments\/user-\d+\//, 'Attachment must be a BuildHub message upload').optional(), quotationId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
+    /*
+     * BOUNDED BEFORE ANYTHING ELSE HAPPENS. Every other content endpoint was
+     * rate limited and this one was not, so one account could reach every
+     * vendor in the directory as fast as it could open sockets - and notify
+     * each of them. Checked before the database is touched, so a flood costs
+     * the server nothing.
+     */
+    enforceMessageRateLimit(ctx.user.id);
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     if (input.fileUrl && !input.fileUrl.startsWith(`/manus-storage/message-attachments/user-${ctx.user.id}/`)) {
@@ -4556,6 +5713,22 @@ const messagesRouter = router({
     if (input.receiverId === ctx.user.id) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot send a message to yourself.' });
     }
+
+    /*
+     * IS THIS A FIRST APPROACH? Either direction counts as history: a vendor
+     * replying to a customer who wrote first is continuing a conversation,
+     * not starting one. The breadth limiter applies only when there is none,
+     * so the cost falls on cold outreach and never on an existing thread.
+     */
+    const [priorContact] = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(or(
+        and(eq(messages.senderId, ctx.user.id), eq(messages.receiverId, input.receiverId)),
+        and(eq(messages.senderId, input.receiverId), eq(messages.receiverId, ctx.user.id)),
+      ))
+      .limit(1);
+    if (!priorContact) enforceNewConversationRateLimit(ctx.user.id);
 
     const result = await db.insert(messages).values({ ...input, senderId: ctx.user.id });
     // THE RECIPIENT IS TOLD.
@@ -4735,6 +5908,9 @@ const servicesRouter = router({
       pricingBasis: serviceOfferings.pricingBasis,
       priceMin: serviceOfferings.priceMin,
       priceMax: serviceOfferings.priceMax,
+      // The supplier's own catalogue reads the same column the storefront does,
+      // so the two cannot disagree about what a price is denominated in.
+      currency: serviceOfferings.currency,
       leadTimeDays: serviceOfferings.leadTimeDays,
       warrantyMonths: serviceOfferings.warrantyMonths,
       status: serviceOfferings.status,
@@ -4791,6 +5967,16 @@ const servicesRouter = router({
           priceMax: pricing.priceMax === null ? null : String(pricing.priceMax),
           leadTimeDays: input.leadTimeDays ?? null,
           warrantyMonths: input.warrantyMonths ?? null,
+          /*
+           * WRITTEN, NOT LEFT TO THE COLUMN DEFAULT. 0061 gave this table a
+           * currency and backfilled it to EGP, which is honest for rows written
+           * before the column existed. A NEW row relying on that default would
+           * be the same assumption again, one migration later - so the currency
+           * is resolved here through the same call projects.create and
+           * rfq.create make, and `requireCurrencyForMarket` throws on a market
+           * it has no currency for rather than falling back to Egypt (§88).
+           */
+          currency: requireCurrencyForMarket(DEFAULT_MARKET),
           status: 'draft',
         });
         const serviceId = Number((result as any)[0].insertId);
@@ -5054,6 +6240,18 @@ function asReviewTrpcError(error: unknown): TRPCError {
     return new TRPCError({ code: error.code, message: error.message });
   }
   return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Review operation failed' });
+}
+
+/**
+ * The same shape for Q&A moderation, and for the same reason: a domain error
+ * that carries its own code must not be flattened into a 500, or a caller
+ * cannot tell "you already reported this" from "the database is down".
+ */
+function asQuestionTrpcError(error: unknown): TRPCError {
+  if (error instanceof ProductQuestionModerationError) {
+    return new TRPCError({ code: error.code, message: error.message });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Moderation operation failed' });
 }
 
 // ── Vendor Profile Router ─────────────────────────────────────────────────
@@ -5700,10 +6898,47 @@ const disputesRouter = router({
 // every write is scoped to ctx.user.id, and reads of someone else's portfolio
 // are public showcase data only.
 const portfolioRouter = router({
-  list: protectedProcedure
+  /**
+   * ── A STOREFRONT'S PORTFOLIO IS PART OF THE STOREFRONT ─────────────────
+   *
+   * This was a `protectedProcedure`, which was consistent while the storefront
+   * itself needed a session. Now that `/vendor/:id` is public it would have
+   * been the worse kind of inconsistency: the page renders, the Portfolio
+   * section renders, and it is EMPTY - so a signed-out buyer reads "this
+   * provider has shown no work" about a provider whose portfolio is full. §21
+   * lists portfolio among the sections a storefront has, and a silently missing
+   * section is a claim about the provider rather than about the reader.
+   *
+   * ── AND IT HAD NO VISIBILITY RULE AT ALL ───────────────────────────────
+   *
+   * It took any `userId` and returned every row for it, without checking that
+   * the account was even a provider. Behind a session that was loose; in public
+   * it is the same exposure the storefront itself had to close, so it applies
+   * the same gate - `directoryVisibilityFilter()`, with self and admin exempt,
+   * and NOT_FOUND rather than FORBIDDEN so ids cannot be enumerated.
+   *
+   * An EMPTY LIST and a REFUSAL are deliberately different answers: a provider
+   * with no portfolio yet returns `[]`, and a provider the directory does not
+   * publish returns NOT_FOUND. The page can then say which.
+   */
+  list: publicProcedure
     .input(z.object({ userId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await requireDb();
+
+      const viewerIsSelf = ctx.user?.id === input.userId;
+      const viewerIsAdmin = ctx.user?.role === 'admin' && Boolean(ctx.user?.adminRole);
+      if (!viewerIsSelf && !viewerIsAdmin) {
+        const [listable] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.id, input.userId), directoryVisibilityFilter()))
+          .limit(1);
+        if (!listable) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Portfolio not found' });
+        }
+      }
+
       return db.select().from(portfolioItems)
         .where(eq(portfolioItems.userId, input.userId))
         .orderBy(desc(portfolioItems.createdAt));
@@ -5729,6 +6964,11 @@ const portfolioRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      // A portfolio image is readable by any signed-in user, so the protection
+      // is on the CLAIM, not the read: without this a provider could point
+      // their portfolio at a rival's photograph and pass the work off as their
+      // own. Same rule the product catalogue uses, from the same module.
+      if (input.images) assertOwnedUploads(input.images, 'portfolio-images', ctx.user.id);
       const result = await db.insert(portfolioItems).values({
         ...input,
         userId: ctx.user.id,
@@ -5752,6 +6992,9 @@ const portfolioRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       const { id, images, ...fields } = input;
+      // Checked on EDIT as well as on create - an item can be created clean and
+      // then have somebody else's photograph added to it.
+      if (images) assertOwnedUploads(images, 'portfolio-images', ctx.user.id);
       const [owned] = await db.select({ id: portfolioItems.id })
         .from(portfolioItems).where(and(eq(portfolioItems.id, id), eq(portfolioItems.userId, ctx.user.id))).limit(1);
       if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Portfolio item not found' });
@@ -5802,13 +7045,52 @@ const portfolioRouter = router({
 });
 
 const profileRouter = router({
-  // Public vendor profile. Requires authentication (the safer of the two options
-  // left open by Phase 4A.5 - fully logged-out access was explicitly flagged as
-  // an unresolved owner decision and is deliberately NOT chosen here; see
-  // BUILDHUB_PHASE4A61_VENDOR_PROFILE_IMPLEMENTATION.md). Scoped to provider-role
-  // accounts only - this endpoint answers "what does this vendor look like,"
-  // not "what does any BuildHub user look like."
-  getPublic: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ ctx, input }) => {
+  /**
+   * ── THE PROVIDER STOREFRONT, NOW PUBLIC ────────────────────────────────
+   *
+   * This was a `protectedProcedure`, and the comment here recorded why: Phase
+   * 4A.5 left logged-out access as an unresolved owner decision and this took
+   * the safer side of it. The owner has now decided, and §21 and §37 were
+   * always the direction - a provider storefront is a public page and the
+   * marketplace's most important destination. A signed-out reader, and every
+   * crawler, used to get "Please sign in".
+   *
+   * ── OPENING IT NEEDED A VISIBILITY GATE, NOT JUST A PROCEDURE CHANGE ────
+   *
+   * The only check here was the account's ROLE. That was tolerable behind a
+   * session and is not tolerable in public: a stranger walking ids would have
+   * reached the page of an applicant BuildHub has not approved, or one whose
+   * account is frozen or deactivated - accounts the directory deliberately
+   * does not list. Approval is server-authoritative (§9), and a storefront is
+   * the most visible thing approval controls.
+   *
+   * So a stranger may see exactly what the DIRECTORY would show them:
+   * `directoryVisibilityFilter()`, the same canonical predicate the listing and
+   * the placement readers use (§11), never a second rule that can drift.
+   *
+   * TWO VIEWERS ARE EXEMPT, and both were already able to see this page:
+   *
+   *   SELF   a provider opens their own storefront to check it - including
+   *          before approval, which is exactly when they most want to look.
+   *          The workspace links them straight here.
+   *   ADMIN  reviewing an applicant is the job.
+   *
+   * Everyone else, signed in or not, gets the same answer, so "can I see this
+   * provider" no longer depends on merely holding an account.
+   *
+   * ── AND NOTHING PRIVATE MOVED ──────────────────────────────────────────
+   *
+   * The tiers below are a property of the COLUMNS, not of the reader
+   * (server/vendorProfile.ts), and `vendorContactAccess` already returned
+   * 'none' for a null viewer. So a signed-out reader receives precisely the
+   * PUBLIC tier - company, description, city, country, website - and the
+   * named contact, their email, phone, mobile and address stay locked behind
+   * the same engagement rule as before: the provider quoted on this reader's
+   * RFQ, or is a live member of their project. The commercial registration
+   * number remains admin-only. `users.email` and `users.phone` are not in
+   * PUBLIC_PROFILE_COLUMNS and are still not added.
+   */
+  getPublic: publicProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
     // accountStatus is read here and DELIBERATELY not returned: it decides
@@ -5819,6 +7101,26 @@ const profileRouter = router({
       .from(users).where(eq(users.id, input.userId));
     if (!target || !providerRoles.includes(target.userRole as typeof providerRoles[number])) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor profile not found' });
+    }
+
+    /*
+     * NOT FOUND, NOT FORBIDDEN. §9: not-yours and not-found must not become an
+     * enumeration oracle. A stranger who walks ids learns only which
+     * storefronts are published - which is what a directory is for - and
+     * nothing about which accounts exist but are unapproved, frozen or
+     * deactivated.
+     */
+    const viewerIsSelf = ctx.user?.id === target.id;
+    const viewerIsAdmin = ctx.user?.role === 'admin' && Boolean(ctx.user?.adminRole);
+    if (!viewerIsSelf && !viewerIsAdmin) {
+      const [listable] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, target.id), directoryVisibilityFilter()))
+        .limit(1);
+      if (!listable) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor profile not found' });
+      }
     }
     const { accountStatus, ...publicFields } = target;
     // THE CONTACT MODEL, DERIVED - NOT INVENTED.
@@ -5856,7 +7158,7 @@ const profileRouter = router({
     // What unlocks is the PRIMARY CONTACT the vendor themselves nominated as
     // their business contact, which is a different field and a different
     // consent.
-    const company = await readVendorProfile(db, target.id, ctx.user);
+    const company = await readVendorProfile(db, target.id, ctx.user ?? null);
 
     return {
       ...publicFields,
@@ -5864,7 +7166,25 @@ const profileRouter = router({
       completedProjects: await completedProjectCount(db, target.id),
       // A frozen or deactivated vendor cannot receive messages - messages.send
       // refuses them - so the page must not offer a button that will fail.
-      contactChannel: accountStatus === 'active' ? 'message' as const : 'none' as const,
+      /*
+       * THREE STATES, BECAUSE TWO WOULD LIE TO A STRANGER.
+       *
+       * This was `active ? 'message' : 'none'`, which was complete while every
+       * reader held a session. To a signed-out reader 'none' would say "this
+       * provider cannot be contacted" - and they can be, by anyone with an
+       * account. §10: UNKNOWN AUTH is not the same as unavailable.
+       *
+       *   message    the reader can open the channel now
+       *   sign_in    the channel exists and needs an account
+       *   none       the provider genuinely cannot receive messages -
+       *              messages.send refuses a frozen or deactivated account, so
+       *              the page must not offer a button that will fail
+       */
+      contactChannel: accountStatus !== 'active'
+        ? 'none' as const
+        : ctx.user
+          ? 'message' as const
+          : 'sign_in' as const,
       // Null when the vendor has filled in nothing. The page says so rather
       // than inventing a company name out of their personal name.
       company: company.profile,
@@ -5929,21 +7249,177 @@ const profileRouter = router({
    * BuildHub granted a benefit and never told the recipient it existed beyond a
    * single notification they may have missed.
    */
+  /**
+   * ── THE BUYER'S SHORTLIST ─────────────────────────────────────────────
+   *
+   * SELF-SCOPED BY CONSTRUCTION. There is no userId in any of these inputs,
+   * so no payload can read or write another buyer's shortlist - a stronger
+   * guarantee than a check somebody has to remember to repeat.
+   *
+   * SAVING IS PRIVATE, and that is a product decision as much as a privacy
+   * one: a supplier who could see who shortlisted them without asking for a
+   * price would have a lead, and a buyer who knew that would think twice
+   * before saving anything. No procedure here exposes the saver to the
+   * saved.
+   */
+  toggleSaved: protectedProcedure
+    .input(z.object({
+      kind: z.enum(SAVED_ITEM_KINDS),
+      itemId: z.number().int().positive(),
+      note: z.string().trim().max(MAX_SAVED_NOTE).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await toggleSaved(db, {
+          userId: ctx.user.id, kind: input.kind, itemId: input.itemId, note: input.note ?? null,
+        });
+      } catch (error) {
+        if (error instanceof SavedItemError) {
+          throw new TRPCError({ code: error.code, message: error.message });
+        }
+        throw error;
+      }
+    }),
+  /** The badge. One count, so the number and the page cannot disagree. */
+  savedCount: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return { total: await countSaved(db, ctx.user.id) };
+  }),
+  /**
+   * The shortlist itself, joined so a page of twenty is one round trip.
+   * `unavailable` carries the items whose target has since been withdrawn -
+   * named rather than silently dropped, because a list that quietly shortens
+   * tells the buyer nothing.
+   */
+  /**
+   * ── SUPPLIER SHOWCASE (§18) ──────────────────────────────────────────
+   *
+   * The supplier's own emphasis on their own storefront. NOT editorial
+   * Featured and NOT commercial Sponsored: it is read by exactly one page,
+   * keyed by that supplier's id, and no shared list consumes it. See
+   * shared/supplierShowcase.ts for why that confinement is the integrity
+   * question rather than a presentational one.
+   */
+  showcase: publicProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      // PUBLIC, because a storefront is public. It returns only what a
+      // visitor could already reach by browsing that storefront - the
+      // reader re-checks ownership AND publication on every row.
+      return listShowcase(db, input.userId);
+    }),
+
+  /**
+   * ── THE SUPPLIER'S MARKETING CENTER (§89 item 16) ────────────────────
+   *
+   * One read, composed from the canonical placement, analytics and showcase
+   * systems - no new domain. Scoped to the caller's own placements by the
+   * SESSION's id, so a supplier cannot read another's commercial reach.
+   */
+  marketingOverview: approvedProviderProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return vendorMarketingOverview(db, ctx.user.id);
+  }),
+
+  /** Everything this supplier is ALLOWED to showcase, by the writer's own rule. */
+  showcaseCandidates: approvedProviderProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return listShowcaseCandidates(db, ctx.user.id);
+  }),
+
+  /** The owner's view: the same cards, plus what was dropped and why. */
+  myShowcase: approvedProviderProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return listShowcase(db, ctx.user.id, { includeUnavailable: true });
+  }),
+
+  /**
+   * Replace the showcase with this selection.
+   *
+   * There is NO userId parameter, deliberately: the subject is the session,
+   * so there is no id by which one supplier could write another's showcase.
+   * Ownership and publication are re-derived server-side for every entry.
+   */
+  setShowcase: approvedProviderProcedure
+    .input(z.object({
+      entries: z.array(z.object({
+        kind: z.enum(SHOWCASE_ITEM_KINDS),
+        itemId: z.number().int().positive(),
+      })).max(MAX_SHOWCASE_ITEMS * 4),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      return setShowcase(db, ctx.user.id, input.entries);
+    }),
+
+  savedItems: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDb();
+    return listSaved(db, ctx.user.id);
+  }),
+  /**
+   * WHICH OF THESE IS ALREADY SAVED, for a grid.
+   *
+   * A separate authenticated read rather than a `saved` flag on the public
+   * marketplace rows: a per-viewer fact inside a cacheable public response is
+   * how a shared cache ends up showing one buyer another's shortlist.
+   */
+  savedState: protectedProcedure
+    .input(z.object({
+      kind: z.enum(SAVED_ITEM_KINDS),
+      itemIds: z.array(z.number().int().positive()).max(100),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const saved = await savedStateFor(db, ctx.user.id, input.kind, input.itemIds);
+      return { saved: Array.from(saved) };
+    }),
+
   myReferral: protectedProcedure.query(async ({ ctx }) => {
     const db = await requireDb();
-    const [row] = await db.select({ referralCode: users.referralCode }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
+    const [row] = await db.select({
+      referralCode: users.referralCode,
+      referralCodeStatus: users.referralCodeStatus,
+      role: users.role,
+    }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
     let code = row?.referralCode ?? null;
-    if (!code) {
+    let codeStatus = row?.referralCodeStatus ?? 'active';
+    if (!code && canHoldReferralCode(row ?? {})) {
       code = generateReferralCode();
-      await db.update(users).set({ referralCode: code }).where(eq(users.id, ctx.user.id));
+      codeStatus = 'active';
+      await db.update(users).set({
+        referralCode: code, referralCodeStatus: 'active', referralCodeIssuedAt: new Date(),
+      }).where(eq(users.id, ctx.user.id));
+      await db.insert(referralCodeEvents).values({
+        userId: ctx.user.id, action: 'issued', newCode: code, actorId: ctx.user.id,
+      });
     }
-    const [counts, rewards] = await Promise.all([
+    const [counts, rewards, referred] = await Promise.all([
       myReferralCounts(db, ctx.user.id),
       listMyReferralRewards(db, ctx.user.id),
+      /*
+       * WHO ACCEPTED, and how far each one got. Three counts could not answer
+       * the only question an inviter has - which of these turned into
+       * anything, and what does the rest still need. See the privacy note on
+       * listMyReferredParties: a publicly listed business is named because it
+       * is already public, and nobody else is.
+       */
+      listMyReferredParties(db, ctx.user.id),
     ]);
     return {
       code,
-      link: `/auth?mode=signup&ref=${encodeURIComponent(code)}`,
+      /**
+       * THE ADMIN SCREEN AND THIS ONE DESCRIBE THE SAME STATE.
+       *
+       * A disabled code gets NO link. Handing somebody a URL that attributes
+       * nothing is worse than telling them the code is off: they would go on
+       * sharing it, and every sign-up through it would silently earn them
+       * nothing. The Referral Center renders the status instead.
+       */
+      codeStatus,
+      link: code && codeStatus === 'active' ? referralLinkFor(code) : null,
+      referred,
       // Kept, because callers render it. It is now the sum of the breakdown
       // beside it rather than an independently counted number that could
       // disagree with it.
@@ -6596,6 +8072,20 @@ const adminRouter = router({
     await recordAccountEvent(db, { userId, actorId: ctx.user.id, action: 'dummy_user_created', source: 'dummy', note: input.note || 'Created for testing' });
     return { success: true, userId, username, email };
   }),
+  /**
+   * ONE ACCOUNT, ACROSS THE WHOLE PRODUCT.
+   *
+   * Counts, states and a few recent headings per domain, each carrying the
+   * canonical link to the screen that owns it. Deliberately NOT the contents
+   * of anything - see server/adminUser360.ts for why that line is where it
+   * is. Behind `users.read`, the same permission the detail page itself needs.
+   */
+  userSnapshot: adminWith('users.read')
+    .input(z.object({ userId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return userOperationalSnapshot(db, input.userId);
+    }),
   userDetail: adminWith('users.read').input(z.object({ userId: z.number().int().positive() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
@@ -6716,6 +8206,92 @@ const adminRouter = router({
    * actual reward sat in `referralRewards` next to it. And the query was
    * `.limit(250)` with no count, so a platform past that saw a silent subset.
    */
+  /**
+   * ── THE REFERRAL CONTROL PLANE ────────────────────────────────────────
+   *
+   * Everything below is one domain: the codes that attribute, the referrals
+   * they attribute, the rewards those earn and the campaigns that decide
+   * them. The code half had no Admin surface at all - `users.referralCode`
+   * was minted at sign-up and never governed again.
+   *
+   * NOTHING HERE FABRICATES A REFERRAL. There is deliberately no "create
+   * referral" action: a referral records that a real person followed a real
+   * link, and a button that writes the relationship would be inventing the
+   * one fact the ledger exists to hold. Attribution repair, if the business
+   * ever needs it, is a differently-named and differently-audited capability.
+   */
+  referralOverview: adminWith('marketplace.manage').query(async () => {
+    const db = await requireDb();
+    return referralOverview(db);
+  }),
+  /**
+   * The code directory. Server-side search, filter and pagination, and
+   * `missing` is a real filter because an account with no code is an action
+   * waiting to be taken rather than a row to hide.
+   */
+  referralCodes: adminWith('marketplace.manage')
+    .input(z.object({
+      page: z.number().int().min(0).max(100_000).default(0),
+      pageSize: z.number().int().min(1).max(100).default(25),
+      search: z.string().trim().max(MAX_SEARCH_LENGTH).optional(),
+      status: z.enum(['all', 'active', 'disabled', 'missing']).default('all'),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { page, pageSize, search, status } = { page: 0, pageSize: 25, status: 'all' as const, ...(input ?? {}) };
+      return listReferralCodes(db, { page, pageSize, search, status });
+    }),
+  /** What this account's code used to be, and who changed it. */
+  referralCodeHistory: adminWith('marketplace.manage')
+    .input(z.object({ userId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return referralCodeHistory(db, input.userId);
+    }),
+  issueReferralCode: adminWith('marketplace.manage')
+    .input(z.object({ userId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await issueReferralCode(db, { userId: input.userId, actorId: ctx.user.id });
+      } catch (error) {
+        throw asReferralCodeError(error);
+      }
+    }),
+  /**
+   * ROTATION BREAKS EVERY LINK ALREADY CARRYING THE OLD CODE. The reason is
+   * required for that reason, and the old string is kept in the history
+   * because after this call `users` no longer holds it.
+   */
+  rotateReferralCode: adminWith('marketplace.manage')
+    .input(z.object({
+      userId: z.number().int().positive(),
+      reason: z.string().trim().min(3).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await rotateReferralCode(db, { userId: input.userId, actorId: ctx.user.id, reason: input.reason });
+      } catch (error) {
+        throw asReferralCodeError(error);
+      }
+    }),
+  setReferralCodeStatus: adminWith('marketplace.manage')
+    .input(z.object({
+      userId: z.number().int().positive(),
+      status: z.enum(REFERRAL_CODE_STATUSES),
+      reason: z.string().trim().min(3).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      try {
+        return await setReferralCodeStatus(db, {
+          userId: input.userId, actorId: ctx.user.id, status: input.status, reason: input.reason,
+        });
+      } catch (error) {
+        throw asReferralCodeError(error);
+      }
+    }),
   referrals: adminWith('marketplace.manage')
     .input(z.object({
       page: z.number().int().min(0).max(100_000).default(0),
@@ -7149,6 +8725,16 @@ const adminRouter = router({
    * business carrying the market's prices, and this endpoint is exactly where
    * they would all be in one response.
    */
+  /**
+   * WHAT IS WAITING, for the sidebar and the dashboard.
+   *
+   * `users.read` rather than a per-queue permission: this returns counts, no
+   * record content, and an administrator who can open the console needs to
+   * know which queues want them. The DESTINATIONS remain permission-gated as
+   * they were - a badge is not an authorisation.
+   */
+  attention: adminWith('users.read').query(async () => adminAttention()),
+
   enquiryList: adminWith('marketplace.manage')
     .input(z.object({
       state: z.enum(ENQUIRY_STATES).optional(),
@@ -9062,6 +10648,21 @@ const adminRouter = router({
       db, actorAdminRole: ctx.user.adminRole, target: verifyTarget, removesAccess: false,
     });
     await db.update(users).set({ verified: input.verified }).where(eq(users.id, input.userId));
+    /*
+     * RECORDED, like its nine neighbours. This was the one administrative
+     * mutation over `users` that changed a row and said nothing about it - the
+     * account showed the new value and no administrator could answer who set
+     * it or when. It matters more here than the count suggests: the flag
+     * decides whether a provider appears in the marketplace at all, and
+     * setting it qualifies a referral, which can grant a reward.
+     */
+    await recordAccountEvent(db, {
+      userId: input.userId,
+      actorId: ctx.user.id,
+      action: input.verified ? 'account_verified' : 'account_unverified',
+      source: 'admin',
+      note: input.verified ? 'Account marked verified' : 'Verification removed',
+    });
     if (input.verified) {
       await qualifyReferralEvent(db, input.userId, 'ACCOUNT_VERIFIED', `verified:${input.userId}`, new Date());
     }
@@ -9165,6 +10766,147 @@ const adminRouter = router({
    * Behind `support.manage`, beside disputes and tickets, because it is the
    * same job: somebody complained and a human has to decide.
    */
+  /**
+   * ── PRODUCT Q&A MODERATION ───────────────────────────────────────────────
+   *
+   * The same permission as review moderation, deliberately: both are public
+   * content on somebody's listing, judged against the same lifecycle, and a
+   * moderator who can act on one has no reason to be barred from the other.
+   */
+  productQuestionReports: adminWith('support.manage')
+    .input(z.object({
+      page: z.number().int().min(0).default(0),
+      pageSize: z.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).default(20),
+      status: z.string().max(16).optional(),
+    }).default({ page: 0, pageSize: 20 }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return listProductQuestionReports(db, input);
+    }),
+
+  /** What an answer used to say, for a moderator weighing an edit. */
+  productAnswerRevisions: adminWith('support.manage')
+    .input(z.object({ questionId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      return answerRevisions(db, input.questionId);
+    }),
+
+  /**
+   * Hide or restore a question, or an answer, independently.
+   *
+   * HIDING IS NOT DELETION. The row stays, the words stay, and the decision
+   * stays reviewable - which is the only way it can be defended afterwards to
+   * the person whose words were removed.
+   */
+  moderateProductQuestion: adminWith('support.manage')
+    .input(z.object({
+      questionId: z.number().int().positive(),
+      target: z.enum(PRODUCT_QUESTION_REPORT_TARGETS),
+      action: z.enum(['hide', 'restore']),
+      reason: z.string().trim().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      let result;
+      try {
+        result = await moderateProductQuestion(db, {
+          questionId: input.questionId,
+          target: input.target,
+          actorId: ctx.user.id,
+          action: input.action,
+          reason: input.reason ?? null,
+        });
+      } catch (error) { throw asQuestionTrpcError(error); }
+
+      const [question] = await db.select({
+        productId: productQuestions.productId,
+        askerId: productQuestions.askerId,
+        supplierId: products.supplierId,
+      }).from(productQuestions)
+        .innerJoin(products, eq(products.id, productQuestions.productId))
+        .where(eq(productQuestions.id, input.questionId)).limit(1);
+
+      // WHO DID IT AND WHICH WAY. A trail that records "moderated" without the
+      // direction cannot answer the only question anybody asks of it later.
+      const action = input.target === 'question'
+        ? (result.hidden ? 'product_question_hidden' : 'product_question_restored')
+        : (result.hidden ? 'product_answer_hidden' : 'product_answer_restored');
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id,
+        ownerId: question?.supplierId ?? ctx.user.id,
+        subjectType: 'product',
+        subjectId: question?.productId ?? 0,
+        action,
+        detail: `question ${input.questionId}`,
+      });
+
+      // THE AUTHOR IS TOLD. Words removed from a public page without a word to
+      // the person who wrote them is how moderation becomes something that
+      // happens TO people rather than something they can answer.
+      const authorId = input.target === 'question' ? question?.askerId : question?.supplierId;
+      if (question && authorId && authorId !== ctx.user.id) {
+        await notifyUser(db, {
+          userId: authorId,
+          title: result.hidden
+            ? 'Something you posted was hidden'
+            : 'Something you posted was restored',
+          body: result.hidden
+            ? 'BuildHub hid a product question or answer you posted.'
+            : 'BuildHub restored a product question or answer you posted.',
+          type: 'product',
+          link: `/marketplace/products/${question.productId}`,
+          messageKey: result.hidden ? 'notif.product.moderated' : 'notif.product.restored',
+          messageParams: {},
+        });
+      }
+      return result;
+    }),
+
+  /** Resolve a report. Upholding does NOT hide - that is a separate decision. */
+  resolveProductQuestionReport: adminWith('support.manage')
+    .input(z.object({
+      reportId: z.number().int().positive(),
+      status: z.enum(['upheld', 'rejected']),
+      note: z.string().trim().max(1000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [report] = await db.select({
+        reporterId: productQuestionReports.reporterId,
+        questionId: productQuestionReports.questionId,
+      }).from(productQuestionReports)
+        .where(eq(productQuestionReports.id, input.reportId)).limit(1);
+      if (!report) throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
+      const [question] = await db.select({ productId: productQuestions.productId })
+        .from(productQuestions).where(eq(productQuestions.id, report.questionId)).limit(1);
+
+      try {
+        await resolveProductQuestionReport(db, {
+          reportId: input.reportId, actorId: ctx.user.id,
+          status: input.status, note: input.note ?? null,
+        });
+      } catch (error) { throw asQuestionTrpcError(error); }
+
+      await recordAccountEvent(db, {
+        userId: report.reporterId, actorId: ctx.user.id,
+        action: 'product_question_report_resolved', source: 'admin',
+        note: `report ${input.reportId} on question ${report.questionId}: ${input.status}`,
+      });
+      await notifyUser(db, {
+        userId: report.reporterId,
+        title: 'Your report about a product question was reviewed',
+        body: `The report was ${input.status}.`,
+        type: 'info',
+        // The product page, where the content either still stands or visibly
+        // no longer does - which is the whole question the reporter asked.
+        link: `/marketplace/products/${question?.productId ?? 0}`,
+        messageKey: 'notif.product.reportResolved',
+        messageParams: { statusKey: `reviewReport.status.${input.status}` },
+      });
+      return { ok: true };
+    }),
+
   reviewReports: adminWith('support.manage')
     .input(z.object({
       page: z.number().int().min(0).default(0),
@@ -9348,18 +11090,45 @@ const adminRouter = router({
     }),
 
   /** Triage. Staff-only by design - see SUPPORT_PRIORITY_IS_STAFF_ONLY. */
+  /**
+   * PRIORITY ORDERS THE QUEUE, so changing it decides whose problem waits.
+   *
+   * This took no `ctx` at all - it could not have recorded an actor if it had
+   * wanted to - and wrote the column and nothing else. Every other privileged
+   * act on a ticket is on the requester's account trail beside the sign-ins
+   * and the plan changes; this one was not, so a ticket could be quietly moved
+   * to the bottom of the queue with no trace of who did it or what it had
+   * been.
+   */
   setSupportTicketPriority: adminWith('support.manage')
     .input(z.object({
       ticketId: z.number().int().positive(),
       priority: z.enum(SUPPORT_PRIORITIES),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await requireDb();
+      // Read first, because the OLD priority is half of what makes the record
+      // worth having - "set to low" does not say what it was moved down from.
+      const [ticket] = await db.select({
+        id: supportTickets.id,
+        reference: supportTickets.reference,
+        requesterId: supportTickets.requesterId,
+        priority: supportTickets.priority,
+      }).from(supportTickets).where(eq(supportTickets.id, input.ticketId));
+      if (!ticket) throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found' });
+      if (ticket.priority === input.priority) return { ok: true };
+
       const result = await db.update(supportTickets).set({ priority: input.priority })
         .where(eq(supportTickets.id, input.ticketId));
       if (!changedSomething(result)) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found' });
       }
+      await recordAccountEvent(db, {
+        userId: ticket.requesterId, actorId: ctx.user.id,
+        action: 'support_ticket_priority_changed',
+        source: 'admin',
+        note: `${ticket.reference ?? `#${ticket.id}`}: ${ticket.priority} -> ${input.priority}`,
+      });
       return { ok: true };
     }),
 
@@ -9621,15 +11390,39 @@ const adminRouter = router({
     const rows = await db.select({ settingKey: adminSettings.settingKey, value: adminSettings.value }).from(adminSettings);
     return { ...DEFAULT_ADMIN_SETTINGS, ...Object.fromEntries(rows.map(row => [row.settingKey, row.value])) };
   }),
+  /**
+   * THE PLATFORM'S OWN SWITCHES, and who threw them.
+   *
+   * `updatedBy` on the row says who touched a setting LAST and nothing else.
+   * It cannot answer the question anybody actually asks afterwards - who
+   * closed registration, when, and for how long - because the previous value
+   * is overwritten by the next one. Maintenance mode and registration being
+   * open are exactly the settings somebody needs to reconstruct later.
+   *
+   * Recorded on the account trail with a null subject: the thing changed is
+   * the platform, not a person. That trail THROWS if it cannot write, which is
+   * the posture this needs - "the setting changed but we failed to record who
+   * did it" is not a degraded success.
+   */
   updateSetting: adminWith('settings.manage').input(z.object({ key: z.string().min(1).max(120), value: z.string().max(2000) })).mutation(async ({ ctx, input }) => {
     if (!(input.key in DEFAULT_ADMIN_SETTINGS)) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unknown setting key' });
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const [existing] = await db.select({ id: adminSettings.id }).from(adminSettings).where(eq(adminSettings.settingKey, input.key));
+    const [existing] = await db.select({ id: adminSettings.id, value: adminSettings.value })
+      .from(adminSettings).where(eq(adminSettings.settingKey, input.key));
+    const before = existing ? existing.value : (DEFAULT_ADMIN_SETTINGS as Record<string, string>)[input.key];
     if (existing) {
       await db.update(adminSettings).set({ value: input.value, updatedBy: ctx.user.id }).where(eq(adminSettings.id, existing.id));
     } else {
       await db.insert(adminSettings).values({ settingKey: input.key, value: input.value, updatedBy: ctx.user.id });
+    }
+    if (before !== input.value) {
+      await recordAccountEvent(db, {
+        userId: null, actorId: ctx.user.id,
+        action: 'platform_setting_changed',
+        source: 'admin',
+        note: `${input.key}: ${before ?? '(unset)'} -> ${input.value}`,
+      });
     }
     return { success: true };
   }),
@@ -10039,6 +11832,186 @@ function aiErrorMessage(category: AiFailureCategory): string {
 }
 
 const aiRouter = router({
+  /**
+   * ── WHAT A CLICK GIVES YOU: CONTEXT, AND A LIST OF OFFERS ───────────────
+   *
+   * THE DEFECT THIS REPLACES. Clicking a suggested prompt or a tool card wrote
+   * the PRODUCT's text into the transcript as `role: 'user'` and submitted it in
+   * the same tick. The person never typed it and could not edit it, and
+   * afterwards the conversation held a question attributed to them that was
+   * indistinguishable from a real one - with every later answer grounded on it.
+   *
+   * So this endpoint returns SUGGESTIONS and nothing else. It does not call the
+   * model, it does not append a message, and there is no field in its output
+   * that means "send this". `ai.chat` remains the only way to ask anything, and
+   * it is reached only when a person submits.
+   *
+   * ── AUTHORIZATION IS THE POINT, NOT A FORMALITY ─────────────────────────
+   *
+   * The context handed to the suggestion engine is built HERE, from the
+   * viewer's PERMITTED PROJECTION of the object - the same projection their own
+   * read returns. The engine is deliberately given a poor, small context so it
+   * cannot leak what it was never given: no budget, no owner identity, no
+   * contact detail, no rival's price.
+   *
+   * The ROLE comes from the session. The RELATION - are you this request's
+   * requester, or a provider looking at it - is re-derived from the database,
+   * because a contractor IS the requester of a request they raised and must be
+   * offered the requester's actions on it.
+   *
+   * A subject the caller may not see resolves to the GENERAL suggestions, not
+   * to an error: the list is not an oracle for which ids exist.
+   */
+  suggestions: protectedProcedure
+    .input(z.object({
+      subject: z.enum(SUGGESTION_SUBJECTS),
+      subjectId: z.number().int().positive().optional(),
+      /** A category or service name the click carried. Display data only. */
+      subtype: z.string().max(120).optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const role = ctx.user.userRole ?? null;
+      // READ FROM THE SESSION, INLINE. Going through the local `role` above
+      // made the same statement, but the cross-role isolation guard reads the
+      // line to check that every provider gate is decided by the session and
+      // not by a request field - and an indirection it cannot follow is a
+      // guard that silently stops guarding.
+      const isProvider = providerRoles.includes(
+        (ctx.user.userRole ?? '') as typeof providerRoles[number]);
+
+      /**
+       * THE DEFAULT, AND WHAT IT DELIBERATELY IS NOT.
+       *
+       * A subject that names an id is only kept once the id has been RESOLVED
+       * against something this caller may see. Until then the subject is
+       * `general`, because keeping `subject: 'request'` for an unresolved id
+       * hands back the request-shaped suggestion list - which is how a stranger
+       * who guessed an id learned that it existed. Found by probe.
+       *
+       * A subject that carries no id - a category, a service - is safe to keep:
+       * it names a public taxonomy, not a record.
+       */
+      const namesARecord = input.subjectId !== undefined;
+      let context: SuggestionContext = {
+        subject: namesARecord ? 'general' : input.subject,
+        subjectId: null,
+        subtype: input.subtype ?? null,
+        role,
+        relation: isProvider ? 'provider' : 'requester',
+      };
+
+      if (input.subject === 'request' && input.subjectId) {
+        const [rfq] = await db.select({
+          requesterId: rfqs.requesterId,
+          category: rfqs.category,
+          status: rfqs.status,
+          pricingPreference: rfqs.pricingPreference,
+          finishingBrief: rfqs.finishingBrief,
+        }).from(rfqs).where(eq(rfqs.id, input.subjectId));
+
+        if (rfq) {
+          const isRequester = rfq.requesterId === ctx.user.id;
+          /**
+           * MAY THIS CALLER SEE THIS REQUEST AT ALL?
+           *
+           * THE FIRST VERSION OF THIS WAS AN ID ORACLE. It read
+           * `access !== null`, and `getRfqResponseAccess` never returns null -
+           * it answers `canRespond: false` for anybody, including a homeowner
+           * who has nothing to do with the request. So every signed-in account
+           * that named a real id got the provider's suggestion list back, and
+           * learned the request existed. A probe caught it; the types could
+           * not.
+           *
+           * The rule is the one the product already applies to its own request
+           * board: the REQUESTER sees their request, and an APPROVED PROVIDER
+           * sees an OPEN one, because that is what `rfq.eligible` lists. Anyone
+           * else falls through to the general list and learns nothing about the
+           * id they named.
+           */
+          const visibleToProvider = isProvider && rfq.status === 'open';
+          const access = visibleToProvider
+            ? await getRfqResponseAccess(db, ctx.user.id, input.subjectId).catch(() => null)
+            : null;
+          const visible = isRequester || visibleToProvider;
+
+          if (visible) {
+            const brief = parseJsonColumn<FinishingBrief>(rfq.finishingBrief);
+            // COUNTED ONLY FOR THE REQUESTER. How many rivals have bid is
+            // commercial intelligence a provider is not entitled to, and it
+            // would change their suggestions if they had it.
+            let quotationCount = 0;
+            if (isRequester) {
+              const [counted] = await db.select({ count: sql<number>`count(*)` })
+                .from(quotations)
+                .where(and(eq(quotations.rfqId, input.subjectId), isNull(quotations.supersededAt)));
+              quotationCount = Number(counted?.count ?? 0);
+            }
+            context = {
+              subject: 'request',
+              subjectId: input.subjectId,
+              // The request's OWN category, not a client-supplied subtype.
+              subtype: rfq.category,
+              role,
+              relation: isRequester ? 'requester' : 'provider',
+              status: rfq.status,
+              quotationCount,
+              isFinishing: rfq.category === 'Renovation',
+              // ONLY THE REQUESTER'S OWN unknowns drive field help: they are
+              // the only person who can answer them, and the list is a
+              // statement about their brief.
+              unknownFields: isRequester ? unknownFields(brief) : [],
+              canRespond: isRequester ? undefined : access?.canRespond === true,
+              pricingPreference: rfq.pricingPreference,
+            };
+          }
+        }
+      }
+
+      if (input.subject === 'quotation' && input.subjectId) {
+        const [row] = await db.select({
+          providerId: quotations.providerId,
+          status: quotations.status,
+          pricingMethod: quotations.pricingMethod,
+          requesterId: rfqs.requesterId,
+        }).from(quotations)
+          .innerJoin(rfqs, eq(quotations.rfqId, rfqs.id))
+          .where(eq(quotations.id, input.subjectId));
+        // THE TWO PARTIES TO THE BID AND NOBODY ELSE. A rival supplier naming
+        // this id gets the general list, exactly as if it did not exist.
+        if (row && (row.providerId === ctx.user.id || row.requesterId === ctx.user.id)) {
+          context = {
+            subject: 'quotation',
+            subjectId: input.subjectId,
+            subtype: row.pricingMethod,
+            role,
+            relation: row.providerId === ctx.user.id ? 'provider' : 'requester',
+            status: row.status,
+          };
+        }
+      }
+
+      if (input.subject === 'project' && input.subjectId) {
+        // The canonical project gate, unchanged and not weakened: owned or an
+        // active member. A directory lead is not project access.
+        const permitted = await readableProjectIds(db, ctx.user.id).catch(() => [] as number[]);
+        if (permitted.includes(input.subjectId)) {
+          context = { ...context, subject: 'project', subjectId: input.subjectId, relation: 'member' };
+        }
+        // else: the default above is already `general` with no id.
+      }
+
+      return {
+        context: {
+          subject: context.subject,
+          subjectId: context.subjectId ?? null,
+          relation: context.relation,
+          stage: context.status ?? null,
+        },
+        suggestions: suggestionsFor(context),
+      };
+    }),
+
   chat: aiChatProcedure
     .input(z.object({
       messages: z.array(z.object({

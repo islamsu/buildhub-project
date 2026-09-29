@@ -1,4 +1,5 @@
 import { VendorsDirectoryView } from './VendorsDirectory';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 /**
  * The finishing-companies directory, reading REAL provider accounts.
@@ -15,6 +16,7 @@ import { VendorsDirectoryView } from './VendorsDirectory';
  * it invents nothing about any company.
  */
 export default function FinishingDirectory() {
+  usePageTitle();
   return (
     <VendorsDirectoryView
       presetCategory="Renovation"

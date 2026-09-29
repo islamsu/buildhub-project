@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  addToBasket, basketSubtotal, parseBasket, removeFromBasket,
+  addToBasket, basketSubtotals, parseBasket, removeFromBasket,
   setQuantity as setItemQuantity, setSpecifications as setItemSpecifications,
   MAX_BASKET_ITEMS, type BasketItem,
 } from '@shared/rfqBasket';
@@ -111,7 +111,12 @@ export function useRfqBasket() {
     count: items.length,
     /** Total UNITS, which is what a "3 items" badge should mean to a buyer. */
     totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
-    subtotal: basketSubtotal(items),
+    /*
+     * ONE TOTAL PER CURRENCY. This was a single number, rendered under a
+     * hard-coded "EGP" - which is only right while every line in the basket
+     * comes from an Egyptian supplier.
+     */
+    subtotals: basketSubtotals(items),
     isFull: items.length >= MAX_BASKET_ITEMS,
     add, update, remove, specify, clear,
   };

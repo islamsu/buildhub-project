@@ -44,12 +44,29 @@ const t = initTRPC.context<TrpcContext>().create({
 export const router = t.router;
 export const publicProcedure = t.procedure;
 
+/**
+ * "SIGNED OUT" AND "I COULD NOT CHECK" ARE DIFFERENT REFUSALS.
+ *
+ * UNAUTHORIZED is what makes the client show the sign-in screen, so sending it
+ * during an outage tells a signed-in administrator that their session ended -
+ * and sends them somewhere they cannot get back from. The request is refused
+ * either way; only the explanation changes, and the explanation is the part
+ * the person acts on.
+ */
+function refuseUnauthenticated(ctx: TrpcContext): never {
+  if (ctx.authUnavailable) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Your session could not be checked right now. This does not mean you are signed out - please try again.",
+    });
+  }
+  throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+}
+
 const requireUser = t.middleware(async opts => {
   const { ctx, next } = opts;
 
-  if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
-  }
+  if (!ctx.user) refuseUnauthenticated(ctx);
   if (ctx.user.role !== 'admin' && ctx.user.accountStatus === 'frozen') {
     throw new TRPCError({ code: "FORBIDDEN", message: "This account is frozen. Contact an administrator." });
   }
@@ -68,7 +85,10 @@ export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;
 
-    if (!ctx.user || ctx.user.role !== 'admin') {
+    // Same distinction. "You are not an administrator" is a claim about WHO
+    // THEY ARE, and an outage is not evidence for it.
+    if (!ctx.user) refuseUnauthenticated(ctx);
+    if (ctx.user.role !== 'admin') {
       throw new TRPCError({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
     }
 

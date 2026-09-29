@@ -475,9 +475,59 @@ describe('the screens tell the truth about price', () => {
       const body = source.slice(at, source.indexOf('\n}', at));
       expect(body, name).not.toMatch(/\?\?\s*0\b/);
       expect(body, name).not.toMatch(/\|\|\s*0\b/);
-      // And it must still be a real formatter, not an emptied one.
-      expect(body, name).toContain('toLocaleString');
+      /*
+       * AND IT MUST STILL BE A REAL FORMATTER, NOT AN EMPTIED ONE.
+       *
+       * This asked for `toLocaleString`, which was true of the two local
+       * implementations that used to live here and is no longer true of
+       * either: both now delegate to `formatMoneyRange`, so the assertion was
+       * naming a formatting detail rather than the property it cared about.
+       *
+       * What it cares about is that the function formats through the one place
+       * that knows about currencies - which is also what now enforces the rule
+       * above, because formatMoney returns null for an absent amount and never
+       * substitutes a zero (server/moneyPresentation.test.ts).
+       */
+      expect(body, name).toContain('formatMoneyRange(');
+      /*
+       * THE CURRENCY COMES FROM THE RECORD NOW. This required
+       * `SERVICE_PRICE_CURRENCY`, a module constant derived from the market -
+       * which was the best available answer while `serviceOfferings` had no
+       * currency column, and is the wrong answer now that migration 0061 gave
+       * it one. The formatter takes the currency as an argument.
+       */
+      expect(body, name).toMatch(/currency,/);
+      expect(body, name).not.toContain('SERVICE_PRICE_CURRENCY');
+      // A currency literal here would be the defect these two carried: both
+      // spelled it `ar ? 'ج.م' : 'EGP'`, and 'ج.م' reads as a pound in more
+      // than one market in this region.
+      expect(body, name).not.toMatch(/['"`](EGP|SAR|AED)['"`]/);
+      expect(body, name).not.toContain('ج.م');
     }
+  });
+
+  it('there is no market coupling left on either screen', () => {
+    /*
+     * This asserted the OPPOSITE, and the change is the point. While
+     * `serviceOfferings` had no currency column both screens named the market
+     * through `requireCurrencyForMarket(DEFAULT_MARKET)` - the same call the
+     * server makes for a project or an RFQ - so the coupling was one greppable
+     * expression instead of a literal, and the debt was declared rather than
+     * hidden.
+     *
+     * Migration 0061 added the column. The screens read `row.currency`, the
+     * declaration is gone from marketReadiness.test.ts, and neither screen
+     * needs to know which market it is in.
+     */
+    for (const [name, source] of [['manager', MANAGER], ['profile', PROFILE]] as const) {
+      expect(source, name).not.toContain('requireCurrencyForMarket');
+      expect(source, name).not.toContain('DEFAULT_MARKET');
+    }
+  });
+
+  it('and the price range is rendered from the offering\'s own currency', () => {
+    expect(MANAGER).toContain('formatRange(row.priceMin, row.priceMax, row.currency');
+    expect(PROFILE).toContain('publicPriceRange(service.priceMin, service.priceMax, service.currency');
   });
 
   it('quote on request renders the sentence and no range, on both screens', () => {

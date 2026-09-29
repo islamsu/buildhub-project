@@ -1,3 +1,4 @@
+import { formatMoney, formatMoneyTotals } from '@shared/money';
 import { useLanguage } from '@/contexts/LanguageContext';
 import Navbar from '@/components/Navbar';
 import { Pager } from '@/components/Pager';
@@ -10,15 +11,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { trpc } from '@/lib/trpc';
 import { useRfqBasket } from '@/hooks/useRfqBasket';
+import { parseInviteIds } from '@shared/rfqBasket';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { Link, useSearch } from 'wouter';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
+  FinishingBriefFields, EMPTY_BRIEF, briefPayload, type BriefDraft,
+} from '@/components/FinishingBriefFields';
+import {
   FileText, Plus, Clock, MapPin, DollarSign, Send,
   BarChart3, Users, Paperclip, X, FileUp, Loader2,
 } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import QuotationComparison from '@/components/QuotationComparison';
 import { parseProductReference, parseRfqAttachments } from '@shared/rfqAttachments';
 import { RFQ_CATEGORIES as rfqCategories, rfqCategoryLabel, type RfqCategory } from '@shared/rfqCategories';
@@ -39,6 +44,8 @@ type RFQItem = {
   description: string | null;
   category: string | null;
   budget: string | null;
+  /** What the budget is denominated in. The feed carries it (CLAUDE.md §87). */
+  currency: string | null;
   location: string | null;
   deadline: Date | null;
   status: 'open' | 'closed' | 'awarded' | null;
@@ -62,6 +69,7 @@ const RFQ_PAGE_SIZE = 25;
 
 export default function RFQPage() {
   const { t, lang } = useLanguage();
+  const ar = lang === 'ar';
   const { isAuthenticated, user } = useAuth();
   // The roles for whom an RFQ is an opportunity to respond to rather than
   // something they raised. Mirrors RFQ_SEEKING_ROLES on the server; the server
@@ -79,6 +87,15 @@ export default function RFQPage() {
   }>({
     title: '', description: '', category: '', budget: '', location: '', deadline: '',
   });
+  /**
+   * THE FINISHING BRIEF, held apart from the request's own fields.
+   *
+   * It only reaches the server for a تشطيب request, and only when something in
+   * it was actually answered - see `briefPayload`. Keeping it separate means a
+   * person who switches category away from Renovation does not silently send a
+   * finishing brief with a materials request.
+   */
+  const [brief, setBrief] = useState<BriefDraft>(EMPTY_BRIEF);
   const [linkedProjectId, setLinkedProjectId] = useState<string>('none');
   const { data: myProjects = [] } = trpc.projects.list.useQuery(undefined, { enabled: isAuthenticated });
   const [marketplaceProduct, setMarketplaceProduct] = useState<{ productId: number; variantId: string; variantLabel: string } | null>(null);
@@ -199,9 +216,98 @@ export default function RFQPage() {
   const rfqs = (rfqList.data?.rows ?? []) as any[];
   const { data: myRfqs = [] } = trpc.rfq.myList.useQuery(undefined, { enabled: isAuthenticated });
 
+  /*
+   * ── ARRIVING FROM A SUPPLIER'S STOREFRONT ────────────────────────────
+   *
+   * A buyer who has just read a supplier's page and wants a price from THEM
+   * had no way to say so: they could post a request into the open market and
+   * hope. `/rfq?invite=<id>` carries that intent, and the supplier is invited
+   * the moment the request exists.
+   *
+   * REUSES THE CANONICAL SYSTEMS. This is an RFQ and an invitation, not a
+   * second enquiry channel - `rfq.inviteSupplier` decides whether the caller
+   * may invite, exactly as it does everywhere else.
+   */
+  /*
+   * IT CARRIES A SHORTLIST NOW, NOT ONE SUPPLIER.
+   *
+   * `?invite=<id>` took exactly one, which is the wrong number for the
+   * journey: a buyer shortlists several suppliers precisely so they can ask
+   * several of them for a price. The parser is shared and BOUNDED, because
+   * this is user-controlled input and a shortlist holds up to 200.
+   */
+  const invitedSupplierIds = parseInviteIds(new URLSearchParams(search).get('invite'));
+  const inviteSupplier = trpc.rfq.inviteSupplier.useMutation();
+
+  /*
+   * NAMING WHAT WAS CARRIED, BEFORE THE REQUEST IS POSTED.
+   *
+   * A form that silently carries four invitations is the same defect as a
+   * basket that silently contains things: the buyer cannot check it, and the
+   * first they learn of it is a toast after the fact.
+   *
+   * The names come from the buyer's OWN shortlist - the list they were just
+   * on - rather than from a new public lookup, so no read is added and no
+   * identity is exposed that this buyer could not already see. An id that is
+   * NOT on their shortlist is shown as its reference rather than given a
+   * name this page cannot prove, which is the honest half of §68.
+   */
+  const shortlist = trpc.profile.savedItems.useQuery(undefined, {
+    enabled: isAuthenticated && invitedSupplierIds.length > 0, retry: false,
+  });
+  const invitedSuppliers = invitedSupplierIds.map(id => {
+    const match = (shortlist.data?.items ?? []).find(
+      (item: any) => item.itemKind === 'provider' && Number(item.target?.id) === id,
+    ) as any;
+    return {
+      id,
+      label: match?.target?.businessName ?? match?.target?.name ?? `#${id}`,
+      named: Boolean(match?.target),
+    };
+  });
+
   const createRfq = trpc.rfq.create.useMutation({
-    onSuccess: () => {
+    onSuccess: created => {
       toast.success(lang === 'ar' ? 'تم نشر طلب العرض بنجاح!' : 'RFQ posted successfully!');
+      /*
+       * THE INVITATION IS ITS OWN STEP, and its failure is reported rather
+       * than swallowed. The request is already posted and real; a supplier
+       * who could not be invited is a smaller problem than a buyer who
+       * believes they were.
+       */
+      /*
+       * EACH INVITATION IS ITS OWN AUTHORIZED CALL, and each outcome is
+       * reported. One provider who is not approved to receive requests must
+       * not silently take the other three down with it, and a buyer told
+       * "4 suppliers invited" when one was refused has been told something
+       * false about who is going to quote.
+       */
+      if (invitedSupplierIds.length > 0 && created?.id) {
+        const rfqId = created.id;
+        void Promise.allSettled(invitedSupplierIds.map(supplierId =>
+          inviteSupplier.mutateAsync({ rfqId, supplierId })
+            .then(() => ({ supplierId, ok: true as const }))
+            .catch((error: any) => ({ supplierId, ok: false as const, message: String(error?.message ?? '') })),
+        )).then(settled => {
+          const outcomes = settled.map(entry => entry.status === 'fulfilled'
+            ? entry.value
+            : { supplierId: 0, ok: false as const, message: '' });
+          const invited = outcomes.filter(outcome => outcome.ok).length;
+          const refused = outcomes.filter(outcome => !outcome.ok);
+          if (invited > 0) {
+            toast.success(lang === 'ar'
+              ? `تمت دعوة ${invited} من الموردين إلى طلبك`
+              : `${invited} supplier${invited === 1 ? '' : 's'} invited to your request`);
+          }
+          // THE REFUSALS ARE NAMED, not folded into the success line. The
+          // server owns the reason; it is shown rather than guessed at.
+          for (const failure of refused) {
+            toast.error(lang === 'ar'
+              ? `تم نشر الطلب، لكن تعذّرت دعوة أحد الموردين: ${failure.message}`
+              : `Request posted, but a supplier could not be invited: ${failure.message}`);
+          }
+        });
+      }
       setOpen(false);
       setForm({ title: '', description: '', category: '', budget: '', location: '', deadline: '' });
       setLinkedProjectId('none');
@@ -256,17 +362,32 @@ export default function RFQPage() {
                   )}
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-lg">
+              {/*
+                * ── HEADER, SCROLLING BODY, REACHABLE ACTIONS ──────────────
+                *
+                * `scrollBody` is the canonical shape for a long form: the title
+                * stays put, the fields scroll, and Submit never leaves the
+                * screen. This form outgrew a laptop's height the moment تشطيب
+                * was selected and the finishing brief appeared - the remaining
+                * fields and the submit button became unreachable, so a finishing
+                * request could not be published at all.
+                *
+                * The bound itself lives in DialogContent, where thirty-three
+                * other dialogs were one long form away from the same dead end.
+                */}
+              <DialogContent className="max-w-lg" scrollBody data-testid="rfq-post-dialog">
                 <DialogHeader>
                   <DialogTitle>{t('rfq.post.title')}</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-4 mt-2">
+                <DialogBody className="space-y-4 mt-2" data-testid="rfq-post-body">
                   <Input
+                    data-testid="rfq-title"
                     placeholder={t('rfq.title.placeholder')}
                     value={form.title}
                     onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
                   />
                   <Textarea
+                    data-testid="rfq-description"
                     placeholder={t('rfq.description.placeholder')}
                     rows={4}
                     value={form.description}
@@ -285,6 +406,26 @@ export default function RFQPage() {
                       {CATEGORIES.map(c => <SelectItem key={c} value={c}>{rfqCategoryLabel(c, lang)}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                  {/*
+                    * ── طلب تشطيب ────────────────────────────────────────
+                    *
+                    * Shown only for the finishing category, because these are
+                    * finishing questions - asking a materials buyer about their
+                    * finishing level would be noise. It is the same `rfqs` row
+                    * either way; this is a brief that hangs off it, not a
+                    * second kind of request.
+                    *
+                    * Every question in it is optional and every one of them
+                    * accepts "لا أعرف", so it can never stop a publication.
+                    */}
+                  {form.category === 'Renovation' && (
+                    <div className="rounded-xl border p-4" data-testid="rfq-finishing-brief">
+                      <p className="mb-3 text-sm font-semibold">
+                        {lang === 'ar' ? 'تفاصيل طلب التشطيب' : 'Finishing details'}
+                      </p>
+                      <FinishingBriefFields draft={brief} onChange={setBrief} lang={lang === 'ar' ? 'ar' : 'en'} />
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <Input
                       placeholder={t('rfq.budget')}
@@ -316,6 +457,44 @@ export default function RFQPage() {
                           {myProjects.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.title}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                    </div>
+                  )}
+                  {/*
+                    WHO THIS REQUEST WILL BE SENT TO, NAMED BEFORE IT IS SENT.
+
+                    A form that silently carries four invitations is the same
+                    defect as a basket that silently contains things: the
+                    buyer cannot check it, and the first they learn of it is a
+                    toast after the fact. The request is still PUBLIC to every
+                    provider whose declared categories match it - these are
+                    invitations on top of that, not instead of it, and saying
+                    so is what stops a buyer thinking they have narrowed the
+                    audience when they have widened it.
+                  */}
+                  {invitedSuppliers.length > 0 && (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3" data-testid="rfq-invite-carry">
+                      <p className="text-sm font-medium">
+                        {ar
+                          ? `${invitedSuppliers.length} مورد من قائمتك المختصرة سيُدعى إلى هذا الطلب`
+                          : `${invitedSuppliers.length} supplier${invitedSuppliers.length === 1 ? '' : 's'} from your shortlist will be invited`}
+                      </p>
+                      <ul className="mt-2 flex flex-wrap gap-1.5">
+                        {invitedSuppliers.map(supplier => (
+                          <li key={supplier.id}>
+                            <Badge
+                              variant="secondary"
+                              data-testid={`rfq-invite-carry-${supplier.id}`}
+                            >
+                              {supplier.label}
+                            </Badge>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {ar
+                          ? 'يبقى الطلب مرئياً لكل مورد تطابق فئاته المعلنة — الدعوة إضافة، وليست حصراً.'
+                          : 'The request stays visible to every provider whose declared categories match it — an invitation is in addition to that, not instead of it.'}
+                      </p>
                     </div>
                   )}
                   {/*
@@ -367,11 +546,11 @@ export default function RFQPage() {
                           </div>
                         ))}
                       </div>
-                      {basket.subtotal != null && (
+                      {basket.subtotals.length > 0 && (
                         <p className="mt-2 text-xs text-muted-foreground" data-testid="rfq-basket-subtotal">
                           {lang === 'ar'
-                            ? `السعر المعروض في السوق: ${basket.subtotal.toLocaleString()} ج.م — ليس عرض سعر`
-                            : `Catalogue value: EGP ${basket.subtotal.toLocaleString()} — not a quotation`}
+                            ? `السعر المعروض في السوق: ${formatMoneyTotals(basket.subtotals, 'ar') ?? ''} — ليس عرض سعر`
+                            : `Catalogue value: ${formatMoneyTotals(basket.subtotals, 'en') ?? ''} — not a quotation`}
                         </p>
                       )}
                     </div>
@@ -449,8 +628,20 @@ export default function RFQPage() {
                     )}
                   </div>
 
+                </DialogBody>
+
+                {/*
+                  * THE ACTIONS, OUTSIDE THE SCROLL REGION.
+                  *
+                  * A submit button that is the last child of a long scrolling
+                  * form is only reachable by scrolling to the end of it. Here it
+                  * is the dialog's third grid row, so it is on screen from the
+                  * moment the dialog opens however tall the form grows.
+                  */}
+                <DialogFooter className="flex-col gap-2 sm:flex-col sm:justify-start">
                   <Button
                     className="w-full gap-2"
+                    data-testid="rfq-create-submit"
                     onClick={() => {
                       // Narrows `category` off '' for real rather than casting
                       // it away. The button is disabled in this state, so this
@@ -460,6 +651,15 @@ export default function RFQPage() {
                       createRfq.mutate({
                       ...form,
                       category: form.category,
+                      /*
+                       * THE BRIEF AND THE PREFERENCE. Both optional, both
+                       * omitted entirely when nothing was answered - an empty
+                       * object would read as "asked and answered with nothing",
+                       * which is a different claim from "not asked".
+                       */
+                      finishingBrief: form.category === 'Renovation' ? briefPayload(brief) : undefined,
+                      pricingPreference: form.category === 'Renovation'
+                        ? (brief.pricingPreference ?? undefined) : undefined,
                       budget: form.budget ? parseFloat(form.budget) : undefined,
                       deadline: form.deadline ? new Date(form.deadline) : undefined,
                       projectId: linkedProjectId !== 'none' ? Number(linkedProjectId) : undefined,
@@ -489,7 +689,7 @@ export default function RFQPage() {
                         : 'Choose a category so matching suppliers can see your request and respond to it.'}
                     </p>
                   )}
-                </div>
+                </DialogFooter>
               </DialogContent>
             </Dialog>
           ) : (
@@ -552,7 +752,7 @@ export default function RFQPage() {
                         )}
                         {rfq.budget && (
                           <span className="flex items-center gap-1">
-                            <DollarSign className="w-3.5 h-3.5" />{t('common.egp')} {Number(rfq.budget).toLocaleString()}
+                            <DollarSign className="w-3.5 h-3.5" />{formatMoney(rfq.budget, rfq.currency, lang)}
                           </span>
                         )}
                         {rfq.location && (
@@ -670,6 +870,7 @@ export default function RFQPage() {
               rfqId={compareRfq.id}
               rfqTitle={compareRfq.title}
               rfqBudget={compareRfq.budget ? Number(compareRfq.budget) : undefined}
+              rfqCurrency={compareRfq.currency}
               rfqStatus={compareRfq.status}
               isOwner={isAuthenticated && user?.id === compareRfq.requesterId}
               onClose={() => setCompareRfq(null)}

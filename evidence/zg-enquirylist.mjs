@@ -14,8 +14,14 @@
 //      that issues forty-one queries looks identical in the response.
 import { execSync } from 'node:child_process';
 import { adminSession } from './lib/session.mjs';
+import { assertBuild } from './lib/build.mjs';
 
 const BASE = 'http://127.0.0.1:5401';
+
+/* WHICH BUILD THIS RAN AGAINST. Printed always; enforced when
+   ZG_EXPECT_COMMIT names one, so a pass can never be reported against
+   a build somebody did not mean to test. */
+await assertBuild(BASE);
 const DB = 'buildhub_prelaunch';
 const sql = q => execSync(`mysql -u root --default-character-set=utf8mb4 ${DB} -N -B`, { input: q })
   .toString().split('\n').filter(l => !/^PAGER set to/.test(l)).join('\n').trim();

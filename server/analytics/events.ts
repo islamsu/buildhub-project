@@ -1,5 +1,6 @@
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { getDb } from '../db';
+import { requireDb } from '../_core/requireDb';
 import { analyticsEvents, users } from '../../drizzle/schema';
 import {
   ANALYTICS_EVENTS, FORBIDDEN_METADATA_KEYS, VENDOR_FUNNEL,
@@ -123,8 +124,11 @@ export type FunnelRow = { stage: VendorFunnelStage; event: string; users: number
  * otherwise inflate every stage of the owner's own funnel.
  */
 export async function getVendorFunnel(options: { includeDummy?: boolean; since?: Date } = {}): Promise<FunnelRow[]> {
-  const db = await getDb();
-  if (!db) return VENDOR_FUNNEL.map(({ stage, event }) => ({ stage, event, users: 0 }));
+  // A ZEROED FUNNEL IS THE SAME CLAIM AS ZERO REVENUE: every stage reading 0
+  // users says nobody has ever registered, completed a profile or
+  // subscribed. The shape exists so a genuinely empty platform renders
+  // honestly; it was answering for an unreadable one too.
+  const db = await requireDb();
 
   const excludedIds = options.includeDummy
     ? []
@@ -172,8 +176,9 @@ export type EventCountRow = { eventType: string; count: number };
 
 /** Raw event volume in a window, for the owner to see what is actually happening. */
 export async function getEventCounts(options: { since?: Date; until?: Date } = {}): Promise<EventCountRow[]> {
-  const db = await getDb();
-  if (!db) return [];
+  // Same rule. An empty count list reads as a platform where nothing has
+  // happened.
+  const db = await requireDb();
   const conditions = [
     ...(options.since ? [gte(analyticsEvents.occurredAt, options.since)] : []),
     ...(options.until ? [lt(analyticsEvents.occurredAt, options.until)] : []),
@@ -200,8 +205,10 @@ export async function getMedianDaysToMilestone(
   milestone: AnalyticsEventType,
   options: { includeDummy?: boolean } = {},
 ): Promise<number | null> {
-  const db = await getDb();
-  if (!db) return null;
+  // A milestone count of `null` reads as "not measured". Same rule: the
+  // shape is for a platform where nobody has reached the milestone, not for
+  // a database nobody could read.
+  const db = await requireDb();
 
   const excluded = options.includeDummy
     ? []

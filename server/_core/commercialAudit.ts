@@ -51,6 +51,15 @@ export type CommercialAction =
   | 'product_created' | 'product_updated' | 'product_published' | 'product_delisted'
   | 'product_featured' | 'product_unfeatured'
   | 'product_images_changed' | 'product_question_answered'
+  // An answer may now be CORRECTED, and the correction is recorded separately
+  // from the original: "answered" and "changed their answer after the fact"
+  // are very different facts about a supplier, and one vocabulary entry for
+  // both would hide the second inside the first.
+  | 'product_answer_edited'
+  // Moderation of public Q&A. Hiding is never deletion, so the trail has to
+  // carry which way the decision went.
+  | 'product_question_hidden' | 'product_question_restored'
+  | 'product_answer_hidden' | 'product_answer_restored'
   // Files
   | 'document_uploaded' | 'document_deleted' | 'attachment_added' | 'attachment_removed'
   // The document lifecycle. `document_deleted` predates it and is kept in the

@@ -1,3 +1,4 @@
+import { LoadFailedInline, loadFailedCopy } from '@/components/LoadFailed';
 import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -48,7 +49,15 @@ export default function VendorIdentitySelect({
     }
   }, [value]);
 
-  const { data: results = [], isFetching } = trpc.admin.vendorSearch.useQuery(
+  /*
+   * A FAILED LOOKUP IS NOT AN ABSENT RECORD.
+   *
+   * The chain below read "no matches" whether the search came back empty or
+   * did not come back at all, so an administrator acting on an account was
+   * told it does not exist - and a typeahead offers no other signal that
+   * anything went wrong.
+   */
+  const { data: results = [], isFetching, isError } = trpc.admin.vendorSearch.useQuery(
     { query: debounced },
     { enabled: debounced.length >= 2 },
   );
@@ -108,6 +117,8 @@ export default function VendorIdentitySelect({
         <div className="absolute z-30 mt-1 w-full rounded-lg border bg-popover text-popover-foreground shadow-lg">
           {isFetching ? (
             <p className="px-3 py-3 text-sm text-muted-foreground">{ar ? 'جارٍ البحث…' : 'Searching…'}</p>
+          ) : isError ? (
+            <LoadFailedInline text={loadFailedCopy(ar).text} />
           ) : results.length === 0 ? (
             <p className="px-3 py-3 text-sm text-muted-foreground">{ar ? 'لا يوجد مورّدون مطابقون.' : 'No matching vendors.'}</p>
           ) : (

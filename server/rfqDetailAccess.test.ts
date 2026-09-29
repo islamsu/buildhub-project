@@ -99,7 +99,15 @@ describe('rfq.summary returns the feed allowlist and no more', () => {
       return [...body.matchAll(/^\s*(\w+): rfqs\.\w+,/gm)].map(m => m[1]).sort();
     };
 
-    const listColumns = columnsIn('list: protectedProcedure.query(async ({ ctx }) => {');
+    /*
+     * ANCHORED ON THE RFQ ROUTER'S OWN `list`, not on the first `list:` in the
+     * file - which is `projects.list`, several thousand lines earlier. The old
+     * marker matched that one and then scanned forward to the next
+     * `.from(rfqs)`, so it was measuring a span that merely happened to contain
+     * the right columns. It passed for the wrong reason, and a real widening of
+     * one procedure was as likely to be missed as caught.
+     */
+    const listColumns = columnsIn('list: protectedProcedure.input(z.object({\n    page: z.number().int().min(0).default(0),');
     const summaryColumns = columnsIn('summary: protectedProcedure');
     expect(listColumns.length).toBeGreaterThan(5);
     expect(summaryColumns).toEqual(listColumns);

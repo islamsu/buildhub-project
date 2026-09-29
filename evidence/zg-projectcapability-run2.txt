@@ -1,0 +1,15 @@
+BUILD  9e5faee (development) built 2026-09-22T09:56:39.195Z  http://127.0.0.1:5401
+PASS  1. SETUP: a project with a member added as a VIEWER  [project 91, added true]
+PASS  2. SERVER: a viewer cannot change the project  [FORBIDDEN Your role on this project (viewer) does not allow this action.]
+PASS  3. SERVER: nor record an expense against it  [FORBIDDEN Your role on this project (viewer) does not allow this action.]
+PASS  4. SERVER: nor put somebody else on the job  [FORBIDDEN Your role on this project (viewer) does not allow this action.]
+PASS  5. SERVER: while the owner can - so the refusals above are about ROLE, not a broken endpoint
+PASS  6. VIEWER: can open the project they were added to - read still works
+PASS  7. VIEWER: is NOT offered Add Expense - the server would refuse it  [correctly absent]
+PASS  8. VIEWER: is NOT offered Add Member  [correctly absent]
+PASS  9. VIEWER: is NOT offered Remove Member  [correctly absent]
+PASS  10. VIEWER: and cannot change the project status from the page  [correctly absent]
+PASS  11. VIEWER: nor read the spend - finance is deliberately NOT part of read  [correctly absent]
+PASS  12. OWNER: still has every control - the fix gates by ROLE, it does not hide the feature  [expense true, member true, status true, finance true]
+
+12/12 checks passed

@@ -1,0 +1,68 @@
+BUILD  9be1c7d (local) built 2026-09-27T12:53:04.139Z  http://127.0.0.1:5401
+PASS  1. SETUP: a published provider, an unapproved one, a frozen one, a deactivated one and a buyer  [1168/1169/1170/1171/1172]
+
+── signed out, approved provider ──
+PASS  2. an unauthenticated read of an approved storefront succeeds  [HTTP 200 null]
+PASS  3. and returns that provider  [id=1168]
+PASS  4. including the company identity §21 asks for  [Probe Materials 13602327 LLC]
+PASS  5. and its location
+
+── what the same response does NOT contain ──
+PASS  6. the contact tier for a stranger is `none`  [none]
+PASS  7. so the named contact block is null, not merely hidden by the page  [null]
+PASS  8. the contact person is absent from the payload
+PASS  9. their email is absent from the payload
+PASS  10. their phone is absent from the payload
+PASS  11. their street address is absent from the payload
+PASS  12. the commercial registration is absent from the payload
+PASS  13. and the registration field is not even present as a key
+PASS  14. the contact channel says SIGN IN, not "unavailable" - the provider can be reached, by somebody with an account  [sign_in]
+
+── signed out, everything the directory would not list ──
+PASS  15. an unapproved applicant answers NOT_FOUND  [NOT_FOUND HTTP 404]
+PASS  16. a frozen account answers NOT_FOUND  [NOT_FOUND HTTP 404]
+PASS  17. a deactivated account answers NOT_FOUND  [NOT_FOUND HTTP 404]
+PASS  18. a homeowner answers NOT_FOUND  [NOT_FOUND HTTP 404]
+PASS  19. an id that does not exist answers NOT_FOUND  [NOT_FOUND HTTP 404]
+PASS  20. and all of them with the SAME message - a stranger learns nothing about which accounts exist  [1 distinct: Vendor profile not found]
+
+── the portfolio, signed out ──
+PASS  21. a stranger can read a published provider's portfolio  [HTTP 200 null]
+PASS  22. and it really contains the item, so the section is not empty  [1 item(s)]
+PASS  23. an unapproved applicant's portfolio answers NOT_FOUND  [NOT_FOUND]
+PASS  24. a frozen account's portfolio answers NOT_FOUND  [NOT_FOUND]
+PASS  25. a homeowner's portfolio answers NOT_FOUND  [NOT_FOUND]
+
+── self and admin are unaffected ──
+PASS  26. an UNAPPROVED provider can still open their own storefront to check it  [id=1169]
+
+── the rendered page, signed out ──
+PASS  27. en/1440px: the storefront renders for a signed-out reader
+PASS  28. en/1440px: no sign-in WALL - the page is readable  [BuildHub Home Marketplace Get Quotes Pricing العربية Sign In Get Start]
+PASS  29. en/1440px: the session-bound actions are replaced by one honest sign-in prompt
+PASS  30. en/1440px: and no button is offered that would answer 401  [contact=false quote=false]
+PASS  31. en/1440px: the private contact and registration are not on the page
+PASS  32. en/1440px: the portfolio section shows real work, not an empty section
+PASS  33. ar/1440px: the storefront renders for a signed-out reader
+PASS  34. ar/1440px: no sign-in WALL - the page is readable  [BuildHub الرئيسية السوق طلب عروض الباقات English تسجيل الدخول ابدأ الآ]
+PASS  35. ar/1440px: the session-bound actions are replaced by one honest sign-in prompt
+PASS  36. ar/1440px: and no button is offered that would answer 401  [contact=false quote=false]
+PASS  37. ar/1440px: the private contact and registration are not on the page
+PASS  38. ar/1440px: the portfolio section shows real work, not an empty section
+PASS  39. ar/1440px: and it reads in Arabic
+PASS  40. en/375px: the storefront renders for a signed-out reader
+PASS  41. en/375px: no sign-in WALL - the page is readable  [BuildHub Home Marketplace Get Quotes Pricing العربية Sign In Get Start]
+PASS  42. en/375px: the session-bound actions are replaced by one honest sign-in prompt
+PASS  43. en/375px: and no button is offered that would answer 401  [contact=false quote=false]
+PASS  44. en/375px: the private contact and registration are not on the page
+PASS  45. en/375px: the portfolio section shows real work, not an empty section
+PASS  46. the tab names the storefront  [Probe Materials 13602327 — BuildHub]
+PASS  47. and so does the FIRST response, before any JavaScript runs  [Probe Materials 13602327 — BuildHub]
+PASS  48. the shell is noindex on a non-production deployment, as every route is
+PASS  49. an unapproved applicant's NAME never reaches a <title> either  [Supplier storefront — BuildHub]
+
+── cleanup ──
+PASS  50. every fixture this probe created is removed  [0 left]
+
+BUILD  9be1c7d (local)
+RESULT 50 passed, 0 failed

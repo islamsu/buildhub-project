@@ -16,11 +16,12 @@
 
 import { and, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { containsTerm } from './_core/searchTerms';
-import { qualifiedEnquiries, reviews, users, vendorCategories, vendorSponsorships, vendorSubscriptions } from '../drizzle/schema';
+import { qualifiedEnquiries, reviews, users, vendorCategories, vendorSponsorships, vendorSubscriptions, vendorProfiles } from '../drizzle/schema';
 import { deriveBillingState } from './billing/domain';
 import { liveSponsorshipFilter, sponsoredVendorIds } from './vendorSponsorship';
 import { getEntitlements } from '@shared/billing';
 import { getDb } from './db';
+import { requireDb } from './_core/requireDb';
 import { isTestLoginEnabled } from './_core/env';
 
 /** The only user columns a public directory response may ever contain. */
@@ -97,11 +98,37 @@ export type DirectoryVendor = {
   categories: string[];
   averageRating: number | null;
   reviewCount: number;
+  /**
+   * THE BUSINESS, WHERE THERE IS ONE.
+   *
+   * The directory returned only `users.name` - the person - so a supplier
+   * trading as a registered company appeared in a B2B marketplace under the
+   * name of whoever opened the account. A buyer comparing suppliers was
+   * reading personal names and could not tell which were businesses at all.
+   *
+   * Null for a provider who has registered no business, which is the honest
+   * answer for an independent professional and not a gap to fill with their
+   * own name. The card decides what to lead with; this only supplies the
+   * fact.
+   */
+  businessName: string | null;
 };
 
 export async function listDirectoryVendors(filters: DirectoryFilters = {}): Promise<DirectoryVendor[]> {
-  const db = await getDb();
-  if (!db) return [];
+  /*
+   * AN OUTAGE IS NOT AN EMPTY MARKETPLACE.
+   *
+   * Every read in this file answered `[]` when the database was unreachable,
+   * and these are the reads the PUBLIC marketplace is built from - the vendor
+   * directory, the categories that can be browsed, the featured strip. A
+   * visitor judging whether BuildHub has anyone on it was shown a platform
+   * with no providers, and the hub's own headline counts were fixed once for
+   * exactly this reason on the client side.
+   *
+   * The empty array is still correct for a marketplace with no approved
+   * providers yet. It must not also be the answer when nobody could look.
+   */
+  const db = await requireDb();
 
   const limit = Math.min(Math.max(filters.limit ?? 48, 1), 100);
   const conditions = [directoryVisibilityFilter()];
@@ -166,6 +193,34 @@ export async function enrichVendorRows(
     }];
   }));
 
+  /*
+   * THE BUSINESS NAME, in one grouped read like the two beside it.
+   *
+   * Placed here rather than on the organic query specifically so that
+   * FEATURED and ORGANIC agree - this function exists because "two code paths
+   * computing reputation differently is how a vendor ends up with 4.6 stars
+   * in one place and 4.8 in another", and a business name shown on one
+   * surface and not the other is the same defect wearing different clothes.
+   *
+   * `tradingName` is what a business is known AS; `companyName` is what it is
+   * registered as. A buyer scanning a directory wants the first and should
+   * still find the second when there is no trading name.
+   */
+  const businessRows = await db
+    .select({
+      userId: vendorProfiles.userId,
+      companyName: vendorProfiles.companyName,
+      tradingName: vendorProfiles.tradingName,
+    })
+    .from(vendorProfiles)
+    .where(inArray(vendorProfiles.userId, ids));
+  const businesses = new Map<number, string | null>(
+    businessRows.map(row => [
+      row.userId,
+      (row.tradingName ?? '').trim() || (row.companyName ?? '').trim() || null,
+    ]),
+  );
+
   const categoryRows = await db
     .select({ userId: vendorCategories.userId, category: vendorCategories.category })
     .from(vendorCategories)
@@ -182,13 +237,14 @@ export async function enrichVendorRows(
     categories: categories.get(row.id) ?? [],
     averageRating: reputation.get(row.id)?.averageRating ?? null,
     reviewCount: reputation.get(row.id)?.reviewCount ?? 0,
+    businessName: businesses.get(row.id) ?? null,
   })) as DirectoryVendor[];
 }
 
 /** Distinct declared categories among currently-visible vendors, for filter UI. */
 export async function listDirectoryCategories(): Promise<string[]> {
-  const db = await getDb();
-  if (!db) return [];
+  // Same rule as listDirectoryVendors above.
+  const db = await requireDb();
   const rows = await db
     .selectDistinct({ category: vendorCategories.category })
     .from(vendorCategories)
@@ -199,8 +255,8 @@ export async function listDirectoryCategories(): Promise<string[]> {
 
 /** Admin troubleshooting view: a vendor's declarations and enquiry consumption. */
 export async function getVendorTargetingDiagnostics(userId: number) {
-  const db = await getDb();
-  if (!db) return { categories: [], recentEnquiries: [] };
+  // Same rule as listDirectoryVendors above.
+  const db = await requireDb();
   const categories = await db
     .select({ category: vendorCategories.category, createdAt: vendorCategories.createdAt })
     .from(vendorCategories)
@@ -273,8 +329,8 @@ export const FEATURED_PLACEMENT_SLOTS = 6;
 export async function listEntitlementSponsoredVendors(
   filters: DirectoryFilters & { now?: Date } = {},
 ): Promise<DirectoryVendor[]> {
-  const db = await getDb();
-  if (!db) return [];
+  // Same rule as listDirectoryVendors above.
+  const db = await requireDb();
 
   const now = filters.now ?? new Date();
   const conditions = [directoryVisibilityFilter()];
@@ -340,8 +396,8 @@ export async function listEntitlementSponsoredVendors(
 export async function listSponsoredVendors(
   filters: DirectoryFilters & { now?: Date } = {},
 ): Promise<(DirectoryVendor & { sponsorshipSource: 'granted' | 'entitlement' })[]> {
-  const db = await getDb();
-  if (!db) return [];
+  // Same rule as listDirectoryVendors above.
+  const db = await requireDb();
   const now = filters.now ?? new Date();
 
   // A grant is scoped to ONE category, so without a category filter there is
@@ -389,8 +445,8 @@ export async function listSponsoredVendors(
  * Ordered earliest-featured-first so the oldest deliberate pick stays first.
  */
 export async function listFeaturedProviders(filters: { category?: string } = {}): Promise<(DirectoryVendor & { featuredCategory: string })[]> {
-  const db = await getDb();
-  if (!db) return [];
+  // Same rule as listDirectoryVendors above.
+  const db = await requireDb();
   const now = new Date();
   const conditions = [eq(vendorSponsorships.kind, 'featured'), liveSponsorshipFilter(now)];
   if (filters.category) conditions.push(eq(vendorSponsorships.category, filters.category));

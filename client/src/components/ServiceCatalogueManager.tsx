@@ -1,3 +1,5 @@
+import { formatMoneyRange } from '@shared/money';
+
 import { useState } from 'react';
 import { Plus, Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -141,7 +143,7 @@ export default function ServiceCatalogueManager() {
                         would be worse than the honest sentence. */}
                     {row.pricingBasis === 'quote_on_request'
                       ? pricingBasisLabel('quote_on_request', lang)
-                      : `${formatRange(row.priceMin, row.priceMax, ar)} · ${pricingBasisLabel(row.pricingBasis as ServicePricingBasis, lang)}`}
+                      : `${formatRange(row.priceMin, row.priceMax, row.currency, ar)} · ${pricingBasisLabel(row.pricingBasis as ServicePricingBasis, lang)}`}
                   </p>
                   {(row.leadTimeDays != null || row.warrantyMonths != null) && (
                     <p className="mt-1 text-sm text-muted-foreground">
@@ -196,14 +198,39 @@ export default function ServiceCatalogueManager() {
   );
 }
 
-/** "EGP 120 – 260", "from EGP 120", "up to EGP 260", or nothing at all. */
-function formatRange(min: unknown, max: unknown, ar: boolean): string {
-  const currency = ar ? 'ج.م' : 'EGP';
-  const n = (value: unknown) => Number(value).toLocaleString(ar ? 'ar-EG' : 'en-EG');
-  if (min != null && max != null) return `${currency} ${n(min)} – ${n(max)}`;
-  if (min != null) return ar ? `من ${currency} ${n(min)}` : `from ${currency} ${n(min)}`;
-  if (max != null) return ar ? `حتى ${currency} ${n(max)}` : `up to ${currency} ${n(max)}`;
-  return ar ? 'السعر غير محدد' : 'Price not stated';
+/**
+ * ── A SERVICE PRICE RANGE, IN THE CURRENCY THE RECORD STATES ────────────
+ *
+ * Two things were wrong here and 0061 fixed the second, which was the cause of
+ * the first.
+ *
+ * This was a local copy of a formatter - the second of two identical ones, the
+ * other in client/src/pages/VendorProfile.tsx -
+ * built from `const currency = ar ? 'ج.م' : 'EGP'`. Both
+ * problems are what shared/money.ts exists to answer: 'ج.م' reads as a pound
+ * and several markets in this region write their currency that way, which is
+ * why the canonical formatter shows the ISO code; and the currency was a
+ * LITERAL chosen by the view.
+ *
+ * The view chose it because `serviceOfferings` had `priceMin`, `priceMax` and
+ * no currency column - there was genuinely nothing on the record to read. That
+ * was declared debt, with the reason stated: the debt was the column.
+ *
+ * 0061 added it, backfilled to EGP because that is what every existing row
+ * already meant, and `services.create` writes it from the market. So this now
+ * reads `row.currency` like every other money surface in the product, and the
+ * market constant this used to need is gone.
+ */
+function formatRange(min: unknown, max: unknown, currency: string | null | undefined, ar: boolean): string {
+  const range = formatMoneyRange(
+    min as number | string | null | undefined,
+    max as number | string | null | undefined,
+    currency,
+    ar ? 'ar' : 'en',
+    ar ? { from: 'من', upTo: 'حتى' } : { from: 'from', upTo: 'up to' },
+  );
+  // Never a zero standing in for an unknown price.
+  return range ?? (ar ? 'السعر غير محدد' : 'Price not stated');
 }
 
 type FormValues = {

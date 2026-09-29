@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 /**
  * ── Listing a product, and changing one (§21–§25) ─────────────────────────
  *
@@ -27,6 +28,7 @@ import { Link, useLocation, useSearch } from 'wouter';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { requireCurrencyForMarket, DEFAULT_MARKET } from '@shared/markets';
 import DashboardLayout from '@/components/DashboardLayout';
 import ProductImport from '@/components/ProductImport';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -58,6 +60,14 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
   const search = useSearch();
   const { lang, dir } = useLanguage();
   const ar = lang === 'ar';
+  /**
+   * WHAT A SUPPLIER PRICES IN.
+   *
+   * The single market BuildHub operates in today. It is read from the market
+   * table rather than written into the label, so the day a supplier lists in
+   * a second market this becomes a lookup rather than a search-and-replace.
+   */
+  const sellingCurrency = requireCurrencyForMarket(DEFAULT_MARKET);
   const { isAuthenticated } = useAuth();
 
   const productId = mode === 'edit' ? (productIdProp ?? NaN) : null;
@@ -187,10 +197,21 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
     return <Shell dir={dir}><Refusal ar={ar} message={ar ? 'رقم منتج غير صالح.' : 'That is not a valid product number.'} /></Shell>;
   }
 
+  /*
+   * A FAILED LIST IS NOT A MISSING PRODUCT.
+   *
+   * `isFetched` turns true after the first attempt whether it SUCCEEDED or
+   * failed, so an outage fell into the refusal below and told a supplier
+   * their own product does not exist - while they were editing it.
+   */
+  if (editing && mine.isError) {
+    return <Shell dir={dir}><LoadFailed {...loadFailedCopy(ar)} onRetry={() => void mine.refetch()} /></Shell>;
+  }
+
   // The product is not in this supplier's own list. Stated as not found rather
   // than "forbidden", the same answer the server gives, so the page does not
   // confirm that somebody else's id exists.
-  if (editing && mine.isFetched && !product) {
+  if (editing && mine.isFetched && !mine.isError && !product) {
     return (
       <Shell dir={dir}>
         <Refusal
@@ -318,7 +339,9 @@ export default function ProductFormPage({ mode, productId: productIdProp }: {
             </select>
           </Field>
 
-          <Field label={ar ? 'السعر بالجنيه' : 'Price (EGP)'}>
+          {/* The unit is not part of the label - see LanguageContext. The market's
+    currency is shown beside the field instead. */}
+          <Field label={ar ? `السعر (${sellingCurrency})` : `Price (${sellingCurrency})`}>
             <Input data-testid="product-price" type="number" min={0} value={form.price} onChange={e => set('price')(e.target.value)} />
           </Field>
           <Field label={ar ? 'المخزون' : 'Stock'}>

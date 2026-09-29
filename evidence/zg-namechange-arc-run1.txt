@@ -1,0 +1,34 @@
+BUILD  72f3b17 (local) built 2026-09-22T13:44:54.143Z  http://127.0.0.1:5401
+
+BUILD 72f3b17  env=local
+
+PASS  1. the Admin attention count is readable  [0]
+PASS  2. the vendor requests a name change  [HTTP 200]
+PASS  3. and it is recorded as a request  [#15]
+PASS  4. a second OPEN request on the same field is refused  [An open name-change request already exists for this field]
+PASS  5. the Admin attention count MOVES  [0 -> 1]
+PASS  6. and the badge names where to go, so it is not a mystery digit  [/admin/name-changes]
+PASS  7. User Management is reachable from the sidebar  [zrcmucx45ptstale zrcmucx45ptstale@example.test · Homeowners 9/22/2026]
+PASS  8. Name Change Requests is a TAB inside User Management, not a top-level destination
+PASS  9. the legacy /admin/name-changes path opens that tab directly
+PASS  10. the requested name is on the screen  [Aziz Trading mud3u29z]
+PASS  11. and so is the human it belongs to - not just an id
+PASS  12. an administrator approves the request  [HTTP 200]
+PASS  13. approval REWRITES the vendor's profile, not just the request row  [Aziz Trading mud3tjc7 -> Aziz Trading mud3u29z]
+PASS  14. a buyer can open the storefront  [HTTP 200]
+PASS  15. the STOREFRONT carries the new name - the consequence the other party sees  [Aziz Trading mud3u29z]
+PASS  16. and no longer carries the old one  [Aziz Trading mud3tjc7]
+PASS  17. the vendor is in the public directory
+PASS  18. and the directory carries the BUSINESS, not only the person  [Tarek Aziz -> Aziz Trading mud3u29z]
+PASS  19. while a provider with no registered business is null, not filled with their own name  [#462 Omar Khaled]
+PASS  20. the decision is written to the account audit trail  [vendor_name_change_approved :: companyName: Aziz Trading mud3tjc7 -> Aziz Trading mud3u29z]
+PASS  21. with the BEFORE and AFTER values, not merely that something changed
+PASS  22. and names the ADMINISTRATOR who decided it, not the vendor  [actor #306]
+PASS  23. the vendor is notified with a link to the decision, not to a long page  [/settings#settings-name-change :: notif.vendorName.approved]
+PASS  24. and in a localized message key rather than an English sentence in the row
+PASS  25. a decided request cannot be decided again  [This request has already been decided]
+PASS  26. a signed-in vendor cannot read the queue  [HTTP 403]
+PASS  27. and certainly cannot approve their own request  [HTTP 403]
+
+27 passed, 0 failed
+

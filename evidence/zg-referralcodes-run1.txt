@@ -1,0 +1,47 @@
+BUILD  72f3b17 (local) built 2026-09-22T13:44:54.143Z  http://127.0.0.1:5401
+
+BUILD 72f3b17  env=local
+
+PASS  1. a fresh account signs up  [HTTP 200]
+PASS  2. sign-up mints a code in the canonical shape  [BH-E59B80B4D87C9E09]
+PASS  3. and records WHEN it was minted  [2026-09-22 16:58:15]
+PASS  4. the "Overview" area exists  [Overview | Referral Codes | Referrals | Rewards | Campaigns]
+PASS  5. the "Referral Codes" area exists  [Overview | Referral Codes | Referrals | Rewards | Campaigns]
+PASS  6. the "Referrals" area exists  [Overview | Referral Codes | Referrals | Rewards | Campaigns]
+PASS  7. the "Rewards" area exists  [Overview | Referral Codes | Referrals | Rewards | Campaigns]
+PASS  8. the "Campaigns" area exists  [Overview | Referral Codes | Referrals | Rewards | Campaigns]
+PASS  9. New Campaign is a primary action, not buried in a tab  [["New campaign"]]
+PASS  10. the Overview issued-codes figure is the real count  [screen 11, database 11]
+PASS  11. the new code is findable by searching for the code itself  [BH-E59B80B4D87C9E09]
+PASS  12. the row shows the code and its status in words  [BH-E59B80B4D87C9E09 | Issued 22/09/2026 | 	zrcmucx45ptinviter | zrcmucx45ptinviter@example.test | homeowner | 	Active	0	]
+PASS  13. the owner deep-links to their User Management page  [/admin/users/987]
+PASS  14. the code history records the issue  [Code issued · 22/09/2026, 16:58:15 · zrcmucx45ptinviter]
+PASS  15. a status change without a reason is REFUSED  [HTTP 400]
+PASS  16. the code can be disabled with a reason  [HTTP 200]
+PASS  17. a sign-up quoting the disabled code still succeeds  [HTTP 200]
+PASS  18. but NOTHING is attributed through it - the code is off  [0 referral rows]
+PASS  19. an unknown code behaves identically - no enumeration oracle
+PASS  20. the code can be reactivated  [HTTP 200]
+PASS  21. and attribution works again  [1 referral row]
+PASS  22. rotation without a reason is REFUSED  [HTTP 400]
+PASS  23. the code can be rotated with a reason  [HTTP 200]
+PASS  24. the code actually changed  [BH-E59B80B4D87C9E09 -> BH-B6F48E0E60C78B7C]
+PASS  25. the OLD code attributes nothing after rotation  [0 rows]
+PASS  26. and the string that stopped working survives in the history  [BH-E59B80B4D87C9E09]
+PASS  27. disabling and rotating did not reach back and revoke earned referrals  [1 referrals]
+PASS  28. no lifecycle change is unattributed or unexplained  [0 bare rows]
+PASS  29. an account with no code is findable under the "No code yet" filter
+PASS  30. Issue resolves it  [HTTP 200]
+PASS  31. and Issue REFUSES to silently rotate a working code  [This account already has a referral code. Use rotate to replace it.]
+PASS  32. the user's own Referral Center shows the rotated code  [BH-B6F48E0E60C78B7C]
+PASS  33. with a working link while the code is active
+PASS  34. and NO LINK once it is disabled - not a URL that quietly earns nothing  [status disabled, link null]
+PASS  35. a signed-in non-administrator cannot list codes  [HTTP 403]
+PASS  36. a signed-in non-administrator cannot overview  [HTTP 403]
+PASS  37. a signed-in non-administrator cannot issue a code  [HTTP 403]
+PASS  38. a signed-in non-administrator cannot rotate a code  [HTTP 403]
+PASS  39. a signed-in non-administrator cannot disable a code  [HTTP 403]
+PASS  40. an administrator cannot issue themselves a referral code  [Platform administrators do not hold referral codes.]
+
+40 passed, 0 failed
+

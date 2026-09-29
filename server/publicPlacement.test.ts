@@ -303,10 +303,21 @@ describe('nothing booked renders nothing', () => {
     expect(await masterProduct('Lighting', NOW)).toBeNull();
   });
 
-  it('no database is not an excuse to invent an advertiser', async () => {
+  it('no database is not an excuse to invent an advertiser - OR to deny one', async () => {
+    /*
+     * The half this always had right: an unreachable database must never
+     * produce a sponsor. It cannot, and that is still asserted - by the
+     * refusal itself, which returns no advertiser of any kind.
+     *
+     * The half it had wrong: `null` here means "nobody has bought this slot",
+     * which is a commercial fact about the surface. Answering it for a
+     * database nobody could read makes an outage look like an absence of
+     * demand, on a public page. Each of these is its own publicProcedure, so
+     * refusing fails that slot and not the page around it.
+     */
     vi.mocked(getDb).mockResolvedValue(null as never);
-    expect(await masterProvider(undefined, NOW)).toBeNull();
-    expect(await masterProduct(undefined, NOW)).toBeNull();
+    await expect(masterProvider(undefined, NOW)).rejects.toThrow(/could not reach its database/i);
+    await expect(masterProduct(undefined, NOW)).rejects.toThrow(/could not reach its database/i);
   });
 });
 

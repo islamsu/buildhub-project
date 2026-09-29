@@ -19,8 +19,14 @@
 import { execSync } from 'node:child_process';
 import { launchBrowser } from './lib/cdp.mjs';
 import { adminSession, asBrowserCookies } from './lib/session.mjs';
+import { assertBuild } from './lib/build.mjs';
 
 const BASE = process.env.ZG_BASE ?? 'http://127.0.0.1:5401';
+
+/* WHICH BUILD THIS RAN AGAINST. Printed always; enforced when
+   ZG_EXPECT_COMMIT names one, so a pass can never be reported against
+   a build somebody did not mean to test. */
+await assertBuild(BASE);
 const DB = 'buildhub_prelaunch';
 const CDP_PORT = Number(process.env.ZG_CDP_PORT ?? (9400 + (process.pid % 90)));
 /**

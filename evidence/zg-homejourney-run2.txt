@@ -1,0 +1,22 @@
+BUILD  fbcb3c9 (local) built 2026-09-25T20:00:29.879Z  http://127.0.0.1:5401
+
+BUILD fbcb3c9  env=local
+
+PASS  1. the connected journey renders for a signed-out visitor
+PASS  2. all six stages render  [6]
+PASS  3. IN ORDER - the sequence is the argument, not a grid  [discover → shortlist → rfq → compare → collaborate → build]
+PASS  4. EVERY stage states what the supplier sees - the thing a feature list cannot say  [6 of 6]
+PASS  5. and says so explicitly, rather than leaving it implied
+PASS  6. every stage links to a real in-product destination  [/marketplace /saved /rfq /rfq /messages /dashboard]
+PASS  7. and following each one reaches a real page, not a 404  [5 of 5]
+PASS  8. the "Four Steps to Success" card wall is gone
+PASS  9. and so is the generic "Features" wall it duplicated
+PASS  10. NO fabricated social proof on the homepage  [NONE]
+PASS  11. the page really switches to Arabic RTL before the checks below
+PASS  12. and every stage is genuinely translated, not English left in place  [اطلب عروض الأسعار]
+PASS  13. with no English fragment beside it
+PASS  14. no sideways scroll at 375px  [contained]
+PASS  15. and every stage is still reachable on a phone  [6]
+
+ALL PASS  15 passed, 0 failed
+

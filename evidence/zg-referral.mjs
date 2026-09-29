@@ -18,8 +18,14 @@
 // than no row at all, because it is the one an administrator quotes back to a
 // vendor. So the effect is asserted, not the ledger.
 import { execSync } from 'node:child_process';
+import { assertBuild } from './lib/build.mjs';
 
 const BASE = process.env.ZG_BASE ?? 'http://127.0.0.1:5401';
+
+/* WHICH BUILD THIS RAN AGAINST. Printed always; enforced when
+   ZG_EXPECT_COMMIT names one, so a pass can never be reported against
+   a build somebody did not mean to test. */
+await assertBuild(BASE);
 const DB = 'buildhub_prelaunch';
 const PASSWORD = 'LocalSuperAdmin!2024';
 

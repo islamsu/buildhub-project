@@ -1,3 +1,4 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -105,9 +106,7 @@ export default function AdminProjects() {
                     </td>
                     <td className="p-2">
                       {project.ownerId ? (
-                        <Link href={`/admin/users/${project.ownerId}`} className="underline-offset-2 hover:underline">
-                          {project.ownerName || `#${project.ownerId}`}
-                        </Link>
+                        <AdminUserLink id={project.ownerId} name={project.ownerName} />
                       ) : '—'}
                     </td>
                     <td className="p-2 text-muted-foreground">{project.type || '—'}</td>

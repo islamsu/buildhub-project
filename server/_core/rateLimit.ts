@@ -155,6 +155,33 @@ export const contentLimiters = {
    */
   placementEventBurst: createRateLimiter({ windowMs: 60_000, max: 60 }),
   placementEventSustained: createRateLimiter({ windowMs: 60 * 60_000, max: 600 }),
+  /**
+   * MESSAGES, which were the one content endpoint with no bound at all.
+   *
+   * BuildHub deliberately does NOT require a prior relationship before one
+   * account may message another - a customer is meant to be able to contact a
+   * vendor they have just found. That policy is precisely why the send has to
+   * be bounded: with no relationship gate, a rate limit is the only thing
+   * between one stolen account and every vendor in the directory. Proven
+   * before this existed: seventy-eight messages to twelve strangers in a few
+   * seconds, every one delivered and every one notified.
+   *
+   * TWO AXES, because volume and BREADTH are different abuses.
+   *
+   * Volume: a negotiation is a fast back-and-forth, so fifteen a minute has
+   * to be comfortable - people send a sentence at a time. A hundred and fifty
+   * an hour is far beyond any real conversation while still capping a patient
+   * script.
+   *
+   * Breadth: twenty NEW conversations an hour. Messaging the same vendor
+   * fifty times is a conversation, however tedious; messaging fifty different
+   * vendors once each is the spam shape, and the volume limits alone would
+   * wave it through. Only a FIRST contact counts against this one, so an
+   * established thread is never affected by how many threads came before it.
+   */
+  messageBurst: createRateLimiter({ windowMs: 60_000, max: 15 }),
+  messageSustained: createRateLimiter({ windowMs: 60 * 60_000, max: 150 }),
+  messageNewThread: createRateLimiter({ windowMs: 60 * 60_000, max: 20 }),
 };
 
 export function resetContentLimiters() {
@@ -162,4 +189,7 @@ export function resetContentLimiters() {
   contentLimiters.rfqSustained.reset();
   contentLimiters.uploadBurst.reset();
   contentLimiters.uploadSustained.reset();
+  contentLimiters.messageBurst.reset();
+  contentLimiters.messageSustained.reset();
+  contentLimiters.messageNewThread.reset();
 }

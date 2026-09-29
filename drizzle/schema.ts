@@ -21,7 +21,23 @@ export const users = mysqlTable('users', {
   name:        text('name'),
   email:       varchar('email', { length: 320 }),
   phone:       varchar('phone', { length: 32 }),
+  /**
+   * THE ONE ACTIVE REFERRAL CODE for this account.
+   *
+   * Single authoritative lookup for sign-up attribution, which is what stops
+   * two codes ever pointing at the same account. Its lifecycle lives on the
+   * two columns below rather than in a second table of codes; the history of
+   * what it used to be lives in `referralCodeEvents`.
+   */
   referralCode: varchar('referralCode', { length: 32 }),
+  /**
+   * A DISABLED CODE ATTRIBUTES NOTHING. The sign-up path filters on this, so
+   * a link already printed on something stops earning rather than quietly
+   * going on working after an administrator turned it off.
+   */
+  referralCodeStatus: mysqlEnum('referralCodeStatus', ['active', 'disabled']).default('active').notNull(),
+  /** When the CURRENT code was minted. Null for codes issued before 0057. */
+  referralCodeIssuedAt: timestamp('referralCodeIssuedAt'),
   loginMethod: varchar('loginMethod', { length: 64 }),
   role:        mysqlEnum('role', ['user', 'admin']).default('user').notNull(),
   // WHICH KIND of administrator, meaningful only where role = 'admin'.
@@ -199,6 +215,15 @@ export const projects = mysqlTable('projects', {
    * in force when they were made.
    */
   createdBy:   int('createdBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  /**
+   * WHERE THE WORK IS. Not where the owner lives, not where they were
+   * browsing, not what their IP said - the country the construction is in.
+   * Authoritative for the project's own workflows and inherited by the RFQs
+   * raised against it. See shared/markets.ts.
+   */
+  marketCode:  varchar('marketCode', { length: 2 }).default('EG').notNull(),
+  /** The sourcing currency for this project. Defaults from its market. */
+  currency:    varchar('currency', { length: 3 }).default('EGP').notNull(),
   title:       varchar('title', { length: 255 }).notNull(),
   description: text('description'),
   type:        mysqlEnum('type', [
@@ -218,6 +243,7 @@ export const projects = mysqlTable('projects', {
   updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
 }, table => ({
   ownerIdIdx: index('projects_ownerId_idx').on(table.ownerId),
+  marketIdx: index('projects_market_idx').on(table.marketCode),
 }));
 
 // ── Milestones ─────────────────────────────────────────────────────────────
@@ -379,9 +405,70 @@ export const productQuestions = mysqlTable('productQuestions', {
   answer:     text('answer'),
   answeredAt: timestamp('answeredAt'),
   createdAt:  timestamp('createdAt').defaultNow().notNull(),
+  // ── MODERATION (0056) ───────────────────────────────────────────────────
+  // The question and the answer are hidden SEPARATELY. They are written by
+  // different people and go wrong independently: a reasonable question can
+  // get an abusive reply, and hiding one must not silence the other.
+  // Hidden, never deleted - see drizzle/0056_product_question_moderation.sql.
+  hiddenAt:     timestamp('hiddenAt'),
+  hiddenBy:     int('hiddenBy').references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  hiddenReason: varchar('hiddenReason', { length: 500 }),
+  answerHiddenAt:     timestamp('answerHiddenAt'),
+  answerHiddenBy:     int('answerHiddenBy').references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  answerHiddenReason: varchar('answerHiddenReason', { length: 500 }),
+  /** Set when the answer has been corrected. Drives the public "Edited" marker. */
+  answerEditedAt: timestamp('answerEditedAt'),
 }, table => ({
   productIdIdx: index('productQuestions_productId_idx').on(table.productId),
   askerIdIdx: index('productQuestions_askerId_idx').on(table.askerId),
+  hiddenAtIdx: index('productQuestions_hiddenAt_idx').on(table.hiddenAt),
+}));
+
+/**
+ * What an answer USED to say.
+ *
+ * An editable public answer is a way to rewrite history - answer "yes, we
+ * ship to Alexandria", take the order, quietly change it to "no". The current
+ * text lives on productQuestions.answer; every version it replaced is kept
+ * here, so an edit is a correction and never an erasure.
+ */
+export const productAnswerRevisions = mysqlTable('productAnswerRevisions', {
+  id:         int('id').autoincrement().primaryKey(),
+  questionId: int('questionId').notNull().references(() => productQuestions.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  answer:     text('answer').notNull(),
+  /** When the superseded text was originally published. */
+  answeredAt: timestamp('answeredAt'),
+  replacedAt: timestamp('replacedAt').defaultNow().notNull(),
+  replacedBy: int('replacedBy').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+}, table => ({
+  questionIdIdx: index('productAnswerRevisions_questionId_idx').on(table.questionId),
+}));
+
+/**
+ * Reports against a question or an answer.
+ *
+ * Shaped like `reviewReports` deliberately - same states, same resolution
+ * columns - so a moderator working both queues meets one decision rather than
+ * two. The lifecycle itself lives in shared/contentModeration.ts.
+ */
+export const productQuestionReports = mysqlTable('productQuestionReports', {
+  id:         int('id').autoincrement().primaryKey(),
+  questionId: int('questionId').notNull().references(() => productQuestions.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  target:     mysqlEnum('target', ['question', 'answer']).notNull(),
+  reporterId: int('reporterId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  reason:     mysqlEnum('reason', ['abusive', 'personal_data', 'off_platform', 'competitor', 'not_a_question', 'spam', 'other']).notNull(),
+  detail:     varchar('detail', { length: 1000 }),
+  status:     mysqlEnum('status', ['open', 'upheld', 'rejected']).default('open').notNull(),
+  resolutionNote: varchar('resolutionNote', { length: 1000 }),
+  resolvedBy: int('resolvedBy').references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  resolvedAt: timestamp('resolvedAt'),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  statusIdx: index('productQuestionReports_status_idx').on(table.status),
+  questionIdIdx: index('productQuestionReports_questionId_idx').on(table.questionId),
+  // One open report per person per target: a reporter clicking twice is not
+  // two reports, and letting it become two drowns the queue it feeds.
+  uniqueReporter: uniqueIndex('productQuestionReports_unique_reporter').on(table.questionId, table.target, table.reporterId),
 }));
 
 // ── Marketplace Products ───────────────────────────────────────────────────
@@ -471,16 +558,57 @@ export const rfqs = mysqlTable('rfqs', {
   description: text('description'),
   category:    varchar('category', { length: 100 }),
   budget:      decimal('budget', { precision: 12, scale: 2 }),
+  /**
+   * WHERE THE REQUIREMENT MUST BE SUPPLIED OR PERFORMED.
+   *
+   * SNAPSHOTTED, not read through the project each time. A project RFQ
+   * inherits this at creation and a standalone RFQ states it; neither is
+   * silently reinterpreted afterwards because somebody edited the project.
+   * Not derived from requester nationality, requester IP, supplier country
+   * or UI language (§37).
+   */
+  marketCode:  varchar('marketCode', { length: 2 }).default('EG').notNull(),
+  /**
+   * THE EXPLICIT COMMERCIAL SOURCE OF TRUTH (§38).
+   *
+   * Every quotation against this RFQ is denominated in this currency, by
+   * rule rather than by the supplier's choice - which is what makes
+   * comparing two bids exact and stops a hidden FX assumption deciding who
+   * looks cheaper. It used to come from the supplier's SUBSCRIPTION plan.
+   */
+  currency:    varchar('currency', { length: 3 }).default('EGP').notNull(),
   location:    varchar('location', { length: 255 }),
   deadline:    timestamp('deadline'),
   attachments: text('attachments'),
   productReference: json('productReference'),
   status:      mysqlEnum('status', ['open', 'closed', 'awarded']).default('open'),
+  /**
+   * WHAT THE REQUESTER WOULD LIKE, NOT WHAT THEY MUST UNDERSTAND. 0062.
+   *
+   * percentage | package | detailed | provider_choice. NULL is a real and
+   * distinct state: "nothing was said" is not the same decision as "let the
+   * contractor propose", and publication never requires either. A STATED
+   * method is a constraint submitQuotation enforces - which is what makes
+   * stating one worth anything.
+   */
+  pricingPreference: varchar('pricingPreference', { length: 20 }),
+  /**
+   * THE STRUCTURED FINISHING BRIEF. 0062.
+   *
+   * JSON because the form is progressive disclosure: every field is optional
+   * and several legitimately hold the explicit 'unknown' sentinel - لا أعرف /
+   * ساعدني في الاختيار - rather than a value. Validated against
+   * shared/finishing.ts on write; never a value the server invented.
+   */
+  finishingBrief: json('finishingBrief'),
   createdAt:   timestamp('createdAt').defaultNow().notNull(),
   updatedAt:   timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
 }, table => ({
   requesterIdIdx: index('rfqs_requesterId_idx').on(table.requesterId),
   projectIdIdx: index('rfqs_projectId_idx').on(table.projectId),
+  // Supplier matching for a cross-border RFQ asks "which providers serve this
+  // market?" before anything else, so the market leads.
+  marketStatusIdx: index('rfqs_market_status_idx').on(table.marketCode, table.status),
 }));
 
 // ── Quotations ─────────────────────────────────────────────────────────────
@@ -530,8 +658,50 @@ export const quotations = mysqlTable('quotations', {
   id:           int('id').autoincrement().primaryKey(),
   rfqId:        int('rfqId').notNull().references(() => rfqs.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   providerId:   int('providerId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
-  price:        decimal('price', { precision: 12, scale: 2 }).notNull(),
+  /**
+   * THE ONE AUTHORITATIVE PAYABLE TOTAL. 0062.
+   *
+   * Widened from decimal(12,2), which could not represent a Kuwaiti dinar,
+   * Bahraini dinar or Omani rial - all three minor digits. Those markets are
+   * `enabled: false` and this does not change that; it removes a rounding
+   * defect that would have appeared on the day one was enabled.
+   *
+   * No SECOND total column was added beside it. The components below EXPLAIN
+   * this number; `computeQuotationTotals` produces it; the server writes it.
+   * Two totals is how two totals disagree.
+   */
+  price:        decimal('price', { precision: 14, scale: 3 }).notNull(),
   currency:     varchar('currency', { length: 10 }).default('EGP'),
+  /**
+   * HOW THE BASE WAS ARRIVED AT. custom | percentage | package | detailed.
+   *
+   * `custom` is the pre-existing behaviour - a stated total with no declared
+   * derivation - and it is the default, so every quotation written before this
+   * column existed remains exactly as truthful as it was.
+   */
+  pricingMethod: varchar('pricingMethod', { length: 20 }).default('custom').notNull(),
+  /** The computed base, before discount, contingency, overhead and VAT. */
+  baseAmount:    decimal('baseAmount', { precision: 14, scale: 3 }),
+  discountAmount: decimal('discountAmount', { precision: 14, scale: 3 }).default('0').notNull(),
+  /** RATES. Both apply to (base - discount), never to each other. */
+  contingencyRate: decimal('contingencyRate', { precision: 6, scale: 3 }),
+  overheadRate:    decimal('overheadRate', { precision: 6, scale: 3 }),
+  /** NULL means no rate was STATED. That is not the claim that it is zero. */
+  vatRate:      decimal('vatRate', { precision: 6, scale: 3 }),
+  vatAmount:    decimal('vatAmount', { precision: 14, scale: 3 }).default('0').notNull(),
+  /** percentage: نسبة من تكلفة المواد */
+  percentageRate:     decimal('percentageRate', { precision: 6, scale: 3 }),
+  materialBaseAmount: decimal('materialBaseAmount', { precision: 14, scale: 3 }),
+  /** Which material values participate in the base, and what is excluded. */
+  percentageBasisNote: text('percentageBasisNote'),
+  /** package: باقة تشطيب. Free text - the suggested tiers are not a closed set. */
+  packageTier:     varchar('packageTier', { length: 60 }),
+  /** A SERVICE_PRICING_BASES value. fixed_project stores rate x quantity 1. */
+  packageBasis:    varchar('packageBasis', { length: 30 }),
+  packageRate:     decimal('packageRate', { precision: 14, scale: 3 }),
+  packageQuantity: decimal('packageQuantity', { precision: 12, scale: 2 }),
+  /** Inclusions, exclusions, allowances, upgrades, assumptions, milestones. */
+  scopeDetail:  json('scopeDetail'),
   timeline:     int('timeline'),
   warranty:     varchar('warranty', { length: 100 }),
   paymentTerms: text('paymentTerms'),
@@ -552,7 +722,21 @@ export const quotations = mysqlTable('quotations', {
    * in storageProxy.ts under the `quotation-attachments/` prefix.
    */
   attachments:  text('attachments'),
-  status:       mysqlEnum('status', ['pending', 'accepted', 'rejected']).default('pending'),
+  /**
+   * WITHDRAWN is the supplier's own exit.
+   *
+   * The other three are the CUSTOMER's decision - a bid is accepted, or it is
+   * rejected because somebody else won. A supplier whose costs moved, or whose
+   * capacity went, had no way to take a price off the table: the audit
+   * vocabulary has carried 'quotation_withdrawn' since it was written and
+   * nothing could ever record it. Revising to an unserious number is not a
+   * withdrawal, it is a worse bid.
+   *
+   * It is terminal and it is the supplier's alone. Only a pending quotation
+   * can be withdrawn - an accepted one is an agreement, and walking away from
+   * that is a dispute, not a state change.
+   */
+  status:       mysqlEnum('status', ['pending', 'accepted', 'rejected', 'withdrawn']).default('pending'),
   /** One current quotation per supplier per RFQ; this counts its versions. */
   revisionNumber: int('revisionNumber').notNull().default(1),
   /** Set on the previous version when a revision supersedes it. */
@@ -561,6 +745,46 @@ export const quotations = mysqlTable('quotations', {
 }, table => ({
   rfqIdIdx: index('quotations_rfqId_idx').on(table.rfqId),
   providerIdIdx: index('quotations_providerId_idx').on(table.providerId),
+}));
+
+/**
+ * THE LINES OF A QUOTATION - the BOQ. 0062.
+ *
+ * `rfqItems` is the REQUEST side and is deliberately not reused: what a
+ * customer asked to be priced and what a contractor priced are different
+ * records, and a contractor regularly prices work the customer did not itemize.
+ *
+ * Authorization is the quotation's, exactly. There is no separate rule and no
+ * separate read - a line is visible to whoever may see the quotation it belongs
+ * to, and cascades away with it.
+ */
+export const quotationItems = mysqlTable('quotationItems', {
+  id:          int('id').autoincrement().primaryKey(),
+  quotationId: int('quotationId').notNull().references(() => quotations.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  /**
+   * material | labor | equipment | subcontract | other.
+   *
+   * DIRECT COSTS ONLY. Overhead and profit are a rate on the whole, never a
+   * line: a markup inside the lines and again on the total is the same markup
+   * charged twice.
+   */
+  component:   varchar('component', { length: 20 }).default('material').notNull(),
+  /** The trade this line groups under, in the contractor's own words. */
+  tradeGroup:  varchar('tradeGroup', { length: 80 }),
+  description: varchar('description', { length: 255 }).notNull(),
+  quantity:    decimal('quantity', { precision: 12, scale: 3 }).notNull(),
+  unit:        varchar('unit', { length: 40 }),
+  rate:        decimal('rate', { precision: 14, scale: 3 }).notNull(),
+  /**
+   * quantity x rate at the currency's scale. Persisted so the printed lines add
+   * up to the printed subtotal - and RECOMPUTED server-side on every write,
+   * never accepted from a client, so it cannot drift from its own inputs.
+   */
+  lineTotal:   decimal('lineTotal', { precision: 14, scale: 3 }).notNull(),
+  position:    int('position').notNull().default(0),
+  createdAt:   timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  quotationIdIdx: index('quotationItems_quotationId_idx').on(table.quotationId),
 }));
 
 // ── Messages ───────────────────────────────────────────────────────────────
@@ -580,6 +804,10 @@ export const messages = mysqlTable('messages', {
   receiverIdIdx: index('messages_receiverId_idx').on(table.receiverId),
   projectIdIdx: index('messages_projectId_idx').on(table.projectId),
   quotationIdIdx: index('messages_quotationId_idx').on(table.quotationId),
+  // The pair lookup messages.send runs before every write, in both
+  // directions - see drizzle/0055_message_pair_index.sql.
+  senderReceiverIdx: index('messages_sender_receiver_idx').on(table.senderId, table.receiverId),
+  receiverSenderIdx: index('messages_receiver_sender_idx').on(table.receiverId, table.senderId),
 }));
 
 // ── Notifications ──────────────────────────────────────────────────────────
@@ -672,6 +900,17 @@ export const serviceOfferings = mysqlTable('serviceOfferings', {
   /** Both NULL when the basis is quote_on_request - refused, not merely ignored. */
   priceMin:    decimal('priceMin', { precision: 12, scale: 2 }),
   priceMax:    decimal('priceMax', { precision: 12, scale: 2 }),
+  /**
+   * WHAT THE TWO PRICES ABOVE ARE DENOMINATED IN. 0061.
+   *
+   * They had no currency, so the two screens that render them hard-coded one -
+   * `ar ? 'ج.م' : 'EGP'` - and a Saudi provider's indicative rate would have
+   * been shown in Egyptian pounds. Written from the market on create, exactly
+   * as projects.currency and rfqs.currency are; the DEFAULT is the honest
+   * backfill for rows written before the column existed, not the rule for new
+   * ones.
+   */
+  currency:    varchar('currency', { length: 3 }).default('EGP').notNull(),
   leadTimeDays:   int('leadTimeDays'),
   warrantyMonths: int('warrantyMonths'),
   status:      mysqlEnum('status', ['draft', 'active', 'inactive', 'archived']).default('draft').notNull(),
@@ -1123,7 +1362,28 @@ export const vendorSubscriptions = mysqlTable('vendorSubscriptions', {
   // after a trial lapses, a cancellation completes, or a grace period expires.
   status:    mysqlEnum('status', ['free', 'trialing', 'active', 'past_due', 'canceled', 'expired']).default('free').notNull(),
   billingInterval: mysqlEnum('billingInterval', ['month', 'year']),
+  /**
+   * WHAT THE SUPPLIER PAYS BUILDHUB, IN WHICH CURRENCY.
+   *
+   * This is a different domain from the sourcing currency on an RFQ, and the
+   * owner's policy is that they must never be confused: a supplier billed in
+   * EGP under an Egypt contract quotes a Saudi RFQ in SAR. This column used
+   * to be read as the quotation currency too - that is the coupling §43
+   * names as launch-era debt, now removed.
+   */
   currency:  varchar('currency', { length: 3 }).default('EGP').notNull(),
+  /** Which market BuildHub bills this contract in. Not where they sell. */
+  billingMarketCode: varchar('billingMarketCode', { length: 2 }).default('EG').notNull(),
+  /**
+   * WHERE THE BENEFIT APPLIES (§44C), separately from where it is billed.
+   *
+   * GLOBAL today because BuildHub operates in one market, so every existing
+   * row is correct as GLOBAL and nothing is claimed that was not true. A
+   * future plan sold in SAR granting enquiries in SA only is MARKET_SET with
+   * its codes in the column below. Scope is never inferred from currency.
+   */
+  entitlementScope: mysqlEnum('entitlementScope', ['GLOBAL', 'MARKET_SET']).default('GLOBAL').notNull(),
+  entitlementMarkets: json('entitlementMarkets'),
   // Price snapshot at the moment of subscription, so a later catalogue change
   // never retroactively rewrites what a vendor actually agreed to pay.
   priceAmount: decimal('priceAmount', { precision: 10, scale: 2 }),
@@ -1822,6 +2082,105 @@ export const referralRewards = mysqlTable('referralRewards', {
   recipientIdx: index('referralRewards_recipient_idx').on(table.recipientUserId),
   statusIdx: index('referralRewards_status_idx').on(table.status),
 }));
+
+/**
+ * WHAT A REFERRAL CODE USED TO BE, AND WHO CHANGED IT.
+ *
+ * Rotation is the reason this table exists: the point of rotating a code is
+ * that the old string is gone from `users`, and somebody investigating "this
+ * link stopped working" still needs to know what it was and when. Every
+ * issue, rotation, disable and reactivation writes one row.
+ *
+ * `previousCode` is deliberately NOT unique - a rotated-away code could in
+ * principle be minted again by chance, and the history has to hold both.
+ */
+/**
+ * ── THE BUYER'S SHORTLIST ───────────────────────────────────────────────
+ *
+ * Save was the one action in CLAUDE.md §22's discovery list with no
+ * implementation. A buyer comparing suppliers over two days had nowhere to
+ * put the ones worth a second look, so the work of finding them was thrown
+ * away every time the tab closed.
+ *
+ * ONE TABLE FOR BOTH KINDS, because the shortlist is read as one list far
+ * more often than as two, and two tables would mean two counts that can
+ * disagree.
+ *
+ * NO FOREIGN KEY ON `itemId`. `itemKind` decides which table it belongs to
+ * and MySQL cannot express a conditional reference; the alternatives - two
+ * nullable columns with two keys, or two tables - are both worse. Integrity
+ * lives on the write path, which resolves the id against the right table
+ * before inserting, and the readers JOIN, so a vanished target reads as
+ * absent rather than as a broken card.
+ *
+ * SAVING IS PRIVATE. A supplier never learns who shortlisted them without
+ * going on to ask for a price: that is a commercial signal the buyer did not
+ * choose to send.
+ */
+export const savedItems = mysqlTable('savedItems', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  itemKind:  mysqlEnum('itemKind', ['product', 'provider']).notNull(),
+  itemId:    int('itemId').notNull(),
+  /** A note the buyer writes to themselves. Never shown to the saved party. */
+  note:      varchar('note', { length: 500 }),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  // THE TOGGLE IS THIS INDEX. A second save of the same thing is the same
+  // row, so a double-tap cannot produce a duplicate.
+  userItemUnique: uniqueIndex('savedItems_user_item_unique').on(table.userId, table.itemKind, table.itemId),
+  userCreatedIdx: index('savedItems_user_created_idx').on(table.userId, table.createdAt),
+}));
+
+/**
+ * ── THE SUPPLIER'S OWN EMPHASIS, ON THEIR OWN STOREFRONT (§18) ──────────
+ *
+ * FEATURED is BuildHub's editorial choice. SPONSORED is a commercial grant.
+ * A SHOWCASE is neither: it is the supplier saying "start here" on the page
+ * that is already theirs.
+ *
+ * IT IS A SEPARATE TABLE ON PURPOSE. `vendorSponsorships` carries grantedBy,
+ * grantedReason, revokedAt, revokedBy, startsAt, endsAt, priority, package
+ * and surface - every one an ADMIN decision about a SHARED surface. A
+ * showcase has none of them. Putting it in that table would leave a
+ * self-selected row sitting in the store the placement engine reads, one
+ * missing WHERE clause away from a supplier granting themselves marketplace
+ * placement with no decision, no period and no label behind it.
+ *
+ * NO FOREIGN KEY ON `itemId`: `itemKind` decides which table it belongs to
+ * and MySQL cannot express a conditional reference - the same reasoning
+ * `savedItems` records. Integrity lives on the write path, which resolves the
+ * id against the right table AND against the caller's ownership before
+ * inserting, and the readers JOIN, so a vanished target reads as absent.
+ */
+export const supplierShowcase = mysqlTable('supplierShowcase', {
+  id:        int('id').autoincrement().primaryKey(),
+  userId:    int('userId').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  itemKind:  mysqlEnum('itemKind', ['product', 'service', 'portfolio']).notNull(),
+  itemId:    int('itemId').notNull(),
+  /** The supplier's own ordering. Rewritten wholesale on save. */
+  position:  int('position').default(0).notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  userItemUnique: uniqueIndex('supplierShowcase_user_item_unique').on(table.userId, table.itemKind, table.itemId),
+  userPositionIdx: index('supplierShowcase_user_position_idx').on(table.userId, table.position),
+}));
+
+export const referralCodeEvents = mysqlTable('referralCodeEvents', {
+  id:           int('id').autoincrement().primaryKey(),
+  userId:       int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  action:       mysqlEnum('action', ['issued', 'rotated', 'disabled', 'reactivated']).notNull(),
+  previousCode: varchar('previousCode', { length: 32 }),
+  newCode:      varchar('newCode', { length: 32 }),
+  /** Required by the mutations that change a working code; free for an issue. */
+  reason:       varchar('reason', { length: 500 }),
+  actorId:      int('actorId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  createdAt:    timestamp('createdAt').defaultNow().notNull(),
+}, table => ({
+  userIdx:     index('referralCodeEvents_user_idx').on(table.userId, table.createdAt),
+  previousIdx: index('referralCodeEvents_previous_idx').on(table.previousCode),
+}));
+
 
 // ── Sponsored placement in the vendors directory (migration 0028) ───────────
 //

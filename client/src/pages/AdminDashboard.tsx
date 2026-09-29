@@ -1,3 +1,4 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -38,12 +39,13 @@ import AdminDisputes from '@/components/AdminDisputes';
 import AdminSupportTickets from '@/components/AdminSupportTickets';
 import AdminRegistrations from '@/components/AdminRegistrations';
 import AdminReviewModeration from '@/components/AdminReviewModeration';
+import AdminProductQuestionModeration from '@/components/AdminProductQuestionModeration';
 import AdminAuditTrail from '@/components/AdminAuditTrail';
-import { LoadFailed } from '@/components/LoadFailed';
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { ROLE_GROUPS, labelForRole, formatComplianceStatus, EmptyState } from '@/lib/adminRoleLabels';
 import AdminPlacements from '@/components/AdminPlacements';
 import PlacementPerformance from '@/components/PlacementPerformance';
-import { ADMIN_NAV } from '@/lib/adminNavigation';
+import { ADMIN_NAV, ADMIN_SECTIONS, ADMIN_SECTION_ALIASES } from '@/lib/adminNavigation';
 
 /*
  * Slice 4 removed a hardcoded MONTHLY_USERS array from this file - six months
@@ -109,7 +111,7 @@ function formatFreezeReason(reason: string | null | undefined, lang: 'en' | 'ar'
 
 export default function AdminDashboard() {
   const { t, lang, dir } = useLanguage();
-  const { user, isAuthenticated, loading } = useAuth();
+  const { user, isAuthenticated, loading, authUnknown, retryAuth } = useAuth();
   const [location, navigate] = useLocation();
   const adminSection = useMemo(() => {
     if (location === '/admin' || location === '/admin/') return 'overview';
@@ -125,9 +127,11 @@ export default function AdminDashboard() {
      * bookmark an administrator saved last month should land somewhere useful
      * rather than on an overview with no explanation.
      */
-    const ALIASES: Record<string, string> = { compliance: 'registrations', 'name-changes': 'users' };
-    const requested = ALIASES[section ?? ''] ?? section;
-    return ['users', 'registrations', 'projects', 'products', 'referrals', 'placements', 'enquiries', 'analytics', 'billing', 'disputes', 'support', 'reviews', 'operations', 'settings'].includes(requested ?? '') ? requested! : 'overview';
+    const requested = ADMIN_SECTION_ALIASES[section ?? ''] ?? section;
+    // Held as data beside the menu, not as a second literal list here: this
+    // array and ADMIN_NAV drifted apart once already, and a destination missing
+    // from it renders the overview under the right heading.
+    return ADMIN_SECTIONS.includes(requested ?? '') ? requested! : 'overview';
   }, [location]);
   // The record a section is showing, when it has one. `/admin/enquiries/ENQ-7-3`
   // makes an enquiry addressable without giving it a table: the reference is
@@ -188,6 +192,20 @@ export default function AdminDashboard() {
   // `/admin/name-changes` resolves to the users section; this is what makes it
   // land on the name-change queue rather than on the directory beside it.
   const [userTab, setUserTab] = useState(location.startsWith('/admin/name-changes') ? 'name-changes' : 'directory');
+  /*
+   * THE SAME NUMBER THE SIDEBAR SHOWS, from the same procedure. The sidebar
+   * badge on User Management is counting name changes; if this tab restated
+   * the figure from a second query the two could disagree, and an
+   * administrator would have no way to tell which was right.
+   */
+  const attention = trpc.admin.attention.useQuery(undefined, { retry: false });
+  const nameChangesWaiting = attention.data?.nameChanges;
+  const questionReportsWaiting = attention.data?.productQuestions;
+  /* `/admin/reviews?tab=questions` is what the attention badge links to, so a
+     moderator who follows the count lands on the queue it counted rather than
+     on the reviews beside it. */
+  const [moderationTab, setModerationTab] = useState(
+    new URLSearchParams(window.location.search).get('tab') === 'questions' ? 'questions' : 'reviews');
   const [includeDummyRegistrations, setIncludeDummyRegistrations] = useState(false);
   const [createAccountType, setCreateAccountType] = useState<'admin' | 'dummy' | null>(null);
   const [accountDraft, setAccountDraft] = useState({ name: '', username: '', email: '', phone: '', userRole: 'homeowner', note: '', password: '' });
@@ -370,11 +388,16 @@ export default function AdminDashboard() {
   }), [realUserCount, realGroupCounts]);
 
 
-  /** The two strings every failed section shows. Worded once, not per tab. */
-  const loadFailedText = lang === 'ar'
-    ? 'تعذّر تحميل هذه البيانات. هذه ليست نتيجة فارغة.'
-    : 'This could not be loaded. This is not an empty result.';
-  const retryText = lang === 'ar' ? 'إعادة المحاولة' : 'Try again';
+  /*
+   * WORDED ONCE ACROSS THE PRODUCT, not once per file.
+   *
+   * This comment used to say "worded once, not per tab" - true inside this
+   * file, and false beside the identical block that had grown in the other
+   * one. Three wordings of the same statement existed: this pair and the
+   * canonical copy in LoadFailed.tsx, which is where the sentence belongs
+   * because it is the same sentence.
+   */
+  const { text: loadFailedText, retryText } = loadFailedCopy(lang === 'ar');
 
   /**
    * THE PREVIEW'S THREE NUMBERS, and the oldest applications behind them.
@@ -399,13 +422,44 @@ export default function AdminDashboard() {
   }, [complianceQueue, lang]);
 
   if (loading) return null;
+
+  /*
+   * "COULD NOT CHECK" IS NOT "NOT SIGNED IN", and this line was reading them
+   * as the same thing.
+   *
+   * `isAuthenticated` is false during a database outage - correctly, because
+   * it is not a claim that anyone IS authenticated - and this turned that into
+   * a hard `window.location.href` away from the console. An administrator
+   * mid-investigation was thrown out to the sign-in page by an outage that had
+   * nothing to do with their session, losing the URL they were on, and the
+   * destination could not sign them in either because the same outage was
+   * underneath it. Found by stopping the database and reloading /admin: the
+   * console rendered the public marketing home.
+   *
+   * DashboardLayout already had the right answer for every other signed-in
+   * screen; this one had its own guard and never got it. Nothing is granted
+   * here - the person is still not authenticated, every admin procedure still
+   * refuses them server-side - they are told the truth and offered the one
+   * action that helps.
+   */
+  if (authUnknown) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-8" dir={dir}>
+        <div className="w-full max-w-md" data-testid="admin-auth-unavailable">
+          <LoadFailed {...loadFailedCopy(lang === 'ar')} onRetry={retryAuth} />
+        </div>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) { window.location.href = '/auth?mode=login'; return null; }
   if (!isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center" dir={dir}>
         <div className="text-center">
           <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-destructive" />
-          <h2 className="text-2xl font-bold mb-2">{lang === 'ar' ? 'غير مصرح' : 'Access Denied'}</h2>
+          {/* The refusal is the whole page, so it is the page's heading. */}
+          <h1 className="text-2xl font-bold mb-2">{lang === 'ar' ? 'غير مصرح' : 'Access Denied'}</h1>
           <p className="text-muted-foreground">{lang === 'ar' ? 'ليس لديك صلاحيات المشرف.' : 'You do not have admin privileges.'}</p>
           {/* To the ADMIN door. Someone landing here is either signed out or
               signed in as a customer; /dashboard would be the right answer for
@@ -543,7 +597,14 @@ export default function AdminDashboard() {
             name in the sidebar and a different one (or none) here. */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-2xl font-bold mb-1" data-testid="admin-section-heading">{t(adminSectionLabelKey)}</h2>
+            {/* H1, NOT H2. Every Admin destination rendered with NO h1 at
+                all, so the heading outline on the whole control plane
+                started at level 2 and a screen-reader user had no page
+                landmark to jump to - on nine routes, including the ones the
+                owner operates daily (§55, §62). The section name IS the page
+                title here: the sidebar says where you are, and this says
+                what you are looking at. */}
+            <h1 className="text-2xl font-bold mb-1" data-testid="admin-section-heading">{t(adminSectionLabelKey)}</h1>
             <p className="text-muted-foreground">{adminSection === 'overview'
               ? (lang === 'ar' ? 'مراقبة وإدارة منصة BuildHub' : 'Monitor and manage the BuildHub platform')
               : t('admin.title')}</p>
@@ -701,19 +762,18 @@ export default function AdminDashboard() {
                   ) : (
                     <div className="overflow-hidden rounded-xl border">
                       {recentUsers.map(userRow => (
-                        <button
-                          type="button"
+                        <AdminUserLink
                           key={userRow.id}
-                          className="flex w-full items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5 text-start transition-colors last:border-0 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                          onClick={() => navigate(`/admin/users/${userRow.id}`)}
-                          data-testid={`admin-recent-user-${userRow.id}`}
+                          id={userRow.id}
+                          testId={`admin-recent-user-${userRow.id}`}
+                          className="flex w-full items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5 text-start transition-colors last:border-0 hover:bg-muted/30 no-underline hover:no-underline"
                         >
                           <span className="min-w-0">
                             <span className="block truncate text-sm font-medium">{userRow.name || userRow.email || `#${userRow.id}`}</span>
                             <span className="block truncate text-xs text-muted-foreground">{userRow.email || '—'} · {labelForRole((userRow as any).userRole ?? userRow.role, lang)}</span>
                           </span>
                           <span className="shrink-0 text-xs text-muted-foreground">{new Date(userRow.createdAt).toLocaleDateString()}</span>
-                        </button>
+                        </AdminUserLink>
                       ))}
                     </div>
                   )}
@@ -739,8 +799,27 @@ export default function AdminDashboard() {
                 <TabsTrigger value="directory" data-testid="users-tab-directory">
                   {lang === 'ar' ? 'المستخدمون' : 'Users'}
                 </TabsTrigger>
-                <TabsTrigger value="name-changes" data-testid="users-tab-name-changes">
+                <TabsTrigger value="name-changes" data-testid="users-tab-name-changes" className="gap-2">
                   {t('admin.name_changes')}
+                  {/* A number only when there is one, and "?" when the count
+                      could not be read - an unreachable queue must not look
+                      like an empty one. */}
+                  {attention.isError ? (
+                    <span
+                      data-testid="tab-attention-nameChanges"
+                      data-attention-state="unknown"
+                      title={lang === 'ar' ? 'تعذر تحميل هذا العدد' : 'This count could not be loaded'}
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-dashed px-1.5 text-[11px] font-medium text-muted-foreground"
+                    >?</span>
+                  ) : nameChangesWaiting && nameChangesWaiting.count > 0 ? (
+                    <span
+                      data-testid="tab-attention-nameChanges"
+                      data-attention-state="waiting"
+                      data-attention-count={nameChangesWaiting.count}
+                      title={nameChangesWaiting.meaning}
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground"
+                    >{nameChangesWaiting.count > 99 ? '99+' : nameChangesWaiting.count}</span>
+                  ) : null}
                 </TabsTrigger>
               </TabsList>
 
@@ -748,7 +827,7 @@ export default function AdminDashboard() {
             <Card>
               <CardHeader className="space-y-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><CardTitle className="flex items-center gap-2"><Users className="w-5 h-5" />{lang === 'ar' ? 'إدارة المستخدمين حسب المجموعة' : 'User Management by Group'}</CardTitle><div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" className="h-8 gap-1" onClick={exportAuditPdf}><Download className="h-3.5 w-3.5" />{lang === 'ar' ? 'تصدير سجل التدقيق PDF' : 'Export Audit PDF'}</Button><Button size="sm" className="h-8 gap-1" onClick={() => { setCreateAccountType('admin'); setAccountDraft({ name: '', username: '', email: '', phone: '', userRole: 'homeowner', note: '', password: '' }); }}><UserPlus className="h-3.5 w-3.5" />{lang === 'ar' ? 'إنشاء حساب' : 'Create account'}</Button><Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => { setCreateAccountType('dummy'); setAccountDraft({ name: '', username: '', email: '', phone: '', userRole: 'homeowner', note: '', password: '' }); }}><Power className="h-3.5 w-3.5" />{lang === 'ar' ? 'مستخدم تجريبي' : 'Dummy user'}</Button><div className="relative w-full lg:w-72"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9 h-9 text-sm" placeholder={lang === 'ar' ? 'بحث بالاسم أو البريد...' : 'Search by name or email...'} value={userSearch} onChange={event => setUserSearch(event.target.value)} /></div></div></div><div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-8">
 <button type="button" onClick={() => setSelectedGroup('all')} className={`rounded-lg border p-3 text-start transition-colors ${selectedGroup === 'all' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="text-xs text-muted-foreground">{lang === 'ar' ? 'الكل' : 'All Users'}</p><p className="text-lg font-semibold">{totalUserCount}</p></button>{ROLE_GROUPS.map(group => <button type="button" key={group.key} onClick={() => setSelectedGroup(group.key)} className={`rounded-lg border p-3 text-start transition-colors ${selectedGroup === group.key ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="truncate text-xs text-muted-foreground">{lang === 'ar' ? group.ar : group.en}</p><p className="text-lg font-semibold">{groupCounts[group.key] ?? 0}</p></button>)}</div></CardHeader>
-              <CardContent><div className="mb-3 flex items-center justify-between text-sm text-muted-foreground"><span>{selectedGroup === 'all' ? (lang === 'ar' ? 'كل المجموعات' : 'All groups') : labelForRole(selectedGroup, lang)}</span>{usersLoading && <RefreshCw className="h-4 w-4 animate-spin" />}</div>{usersFailed ? <LoadFailed text={loadFailedText} retryText={retryText} onRetry={() => void refetchUsers()} /> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-border"><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الاسم' : 'Name'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'البريد الإلكتروني' : 'Email'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'المجموعة' : 'Group'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الحالة' : 'Status'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الانضمام' : 'Joined'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{t('admin.actions')}</th></tr></thead><tbody>{filteredUsers.map(userRow => { const status = (userRow as any).accountStatus ?? 'active'; const isFrozen = status === 'frozen'; const isSelf = userRow.id === (user as any).id; return <tr key={userRow.id} className="border-b border-border/50 hover:bg-muted/30"><td className="py-3 px-2 font-medium"><div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-muted-foreground" /><button type="button" data-testid={`admin-user-link-${userRow.id}`} onClick={() => navigate(`/admin/users/${userRow.id}`)} className="truncate text-start font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{userRow.name ?? '—'}</button>{(userRow as any).isDummy ? <Badge className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">{lang === 'ar' ? 'تجريبي / اختباري' : 'Dummy / Test'}</Badge> : (userRow as any).accountSource === 'admin_created' ? <Badge className="border-blue-200 bg-blue-50 text-[10px] text-blue-700">{lang === 'ar' ? 'منشأ بواسطة المشرف' : 'Admin Created'}</Badge> : <Badge className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">{lang === 'ar' ? 'تسجيل ذاتي' : 'Self Registered'}</Badge>}</div><p className="mt-1 text-xs font-normal text-muted-foreground">@{(userRow as any).username ?? '—'} · {(userRow as any).invitationStatus && (userRow as any).invitationStatus !== 'none' ? `${lang === 'ar' ? 'الدعوة' : 'Invite'}: ${formatInvitationStatus((userRow as any).invitationStatus, lang)}` : ''}</p></td><td className="py-3 px-2 text-muted-foreground">{userRow.email ?? '—'}</td><td className="py-3 px-2"><Badge variant="secondary">{labelForRole((userRow as any).userRole ?? userRow.role, lang)}</Badge></td><td className="py-3 px-2"><Badge variant={isFrozen ? 'destructive' : 'outline'} title={isFrozen && (userRow as any).frozenReason ? formatFreezeReason((userRow as any).frozenReason, lang) : undefined}>{formatStatus(status, lang)}{isFrozen ? (formatFreezeReason((userRow as any).frozenReason, lang) ? ` · ${formatFreezeReason((userRow as any).frozenReason, lang)}` : '') : ` · ${formatStatus((userRow as any).verified ? 'accepted' : 'pending', lang)}`}</Badge></td><td className="py-3 px-2 text-muted-foreground">{new Date(userRow.createdAt).toLocaleDateString()}</td><td className="py-3 px-2"><div className="flex flex-wrap items-center gap-1"><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setAuditTarget(userRow)}><History className="h-3 w-3" />{lang === 'ar' ? 'السجل' : 'Audit'}</Button>{(userRow as any).accountSource === 'admin_created' && !(userRow as any).isDummy && <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => resendInvitation.mutate({ userId: userRow.id })} disabled={resendInvitation.isPending}><SendHorizontal className="h-3 w-3" />{lang === 'ar' ? 'إعادة دعوة' : 'Resend Invite'}</Button>}{(userRow as any).isDummy ? <><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => { setDummyPasswordTarget(userRow); setDummyPassword(''); }}><KeyRound className="h-3 w-3" />{lang === 'ar' ? 'كلمة المرور' : 'Password'}</Button><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => { setLinkTarget(userRow); setIssuedToken(null); setLinkMinutes(60); }}><LinkIcon className="h-3 w-3" />{lang === 'ar' ? 'رابط دخول' : 'QA link'}</Button><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setDummyUserActive.mutate({ userId: userRow.id, active: isFrozen })} disabled={setDummyUserActive.isPending}>{isFrozen ? <Power className="h-3 w-3" /> : <Ban className="h-3 w-3" />}{isFrozen ? (lang === 'ar' ? 'تفعيل' : 'Activate') : (lang === 'ar' ? 'تعطيل' : 'Deactivate')}</Button><Button size="sm" variant="ghost" className="h-7 gap-1 text-xs text-destructive hover:text-destructive" onClick={() => { if (window.confirm(lang === 'ar' ? 'حذف المستخدم التجريبي؟' : 'Delete this dummy user?')) deleteDummyUser.mutate({ userId: userRow.id }); }} disabled={deleteDummyUser.isPending}><Trash2 className="h-3 w-3" />{lang === 'ar' ? 'حذف' : 'Delete'}</Button></> : <><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => verifyUser.mutate({ userId: userRow.id, verified: !(userRow as any).verified })} disabled={verifyUser.isPending}><ShieldCheck className="h-3 w-3" />{(userRow as any).verified ? (lang === 'ar' ? 'إلغاء التحقق' : 'Unverify') : (lang === 'ar' ? 'تحقق' : 'Verify')}</Button><Button size="sm" variant={isFrozen ? 'outline' : 'ghost'} className={`h-7 gap-1 text-xs ${isFrozen ? '' : 'text-destructive hover:text-destructive'}`} onClick={() => { setFreezeTarget(userRow); setFreezeReason((userRow as any).accountStatus === 'frozen' ? '' : ''); setFreezeReasonDetail(''); }} disabled={isSelf}>{isFrozen ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}{isFrozen ? (lang === 'ar' ? 'إلغاء التجميد' : 'Unfreeze') : (lang === 'ar' ? 'تجميد' : 'Freeze')}</Button></>}
+              <CardContent><div className="mb-3 flex items-center justify-between text-sm text-muted-foreground"><span>{selectedGroup === 'all' ? (lang === 'ar' ? 'كل المجموعات' : 'All groups') : labelForRole(selectedGroup, lang)}</span>{usersLoading && <RefreshCw className="h-4 w-4 animate-spin" />}</div>{usersFailed ? <LoadFailed text={loadFailedText} retryText={retryText} onRetry={() => void refetchUsers()} /> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-border"><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الاسم' : 'Name'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'البريد الإلكتروني' : 'Email'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'المجموعة' : 'Group'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الحالة' : 'Status'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{lang === 'ar' ? 'الانضمام' : 'Joined'}</th><th className="text-left py-3 px-2 font-medium text-muted-foreground">{t('admin.actions')}</th></tr></thead><tbody>{filteredUsers.map(userRow => { const status = (userRow as any).accountStatus ?? 'active'; const isFrozen = status === 'frozen'; const isSelf = userRow.id === (user as any).id; return <tr key={userRow.id} className="border-b border-border/50 hover:bg-muted/30"><td className="py-3 px-2 font-medium"><div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-muted-foreground" /><AdminUserLink id={userRow.id} name={userRow.name} className="truncate text-start font-medium" />{(userRow as any).isDummy ? <Badge className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">{lang === 'ar' ? 'تجريبي / اختباري' : 'Dummy / Test'}</Badge> : (userRow as any).accountSource === 'admin_created' ? <Badge className="border-blue-200 bg-blue-50 text-[10px] text-blue-700">{lang === 'ar' ? 'منشأ بواسطة المشرف' : 'Admin Created'}</Badge> : <Badge className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">{lang === 'ar' ? 'تسجيل ذاتي' : 'Self Registered'}</Badge>}</div><p className="mt-1 text-xs font-normal text-muted-foreground">@{(userRow as any).username ?? '—'} · {(userRow as any).invitationStatus && (userRow as any).invitationStatus !== 'none' ? `${lang === 'ar' ? 'الدعوة' : 'Invite'}: ${formatInvitationStatus((userRow as any).invitationStatus, lang)}` : ''}</p></td><td className="py-3 px-2 text-muted-foreground">{userRow.email ?? '—'}</td><td className="py-3 px-2"><Badge variant="secondary">{labelForRole((userRow as any).userRole ?? userRow.role, lang)}</Badge></td><td className="py-3 px-2"><Badge variant={isFrozen ? 'destructive' : 'outline'} title={isFrozen && (userRow as any).frozenReason ? formatFreezeReason((userRow as any).frozenReason, lang) : undefined}>{formatStatus(status, lang)}{isFrozen ? (formatFreezeReason((userRow as any).frozenReason, lang) ? ` · ${formatFreezeReason((userRow as any).frozenReason, lang)}` : '') : ` · ${formatStatus((userRow as any).verified ? 'accepted' : 'pending', lang)}`}</Badge></td><td className="py-3 px-2 text-muted-foreground">{new Date(userRow.createdAt).toLocaleDateString()}</td><td className="py-3 px-2"><div className="flex flex-wrap items-center gap-1"><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" data-testid={`admin-user-audit-${userRow.id}`} onClick={() => setAuditTarget(userRow)}><History className="h-3 w-3" />{lang === 'ar' ? 'السجل' : 'Audit'}</Button>{(userRow as any).accountSource === 'admin_created' && !(userRow as any).isDummy && <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => resendInvitation.mutate({ userId: userRow.id })} disabled={resendInvitation.isPending}><SendHorizontal className="h-3 w-3" />{lang === 'ar' ? 'إعادة دعوة' : 'Resend Invite'}</Button>}{(userRow as any).isDummy ? <><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => { setDummyPasswordTarget(userRow); setDummyPassword(''); }}><KeyRound className="h-3 w-3" />{lang === 'ar' ? 'كلمة المرور' : 'Password'}</Button><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => { setLinkTarget(userRow); setIssuedToken(null); setLinkMinutes(60); }}><LinkIcon className="h-3 w-3" />{lang === 'ar' ? 'رابط دخول' : 'QA link'}</Button><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setDummyUserActive.mutate({ userId: userRow.id, active: isFrozen })} disabled={setDummyUserActive.isPending}>{isFrozen ? <Power className="h-3 w-3" /> : <Ban className="h-3 w-3" />}{isFrozen ? (lang === 'ar' ? 'تفعيل' : 'Activate') : (lang === 'ar' ? 'تعطيل' : 'Deactivate')}</Button><Button size="sm" variant="ghost" className="h-7 gap-1 text-xs text-destructive hover:text-destructive" onClick={() => { if (window.confirm(lang === 'ar' ? 'حذف المستخدم التجريبي؟' : 'Delete this dummy user?')) deleteDummyUser.mutate({ userId: userRow.id }); }} disabled={deleteDummyUser.isPending}><Trash2 className="h-3 w-3" />{lang === 'ar' ? 'حذف' : 'Delete'}</Button></> : <><Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => verifyUser.mutate({ userId: userRow.id, verified: !(userRow as any).verified })} disabled={verifyUser.isPending}><ShieldCheck className="h-3 w-3" />{(userRow as any).verified ? (lang === 'ar' ? 'إلغاء التحقق' : 'Unverify') : (lang === 'ar' ? 'تحقق' : 'Verify')}</Button><Button size="sm" variant={isFrozen ? 'outline' : 'ghost'} className={`h-7 gap-1 text-xs ${isFrozen ? '' : 'text-destructive hover:text-destructive'}`} onClick={() => { setFreezeTarget(userRow); setFreezeReason((userRow as any).accountStatus === 'frozen' ? '' : ''); setFreezeReasonDetail(''); }} disabled={isSelf}>{isFrozen ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}{isFrozen ? (lang === 'ar' ? 'إلغاء التجميد' : 'Unfreeze') : (lang === 'ar' ? 'تجميد' : 'Freeze')}</Button></>}
 </div></td></tr>; })}{filteredUsers.length === 0 && <tr><td colSpan={6} className="py-10 text-center text-muted-foreground">{lang === 'ar' ? 'لا يوجد مستخدمون في هذه المجموعة' : 'No users in this group'}</td></tr>}</tbody></table></div>}
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -817,11 +896,49 @@ export default function AdminDashboard() {
 
           <TabsContent value="billing"><div className="space-y-6"><AdminVendorBilling /><AdminEnquiryAllowance /></div></TabsContent>
 
-          <TabsContent value="disputes"><div className="space-y-6"><AdminPlatformSearch /><AdminRfqInvestigation /><AdminDisputes /></div></TabsContent>
+          <TabsContent value="disputes"><div className="space-y-6"><AdminRfqInvestigation /><AdminDisputes openRecord={adminRecord} /></div></TabsContent>
           <TabsContent value="registrations"><AdminRegistrations /></TabsContent>
 
-          <TabsContent value="support"><AdminSupportTickets /></TabsContent>
-          <TabsContent value="reviews"><AdminReviewModeration /></TabsContent>
+          <TabsContent value="support"><AdminSupportTickets openRecord={adminRecord} /></TabsContent>
+          {/* ── MODERATION: TWO QUEUES, ONE DESTINATION ────────────────────
+              Reviews and product Q&A are the same job - public content on
+              somebody's listing, judged against the same lifecycle, by the
+              same permission. Two top-level destinations would make a
+              moderator check two places to learn whether anything is waiting;
+              the badge in the sidebar counts both and lands here.
+
+              `?tab=questions` is what the attention badge links to, so the
+              count and the screen it opens are the same thing. */}
+          <TabsContent value="reviews">
+            <Tabs value={moderationTab} onValueChange={setModerationTab} className="space-y-4">
+              <TabsList>
+                <TabsTrigger value="reviews" data-testid="moderation-tab-reviews">
+                  {lang === 'ar' ? 'التقييمات' : 'Reviews'}
+                </TabsTrigger>
+                <TabsTrigger value="questions" data-testid="moderation-tab-questions" className="gap-2">
+                  {lang === 'ar' ? 'أسئلة المنتجات' : 'Product questions'}
+                  {attention.isError ? (
+                    <span
+                      data-testid="tab-attention-productQuestions"
+                      data-attention-state="unknown"
+                      title={lang === 'ar' ? 'تعذر تحميل هذا العدد' : 'This count could not be loaded'}
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-dashed px-1.5 text-[11px] font-medium text-muted-foreground"
+                    >?</span>
+                  ) : questionReportsWaiting && questionReportsWaiting.count > 0 ? (
+                    <span
+                      data-testid="tab-attention-productQuestions"
+                      data-attention-state="waiting"
+                      data-attention-count={questionReportsWaiting.count}
+                      title={questionReportsWaiting.meaning}
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground"
+                    >{questionReportsWaiting.count > 99 ? '99+' : questionReportsWaiting.count}</span>
+                  ) : null}
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="reviews"><AdminReviewModeration /></TabsContent>
+              <TabsContent value="questions"><AdminProductQuestionModeration /></TabsContent>
+            </Tabs>
+          </TabsContent>
 
           {/* Operations. The tab this replaces was "Fraud Detection", which
               rendered a permanent empty state - there is no detector and no
@@ -839,9 +956,19 @@ export default function AdminDashboard() {
               Operations in the menu, and a USER_ADMIN who did see it got the
               three components hidden. They have moved to Placements, where the
               domain and the permission finally agree. */}
-          <TabsContent value="operations"><div className="space-y-6"><AdminDataQuality /><AdminOperationalHealth />{can('audit.read') && <AdminAuditTrail />}</div></TabsContent>
+          <TabsContent value="operations"><div className="space-y-6">
+            {/* PLATFORM SEARCH LIVES HERE, not in Disputes.
+                It was rendered above the RFQ investigation because the
+                investigation needs a request id - but the investigation grew
+                its own typeahead over the same procedure, which left this card
+                as a second search box inside a case queue, reachable only by an
+                administrator who first went looking for disputes. Operations is
+                where the console keeps the cross-cutting instruments: data
+                quality, operational health, the audit trail, and finding a
+                record. One search, one home. */}
+            <AdminPlatformSearch /><AdminDataQuality /><AdminOperationalHealth />{can('audit.read') && <AdminAuditTrail />}</div></TabsContent>
 
-          <TabsContent value="settings"><Card><CardHeader><CardTitle className="flex items-center gap-2"><Settings className="w-5 h-5" />{lang === 'ar' ? 'إعدادات المنصة' : 'Platform Settings'}</CardTitle></CardHeader><CardContent><div className="grid gap-4 md:grid-cols-2">{SETTING_DEFINITIONS.map(definition => { const value = settingDrafts[definition.key] ?? ''; const isBoolean = definition.type === 'boolean'; return <div key={definition.key} className="rounded-xl border p-4"><div className="flex items-center justify-between gap-4"><div><p className="text-sm font-medium">{lang === 'ar' ? definition.ar : definition.en}</p><p className="mt-1 text-xs text-muted-foreground">{definition.key}</p></div>{isBoolean ? <Switch checked={value === 'true'} onCheckedChange={checked => { const next = checked ? 'true' : 'false'; setSettingDrafts(draft => ({ ...draft, [definition.key]: next })); updateSetting.mutate({ key: definition.key, value: next }); }} disabled={updateSetting.isPending} /> : <div className="flex items-center gap-2"><Input className="h-8 w-28" type={definition.type === 'number' ? 'number' : 'text'} value={value} onChange={event => setSettingDrafts(draft => ({ ...draft, [definition.key]: event.target.value }))} /><Button size="sm" className="h-8 gap-1" onClick={() => updateSetting.mutate({ key: definition.key, value })} disabled={updateSetting.isPending}><Save className="h-3 w-3" />{lang === 'ar' ? 'حفظ' : 'Save'}</Button></div>}</div></div>; })}</div></CardContent></Card></TabsContent>
+          <TabsContent value="settings"><Card><CardHeader><CardTitle className="flex items-center gap-2"><Settings className="w-5 h-5" />{lang === 'ar' ? 'إعدادات المنصة' : 'Platform Settings'}</CardTitle></CardHeader><CardContent><div className="grid gap-4 md:grid-cols-2">{SETTING_DEFINITIONS.map(definition => { const value = settingDrafts[definition.key] ?? ''; const isBoolean = definition.type === 'boolean'; return <div key={definition.key} className="rounded-xl border p-4"><div className="flex items-center justify-between gap-4"><div><p className="text-sm font-medium">{lang === 'ar' ? definition.ar : definition.en}</p><p className="mt-1 text-xs text-muted-foreground">{definition.key}</p></div>{isBoolean ? <Switch aria-label={lang === 'ar' ? definition.ar : definition.en} checked={value === 'true'} onCheckedChange={checked => { const next = checked ? 'true' : 'false'; setSettingDrafts(draft => ({ ...draft, [definition.key]: next })); updateSetting.mutate({ key: definition.key, value: next }); }} disabled={updateSetting.isPending} /> : <div className="flex items-center gap-2"><Input className="h-8 w-28" type={definition.type === 'number' ? 'number' : 'text'} value={value} onChange={event => setSettingDrafts(draft => ({ ...draft, [definition.key]: event.target.value }))} /><Button size="sm" className="h-8 gap-1" onClick={() => updateSetting.mutate({ key: definition.key, value })} disabled={updateSetting.isPending}><Save className="h-3 w-3" />{lang === 'ar' ? 'حفظ' : 'Save'}</Button></div>}</div></div>; })}</div></CardContent></Card></TabsContent>
         </Tabs>
       </div>
 

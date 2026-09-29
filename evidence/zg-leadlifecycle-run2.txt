@@ -1,0 +1,40 @@
+BUILD  25a242a (local) built 2026-09-25T10:09:46.074Z  http://127.0.0.1:5401
+
+BUILD 25a242a  env=local
+
+PASS  1. a supplier and a buyer exist  [#464 / #461]
+PASS  2. the supplier has opened it and has NO quotation on it  [rfq #225]
+PASS  3. CONTROL: while the request is open it reads OPENED, as it should  [opened]
+PASS  4. and a lead the supplier paid for is in My Leads, not the Opportunity Centre
+PASS  5. WITHDRAWN: an opened-but-unquoted lead reports Request withdrawn  [closed]
+PASS  6. and NO LONGER reports Opened over a request that cannot be answered
+PASS  7. nor Not selected - the customer withdrew it, nobody won it
+PASS  8. AWARDED: an opened-but-unquoted lead reports Did not quote  [unquoted]
+PASS  9. and NO LONGER reports Opened after the request was awarded elsewhere
+PASS  10. AND NOT Not selected - this supplier never entered the competition (§68)
+PASS  11. reopening the request restores Opened - the state is derived, not stored
+PASS  12. CONTROL: an untouched invitation on an open request reads INVITED
+PASS  13. and is offered in the Opportunity Centre, which is correct while it is open
+PASS  14. WITHDRAWN: an untouched invitation reports Request withdrawn  [closed]
+PASS  15. AND LEAVES THE OPPORTUNITY CENTRE - it can no longer be taken
+PASS  16. appearing in My Leads instead, so it is not lost from the record
+PASS  17. AWARDED: an untouched invitation reports Did not quote  [unquoted]
+PASS  18. and is not offered as an opportunity either
+PASS  19. a DECLINED invitation survives a later award - their own decision is not rewritten  [declined]
+PASS  20. and is not downgraded to Did not quote, which would erase that they answered
+PASS  21. CONTROL: the quoted request reaches the supplier at all  [quoted]
+PASS  22. a WON bid still reads Won, not Did not quote  [won]
+PASS  23. a losing bid on an AWARDED request still reads Not selected  [lost]
+PASS  24. and is never collapsed into Did not quote - they DID quote  [lost]
+PASS  25. and a quoted request the customer withdrew still reads Request withdrawn  [closed]
+PASS  26. the queue now contains Did-not-quote rows  [2]
+PASS  27. and the summary count agrees with them  [summary 2, rows 2]
+PASS  28. the queue accepts the new state as a filter
+PASS  29. and filtering by it returns only those rows
+PASS  30. FINAL CONTROL: live requests are still Opened and Invited, so terminal means terminal
+PASS  31. and the reopened invitation is offered again
+
+(cleanup) probe requests remaining: 0
+
+ALL PASS  31 passed, 0 failed
+

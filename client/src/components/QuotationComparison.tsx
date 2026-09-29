@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { Link } from 'wouter';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatMoney } from '@shared/money';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import CrossMethodComparison from '@/components/CrossMethodComparison';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,7 +44,15 @@ type QuotationRow = {
   notes: string | null;
   /** JSON array of {key,url,name,type,size}, or null. */
   attachments: string | null;
-  status: 'pending' | 'accepted' | 'rejected' | null;
+  /**
+   * WITHDRAWN is the supplier's own exit, and it reads differently from the
+   * other three: pending, accepted and rejected are all the customer's
+   * decision about a live price, and a withdrawn bid is no longer a price at
+   * all. It is kept on the comparison rather than hidden - a column that
+   * silently disappears between two visits reads as a bug in the product -
+   * but it is dimmed and it cannot be accepted.
+   */
+  status: 'pending' | 'accepted' | 'rejected' | 'withdrawn' | null;
   createdAt: Date;
   providerName: string | null;
   providerEmail: string | null;
@@ -122,6 +132,17 @@ interface Props {
   rfqId: number;
   rfqTitle: string;
   rfqBudget?: number;
+  /**
+   * WHAT THE BUDGET IS DENOMINATED IN. The budget was rendered as
+   * `{t('common.egp')} {rfqBudget}` - the number from the record, the
+   * currency from a translation key that cannot know the answer. Every
+   * quotation on this screen already formats through `formatMoney` with its
+   * own `currency`; the budget they are all being compared against did not,
+   * so a Saudi request showed SAR bids beneath an EGP budget line. The RFQ
+   * decides the currency and every quotation inherits it (CLAUDE.md §87),
+   * which is precisely why these must agree.
+   */
+  rfqCurrency?: string | null;
   rfqStatus?: string | null;
   isOwner: boolean;
   onClose: () => void;
@@ -142,8 +163,8 @@ function parseQuotationAttachments(value: string | null): { key: string; url: st
   }
 }
 
-export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqStatus, isOwner, onClose }: Props) {
-  const { t } = useLanguage();
+export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqCurrency, rfqStatus, isOwner, onClose }: Props) {
+  const { t, lang } = useLanguage();
   const [sortKey, setSortKey] = useState<SortKey>('score');
   const [sortAsc, setSortAsc] = useState(false);
   const [confirmAccept, setConfirmAccept] = useState<QuotationRow | null>(null);
@@ -218,7 +239,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
           <h2 className="text-xl font-bold">{rfqTitle}</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
             {quotes.length} {t('rfq.quotations')}
-            {rfqBudget && <span className="ml-2">· {t('project.budget')}: <strong>{t('common.egp')} {rfqBudget.toLocaleString()}</strong></span>}
+            {rfqBudget != null && <span className="ml-2">· {t('project.budget')}: <strong data-testid="comparison-rfq-budget">{formatMoney(rfqBudget, rfqCurrency, lang) ?? rfqBudget.toLocaleString()}</strong></span>}
           </p>
         </div>
         {rfqAwarded && (
@@ -227,6 +248,15 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
           </Badge>
         )}
       </div>
+
+      {/*
+        * ── HOW EACH NUMBER WAS REACHED, AND WHAT IT COVERS ──────────────
+        *
+        * Above the cards because it answers the question the cards cannot: the
+        * cheaper bid is usually the one that left more out. It renders nothing
+        * for a single quotation, and nothing until the data has loaded.
+        */}
+      <CrossMethodComparison rfqId={rfqId} lang={lang === 'ar' ? 'ar' : 'en'} />
 
       {/* Sort controls */}
       {quotes.length > 1 && (
@@ -264,7 +294,10 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
             const isCheapest = parseFloat(q.price) === lowestPrice;
             const isFastest = q.timeline === fastestTimeline && fastestTimeline < 9999;
             const isAccepted = q.status === 'accepted';
-            const isRejected = q.status === 'rejected';
+            const isWithdrawn = q.status === 'withdrawn';
+            // Dimmed for the same reason a rejected one is: still readable,
+            // visibly out of the running.
+            const isRejected = q.status === 'rejected' || isWithdrawn;
             // The server decides, and says so in the same response - the
             // screen renders that answer rather than recomputing the rule.
             const isExpired = q.expired === true;
@@ -338,10 +371,15 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                   {/* Price */}
                   <div className="text-center py-3 rounded-lg bg-muted/50">
                     <div className="flex items-center justify-center gap-1.5">
+                      {/* NO FALLBACK. `?? 'EGP'` on the screen a buyer picks
+                          a winner from would label a SAR bid in Egyptian
+                          pounds the day BuildHub lists a second market - and
+                          every bid here is in the RFQ's currency by rule, so
+                          a missing one means something is wrong rather than
+                          that it is Egyptian. */}
                       <span className="text-2xl font-bold text-foreground">
-                        {parseFloat(q.price).toLocaleString()}
+                        {formatMoney(q.price, q.currency, lang) ?? parseFloat(q.price).toLocaleString()}
                       </span>
-                      <span className="text-sm text-muted-foreground">{q.currency ?? 'EGP'}</span>
                       {isCheapest && (
                         <Tooltip>
                           <TooltipTrigger>
@@ -353,9 +391,12 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                     </div>
                     {rfqBudget && (
                       <div className={`text-xs mt-1 font-medium ${parseFloat(q.price) <= rfqBudget ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {/* THE DIFFERENCE IS IN THE SAME CURRENCY AS THE
+                            TWO NUMBERS IT SUBTRACTS - which is the RFQ's,
+                            because the bid inherits it. */}
                         {parseFloat(q.price) <= rfqBudget
-                          ? `${t('common.egp')} ${(rfqBudget - parseFloat(q.price)).toLocaleString()} ↓`
-                          : `${t('common.egp')} ${(parseFloat(q.price) - rfqBudget).toLocaleString()} ↑`}
+                          ? `${formatMoney(rfqBudget - parseFloat(q.price), rfqCurrency ?? q.currency, lang) ?? (rfqBudget - parseFloat(q.price)).toLocaleString()} ↓`
+                          : `${formatMoney(parseFloat(q.price) - rfqBudget, rfqCurrency ?? q.currency, lang) ?? (parseFloat(q.price) - rfqBudget).toLocaleString()} ↑`}
                       </div>
                     )}
                   </div>
@@ -465,7 +506,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                       size="sm"
                       variant="ghost"
                       className="w-full gap-1.5 text-xs"
-                      data-testid="quotation-comparison-open"
+                      data-testid={`quotation-open-${q.id}`}
                     >
                       <FileText className="w-3.5 h-3.5" /> {t('rfq.viewQuotation')}
                     </Button>
@@ -548,7 +589,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                     const cheapest = parseFloat(q.price) === lowestPrice;
                     return (
                       <td key={q.id} className={`text-center py-2.5 px-3 font-semibold ${cheapest ? 'text-emerald-600' : ''}`}>
-                        {parseFloat(q.price).toLocaleString()} {q.currency ?? 'EGP'}
+                        {formatMoney(q.price, q.currency, lang) ?? parseFloat(q.price).toLocaleString()}
                         {cheapest && <div className="text-xs font-normal text-emerald-500">{t('rfq.lowest_price')}</div>}
                       </td>
                     );
@@ -632,6 +673,7 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full
                         ${q.status === 'accepted' ? 'bg-emerald-100 text-emerald-700' :
                           q.status === 'rejected' ? 'bg-red-100 text-red-600' :
+                          q.status === 'withdrawn' ? 'bg-muted text-muted-foreground' :
                           'bg-blue-100 text-blue-700'}`}>
                         {t(`common.${q.status ?? 'pending'}`)}
                       </span>
@@ -650,13 +692,14 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqSta
           <AlertDialogHeader>
             <AlertDialogTitle>{t('rfq.accept.confirm.title')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('rfq.accept.confirm.desc').replace('{name}', confirmAccept?.providerName ?? '').replace('{price}', `${t('common.egp')} ${confirmAccept ? parseFloat(confirmAccept.price).toLocaleString() : ''}`)}
+              {t('rfq.accept.confirm.desc').replace('{name}', confirmAccept?.providerName ?? '').replace('{price}', confirmAccept ? (formatMoney(confirmAccept.price, confirmAccept.currency, lang) ?? parseFloat(confirmAccept.price).toLocaleString()) : '')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-emerald-600 hover:bg-emerald-700"
+              data-testid="quotation-accept-confirm"
               onClick={() => confirmAccept && acceptMutation.mutate({ quotationId: confirmAccept.id, rfqId })}
               disabled={acceptMutation.isPending}
             >

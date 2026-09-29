@@ -1,3 +1,5 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -118,7 +120,12 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
   const [bulkResult, setBulkResult] = useState('');
   const [exportError, setExportError] = useState('');
 
-  const overview = trpc.admin.enquiryOverview.useQuery();
+  /*
+   * "No enquiries yet" IS A STATEMENT ABOUT THE WHOLE MARKETPLACE - every
+   * vendor invited to a request, every one who opened one, every one who
+   * answered. An outage said none of it had ever happened.
+   */
+  const overview = trpc.admin.enquiryOverview.useQuery(undefined, { retry: false });
   const list = trpc.admin.enquiryList.useQuery({
     ...(state === 'all' ? {} : { state: state as any }),
     ...(search.trim() ? { search: search.trim() } : {}),
@@ -228,10 +235,25 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
                     <Building2 className="h-4 w-4 text-muted-foreground" />
                     {ar ? 'المورد' : 'The vendor'}
                   </p>
+                  {/*
+                    * TWO DESTINATIONS, because they answer different questions.
+                    * The public profile shows what a customer sees, which is
+                    * what you want when judging a placement or a complaint. The
+                    * account is where an administrator ACTS - freeze, verify,
+                    * audit trail, benefits - and it was not reachable from this
+                    * panel at all.
+                    */}
                   <Link href={`/vendor/${data.vendor.id}`}
                     className="text-sm text-primary underline-offset-2 hover:underline">
                     {data.vendor.company || data.vendor.name || `#${data.vendor.id}`}
                   </Link>
+                  <span className="mx-2 text-xs text-muted-foreground">·</span>
+                  <AdminUserLink
+                    id={data.vendor.id}
+                    name={ar ? 'إدارة الحساب' : 'Manage account'}
+                    testId={`enquiry-vendor-account-${data.vendor.id}`}
+                    className="text-xs text-muted-foreground"
+                  />
                   {data.vendor.company && data.vendor.name && (
                     <p className="mt-1 text-xs text-muted-foreground">{data.vendor.name}</p>
                   )}
@@ -504,6 +526,8 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
               <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" />
               {ar ? 'جاري التحميل…' : 'Loading…'}
             </div>
+          ) : overview.isError ? (
+            <LoadFailed {...loadFailedCopy(ar)} onRetry={() => void overview.refetch()} />
           ) : !counted || counted.total === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground" data-testid="enquiry-overview-empty">
               {ar

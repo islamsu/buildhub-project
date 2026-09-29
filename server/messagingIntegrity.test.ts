@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { readSourceForAssertions } from './_testing/sourceText';
 import { appRouter } from './routers';
 import type { TrpcContext } from './_core/trpc';
 import { messages as messagesTable, notifications as notificationsTable } from '../drizzle/schema';
+import { resetContentLimiters } from './_core/rateLimit';
 
 /**
  * MESSAGING INTEGRITY.
@@ -44,12 +45,23 @@ const ctx = (id: number): TrpcContext => ({
  * `users` holds the accounts that exist, so "no such user" is a real absence
  * rather than a stub that forgot to model it.
  */
-function stubDb(users: { id: number; accountStatus: string }[]) {
+function stubDb(
+  users: { id: number; accountStatus: string }[],
+  /**
+   * Whether these two have spoken before. messages.send looks the pair up to
+   * decide if this is a COLD APPROACH, which is charged against a much
+   * tighter limit than another line in an existing thread. The stub has to
+   * know which table is being read to answer that honestly - answering the
+   * recipient lookup for it would make every message look like a reply.
+   */
+  priorContact: boolean = true,
+) {
   const inserted: Record<string, unknown>[] = [];
   const db = {
     select: (_projection?: unknown) => ({
-      from: (_table: unknown) => ({
+      from: (table: unknown) => ({
         where: (predicate: unknown) => {
+          const readingMessages = table === messagesTable;
           // Pull the bound id out of the (circular) drizzle predicate.
           const seen = new Set<unknown>();
           const numbers: number[] = [];
@@ -62,9 +74,12 @@ function stubDb(users: { id: number; accountStatus: string }[]) {
             }
           };
           walk(predicate);
-          const match = users.filter(u => numbers.includes(u.id));
+          const match = readingMessages
+            ? (priorContact ? [{ id: 1 }] : [])
+            : users.filter(u => numbers.includes(u.id));
           return Object.assign(Promise.resolve(match), {
             orderBy: () => Promise.resolve(match),
+            limit: () => Promise.resolve(match),
             innerJoin: () => ({ where: () => Promise.resolve([]) }),
           });
         },
@@ -316,5 +331,119 @@ describe('conversation metadata is computed, not hard-coded', () => {
       ROUTERS.indexOf('markThreadRead: protectedProcedure'),
     )).not.toMatch(/online:/);
     expect(MESSAGING).not.toMatch(/online:/);
+  });
+});
+
+// ══ A COLD APPROACH COSTS MORE THAN A REPLY ════════════════════════════════
+//
+// BuildHub lets a customer contact a vendor they have just found, so the send
+// itself is what has to be bounded - and volume alone would wave the spam
+// shape through: fifty messages to one vendor is a tedious conversation,
+// fifty to fifty vendors is a blast.
+//
+// These run through the real procedure with a stub that knows whether the
+// pair has spoken, which is the distinction the limiter turns on.
+//
+// TIME IS ADVANCED BETWEEN SENDS, because a person does not send twenty
+// messages in the same millisecond. Without that the per-minute burst rule
+// fires first and the breadth rule is never reached - which would leave the
+// rule under test passing for the wrong reason.
+describe('the breadth limit falls on cold outreach and not on conversations', () => {
+  const SPACING_MS = 5_000;
+
+  beforeEach(() => {
+    resetContentLimiters();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-01T09:00:00Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    resetContentLimiters();
+  });
+
+  /** One send, five seconds after the last - under the burst ceiling. */
+  const paced = async (fn: () => Promise<unknown>) => {
+    vi.setSystemTime(new Date(Date.now() + SPACING_MS));
+    return fn();
+  };
+
+  it('refuses the twenty-first stranger in an hour', async () => {
+    // Every recipient is somebody this account has never written to.
+    const { db } = stubDb([{ id: 50, accountStatus: 'active' }], false);
+    await withDb(db, async () => {
+      const caller = appRouter.createCaller(ctx(1));
+      for (let i = 0; i < 20; i++) {
+        await expect(
+          paced(() => caller.messages.send({ receiverId: 50, content: `approach ${i}` })),
+          `approach ${i + 1} should still be allowed`,
+        ).resolves.toBeTruthy();
+      }
+      await expect(paced(() => caller.messages.send({ receiverId: 50, content: 'one too many' })))
+        .rejects.toThrow(/new conversations/i);
+    });
+  });
+
+  it('never charges a thread that already exists', async () => {
+    // The SAME number of sends, but with history on the pair. If breadth were
+    // charged here the twenty-first would fail exactly as above - so this is
+    // the assertion that keeps the two rules genuinely separate rather than
+    // one rule with two names.
+    const { db } = stubDb([{ id: 50, accountStatus: 'active' }], true);
+    await withDb(db, async () => {
+      const caller = appRouter.createCaller(ctx(2));
+      for (let i = 0; i < 21; i++) {
+        await expect(
+          paced(() => caller.messages.send({ receiverId: 50, content: `reply ${i}` })),
+          `reply ${i + 1} should be allowed - this is an open conversation`,
+        ).resolves.toBeTruthy();
+      }
+    });
+  });
+
+  it('refuses a flood into one thread on volume instead', async () => {
+    // Breadth cannot catch this one - it is a single conversation - so if the
+    // volume limit were missing nothing would stop it.
+    const { db } = stubDb([{ id: 50, accountStatus: 'active' }], true);
+    await withDb(db, async () => {
+      const caller = appRouter.createCaller(ctx(3));
+      for (let i = 0; i < 150; i++) {
+        await paced(() => caller.messages.send({ receiverId: 50, content: `line ${i}` }));
+      }
+      await expect(paced(() => caller.messages.send({ receiverId: 50, content: 'past the hour' })))
+        .rejects.toThrow(/too many requests/i);
+    });
+  });
+
+  it('one account running out does not silence another', async () => {
+    const { db } = stubDb([{ id: 50, accountStatus: 'active' }], false);
+    await withDb(db, async () => {
+      const flooder = appRouter.createCaller(ctx(4));
+      for (let i = 0; i < 20; i++) {
+        await paced(() => flooder.messages.send({ receiverId: 50, content: `x${i}` }));
+      }
+      await expect(paced(() => flooder.messages.send({ receiverId: 50, content: 'blocked' })))
+        .rejects.toThrow();
+      const bystander = appRouter.createCaller(ctx(6));
+      await expect(paced(() => bystander.messages.send({ receiverId: 50, content: 'hello' })))
+        .resolves.toBeTruthy();
+    });
+  });
+
+  it('nothing is written when the send is refused', async () => {
+    const { db, inserted } = stubDb([{ id: 50, accountStatus: 'active' }], false);
+    await withDb(db, async () => {
+      const caller = appRouter.createCaller(ctx(7));
+      for (let i = 0; i < 20; i++) {
+        await paced(() => caller.messages.send({ receiverId: 50, content: `x${i}` }));
+      }
+      const before = inserted.filter(row => row.__table === 'messages').length;
+      await expect(paced(() => caller.messages.send({ receiverId: 50, content: 'refused' })))
+        .rejects.toThrow();
+      const after = inserted.filter(row => row.__table === 'messages').length;
+      // A limiter that returns 429 and stores the row anyway protects nothing,
+      // and no response-only assertion would notice.
+      expect(after).toBe(before);
+      expect(before).toBe(20);
+    });
   });
 });

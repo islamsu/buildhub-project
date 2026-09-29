@@ -1,0 +1,22 @@
+PASS  1. SETUP: the migration set is complete and 0056 is in it  [57 files, 0056_product_question_moderation.sql]
+PASS  2. EMPTY: every migration applies to a fresh database  [405 statements over 57 files]
+PASS  3. EMPTY: and productQuestions ends with all seven moderation columns  [7/7]
+PASS  4. EMPTY: and both new tables exist  [productQuestionReports, productAnswerRevisions]
+PASS  5. UPGRADE: the pre-0056 database genuinely lacks the new columns - a real "before"  [hiddenAt columns: 0]
+PASS  6. UPGRADE: seeded a real "before" - two questions, one answered, plus a reported review  [2 questions]
+PASS  7. UPGRADE: 0056 applies over a populated database  [applied]
+PASS  8. UPGRADE: every existing question and answer survives BYTE-IDENTICAL  [unchanged]
+PASS  9. UPGRADE: and the review moderation it sits beside is untouched  [unchanged]
+PASS  10. SAFE: no existing content is hidden by the upgrade - every product page still renders  [0 hidden]
+PASS  11. SAFE: and no existing answer is falsely marked as edited  [0 marked]
+PASS  12. SAFE: and the new tables start genuinely empty, with no invented history  [0 reports, 0 revisions]
+PASS  13. MID-DEPLOY: the previous application's READ still works against the new schema  [the pre-0056 column list still resolves]
+PASS  14. MID-DEPLOY: and its INSERT still works - every new column is nullable  [accepted]
+PASS  15. MID-DEPLOY: and a row the old code wrote is visible, not hidden  [<null>	<null>]
+PASS  16. MID-DEPLOY: and the old answer path still writes  [accepted]
+PASS  17. ADDITIVE: 0056 drops nothing, deletes nothing and retypes nothing  [add-only]
+PASS  18. ADDITIVE: every new foreign key is RESTRICT - moderation evidence cannot vanish  [7 restrict, 0 cascade]
+PASS  19. CONVERGENT: a fresh database and an upgraded one reach the SAME schema  [identical]
+  (scratch databases dropped)
+
+19/19 checks passed

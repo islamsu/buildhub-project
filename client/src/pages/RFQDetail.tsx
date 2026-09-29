@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { useParams, Link } from 'wouter';
+import AskAiAbout from '@/components/AskAiAbout';
+import FinishingBriefSummary from '@/components/FinishingBriefSummary';
 import { OpenDisputeDialog } from '@/components/OpenDisputeDialog';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatMoney } from '@shared/money';
 import { useAuth } from '@/_core/hooks/useAuth';
 import RfqInvitations from '@/components/RfqInvitations';
 import { isComplianceRole } from '@shared/compliance';
@@ -12,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import QuotationComparison from '@/components/QuotationComparison';
 import {
-  ArrowLeft, Clock, DollarSign, FileText, Flag, MapPin, Lock, Package,
+  ArrowLeft, Building2, Clock, DollarSign, FileText, Flag, MapPin, Lock, Package,
 } from 'lucide-react';
 
 /**
@@ -215,6 +218,9 @@ export default function RFQDetail() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {/* Carries THIS request across, so the assistant opens knowing
+                    what the reader was looking at. It asks nothing. */}
+                <AskAiAbout subject="request" id={rfq.id} subtype={rfq.category} lang={ar ? 'ar' : 'en'} />
                 <span
                   className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${STATUS_TONE[status] ?? STATUS_TONE.open}`}
                   data-testid="rfq-detail-status"
@@ -235,6 +241,64 @@ export default function RFQDetail() {
               <p className="whitespace-pre-wrap text-sm text-muted-foreground" data-testid="rfq-detail-description">
                 {rfq.description}
               </p>
+            )}
+
+            {/* THE REQUESTER READING BACK WHAT THEY ASKED FOR, including the
+                questions they said they did not know - which is how they can
+                tell that nothing was filled in on their behalf. */}
+            {rfq.finishingBrief && (
+              <div className="@container/brief-summary rounded-xl border p-4">
+                <p className="mb-2 text-sm font-medium">
+                  {ar ? 'تفاصيل التشطيب' : 'Finishing brief'}
+                </p>
+                <FinishingBriefSummary
+                  brief={rfq.finishingBrief}
+                  pricingPreference={rfq.pricingPreference}
+                  lang={ar ? 'ar' : 'en'} />
+              </div>
+            )}
+
+            {/*
+              THE PROJECT THIS WAS RAISED FOR.
+              The RFQ form has a project selector and `rfqs.projectId` has been
+              written all along, but the RFQ's own page never said which
+              project it belonged to - so a buyer running several projects
+              could open a request and have no way back to its context.
+
+              OWNER ONLY, and read off `full` rather than `summary`: which of a
+              buyer's projects a request belongs to is their internal business,
+              and a supplier reading an open request has no need of it.
+
+              The server resolves the name only while the buyer still has read
+              access to that project, so the two cases below are genuinely
+              different and are worded differently. A link they can follow, or
+              a plain statement that the link exists and the project is no
+              longer theirs to open - which is the truth, and better than
+              silently rendering nothing.
+            */}
+            {isOwner && full?.projectLinked && (
+              full.project ? (
+                <Link
+                  href={`/projects/${full.project.id}`}
+                  className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                  data-testid="rfq-detail-project"
+                >
+                  <Building2 className="h-4 w-4 shrink-0" />
+                  <span className="truncate">
+                    {ar ? `المشروع: ${full.project.title}` : `Project: ${full.project.title}`}
+                  </span>
+                </Link>
+              ) : (
+                <p
+                  className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"
+                  data-testid="rfq-detail-project-unavailable"
+                >
+                  <Building2 className="h-4 w-4 shrink-0" />
+                  {ar
+                    ? 'هذا الطلب مرتبط بمشروع لم يعد بإمكانك الوصول إليه.'
+                    : 'Raised for a project you no longer have access to.'}
+                </p>
+              )
             )}
 
             {/*
@@ -390,7 +454,7 @@ export default function RFQDetail() {
                   </Badge>
                 </div>
                 <div className="mt-2 grid gap-1 text-sm text-muted-foreground sm:grid-cols-3">
-                  <span>{ar ? 'السعر' : 'Price'}: {ar ? 'ج.م' : 'EGP'} {Number(myQuotation.price).toLocaleString()}</span>
+                  <span>{ar ? 'السعر' : 'Price'}: {formatMoney(myQuotation.price, myQuotation.currency, ar ? 'ar' : 'en') ?? Number(myQuotation.price).toLocaleString()}</span>
                   <span>{ar ? 'المدة' : 'Timeline'}: {myQuotation.timeline ?? '—'}</span>
                   <span>{ar ? 'أُرسل' : 'Submitted'}: {new Date(myQuotation.createdAt).toLocaleDateString(ar ? 'ar-EG' : 'en-US')}</span>
                 </div>
@@ -509,6 +573,7 @@ export default function RFQDetail() {
               rfqId={rfq.id}
               rfqTitle={rfq.title}
               rfqBudget={rfq.budget ? Number(rfq.budget) : undefined}
+              rfqCurrency={rfq.currency}
               rfqStatus={status}
               isOwner
               onClose={() => undefined}

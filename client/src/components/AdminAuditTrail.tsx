@@ -1,3 +1,4 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
 import { useEffect, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -8,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollText } from 'lucide-react';
+import { accountAuditActionLabel } from '@shared/accountAuditLabels';
 
 /**
  * THE AUDIT TRAILS, ON A SCREEN.
@@ -25,8 +27,30 @@ import { ScrollText } from 'lucide-react';
  * shared subject that neither has, and the "subjectId: 0 names nothing" problem
  * the commercial guard already rejects once.
  */
+/**
+ * THE EVENT'S NAME, NOT ITS IDENTIFIER.
+ *
+ * This table rendered `row.action` raw, so an administrator read
+ * `admin_password_reset_requested` in a badge and the filter dropdown offered
+ * the same snake_case as its options - raw enums and database terminology in
+ * user-facing text (§55, §72), in English regardless of the reader's language
+ * (§67). Found by the visual-QA sweep, which reported `signed_in` as a raw
+ * token on /admin/analytics.
+ *
+ * An UNLABELLED action falls back to the identifier deliberately and visibly:
+ * showing nothing would hide an event from an audit trail, which is worse
+ * than showing it unpolished - and `accountAuditLabels.test.ts` fails if a
+ * new action ships without a label, so the fallback should never be reached.
+ */
+function useActionLabel() {
+  const { lang } = useLanguage();
+  return (action: string) =>
+    accountAuditActionLabel(action, lang === 'ar' ? 'ar' : 'en') ?? action;
+}
+
 export default function AdminAuditTrail() {
   const { lang } = useLanguage();
+  const actionLabel = useActionLabel();
   const ar = lang === 'ar';
   const failedCopy = loadFailedCopy(ar);
 
@@ -107,7 +131,7 @@ export default function AdminAuditTrail() {
                     {(commercial.data ?? []).map((row: any) => (
                       <tr key={row.id} className="border-b last:border-0">
                         <td className="p-2 font-mono text-xs">{row.subjectType} #{row.subjectId}</td>
-                        <td className="p-2"><Badge variant="outline">{row.action}</Badge></td>
+                        <td className="p-2"><Badge variant="outline">{actionLabel(row.action)}</Badge></td>
                         <td className="p-2 max-w-[28rem] break-words text-xs text-muted-foreground">{row.detail ?? '—'}</td>
                         <td className="p-2 text-xs text-muted-foreground">{when(row.createdAt)}</td>
                       </tr>
@@ -154,7 +178,7 @@ export default function AdminAuditTrail() {
               >
                 <option value="">{ar ? 'كل الإجراءات' : 'All actions'}</option>
                 {(filterOptions.data?.actions ?? []).map(action => (
-                  <option key={action} value={action}>{action}</option>
+                  <option key={action} value={action}>{actionLabel(action)}</option>
                 ))}
               </select>
               {/* THE REAL TOTAL, which is the number that tells an administrator
@@ -191,10 +215,18 @@ export default function AdminAuditTrail() {
                   <tbody>
                     {auditRows.map((row) => (
                       <tr key={row.id} className="border-b last:border-0">
-                        {/* A name, then the id - never the id alone. */}
-                        <td className="p-2 text-xs">{row.userName ?? row.userEmail ?? (row.userId ? `#${row.userId}` : '—')}</td>
-                        <td className="p-2"><Badge variant="outline">{row.action}</Badge></td>
-                        <td className="p-2 text-xs text-muted-foreground">{row.actorName ?? '—'}</td>
+                        {/* A name, then the id - never the id alone, and the
+                            name opens the account. Both columns: the SUBJECT of
+                            an event and the ADMINISTRATOR who caused it are the
+                            two records somebody reading an audit line wants to
+                            look at next, and neither was reachable from here. */}
+                        <td className="p-2 text-xs">
+                          <AdminUserLink id={row.userId} name={row.userName ?? row.userEmail} />
+                        </td>
+                        <td className="p-2"><Badge variant="outline">{actionLabel(row.action)}</Badge></td>
+                        <td className="p-2 text-xs text-muted-foreground">
+                          <AdminUserLink id={row.actorId} name={row.actorName ?? row.actorEmail} />
+                        </td>
                         <td className="p-2 max-w-[24rem] break-words text-xs text-muted-foreground">{row.note ?? '—'}</td>
                         <td className="p-2 text-xs text-muted-foreground">{when(row.createdAt)}</td>
                       </tr>

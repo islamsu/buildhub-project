@@ -272,12 +272,25 @@ describe('the events that matter are recorded', () => {
     // removed. Putting somebody on a project, changing their capacity on it or
     // taking them off it decides WHO CAN READ the customer's documents, RFQs
     // and quotations, and none of it was recorded anywhere.
-    expect(sites).toHaveLength(15);
+    // 15 -> 17 when public product Q&A became moderatable: a supplier editing
+    // their own published answer, and an administrator hiding or restoring a
+    // question or an answer. Both change what the public sees on a listing,
+    // and an edit in particular is how an answer somebody relied on can be
+    // rewritten after the fact - so neither may be silent.
+    expect(sites).toHaveLength(17);
 
     // The id expression each subjectType is allowed to carry. `input.rfqId` is
     // absent from 'quotation' and 'enquiry' deliberately - that was the defect.
     const ALLOWED: Record<string, string[]> = {
-      product:   ['id', 'input.id', 'input.productId', 'row.productId', 'params.productId'],
+      // `question?.productId ?? 0` is the product id read through the
+      // productQuestions -> products join, which is the same fact as
+      // `row.productId`; the optional chain is there because the row is read
+      // after the mutation and a deleted question would otherwise throw
+      // inside the audit write rather than in the operation it describes.
+      product:   [
+        'id', 'input.id', 'input.productId', 'row.productId', 'params.productId',
+        'question?.productId ?? 0',
+      ],
       // A service event names the service, never its category or its provider.
       service:   ['serviceId', 'input.serviceId', 'params.serviceId'],
       rfq:       ['rfqId'],
@@ -306,7 +319,13 @@ describe('the events that matter are recorded', () => {
   it('the RFQ behind a quotation or enquiry is kept, as CONTEXT not as identity', () => {
     // Losing it entirely would be the opposite mistake: a quotation audit row
     // that cannot be traced back to what was quoted on.
-    expect(ROUTERS).toMatch(/detail: `rfq \$\{input\.rfqId\}, price/);
+    //
+    // WHAT FOLLOWS THE RFQ ID IS NOT PART OF THE RULE. This matched
+    // "rfq ${input.rfqId}, price" until a quotation stopped being one number
+    // and started recording its pricing method and derived total. The invariant
+    // is that the RFQ is in `detail` and not in `subjectId`; pinning the rest of
+    // the sentence made an unrelated change look like a breach.
+    expect(ROUTERS).toMatch(/detail: `rfq \$\{input\.rfqId\}, /);
     // The enquiry side is asserted against the RECORDED DETAIL STRING in
     // server/enquiryInvitationExemption.test.ts - all three outcomes, including
     // an invited open, which must never claim a credit was charged.

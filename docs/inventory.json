@@ -169,6 +169,14 @@
       "deadParamRoute": false
     },
     {
+      "path": "/saved",
+      "component": "SavedPage",
+      "source": "client/src/pages/SavedPage.tsx",
+      "declaresParam": false,
+      "readsParam": true,
+      "deadParamRoute": false
+    },
+    {
       "path": "/marketplace/designers/:id",
       "component": "RedirectToVendor",
       "source": null,
@@ -305,6 +313,14 @@
       "deadParamRoute": false
     },
     {
+      "path": "/marketing",
+      "component": "MarketingCenterPage",
+      "source": "client/src/pages/MarketingCenterPage.tsx",
+      "declaresParam": false,
+      "readsParam": false,
+      "deadParamRoute": false
+    },
+    {
       "path": "/disputes/:id",
       "component": "DisputeDetail",
       "source": "client/src/pages/DisputeDetail.tsx",
@@ -357,7 +373,7 @@
       "component": "AIAssistantPage",
       "source": "client/src/pages/AIAssistantPage.tsx",
       "declaresParam": false,
-      "readsParam": false,
+      "readsParam": true,
       "deadParamRoute": false
     },
     {
@@ -596,9 +612,14 @@
       "indent": 2
     },
     {
-      "name": "masterProvider",
+      "name": "featuredProducts",
       "tier": "publicProcedure",
       "indent": 2
+    },
+    {
+      "name": "masterProvider",
+      "tier": "publicProcedure",
+      "indent": 3
     },
     {
       "name": "masterProduct",
@@ -696,6 +717,16 @@
       "indent": 2
     },
     {
+      "name": "editAnswer",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "reportQuestion",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "myProductQuestions",
       "tier": "protectedProcedure",
       "indent": 2
@@ -751,6 +782,11 @@
       "indent": 2
     },
     {
+      "name": "comparison",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "inviteSupplier",
       "tier": "protectedProcedure",
       "indent": 2
@@ -801,9 +837,14 @@
       "indent": 2
     },
     {
+      "name": "withdrawQuotation",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
       "name": "acceptQuotation",
       "tier": "protectedProcedure",
-      "indent": 2
+      "indent": 3
     },
     {
       "name": "rejectQuotation",
@@ -1007,7 +1048,7 @@
     },
     {
       "name": "list",
-      "tier": "protectedProcedure",
+      "tier": "publicProcedure",
       "indent": 2
     },
     {
@@ -1037,7 +1078,7 @@
     },
     {
       "name": "getPublic",
-      "tier": "protectedProcedure",
+      "tier": "publicProcedure",
       "indent": 2
     },
     {
@@ -1056,9 +1097,54 @@
       "indent": 2
     },
     {
-      "name": "myReferral",
+      "name": "toggleSaved",
       "tier": "protectedProcedure",
       "indent": 2
+    },
+    {
+      "name": "savedCount",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "showcase",
+      "tier": "publicProcedure",
+      "indent": 2
+    },
+    {
+      "name": "marketingOverview",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "showcaseCandidates",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myShowcase",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "setShowcase",
+      "tier": "approvedProviderProcedure",
+      "indent": 2
+    },
+    {
+      "name": "savedItems",
+      "tier": "protectedProcedure",
+      "indent": 3
+    },
+    {
+      "name": "savedState",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
+      "name": "myReferral",
+      "tier": "protectedProcedure",
+      "indent": 3
     },
     {
       "name": "saveMyCompanyProfile",
@@ -1166,6 +1252,11 @@
       "indent": 3
     },
     {
+      "name": "userSnapshot",
+      "tier": "adminWith:users.read",
+      "indent": 2
+    },
+    {
       "name": "userDetail",
       "tier": "adminWith:users.read",
       "indent": 2
@@ -1183,6 +1274,36 @@
     {
       "name": "addUserNote",
       "tier": "adminWith:users.manage",
+      "indent": 2
+    },
+    {
+      "name": "referralOverview",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "referralCodes",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "referralCodeHistory",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "issueReferralCode",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "rotateReferralCode",
+      "tier": "adminWith:marketplace.manage",
+      "indent": 2
+    },
+    {
+      "name": "setReferralCodeStatus",
+      "tier": "adminWith:marketplace.manage",
       "indent": 2
     },
     {
@@ -1231,9 +1352,14 @@
       "indent": 2
     },
     {
+      "name": "attention",
+      "tier": "adminWith:users.read",
+      "indent": 2
+    },
+    {
       "name": "enquiryList",
       "tier": "adminWith:marketplace.manage",
-      "indent": 2
+      "indent": 3
     },
     {
       "name": "enquiryDetail",
@@ -1536,9 +1662,29 @@
       "indent": 2
     },
     {
-      "name": "reviewReports",
+      "name": "productQuestionReports",
       "tier": "adminWith:support.manage",
       "indent": 2
+    },
+    {
+      "name": "productAnswerRevisions",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "moderateProductQuestion",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "resolveProductQuestionReport",
+      "tier": "adminWith:support.manage",
+      "indent": 2
+    },
+    {
+      "name": "reviewReports",
+      "tier": "adminWith:support.manage",
+      "indent": 3
     },
     {
       "name": "moderateReview",
@@ -1666,9 +1812,14 @@
       "indent": 2
     },
     {
+      "name": "suggestions",
+      "tier": "protectedProcedure",
+      "indent": 2
+    },
+    {
       "name": "chat",
       "tier": "aiChatProcedure",
-      "indent": 2
+      "indent": 3
     },
     {
       "name": "uploadAttachment",
@@ -1732,12 +1883,12 @@
     }
   ],
   "procedureTiers": {
-    "publicProcedure": 34,
-    "protectedProcedure": 87,
+    "publicProcedure": 38,
+    "protectedProcedure": 93,
     "complianceProcedure": 6,
-    "approvedProviderProcedure": 30,
-    "adminWith:marketplace.manage": 44,
-    "adminWith:users.read": 7,
+    "approvedProviderProcedure": 35,
+    "adminWith:marketplace.manage": 50,
+    "adminWith:users.read": 9,
     "adminWith:users.manage": 6,
     "adminWith:audit.read": 6,
     "adminWith:qa.manage": 7,
@@ -1745,7 +1896,7 @@
     "superAdminProcedure": 10,
     "adminProcedure": 4,
     "adminWith:billing.manage": 8,
-    "adminWith:support.manage": 16,
+    "adminWith:support.manage": 20,
     "adminWith:settings.manage": 2,
     "aiChatProcedure": 1
   },
@@ -1753,9 +1904,9 @@
     {
       "ident": "users",
       "name": "users",
-      "columns": 46,
+      "columns": 48,
       "references": 2,
-      "notNull": 10,
+      "notNull": 11,
       "unique": 1
     },
     {
@@ -1785,9 +1936,9 @@
     {
       "ident": "projects",
       "name": "projects",
-      "columns": 16,
+      "columns": 19,
       "references": 2,
-      "notNull": 4,
+      "notNull": 6,
       "unique": 0
     },
     {
@@ -1849,9 +2000,25 @@
     {
       "ident": "productQuestions",
       "name": "productQuestions",
-      "columns": 9,
+      "columns": 17,
+      "references": 4,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "productAnswerRevisions",
+      "name": "productAnswerRevisions",
+      "columns": 7,
       "references": 2,
       "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "productQuestionReports",
+      "name": "productQuestionReports",
+      "columns": 14,
+      "references": 3,
+      "notNull": 6,
       "unique": 0
     },
     {
@@ -1873,9 +2040,9 @@
     {
       "ident": "rfqs",
       "name": "rfqs",
-      "columns": 16,
+      "columns": 21,
       "references": 2,
-      "notNull": 4,
+      "notNull": 6,
       "unique": 0
     },
     {
@@ -1889,15 +2056,23 @@
     {
       "ident": "quotations",
       "name": "quotations",
-      "columns": 18,
+      "columns": 33,
       "references": 2,
-      "notNull": 5,
+      "notNull": 8,
+      "unique": 0
+    },
+    {
+      "ident": "quotationItems",
+      "name": "quotationItems",
+      "columns": 12,
+      "references": 1,
+      "notNull": 8,
       "unique": 0
     },
     {
       "ident": "messages",
       "name": "messages",
-      "columns": 14,
+      "columns": 16,
       "references": 4,
       "notNull": 4,
       "unique": 0
@@ -1921,9 +2096,9 @@
     {
       "ident": "serviceOfferings",
       "name": "serviceOfferings",
-      "columns": 17,
+      "columns": 18,
       "references": 2,
-      "notNull": 7,
+      "notNull": 8,
       "unique": 0
     },
     {
@@ -2049,9 +2224,9 @@
     {
       "ident": "vendorSubscriptions",
       "name": "vendorSubscriptions",
-      "columns": 28,
+      "columns": 31,
       "references": 1,
-      "notNull": 8,
+      "notNull": 10,
       "unique": 0
     },
     {
@@ -2199,6 +2374,30 @@
       "unique": 0
     },
     {
+      "ident": "savedItems",
+      "name": "savedItems",
+      "columns": 8,
+      "references": 1,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
+      "ident": "supplierShowcase",
+      "name": "supplierShowcase",
+      "columns": 8,
+      "references": 1,
+      "notNull": 5,
+      "unique": 0
+    },
+    {
+      "ident": "referralCodeEvents",
+      "name": "referralCodeEvents",
+      "columns": 10,
+      "references": 2,
+      "notNull": 4,
+      "unique": 0
+    },
+    {
       "ident": "vendorSponsorships",
       "name": "vendorSponsorships",
       "columns": 22,
@@ -2218,127 +2417,142 @@
   "notificationWrites": [
     {
       "file": "server/routers.ts",
-      "line": 652,
+      "line": 807,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 1429,
+      "line": 1652,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 1517,
+      "line": 1740,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2745,
+      "line": 3013,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 2825,
+      "line": 3093,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3641,
+      "line": 3144,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 3698,
+      "line": 4443,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4244,
+      "line": 4500,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4571,
+      "line": 5359,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 4986,
+      "line": 5744,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5228,
+      "line": 6172,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5420,
+      "line": 6426,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 5590,
+      "line": 6618,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7037,
+      "line": 6788,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7370,
+      "line": 8613,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 7448,
+      "line": 8956,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8294,
+      "line": 9034,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8365,
+      "line": 9880,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8769,
+      "line": 9951,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 8986,
+      "line": 10355,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9016,
+      "line": 10572,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9049,
+      "line": 10602,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9256,
+      "line": 10635,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9338,
+      "line": 10849,
       "via": "notifyUser"
     },
     {
       "file": "server/routers.ts",
-      "line": 9432,
+      "line": 10896,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 10998,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 11080,
+      "via": "notifyUser"
+    },
+    {
+      "file": "server/routers.ts",
+      "line": 11201,
       "via": "notifyUser"
     },
     {

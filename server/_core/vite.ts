@@ -3,6 +3,7 @@ import fs from "fs";
 import { type Server } from "http";
 import { nanoid } from "nanoid";
 import path from "path";
+import { applySeoHead } from "./seoHead";
 
 // `vite` and the vite config are imported LAZILY, inside setupVite.
 //
@@ -59,7 +60,12 @@ export async function setupVite(app: Express, server: Server) {
         `src="/src/main.tsx?v=${nanoid()}"`
       );
       const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({ "Content-Type": "text/html" }).end(page);
+      // Per-route title, description, canonical and robots. Same call as the
+      // production path below, so development shows what a crawler will get.
+      res
+        .status(200)
+        .set({ "Content-Type": "text/html" })
+        .end(await applySeoHead(page, req.originalUrl));
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);
@@ -80,8 +86,21 @@ export function serveStatic(app: Express) {
 
   app.use(express.static(distPath));
 
-  // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
-    res.sendFile(path.resolve(distPath, "index.html"));
+  // fall through to index.html if the file doesn't exist.
+  //
+  // READ, REWRITTEN, THEN SENT - not res.sendFile. The `<head>` the crawler
+  // needs depends on the path (shared/seo.ts), and sendFile streams the same
+  // bytes for every URL. The file is read per request rather than cached
+  // because a container that was redeployed under a long-lived process would
+  // otherwise keep serving the previous build's shell.
+  const indexPath = path.resolve(distPath, "index.html");
+  app.use("*", (req, res, next) => {
+    fs.promises
+      .readFile(indexPath, "utf-8")
+      .then(html => applySeoHead(html, req.originalUrl))
+      .then(page => {
+        res.status(200).set({ "Content-Type": "text/html" }).end(page);
+      })
+      .catch(next);
   });
 }

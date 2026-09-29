@@ -147,18 +147,35 @@ describe('an unanswerable question is null, never a comfortable default', () => 
 });
 
 describe('the build identity comes from one place', () => {
-  it('reuses buildCommit rather than reading the environment again', () => {
+  it('reuses the shared readers rather than resolving identity again', () => {
     // A second copy of this logic is how a console and a deployment gate come
     // to disagree about which commit is running.
-    expect(SOURCE).toContain("import { buildCommit } from '../_core/health'");
-    expect(SOURCE).toContain('commit: buildCommit()');
+    //
+    // Asserted as WHERE IT IMPORTS FROM and WHAT IT DOES NOT DO, rather than
+    // as an exact import line: the previous version pinned the literal string
+    // `import { buildCommit } from '../_core/health'` and broke the moment
+    // the build time and environment were served alongside the commit - which
+    // is the single-source rule being followed, not broken.
+    expect(SOURCE).toMatch(/import \{[^}]*\bbuildCommit\b[^}]*\} from '\.\.\/_core\/health'/);
+    expect(SOURCE).toContain('buildCommit()');
+    expect(SOURCE).toContain('buildTime()');
+    expect(SOURCE).toContain('buildEnvironment()');
+    // The point of the rule: no second resolution of any of the three.
     expect(SOURCE).not.toContain('RENDER_GIT_COMMIT');
+    expect(SOURCE).not.toContain('BUILD_COMMIT');
+    expect(SOURCE).not.toContain('NODE_ENV');
+    expect(SOURCE).not.toContain('build-info.json');
   });
 
-  it('reports the commit the version endpoint reports', async () => {
-    const { buildCommit } = await import('./_core/health');
+  it('reports exactly what the version endpoint reports', async () => {
+    const { buildCommit, buildTime, buildEnvironment } = await import('./_core/health');
     const health = await readOperationalHealth(stubDb(COUNTS) as never);
     expect(health.commit).toBe(buildCommit());
+    expect(health.buildTime).toBe(buildTime());
+    expect(health.environment).toBe(buildEnvironment());
+    // The abbreviation is derived from the same commit, never resolved twice.
+    expect(health.shortCommit).toBe(
+      health.commit === 'unknown' ? 'unknown' : health.commit.slice(0, 7));
   });
 });
 

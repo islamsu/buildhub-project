@@ -1,3 +1,4 @@
+import { LoadFailed, loadFailedCopy } from '@/components/LoadFailed';
 import { useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { trpc } from '@/lib/trpc';
@@ -16,7 +17,11 @@ export default function VendorNameChangeRequest() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
-  const { data: requests = [] } = trpc.profile.myVendorNameChanges.useQuery(undefined, { retry: false });
+  /*
+   * "No requests yet." while one is PENDING is how a provider submits a second.
+   */
+  const myRequests = trpc.profile.myVendorNameChanges.useQuery(undefined, { retry: false });
+  const requests = myRequests.data ?? [];
   const submitRequest = trpc.profile.requestVendorNameChange.useMutation({
     onSuccess: () => {
       setError(''); setNotice(ar ? 'تم إرسال طلب تغيير الاسم للمراجعة.' : 'Name change request submitted for review.');
@@ -67,7 +72,9 @@ export default function VendorNameChangeRequest() {
 
       <div>
         <p className="mb-2 text-sm font-medium">{ar ? 'طلباتي السابقة' : 'My requests'}</p>
-        {requests.length === 0 ? (
+        {myRequests.isError ? (
+          <LoadFailed {...loadFailedCopy(ar)} onRetry={() => void myRequests.refetch()} />
+        ) : requests.length === 0 ? (
           <p className="text-sm text-muted-foreground">{ar ? 'لا توجد طلبات بعد.' : 'No requests yet.'}</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border">

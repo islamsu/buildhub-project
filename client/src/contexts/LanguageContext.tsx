@@ -41,7 +41,6 @@ const translations: Record<Language, Record<string, string>> = {
     'features.title': 'Everything You Need to Build',
     'features.subtitle': 'One platform for every stage of your construction journey',
     'features.marketplace.title': 'Smart Marketplace',
-    'features.marketplace.desc': 'Browse thousands of products across materials, furniture, HVAC, and more with full specs and verified reviews.',
     'features.rfq.title': 'RFQ Engine',
     'features.rfq.desc': 'Post your requirements and receive competitive quotations from verified providers, then compare side by side.',
     'features.ai.title': 'AI Assistant Suite',
@@ -79,15 +78,13 @@ const translations: Record<Language, Record<string, string>> = {
     'roles.architect.desc': 'Present your designs, connect with clients, and manage project documentation.',
     'roles.architect.cta': 'Join as Architect',
     'roles.supplier': 'Supplier',
-    'roles.supplier.desc': 'List your products, receive orders, and reach thousands of construction professionals.',
+    'roles.supplier.desc': 'Publish your catalogue, receive requests that match your declared categories, and quote on them.',
     'roles.supplier.cta': 'Join as Supplier',
     'roles.pm': 'Project Manager',
     'roles.pm.desc': 'Oversee multiple projects, coordinate teams, and deliver on time and budget.',
     'roles.pm.cta': 'Join as PM',
-    // ── Testimonials ─────────────────────────────────────────────────────────
     // ── CTA Banner ───────────────────────────────────────────────────────────
     'cta.title': 'Ready to Build Smarter?',
-    'cta.subtitle': 'Join thousands of homeowners, contractors, and professionals already using BuildHub.',
     'cta.primary': 'Get Started Free',
     'cta.secondary': 'Learn More',
     // ── Footer ───────────────────────────────────────────────────────────────
@@ -192,6 +189,21 @@ const translations: Record<Language, Record<string, string>> = {
     // theirs, in whatever language they wrote it, and is passed through as-is.
     'notif.quotation.received.title': 'New quotation received',
     'notif.quotation.received.body': 'You received a new quotation for "{rfqTitle}".',
+    /*
+     * A price disappearing from a comparison with no explanation reads as a
+     * bug in the product rather than a decision by a supplier, so the
+     * withdrawal is announced.
+     *
+     * TWO BODIES, under the `.bodyNote` convention notificationText already
+     * uses: the supplier's reason is optional, and a sentence ending in a
+     * dangling colon is worse than no reason at all. The reason travels as
+     * `note` because that is the param the resolver looks at when it decides
+     * which body to render, and it is passed through verbatim - it is the
+     * supplier's own words, in whatever language they wrote them.
+     */
+    'notif.quotation.withdrawn.title': 'A quotation was withdrawn',
+    'notif.quotation.withdrawn.body': 'A supplier withdrew their quotation for "{rfqTitle}".',
+    'notif.quotation.withdrawn.bodyNote': 'A supplier withdrew their quotation for "{rfqTitle}": {note}',
     // The in-platform thread is the only contact channel between a customer and
     // a vendor, and nothing announced a message on it. The asker's identity is
     // deliberately absent from the product-question notification: that Q&A is
@@ -202,6 +214,21 @@ const translations: Record<Language, Record<string, string>> = {
     'notif.product.question.body': 'Someone asked a question about "{productName}".',
     'notif.product.answered.title': 'Your question was answered',
     'notif.product.answered.body': 'The supplier answered your question about "{productName}".',
+    // An answer a buyer relied on can now be CORRECTED, and they are told when
+    // it is. A supplier who answers "yes, we ship to Alexandria", takes the
+    // order and quietly changes it is exactly what this notice exists to stop.
+    'notif.product.answerEdited.title': 'An answer you asked about was updated',
+    'notif.product.answerEdited.body': 'The supplier changed their answer about "{productName}".',
+    // Moderation, told to the person whose words were acted on. Content
+    // removed from a public page with no word to its author is how moderation
+    // becomes something that happens TO people rather than something they can
+    // answer.
+    'notif.product.moderated.title': 'Something you posted was hidden',
+    'notif.product.moderated.body': 'BuildHub hid a product question or answer you posted.',
+    'notif.product.restored.title': 'Something you posted was restored',
+    'notif.product.restored.body': 'BuildHub restored a product question or answer you posted.',
+    'notif.product.reportResolved.title': 'Your report about a product question was reviewed',
+    'notif.product.reportResolved.body': 'The report was {statusKey}.',
     'notif.quotation.accepted.title': 'Quotation accepted',
     'notif.quotation.accepted.body': 'Your quotation for "{rfqTitle}" was accepted.',
     'notif.quotation.notSelected.title': 'Quotation not selected',
@@ -292,8 +319,12 @@ const translations: Record<Language, Record<string, string>> = {
     'svc.description': 'What the service includes',
     'svc.descriptionPlaceholder': 'Scope, materials, and anything a customer should know before asking for a quote.',
     'svc.pricingBasis': 'How you price it',
-    'svc.priceMin': 'Indicative price from (EGP)',
-    'svc.priceMax': 'Indicative price to (EGP)',
+    // THE UNIT IS NOT PART OF THE LABEL. A form field whose label spells out
+    // one market's currency is a hard-code in a place nobody greps - and it
+    // becomes a wrong instruction the day a supplier prices in anything else.
+    // The currency belongs beside the input, from the record.
+    'svc.priceMin': 'Indicative price from',
+    'svc.priceMax': 'Indicative price to',
     'svc.leadTime': 'Lead time',
     'svc.warranty': 'Warranty',
     'svc.days': 'days',
@@ -464,7 +495,7 @@ const translations: Record<Language, Record<string, string>> = {
     'project.type.other': 'Other',
     // ── Marketplace ──────────────────────────────────────────────────────────
     'market.title': 'Marketplace',
-    'market.subtitle': 'Browse thousands of products from verified suppliers',
+    'market.subtitle': 'Browse products and services from verified suppliers, with full specifications',
     'market.search': 'Search products, brands, categories...',
     'market.filter': 'Filter',
     'market.sort': 'Sort by',
@@ -489,7 +520,7 @@ const translations: Record<Language, Record<string, string>> = {
     'rfq.title_field': 'RFQ Title',
     'rfq.description': 'Describe your requirements in detail…',
     'rfq.category': 'Category',
-    'rfq.budget': 'Budget (EGP)',
+    'rfq.budget': 'Budget',
     'rfq.location': 'Location',
     'rfq.deadline': 'Deadline',
     'rfq.linkedProject': 'Link to a project (optional)',
@@ -754,6 +785,12 @@ const translations: Record<Language, Record<string, string>> = {
     'vendor.contact.note': 'Messages are exchanged on BuildHub. Direct phone numbers and email addresses are not published on vendor profiles.',
     'vendor.contact.self': 'This is your own public profile. This is the page clients see.',
     'vendor.contact.unavailable': 'This vendor is not accepting messages at the moment.',
+    /* A STOREFRONT IS PUBLIC; ACTING ON IT IS NOT. These say which, so a
+       signed-out reader is told what an account is for rather than being shown
+       a button that answers 401. */
+    'vendor.signedout.title': 'Sign in to contact this provider',
+    'vendor.signedout.body': 'Anyone can read this storefront. Messaging the provider, requesting a quote and saving them to a shortlist need a BuildHub account.',
+    'vendor.signedout.cta': 'Sign in or create an account',
     'vendor.catalogue': 'Published products',
     'profile.bio_placeholder': 'Tell customers about your business…',
     'profile.location_label': 'Location',
@@ -810,7 +847,7 @@ const translations: Record<Language, Record<string, string>> = {
     'review.success': 'Review submitted!',
     'review.rating_required': 'Please select a rating',
     // ── Quotation form ───────────────────────────────────────────────────────
-    'quote.price': 'Your Price (EGP)',
+    'quote.price': 'Your Price',
     'quote.timeline': 'Timeline (days)',
     'quote.warranty': 'Warranty',
     'quote.payment_terms': 'Payment Terms',
@@ -839,6 +876,8 @@ const translations: Record<Language, Record<string, string>> = {
     'common.update': 'Update',
     'common.remove': 'Remove',
     'common.status.active': 'Active',
+    /* A frozen account, named the same way the user directory names it. */
+    'common.status.frozen': 'Frozen',
     'common.status.pending': 'Pending',
     'common.status.completed': 'Completed',
     'common.status.cancelled': 'Cancelled',
@@ -849,7 +888,7 @@ const translations: Record<Language, Record<string, string>> = {
     'common.unverified': 'Unverified',
     'common.optional': 'Optional',
     'common.required': 'Required',
-    'common.egp': 'EGP',
+    'nav.marketing': 'Marketing Center',
     'common.days': 'days',
     'common.sort_by': 'Sort by',
     'common.no_results': 'No results found',
@@ -887,6 +926,7 @@ const translations: Record<Language, Record<string, string>> = {
     'common.accepted': 'Accepted',
     'common.rejected': 'Rejected',
     'common.pending': 'Pending',
+    'common.withdrawn': 'Withdrawn',
     'common.awarded': 'Awarded',
     'common.status.on_hold': 'On Hold',
     'common.status.in_progress': 'In Progress',
@@ -910,8 +950,6 @@ const translations: Record<Language, Record<string, string>> = {
     'vendorsDir.sortOrders': 'Most orders',
     'vendorsDir.sortExperience': 'Most experienced',
     'vendorsDir.countSuffix': 'vendors',
-    'vendorsDir.badgeTopRated': 'Top Rated',
-    'vendorsDir.badgeRecommended': 'Recommended',
     'vendorsDir.badgeNew': 'New',
     'vendorsDir.branchesSuffix': 'branches',
     'vendorsDir.responds': 'Responds',
@@ -1059,9 +1097,6 @@ const translations: Record<Language, Record<string, string>> = {
     'designersDir.sortProjects': 'Most projects',
     'designersDir.sortExperience': 'Most experienced',
     'designersDir.countSuffix': 'designers',
-    'designersDir.badgeAwardWinning': 'Award-Winning',
-    'designersDir.badgeTrending': 'Trending',
-    'designersDir.badgeRecommended': 'Recommended',
     'designersDir.teamSuffix': 'team',
     'designersDir.projectsSuffix': 'projects',
     'designersDir.yearsExpSuffix': 'yrs experience',
@@ -1079,8 +1114,6 @@ const translations: Record<Language, Record<string, string>> = {
     'finishingDir.sortProjects': 'Most projects',
     'finishingDir.sortYears': 'Most experienced',
     'finishingDir.countSuffix': 'companies',
-    'finishingDir.badgeTopRated': 'Top Rated',
-    'finishingDir.badgeFastResponse': 'Fast Response',
     'finishingDir.badgeNew': 'New',
     'finishingDir.completedSuffix': 'completed',
     'finishingDir.teamSuffix': 'team',
@@ -1098,7 +1131,21 @@ const translations: Record<Language, Record<string, string>> = {
     'marketHub.heroSubtitle': 'Discover products, evaluate suppliers, hire professionals, and request quotations — all in one connected construction ecosystem.',
     'marketHub.searchPlaceholder': 'Search products, vendors, designers, finishing companies…',
     'marketHub.sectionProductsTitle': 'Products',
-    'marketHub.sectionProductsDesc': 'Comprehensive catalog of building & finishing materials across 30+ categories',
+    // "30+ categories" was a figure nothing produced - the taxonomy holds
+    // nineteen. The description no longer counts anything; the card's own
+    // stat does, from the database.
+    'marketHub.sectionProductsDesc': 'Building and finishing materials from approved suppliers, listed by category and specification.',
+    'marketHub.productsLabel': 'Products',
+    'marketHub.listingsCount': '{n} listings',
+    'marketHub.listingsCountOne': '1 listing',
+    // English has two forms and Arabic four; the dictionaries must still carry
+    // the same keys, so these two map onto the plural English already uses.
+    'marketHub.listingsCountTwo': '{n} listings',
+    'marketHub.listingsCountMany': '{n} listings',
+    'marketHub.noListingsYet': 'No listings yet',
+    'marketHub.rfqTitle': "Can't find it in the catalogue?",
+    'marketHub.rfqDesc': 'Describe what your project needs and send one request to the suppliers who can quote it. You compare the responses side by side.',
+    'marketHub.rfqCta': 'Request quotations',
     'marketHub.categoriesLabel': 'Categories',
     'marketHub.sectionVendorsTitle': 'Vendors',
     'marketHub.sectionVendorsDesc': 'Directory of trusted suppliers and manufacturers across Egypt',
@@ -1155,7 +1202,6 @@ const translations: Record<Language, Record<string, string>> = {
     'marketHub.noReviewsYet': 'No reviews yet',
     'marketHub.featuredDesigners': 'Featured Designers',
     'marketHub.featuredCompanies': 'Featured Finishing Companies',
-    'marketHub.awardWinningTitle': 'Award-winning',
     'marketHub.projectsSuffix': 'projects',
     'marketHub.suggestionProductCategory': 'Product Category',
     'marketHub.suggestionVendor': 'Vendor',
@@ -1208,7 +1254,15 @@ const translations: Record<Language, Record<string, string>> = {
     'platform.new_project': 'New Project',
     'platform.portfolio': 'Portfolio',
     'platform.add_service': 'Add Service',
-    'platform.project_queue': 'Project Queue',
+    /*
+       "Project Queue" LABELLED TWO DIFFERENT SECTIONS. The project manager's
+       nav pointed it at their own projects and the engineer's at the lead
+       directory, so one word promised two things - and neither section's cards
+       did anything. The sections are now Managed Projects and Project
+       Opportunities, and the labels say which.
+    */
+    'platform.managed_projects': 'Managed Projects',
+    'platform.project_opportunities': 'Project Opportunities',
     'platform.recent_activity': 'Recent Activity',
     'platform.no_items': 'No items yet',
     'platform.open': 'Open',
@@ -1259,7 +1313,6 @@ const translations: Record<Language, Record<string, string>> = {
     'features.title': 'كل ما تحتاجه للبناء',
     'features.subtitle': 'منصة واحدة لكل مرحلة من رحلة البناء',
     'features.marketplace.title': 'سوق ذكي',
-    'features.marketplace.desc': 'تصفح آلاف المنتجات من مواد البناء والأثاث وأنظمة التكييف وغيرها مع مواصفات كاملة وتقييمات موثقة.',
     'features.rfq.title': 'محرك طلبات العروض',
     'features.rfq.desc': 'انشر متطلباتك واحصل على عروض تنافسية من مزودين موثقين، ثم قارن بينها جنباً إلى جنب.',
     'features.ai.title': 'مجموعة مساعد الذكاء الاصطناعي',
@@ -1297,15 +1350,13 @@ const translations: Record<Language, Record<string, string>> = {
     'roles.architect.desc': 'قدّم تصاميمك وتواصل مع العملاء وأدر وثائق المشروع.',
     'roles.architect.cta': 'انضم كمعماري',
     'roles.supplier': 'المورد',
-    'roles.supplier.desc': 'اعرض منتجاتك واستقبل الطلبات وتواصل مع آلاف المحترفين في البناء.',
+    'roles.supplier.desc': 'انشر كتالوجك، واستقبل الطلبات المطابقة لفئاتك المعلنة، وقدّم عروضك عليها.',
     'roles.supplier.cta': 'انضم كمورد',
     'roles.pm': 'مدير المشروع',
     'roles.pm.desc': 'أشرف على مشاريع متعددة ونسّق الفرق وسلّم في الوقت والميزانية المحددين.',
     'roles.pm.cta': 'انضم كمدير مشروع',
-    // ── Testimonials ─────────────────────────────────────────────────────────
     // ── CTA Banner ───────────────────────────────────────────────────────────
     'cta.title': 'هل أنت مستعد للبناء بذكاء؟',
-    'cta.subtitle': 'انضم إلى آلاف أصحاب المنازل والمقاولين والمحترفين الذين يستخدمون BuildHub بالفعل.',
     'cta.primary': 'ابدأ مجاناً',
     'cta.secondary': 'اعرف المزيد',
     // ── Footer ───────────────────────────────────────────────────────────────
@@ -1406,12 +1457,23 @@ const translations: Record<Language, Record<string, string>> = {
     // ملاحظة: نص المراجع الحر يمرَّر كما هو - هو كلامه بلغته.
     'notif.quotation.received.title': 'عرض سعر جديد',
     'notif.quotation.received.body': 'وصلك عرض سعر جديد على "{rfqTitle}".',
+    'notif.quotation.withdrawn.title': 'تم سحب عرض سعر',
+    'notif.quotation.withdrawn.body': 'سحب أحد المورّدين عرض السعر المقدَّم على "{rfqTitle}".',
+    'notif.quotation.withdrawn.bodyNote': 'سحب أحد المورّدين عرض السعر المقدَّم على "{rfqTitle}": {note}',
     'notif.message.received.title': 'رسالة جديدة',
     'notif.message.received.body': 'أرسل لك {senderName} رسالة.',
     'notif.product.question.title': 'سؤال جديد على منتجك',
     'notif.product.question.body': 'طرح أحدهم سؤالاً عن "{productName}".',
     'notif.product.answered.title': 'تمت الإجابة على سؤالك',
     'notif.product.answered.body': 'أجاب المورد على سؤالك عن "{productName}".',
+    'notif.product.answerEdited.title': 'تم تحديث إجابة سألت عنها',
+    'notif.product.answerEdited.body': 'غيّر المورد إجابته عن "{productName}".',
+    'notif.product.moderated.title': 'تم إخفاء محتوى نشرته',
+    'notif.product.moderated.body': 'أخفت بيلدهَب سؤالًا أو إجابة عن منتج نشرتها.',
+    'notif.product.restored.title': 'تمت إعادة إظهار محتوى نشرته',
+    'notif.product.restored.body': 'أعادت بيلدهَب إظهار سؤال أو إجابة عن منتج نشرتها.',
+    'notif.product.reportResolved.title': 'تمت مراجعة بلاغك عن سؤال منتج',
+    'notif.product.reportResolved.body': 'تم {statusKey} البلاغ.',
     'notif.quotation.accepted.title': 'تم قبول عرض السعر',
     'notif.quotation.accepted.body': 'تم قبول عرض سعرك على "{rfqTitle}".',
     'notif.quotation.notSelected.title': 'لم يتم اختيار عرض السعر',
@@ -1485,8 +1547,8 @@ const translations: Record<Language, Record<string, string>> = {
     'svc.description': 'ما تشمله الخدمة',
     'svc.descriptionPlaceholder': 'نطاق العمل والخامات وأي تفاصيل يحتاج العميل معرفتها قبل طلب عرض السعر.',
     'svc.pricingBasis': 'طريقة التسعير',
-    'svc.priceMin': 'سعر استرشادي من (ج.م)',
-    'svc.priceMax': 'سعر استرشادي إلى (ج.م)',
+    'svc.priceMin': 'سعر استرشادي من',
+    'svc.priceMax': 'سعر استرشادي إلى',
     'svc.leadTime': 'مدة التنفيذ',
     'svc.warranty': 'الضمان',
     'svc.days': 'يوم',
@@ -1655,7 +1717,7 @@ const translations: Record<Language, Record<string, string>> = {
     'project.type.other': 'أخرى',
     // ── Marketplace ──────────────────────────────────────────────────────────
     'market.title': 'السوق',
-    'market.subtitle': 'تصفح آلاف المنتجات من موردين موثقين',
+    'market.subtitle': 'تصفح المنتجات والخدمات من موردين موثّقين، بمواصفات كاملة',
     'market.search': 'ابحث عن منتجات، علامات تجارية، فئات...',
     'market.filter': 'تصفية',
     'market.sort': 'ترتيب حسب',
@@ -1680,7 +1742,7 @@ const translations: Record<Language, Record<string, string>> = {
     'rfq.title_field': 'عنوان الطلب',
     'rfq.description': 'صف متطلباتك بالتفصيل…',
     'rfq.category': 'الفئة',
-    'rfq.budget': 'الميزانية (جنيه)',
+    'rfq.budget': 'الميزانية',
     'rfq.location': 'الموقع',
     'rfq.deadline': 'الموعد النهائي',
     'rfq.linkedProject': 'ربط بمشروع (اختياري)',
@@ -1935,6 +1997,9 @@ const translations: Record<Language, Record<string, string>> = {
     'vendor.contact.note': 'تتم المراسلة داخل BuildHub. أرقام الهاتف والبريد الإلكتروني المباشرة غير منشورة في ملفات المزودين.',
     'vendor.contact.self': 'هذا ملفك العام. هذه هي الصفحة التي يراها العملاء.',
     'vendor.contact.unavailable': 'هذا المورد لا يستقبل الرسائل حالياً.',
+    'vendor.signedout.title': 'سجّل الدخول للتواصل مع هذا المزود',
+    'vendor.signedout.body': 'يمكن لأي شخص قراءة هذا المتجر. أما مراسلة المزود وطلب عرض سعر وإضافته إلى قائمتك فتتطلب حساباً في بيلد هَب.',
+    'vendor.signedout.cta': 'سجّل الدخول أو أنشئ حساباً',
     'vendor.catalogue': 'المنتجات المنشورة',
     'profile.bio_placeholder': 'أخبر العملاء عن نشاطك التجاري…',
     'profile.location_label': 'الموقع',
@@ -1991,7 +2056,7 @@ const translations: Record<Language, Record<string, string>> = {
     'review.success': 'تم إرسال التقييم!',
     'review.rating_required': 'يرجى اختيار تقييم',
     // ── Quotation form ───────────────────────────────────────────────────────
-    'quote.price': 'سعرك (جنيه)',
+    'quote.price': 'سعرك',
     'quote.timeline': 'الجدول الزمني (أيام)',
     'quote.warranty': 'الضمان',
     'quote.payment_terms': 'شروط الدفع',
@@ -2020,6 +2085,7 @@ const translations: Record<Language, Record<string, string>> = {
     'common.update': 'تحديث',
     'common.remove': 'إزالة',
     'common.status.active': 'نشط',
+    'common.status.frozen': 'مُجمَّد',
     'common.status.pending': 'قيد الانتظار',
     'common.status.completed': 'مكتمل',
     'common.status.cancelled': 'ملغي',
@@ -2030,7 +2096,7 @@ const translations: Record<Language, Record<string, string>> = {
     'common.unverified': 'غير موثق',
     'common.optional': 'اختياري',
     'common.required': 'مطلوب',
-    'common.egp': 'جنيه',
+    'nav.marketing': 'مركز التسويق',
     'common.days': 'يوم',
     'common.sort_by': 'ترتيب حسب',
     'common.no_results': 'لا توجد نتائج',
@@ -2068,6 +2134,7 @@ const translations: Record<Language, Record<string, string>> = {
     'common.accepted': 'مقبول',
     'common.rejected': 'مرفوض',
     'common.pending': 'قيد الانتظار',
+    'common.withdrawn': 'مسحوب',
     'common.awarded': 'تم الترسية',
     'common.status.on_hold': 'معلق',
     'common.status.in_progress': 'قيد التنفيذ',
@@ -2091,8 +2158,6 @@ const translations: Record<Language, Record<string, string>> = {
     'vendorsDir.sortOrders': 'الأكثر طلبات',
     'vendorsDir.sortExperience': 'الأقدم خبرة',
     'vendorsDir.countSuffix': 'مورد',
-    'vendorsDir.badgeTopRated': 'الأعلى تقييماً',
-    'vendorsDir.badgeRecommended': 'موصى به',
     'vendorsDir.badgeNew': 'جديد',
     'vendorsDir.branchesSuffix': 'فرع',
     'vendorsDir.responds': 'يرد خلال',
@@ -2236,9 +2301,6 @@ const translations: Record<Language, Record<string, string>> = {
     'designersDir.sortProjects': 'الأكثر مشاريع',
     'designersDir.sortExperience': 'الأكثر خبرة',
     'designersDir.countSuffix': 'مصمم',
-    'designersDir.badgeAwardWinning': 'حائز على جوائز',
-    'designersDir.badgeTrending': 'رائج',
-    'designersDir.badgeRecommended': 'موصى به',
     'designersDir.teamSuffix': 'فرد',
     'designersDir.projectsSuffix': 'مشروع',
     'designersDir.yearsExpSuffix': 'سنة خبرة',
@@ -2256,8 +2318,6 @@ const translations: Record<Language, Record<string, string>> = {
     'finishingDir.sortProjects': 'الأكثر مشاريع',
     'finishingDir.sortYears': 'الأقدم خبرة',
     'finishingDir.countSuffix': 'شركة',
-    'finishingDir.badgeTopRated': 'الأعلى تقييماً',
-    'finishingDir.badgeFastResponse': 'استجابة سريعة',
     'finishingDir.badgeNew': 'جديد',
     'finishingDir.completedSuffix': 'مشروع منجز',
     'finishingDir.teamSuffix': 'فرد',
@@ -2275,7 +2335,19 @@ const translations: Record<Language, Record<string, string>> = {
     'marketHub.heroSubtitle': 'اكتشف المنتجات، وقيّم الموردين، ووظف المحترفين، واطلب عروض الأسعار — كل ذلك في منظومة بناء متكاملة.',
     'marketHub.searchPlaceholder': 'ابحث عن منتجات، موردين، مصممين، شركات تشطيب…',
     'marketHub.sectionProductsTitle': 'المنتجات',
-    'marketHub.sectionProductsDesc': 'كتالوج شامل لمواد البناء والتشطيب من أكثر من 30 فئة',
+    'marketHub.sectionProductsDesc': 'مواد بناء وتشطيب من موردين معتمدين، مصنّفة حسب الفئة والمواصفات.',
+    'marketHub.productsLabel': 'منتج',
+    // Arabic counts a noun four different ways. "1 منتج" and "2 منتج" are
+    // both wrong, and a marketplace that gets its own product noun wrong in
+    // its own language is not a first-class Arabic product.
+    'marketHub.listingsCount': '{n} منتجات',
+    'marketHub.listingsCountOne': 'منتج واحد',
+    'marketHub.listingsCountTwo': 'منتجان',
+    'marketHub.listingsCountMany': '{n} منتجًا',
+    'marketHub.noListingsYet': 'لا توجد منتجات بعد',
+    'marketHub.rfqTitle': 'لم تجد ما تبحث عنه في الكتالوج؟',
+    'marketHub.rfqDesc': 'اشرح ما يحتاجه مشروعك وأرسل طلباً واحداً إلى الموردين القادرين على تسعيره، ثم قارن العروض جنباً إلى جنب.',
+    'marketHub.rfqCta': 'اطلب عروض أسعار',
     'marketHub.categoriesLabel': 'فئة',
     'marketHub.sectionVendorsTitle': 'الموردون',
     'marketHub.sectionVendorsDesc': 'دليل الموردين والمصنعين الموثوقين في مصر',
@@ -2329,7 +2401,6 @@ const translations: Record<Language, Record<string, string>> = {
     'marketHub.noReviewsYet': 'لا توجد مراجعات بعد',
     'marketHub.featuredDesigners': 'مصممون مميزون',
     'marketHub.featuredCompanies': 'شركات تشطيب مميزة',
-    'marketHub.awardWinningTitle': 'حائز على جوائز',
     'marketHub.projectsSuffix': 'مشروع',
     'marketHub.suggestionProductCategory': 'فئة منتجات',
     'marketHub.suggestionVendor': 'مورد',
@@ -2382,7 +2453,8 @@ const translations: Record<Language, Record<string, string>> = {
     'platform.new_project': 'مشروع جديد',
     'platform.portfolio': 'معرض الأعمال',
     'platform.add_service': 'إضافة خدمة',
-    'platform.project_queue': 'قائمة المشاريع',
+    'platform.managed_projects': 'المشاريع التي أديرها',
+    'platform.project_opportunities': 'فرص المشاريع',
     'platform.recent_activity': 'النشاط الأخير',
     'platform.no_items': 'لا توجد عناصر بعد',
     'platform.open': 'مفتوح',

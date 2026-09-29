@@ -28,6 +28,24 @@ export function LoadFailed({ text, onRetry, retryText }: { text: string; onRetry
   );
 }
 
+/**
+ * THE SAME SENTENCE, WHERE A BLOCK WILL NOT FIT.
+ *
+ * A dropdown's result list is three lines tall; dropping a centred block with
+ * an icon and a Retry button into it pushes the field off the screen. This is
+ * the same statement at the size the surface has, and it reads from the same
+ * copy, so the two cannot drift into saying different things about the same
+ * failure. Retrying a typeahead is what typing another character already does.
+ */
+export function LoadFailedInline({ text }: { text: string }) {
+  return (
+    <p className="flex items-start gap-2 px-3 py-3 text-sm text-destructive" role="alert" data-testid="section-failed-inline">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>{text}</span>
+    </p>
+  );
+}
+
 /** The same sentence, in both languages, wherever a section fails. */
 export function loadFailedCopy(ar: boolean) {
   return {

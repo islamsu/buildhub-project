@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { HttpError } from '@shared/_core/errors';
 import express from 'express';
 import type { AddressInfo } from 'net';
 import type { User } from '../drizzle/schema';
@@ -306,9 +307,36 @@ describe('/manus-storage/* (live Express route — real HTTP requests)', () => {
   });
 
   it('rejects an unauthenticated request with 401', async () => {
-    (sdk.authenticateRequest as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no session'));
+    /*
+     * HttpError, NOT a bare Error, and the difference is the whole point.
+     *
+     * The authenticator raises HttpError for a genuine authentication failure
+     * - no session, a bad token, an expired one. This test used to reject with
+     * `new Error('no session')`, which is what a BROKEN CHECK looks like, and
+     * it passed only because the proxy treated every failure as "not signed
+     * in". It was asserting the defect.
+     */
+    (sdk.authenticateRequest as ReturnType<typeof vi.fn>)
+      .mockRejectedValue(new HttpError(401, 'no session'));
     const res = await fetch(`${baseUrl}/manus-storage/registration/1/x_abc.pdf`);
     expect(res.status).toBe(401);
+  });
+
+  it('reports an outage as 503, NOT as "authentication required"', async () => {
+    /*
+     * A signed-in person whose own file could not be checked - because the
+     * user store was unreachable, not because their session was bad - was
+     * told they were not signed in. They see a broken image and, if they act
+     * on the message, they sign in again and it happens again.
+     *
+     * Nothing is granted here: no user, no file. It just stops blaming the
+     * caller for our outage, using the code this proxy already speaks.
+     */
+    (sdk.authenticateRequest as ReturnType<typeof vi.fn>)
+      .mockRejectedValue(new Error('user store unreachable'));
+    const res = await fetch(`${baseUrl}/manus-storage/registration/1/x_abc.pdf`);
+    expect(res.status).toBe(503);
+    expect(await res.text()).not.toMatch(/authentication required/i);
   });
 
   it('rejects a logged-in but unauthorized user with 403 (cross-customer access denied)', async () => {

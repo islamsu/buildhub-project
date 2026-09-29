@@ -55,7 +55,23 @@ function stubDb() {
     // list the Messages page used to render) delivered messages to whichever
     // real account held that id. This stub returns one so these tests keep
     // testing what they are about, which is ATTACHMENT authorization.
-    select: vi.fn(() => ({ from: () => ({ innerJoin: () => ({ where: () => Promise.resolve([]) }), where: () => Promise.resolve([{ id: 2, accountStatus: 'active' }]) }) })),
+    /*
+     * `where` now has to answer a SECOND question. messages.send looks the
+     * sender/recipient pair up to decide whether this is a cold approach,
+     * which is charged against a much tighter limit than a reply. These tests
+     * are about ATTACHMENT PATHS, so the pair is given a history and the
+     * breadth limit stays out of the way - the limit itself is covered in
+     * messagingIntegrity.test.ts and contentAbuseControls.test.ts.
+     */
+    select: vi.fn(() => ({
+      from: () => ({
+        innerJoin: () => ({ where: () => Promise.resolve([]) }),
+        where: () => Object.assign(
+          Promise.resolve([{ id: 2, accountStatus: 'active' }]),
+          { limit: () => Promise.resolve([{ id: 1 }]) },
+        ),
+      }),
+    })),
   });
   return values;
 }

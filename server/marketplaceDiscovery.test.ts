@@ -43,13 +43,13 @@ function section(id: string): string {
 describe('every headline count on the hub counts something real', () => {
   it('THE DESIGNERS CARD COUNTS DESIGNERS, not a list of disciplines', () => {
     const body = section('designers');
-    expect(body).toContain('stat: `${designers.length}`');
+    expect(body).toContain('designers.length');
     expect(body, 'the constant is back').not.toContain('DESIGN_CATEGORIES.length');
   });
 
   it('and the finishing card counts finishing providers', () => {
     const body = section('finishing');
-    expect(body).toContain('stat: `${finishing.length}`');
+    expect(body).toContain('finishing.length');
     expect(body, 'the constant is back').not.toContain('FINISHING_CATEGORIES.length');
   });
 
@@ -71,22 +71,83 @@ describe('every headline count on the hub counts something real', () => {
     expect(hits[1], 'the Arabic label is an English fallback').toMatch(/[؀-ۿ]/);
   });
 
-  it('the other two cards were already honest and are untouched', () => {
-    expect(section('products')).toContain('stat: `${productCategories.length}`');
-    expect(section('vendors')).toContain('stat: `${directory.length}`');
+  it('the vendors card was already honest and is untouched', () => {
+    expect(section('vendors')).toContain('directory.length');
+  });
+
+  /**
+   * THE PRODUCTS CARD COUNTED THE WRONG NOUN.
+   *
+   * It was honest - `productCategories.length` really was the number of
+   * categories - but it sat in the slot the cards beside it use for a count
+   * of real entities, so the row read as a catalogue size. The owner asked
+   * for the item count back. It now comes from the server, counted with the
+   * marketplace's own visibility predicate.
+   */
+  it('the products card counts PRODUCTS, from the server', () => {
+    const products = section('products');
+    expect(products).toContain('platformStats?.publicProducts');
+    expect(products, 'the headline is the category count again')
+      .not.toMatch(/stat: countOrUnknown\([^)]*productCategories\.length/);
+    expect(products).toContain("statLabel: t('marketHub.productsLabel')");
+    const hits = [...LANG.matchAll(/'marketHub\.productsLabel': '([^']+)'/g)].map(m => m[1]);
+    expect(hits, 'the label is not translated in both languages').toHaveLength(2);
+    expect(hits[1], 'the Arabic label is an English fallback').toMatch(/[؀-ۿ]/);
+  });
+
+  it('the category count survives as the SECONDARY line, and only when known', () => {
+    const products = section('products');
+    expect(products).toContain('productCategories.length');
+    // A dash in the headline over "19 categories" underneath would be the
+    // same substitution in a smaller font.
+    expect(products).toContain('taxonomyFailed || taxonomyLoading || productCategories.length === 0');
   });
 
   it('NO SECTION COUNTS A COMPILED-IN CONSTANT', () => {
     // The rule, over the whole block rather than card by card, so a new
     // section cannot quietly reintroduce it.
+    //
+    // Matched on the counted EXPRESSION rather than on one spelling of the
+    // template literal. Every stat now goes through `countOrUnknown`, because
+    // an empty array was being counted exactly like a constant was - see the
+    // test below - and pinning the old `stat: ${x.length}` form would have
+    // failed on the fix rather than on a regression.
     const sections = HUB.slice(HUB.indexOf('const sections = ['), HUB.indexOf('EDITORIAL FEATURED') > -1
       ? HUB.indexOf('EDITORIAL FEATURED') : HUB.length);
-    const stats = [...sections.matchAll(/stat: `\$\{([^}]+)\}`/g)].map(m => m[1]);
+    const stats = [...sections.matchAll(/stat: ([^\n]+),/g)].map(m => m[1]);
     expect(stats.length, 'the stats are gone').toBe(4);
     for (const expression of stats) {
       expect(expression, `${expression} is a constant, not a count of anything real`)
-        .not.toMatch(/^[A-Z_]+\.length$/);
+        .not.toMatch(/[A-Z_]{4,}\.length/);
+      // A count of a client-side array (`.length`) or a figure the server
+      // counted. What is forbidden is a literal: `stat: '30+'` is the defect
+      // this guard exists for, and it would pass a looser rule.
+      expect(expression, `${expression} does not count anything`)
+        .toMatch(/\.length|platformStats\?\.\w+/);
+      expect(expression, `${expression} is a hardcoded figure`)
+        .not.toMatch(/countOrUnknown\([^,]+,[^,]+,\s*['"`\d]/);
     }
+  });
+
+  it('AND NO SECTION COUNTS A REQUEST THAT FAILED', () => {
+    // The same defect from the other side. `directory` and `taxonomy` both
+    // default to an empty value, so a failed or in-flight request rendered a
+    // confident "0 vendors" on a PUBLIC page - a statement about the size of
+    // the business, made because a request did not come back. A count is a
+    // claim, and so is a zero.
+    const sections = HUB.slice(HUB.indexOf('const sections = ['), HUB.indexOf('EDITORIAL FEATURED') > -1
+      ? HUB.indexOf('EDITORIAL FEATURED') : HUB.length);
+    const stats = [...sections.matchAll(/stat: ([^\n]+),/g)].map(m => m[1]);
+    for (const expression of stats) {
+      expect(expression, `${expression} counts an empty default as a real zero`)
+        .toContain('countOrUnknown(');
+    }
+    // And the helper must really consult the query state rather than being a
+    // rename of the old template literal.
+    expect(HUB).toContain('const countOrUnknown = (failed: boolean, loading: boolean, value: number) =>');
+    expect(HUB).toMatch(/failed \|\| loading \? '\u2014'/);
+    expect(HUB, 'the directory query must report failure').toContain('isError: directoryFailed');
+    expect(HUB, 'the taxonomy query must report failure').toContain('isError: taxonomyFailed');
   });
 });
 
@@ -104,7 +165,12 @@ describe('the chips stay what they are', () => {
     // The defect CAT found: 33 browse chips sharing no values with the 19 the
     // write path accepted, so clicking one could never find a product.
     expect(section('products')).toBeTruthy();
-    expect(HUB).toContain("trpc.marketplace.categories.useQuery({ view: 'public' })");
+    // The rule being asserted is WHICH source the chips come from, not how the
+    // query is configured - and the previous spelling pinned the whole
+    // argument list despite saying so, which is why adding `withCounts` to it
+    // failed here. Matched on the call and on the view, separately.
+    expect(HUB).toContain('trpc.marketplace.categories.useQuery(');
+    expect(HUB).toMatch(/categories\.useQuery\(\{[^}]*view: 'public'/);
     expect(HUB, 'a third product-category list is back').not.toContain('PRODUCT_CATEGORIES');
   });
 });

@@ -90,11 +90,75 @@ export default function AIAssistantPage() {
   // re-derives permission on every request regardless.
   const search = useSearch();
   const requestedProjectId = (() => {
-    const raw = new URLSearchParams(search).get('project');
+    const params = new URLSearchParams(search);
+    /*
+     * TWO SPELLINGS, ONE MEANING.
+     *
+     * `?project=` is the original hand-off from the project page. The shared
+     * AskAiAbout affordance writes `?subject=project&id=` instead, which is the
+     * one contract every other surface now uses - and when the project page
+     * moved to it, the SELECTOR stopped being preselected, so `ai.chat` lost
+     * the project context even though the suggestions still had it. Both are
+     * read here so the link shape can be uniform without losing the thing the
+     * link was for.
+     */
+    const raw = params.get('project')
+      ?? (params.get('subject') === 'project' ? params.get('id') : null);
     const id = Number(raw);
     return raw && Number.isInteger(id) && id > 0 ? String(id) : null;
   })();
   const [projectId, setProjectId] = useState<string>('none');
+
+  /**
+   * ── A CLICK GIVES CONTEXT, AND A DRAFT. IT NEVER ASKS. ────────────────
+   *
+   * `draft` is text placed in the composer for the person to read, edit and
+   * then send if they want to. It is a request carrying a nonce, so choosing the
+   * same suggestion twice fills twice.
+   *
+   * Nothing on this page may call `handleSend` on the user's behalf any more.
+   * The tool cards and the suggestion chips both go through here.
+   */
+  const [draft, setDraft] = useState<{ text: string; nonce: number } | null>(null);
+  const offer = (text: string) => setDraft({ text, nonce: Date.now() });
+
+  /**
+   * THE SUBJECT A CLICK ELSEWHERE IN THE PRODUCT HANDED OVER.
+   *
+   * `/ai?subject=request&id=42`. A SELECTOR, exactly like `?project=` above:
+   * the server re-derives whether this account may see that object and falls
+   * back to the general suggestions when it may not, so naming an id in the
+   * address bar reveals nothing about whether it exists.
+   */
+  const subjectParam = (() => {
+    const params = new URLSearchParams(search);
+    const kind = params.get('subject');
+    const rawId = params.get('id');
+    const id = Number(rawId);
+    const known = ['service', 'category', 'request', 'quotation', 'provider', 'boq_item', 'project'];
+    if (!kind || !known.includes(kind)) return null;
+    return {
+      subject: kind as 'service' | 'category' | 'request' | 'quotation' | 'provider' | 'boq_item' | 'project',
+      subjectId: rawId && Number.isInteger(id) && id > 0 ? id : undefined,
+      subtype: params.get('subtype') ?? undefined,
+    };
+  })();
+
+  /**
+   * SUGGESTIONS, DERIVED SERVER-SIDE from the object, the session role, the
+   * workflow stage and what this viewer is permitted to see. The six fixed
+   * strings this replaces were offered to a contractor looking at a request
+   * they could bid on.
+   */
+  const suggestionQuery = trpc.ai.suggestions.useQuery(
+    subjectParam
+      ? { subject: subjectParam.subject, ...(subjectParam.subjectId ? { subjectId: subjectParam.subjectId } : {}), ...(subjectParam.subtype ? { subtype: subjectParam.subtype } : {}) }
+      : projectId !== 'none'
+        ? { subject: 'project' as const, subjectId: Number(projectId) }
+        : { subject: 'general' as const },
+    { enabled: Boolean(me) },
+  );
+  const suggestions = suggestionQuery.data?.suggestions ?? [];
   useEffect(() => {
     if (!requestedProjectId) return;
     if (projectId !== 'none') return;
@@ -175,7 +239,23 @@ export default function AIAssistantPage() {
                   data-testid={`ai-tool-${mode.id}`}
                   aria-disabled={aiUnavailable}
                   className={`border-border ${aiUnavailable ? 'opacity-50 pointer-events-none' : 'card-hover cursor-pointer hover:border-primary/30'}`}
-                  onClick={() => { if (!aiUnavailable) handleSend(t(mode.promptKey)); }}
+                  /*
+                   * OFFERS, DOES NOT ASK. This was
+                   * `handleSend(t(mode.promptKey))` - one click put the
+                   * product's own sentence into the transcript as the user's
+                   * question and submitted it. Now it fills the composer, where
+                   * the person can read it, change it, or ignore it.
+                   */
+                  onClick={() => { if (!aiUnavailable) offer(t(mode.promptKey)); }}
+                  role="button"
+                  tabIndex={aiUnavailable ? -1 : 0}
+                  onKeyDown={event => {
+                    if (aiUnavailable) return;
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      offer(t(mode.promptKey));
+                    }
+                  }}
                 >
                   <CardContent className="p-4 text-center">
                     <Icon className="w-6 h-6 mx-auto mb-2 text-primary" />
@@ -185,6 +265,47 @@ export default function AIAssistantPage() {
               );
             })}
           </div>
+
+          {/*
+            * ── CONTEXT-AWARE SUGGESTIONS ────────────────────────────────
+            *
+            * Derived server-side from the selected object, this account's role,
+            * the workflow stage and what this viewer may see. A `prompt`
+            * suggestion FILLS the composer; a `navigate` suggestion goes
+            * somewhere and asks nothing. There is no third kind, and in
+            * particular none that submits.
+            */}
+          {suggestions.length > 0 && (
+            <div className="mb-6" data-testid="ai-context-suggestions">
+              <p className="mb-2 text-center text-sm text-muted-foreground">
+                {t('ai.suggestions.title')}
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {suggestions.map(suggestion => suggestion.kind === 'navigate' && suggestion.href ? (
+                  <Button key={suggestion.id} variant="outline" size="sm" asChild
+                    data-testid={`ai-suggestion-navigate-${suggestion.id}`}>
+                    <Link href={suggestion.href} className="gap-1.5">
+                      {lang === 'ar' ? suggestion.labelAr : suggestion.labelEn}
+                      <ArrowRight className="size-3.5 rtl:rotate-180" />
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button
+                    key={suggestion.id}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={aiUnavailable}
+                    data-testid={`ai-suggestion-prompt-${suggestion.id}`}
+                    /* FILLS. Never sends - see the block comment above. */
+                    onClick={() => offer((lang === 'ar' ? suggestion.promptAr : suggestion.promptEn) ?? '')}
+                  >
+                    {lang === 'ar' ? suggestion.labelAr : suggestion.labelEn}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Real routes only. A button that goes nowhere teaches people the
               assistant's suggestions are decorative. */}
@@ -203,6 +324,9 @@ export default function AIAssistantPage() {
             <AIChatBox
               messages={messages.filter(m => m.role !== 'system')}
               onSendMessage={handleSend}
+              /* The composer's contents when a suggestion is chosen. Filling,
+                 not sending: the person still has to submit. */
+              draft={draft}
               isLoading={chatMutation.isPending}
               disabled={aiUnavailable}
               placeholder={lang === 'ar' ? 'اسأل عن أي شيء في البناء والتشطيب...' : 'Ask anything about construction...'}

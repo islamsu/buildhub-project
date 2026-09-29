@@ -1,4 +1,7 @@
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatMoney } from '@shared/money';
+import AskAiAbout from '@/components/AskAiAbout';
+import { currencyForMarket } from '@shared/markets';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +14,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { trpc } from '@/lib/trpc';
+import {
+  capabilitiesFor, isProjectRole, type ProjectCapability,
+} from '@shared/projectAccess';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { OpenDisputeDialog } from '@/components/OpenDisputeDialog';
 import { useState } from 'react';
@@ -60,6 +66,19 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
   const [logForm, setLogForm] = useState({ description: '', weather: '', workers: '' });
 
   const { data: project, refetch: refetchProject } = trpc.projects.get.useQuery({ id: projectId }, { enabled: isAuthenticated && projectId > 0 });
+  /**
+   * THE PROJECT'S OWN CURRENCY, which its expense log is denominated in.
+   *
+   * This page hard-coded "EGP" in three places. The expense log is the
+   * canonical source of project spend (CLAUDE.md §15), so a spend figure
+   * labelled with whatever the page happened to compile in is a number
+   * nobody can trust the moment a project is anywhere else.
+   *
+   * `currencyForMarket` is the fallback for a project written before 0058
+   * gave the column a value, and it resolves to exactly what that project
+   * already meant.
+   */
+  const projectCurrency = (project as any)?.currency || currencyForMarket((project as any)?.marketCode);
   const { data: tasks, refetch: refetchTasks } = trpc.projects.tasks.useQuery({ projectId }, { enabled: isAuthenticated && projectId > 0 });
   const { data: milestones, refetch: refetchMs } = trpc.projects.milestones.useQuery({ projectId }, { enabled: isAuthenticated && projectId > 0 });
   const { data: expenses, refetch: refetchExp } = trpc.projects.expenses.useQuery({ projectId }, { enabled: isAuthenticated && projectId > 0 });
@@ -112,6 +131,33 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
   if (loading) return null;
   if (!isAuthenticated) { window.location.href = '/auth?mode=login'; return null; }
 
+  /*
+   * ── WHAT THIS PERSON MAY ACTUALLY DO HERE ────────────────────────────
+   *
+   * The server has always sent `myProjectRole` on the project record, and its
+   * own comment says why: "the caller's own capacity travels with the record
+   * so the UI can render the right controls". Nothing read it. So a member
+   * added as a VIEWER was shown the status dropdown, the Expenses section and
+   * Add Expense - and the server refused every one, correctly. The
+   * authorization was sound; the screen was lying.
+   *
+   * Found by the reachability census (scripts/reachability-census.mjs), which
+   * looks for exactly this: a value computed for a purpose that never
+   * materialised. Same shape as `projects.spent`.
+   *
+   * ONE DERIVATION, from the shared matrix, used by every control on this
+   * page - including the team tab, which had grown its own copy from
+   * `projects.members.myCapabilities`. Two ways of asking the same question
+   * is how they come to give different answers.
+   *
+   * THIS IS NOT THE ENFORCEMENT. Every procedure still checks for itself;
+   * hiding a control the server would refuse is about not lying to the
+   * person, not about security.
+   */
+  const myCapabilities = capabilitiesFor(
+    isProjectRole(project?.myProjectRole) ? project.myProjectRole : 'viewer');
+  const can = (capability: ProjectCapability) => myCapabilities.includes(capability);
+
   const totalExpenses = expenses?.reduce((s, e) => s + Number(e.amount), 0) ?? 0;
   const doneTasks = tasks?.filter(t => t.status === 'done').length ?? 0;
   const totalTasks = tasks?.length ?? 0;
@@ -145,7 +191,7 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                 <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
                   {project.location && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{project.location}</span>}
                   <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" />{lang === 'ar' ? 'أُنشئ ' : 'Created '}{new Date(project.createdAt).toLocaleDateString()}</span>
-                  {project.budget && <span className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" />{lang === 'ar' ? 'الميزانية: ' : 'Budget: '}{t('common.egp')} {Number(project.budget).toLocaleString()}</span>}
+                  {project.budget && <span className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" />{lang === 'ar' ? 'الميزانية: ' : 'Budget: '}{formatMoney(project.budget, projectCurrency, lang)}</span>}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -158,20 +204,29 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                     re-derives what this account may see and picks among that,
                     so naming a project here cannot reach one the session does
                     not already permit. */}
-                <Button variant="outline" size="sm" className="gap-1.5" data-testid="project-ai-help" onClick={() => window.open(`/ai?project=${projectId}`, '_blank')}>
-                  <Bot className="w-4 h-4" /> {lang === 'ar' ? 'مساعدة AI' : 'AI Help'}
-                </Button>
+                {/* MOVED TO THE CANONICAL AFFORDANCE. This opened a new tab on
+                    `/ai?project=`, which the assistant still honours; the shared
+                    component uses the one `?subject=&id=` contract every other
+                    surface now uses, and navigates in place so the reader keeps
+                    their history. */}
+                <AskAiAbout
+                  subject="project" id={projectId} lang={lang === 'ar' ? 'ar' : 'en'}
+                  label={lang === 'ar' ? 'مساعدة AI' : 'AI Help'} />
                 <Button variant="outline" size="sm" className="gap-1.5" data-testid="project-open-dispute" onClick={() => setDisputeOpen(true)}>
                   <Flag className="w-4 h-4" /> {lang === 'ar' ? 'فتح نزاع' : 'Open dispute'}
                 </Button>
+                {/* Changing a project's state is 'manage'. A viewer saw this
+                    dropdown, changed it, and was refused. */}
+                {can('manage') && (
                 <Select value={project.status ?? 'planning'} onValueChange={v => updateProject.mutate({ id: projectId, status: v as any })}>
-                  <SelectTrigger className="w-36 h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectTrigger data-testid="project-status-select" className="w-36 h-9 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {['planning', 'active', 'on_hold', 'completed', 'cancelled'].map(s => (
                       <SelectItem key={s} value={s} className="capitalize">{lang === 'ar' ? {'planning':'تخطيط','active':'نشط','on_hold':'متوقف','completed':'مكتمل','cancelled':'ملغي'}[s] ?? s : s.replace('_', ' ')}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                )}
               </div>
             </div>
 
@@ -180,8 +235,8 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
               {[
                 { label: t('project.progress'), value: `${project.progress ?? 0}%`, icon: TrendingUp, color: 'text-blue-500', bg: 'bg-blue-50', extra: <Progress value={project.progress ?? 0} className="h-1 mt-1" /> },
                 { label: t('project.tasks'), value: `${doneTasks}/${totalTasks}`, icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-50' },
-                { label: t('project.budget'), value: project.budget ? `${t('common.egp')} ${Number(project.budget).toLocaleString()}` : '—', icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-50' },
-                { label: t('project.budget_used'), value: `${t('common.egp')} ${totalExpenses.toLocaleString()}`, icon: BarChart3, color: 'text-purple-500', bg: 'bg-purple-50' },
+                { label: t('project.budget'), value: formatMoney(project.budget, projectCurrency, lang) ?? '—', icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-50' },
+                { label: t('project.budget_used'), value: formatMoney(totalExpenses, projectCurrency, lang) ?? '—', icon: BarChart3, color: 'text-purple-500', bg: 'bg-purple-50' },
               ].map(s => (
                 <Card key={s.label}>
                   <CardContent className="p-4 flex items-center gap-3">
@@ -203,12 +258,18 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
               <TabsList className="mb-6 flex-wrap h-auto gap-1">
                 <TabsTrigger value="tasks" className="gap-1.5"><CheckCircle2 className="w-4 h-4" /> {t('project.tasks')} ({totalTasks})</TabsTrigger>
                 <TabsTrigger value="milestones" className="gap-1.5"><Flag className="w-4 h-4" /> {t('project.milestones')} ({milestones?.length ?? 0})</TabsTrigger>
-                <TabsTrigger value="expenses" className="gap-1.5"><DollarSign className="w-4 h-4" /> {t('project.expenses')}</TabsTrigger>
+                {/* FINANCE IS NOT PART OF READ, deliberately: a contractor
+                    working on a job has no business reading what the customer
+                    paid everyone else. The tab itself is withheld, not just
+                    the button inside it. */}
+                {can('finance') && (
+                <TabsTrigger value="expenses" className="gap-1.5" data-testid="project-tab-expenses"><DollarSign className="w-4 h-4" /> {t('project.expenses')}</TabsTrigger>
+                )}
                 <TabsTrigger value="logs" className="gap-1.5"><BookOpen className="w-4 h-4" /> {t('project.daily_logs')}</TabsTrigger>
                 <TabsTrigger value="documents" className="gap-1.5"><FileText className="w-4 h-4" /> {t('project.documents')}</TabsTrigger>
                 <TabsTrigger value="operations" className="gap-1.5"><BarChart3 className="w-4 h-4" /> {lang === 'ar' ? 'عمليات المشروع' : 'Project Operations'}</TabsTrigger>
                 <TabsTrigger value="reviews" className="gap-1.5"><Star className="w-4 h-4" /> {t('review.tab_label')}</TabsTrigger>
-                <TabsTrigger value="team" className="gap-1.5"><Users className="w-4 h-4" /> {t('project.team')}</TabsTrigger>
+                <TabsTrigger value="team" className="gap-1.5" data-testid="project-tab-team"><Users className="w-4 h-4" /> {t('project.team')}</TabsTrigger>
               </TabsList>
 
               {/* Tasks */}
@@ -328,11 +389,20 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
               </TabsContent>
 
               {/* Expenses */}
+              {/* The CONTENT is gated as well as the trigger. Radix will
+                  render a TabsContent whose value is selected however it was
+                  selected - including a stale `defaultValue` or a direct
+                  manipulation - so gating the trigger alone leaves the spend
+                  one step away from somebody who may not read it. */}
+              {can('finance') && (
               <TabsContent value="expenses">
                 <div className="flex justify-between items-center mb-4">
                   <div>
                     <h3 className="font-semibold">{lang === 'ar' ? 'متتبع المصروفات' : 'Expense Tracker'}</h3>
-                    <p className="text-sm text-muted-foreground">Total: EGP {totalExpenses.toLocaleString()}</p>
+                    {/* The PROJECT's currency, from the project. An expense log denominated
+    in whatever the page happened to hard-code is a spend figure nobody
+    can trust across markets. */}
+                    <p className="text-sm text-muted-foreground">Total: {formatMoney(totalExpenses, projectCurrency, lang) ?? totalExpenses.toLocaleString()}</p>
                   </div>
                   <Dialog open={expOpen} onOpenChange={setExpOpen}>
                     <DialogTrigger asChild>
@@ -343,7 +413,7 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                       <div className="space-y-3 mt-2">
                         <Input placeholder="Category (e.g. Materials, Labor)" value={expForm.category} onChange={e => setExpForm(f => ({ ...f, category: e.target.value }))} />
                         <Input placeholder={lang === 'ar' ? 'الوصف' : 'Description'} value={expForm.description} onChange={e => setExpForm(f => ({ ...f, description: e.target.value }))} />
-                        <Input type="number" placeholder="Amount (EGP)" value={expForm.amount} onChange={e => setExpForm(f => ({ ...f, amount: e.target.value }))} />
+                        <Input type="number" placeholder={lang === 'ar' ? `المبلغ (${projectCurrency})` : `Amount (${projectCurrency})`} value={expForm.amount} onChange={e => setExpForm(f => ({ ...f, amount: e.target.value }))} />
                         <Button className="w-full" onClick={() => addExpense.mutate({ projectId, ...expForm, amount: parseFloat(expForm.amount) })} disabled={addExpense.isPending || !expForm.amount}>
                           Record Expense
                         </Button>
@@ -369,11 +439,12 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                           <p className="text-xs text-muted-foreground">{exp.category} · {exp.date ? new Date(exp.date as unknown as Date).toLocaleDateString() : "Today"}</p>
                         </div>
                       </div>
-                      <p className="font-semibold text-sm">EGP {Number(exp.amount).toLocaleString()}</p>
+                      <p className="font-semibold text-sm">{formatMoney(exp.amount, exp.currency ?? projectCurrency, lang) ?? Number(exp.amount).toLocaleString()}</p>
                     </div>
                   ))}
                 </div>
               </TabsContent>
+              )}
 
               {/* Daily Logs */}
               <TabsContent value="logs">
@@ -444,7 +515,7 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
               <TabsContent value="team">
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <h3 className="font-semibold">{t('project.team')}</h3>
-                  {team?.myCapabilities?.includes('manage') && (
+                  {can('manage') && (
                     <div className="flex flex-wrap items-end gap-2">
                       <div>
                         <label className="text-xs text-muted-foreground" htmlFor="member-id">{lang === 'ar' ? 'رقم المستخدم' : 'User id'}</label>

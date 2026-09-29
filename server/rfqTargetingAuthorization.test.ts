@@ -838,8 +838,21 @@ describe('sensitive-field leakage (Phase 4B.3 §15)', () => {
 
     const [vendor] = await appRouter.createCaller(anonCtx()).marketplace.vendors();
 
+    /*
+     * `businessName` IS AN APPROVED PUBLIC COLUMN, added deliberately.
+     *
+     * The directory returned only `users.name`, so a supplier trading as a
+     * registered company appeared in a B2B marketplace under the name of
+     * whoever opened the account. The business name is public by
+     * construction: a directory row is an APPROVED provider - the visibility
+     * filter requires it - and `profile.getPublic` already returns the same
+     * value on their storefront. This exposes nothing a buyer cannot
+     * already read one click away.
+     *
+     * The forbidden list below is the part that must not move, and has not.
+     */
     expect(Object.keys(vendor).sort()).toEqual(
-      ['averageRating', 'avatar', 'bio', 'categories', 'createdAt', 'id', 'location', 'name', 'reviewCount', 'userRole', 'verified'].sort(),
+      ['averageRating', 'avatar', 'bio', 'businessName', 'categories', 'createdAt', 'id', 'location', 'name', 'reviewCount', 'userRole', 'verified'].sort(),
     );
     for (const forbidden of ['passwordHash', 'invitationToken', 'email', 'phone', 'openId', 'accountStatus', 'frozenReason', 'isDummy', 'plan', 'providerCustomerRef']) {
       expect(vendor, forbidden).not.toHaveProperty(forbidden);
@@ -882,12 +895,30 @@ describe('sensitive-field leakage (Phase 4B.3 §15)', () => {
     // and whether opening it will cost a lead. It names nobody - not the
     // requester, not who else was invited - which is what keeps it on the safe
     // side of the line this test draws.
+    //
+    // `currency` joins it because a budget with no currency beside it is a
+    // number the reader has to guess at, and the guess is wrong the moment a
+    // second market exists. It is a property of the REQUEST, already public on
+    // `rfq.list` and `rfq.summary`, and it says nothing about who raised it.
+    //
+    // `responseState` joins it because it is derived entirely from THIS
+    // provider's own relationship to the request - their invitation, their
+    // opened enquiry, their quotation. A rival's quotation cannot move it, so
+    // it carries no competitor information; it is what lets the Opportunity
+    // Centre and My Leads be two disjoint halves of one queue.
     expect(Object.keys(items[0]).sort()).toEqual(
-      ['alreadyOpened', 'budget', 'category', 'createdAt', 'deadline', 'id', 'invited', 'location', 'status', 'title'].sort(),
+      ['alreadyOpened', 'budget', 'category', 'createdAt', 'currency', 'deadline',
+       'id', 'invited', 'location', 'responseState', 'status', 'title'].sort(),
     );
     for (const forbidden of ['requesterId', 'email', 'phone', 'contactName', 'description']) {
       expect(items[0], forbidden).not.toHaveProperty(forbidden);
     }
+    // THE TWO NEW FIELDS SAY NOTHING ABOUT ANYBODY ELSE. Asserted as values,
+    // not merely as key names: a `responseState` of 'won' or 'lost' would mean
+    // the list had started reporting the outcome of a competition to a
+    // provider who has not even opened the request.
+    expect(['available', 'invited']).toContain(items[0].responseState);
+    expect(JSON.stringify(items[0])).not.toMatch(/competitor|otherSupplier|quotationCount/i);
   });
 
   it('the limit-reached message states the caller own allowance and nothing about anyone else', async () => {

@@ -18,6 +18,7 @@ import { lazy, Suspense } from "react";
  */
 const MarketplaceHub = lazy(() => import("./pages/MarketplaceHub"));
 const VendorsDirectory = lazy(() => import("./pages/VendorsDirectory"));
+const SavedPage = lazy(() => import("./pages/SavedPage"));
 const DesignersDirectory = lazy(() => import("./pages/DesignersDirectory"));
 const FinishingDirectory = lazy(() => import("./pages/FinishingDirectory"));
 const HomeownerDashboard = lazy(() => import("./pages/HomeownerDashboard"));
@@ -38,6 +39,7 @@ const RFQDetail = lazy(() => import("./pages/RFQDetail"));
 const QuotationDetail = lazy(() => import("./pages/QuotationDetail"));
 const MessagesPage = lazy(() => import("./pages/MessagesPage"));
 const EnquiriesPage = lazy(() => import("./pages/EnquiriesPage"));
+const MarketingCenterPage = lazy(() => import("./pages/MarketingCenterPage"));
 const MyDisputes = lazy(() => import("./pages/MyDisputes"));
 const MySupport = lazy(() => import("./pages/MySupport"));
 const SupportTicketDetail = lazy(() => import("./pages/SupportTicketDetail"));
@@ -142,6 +144,10 @@ function Router() {
           they name instead of 404ing. */}
       <Route path={"/marketplace/vendors/:id"} component={RedirectToVendor} />
       <Route path={"/marketplace/vendors"} component={VendorsDirectory} />
+      {/* The buyer's shortlist. Any signed-in account can save - a
+          contractor sourcing materials is a buyer - so this is not gated to
+          one role's workspace. */}
+      <Route path={"/saved"} component={SavedPage} />
       <Route path={"/marketplace/designers/:id"} component={RedirectToVendor} />
       <Route path={"/marketplace/designers"} component={DesignersDirectory} />
       <Route path={"/marketplace/finishing/:id"} component={RedirectToVendor} />
@@ -162,6 +168,9 @@ function Router() {
           for a summary on the dashboard with a dedicated page behind it, and
           the enquiries page is where a notification's `?rfq=` deep link lands. */}
       <Route path={"/enquiries"} component={EnquiriesPage} />
+      {/* The supplier's Marketing Center (§89 item 16): a composition of
+          the canonical placement, analytics and showcase systems. */}
+      <Route path={"/marketing"} component={MarketingCenterPage} />
       {/* ORDER MATTERS: "/disputes/:id" before "/disputes" is not required by
           wouter's first-match, but keeping the specific one first matches the
           rest of this table and survives a later "/disputes/new".

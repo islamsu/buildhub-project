@@ -67,8 +67,15 @@ export type EnquirySource = (typeof ENQUIRY_SOURCES)[number];
  * provider who said no has made a decision, and showing it as "not started"
  * would invite them to be chased for work they already refused.
  */
-export const ENQUIRY_RESPONSE_STATES = ['available', 'opened', 'quoted', 'declined'] as const;
-export type EnquiryResponseState = (typeof ENQUIRY_RESPONSE_STATES)[number];
+// The canonical vocabulary lives in shared/ so the client's filter chips and
+// this query's CASE expression cannot drift apart - which they had, the
+// client offering four states over a queue that could return seven.
+import {
+  ENQUIRY_RESPONSE_STATES, ENQUIRY_SCOPES, statesForScope,
+  type EnquiryResponseState, type EnquiryScope,
+} from '../shared/enquiryStates';
+export { ENQUIRY_RESPONSE_STATES, ENQUIRY_SCOPES, statesForScope };
+export type { EnquiryResponseState, EnquiryScope };
 
 export const ENQUIRY_RFQ_STATUSES = ['open', 'closed', 'awarded'] as const;
 
@@ -78,6 +85,17 @@ export type EnquiryQueueRow = {
   category: string | null;
   location: string | null;
   budget: string | null;
+  /**
+   * WHAT THE BUDGET IS DENOMINATED IN, carried with the number it belongs to.
+   *
+   * The screen rendered `EGP {budget}` from a translation key, so a Saudi
+   * request would have been labelled in Egyptian pounds - a wrong number in
+   * front of somebody deciding what to bid. The currency is a property of
+   * the RFQ (CLAUDE.md §87: the RFQ decides the currency), so it travels
+   * with it rather than being supplied by the view.
+   */
+  currency: string | null;
+  marketCode: string | null;
   deadline: Date | null;
   rfqStatus: string;
   createdAt: Date;
@@ -98,6 +116,17 @@ export type EnquiryQueueRow = {
 export type EnquiryQueueFilters = {
   rfqStatus?: string | null;
   source?: EnquirySource | null;
+  /**
+   * WHICH HALF OF THE QUEUE, resolved from the shared partition rather than
+   * from a list the caller sends.
+   *
+   * The client asks for "opportunities" or "leads" and the server decides
+   * which states those are, so a caller cannot construct a pair of views
+   * that overlap - which is exactly what two independent lists on one screen
+   * did. Combined with `responseState` by AND: the scope is the view, the
+   * chip narrows within it.
+   */
+  scope?: EnquiryScope | null;
   responseState?: EnquiryResponseState | null;
   category?: string | null;
   from?: Date | null;
@@ -156,10 +185,82 @@ export function reachableFilter(declaredCategories: readonly string[]) {
 
 /** `source` and `responseState` as SQL, so the SAME rule can be filtered on and returned. */
 const sourceExpression = sql<string>`case when ${rfqSuppliers.id} is not null then 'invitation' else 'category' end`;
+/**
+ * THE END OF THE SUPPLIER'S COMMERCIAL ARC (§23).
+ *
+ * The queue could say a supplier had QUOTED and never whether they WON. That
+ * is the one outcome a supplier actually cares about, and the arc in §19 runs
+ * all the way to "buyer decision" - a pipeline that stops at "quoted" leaves
+ * its most important column blank.
+ *
+ * ORDER MATTERS, and it is decided by what is most specific rather than by
+ * what is most recent:
+ *
+ *   declined   the supplier said no. Their own act, so it outranks
+ *              everything - a declined invitation is not an open lead.
+ *   won        their CURRENT quotation was accepted.
+ *   lost       the request was AWARDED and their quotation was not the one.
+ *              Claimed only when both halves are true: an RFQ the customer
+ *              merely closed is not a competition anybody lost, and telling
+ *              a supplier they lost one would be a fabricated outcome (§68).
+ *   closed     the customer withdrew the request. The supplier's quotation
+ *              went nowhere, and saying so is different from saying they
+ *              were beaten.
+ *   quoted     a live quotation, no decision yet.
+ *
+ * ── AND THEN THE REQUEST ENDS WITHOUT THIS SUPPLIER IN IT ───────────────
+ *
+ * The four arms above all require a quotation, so a supplier who OPENED a
+ * lead and never bid on it fell straight through them to `opened` - and
+ * stayed there after the customer withdrew the request or awarded it to
+ * somebody else. An actionable-looking state over a request that can no
+ * longer be answered: the supplier's pipeline showed work waiting for them
+ * that had in fact concluded weeks ago, and an invitation they had never
+ * touched stayed in the Opportunity Centre being offered as takeable.
+ *
+ * A TERMINAL RFQ OUTCOME SUPERSEDES AN ACTIONABLE STATE. These two arms are
+ * placed AFTER every quotation arm and BEFORE `opened`/`invited`, which is
+ * the whole of the fix:
+ *
+ *   closed     the customer WITHDREW the request. True whether or not this
+ *              supplier quoted, so it is the same state either way - the
+ *              fact being reported is what the customer did.
+ *   unquoted   the request was AWARDED and this supplier has no quotation
+ *              on it. NOT `lost`: "Not selected" is a statement about a
+ *              competition, and telling a supplier they were beaten in one
+ *              they never entered is a fabricated outcome (§68). They did
+ *              not bid, and the honest label says exactly that.
+ *
+ * `declined` still outranks both, because it is the supplier's own recorded
+ * decision and a later award does not rewrite it.
+ *
+ *   opened     a paid `qualifiedEnquiries` row, OR an invitation the supplier
+ *              has acted on - `markInvitationViewed` moves it off 'invited'
+ *              the moment they open it. Reached only while the request is
+ *              still live, now that the two arms above exist.
+ *   invited    AN OFFER THEY HAVE NOT TAKEN. Checked after `opened` so that
+ *              opening an invitation leaves this state, and before the
+ *              catch-all so it is never confused with a category match. It
+ *              used to fall into `opened`, which told a supplier they had a
+ *              lead in their record that they had in fact never seen - and
+ *              put the untouched invitation on the same screen as the work
+ *              they had actually done.
+ *
+ * `quotations` is joined on `supersededAt IS NULL`, so this reads the
+ * CURRENT revision - a superseded quote that was rejected before being
+ * revised must not make a live bid read as lost.
+ */
 const responseStateExpression = sql<string>`case
   when ${rfqSuppliers.status} = 'declined' then 'declined'
+  when ${quotations.status} = 'accepted' then 'won'
+  when ${quotations.id} is not null and ${rfqs.status} = 'awarded' then 'lost'
+  when ${quotations.id} is not null and ${rfqs.status} = 'closed' then 'closed'
   when ${quotations.id} is not null then 'quoted'
-  when ${qualifiedEnquiries.id} is not null or ${rfqSuppliers.id} is not null then 'opened'
+  when ${rfqs.status} = 'closed' then 'closed'
+  when ${rfqs.status} = 'awarded' then 'unquoted'
+  when ${qualifiedEnquiries.id} is not null then 'opened'
+  when ${rfqSuppliers.status} = 'invited' then 'invited'
+  when ${rfqSuppliers.id} is not null then 'opened'
   else 'available' end`;
 
 function filterClause(filters: EnquiryQueueFilters) {
@@ -172,6 +273,12 @@ function filterClause(filters: EnquiryQueueFilters) {
   // hand-written `rfqSuppliers.id is not null` here would be a copy that drifts
   // the first time either definition changes.
   if (filters.source) clauses.push(sql`${sourceExpression} = ${filters.source}`);
+  // The scope, off the SAME expression for the same reason - one definition of
+  // what state a row is in, filtered on from two directions.
+  if (filters.scope && filters.scope !== 'all') {
+    const states = statesForScope(filters.scope);
+    clauses.push(sql`${responseStateExpression} in ${states}`);
+  }
   if (filters.responseState) clauses.push(sql`${responseStateExpression} = ${filters.responseState}`);
   if (filters.search) {
     const term = filters.search.trim().slice(0, MAX_SEARCH_LENGTH);
@@ -213,6 +320,8 @@ export async function listEnquiryQueue(db: Db, params: {
       category: rfqs.category,
       location: rfqs.location,
       budget: rfqs.budget,
+      currency: rfqs.currency,
+      marketCode: rfqs.marketCode,
       deadline: rfqs.deadline,
       rfqStatus: rfqs.status,
       createdAt: rfqs.createdAt,
@@ -264,7 +373,18 @@ export async function enquiryQueueSummary(db: Db, params: {
     .where(reachableFilter(params.declaredCategories))
     .groupBy(responseStateExpression);
 
-  const counts: Record<string, number> = { available: 0, opened: 0, quoted: 0, declined: 0, total: 0 };
+  /*
+   * SEEDED FROM THE CANONICAL LIST, not from a literal.
+   *
+   * This was `{ available, opened, quoted, declined }` - four of the states a
+   * queue that can now return eight, written out by hand. Every state the
+   * literal forgot came back `undefined` from a summary typed as returning
+   * numbers, so a chip reading `summary[state] ?? 0` printed a confident 0
+   * over a pipeline that had never been counted. Seeding from
+   * ENQUIRY_RESPONSE_STATES means a new state cannot be forgotten here.
+   */
+  const counts: Record<string, number> = { total: 0 };
+  for (const state of ENQUIRY_RESPONSE_STATES) counts[state] = 0;
   for (const row of rows as Array<{ state: string; count: number }>) {
     const value = Number(row.count ?? 0);
     counts[row.state] = value;

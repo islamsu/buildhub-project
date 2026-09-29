@@ -1,0 +1,107 @@
+BUILD  9be1c7d (local) built 2026-09-27T12:53:04.139Z  http://127.0.0.1:5401
+DATA   29 active products, sample #88 "Ordinary Portland Cement 42.5N", 3 approved providers, storefront #462
+PASS  1. there is a published storefront to reason about  [#462]
+PASS  2. the catalogue has public products to reason about  [29]
+
+── local (environment != production) ──
+PASS  3. / is noindex outside production  [noindex, nofollow]
+PASS  4. /marketplace is noindex outside production  [noindex, nofollow]
+PASS  5. /marketplace/products is noindex outside production  [noindex, nofollow]
+PASS  6. /marketplace/products/88 is noindex outside production  [noindex, nofollow]
+PASS  7. robots.txt disallows everything outside production
+PASS  8. and advertises no sitemap
+PASS  9. sitemap refuses without a configured origin  [HTTP 503]
+PASS  10. and does not answer with an empty urlset
+
+── production semantics ──
+BUILD  9be1c7d (production)  http://127.0.0.1:5487  [APP_ENV=production]
+PASS  11. the second process reports environment=production
+PASS  12. five public routes, five different titles  [5/5]
+PASS  13. each one names the product
+PASS  14. and four different descriptions
+PASS  15. a product page is titled with the product, before any JavaScript runs  [Ordinary Portland Cement 42.5N — BuildHub]
+PASS  16. and og:title agrees with it
+PASS  17. / is indexable in production, with one directive  [index, follow ×1]
+PASS  18. /marketplace is indexable in production, with one directive  [index, follow ×1]
+PASS  19. /marketplace/products is indexable in production, with one directive  [index, follow ×1]
+PASS  20. /marketplace/products/88 is indexable in production, with one directive  [index, follow ×1]
+PASS  21. the homepage canonical is the homepage  [https://buildhub.example/]
+PASS  22. the marketplace canonical is the marketplace  [https://buildhub.example/marketplace]
+PASS  23. a product canonical is that product  [https://buildhub.example/marketplace/products/88]
+PASS  24. and there is exactly one canonical tag  [×1]
+PASS  25. og:url agrees with the canonical
+PASS  26. a filtered listing canonicalises to the listing, not to itself  [https://buildhub.example/marketplace/products]
+PASS  27. the hard-coded homepage canonical is gone from every route
+PASS  28. /admin is noindex in production  [noindex, nofollow]
+PASS  29. /admin publishes no canonical URL  [×0]
+PASS  30. /admin/users/461 is noindex in production  [noindex, nofollow]
+PASS  31. /admin/users/461 publishes no canonical URL  [×0]
+PASS  32. /messages is noindex in production  [noindex, nofollow]
+PASS  33. /messages publishes no canonical URL  [×0]
+PASS  34. /rfq/8 is noindex in production  [noindex, nofollow]
+PASS  35. /rfq/8 publishes no canonical URL  [×0]
+PASS  36. /quotations/3 is noindex in production  [noindex, nofollow]
+PASS  37. /quotations/3 publishes no canonical URL  [×0]
+PASS  38. /settings is noindex in production  [noindex, nofollow]
+PASS  39. /settings publishes no canonical URL  [×0]
+PASS  40. /enquiries is noindex in production  [noindex, nofollow]
+PASS  41. /enquiries publishes no canonical URL  [×0]
+PASS  42. /marketing is noindex in production  [noindex, nofollow]
+PASS  43. /marketing publishes no canonical URL  [×0]
+PASS  44. /saved is noindex in production  [noindex, nofollow]
+PASS  45. /saved publishes no canonical URL  [×0]
+PASS  46. /projects/12 is noindex in production  [noindex, nofollow]
+PASS  47. /projects/12 publishes no canonical URL  [×0]
+PASS  48. /dashboard is noindex in production  [noindex, nofollow]
+PASS  49. /dashboard publishes no canonical URL  [×0]
+PASS  50. /provider is noindex in production  [noindex, nofollow]
+PASS  51. /provider publishes no canonical URL  [×0]
+PASS  52. /compliance is noindex in production  [noindex, nofollow]
+PASS  53. /compliance publishes no canonical URL  [×0]
+PASS  54. /catalogue is noindex in production  [noindex, nofollow]
+PASS  55. /catalogue publishes no canonical URL  [×0]
+PASS  56. /products/88/edit is noindex in production  [noindex, nofollow]
+PASS  57. /products/88/edit publishes no canonical URL  [×0]
+PASS  58. an unlisted path is noindex by default
+PASS  59. /vendor/:id is indexable in production now that the storefront is public  [index, follow]
+PASS  60. and its canonical is that storefront  [https://buildhub.example/vendor/462]
+PASS  61. robots.txt is served as text
+PASS  62. it allows crawling in production
+PASS  63. and names every authenticated prefix  [all present]
+PASS  64. and points at the sitemap
+PASS  65. sitemap.xml is served as XML  [HTTP 200 application/xml; charset=utf-8]
+PASS  66. it is a well-formed XML document
+PASS  67. it lists URLs  [40]
+PASS  68. every URL is absolute and on this origin
+PASS  69. and none is listed twice
+PASS  70. every ACTIVE product appears, and only those  [29 listed vs 29 active]
+PASS  71. including the sample product
+PASS  72. and no draft, withdrawn or archived product does  [1 non-active checked]
+PASS  73. every directory-visible storefront is published, and only those  [3 listed vs 3 visible]
+PASS  74. and nothing is withheld any more - the note that counted them is gone
+PASS  75. and no unapproved, frozen or deactivated provider is listed  [0 hidden checked]
+PASS  76. and the sitemap contradicts robots.txt nowhere  [consistent]
+PASS  77. every listed page answers 200 and declares itself indexable  [11/11]
+PASS  78. the rewritten shell still mounts the application
+PASS  79. and is a complete document
+PASS  80. the viewport no longer blocks pinch-zoom (WCAG 1.4.4)
+
+── database unavailable ──
+BUILD  9be1c7d (production)  http://127.0.0.1:5488  [DATABASE_URL points nowhere]
+PASS  81. the sitemap answers 503 when the catalogue is unreachable  [HTTP 503]
+PASS  82. it does NOT answer with a valid empty sitemap - that would state, in XML, that BuildHub has no catalogue
+PASS  83. and it says which of the two it is
+PASS  84. a product page still serves with no database  [HTTP 200]
+PASS  85. and falls back to the route title rather than failing or inventing a name  [Product specifications and supplier — BuildHub]
+PASS  86. robots.txt needs no database  [HTTP 200]
+
+── the provider storefront, signed out ──
+PASS  87. /vendor/462 shows a sign-in wall to a signed-out reader - so it is NOT public (§21/§37 finding)  [BuildHub Home Marketplace Get Quotes Pricing العربية Sign In Get Started Back OK Omar Khal]
+PASS  88. the storefront content is not rendered to a signed-out reader
+PASS  89. the marketplace tab names the marketplace, in English  [Marketplace — suppliers, products and services — BuildHub]
+PASS  90. and in Arabic it is Arabic, not a translated brand on an English title  [السوق — الموردون والمنتجات والخدمات — بيلد هَب]
+PASS  91. a product tab names the product  [Ordinary Portland Cement 42.5N — BuildHub]
+PASS  92. and two products do not share one title  [Ordinary Portland Cement 42.5N — BuildHub vs LED Panel Light 60x60 40W — BuildHub]
+
+BUILD  9be1c7d (local)
+RESULT 92 passed, 0 failed

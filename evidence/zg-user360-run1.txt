@@ -1,0 +1,47 @@
+BUILD  72f3b17 (local) built 2026-09-22T13:44:54.143Z  http://127.0.0.1:5401
+
+BUILD 72f3b17  env=local
+
+PASS  1. a real account to inspect  [#464]
+PASS  2. the snapshot loads  [HTTP 200]
+PASS  3. projects owned matches the database  [snapshot 0, db 0]
+PASS  4. projects member of matches the database  [snapshot 0, db 0]
+PASS  5. rfqs matches the database  [snapshot 0, db 0]
+PASS  6. quotations (current only) matches the database  [snapshot 0, db 0]
+PASS  7. qualified enquiries matches the database  [snapshot 0, db 0]
+PASS  8. products matches the database  [snapshot 16, db 16]
+PASS  9. live products matches the database  [snapshot 15, db 15]
+PASS  10. services matches the database  [snapshot 0, db 0]
+PASS  11. compliance documents matches the database  [snapshot 0, db 0]
+PASS  12. reviews received matches the database  [snapshot 0, db 0]
+PASS  13. disputes (both sides) matches the database  [snapshot 0, db 0]
+PASS  14. support tickets matches the database  [snapshot 0, db 0]
+PASS  15. referrals attributed matches the database  [snapshot 0, db 0]
+SKIP  16. a revised quotation counts once  [no superseded revisions in this dataset]
+PASS  17. the snapshot does not carry a compliance document URL
+PASS  18. the snapshot does not carry a stored file key
+PASS  19. the snapshot does not carry a dispute description
+PASS  20. the snapshot does not carry quotation commercial terms
+PASS  21. the snapshot does not carry a password hash
+PASS  22. the snapshot does not carry a reset token
+PASS  23. the "Overview" section exists  [Overview | Account | Business | Compliance | Activity | Benefits & Referrals | Trust & Support | Notes | Audit]
+PASS  24. the "Account" section exists  [Overview | Account | Business | Compliance | Activity | Benefits & Referrals | Trust & Support | Notes | Audit]
+PASS  25. the "Business" section exists  [Overview | Account | Business | Compliance | Activity | Benefits & Referrals | Trust & Support | Notes | Audit]
+PASS  26. the "Compliance" section exists  [Overview | Account | Business | Compliance | Activity | Benefits & Referrals | Trust & Support | Notes | Audit]
+PASS  27. the "Activity" section exists  [Overview | Account | Business | Compliance | Activity | Benefits & Referrals | Trust & Support | Notes | Audit]
+PASS  28. the "Benefits & Referrals" section exists  [Overview | Account | Business | Compliance | Activity | Benefits & Referrals | Trust & Support | Notes | Audit]
+PASS  29. the "Trust & Support" section exists  [Overview | Account | Business | Compliance | Activity | Benefits & Referrals | Trust & Support | Notes | Audit]
+PASS  30. the "Notes" section exists  [Overview | Account | Business | Compliance | Activity | Benefits & Referrals | Trust & Support | Notes | Audit]
+PASS  31. the "Audit" section exists  [Overview | Account | Business | Compliance | Activity | Benefits & Referrals | Trust & Support | Notes | Audit]
+PASS  32. the page is sectioned, not one long card - Business is not rendered until opened
+PASS  33. and opening it renders it
+PASS  34. the rendered product figure is the counted one  [screen 15]
+PASS  35. a domain with nothing in it says so rather than vanishing  [PROJECTS | 0 | Owned | 0 | Member of | No projects. | SOURCING | 0 | RFQs raised | 0 | Quotations sent | 0 | Accepted | ]
+PASS  36. Benefits & Referrals deep-links to Referral Management  [/admin/referrals]
+PASS  37. an unreachable server renders NO counted figures at all  [0 stat tiles]
+PASS  38. and says the read failed rather than showing an empty account
+PASS  39. a signed-in non-administrator cannot read the snapshot - not even their own  [HTTP 403]
+PASS  40. and an anonymous caller certainly cannot  [HTTP 401]
+
+39 passed, 0 failed
+

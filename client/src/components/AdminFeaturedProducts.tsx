@@ -1,3 +1,4 @@
+import { AdminUserLink } from '@/components/AdminEntityLink';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { productStatusLabel } from '@shared/productLifecycle';
 import { trpc } from '@/lib/trpc';
@@ -104,7 +105,7 @@ export default function AdminFeaturedProducts() {
                       {ar && p.nameAr ? p.nameAr : p.name}
                       <span className="text-muted-foreground"> #{p.id}</span>
                     </td>
-                    <td className="px-3 py-2 text-muted-foreground">{p.supplierName ?? `#${p.supplierId}`}</td>
+                    <td className="px-3 py-2 text-muted-foreground"><AdminUserLink id={p.supplierId} name={p.supplierName} /></td>
                     <td className="px-3 py-2">{p.category}</td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">

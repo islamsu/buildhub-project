@@ -1,5 +1,6 @@
 import { and, avg, count, eq, inArray } from 'drizzle-orm';
-import { projects, reviews, users } from '../drizzle/schema';
+import { products, projects, reviews, users } from '../drizzle/schema';
+import { publicProductFilter } from './productLifecycle';
 
 /**
  * THE NUMBERS ON THE FRONT DOOR.
@@ -29,6 +30,21 @@ export type PlatformStats = {
   registeredUsers: number;
   activeProjects: number;
   verifiedProviders: number;
+  /**
+   * HOW MANY THINGS A BUYER CAN ACTUALLY BROWSE.
+   *
+   * Counted with `publicProductFilter()` - THE CATALOGUE'S OWN RULE, not a
+   * second one written here. That matters more than it sounds: the headline
+   * "X Products" is a promise that clicking through to the marketplace shows
+   * X products, and the only way to keep that promise is to count with the
+   * predicate the marketplace lists with. Drafts, withdrawn and archived rows
+   * are therefore excluded, because they are excluded there.
+   *
+   * The Marketplace Products card used to show the number of CATEGORIES in
+   * this slot - a count of the browse vocabulary presented as the size of the
+   * catalogue. Nineteen categories and no products read as "19 Products".
+   */
+  publicProducts: number;
   /** Null until at least one review exists. Never a stand-in value. */
   satisfaction: { averageRating: number; reviewCount: number } | null;
 };
@@ -59,6 +75,7 @@ export async function getPlatformStats(db: any): Promise<PlatformStats> {
     eq(users.isDummy, false),
     inArray(users.userRole, [...PROVIDER_ROLES]),
   ));
+  const [productRow] = await db.select({ n: count() }).from(products).where(publicProductFilter());
   const [reviewRow] = await db.select({ n: count(), average: avg(reviews.rating) }).from(reviews);
 
   const reviewCount = Number(reviewRow?.n ?? 0);
@@ -66,6 +83,7 @@ export async function getPlatformStats(db: any): Promise<PlatformStats> {
     registeredUsers: Number(userRow?.n ?? 0),
     activeProjects: Number(projectRow?.n ?? 0),
     verifiedProviders: Number(providerRow?.n ?? 0),
+    publicProducts: Number(productRow?.n ?? 0),
     // The whole point: no reviews means no satisfaction figure, not 0% and not 98%.
     satisfaction: reviewCount > 0
       ? { averageRating: Math.round(Number(reviewRow.average ?? 0) * 10) / 10, reviewCount }
