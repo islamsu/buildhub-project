@@ -77,7 +77,7 @@ Dead param routes: **0**
 - `adminWith:settings.manage` — 2
 - `aiChatProcedure` — 1
 
-## Tables (64)
+## Tables (65)
 
 | Table | Columns | FK refs | NOT NULL | UNIQUE |
 |---|---|---|---|---|
@@ -90,7 +90,7 @@ Dead param routes: **0**
 | `tasks` | 13 | 3 | 3 | 0 |
 | `aiAttachments` | 10 | 1 | 6 | 0 |
 | `documents` | 16 | 4 | 5 | 0 |
-| `registrationDocuments` | 18 | 2 | 10 | 0 |
+| `registrationDocuments` | 19 | 2 | 10 | 0 |
 | `registrationDocumentSubmissions` | 15 | 1 | 9 | 0 |
 | `registrationReviewEvents` | 11 | 3 | 4 | 0 |
 | `productQuestions` | 17 | 4 | 4 | 0 |
@@ -130,11 +130,12 @@ Dead param routes: **0**
 | `qualifiedEnquiries` | 10 | 2 | 4 | 0 |
 | `testLoginTokens` | 11 | 3 | 5 | 1 |
 | `commercialAuditEvents` | 12 | 2 | 4 | 0 |
+| `providerMarkets` | 11 | 2 | 5 | 0 |
 | `vendorEntitlementOverrides` | 15 | 3 | 5 | 0 |
 | `fieldValueHistory` | 14 | 2 | 4 | 0 |
 | `projectMembers` | 12 | 4 | 5 | 0 |
 | `rfqSuppliers` | 14 | 3 | 5 | 0 |
-| `vendorProfiles` | 23 | 1 | 3 | 0 |
+| `vendorProfiles` | 25 | 1 | 3 | 0 |
 | `vendorNameChangeRequests` | 15 | 2 | 7 | 0 |
 | `adminNotes` | 9 | 1 | 6 | 0 |
 | `referrals` | 22 | 3 | 6 | 0 |

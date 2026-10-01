@@ -338,6 +338,16 @@ export const registrationDocuments = mysqlTable('registrationDocuments', {
   id:         int('id').autoincrement().primaryKey(),
   userId:     int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   documentType: varchar('documentType', { length: 100 }).notNull(),
+  /**
+   * WHICH MARKET THIS EVIDENCE WAS FILED FOR.
+   *
+   * Nullable: every document filed before this column existed was filed against
+   * a platform with one market and no concept of scoping, and NULL reads as
+   * "not market-scoped", which is exactly what those rows are. A document filed
+   * for a specific market from now on carries it, so a Saudi trade licence
+   * cannot be read as satisfying an Omani requirement.
+   */
+  marketCode: varchar('marketCode', { length: 2 }),
   displayName: varchar('displayName', { length: 255 }).notNull(),
   fileName:   varchar('fileName', { length: 255 }).notNull(),
   url:        text('url').notNull(),
@@ -1737,6 +1747,49 @@ export const commercialAuditEvents = mysqlTable('commercialAuditEvents', {
 // validated against that list at the boundary rather than by an enum here -
 // the same reasoning as analyticsEvents.eventType: the entitlement catalogue
 // changes far more often than the schema should.
+/**
+ * ── WHICH MARKETS A PROVIDER OPERATES IN, AND THEIR STATUS IN EACH ──────
+ *
+ * The row that makes "approved" a per-market fact instead of a global one.
+ *
+ * Before this table, `users.onboardingStatus` was the whole story: one flag,
+ * granted against the only compliance requirement set that exists (Egypt's).
+ * An approved provider was therefore approvable everywhere the moment a second
+ * market opened - the outcome the owner ruled out. Approval in Egypt must not
+ * imply approval in Saudi Arabia, UAE, Qatar, Kuwait, Bahrain or Oman, and
+ * approval in a GCC market must not imply approval in Egypt.
+ *
+ * One row per market the provider operates in, INCLUDING their primary - the
+ * primary is distinguished by `vendorProfiles.primaryMarketCode` pointing at
+ * it, not by being absent from here.
+ *
+ * Keyed on `userId` like every other provider-scoped table (vendorCategories,
+ * registrationDocuments), not on `vendorProfiles.id`.
+ */
+export const providerMarkets = mysqlTable('providerMarkets', {
+  id:         int('id').autoincrement().primaryKey(),
+  userId:     int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+  marketCode: varchar('marketCode', { length: 2 }).notNull(),
+  /**
+   * THE SAME FIVE STATES AS `users.onboardingStatus`, on purpose. A per-market
+   * approval is the same kind of decision as the global one, made by the same
+   * reviewers through the same queue, so a second vocabulary would only create
+   * a mapping nobody maintains.
+   */
+  status: mysqlEnum('status', ['not_started', 'under_review', 'update_required', 'approved', 'rejected'])
+    .default('not_started').notNull(),
+  reviewerNote: text('reviewerNote'),
+  reviewedBy: int('reviewedBy').references(() => users.id, { onDelete: 'set null', onUpdate: 'restrict' }),
+  reviewedAt: timestamp('reviewedAt'),
+  createdAt:  timestamp('createdAt').defaultNow().notNull(),
+  updatedAt:  timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  userMarketUnique: uniqueIndex('providerMarkets_userId_marketCode_unique').on(table.userId, table.marketCode),
+  // Drives discovery in the market -> provider direction, which is the hot
+  // path the canonical eligibility predicate reads.
+  marketStatusIdx: index('providerMarkets_market_status_idx').on(table.marketCode, table.status),
+}));
+
 export const vendorEntitlementOverrides = mysqlTable('vendorEntitlementOverrides', {
   id:        int('id').autoincrement().primaryKey(),
   userId:    int('userId').notNull().references(() => users.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
@@ -1949,6 +2002,31 @@ export const vendorProfiles = mysqlTable('vendorProfiles', {
   city:        varchar('city', { length: 120 }),
   /** PUBLIC. */
   country:     varchar('country', { length: 120 }),
+  /**
+   * WHERE THE BUSINESS IS REGISTERED. ISO 3166-1 alpha-2, deliberately WIDER
+   * than `MarketCode`: a business may be registered in a country BuildHub does
+   * not operate in and still serve a market it does. The two are not
+   * interchangeable even where the letters coincide.
+   *
+   * Nullable and never inferred from `country` above, which holds display
+   * strings - "Egypt", "EG", "Cairo, Egypt", blank - and guessing a legal
+   * jurisdiction from one of those is how a compliance decision gets made by a
+   * regex.
+   */
+  legalCountryCode: varchar('legalCountryCode', { length: 2 }),
+  /**
+   * THE MARKET THIS BUSINESS MAINLY WORKS IN. A `MarketCode`.
+   *
+   * A column rather than a flag on `providerMarkets`, because a boolean there
+   * can hold two primaries and MySQL has no partial unique index to prevent it.
+   * The remaining rule - that the primary must also be a served market - is an
+   * application invariant with a test.
+   *
+   * NOT backfilled from an existing approval. An Egypt approval proves
+   * BuildHub approved them for Egypt; it does not prove Egypt is where they
+   * mainly work, and those are different claims.
+   */
+  primaryMarketCode: varchar('primaryMarketCode', { length: 2 }),
   /** PUBLIC. */
   website:     varchar('website', { length: 255 }),
 

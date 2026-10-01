@@ -456,6 +456,13 @@
       "when": 1791000001000,
       "tag": "0064_rfq_item_snapshot_currency",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "5",
+      "when": 1791000002000,
+      "tag": "0065_provider_market_identity",
+      "breakpoints": true
     }
   ]
 }

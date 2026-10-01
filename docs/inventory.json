@@ -1976,7 +1976,7 @@
     {
       "ident": "registrationDocuments",
       "name": "registrationDocuments",
-      "columns": 18,
+      "columns": 19,
       "references": 2,
       "notNull": 10,
       "unique": 0
@@ -2294,6 +2294,14 @@
       "unique": 0
     },
     {
+      "ident": "providerMarkets",
+      "name": "providerMarkets",
+      "columns": 11,
+      "references": 2,
+      "notNull": 5,
+      "unique": 0
+    },
+    {
       "ident": "vendorEntitlementOverrides",
       "name": "vendorEntitlementOverrides",
       "columns": 15,
@@ -2328,7 +2336,7 @@
     {
       "ident": "vendorProfiles",
       "name": "vendorProfiles",
-      "columns": 23,
+      "columns": 25,
       "references": 1,
       "notNull": 3,
       "unique": 0
