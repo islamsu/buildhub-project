@@ -122,3 +122,4 @@ client/public/__manus__/version.json
 # stack, so this entry is a secret-safety measure and not only tidiness. The
 # evidence worth keeping is committed under evidence/ instead.
 /scratchpad/
+__pycache__/

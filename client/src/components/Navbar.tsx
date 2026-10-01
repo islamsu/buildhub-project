@@ -16,7 +16,7 @@ import { Menu, X, Bell, ChevronDown, Bookmark } from 'lucide-react';
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
-import { BuildHubLogo } from '@/components/brand/BuildHubLogo';
+import { RakizaLogo } from '@/components/brand/RakizaLogo';
 
 export default function Navbar() {
   const { lang, t, dir } = useLanguage();
@@ -94,7 +94,7 @@ export default function Navbar() {
               both - which was previously handled for the wordmark only, so the
               icon tile kept its gradient against the hero it was sitting on. */}
           <Link href="/" className="flex items-center gap-2 group" data-testid="brand-home-nav">
-            <BuildHubLogo tone={isTransparent ? 'inverse' : 'default'} size="md" />
+            <RakizaLogo tone={isTransparent ? 'inverse' : 'default'} size="md" />
           </Link>
 
           {/* Desktop Nav Links */}

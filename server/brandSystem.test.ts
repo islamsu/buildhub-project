@@ -42,6 +42,20 @@ const rel = (file: string) => file.slice(ROOT.length).replace(/^\/+/, '');
 
 const PALETTE = /\b(bg|text|border|from|to|via|ring)-(blue|amber|orange|green|purple|teal|emerald|sky|indigo|violet|rose|red|yellow|cyan|lime|pink|fuchsia)-[0-9]{2,3}\b/g;
 
+/**
+ * Minimal PNG header read. Enough to answer "is the file that ships actually
+ * the size the component claims", which is the only thing worth asserting
+ * about a binary from a test - and strictly more than the geometry heuristic
+ * this replaced, which measured SVG rects that no longer exist.
+ */
+function pngSize(file: string): { width: number; height: number } {
+  const buf = readFileSync(join(ROOT, file));
+  expect(buf.subarray(0, 8).toString('latin1'), `${file} is not a PNG`)
+    .toBe('\x89PNG\r\n\x1a\n');
+  expect(buf.subarray(12, 16).toString('latin1'), `${file} has no IHDR`).toBe('IHDR');
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+}
+
 describe('the logo has exactly one source', () => {
   it('no surface assembles a logo from a UI icon and a tinted box', () => {
     /*
@@ -56,10 +70,10 @@ describe('the logo has exactly one source', () => {
       if (rel(file).includes('components/brand/')) continue;
       const source = codeAbs(file);
       // A Lucide building glyph sitting inside a sized, tinted container next
-      // to the word BuildHub is the shape of a hand-rolled logo.
+      // to the brand name is the shape of a hand-rolled logo.
       const logoish =
         /Building2\s+className="w-[45] h-[45]/.test(source)
-        && /BuildHub/.test(source);
+        && /Rakiza|RAKIZA/.test(source);
       if (logoish) offenders.push(rel(file));
     }
     expect(offenders, 'a logo is being assembled outside components/brand/').toEqual([]);
@@ -71,43 +85,102 @@ describe('the logo has exactly one source', () => {
       'client/src/pages/Home.tsx',
       'client/src/pages/AuthPage.tsx',
     ]) {
-      expect(code(file), `${file} does not use BuildHubLogo`).toContain('BuildHubLogo');
+      expect(code(file), `${file} does not use RakizaLogo`).toContain('RakizaLogo');
     }
   });
 
-  it('the wordmark casing is fixed in one place, so it cannot drift', () => {
-    // BUILDHUB, Build Hub and buildhub are all one careless edit away when the
-    // word is typed per surface.
-    /* COMMENTS STRIPPED. The first version read the raw file and tripped on
-       this component's own heading, "THE BUILDHUB BRAND LOCK-UP" - a guard
-       that cannot tell code from the prose describing it teaches the next
-       person to delete the prose. */
-    const logo = code('client/src/components/brand/BuildHubLogo.tsx');
-    expect(logo).toContain('BuildHub');
-    expect(logo).not.toContain('BUILDHUB');
-    expect(logo).not.toMatch(/>\s*Build Hub\s*</);
+  it('nothing imports the retired BuildHub lock-up', () => {
+    // The rename is only safe if the old component is gone rather than
+    // orphaned next to the new one, waiting to be imported by habit.
+    for (const file of CLIENT) {
+      expect(codeAbs(file), `${rel(file)} still references the old lock-up`)
+        .not.toMatch(/BuildHubLogo|BuildHubMark|BuildHubWordmark/);
+    }
   });
 
-  it('the mark survives a favicon, because its members are thick enough', () => {
+  it('the brand forms are fixed in one place, so they cannot drift', () => {
     /*
-     * THE ONE MEASURABLE THING ABOUT A LOGO. On a 32-unit grid a 6-unit member
-     * is 18.75% of the width, so at 24px it renders about 4.5px and the open
-     * bay stays open. Thin-stroke marks fail here: at 16px a 2-unit member is
-     * a single pixel and the whole thing turns to grey mush.
+     * RAKIZA, Rakiza, RAKEZA and rakiza are all one careless edit away when
+     * the word is typed per surface. shared/brand.ts owns the forms; this
+     * asserts the distinction the design actually depends on - capitals are
+     * the drawn logotype, title case is what goes in a sentence.
      */
-    const logo = read('client/src/components/brand/BuildHubLogo.tsx');
-    expect(logo).toContain('viewBox="0 0 32 32"');
-    const widths = [...logo.matchAll(/width="(\d+)"\s+height="(\d+)"/g)]
-      .flatMap(m => [Number(m[1]), Number(m[2])]);
-    expect(widths.length).toBeGreaterThan(0);
-    const thinnest = Math.min(...widths);
-    expect(thinnest / 32, 'a member is too thin to survive 24px').toBeGreaterThanOrEqual(0.15);
+    const brand = code('shared/brand.ts');
+    expect(brand).toContain("BRAND_LOGOTYPE = 'RAKIZA'");
+    expect(brand).toContain("BRAND_NAME_EN = 'Rakiza'");
+    expect(brand).toContain("BRAND_NAME_AR = 'ركيزة'");
+    // The old Arabic brand was a transliteration. It must not survive here.
+    expect(brand).not.toContain('بيلد هَب');
   });
 
-  it('documents where final artwork goes instead of pretending to be final', () => {
-    const logo = read('client/src/components/brand/BuildHubLogo.tsx');
-    expect(logo).toContain('BRAND_ARTWORK_NOTE');
-    expect(logo).toMatch(/placeholder/i);
+  it('every asset the component can request actually ships', () => {
+    /*
+     * The component picks a path from BRAND_ASSETS by tone. A path that is
+     * right in TypeScript and absent on disk is a broken image in the header
+     * of every page, and nothing else in the suite would catch it.
+     */
+    const brand = read('shared/brand.ts');
+    const paths = [...brand.matchAll(/'(\/brand\/[a-z0-9.-]+)'/g)].map(m => m[1]);
+    expect(paths.length, 'BRAND_ASSETS looks empty').toBeGreaterThanOrEqual(8);
+    for (const p of paths) {
+      expect(() => readFileSync(join(ROOT, 'client/public', p)), `${p} is missing`).not.toThrow();
+    }
+  });
+
+  it('the declared intrinsic sizes are the real ones, so the box is reserved correctly', () => {
+    /*
+     * width and height on the img are what stop the header shifting when the
+     * logo lands. Declaring sizes that do not match the file reserves the
+     * WRONG box, which is a layout shift that looks deliberate - worse than
+     * declaring none. CLS <= 0.1 is a release gate (§63).
+     */
+    const brand = read('shared/brand.ts');
+    const declared = (key: string) => {
+      const m = brand.match(new RegExp(`${key}:\\s*\\{\\s*width:\\s*(\\d+),\\s*height:\\s*(\\d+)`));
+      expect(m, `${key} has no declared size`).toBeTruthy();
+      return { width: Number(m![1]), height: Number(m![2]) };
+    };
+    expect(pngSize('client/public/brand/rakiza-lockup.png')).toEqual(declared('lockup'));
+    expect(pngSize('client/public/brand/rakiza-lockup-inverse.png')).toEqual(declared('lockup'));
+    expect(pngSize('client/public/brand/rakiza-mark.png')).toEqual(declared('mark'));
+    expect(pngSize('client/public/brand/rakiza-mark-inverse.png')).toEqual(declared('mark'));
+  });
+
+  it('the favicon and the social card are the sizes those slots require', () => {
+    // 32 because that is what a tab renders; 180 because that is the Apple
+    // touch icon size; 1200x630 because that is the Open Graph card.
+    expect(pngSize('client/public/brand/favicon-32.png')).toEqual({ width: 32, height: 32 });
+    expect(pngSize('client/public/brand/apple-touch-icon.png')).toEqual({ width: 180, height: 180 });
+    expect(pngSize('client/public/brand/rakiza-og.png')).toEqual({ width: 1200, height: 630 });
+  });
+
+  it('the artwork is derived from the owner master, and says so', () => {
+    /*
+     * The owner's directive was explicit: do not trace the mark, do not crop a
+     * screenshot, do not silently ship a reconstruction. The defence is
+     * provenance - one master in the repo, one script that derives every
+     * served size from it, and a recorded note saying which.
+     */
+    expect(() => read('brand-source/rakiza-master.png'), 'the master is not in the repo').not.toThrow();
+    expect(() => read('scripts/brand/build-assets.py'), 'the derivation is not reproducible').not.toThrow();
+    const brand = read('shared/brand.ts');
+    expect(brand).toContain('BRAND_ASSET_PROVENANCE');
+    expect(brand).toMatch(/brand-source\/rakiza-master\.png/);
+    // And the outstanding ask is recorded rather than quietly dropped.
+    expect(brand).toMatch(/[Vv]ector master/);
+  });
+
+  it('the lock-up reserves its box wherever it is rendered', () => {
+    const logo = code('client/src/components/brand/RakizaLogo.tsx');
+    expect(logo).toContain('BRAND_ASSET_SIZES');
+    // Two img elements - mark and lock-up - and both carry width and height.
+    const imgs = [...logo.matchAll(/<img\b[\s\S]*?\/>/g)].map(m => m[0]);
+    expect(imgs.length, 'expected the mark and the lock-up').toBe(2);
+    for (const img of imgs) {
+      expect(img, 'an img ships without intrinsic dimensions').toMatch(/width=\{/);
+      expect(img, 'an img ships without intrinsic dimensions').toMatch(/height=\{/);
+      expect(img, 'an img ships without an alt decision').toMatch(/alt=\{/);
+    }
   });
 });
 
@@ -255,10 +328,17 @@ describe('the brand is reachable as utilities, which is why hardcoding stopped',
 describe('launch assets exist and the metadata is consistent', () => {
   const html = read('client/index.html');
 
-  it('there is a favicon at all', () => {
-    // There was none, so every tab showed the browser's default globe - the
-    // first branding a visitor sees, before the page paints.
-    expect(html).toMatch(/rel="icon"[^>]*href="\/brand\/favicon\.svg"/);
+  it('there is a favicon at all, and it is the PNG tile', () => {
+    /*
+     * There was none at first, so every tab showed the browser's default
+     * globe. It is now PNG rather than SVG because the RAKIZA mark is
+     * owner-supplied raster artwork; a traced SVG approximation of it is
+     * exactly what the owner forbade.
+     */
+    expect(html).toMatch(/rel="icon"[^>]*href="\/brand\/favicon-32\.png"/);
+    expect(html).toMatch(/rel="apple-touch-icon"[^>]*href="\/brand\/apple-touch-icon\.png"/);
+    // The retired placeholder must not be left referenced.
+    expect(html).not.toContain('favicon.svg');
   });
 
   it('a social card exists, with dimensions and alt text', () => {
@@ -268,25 +348,39 @@ describe('launch assets exist and the metadata is consistent', () => {
     expect(html).toContain('og:image:alt');
   });
 
+  it('the social card is a PNG, which closes a standing owner note', () => {
+    /*
+     * The previous card was SVG, carrying a comment that several Slack and
+     * WhatsApp versions do not render SVG for og:image - so a shared link
+     * showed a bare title with no identity. Asserting the extension is what
+     * stops that regressing the next time somebody prefers vector.
+     */
+    expect(html).toMatch(/property="og:image"\s+content="\/brand\/rakiza-og\.png"/);
+    expect(html).not.toContain('og-image.svg');
+  });
+
   it('og:url is NOT hard-coded, because staging and production differ', () => {
     // A wrong canonical URL in a social card is worse than an absent one.
     expect(html).not.toMatch(/property="og:url"\s+content="https?:\/\//);
   });
 
-  it('theme-color matches a real brand value', () => {
-    // It was #0f172a, a hex belonging to no token and matching nothing.
-    expect(html).toContain('content="#122c45"');
+  it('theme-color is the approved brand anchor, not a stray hex', () => {
+    // It was #0f172a, a hex belonging to no token; then #122c45, the old
+    // brand-900. Primary Navy is the value the owner approved.
+    expect(html).toContain('content="#0F2D5B"');
   });
 
-  it('the brand asset files are present', () => {
+  it('the page title and social metadata carry the new brand', () => {
+    expect(html).toContain('<title>Rakiza');
+    expect(html).toContain('content="Rakiza"');
+    expect(html, 'the old brand is still in the document head').not.toMatch(/BuildHub/);
+  });
+
+  it('the retired placeholder artwork is gone, not merely unreferenced', () => {
+    // An orphaned asset next to the real one is an invitation to point at it.
     for (const asset of ['favicon.svg', 'mark.svg', 'mark-inverse.svg', 'og-image.svg']) {
-      expect(() => read(`client/public/brand/${asset}`), asset).not.toThrow();
+      expect(() => read(`client/public/brand/${asset}`), `${asset} still ships`).toThrow();
     }
-  });
-
-  it('the favicon keeps the accent node, which is what distinguishes it at 16px', () => {
-    const favicon = read('client/public/brand/favicon.svg');
-    expect(favicon).toContain('#f0a44a');
   });
 });
 

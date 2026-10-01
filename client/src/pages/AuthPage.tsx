@@ -12,7 +12,7 @@ import LanguageToggle from '@/components/LanguageToggle';
 import { toast } from 'sonner';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
 import { ChevronRight, ShieldCheck, KeyRound } from 'lucide-react';
-import { BuildHubLogo } from '@/components/brand/BuildHubLogo';
+import { RakizaLogo } from '@/components/brand/RakizaLogo';
 import { ROLE_IDENTITIES } from '@/components/brand/roleIdentity';
 
 type UserRole = 'homeowner' | 'contractor' | 'engineer' | 'architect' | 'supplier' | 'project_manager';
@@ -256,7 +256,7 @@ export default function AuthPage() {
             component entirely - which is exactly how a logo ends up with
             four slightly different treatments nobody intended. */}
         <Link href="/" className="flex items-center gap-2">
-          <BuildHubLogo tone="inverse" size="lg" />
+          <RakizaLogo tone="inverse" size="lg" />
         </Link>
         <div>
           <h2 className="text-4xl font-bold leading-tight mb-4">
@@ -296,7 +296,7 @@ export default function AuthPage() {
             {/* The same lock-up the visitor saw in the navbar - entering the
                 product should not look like arriving at a different one. */}
             <Link href="/" className="flex items-center gap-2 lg:hidden">
-              <BuildHubLogo size="sm" />
+              <RakizaLogo size="sm" />
             </Link>
             <LanguageToggle className="ml-auto" />
           </div>

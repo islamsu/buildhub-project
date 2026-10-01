@@ -14,7 +14,7 @@ import {
   BarChart3, MessageSquare, Sparkles, Play
 } from 'lucide-react';
 import { usePageTitle } from '../hooks/usePageTitle';
-import { BuildHubLogo } from '@/components/brand/BuildHubLogo';
+import { RakizaLogo } from '@/components/brand/RakizaLogo';
 import { ROLE_IDENTITIES, ROLE_CARD_CLASSES, roleIconClasses } from '@/components/brand/roleIdentity';
 
 /* THE ROLE LIST MOVED. Six per-role colours lived here and again in
@@ -278,7 +278,7 @@ export default function Home() {
             {/* Brand */}
             <div className="md:col-span-1">
               <Link href="/" className="flex items-center gap-2 mb-4" data-testid="brand-home-footer">
-                <BuildHubLogo tone="inverse" size="md" />
+                <RakizaLogo tone="inverse" size="md" />
               </Link>
               {/* POSITIONING, NOT ARCHITECTURE. This read "The AI-powered
                   Construction OS", which describes the implementation to a
