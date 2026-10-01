@@ -47,7 +47,7 @@ const ROOT = new URL('..', import.meta.url).pathname;
 const ROUTERS = readSourceForAssertions(readFileSync(join(ROOT, 'server/routers.ts'), 'utf8'));
 
 describe('the market table is architecture, not a launch', () => {
-  it('Egypt is the only market BuildHub operates in', () => {
+  it('Egypt is the only market Rakiza operates in', () => {
     // A country appearing in a dropdown is never sufficient to call that
     // market launched (§86). The GCC rows exist so the code that will need
     // them is written against real values, and `enabled` is what decides.
@@ -142,7 +142,7 @@ describe('geolocation suggests and never decides', () => {
    * country, project country, RFQ market, quotation currency, tax treatment,
    * compliance eligibility, serviceability or billing country.
    */
-  it('a hint for a market BuildHub does not operate in returns nothing', () => {
+  it('a hint for a market Rakiza does not operate in returns nothing', () => {
     // Not a fallback. Offering a market that is not enabled would be worse
     // than offering none.
     expect(suggestMarket('SA')).toBeNull();
@@ -269,7 +269,7 @@ describe('RFQ and project creation establish the market explicitly', () => {
     // An RFQ in a market BuildHub cannot serve is one no supplier could ever
     // be matched to.
     const create = ROUTERS.slice(ROUTERS.indexOf('  create: protectedProcedure', ROUTERS.indexOf('const rfqRouter')));
-    expect(create).toContain('BuildHub does not currently operate in that market.');
+    expect(create).toContain('Rakiza does not currently operate in that market.');
   });
 
   it('and the RFQ feed carries the market and currency beside the budget', () => {
@@ -519,7 +519,7 @@ const DECLARED_CURRENCY_HARDCODES: readonly { file: string; reason: string }[] =
   {
     file: 'shared/billing.ts',
     reason: 'BILLING_CURRENCY and SUPPORTED_CURRENCIES - what a supplier pays '
-      + 'BuildHub. CORRECTLY Egypt-only: BuildHub bills in one market and has '
+      + 'Rakiza. CORRECTLY Egypt-only: Rakiza bills in one market and has '
       + 'no payment provider. It is no longer read by any sourcing surface, '
       + 'which was the defect; a second billing market needs an approved '
       + 'catalogue price per market (§45), not an FX conversion of this one.',
@@ -708,7 +708,7 @@ describe('no NEW Egypt-only assumption on a commercial surface', () => {
     expect(
       offenders,
       'A hard-coded currency on a commercial surface is a WRONG NUMBER the day '
-      + 'BuildHub lists a second market. Read it from the record, or add it to '
+      + 'Rakiza lists a second market. Read it from the record, or add it to '
       + 'DECLARED_CURRENCY_HARDCODES with the reason it cannot be.',
     ).toEqual([]);
   });

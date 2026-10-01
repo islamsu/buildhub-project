@@ -80,7 +80,7 @@ describe('a superseded edition is never presented as the current one', () => {
     expect(fire.note).toMatch(/Civil Defence/i);
   });
 
-  it('the Egyptian record admits BuildHub has not verified a later edition', () => {
+  it('the Egyptian record admits Rakiza has not verified a later edition', () => {
     // The honest status. Claiming 'current' for an edition nobody checked is
     // the exact failure this field exists to prevent.
     const ecp = REGULATORY_REFERENCES.find(reference => reference.id === 'eg-ecp-203')!;
@@ -120,7 +120,7 @@ describe('coverage is reported honestly', () => {
     const kuwait = REGULATORY_REFERENCES.find(reference => reference.jurisdiction === 'KW')!;
     expect(kuwait.edition).toBeUndefined();
     const block = formatRegulatoryForModel([kuwait], 'en');
-    expect(block).toContain('NOT ESTABLISHED BY BUILDHUB');
+    expect(block).toContain('NOT ESTABLISHED BY RAKIZA');
     expect(block).toMatch(/Do NOT supply\s+an edition from your own recollection/);
     expect(block).not.toMatch(/undefined/);
   });

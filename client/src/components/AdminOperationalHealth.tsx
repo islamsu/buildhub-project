@@ -178,7 +178,7 @@ export default function AdminOperationalHealth() {
               <p className="mt-1 text-xs text-muted-foreground">
                 {ar
                   ? 'لا تُخزَّن هذه القيم في BuildHub، وعرض رقم لها هنا سيكون اختلاقاً: '
-                  : 'BuildHub does not store any of these, and showing a number for them here would be inventing it: '}
+                  : 'Rakiza does not store any of these, and showing a number for them here would be inventing it: '}
                 {data.notMeasured.map(key => text(NOT_MEASURED_LABEL, key, key)).join(ar ? '، ' : ', ')}.
               </p>
             </section>

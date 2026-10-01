@@ -271,7 +271,7 @@ export function suggestMarket(hint: string | null | undefined): MarketCode | nul
 export class ImplicitMarketUnavailableError extends Error {
   constructor(public readonly enabledCount: number, public readonly detail: string) {
     super(
-      `This path needs a market but states none, and BuildHub cannot resolve one: ${detail}. `
+      `This path needs a market but states none, and Rakiza cannot resolve one: ${detail}. `
       + `It must take its market from the record it is writing (a project's market, an RFQ's `
       + `market) rather than from a platform-wide default.`,
     );

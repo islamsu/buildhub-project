@@ -342,7 +342,7 @@ describe('§6 client/index.html', () => {
     expect(INDEX_HTML).not.toContain('user-scalable=no');
   });
 
-  it('declares both languages BuildHub actually serves', () => {
+  it('declares both languages Rakiza actually serves', () => {
     expect(INDEX_HTML).toContain('og:locale:alternate" content="ar_EG');
   });
 });

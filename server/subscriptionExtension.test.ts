@@ -34,7 +34,7 @@ describe('the extension exists and is reachable from the reward', () => {
   });
 
   it('SUBSCRIPTION_EXTENSION is no longer refused as unimplemented', () => {
-    expect(ENGINE).not.toContain('is not yet applied by BuildHub');
+    expect(ENGINE).not.toContain('is not yet applied by Rakiza');
   });
 });
 

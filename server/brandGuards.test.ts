@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readSourceForAssertions } from './_testing/sourceText';
 import { join } from 'node:path';
 
 /**
@@ -144,5 +145,84 @@ describe('the domain is NOT migrated by this release', () => {
      * When the domain does move, this assertion moves with the DNS, not before.
      */
     expect(read('shared/seo.ts')).toContain('buildhub.eg');
+  });
+});
+
+/**
+ * ── THE CENSUS: NO ENGLISH SURFACE STILL SAYS BUILDHUB ──────────────────
+ *
+ * R3 migrated 69 string literals in the client, 21 in shared and 107 in the
+ * server. What stops the 198th from coming back is this, not memory.
+ *
+ * LINE-BASED ON PURPOSE. An earlier pass used a hand-written segmenter to tell
+ * code from string from comment, and it did not know that a regex literal can
+ * contain a quote character. `/Building2\s+className="w-[45] h-[45]/` put it
+ * into string mode and it silently rewrote a regex inside a NEGATIVE assertion,
+ * inverting what that assertion tested — and the inverted test still passed.
+ * It also desynchronised in the other direction and MISSED two real strings,
+ * one of them a customer-visible validation message in routers.ts.
+ *
+ * That was found by reading the diff. This guard is deliberately dumber than
+ * the thing that got it wrong: it reads lines, and the only cleverness is
+ * stripping comments with the shared reader the rest of the suite uses.
+ */
+describe('no English customer surface still carries the old brand', () => {
+  const ARABIC = /[؀-ۿ]/;
+  /* A line naming one of these is about an IDENTIFIER, not about the brand. */
+  const FROZEN = [
+    'buildhub_lang', 'buildhub_policy', '__Host-buildhub', 'buildhub-source-of-truth',
+    'buildhub-staging', 'BUILDHUB_', 'buildhub.eg', 'buildhubKnowledge', 'buildhub.test',
+    'BuildHubRole', 'BUILDHUB_ROLES', 'isBuildHubRole', 'buildhubSpecific',
+  ];
+
+  function walkTs(dir: string, out: string[] = []): string[] {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) walkTs(full, out);
+      else if (/\.tsx?$/.test(entry)) out.push(full);
+    }
+    return out;
+  }
+
+  const FILES = [
+    ...walkTs(join(ROOT, 'client/src')),
+    ...walkTs(join(ROOT, 'shared')),
+    ...walkTs(join(ROOT, 'server')),
+  ].filter(f => !f.endsWith('brandSystem.test.ts') && !f.endsWith('brandGuards.test.ts'));
+
+  function offenders(predicate: (line: string) => boolean) {
+    const found: string[] = [];
+    for (const file of FILES) {
+      const stripped = readSourceForAssertions(readFileSync(file, 'utf8'));
+      stripped.split('\n').forEach((line, i) => {
+        if (!/BuildHub|BUILDHUB/.test(line)) return;
+        if (FROZEN.some(f => line.includes(f))) return;
+        /* A line naming BOTH brands is deliberately about the transition - a
+           detector that must keep catching the old name, or a routing cue that
+           still has to understand what people used to call the product. */
+        if (/Rakiza|RAKIZA|rakiza/.test(line)) return;
+        if (!predicate(line)) return;
+        found.push(`${file.slice(ROOT.length + 1)}:${i + 1}  ${line.trim().slice(0, 110)}`);
+      });
+    }
+    return found;
+  }
+
+  it('no line of English code or copy names BuildHub', () => {
+    expect(offenders(line => !ARABIC.test(line))).toEqual([]);
+  });
+
+  it('the Arabic exemption is finite, and shrinks to nothing in R4', () => {
+    /*
+     * Arabic sentences carrying the brand are hand-reviewed rather than
+     * substituted, because Arabic agreement is grammatical: "بدأت BuildHub
+     * التحقيق" needs "بدأت ركيزة", not a word swapped in place. Until that
+     * pass lands they are counted here so the exemption is a number somebody
+     * has to look at, rather than a silence.
+     *
+     * LOWER THIS AS R4 LANDS. It must reach 0; it must never rise.
+     */
+    const remaining = offenders(line => ARABIC.test(line));
+    expect(remaining.length, 'Arabic brand lines grew').toBeLessThanOrEqual(56);
   });
 });

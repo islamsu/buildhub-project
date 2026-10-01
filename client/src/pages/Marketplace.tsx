@@ -258,7 +258,7 @@ export default function Marketplace() {
                       {lang === 'ar' ? 'منتجات مختارة' : 'Featured products'}
                     </h2>
                     <p className="text-xs text-muted-foreground">
-                      {lang === 'ar' ? 'اختيار من BuildHub، غير مدفوع' : 'Chosen by BuildHub, not paid for'}
+                      {lang === 'ar' ? 'اختيار من BuildHub، غير مدفوع' : 'Chosen by Rakiza, not paid for'}
                     </p>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

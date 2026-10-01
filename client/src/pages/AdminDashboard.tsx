@@ -523,7 +523,7 @@ export default function AdminDashboard() {
       <html lang="${lang}">
       <head>
         <meta charset="utf-8">
-        <title>BuildHub - Comprehensive Account Audit Log</title>
+        <title>Rakiza - Comprehensive Account Audit Log</title>
         <style>
           body { font-family: system-ui, -apple-system, sans-serif; padding: 24px; color: #111827; }
           h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
@@ -536,7 +536,7 @@ export default function AdminDashboard() {
         </style>
       </head>
       <body>
-        <h1>BuildHub Enterprise Account Audit Log</h1>
+        <h1>Rakiza Enterprise Account Audit Log</h1>
         <p>Generated on ${new Date().toLocaleString()} · Total Audit Events: ${auditRows.length}</p>
         <table>
           <thead>
@@ -606,7 +606,7 @@ export default function AdminDashboard() {
                 what you are looking at. */}
             <h1 className="text-2xl font-bold mb-1" data-testid="admin-section-heading">{t(adminSectionLabelKey)}</h1>
             <p className="text-muted-foreground">{adminSection === 'overview'
-              ? (lang === 'ar' ? 'مراقبة وإدارة منصة BuildHub' : 'Monitor and manage the BuildHub platform')
+              ? (lang === 'ar' ? 'مراقبة وإدارة منصة BuildHub' : 'Monitor and manage the Rakiza platform')
               : t('admin.title')}</p>
           </div>
           <div className="flex items-center gap-2"><Badge className="badge-info text-xs px-3 py-1 flex items-center gap-1"><Activity className="w-3 h-3" /> {lang === 'ar' ? 'لوحة التشغيل' : 'Operational Console'}</Badge></div>

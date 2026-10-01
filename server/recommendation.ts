@@ -117,7 +117,7 @@ export function scoreProvider(vendor: DirectoryVendor, criteria: RecommendationC
   const wantedRole = norm(criteria.role);
   if (wantedRole && norm(vendor.userRole) === wantedRole) {
     score += WEIGHTS.roleMatch;
-    reasons.push(`is a ${criteria.role} on BuildHub`);
+    reasons.push(`is a ${criteria.role} on Rakiza`);
   }
 
   const wantedLocation = norm(criteria.location);
@@ -128,7 +128,7 @@ export function scoreProvider(vendor: DirectoryVendor, criteria: RecommendationC
 
   if (vendor.verified) {
     score += WEIGHTS.verified;
-    reasons.push('is a verified BuildHub provider');
+    reasons.push('is a verified Rakiza provider');
   }
 
   // Rating only counts when reviews exist. A 5.0 from zero reviews is not a
@@ -233,23 +233,23 @@ export function formatCandidatesForModel(
   unmappedQualifiers: string[] = [],
 ): string {
   if (outcome.matchQuality === 'none') {
-    return `=== BUILDHUB PROVIDER SEARCH RESULT ===
-NO SUITABLE BUILDHUB-LISTED PROVIDER was found for this request, after also
+    return `=== RAKIZA PROVIDER SEARCH RESULT ===
+NO SUITABLE RAKIZA-LISTED PROVIDER was found for this request, after also
 searching more broadly.
 
-Tell the person plainly that BuildHub has no listed provider matching this, and
+Tell the person plainly that Rakiza has no listed provider matching this, and
 offer to help them post an RFQ so listed providers can quote. Do NOT name any
 provider. Do NOT invent one. If - and only if - they explicitly ask for
-providers outside BuildHub, anything you offer must be labelled
-"External recommendation - not currently listed on BuildHub", and you must not
-imply BuildHub has verified or endorsed it.
+providers outside Rakiza, anything you offer must be labelled
+"External recommendation - not currently listed on Rakiza", and you must not
+imply Rakiza has verified or endorsed it.
 === END ===`;
   }
 
   // An "exact" match on the criteria BuildHub UNDERSTOOD is not an exact match
   // on what was ASKED, if part of the request never became a criterion.
   const unmapped = unmappedQualifiers.length > 0
-    ? `\n\nWHAT BUILDHUB COULD NOT MATCH ON: ${unmappedQualifiers.join('; ')}. BuildHub
+    ? `\n\nWHAT RAKIZA COULD NOT MATCH ON: ${unmappedQualifiers.join('; ')}. Rakiza
 does not hold that as a searchable attribute, so these providers were NOT
 matched on it. Say that plainly - name what the match WAS based on, and do not
 imply any of them specialises in it. Suggest an RFQ, where the requirement can
@@ -258,7 +258,7 @@ be described in full.`
 
   const header = {
     related: `MATCH QUALITY: RELATED. ${outcome.broadenedBy.join('; ')}. These did NOT match as asked - say so, and do not present them as matches for the original request.`,
-    partial: 'MATCH QUALITY: PARTIAL - these match the criteria BuildHub could search on, NOT the full request.',
+    partial: 'MATCH QUALITY: PARTIAL - these match the criteria Rakiza could search on, NOT the full request.',
     exact: 'MATCH QUALITY: EXACT - these match the request as asked.',
     none: '',
   }[outcome.matchQuality];
@@ -282,26 +282,26 @@ be described in full.`
         : 'declared categories: none',
     ].join(' | ');
     const safeName = neutralizeUntrusted(v.name, 120) || `Provider #${v.id}`;
-    return `  ${index + 1}. ${safeName} [BuildHub score ${candidate.score}]
+    return `  ${index + 1}. ${safeName} [Rakiza score ${candidate.score}]
      ${facts}
      why ranked here: ${candidate.reasons.length ? candidate.reasons.join('; ') : 'no matching signals beyond being listed and approved'}`;
   }).join('\n');
 
-  return `=== BUILDHUB PROVIDER SEARCH RESULT ===
+  return `=== RAKIZA PROVIDER SEARCH RESULT ===
 ${header}${unmapped}
 
-These are BuildHub-listed, approved providers, ranked by BuildHub's own scoring.
+These are Rakiza-listed, approved providers, ranked by Rakiza's own scoring.
 Present them in THIS ORDER. You did not choose this order and you must not
 re-order it.
 
 ${rows}
 
-WHAT BUILDHUB DOES NOT KNOW about these providers: availability, response time,
+WHAT RAKIZA DOES NOT KNOW about these providers: availability, response time,
 years of experience, portfolio relevance, current workload, and whether their
-pricing fits any budget. BuildHub does not store those. Do not state, estimate
+pricing fits any budget. Rakiza does not store those. Do not state, estimate
 or imply any of them.
 
-Say your suggestion is the "best match based on the available BuildHub data".
+Say your suggestion is the "best match based on the available Rakiza data".
 Do not claim any provider is the best in a city or the best overall - the data
 does not support that.${lang === 'ar' ? '\nAnswer in Arabic.' : ''}
 === END ===`;

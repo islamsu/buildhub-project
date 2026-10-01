@@ -58,9 +58,9 @@ describe('requireDb is the one way to say "unavailable"', () => {
     await expect(requireDb()).rejects.toThrow(/not an empty result/i);
   });
 
-  it('names BuildHub, not the storage engine', async () => {
+  it('names Rakiza, not the storage engine', async () => {
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-    await expect(requireDb()).rejects.toThrow(/BuildHub/);
+    await expect(requireDb()).rejects.toThrow(/Rakiza/);
     await expect(requireDb()).rejects.not.toThrow(/mysql|mariadb|drizzle/i);
   });
 

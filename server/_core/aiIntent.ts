@@ -100,6 +100,14 @@ const RECOMMENDATION_CUES = [
   // limits - "I cannot access BuildHub's vendor directory" - which is a worse
   // answer than the true one BuildHub can actually produce.
   'who is on', 'who are on', 'who do you have', 'do you have any',
+  // THE BRAND NAME IS A ROUTING CUE, so the rebrand had to add the new one.
+  // "Are there any suppliers listed on Rakiza?" is the same directory question
+  // as the BuildHub phrasing, and a cue list naming only the old brand would
+  // have sent it to the model's own limits instead of to the directory. The
+  // old name stays alongside it: people who knew the product before the
+  // rename will keep using it for a long time, and a question is not less of
+  // a directory question for being phrased in last year's brand.
+  'anyone on rakiza', 'listed on rakiza',
   'anyone on buildhub', 'listed on buildhub',
   'من لديكم', 'هل لديكم', 'مين عندكم', 'المسجلين على',
   'أرشح', 'اقترح', 'رشح', 'أبحث عن', 'من يستطيع', 'أفضل شركة', 'أي شركة',

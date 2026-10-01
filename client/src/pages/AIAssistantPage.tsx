@@ -57,7 +57,7 @@ export default function AIAssistantPage() {
   const experience = experienceFor(me?.userRole);
 
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: lang === 'ar' ? 'مرحباً! أنا BuildHub AI. اسألني عن أي شيء يخص البناء والتشطيب، أو اختر أداة من الأعلى.' : "Hello! I'm BuildHub AI. Ask me anything about construction, or pick one of the tools above." },
+    { role: 'assistant', content: lang === 'ar' ? 'مرحباً! أنا BuildHub AI. اسألني عن أي شيء يخص البناء والتشطيب، أو اختر أداة من الأعلى.' : "Hello! I'm Rakiza AI. Ask me anything about construction, or pick one of the tools above." },
   ]);
   const [attachment, setAttachment] = useState<UploadedAttachment | null>(null);
 

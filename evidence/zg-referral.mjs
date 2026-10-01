@@ -412,7 +412,7 @@ try {
       && (usage.remaining === null || usage.remaining === Math.max(0, allowance.effective - usage.used)),
       `used=${usage?.used} remaining=${usage?.remaining} resets=${usage?.resetsAt}`);
 
-    check('BENEFITS: only capabilities BuildHub has actually built are listed',
+    check('BENEFITS: only capabilities Rakiza has actually built are listed',
       Object.values(benefits.data?.plan?.capabilities ?? {}).every(value => typeof value === 'boolean'),
       JSON.stringify(benefits.data?.plan?.capabilities));
 

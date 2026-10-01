@@ -88,7 +88,7 @@ export type SeoRoute = {
 };
 
 /** The suffix every page title carries, so a tab is identifiable at any width. */
-export const SEO_BRAND_EN = 'BuildHub';
+export const SEO_BRAND_EN = 'Rakiza';
 export const SEO_BRAND_AR = 'بيلد هَب';
 
 /**
@@ -189,7 +189,7 @@ export const PUBLIC_SEO_ROUTES: readonly SeoRoute[] = [
     titleEn: 'Service categories',
     titleAr: 'فئات الخدمات',
     descriptionEn:
-      'Every construction service category on BuildHub, from structural works to finishing, with the providers who cover each one.',
+      'Every construction service category on Rakiza, from structural works to finishing, with the providers who cover each one.',
     descriptionAr:
       'كل فئات خدمات البناء على بيلد هَب، من الأعمال الإنشائية إلى التشطيب، مع مقدّمي الخدمة في كل فئة.',
   },
@@ -199,7 +199,7 @@ export const PUBLIC_SEO_ROUTES: readonly SeoRoute[] = [
     titleEn: 'Plans for suppliers and professionals',
     titleAr: 'خطط الموردين والمهنيين',
     descriptionEn:
-      'What each BuildHub plan includes for suppliers and professionals: qualified enquiries, catalogue capacity and marketplace visibility.',
+      'What each Rakiza plan includes for suppliers and professionals: qualified enquiries, catalogue capacity and marketplace visibility.',
     descriptionAr:
       'ما تتضمنه كل خطة في بيلد هَب للموردين والمهنيين: الطلبات المؤهلة وسعة الكتالوج والظهور في السوق.',
   },
@@ -286,7 +286,7 @@ export function seoDescription(route: SeoRoute | null, lang: 'en' | 'ar'): strin
   if (!route) {
     return lang === 'ar'
       ? 'بيلد هَب: سوق ومنصة عمل لقطاع البناء.'
-      : 'BuildHub: a construction marketplace and workspace.';
+      : 'Rakiza: a construction marketplace and workspace.';
   }
   return lang === 'ar' ? route.descriptionAr : route.descriptionEn;
 }

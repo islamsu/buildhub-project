@@ -62,7 +62,7 @@ export default function MySupport() {
         <p className="text-muted-foreground mt-1 text-sm">
           {ar
             ? 'اطرح سؤالك على فريق BuildHub وتابع الرد هنا.'
-            : 'Ask the BuildHub team a question and follow the answer here.'}
+            : 'Ask the Rakiza team a question and follow the answer here.'}
         </p>
       </div>
 

@@ -103,7 +103,7 @@ describe('neutralizeUntrusted removes the structure, not the meaning', () => {
   it('a very long field is truncated AND marked as truncated', () => {
     const out = neutralizeUntrusted('x'.repeat(5000));
     expect(out.length).toBeLessThan(MAX_UNTRUSTED_FIELD_LENGTH + 60);
-    expect(out).toContain('[truncated by BuildHub]');
+    expect(out).toContain('[truncated by Rakiza]');
   });
 
   it('null, undefined and whitespace collapse to empty, never to "null"', () => {

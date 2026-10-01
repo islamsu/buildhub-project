@@ -13,6 +13,7 @@
 // shows exactly that message rather than interpreting it.
 
 import { useEffect, useState } from 'react';
+import { RakizaLogo } from '@/components/brand/RakizaLogo';
 import { Link, useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { ShieldCheck, Loader2 } from 'lucide-react';
@@ -45,7 +46,7 @@ export default function AdminLogin() {
     onError: (error: { message: string }) => toast.error(error.message),
   });
 
-  useEffect(() => { document.title = 'BuildHub Admin'; }, []);
+  useEffect(() => { document.title = 'Rakiza Admin'; }, []);
 
   const submit = () => {
     if (identifier.trim().length < 3 || !password) return;
@@ -58,7 +59,9 @@ export default function AdminLogin() {
         <div className="mb-6 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2" data-testid="brand-home">
             <ShieldCheck className="h-6 w-6 text-primary" />
-            <span className="text-lg font-semibold">BuildHub</span>
+            {/* The shared lock-up. The icon stays because it says WHICH door
+                this is; the brand is not typed out beside it. */}
+            <RakizaLogo size="sm" />
           </Link>
           <LanguageToggle />
         </div>
@@ -67,7 +70,7 @@ export default function AdminLogin() {
           <CardContent className="p-6">
             <h1 className="text-2xl font-bold">{t('Administrator sign-in', 'دخول المشرفين')}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {t('This door is for BuildHub staff. Customer accounts sign in at /auth.',
+              {t('This door is for Rakiza staff. Customer accounts sign in at /auth.',
                  'هذه البوابة لموظفي BuildHub. حسابات العملاء تسجل الدخول من /auth.')}
             </p>
 

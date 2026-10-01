@@ -206,7 +206,7 @@ try {
     sql(`select name from users where name is not null and name <> ''
          union select email from users where email is not null and email <> ''`)
       .split('\n').map(v => v.trim()).filter(Boolean));
-  const BRAND = new Set(['BuildHub']);
+  const BRAND = new Set(['Rakiza']);
   const isData = text => BRAND.has(text) || names.has(text);
 
   const cookie = await signIn(`${u}@example.test`);

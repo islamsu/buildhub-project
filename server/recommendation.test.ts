@@ -26,7 +26,7 @@ const vendor = (over: Partial<DirectoryVendor> & { id: number }): DirectoryVendo
   categories: [], averageRating: null, reviewCount: 0, ...over,
 });
 
-describe('scoring uses only signals BuildHub actually stores', () => {
+describe('scoring uses only signals Rakiza actually stores', () => {
   it('an exact service-category match outranks everything else combined', () => {
     const exact = scoreProvider(vendor({ id: 1, categories: ['waterproofing'] }), { category: 'waterproofing' });
     const decorated = scoreProvider(
@@ -75,7 +75,7 @@ describe('scoring uses only signals BuildHub actually stores', () => {
   });
 });
 
-describe('search BuildHub first, then broaden, then admit no match', () => {
+describe('search Rakiza first, then broaden, then admit no match', () => {
   beforeEach(() => { listDirectoryVendors.mockReset(); });
 
   it('exact matches are returned as exact', async () => {
@@ -144,7 +144,7 @@ describe('what the model is handed', () => {
   it('the model is told the order is not its to change', () => {
     const block = formatCandidatesForModel({
       matchQuality: 'exact', broadenedBy: [], appliedCriteria: {},
-      candidates: [{ vendor: vendor({ id: 1, verified: true }), score: 15, reasons: ['is a verified BuildHub provider'] }],
+      candidates: [{ vendor: vendor({ id: 1, verified: true }), score: 15, reasons: ['is a verified Rakiza provider'] }],
     }, 'en');
     expect(block).toMatch(/Present them in THIS ORDER/);
     expect(block.replace(/\s+/g, ' ')).toMatch(/must not re-order it/);
@@ -163,15 +163,15 @@ describe('what the model is handed', () => {
 
   it('no-match forbids naming a provider and offers the RFQ route', () => {
     const block = formatCandidatesForModel({ matchQuality: 'none', broadenedBy: [], candidates: [], appliedCriteria: {} }, 'en');
-    expect(block).toMatch(/NO SUITABLE BUILDHUB-LISTED PROVIDER/);
+    expect(block).toMatch(/NO SUITABLE RAKIZA-LISTED PROVIDER/);
     expect(block.replace(/\s+/g, ' ')).toMatch(/Do NOT name any provider/);
     expect(block).toMatch(/post an RFQ/);
   });
 
   it('external providers must be labelled and never implied to be endorsed', () => {
     const block = formatCandidatesForModel({ matchQuality: 'none', broadenedBy: [], candidates: [], appliedCriteria: {} }, 'en');
-    expect(block).toContain('External recommendation - not currently listed on BuildHub');
-    expect(block.replace(/\s+/g, ' ')).toMatch(/not imply BuildHub has verified or endorsed/);
+    expect(block).toContain('External recommendation - not currently listed on Rakiza');
+    expect(block.replace(/\s+/g, ' ')).toMatch(/not imply Rakiza has verified or endorsed/);
   });
 
   it('a related result is labelled as related, not passed off as exact', () => {
@@ -196,7 +196,7 @@ describe('what the model is handed', () => {
       matchQuality: 'exact', broadenedBy: [], appliedCriteria: {},
       candidates: [{ vendor: vendor({ id: 1 }), score: 0, reasons: [] }],
     }, 'en');
-    expect(block).toMatch(/best match based on the available BuildHub data/);
+    expect(block).toMatch(/best match based on the available Rakiza data/);
     expect(block).toMatch(/Do not claim any provider is the best in a city/);
   });
 });
@@ -225,7 +225,7 @@ describe('a partial match is never presented as an exact one', () => {
       ['Aswan', 'the specific trade asked for'],
     );
     expect(block).toContain('MATCH QUALITY: PARTIAL');
-    expect(block).toContain('WHAT BUILDHUB COULD NOT MATCH ON');
+    expect(block).toContain('WHAT RAKIZA COULD NOT MATCH ON');
     expect(block).toContain('Aswan');
     expect(block).toMatch(/do not\s+imply any of them specialises in it/);
     expect(block).toMatch(/RFQ/);
@@ -248,7 +248,7 @@ describe('Part 8: a generic provider is never an EXACT match for a specialist re
     // The exact defect from the audit, asserted end to end through the real
     // intent router rather than with hand-built criteria - because the bug was
     // in the handoff between the two, not in either half.
-    const intent = detectIntent('I need a swimming pool specialist contractor in Aswan. Who is on BuildHub?');
+    const intent = detectIntent('I need a swimming pool specialist contractor in Aswan. Who is on Rakiza?');
     listDirectoryVendors.mockResolvedValue([
       { id: 1, name: 'QA contractor', userRole: 'contractor', location: null, verified: true, averageRating: null, reviewCount: 0, categories: [] },
     ]);

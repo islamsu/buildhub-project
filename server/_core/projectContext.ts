@@ -216,7 +216,7 @@ export function formatProjectContext(context: ProjectContext, lang: 'en' | 'ar')
 
   const discipline = ar
     ? 'استخدم هذه الأرقام كما هي، ولا تخترع أي حقل غير مذكور أعلاه. إن كان السؤال يحتاج حقلاً غير موجود، قل إنه غير متاح في البناء هنا.'
-    : 'Use these figures as given. Do NOT invent any field not listed above. If the question needs one that is missing, say it is not recorded in BuildHub rather than estimating it.';
+    : 'Use these figures as given. Do NOT invent any field not listed above. If the question needs one that is missing, say it is not recorded in Rakiza rather than estimating it.';
 
   return `\n\n${ar ? 'سياق المشروع' : 'PROJECT CONTEXT'}\n${scopeNote}\n${facts}\n${discipline}`;
 }

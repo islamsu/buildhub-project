@@ -180,7 +180,7 @@ describe('the build identity comes from one place', () => {
 });
 
 describe('what is not measured is named on the screen', () => {
-  it('lists the metrics BuildHub does not persist', () => {
+  it('lists the metrics Rakiza does not persist', () => {
     expect([...NOT_MEASURED].sort()).toEqual([
       'background_queue_depth', 'request_error_rate', 'request_latency', 'throughput', 'uptime',
     ]);

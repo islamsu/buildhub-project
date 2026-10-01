@@ -693,7 +693,7 @@ function Snapshot({ snapshot, failed, loading, lang, userId, navigate }: {
   return (
     <div className="space-y-3" data-testid="user-snapshot">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {ar ? 'النشاط عبر المنصة' : 'Activity across BuildHub'}
+        {ar ? 'النشاط عبر المنصة' : 'Activity across Rakiza'}
       </h3>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label={ar ? 'مشاريع' : 'Projects'} value={value(() => snapshot.projects.owned + snapshot.projects.memberOf)} />

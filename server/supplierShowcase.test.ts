@@ -104,7 +104,7 @@ describe('a showcase never leaves the storefront it belongs to', () => {
     // buyer who cannot tell them apart is being misled (§68).
     expect(STRIP).toContain('data-testid="showcase-provenance"');
     expect(STRIP).toMatch(/Selected by this supplier/);
-    expect(STRIP).toMatch(/Not a BuildHub recommendation, and not a paid placement/);
+    expect(STRIP).toMatch(/Not a Rakiza recommendation, and not a paid placement/);
   });
 });
 

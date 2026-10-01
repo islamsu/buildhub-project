@@ -164,7 +164,7 @@ export default function SupportTicketDetail() {
                 >
                   <p className="text-xs font-medium">
                     {message.authorSide === 'support'
-                      ? (ar ? 'فريق دعم BuildHub' : 'BuildHub support')
+                      ? (ar ? 'فريق دعم BuildHub' : 'Rakiza support')
                       : message.authorName}
                   </p>
                   <p className="mt-1 whitespace-pre-wrap text-sm">{message.body}</p>

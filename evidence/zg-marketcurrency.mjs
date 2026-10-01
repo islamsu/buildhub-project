@@ -137,7 +137,7 @@ const refused = await createRfq(buyerCookie, {
   title: `Unserved market ${stamp}`, category: 'Materials', marketCode: 'SA',
 });
 check(refused.status !== 200,
-  'an RFQ in a market BuildHub does not operate in is REFUSED',
+  'an RFQ in a market Rakiza does not operate in is REFUSED',
   refused.body?.error?.json?.message ?? `HTTP ${refused.status}`);
 
 /* ── THE SUPPLIER CANNOT NAME A CURRENCY ─────────────────────────────── */

@@ -206,7 +206,7 @@ describe('a password reset link is a credential, and is stored like one', () => 
   });
 
   it('the raw token still reaches the person, in the email', () => {
-    const at = routers.indexOf('subject: \'Reset your BuildHub password\'');
+    const at = routers.indexOf('subject: \'Reset your Rakiza password\'');
     expect(at).toBeGreaterThan(-1);
     expect(routers.slice(at, at + 400)).toContain('reset-password?token=${token}');
   });

@@ -88,7 +88,7 @@ const AUDIT = `
     .map(el => el.tagName + '.' + (el.className || '').toString().slice(0, 40));
 
   /*
-   * UI CHROME ONLY, for the Arabic check. BuildHub writes an accessible
+   * UI CHROME ONLY, for the Arabic check. Rakiza writes an accessible
    * name or a nav label; a user writes their own business name. Latin text
    * in the first is always a translation gap; in the second it is correct.
    */

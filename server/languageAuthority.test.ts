@@ -89,11 +89,11 @@ describe('the instruction is explicit that language and facts are separate', () 
   it('says the rule holds regardless of the source material language', () => {
     const prompt = buildSystemPrompt('ar', { userRole: 'homeowner' });
     expect(prompt).toMatch(/regardless of which language this instruction is written/i);
-    expect(prompt).toMatch(/regardless of the language of the BuildHub information/i);
+    expect(prompt).toMatch(/regardless of the language of the Rakiza information/i);
     expect(prompt).toMatch(/The\s+language changes; the facts do not/i);
   });
 
-  it('the BuildHub briefing carries the SAME facts in both languages', () => {
+  it('the Rakiza briefing carries the SAME facts in both languages', () => {
     // A rule is not a translation: the Arabic prompt must not be a reduced
     // version of the English one.
     const en = buildSystemPrompt('en', { userRole: 'homeowner' });

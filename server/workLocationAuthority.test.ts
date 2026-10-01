@@ -36,7 +36,7 @@ describe('the chain is server-derived, end to end', () => {
     expect(body).toContain('marketCode = project.marketCode;');
   });
 
-  it("a project in a market BuildHub no longer serves refuses, rather than becoming Egyptian", () => {
+  it("a project in a market Rakiza no longer serves refuses, rather than becoming Egyptian", () => {
     // This fell through to the implicit market, which would have turned an
     // Omani project's RFQ into an Egyptian one the moment Oman was disabled.
     const create = ROUTERS.slice(ROUTERS.indexOf('let marketCode: MarketCode = resolveImplicitMarket();'), );
@@ -225,7 +225,7 @@ describe('changing a project market: every lifecycle boundary', () => {
     }
   });
 
-  it('a DISABLED target refuses - a project cannot move into a market BuildHub does not serve', () => {
+  it('a DISABLED target refuses - a project cannot move into a market Rakiza does not serve', () => {
     for (const code of ['SA', 'AE', 'QA', 'KW', 'BH', 'OM']) {
       expect(decide({ targetMarketCode: code }), code)
         .toEqual({ allowed: false, reason: 'target_disabled' });

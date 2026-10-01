@@ -265,7 +265,7 @@ try {
   });
   check('PROPAGATION: a NEW listing in the hidden category is refused immediately',
     blockedUpload.data?.errorCount === 1, `${blockedUpload.data?.errorCount}`);
-  check('ERROR QUALITY: as INACTIVE, not as "not a BuildHub category"',
+  check('ERROR QUALITY: as INACTIVE, not as "not a Rakiza category"',
     blockedUpload.data?.categoryIssues?.[0]?.reason === 'INACTIVE'
     && !/is not a BuildHub category/.test(blockedUpload.data?.categoryIssues?.[0]?.message ?? ''),
     blockedUpload.data?.categoryIssues?.[0]?.message ?? '');

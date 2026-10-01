@@ -56,7 +56,7 @@ export function registerCrawlerRoutes(app: Express) {
        * retried; a lie is not.
        */
       res.status(503).set({ 'Content-Type': 'text/plain; charset=utf-8' }).send(
-        'No sitemap: BuildHub could not reach its catalogue. This is not an empty catalogue - please retry.\n'
+        'No sitemap: Rakiza could not reach its catalogue. This is not an empty catalogue - please retry.\n'
       );
     }
   });

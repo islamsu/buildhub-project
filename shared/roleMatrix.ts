@@ -59,7 +59,7 @@ const ALL = 'all' as const;
 /** Not a record - there is nothing to create, approve or download. */
 const NOT_A_RECORD = 'A dashboard is a view over other records, not a record itself.';
 /** The product has no delete surface here. */
-const NO_DELETE = 'BuildHub implements no delete for this resource, for any role.';
+const NO_DELETE = 'Rakiza implements no delete for this resource, for any role.';
 /** Nothing in the product edits this after creation. */
 const NO_EDIT = 'No update procedure exists for this resource.';
 
@@ -243,11 +243,11 @@ export const ROLE_MATRIX: Record<MatrixResource, Record<MatrixVerb, Access>> = {
   },
 
   order: {
-    view: na('BuildHub has no order. The marketplace generates RFQs and quotations; nothing is purchased through the platform.'),
+    view: na('Rakiza has no order. The marketplace generates RFQs and quotations; nothing is purchased through the platform.'),
     create: na('There is no order table, no order procedure and no checkout.'),
     edit: na('There is no order record in the product to edit.'),
     delete: na('There is no order record in the product to delete.'),
-    submit: na('Nothing is ordered through BuildHub; an RFQ is the closest act.'),
+    submit: na('Nothing is ordered through Rakiza; an RFQ is the closest act.'),
     approve: na('There is no order to approve - purchasing happens off-platform.'),
     reject: na('There is no order to reject - purchasing happens off-platform.'),
     download: na('No order confirmation or invoice document is produced.'),
@@ -256,10 +256,10 @@ export const ROLE_MATRIX: Record<MatrixResource, Record<MatrixVerb, Access>> = {
 
   transaction: {
     view: { status: 'ok', via: 'billing.mySubscription', tier: 'protectedProcedure', roles: ALL, scope: 'own subscription state and lifecycle; every role may read theirs, only providers can have one' },
-    create: na('No payment is taken by BuildHub. Checkout is honestly reported unavailable and no provider integration is wired.'),
+    create: na('No payment is taken by Rakiza. Checkout is honestly reported unavailable and no provider integration is wired.'),
     edit: { status: 'ok', via: 'billing.cancelSubscription', tier: 'approvedProviderProcedure', roles: PROVIDER_ROLES, scope: 'own; cancel and resume are the only transitions a vendor can drive' },
     delete: na('A billing record is financial history and is never deleted.'),
-    submit: na('Nothing is submitted - BuildHub has no checkout at all.'),
+    submit: na('Nothing is submitted - Rakiza has no checkout at all.'),
     approve: na('No payment approval flow exists.'),
     reject: na('No payment approval flow exists.'),
     download: na('No invoice or receipt document is produced.'),

@@ -147,7 +147,7 @@ export default function SourcingJourney() {
       <div className="container">
         <div className="mx-auto max-w-2xl text-center">
           <Badge variant="secondary" className="mb-4 px-4 py-1 text-sm">
-            {ar ? 'كيف تعمل BuildHub' : 'How BuildHub works'}
+            {ar ? 'كيف تعمل BuildHub' : 'How Rakiza works'}
           </Badge>
           <h2 className="text-3xl font-bold sm:text-4xl">
             {ar ? 'من البحث إلى التنفيذ، في مسار واحد' : 'From sourcing to site, in one connected path'}

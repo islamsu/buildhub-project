@@ -106,7 +106,7 @@ export async function bootstrapFirstAdmin(): Promise<BootstrapOutcome> {
       openId: `local_${randomUUID()}`,
       username,
       email,
-      name: 'BuildHub Super Admin',
+      name: 'Rakiza Super Admin',
       role: 'admin',
       adminRole: 'SUPER_ADMIN',
       userRole: 'admin',

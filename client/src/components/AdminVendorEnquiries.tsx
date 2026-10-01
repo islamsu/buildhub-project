@@ -730,7 +730,7 @@ export default function AdminVendorEnquiries({ reference = null }: { reference?:
                         const url = URL.createObjectURL(blob);
                         const link = document.createElement('a');
                         link.href = url;
-                        link.download = `buildhub-enquiries-${new Date().toISOString().slice(0, 10)}.csv`;
+                        link.download = `rakiza-enquiries-${new Date().toISOString().slice(0, 10)}.csv`;
                         link.click();
                         URL.revokeObjectURL(url);
                         // TRUNCATION IS SAID OUT LOUD. A quiet subset is worse

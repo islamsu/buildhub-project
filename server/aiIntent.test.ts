@@ -95,14 +95,14 @@ describe('current-information detection', () => {
  */
 describe('asking for a provider without using the word "recommend"', () => {
   it.each([
-    'I need a swimming pool specialist contractor in Aswan. Who is on BuildHub?',
+    'I need a swimming pool specialist contractor in Aswan. Who is on Rakiza?',
     'I need a contractor in Cairo',
     'We need an architect for a villa in Giza',
     'Who do you have for waterproofing in Alexandria? I want a contractor.',
-    'Are there any suppliers listed on BuildHub for steel?',
+    'Are there any suppliers listed on Rakiza for steel?',
     'أحتاج مهندس في القاهرة',
     'هل لديكم مقاول تشطيبات؟',
-  ])('routes to the BuildHub directory: %s', question => {
+  ])('routes to the Rakiza directory: %s', question => {
     expect(detectIntent(question).wantsProviderRecommendation).toBe(true);
   });
 
@@ -113,7 +113,7 @@ describe('asking for a provider without using the word "recommend"', () => {
     expect(intent.location).toBe('Cairo');
   });
 
-  it('a city BuildHub does not list yields NO location filter, so the search stays wide', () => {
+  it('a city Rakiza does not list yields NO location filter, so the search stays wide', () => {
     // Aswan is not a served city. Guessing it would filter every real provider
     // out; leaving it off lets the broadening ladder answer honestly.
     const intent = detectIntent('I need a contractor in Aswan');
@@ -146,9 +146,9 @@ describe('asking for a provider without using the word "recommend"', () => {
  * qualifier is in its vocabulary, both were silently dropped, and the search
  * then reported an EXACT match on the one criterion that survived.
  */
-describe('qualifiers BuildHub cannot map are carried, not dropped', () => {
+describe('qualifiers Rakiza cannot map are carried, not dropped', () => {
   it('reports both the unserved city and the unlisted trade', () => {
-    const intent = detectIntent('I need a swimming pool specialist contractor in Aswan. Who is on BuildHub?');
+    const intent = detectIntent('I need a swimming pool specialist contractor in Aswan. Who is on Rakiza?');
     expect(intent.wantsProviderRecommendation).toBe(true);
     expect(intent.location).toBeUndefined();
     expect(intent.unmappedQualifiers).toContain('Aswan');

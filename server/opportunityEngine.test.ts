@@ -376,9 +376,9 @@ describe('the prompt block', () => {
     expect(block.indexOf('RFQ #9')).toBeLessThan(block.indexOf('RFQ #4'));
   });
 
-  it('names what BuildHub does not know, so the model does not fill it in', () => {
+  it('names what Rakiza does not know, so the model does not fill it in', () => {
     const block = formatOpportunitiesForModel(outcome, 'en');
-    expect(block).toMatch(/WHAT BUILDHUB DOES NOT KNOW/);
+    expect(block).toMatch(/WHAT RAKIZA DOES NOT KNOW/);
     expect(block).toMatch(/how many other providers are bidding/i);
     expect(block).toMatch(/Do not state,\s+estimate or imply/i);
   });

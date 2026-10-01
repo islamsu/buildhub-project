@@ -288,7 +288,7 @@ export default function Home() {
               <p className="text-background/60 text-sm leading-relaxed">
                 {lang === 'ar'
                   ? 'من التوريد إلى موقع التنفيذ — نربط رحلة مشروعك في منصة واحدة.'
-                  : 'From sourcing to site, BuildHub connects your construction journey.'}
+                  : 'From sourcing to site, Rakiza connects your construction journey.'}
               </p>
             </div>
 

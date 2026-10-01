@@ -231,7 +231,7 @@ export default function AdminRegistrations() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `buildhub-registration-metrics-${dateKey(new Date()) || 'export'}.csv`;
+      anchor.download = `rakiza-registration-metrics-${dateKey(new Date()) || 'export'}.csv`;
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast.success(lang === 'ar' ? 'تم إنشاء ملف CSV وتنزيله' : 'CSV export generated and downloaded', { id: toastId, duration: 5000, closeButton: true });

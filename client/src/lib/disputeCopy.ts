@@ -30,7 +30,7 @@ const EN = {
   subject: { project: 'Project', rfq: 'RFQ', quotation: 'Quotation' } as Dictionary,
   resolution: {
     resolved_by_agreement: 'Resolved by agreement',
-    resolved_by_platform: 'Resolved by BuildHub',
+    resolved_by_platform: 'Resolved by Rakiza',
     no_action_required: 'No action required',
     insufficient_evidence: 'Insufficient evidence',
     out_of_scope: 'Out of scope',

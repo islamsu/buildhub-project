@@ -109,7 +109,7 @@ ${body}`;
     ? `\nNOTE: these sources sit at different authority levels. Where they disagree, the LOWER tier number wins, and say that they differ rather than silently picking one.`
     : '';
 
-  return `=== BUILDHUB REFERENCE KNOWLEDGE ===
+  return `=== RAKIZA REFERENCE KNOWLEDGE ===
 Retrieved for this question. Higher authority (lower tier number) wins over
 lower authority, and all of it outranks your general recollection.${conflictNote}
 

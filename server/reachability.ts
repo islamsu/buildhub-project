@@ -83,7 +83,7 @@ export const UNCALLED_BY_DESIGN: readonly UncalledReason[] = [
   {
     procedure: 'admin.recordVendorPaymentSucceeded',
     reason: 'A payment-provider webhook write. No provider is configured, and a manual '
-      + 'button for it would record revenue BuildHub never received.',
+      + 'button for it would record revenue Rakiza never received.',
   },
   {
     procedure: 'admin.recordVendorPaymentFailed',
@@ -100,7 +100,7 @@ export const UNCALLED_BY_DESIGN: readonly UncalledReason[] = [
   },
   {
     procedure: 'admin.reconcileDueBilling',
-    reason: 'The sweep of every due subscription. BuildHub has no job runner '
+    reason: 'The sweep of every due subscription. Rakiza has no job runner '
       + '(server/billing/lifecycle.ts) and no provider, so it has nothing to sweep '
       + 'and nowhere to be called from.',
   },

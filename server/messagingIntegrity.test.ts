@@ -237,7 +237,7 @@ describe('the Messages page shows only real data', () => {
   });
 
   it('carries none of the invented identities', () => {
-    for (const invented of ['Ahmed Hassan', 'Sara Khalil', 'Mohamed Supplier', 'BuildHub Support']) {
+    for (const invented of ['Ahmed Hassan', 'Sara Khalil', 'Mohamed Supplier', 'Rakiza Support']) {
       expect(CODE).not.toContain(invented);
     }
   });

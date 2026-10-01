@@ -63,7 +63,7 @@ const COVERAGE: Readonly<Record<string, readonly string[]>> = {
   'answer language follows the site, in all four combinations': ['languageAuthority.test.ts', 'buildhubKnowledge.test.ts'],
   'authorized context only': ['aiChatSecurity.test.ts', 'aiProjectContext.test.ts'],
   'no private-data leakage': ['aiPromptPrivacy.test.ts'],
-  'no fabricated BuildHub facts': ['aiFalsePremises.test.ts'],
+  'no fabricated Rakiza facts': ['aiFalsePremises.test.ts'],
   'capability vs available knowledge': ['aiUnavailableAffordance.test.ts', 'aiAvailability.test.ts'],
 };
 
@@ -153,8 +153,8 @@ describe('§38.4 no private-data leakage', () => {
   });
 });
 
-describe('§38.5 no fabricated BuildHub facts', () => {
-  it('the prompt puts BuildHub content above the model\'s own recall', () => {
+describe('§38.5 no fabricated Rakiza facts', () => {
+  it('the prompt puts Rakiza content above the model\'s own recall', () => {
     const prompt = buildSystemPrompt('en', { userRole: 'homeowner' });
     expect(prompt.toLowerCase()).toMatch(/source of truth|buildhub content/);
   });

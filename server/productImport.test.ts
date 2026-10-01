@@ -132,7 +132,7 @@ describe('validation reports every problem, not the first', () => {
     expect(errors.some(e => e.column === 'category')).toBe(true);
   });
 
-  it('rejects a category outside the BuildHub taxonomy', () => {
+  it('rejects a category outside the Rakiza taxonomy', () => {
     // A category the directory has no filter for makes the product unfindable.
     const { errors } = parseProductImport(csv('Rebar,,Invented Category,,,,,,'), CATEGORY_RESOLVER);
     expect(errors.some(e => e.column === 'category')).toBe(true);
@@ -410,7 +410,7 @@ describe('editing a product goes through the SAME resolver', () => {
     const patches = editStub();
     await expect(
       appRouter.createCaller(supplier()).marketplace.updateProduct({ id: OWNED.id, category: 'Not A Category At All' }),
-    ).rejects.toThrow(/not a BuildHub category/);
+    ).rejects.toThrow(/not a Rakiza category/);
     expect(patches, 'a refused edit must write nothing').toEqual([]);
   });
 

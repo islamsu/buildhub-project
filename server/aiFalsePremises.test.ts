@@ -65,7 +65,7 @@ describe('the briefing refuses the premise, not just the request', () => {
   it('the section reaches an Arabic reader too', () => {
     // The briefing is deliberately the SAME in both languages - a rule is not
     // a translation - so the section must be present for an Arabic session.
-    expect(PROMPTS.ar).toContain('CLAIMS PEOPLE MAKE ABOUT BUILDHUB THAT ARE WRONG');
+    expect(PROMPTS.ar).toContain('CLAIMS PEOPLE MAKE ABOUT RAKIZA THAT ARE WRONG');
   });
 });
 
@@ -80,7 +80,7 @@ describe('each correction matches what the code actually does', () => {
     // from BuildHub warranting anything. The first version of this assertion
     // matched it and failed on a legitimate field.
     const SCHEMA = readFileSync(new URL('../drizzle/schema.ts', import.meta.url), 'utf8');
-    expect(SCHEMA, 'a BuildHub-issued guarantee column appeared').not.toMatch(/\bguarantee\w*:/i);
+    expect(SCHEMA, 'a Rakiza-issued guarantee column appeared').not.toMatch(/\bguarantee\w*:/i);
     expect(ROUTERS).not.toMatch(/buildhub (guarantees|warrants|vets)/i);
     expect(PROMPTS.en).toMatch(/documents check on a business, not a warranty on a job/i);
   });
@@ -123,9 +123,9 @@ describe('each correction matches what the code actually does', () => {
 
 // ── The precedence chain the brief specifies ──────────────────────────────
 //
-// AI PHASE PARTS 12 AND 13. The hierarchy used to have two levels: BuildHub
+// AI PHASE PARTS 12 AND 13. The hierarchy used to have two levels: Rakiza
 // information, then general expertise. The brief specifies five, in an order
-// that decides real disagreements - an attachment beats BuildHub's generic
+// that decides real disagreements - an attachment beats Rakiza's generic
 // guidance about the person's OWN document, and current regulatory information
 // beats older recall.
 //
@@ -135,8 +135,8 @@ describe('each correction matches what the code actually does', () => {
 describe('the source hierarchy is a precedence chain, in order', () => {
   const STEPS = [
     'AN ATTACHMENT THE PERSON GAVE YOU',
-    'AUTHORITATIVE BUILDHUB INFORMATION',
-    'LIVE BUILDHUB RECORDS',
+    'AUTHORITATIVE RAKIZA INFORMATION',
+    'LIVE RAKIZA RECORDS',
     'CURRENT REGULATORY AND WEB INFORMATION',
     'YOUR GENERAL CONSTRUCTION EXPERTISE',
   ];
@@ -171,9 +171,9 @@ describe('the source hierarchy is a precedence chain, in order', () => {
     expect(PROMPTS.en).toMatch(/Say which edition or date you are relying on/i);
   });
 
-  it('a BuildHub rule beats a generic assumption at EVERY level below it', () => {
-    expect(PROMPTS.en).toMatch(/A BuildHub rule always beats a generic industry assumption/i);
-    expect(PROMPTS.en).toMatch(/never present\s+BuildHub policy as universal industry practice/i);
+  it('a Rakiza rule beats a generic assumption at EVERY level below it', () => {
+    expect(PROMPTS.en).toMatch(/A Rakiza rule always beats a generic industry assumption/i);
+    expect(PROMPTS.en).toMatch(/never present\s+Rakiza policy as universal industry practice/i);
   });
 
   it('the chain reaches an Arabic session unchanged - a rule is not a translation', () => {

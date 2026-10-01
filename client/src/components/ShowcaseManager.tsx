@@ -127,7 +127,7 @@ export default function ShowcaseManager() {
         <p className="text-xs text-muted-foreground" data-testid="showcase-scope-note">
           {ar
             ? 'يؤثّر هذا على صفحتك العامة فقط. لا يغيّر ترتيبك في السوق أو نتائج البحث، وليس ترشيحاً من BuildHub ولا مساحة مدفوعة.'
-            : 'This affects your own public page only. It does not change your position in the marketplace or in search results, and it is neither a BuildHub recommendation nor a paid placement.'}
+            : 'This affects your own public page only. It does not change your position in the marketplace or in search results, and it is neither a Rakiza recommendation nor a paid placement.'}
         </p>
       </CardHeader>
       <CardContent>

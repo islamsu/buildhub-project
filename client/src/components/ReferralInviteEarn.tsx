@@ -68,8 +68,8 @@ export default function ReferralInviteEarn() {
   const share = () => {
     if (!fullLink) return;
     void (navigator as any).share({
-      title: 'BuildHub',
-      text: ar ? 'انضم إلى BuildHub عبر دعوتي' : 'Join me on BuildHub',
+      title: 'Rakiza',
+      text: ar ? 'انضم إلى BuildHub عبر دعوتي' : 'Join me on Rakiza',
       url: fullLink,
     }).catch(() => { /* dismissed by the person - not an error */ });
   };
@@ -130,7 +130,7 @@ export default function ReferralInviteEarn() {
             </li>
             <li className="flex gap-2">
               <span className="font-semibold text-primary">2.</span>
-              <span>{ar ? 'يسجّلون عبره ويبدأون العمل على المنصّة.' : 'They sign up through it and start using BuildHub.'}</span>
+              <span>{ar ? 'يسجّلون عبره ويبدأون العمل على المنصّة.' : 'They sign up through it and start using Rakiza.'}</span>
             </li>
             <li className="flex gap-2">
               <span className="font-semibold text-primary">3.</span>

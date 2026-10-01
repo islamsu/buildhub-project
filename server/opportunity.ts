@@ -315,8 +315,8 @@ export function formatOpportunitiesForModel(
   lang: 'en' | 'ar',
 ): string {
   if (outcome.matchQuality === 'none' || outcome.opportunities.length === 0) {
-    return `=== BUILDHUB OPPORTUNITY SEARCH ===
-NO OPEN RFQ on BuildHub currently matches this request.
+    return `=== RAKIZA OPPORTUNITY SEARCH ===
+NO OPEN RFQ on Rakiza currently matches this request.
 
 Say so plainly. Do NOT invent an RFQ, a client, a budget or a deadline. You may
 suggest they broaden their declared service categories, or check back - nothing
@@ -342,20 +342,20 @@ more.${lang === 'ar' ? '\nAnswer in Arabic.' : ''}
       `location: ${neutralizeUntrusted(o.location, 60) || 'not stated'}`,
       `deadline: ${o.deadline ? o.deadline.toISOString().slice(0, 10) : 'none given'}`,
     ].join(' | ');
-    return `  ${i + 1}. RFQ #${o.id}: ${safeTitle} [BuildHub score ${o.score}]
+    return `  ${i + 1}. RFQ #${o.id}: ${safeTitle} [Rakiza score ${o.score}]
      ${facts}
      why ranked here: ${o.reasons.length ? o.reasons.join('; ') : 'open and live, no other matching signal'}`;
   }).join('\n');
 
-  return `=== BUILDHUB OPPORTUNITY SEARCH ===
+  return `=== RAKIZA OPPORTUNITY SEARCH ===
 ${header}
 
-Ranked by BuildHub's own scoring. Present them in THIS ORDER. You did not
+Ranked by Rakiza's own scoring. Present them in THIS ORDER. You did not
 choose this order and you must not re-order it.
 
 ${rows}
 
-WHAT BUILDHUB DOES NOT KNOW about these: the client's real budget flexibility,
+WHAT RAKIZA DOES NOT KNOW about these: the client's real budget flexibility,
 how many other providers are bidding, whether the work suits this provider's
 current workload, and how likely any of them is to be awarded. Do not state,
 estimate or imply any of it.

@@ -24,7 +24,7 @@ vi.mock('./_core/env', () => ({ ENV: { isProduction: false } }));
 
 afterEach(() => vi.resetModules());
 
-const base = { SMTP_HOST: 'smtp.example.com', SMTP_FROM: 'BuildHub <no-reply@buildhub.test>' };
+const base = { SMTP_HOST: 'smtp.example.com', SMTP_FROM: 'Rakiza <no-reply@buildhub.test>' };
 
 // ── §1 Reading configuration ───────────────────────────────────────────────
 

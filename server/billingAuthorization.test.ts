@@ -278,7 +278,7 @@ describe('admin billing visibility (Phase 4B.1)', () => {
     }
   });
 
-  it('BuildHub stores no card, token, or payment credential column anywhere in the schema', () => {
+  it('Rakiza stores no card, token, or payment credential column anywhere in the schema', () => {
     const schema = readFileSync(new URL('../drizzle/schema.ts', import.meta.url), 'utf8');
     const billingBlock = schema.slice(schema.indexOf('export const vendorSubscriptions'), schema.indexOf('// ── Types'));
     for (const forbidden of ['cardNumber', 'cvv', 'pan', 'cardToken', 'apiKey', 'secret']) {

@@ -123,7 +123,7 @@ export default function ProductQuestionThread({
               className="mt-2 border-s-2 border-muted-foreground/40 ps-3 text-sm italic text-muted-foreground"
               data-testid={`product-answer-hidden-${item.id}`}
             >
-              {ar ? 'أزالت بيلدهَب هذه الإجابة.' : 'BuildHub removed this answer.'}
+              {ar ? 'أزالت بيلدهَب هذه الإجابة.' : 'Rakiza removed this answer.'}
             </p>
           ) : item.answer ? (
             <div className="mt-2 border-s-2 border-primary ps-3">

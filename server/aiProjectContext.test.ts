@@ -210,7 +210,7 @@ describe('the resolved block is facts, with the discipline attached', () => {
   it('forbids inventing a field that is not there', () => {
     // The failure mode of giving a model five fields is a confident sixth.
     expect(formatProjectContext(owned, 'en')).toMatch(/Do NOT invent any field not listed above/);
-    expect(formatProjectContext(owned, 'en')).toMatch(/not recorded in BuildHub rather than estimating/);
+    expect(formatProjectContext(owned, 'en')).toMatch(/not recorded in Rakiza rather than estimating/);
   });
 
   it('omits empty fields instead of printing null', () => {

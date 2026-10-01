@@ -48,7 +48,7 @@ describe('the rules are tied to the code that enforces them', () => {
   });
 });
 
-describe('A. a BuildHub question whose answer exists in the product', () => {
+describe('A. a Rakiza question whose answer exists in the product', () => {
   it('the briefing carries the actual plan prices, not a description of them', () => {
     const briefing = buildKnowledgeBriefing('en', customer);
     expect(briefing).toContain(String(PLANS.professional.standard.month));
@@ -77,11 +77,11 @@ describe('A. a BuildHub question whose answer exists in the product', () => {
   });
 });
 
-describe('B. BuildHub content must beat generic marketplace assumptions', () => {
+describe('B. Rakiza content must beat generic marketplace assumptions', () => {
   it('the prompt states the override explicitly', () => {
     const prompt = buildSystemPrompt('en', customer);
     expect(prompt).toContain('answer X');
-    expect(prompt).toMatch(/Never assume BuildHub works like another marketplace/i);
+    expect(prompt).toMatch(/Never assume Rakiza works like another marketplace/i);
   });
 
   it('the tricky cases the owner named are actually covered', () => {
@@ -103,12 +103,12 @@ describe('B. BuildHub content must beat generic marketplace assumptions', () => 
   });
 });
 
-describe('C. when BuildHub does not specify something', () => {
+describe('C. when Rakiza does not specify something', () => {
   it('the prompt requires an explicit "not specified" rather than a guess', () => {
     const prompt = buildSystemPrompt('en', customer);
     expect(prompt).toMatch(/does not specify/i);
     expect(prompt).toMatch(/CLEARLY LABELLED as general practice/i);
-    expect(prompt).toMatch(/Never invent a BuildHub policy/i);
+    expect(prompt).toMatch(/Never invent a Rakiza policy/i);
   });
 
   it('the briefing declares where its own knowledge ends', () => {
@@ -158,7 +158,7 @@ describe('E. the grounding cannot be talked out of the model', () => {
 describe('F. a feature that does not exist must not be invented', () => {
   it('the prompt forbids inventing features and limits', () => {
     expect(buildSystemPrompt('en', customer))
-      .toMatch(/Never invent a BuildHub policy, feature, price, limit or process/i);
+      .toMatch(/Never invent a Rakiza policy, feature, price, limit or process/i);
   });
 });
 

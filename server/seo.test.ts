@@ -190,8 +190,8 @@ describe('the robots directive', () => {
 
 describe('titles', () => {
   it('leads with the brand on the homepage and trails it everywhere else', () => {
-    expect(seoTitle(matchPublicSeoRoute('/'), 'en')).toMatch(/^BuildHub — /);
-    expect(seoTitle(matchPublicSeoRoute('/marketplace'), 'en')).toMatch(/ — BuildHub$/);
+    expect(seoTitle(matchPublicSeoRoute('/'), 'en')).toMatch(/^Rakiza — /);
+    expect(seoTitle(matchPublicSeoRoute('/marketplace'), 'en')).toMatch(/ — Rakiza$/);
   });
 
   it('is Arabic in Arabic, brand included', () => {
@@ -202,7 +202,7 @@ describe('titles', () => {
 
   it('uses the entity name when there is one', () => {
     const route = matchPublicSeoRoute('/marketplace/products/491');
-    expect(seoEntityTitle('Portland Cement 50kg', route, 'en')).toBe('Portland Cement 50kg — BuildHub');
+    expect(seoEntityTitle('Portland Cement 50kg', route, 'en')).toBe('Portland Cement 50kg — Rakiza');
   });
 
   it('falls back to the route title rather than rendering an empty name', () => {
@@ -215,8 +215,8 @@ describe('titles', () => {
   });
 
   it('says the brand and nothing invented for an unknown route', () => {
-    expect(seoTitle(null, 'en')).toBe('BuildHub');
-    expect(seoDescription(null, 'en')).toContain('BuildHub');
+    expect(seoTitle(null, 'en')).toBe('Rakiza');
+    expect(seoDescription(null, 'en')).toContain('Rakiza');
   });
 });
 
@@ -317,7 +317,7 @@ describe('the head the crawler receives', () => {
     const html = await applySeoHead(SHELL, '/marketplace');
     expect(html).not.toContain('Placeholder');
     expect(html).not.toContain('content="placeholder"');
-    expect(html).toContain('<title>Marketplace — suppliers, products and services — BuildHub</title>');
+    expect(html).toContain('<title>Marketplace — suppliers, products and services — Rakiza</title>');
   });
 
   it('replaces exactly one title tag', async () => {

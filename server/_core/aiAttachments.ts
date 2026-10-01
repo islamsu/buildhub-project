@@ -56,7 +56,7 @@ export function validateAiAttachment(params: {
   if (!(AI_ATTACHMENT_TYPES as readonly string[]).includes(declared)) {
     return {
       code: 'unsupported-type',
-      message: 'BuildHub AI can read PNG, JPEG, WEBP and PDF files.',
+      message: 'Rakiza AI can read PNG, JPEG, WEBP and PDF files.',
     };
   }
 
@@ -125,7 +125,7 @@ export function attachmentInstruction(names: string[], lang: 'en' | 'ar'): strin
 The person has attached: ${list}.
 
 This file is the SUBJECT of their question and it OUTRANKS every other source
-you have, including BuildHub's own knowledge and your general construction
+you have, including Rakiza's own knowledge and your general construction
 expertise, for any fact ABOUT THIS FILE.
 
   - Read the attachment and answer from what is actually in it. Do not answer
@@ -139,7 +139,7 @@ expertise, for any fact ABOUT THIS FILE.
   - Never invent a figure, dimension, quantity, rate, certification or product
     name that is not in the file.
 
-After you have answered from the attachment, you may add BuildHub information
+After you have answered from the attachment, you may add Rakiza information
 or general construction guidance - clearly separated, and clearly labelled as
 context rather than as something the file says.${lang === 'ar' ? '\nAnswer in Arabic.' : ''}
 === END ATTACHED FILE${names.length > 1 ? 'S' : ''} ===`;

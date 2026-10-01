@@ -124,11 +124,11 @@ describe('the OpenAI provider', () => {
       const { create } = mockSdk(() => ({ output_text: 'ok', status: 'completed' }));
       const ai = await loadAi({ key: 'sk-test' });
       await ai.generateAIResponse({ messages: [
-        { role: 'system', content: 'You are BuildHub AI.' },
+        { role: 'system', content: 'You are Rakiza AI.' },
         { role: 'user', content: 'hello' },
       ] });
       const sent = create.mock.calls[0][0];
-      expect(sent.instructions).toContain('You are BuildHub AI.');
+      expect(sent.instructions).toContain('You are Rakiza AI.');
       expect(sent.input).toEqual([{ role: 'user', content: 'hello' }]);
     });
 

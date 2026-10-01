@@ -76,7 +76,7 @@ const BOUNDED_BY_NATURE: Record<string, string> = {
   // never a good answer for it.
   'notifications.list':
     'The 50 most recent notifications, which is what a notification bell shows. It is a '
-    + 'feed, not an index. This becomes a truncation the day BuildHub gains a notifications '
+    + 'feed, not an index. This becomes a truncation the day Rakiza gains a notifications '
     + 'archive page, and it should be paged then.',
   'profile.myVendorNameChanges':
     'A vendor\'s own name-change requests, capped at 50. Each one is reviewed by an '

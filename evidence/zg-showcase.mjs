@@ -232,7 +232,7 @@ try {
     check(stripText !== 'MISSING' && /Selected by this supplier/i.test(String(stripText)),
       "LABELLED AS THE SUPPLIER'S OWN CHOICE", String(stripText).split('\n')[1] ?? '');
     check(stripText !== 'MISSING' && /not a paid placement/i.test(String(stripText)),
-      'and explicitly NOT a BuildHub recommendation or a paid slot');
+      'and explicitly NOT a Rakiza recommendation or a paid slot');
 
     const cardCount = await page.evaluate(`
       const el = document.querySelector('[data-testid="showcase-strip"]');

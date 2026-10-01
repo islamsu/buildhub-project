@@ -82,7 +82,7 @@ export default function BenefitsAndLimits() {
                 {allowance.adminOverride && (
                   <tr className="border-b">
                     <td className="p-2 text-muted-foreground">
-                      {ar ? 'منحة من الإدارة (تحل محل الباقة)' : 'Granted by BuildHub (replaces the plan figure)'}
+                      {ar ? 'منحة من الإدارة (تحل محل الباقة)' : 'Granted by Rakiza (replaces the plan figure)'}
                       {allowance.adminOverride.reason && (
                         <p className="text-xs">{allowance.adminOverride.reason}</p>
                       )}
@@ -135,7 +135,7 @@ export default function BenefitsAndLimits() {
             <p className="text-xs text-destructive" data-testid="benefits-mismatch">
               {ar
                 ? `المجموع أعلاه (${unlimited(allowance.computed)}) لا يطابق ما يطبّقه النظام (${unlimited(allowance.effective)}). المطبَّق فعليًا هو الرقم الثاني — يرجى التواصل مع الدعم.`
-                : `The parts above add to ${unlimited(allowance.computed)}, which does not match the ${unlimited(allowance.effective)} BuildHub is enforcing. The enforced figure is what applies - please contact support.`}
+                : `The parts above add to ${unlimited(allowance.computed)}, which does not match the ${unlimited(allowance.effective)} Rakiza is enforcing. The enforced figure is what applies - please contact support.`}
             </p>
           )}
         </div>

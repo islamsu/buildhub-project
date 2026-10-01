@@ -136,7 +136,7 @@ describe('the role comes from the session, never from the request', () => {
     const prompt = (generateAIResponse as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0].messages[0].content as string;
     expect(prompt).toMatch(/decision-friendly/);
     expect(prompt).not.toMatch(/Use correct technical terminology/);
-    expect(prompt).toContain('BuildHub role: homeowner');
+    expect(prompt).toContain('Rakiza role: homeowner');
   });
 
   it('the input schema does not declare a role field, so nothing could honour one', () => {
@@ -253,7 +253,7 @@ describe('role awareness does not widen what the model can see', () => {
   it('the prompt carries the role and the plan, and no other profile data', async () => {
     const prompt = await promptFor('contractor');
     // What IS there.
-    expect(prompt).toContain('BuildHub role: contractor');
+    expect(prompt).toContain('Rakiza role: contractor');
     // What must NOT be: identity and contact details are not needed to pitch an
     // answer, so they are not sent. Personalisation is not a reason to widen
     // the context.

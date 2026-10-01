@@ -93,7 +93,7 @@ export async function reverseRewardEffect(
       ok: true,
       effect: 'nothing_to_undo',
       detail: 'The subscription time already granted is left in place. '
-        + 'BuildHub does not shorten a period it cannot prove this reward alone extended.',
+        + 'Rakiza does not shorten a period it cannot prove this reward alone extended.',
     };
   }
 

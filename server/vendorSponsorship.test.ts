@@ -95,7 +95,7 @@ describe('grantSponsorship - a real arrangement, or a refusal that says why', ()
     });
   });
 
-  it('RECORDS NO PRICE, NO INVOICE AND NO PAYMENT - BuildHub has no payment provider', async () => {
+  it('RECORDS NO PRICE, NO INVOICE AND NO PAYMENT - Rakiza has no payment provider', async () => {
     const rec = makeDb({ liveLookup: [] });
     await grantSponsorship({
       db: rec.db, vendorId: VENDOR, category: 'Materials', grantedBy: ADMIN, reason: 'x', now: NOW,

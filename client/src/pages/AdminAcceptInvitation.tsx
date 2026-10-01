@@ -10,6 +10,7 @@
 // just avoids leaving a spent credential lying around.
 
 import { useEffect, useRef, useState } from 'react';
+import { RakizaLogo } from '@/components/brand/RakizaLogo';
 import { Link, useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { KeyRound, Loader2 } from 'lucide-react';
@@ -79,7 +80,9 @@ export default function AdminAcceptInvitation() {
         <div className="mb-6 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2" data-testid="brand-home">
             <KeyRound className="h-6 w-6 text-primary" />
-            <span className="text-lg font-semibold">BuildHub</span>
+            {/* The shared lock-up. The icon stays because it says WHICH door
+                this is; the brand is not typed out beside it. */}
+            <RakizaLogo size="sm" />
           </Link>
           <LanguageToggle />
         </div>
@@ -87,7 +90,7 @@ export default function AdminAcceptInvitation() {
           <CardContent className="p-6">
             <h1 className="text-2xl font-bold">{t('Set your password', 'عيّن كلمة المرور')}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {t('Choose a password only you know. Nobody at BuildHub can see it.',
+              {t('Choose a password only you know. Nobody at Rakiza can see it.',
                  'اختر كلمة مرور لا يعرفها سواك. لا يمكن لأحد في BuildHub الاطلاع عليها.')}
             </p>
             <form

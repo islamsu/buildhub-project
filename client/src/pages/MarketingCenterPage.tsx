@@ -69,7 +69,7 @@ export default function MarketingCenterPage() {
           <p className="text-sm text-muted-foreground">
             {ar
               ? 'كيف يُعرض نشاطك على BuildHub، وما هو فعّال الآن، ونطاقه وانتهاؤه، وأداؤه من أحداث مسجّلة فعلياً.'
-              : 'How your business appears across BuildHub, what is active now, its scope and expiry, and how it is performing from events BuildHub actually recorded.'}
+              : 'How your business appears across Rakiza, what is active now, its scope and expiry, and how it is performing from events Rakiza actually recorded.'}
           </p>
         </div>
 
@@ -92,7 +92,7 @@ export default function MarketingCenterPage() {
                   <p className="text-2xl font-semibold tabular-nums">{data?.activeFeatured ?? 0}</p>
                   <p className="mt-1 text-sm font-medium">{ar ? 'ترشيحات BuildHub الفعّالة' : 'Active Featured'}</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {ar ? 'اختيار تحريري من BuildHub' : "BuildHub's editorial selection"}
+                    {ar ? 'اختيار تحريري من BuildHub' : "Rakiza's editorial selection"}
                   </p>
                 </CardContent>
               </Card>
@@ -101,7 +101,7 @@ export default function MarketingCenterPage() {
                   <p className="text-2xl font-semibold tabular-nums">{data?.activeSponsored ?? 0}</p>
                   <p className="mt-1 text-sm font-medium">{ar ? 'المساحات المدفوعة الفعّالة' : 'Active Sponsored'}</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {ar ? 'مساحة تجارية ممنوحة إدارياً' : 'Commercial placement, granted by BuildHub'}
+                    {ar ? 'مساحة تجارية ممنوحة إدارياً' : 'Commercial placement, granted by Rakiza'}
                   </p>
                 </CardContent>
               </Card>
@@ -129,7 +129,7 @@ export default function MarketingCenterPage() {
                 <p className="text-sm text-muted-foreground">
                   {ar
                     ? 'كل رقم هنا هو عدّ لأحداث سجّلتها BuildHub فعلاً: ظهور، وفتح الصفحة، ونقرة إجراء، وطلب مؤهل.'
-                    : 'Every figure here counts events BuildHub actually recorded: impressions, page opens, action clicks and qualified enquiries.'}
+                    : 'Every figure here counts events Rakiza actually recorded: impressions, page opens, action clicks and qualified enquiries.'}
                 </p>
               </CardHeader>
               <CardContent>
@@ -141,7 +141,7 @@ export default function MarketingCenterPage() {
                     <p className="text-sm text-muted-foreground">
                       {ar
                         ? 'لا توجد لديك مساحات مدفوعة أو ترشيحات حالياً. الترشيح اختيار تحريري من BuildHub، والمساحة التجارية تُمنح إدارياً.'
-                        : 'You have no Sponsored placements or Featured selections right now. Featured is BuildHub’s editorial choice, and Sponsored placement is granted by BuildHub.'}
+                        : 'You have no Sponsored placements or Featured selections right now. Featured is Rakiza’s editorial choice, and Sponsored placement is granted by Rakiza.'}
                     </p>
                     <p className="mx-auto mt-2 max-w-lg text-xs text-muted-foreground">
                       {ar
@@ -259,7 +259,7 @@ export default function MarketingCenterPage() {
                   <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   {ar
                     ? 'لا تعرض BuildHub ميزانيات أو تكلفة نقرة أو عائداً على الإنفاق، لأنه لا توجد بعد بوابة دفع — ورقم كهذا سيكون مُختلقاً.'
-                    : 'BuildHub shows no budget, cost-per-click or return-on-spend figures, because there is no payment provider yet — any such number would be invented.'}
+                    : 'Rakiza shows no budget, cost-per-click or return-on-spend figures, because there is no payment provider yet — any such number would be invented.'}
                 </p>
               </CardContent>
             </Card>

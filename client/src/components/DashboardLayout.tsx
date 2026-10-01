@@ -21,6 +21,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
+import { RakizaLogo } from '@/components/brand/RakizaLogo';
 import { useLanguage } from "@/contexts/LanguageContext";
 import { attentionMeaning } from "@shared/adminAttention";
 import { trpc } from "@/lib/trpc";
@@ -675,8 +676,11 @@ function DashboardLayoutContent({
                   data-testid="brand-home"
                   aria-label={t('nav.home')}
                 >
-                  <Building2 className="h-5 w-5 text-primary flex-shrink-0" />
-                  <span className="font-bold tracking-tight truncate text-primary">BuildHub</span>
+                  {/* THE SHARED LOCK-UP, not a UI icon beside the word. This
+                      was `Building2` plus bold text - the same glyph this
+                      codebase uses as an ordinary list bullet, so the logo and
+                      a bullet were the same drawing. */}
+                  <RakizaLogo size="sm" />
                 </Link>
               ) : null}
             </div>

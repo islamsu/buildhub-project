@@ -63,13 +63,13 @@ describe('the shared vocabulary matches the columns it describes', () => {
     for (const status of DISPUTE_OPEN_STATUSES) expect(health).toContain(`'${status}'`);
   });
 
-  it('nothing in the vocabulary promises money BuildHub does not hold', () => {
+  it('nothing in the vocabulary promises money Rakiza does not hold', () => {
     // BuildHub takes no payments, holds no funds and issues no refunds, so a
     // refund category would describe a process that does not exist and invite a
     // user to expect one.
     const words = [...DISPUTE_CATEGORIES, ...DISPUTE_RESOLUTION_TYPES].join(' ');
     for (const forbidden of ['refund', 'chargeback', 'payment', 'compensat', 'reimburse', 'payout']) {
-      expect(words, `${forbidden} promises a remedy BuildHub cannot deliver`).not.toContain(forbidden);
+      expect(words, `${forbidden} promises a remedy Rakiza cannot deliver`).not.toContain(forbidden);
     }
   });
 });

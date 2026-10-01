@@ -107,7 +107,7 @@ async function main() {
 
   const username = (arg('username') ?? process.env.BOOTSTRAP_ADMIN_USERNAME ?? '').trim().toLowerCase();
   const email = (arg('email') ?? process.env.BOOTSTRAP_ADMIN_EMAIL ?? '').trim().toLowerCase();
-  const name = arg('name') ?? process.env.BOOTSTRAP_ADMIN_NAME ?? 'BuildHub Administrator';
+  const name = arg('name') ?? process.env.BOOTSTRAP_ADMIN_NAME ?? 'Rakiza Administrator';
 
   if (!username) fail('--username is required (or BOOTSTRAP_ADMIN_USERNAME).');
   if (!email) fail('--email is required (or BOOTSTRAP_ADMIN_EMAIL).');

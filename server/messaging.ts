@@ -126,7 +126,7 @@ export async function listConversations(
     // A correspondent whose account has gone is not rendered as a blank row.
     if (!person) return [];
     const last = messageById.get(Number(peer.lastMessageId));
-    const name = person.name || 'BuildHub user';
+    const name = person.name || 'Rakiza user';
     return [{
       id: Number(peer.peerId),
       name,

@@ -902,7 +902,7 @@ const authRouter = router({
     }
 
     const sessionToken = await sdk.createSessionToken(candidate.openId, {
-      name: candidate.name || candidate.username || 'BuildHub user',
+      name: candidate.name || candidate.username || 'Rakiza user',
     });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
     await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, candidate.id));
@@ -965,7 +965,7 @@ const authRouter = router({
     if (candidate.accountStatus !== 'active' || candidate.deactivatedAt) throw reject();
 
     const sessionToken = await sdk.createSessionToken(candidate.openId, {
-      name: candidate.name || candidate.username || 'BuildHub administrator',
+      name: candidate.name || candidate.username || 'Rakiza administrator',
     });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
     await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, candidate.id));
@@ -1068,7 +1068,7 @@ const authRouter = router({
       try {
         await getMailer().send({
           to: email,
-          subject: 'Reset your BuildHub password',
+          subject: 'Reset your Rakiza password',
           body: `Open this link to choose a new password:\n\n${ENV.appBaseUrl}/auth/reset-password?token=${token}\n\n`
             + `The link expires in ${Math.round(PASSWORD_RESET_TTL_MS / 60000)} minutes. `
             + `If you did not request this, you can ignore this message - your password has not changed.`,
@@ -1506,7 +1506,7 @@ const projectsRouter = router({
       if (input.marketCode !== undefined && !isEnabledMarket(input.marketCode)) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: 'BuildHub does not currently operate in that market.',
+          message: 'Rakiza does not currently operate in that market.',
         });
       }
       const marketCode: MarketCode = isEnabledMarket(input.marketCode) ? input.marketCode : resolveImplicitMarket();
@@ -1919,8 +1919,8 @@ const projectsRouter = router({
            * country and no idea what to do about it.
            */
           message: {
-            unknown_target: 'That is not a market BuildHub recognises.',
-            target_disabled: 'BuildHub does not currently operate in that market.',
+            unknown_target: 'That is not a market Rakiza recognises.',
+            target_disabled: 'Rakiza does not currently operate in that market.',
             same_market: 'The work location is already set to that market.',
             award_exists: 'A quotation on this project has been accepted, so its work location is fixed. An agreed price cannot be restated in another currency.',
             quotation_exists: 'Suppliers have already quoted work on this project in its current currency. Their quotations would have to be withdrawn before the work location can change.',
@@ -2556,7 +2556,7 @@ const marketplaceRouter = router({
             ? `"${rejection.category.nameEn}" is a service category and cannot be used for a product.`
             : rejection.reason === 'AMBIGUOUS'
               ? `"${rejection.supplied}" matches more than one category. Use the exact category name.`
-              : `"${input.category}" is not a BuildHub category.`;
+              : `"${input.category}" is not a Rakiza category.`;
         throw new TRPCError({ code: 'BAD_REQUEST', message });
       }
 
@@ -2664,7 +2664,7 @@ const marketplaceRouter = router({
         .map(row => ({
           line: row.line,
           column: 'unit',
-          message: `"${row.unit}" is not a unit BuildHub recognises. Use one of: ${PRODUCT_UNITS.join(', ')}`,
+          message: `"${row.unit}" is not a unit Rakiza recognises. Use one of: ${PRODUCT_UNITS.join(', ')}`,
         }));
 
       const errors = [...parsed.errors, ...conflicts, ...unitErrors]
@@ -2875,7 +2875,7 @@ const marketplaceRouter = router({
               ? `"${rejection.category.nameEn}" is a service category and cannot be used for a product.`
               : rejection.reason === 'AMBIGUOUS'
                 ? `"${rejection.supplied}" matches more than one category. Use the exact category name.`
-                : `"${patch.category}" is not a BuildHub category.`;
+                : `"${patch.category}" is not a Rakiza category.`;
           throw new TRPCError({ code: 'BAD_REQUEST', message });
         }
         patch.category = resolved.category.nameEn;
@@ -3938,7 +3938,7 @@ const rfqRouter = router({
         if (!isEnabledMarket(project.marketCode)) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
-            message: 'BuildHub does not currently operate in this project\'s market, so a new request cannot be raised against it.',
+            message: 'Rakiza does not currently operate in this project\'s market, so a new request cannot be raised against it.',
           });
         }
         if (input.marketCode !== undefined && input.marketCode !== project.marketCode) {
@@ -3952,7 +3952,7 @@ const rfqRouter = router({
         if (!isEnabledMarket(input.marketCode)) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
-            message: 'BuildHub does not currently operate in that market.',
+            message: 'Rakiza does not currently operate in that market.',
           });
         }
         marketCode = input.marketCode;
@@ -5306,7 +5306,7 @@ const rfqRouter = router({
         if (error instanceof UnknownCurrencyScaleError) {
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: 'This request is denominated in a currency BuildHub cannot price in. Contact support rather than quoting.',
+            message: 'This request is denominated in a currency Rakiza cannot price in. Contact support rather than quoting.',
           });
         }
         throw error;
@@ -5737,7 +5737,7 @@ const messagesRouter = router({
     if (!person || person.accountStatus !== 'active') {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'That recipient is not available.' });
     }
-    const name = person.name || 'BuildHub user';
+    const name = person.name || 'Rakiza user';
     return {
       id: person.id,
       name,
@@ -5820,7 +5820,7 @@ const messagesRouter = router({
   // elsewhere - the proxy resolves keys through rows - but here it is the
   // sender's own id from the session being required to match, which is a
   // different thing: it stops a sender naming a key that is not theirs.
-  send: protectedProcedure.input(z.object({ receiverId: z.number().int().positive(), projectId: z.number().int().positive().optional(), content: z.string().min(1).max(4000), type: z.enum(['text', 'file', 'quotation']).default('text'), fileUrl: z.string().max(512).regex(/^\/manus-storage\/message-attachments\/user-\d+\//, 'Attachment must be a BuildHub message upload').optional(), quotationId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
+  send: protectedProcedure.input(z.object({ receiverId: z.number().int().positive(), projectId: z.number().int().positive().optional(), content: z.string().min(1).max(4000), type: z.enum(['text', 'file', 'quotation']).default('text'), fileUrl: z.string().max(512).regex(/^\/manus-storage\/message-attachments\/user-\d+\//, 'Attachment must be a Rakiza message upload').optional(), quotationId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
     /*
      * BOUNDED BEFORE ANYTHING ELSE HAPPENS. Every other content endpoint was
      * rate limited and this one was not, so one account could reach every
@@ -5917,11 +5917,11 @@ const messagesRouter = router({
     await notifyUser(db, {
       userId: input.receiverId,
       title: 'New message',
-      body: `${ctx.user.name || 'A BuildHub user'} sent you a message`,
+      body: `${ctx.user.name || 'A Rakiza user'} sent you a message`,
       type: 'message',
       link: `/messages?to=${ctx.user.id}`,
       messageKey: 'notif.message.received',
-      messageParams: { senderName: ctx.user.name || 'A BuildHub user' },
+      messageParams: { senderName: ctx.user.name || 'A Rakiza user' },
     });
     return { id: Number(result[0].insertId), ...input, senderId: ctx.user.id };
   }),
@@ -6340,10 +6340,10 @@ const servicesRouter = router({
           // to know - it tells them what to do next rather than that something
           // went wrong.
           message: decision.reason === 'market_disabled'
-            ? 'BuildHub does not currently operate in that market.'
+            ? 'Rakiza does not currently operate in that market.'
             : decision.reason === 'not_approved_in_market'
               ? 'Your business is not approved to offer services in that market yet.'
-              : 'That is not a market BuildHub recognises.',
+              : 'That is not a market Rakiza recognises.',
         });
       }
 
@@ -6744,7 +6744,7 @@ const supportRouter = router({
           .from(supportTickets).where(eq(supportTickets.id, access.ticket.id)).limit(1);
         await notifyUser(db, {
           userId: owner.requesterId,
-          title: 'BuildHub support replied',
+          title: 'Rakiza support replied',
           body: access.ticket.reference ?? `Ticket #${access.ticket.id}`,
           type: 'info',
           link: `/support/${access.ticket.id}`,
@@ -11171,8 +11171,8 @@ const adminRouter = router({
             ? 'Something you posted was hidden'
             : 'Something you posted was restored',
           body: result.hidden
-            ? 'BuildHub hid a product question or answer you posted.'
-            : 'BuildHub restored a product question or answer you posted.',
+            ? 'Rakiza hid a product question or answer you posted.'
+            : 'Rakiza restored a product question or answer you posted.',
           type: 'product',
           link: `/marketplace/products/${question.productId}`,
           messageKey: result.hidden ? 'notif.product.moderated' : 'notif.product.restored',
@@ -11520,7 +11520,7 @@ const adminRouter = router({
       await notifyUser(db, {
         userId: ticket.requesterId,
         title: input.to === 'awaiting_user'
-          ? 'BuildHub support needs more information'
+          ? 'Rakiza support needs more information'
           : `Your support ticket is now ${input.to.replace('_', ' ')}`,
         body: ticket.reference ?? `Ticket #${ticket.id}`,
         type: 'info',
@@ -12066,7 +12066,7 @@ const adminRouter = router({
     // out by their own action, because the token they are holding predates
     // sessionsInvalidBefore.
     const sessionToken = await sdk.createSessionToken(ctx.user.openId, {
-      name: ctx.user.name || ctx.user.username || 'BuildHub administrator',
+      name: ctx.user.name || ctx.user.username || 'Rakiza administrator',
     });
     ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req) });
 

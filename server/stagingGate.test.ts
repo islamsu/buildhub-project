@@ -413,7 +413,7 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
     // behind a green run - the exact shape of the original incident.
     expect(PAID).not.toContain('skip(');
     expect(PAID).toContain('the Arabic AI request succeeds against the configured provider');
-    expect(PAID).toContain('BuildHub returns a non-empty Arabic answer');
+    expect(PAID).toContain('Rakiza returns a non-empty Arabic answer');
   });
 
   it('only the unconfigured branch skips, and it says exactly what it needs', () => {
@@ -472,21 +472,21 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
     expect(GATE).toContain('const AI_KNOWLEDGE_SUITE');
     expect(GATE).toContain("process.env.STAGING_AI_KNOWLEDGE_SUITE ?? ''");
     expect(GATE).toContain('if (AI_KNOWLEDGE_SUITE) {');
-    expect(GATE).toContain("skip('29. BuildHub knowledge priority (live)'");
+    expect(GATE).toContain("skip('29. Rakiza knowledge priority (live)'");
     expect(GATE).toContain('twelve extra paid provider requests');
     // And the number matches how many paid asks the suite actually makes.
-    const suite = GATE.slice(GATE.indexOf('29. BuildHub knowledge priority'));
+    const suite = GATE.slice(GATE.indexOf('29. Rakiza knowledge priority'));
     const paidAsks = (suite.match(/await ask\(/g) ?? []).length;
     expect(paidAsks).toBe(12);
     expect(WORKFLOW).toContain('ai_knowledge_suite:');
     expect(WORKFLOW).toContain('STAGING_AI_KNOWLEDGE_SUITE:');
   });
 
-  it('the knowledge suite proves grounding with a number only BuildHub knows', () => {
+  it('the knowledge suite proves grounding with a number only Rakiza knows', () => {
     // "The model seems to know BuildHub" is not evidence. The expected price is
     // read from the deployment's own billing.plans, so the check cannot pass on
     // general knowledge and cannot pass by coincidence.
-    const SUITE = GATE.slice(GATE.indexOf('if (AI_KNOWLEDGE_SUITE) {'), GATE.indexOf("skip('29. BuildHub knowledge priority (live)'"));
+    const SUITE = GATE.slice(GATE.indexOf('if (AI_KNOWLEDGE_SUITE) {'), GATE.indexOf("skip('29. Rakiza knowledge priority (live)'"));
     expect(SUITE).toContain("get('billing.plans')");
     expect(SUITE).toContain('answer.includes(PRICE)');
     // Both languages must carry the SAME fact.
@@ -494,10 +494,10 @@ describe('§6 the AI sections cannot claim an AI that was never exercised', () =
   });
 
   it('the knowledge suite covers all ten cases the owner listed', () => {
-    const SUITE = GATE.slice(GATE.indexOf('if (AI_KNOWLEDGE_SUITE) {'), GATE.indexOf("skip('29. BuildHub knowledge priority (live)'"));
+    const SUITE = GATE.slice(GATE.indexOf('if (AI_KNOWLEDGE_SUITE) {'), GATE.indexOf("skip('29. Rakiza knowledge priority (live)'"));
     expect(SUITE).toContain('29.1 a general construction question');
-    expect(SUITE).toContain('29.2 a BuildHub fact is answered from BuildHub content');
-    expect(SUITE).toContain('29.3 BuildHub content beats the generic marketplace assumption');
+    expect(SUITE).toContain('29.2 a Rakiza fact is answered from Rakiza content');
+    expect(SUITE).toContain('29.3 Rakiza content beats the generic marketplace assumption');
     expect(SUITE).toContain('29.4 an unpublished point is acknowledged, not invented');
     expect(SUITE).toContain('29.5 the Arabic question is answered in Arabic');
     expect(SUITE).toContain('29.6 the English question is answered in English');
@@ -605,7 +605,7 @@ describe('§7 the attachment section proves the feature without faking storage',
     for (const refusal of [
       'an SVG relabelled as a PNG is refused',
       'an HTML document relabelled as a PNG is refused',
-      'a format BuildHub does not advertise is refused',
+      'a format Rakiza does not advertise is refused',
       'a name that disagrees with its own declared type is refused',
       'an empty file is refused',
     ]) {

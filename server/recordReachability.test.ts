@@ -190,7 +190,7 @@ describe('dashboard KPIs lead to the records they count', () => {
   });
 });
 
-describe('every business entity BuildHub stores is either openable or deliberately not', () => {
+describe('every business entity Rakiza stores is either openable or deliberately not', () => {
   // The list is the schema's, not a wish list. Where there is no detail page
   // the reason is recorded here rather than left as an unexplained gap.
   const ENTITIES: Array<{ name: string; route?: string; note?: string }> = [
@@ -343,6 +343,6 @@ describe('a product names who sells it, and links there', () => {
   it('and degrades honestly when a supplier row is missing', () => {
     // A product whose supplier account was removed must not render "undefined".
     expect(productDetail).toContain('{product.supplier && (');
-    expect(productDetail).toContain("product.supplier.name ?? (lang === 'ar' ? 'مورد على BuildHub' : 'A BuildHub supplier')");
+    expect(productDetail).toContain("product.supplier.name ?? (lang === 'ar' ? 'مورد على BuildHub' : 'A Rakiza supplier')");
   });
 });

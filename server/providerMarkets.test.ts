@@ -106,7 +106,7 @@ describe('the primary market must be one the provider serves', () => {
     /*
      * A provider who has not named a primary market has contradicted nothing.
      * The column is nullable on purpose: an approval for a market proves
-     * BuildHub approved them there, NOT that it is where they mainly work -
+     * Rakiza approved them there, NOT that it is where they mainly work -
      * the Omani vendor who opened this workstream is the standing proof that
      * those are different claims.
      */
@@ -126,7 +126,7 @@ describe('the primary market must be one the provider serves', () => {
 });
 
 describe('legal country is wider than the market registry', () => {
-  it('accepts a country BuildHub does not operate in', () => {
+  it('accepts a country Rakiza does not operate in', () => {
     // A Jordanian contractor serving Saudi Arabia is legitimate. Validating
     // legal country against MarketCode would reject them.
     for (const code of ['JO', 'LB', 'TR', 'GB', 'IN']) {

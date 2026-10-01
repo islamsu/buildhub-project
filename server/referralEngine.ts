@@ -342,7 +342,7 @@ export async function qualifyReferralEvent(
     }
 
     // A reward type with no implementation must not silently read as granted.
-    return { ok: false as const, reason: `${campaign.rewardType} is not applied by BuildHub.` };
+    return { ok: false as const, reason: `${campaign.rewardType} is not applied by Rakiza.` };
   })();
 
   if (!applied.ok) {

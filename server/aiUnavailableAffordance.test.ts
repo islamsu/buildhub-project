@@ -66,7 +66,7 @@ describe('when no AI provider is configured', () => {
     const at = I18N.indexOf("'ai.unavailable.body':");
     const body = I18N.slice(at, at + 260);
     expect(body).toMatch(/no AI provider configured/i);
-    expect(body).toMatch(/Everything else on BuildHub works normally/i);
+    expect(body).toMatch(/Everything else on Rakiza works normally/i);
   });
 
   it('the notice is rendered ABOVE the cards', () => {

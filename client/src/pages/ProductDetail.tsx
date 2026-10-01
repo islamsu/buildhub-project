@@ -156,7 +156,7 @@ export default function ProductDetail() {
       <div className="min-w-0">
         <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'المورد' : 'Sold by'}</p>
         <p className="truncate text-sm font-medium">
-          {product.supplier.name ?? (lang === 'ar' ? 'مورد على BuildHub' : 'A BuildHub supplier')}
+          {product.supplier.name ?? (lang === 'ar' ? 'مورد على BuildHub' : 'A Rakiza supplier')}
         </p>
       </div>
       {product.supplier.verified && <BadgeCheck className="ms-auto h-4 w-4 shrink-0 text-emerald-600" />}

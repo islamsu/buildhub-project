@@ -95,7 +95,7 @@ describe('no figure is invented', () => {
     const offenders = PRODUCT_FILES
       .filter(file => forbidden.test(codeOf(file)))
       .map(relative);
-    expect(offenders, 'a commercial figure BuildHub cannot derive is being computed')
+    expect(offenders, 'a commercial figure Rakiza cannot derive is being computed')
       .toEqual([]);
 
     const mrr = PRODUCT_FILES.filter(file => /\bmrr\s*[:=]\s*[^=]/i.test(codeOf(file))).map(relative);

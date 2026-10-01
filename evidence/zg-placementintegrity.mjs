@@ -151,7 +151,7 @@ try {
     check(badge && badge.icons > 0,
       'and its own icon, so two badges are distinguishable without hue', String(badge?.icons));
     check(/sponsor/i.test(String(badge?.text)),
-      'and a PAID placement says Sponsored, never BuildHub\'s editorial word', badge?.text);
+      'and a PAID placement says Sponsored, never Rakiza\'s editorial word', badge?.text);
 
     /* THE FEATURED BADGE MUST BE A DIFFERENT WORD AND A DIFFERENT ICON. */
     const distinct = await page.evaluate(`

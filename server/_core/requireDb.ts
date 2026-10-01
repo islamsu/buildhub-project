@@ -45,7 +45,7 @@ export async function requireDb() {
   if (!db) {
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
-      message: 'BuildHub could not reach its database. This is not an empty result - please try again.',
+      message: 'Rakiza could not reach its database. This is not an empty result - please try again.',
     });
   }
   return db;

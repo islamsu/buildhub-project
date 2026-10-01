@@ -173,7 +173,7 @@ try {
   const titles = [home, hub, catalogue, suppliers, product].map(h => h.title.value);
   check(new Set(titles).size === titles.length, 'five public routes, five different titles',
     `${new Set(titles).size}/${titles.length}`);
-  check(titles.every(title => title && title.includes('BuildHub')), 'each one names the product');
+  check(titles.every(title => title && title.includes('Rakiza')), 'each one names the product');
   const descriptions = [home, hub, catalogue, suppliers].map(h => h.description.value);
   check(new Set(descriptions).size === descriptions.length, 'and four different descriptions');
 
@@ -345,14 +345,14 @@ try {
   check(sitemap.status === 503, 'the sitemap answers 503 when the catalogue is unreachable',
     `HTTP ${sitemap.status}`);
   check(!sitemap.body.includes('<urlset'),
-    'it does NOT answer with a valid empty sitemap - that would state, in XML, that BuildHub has no catalogue');
+    'it does NOT answer with a valid empty sitemap - that would state, in XML, that Rakiza has no catalogue');
   check(/not an empty catalogue/i.test(sitemap.body), 'and it says which of the two it is');
 
   /* The pages themselves must still serve: a database outage degrades the
      title to the route's generic one, it does not take the site down. */
   const h = await head(broken.base, `/marketplace/products/${sampleId}`);
   check(h.status === 200, 'a product page still serves with no database', `HTTP ${h.status}`);
-  check(h.title.value === 'Product specifications and supplier — BuildHub',
+  check(h.title.value === 'Product specifications and supplier — Rakiza',
     'and falls back to the route title rather than failing or inventing a name', h.title.value ?? 'absent');
   const robots = await text(broken.base, '/robots.txt');
   check(robots.status === 200, 'robots.txt needs no database', `HTTP ${robots.status}`);
@@ -409,7 +409,7 @@ console.log('\n── the provider storefront, signed out ──');
     await page.goto(`${LOCAL}/marketplace`);
     await waitFor(page, `document.title.includes('Marketplace')`);
     const enTitle = await page.evaluate('return document.title;');
-    check(enTitle === 'Marketplace — suppliers, products and services — BuildHub',
+    check(enTitle === 'Marketplace — suppliers, products and services — Rakiza',
       'the marketplace tab names the marketplace, in English', enTitle);
 
     await page.evaluate(`localStorage.setItem('buildhub_lang', 'ar'); return true;`);
@@ -424,7 +424,7 @@ console.log('\n── the provider storefront, signed out ──');
     await page.goto(`${LOCAL}/marketplace/products/${sampleId}`);
     await waitFor(page, `document.title.startsWith(${JSON.stringify(sampleName)})`);
     const productTitle = await page.evaluate('return document.title;');
-    check(productTitle === `${sampleName} — BuildHub`,
+    check(productTitle === `${sampleName} — Rakiza`,
       'a product tab names the product', productTitle);
 
     /* And two different products must not share a tab title. */
@@ -433,7 +433,7 @@ console.log('\n── the provider storefront, signed out ──');
     ).trim();
     if (otherId) {
       await page.goto(`${LOCAL}/marketplace/products/${otherId}`);
-      await waitFor(page, `document.title !== ${JSON.stringify(productTitle)} && document.title.includes('BuildHub')`);
+      await waitFor(page, `document.title !== ${JSON.stringify(productTitle)} && document.title.includes('Rakiza')`);
       const otherTitle = await page.evaluate('return document.title;');
       check(otherTitle !== productTitle, 'and two products do not share one title',
         `${productTitle} vs ${otherTitle}`);

@@ -83,7 +83,7 @@ export function normalizeUsername(value: string | null | undefined) {
 function requireDbHere(): Promise<NonNullable<Awaited<ReturnType<typeof getDb>>>> {
   return getDb().then(db => {
     if (!db) {
-      throw new Error('BuildHub could not reach its database. This is not an empty result - please try again.');
+      throw new Error('Rakiza could not reach its database. This is not an empty result - please try again.');
     }
     return db;
   });

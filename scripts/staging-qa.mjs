@@ -1490,12 +1490,12 @@ try {
         console.log(`INFO  28. Arabic answer length: ${arContent.length} chars`);
         if (arHttpStatus !== 200) {
           console.log(`INFO  28. refusal message: ${arMsg || '(none captured)'}`);
-          console.log(`INFO  28. refused by: ${/Too many AI requests/i.test(arMsg) ? "BuildHub's own AI rate limiter" : 'the provider path'}`);
+          console.log(`INFO  28. refused by: ${/Too many AI requests/i.test(arMsg) ? "Rakiza's own AI rate limiter" : 'the provider path'}`);
         }
 
         check(arHttpStatus === 200, '28. the Arabic AI request succeeds against the configured provider',
           `http ${arHttpStatus}${arCode ? ` ${arCode}` : ''} in ${elapsed}ms${arHttpStatus !== 200 ? ` — ${arMsg.slice(0, 90)}` : ''}`);
-        check(arContent.trim().length > 0, '28. BuildHub returns a non-empty Arabic answer',
+        check(arContent.trim().length > 0, '28. Rakiza returns a non-empty Arabic answer',
           arContent ? `${arContent.trim().slice(0, 60)}…` : `no content; ${arCode || 'no code'}`);
 
         // The ANSWER must be Arabic, not merely the page around it.
@@ -1572,7 +1572,7 @@ try {
   // length. A model answering from general knowledge cannot produce 499 EGP;
   // if it appears, the briefing demonstrably reached the model and was used.
   if (AI_KNOWLEDGE_SUITE) {
-    section('29. BuildHub knowledge priority (live)');
+    section('29. Rakiza knowledge priority (live)');
 
     // Language models write TYPOGRAPHIC punctuation: "can\u2019t", not "can't". A
     // check for the word "can't" therefore misses a perfectly good refusal and
@@ -1601,28 +1601,28 @@ try {
       q1.answer ? `${q1.answer.slice(0, 60)}…` : `http ${q1.s} ${q1.code}`);
 
     // 2. A BuildHub question whose answer is in BuildHub's own source.
-    const q2 = await ask('On BuildHub, how many qualified enquiries per month does the free vendor plan include?', 'en');
-    console.log(`INFO  29.2 BuildHub fact -> http ${q2.s} in ${q2.ms}ms`);
+    const q2 = await ask('On Rakiza, how many qualified enquiries per month does the free vendor plan include?', 'en');
+    console.log(`INFO  29.2 Rakiza fact -> http ${q2.s} in ${q2.ms}ms`);
     check(q2.s === 200 && /\b5\b/.test(q2.plain),
-      '29.2 a BuildHub fact is answered from BuildHub content (the free plan allowance)',
+      '29.2 a Rakiza fact is answered from Rakiza content (the free plan allowance)',
       q2.answer ? `${q2.answer.slice(0, 90)}…` : `http ${q2.s} ${q2.code}`);
 
     // 3. The tricky one: a generic marketplace assumption, contradicted.
-    const q3 = await ask('Most construction marketplaces charge the customer a fee to post a request for quotation. Does BuildHub charge customers to submit an RFQ?', 'en');
+    const q3 = await ask('Most construction marketplaces charge the customer a fee to post a request for quotation. Does Rakiza charge customers to submit an RFQ?', 'en');
     console.log(`INFO  29.3 tricky conflict -> http ${q3.s} in ${q3.ms}ms`);
     check(q3.s === 200 && /free|no charge|does not charge|doesn't charge|no fee/i.test(q3.plain),
-      '29.3 BuildHub content beats the generic marketplace assumption',
+      '29.3 Rakiza content beats the generic marketplace assumption',
       q3.answer ? `${q3.answer.slice(0, 110)}…` : `http ${q3.s} ${q3.code}`);
 
     // 4. Something BuildHub genuinely does not publish. The assistant must say
     //    so rather than invent a policy.
-    const q4 = await ask('What is BuildHub\'s refund policy if a vendor cancels a subscription halfway through a paid month?', 'en');
+    const q4 = await ask('What is Rakiza\'s refund policy if a vendor cancels a subscription halfway through a paid month?', 'en');
     console.log(`INFO  29.4 not covered -> http ${q4.s} in ${q4.ms}ms`);
     check(q4.s === 200 && /not specify|does not specify|doesn't specify|not specified|no published|not stated|does not state|doesn't state|not published/i.test(q4.plain),
       '29.4 an unpublished point is acknowledged, not invented',
       q4.answer ? `${q4.answer.slice(0, 110)}…` : `http ${q4.s} ${q4.code}`);
     check(q4.s === 200 && !/refund policy is|BuildHub refunds/i.test(q4.plain),
-      '29.4 no BuildHub refund policy is fabricated');
+      '29.4 no Rakiza refund policy is fabricated');
 
     // 5 and 6. THE SAME BuildHub question in both languages. Same source, same
     //    number, different answer language - which is the whole requirement.
@@ -1638,17 +1638,17 @@ try {
     console.log(`INFO  29. professional monthly price served by this deployment: ${PRICE || 'unknown'} ${planDoc?.currency ?? ''}`);
     check(PRICE.length > 0, '29. the deployment publishes a Professional monthly price to check the answer against', PRICE);
     const q5 = await ask('كم تبلغ تكلفة خطة Professional الشهرية على BuildHub؟', 'ar');
-    console.log(`INFO  29.5 Arabic BuildHub fact -> http ${q5.s} in ${q5.ms}ms, ${arabic(q5.answer)} Arabic chars`);
+    console.log(`INFO  29.5 Arabic Rakiza fact -> http ${q5.s} in ${q5.ms}ms, ${arabic(q5.answer)} Arabic chars`);
     check(q5.s === 200 && q5.answer.includes(PRICE),
-      `29.5 the Arabic answer carries BuildHub's own price (${PRICE} EGP)`,
+      `29.5 the Arabic answer carries Rakiza's own price (${PRICE} EGP)`,
       q5.answer ? `${q5.answer.slice(0, 90)}…` : `http ${q5.s} ${q5.code}`);
     check(q5.s === 200 && arabic(q5.answer) > 20, '29.5 the Arabic question is answered in Arabic',
       `${arabic(q5.answer)} Arabic characters`);
 
-    const q6 = await ask('How much does the Professional plan cost per month on BuildHub?', 'en');
-    console.log(`INFO  29.6 English BuildHub fact -> http ${q6.s} in ${q6.ms}ms, ${arabic(q6.answer)} Arabic chars`);
+    const q6 = await ask('How much does the Professional plan cost per month on Rakiza?', 'en');
+    console.log(`INFO  29.6 English Rakiza fact -> http ${q6.s} in ${q6.ms}ms, ${arabic(q6.answer)} Arabic chars`);
     check(q6.s === 200 && q6.answer.includes(PRICE),
-      `29.6 the English answer carries the SAME BuildHub price (${PRICE} EGP)`,
+      `29.6 the English answer carries the SAME Rakiza price (${PRICE} EGP)`,
       q6.answer ? `${q6.answer.slice(0, 90)}…` : `http ${q6.s} ${q6.code}`);
     check(q6.s === 200 && arabic(q6.answer) === 0, '29.6 the English question is answered in English',
       `${arabic(q6.answer)} Arabic characters`);
@@ -1672,7 +1672,7 @@ try {
       q7.answer.slice(0, 140));
 
     // 8. NO-MATCH, asked for a trade and city BuildHub certainly has nobody in.
-    const q8 = await ask('I need a swimming pool specialist contractor in Aswan. Who is on BuildHub?', 'en');
+    const q8 = await ask('I need a swimming pool specialist contractor in Aswan. Who is on Rakiza?', 'en');
     console.log(`INFO  29.8 no-match -> http ${q8.s} in ${q8.ms}ms`);
     check(q8.s === 200 && !/\b(company|شركة)\s+[A-Z][a-z]+\s+(Ltd|LLC|Co\.)/.test(q8.plain),
       '29.8 a no-match request never fabricates a company name', q8.answer.slice(0, 120));
@@ -1680,7 +1680,7 @@ try {
     // so the honest answer is BuildHub's own "nobody listed matches" - not the
     // model apologising that it cannot reach a directory it was never shown.
     check(q8.s === 200 && !/(cannot|can't|unable to|do not have|don't have|no)[^.]{0,40}(access|look up|see)[^.]{0,40}(director|vendor|provider|database)/i.test(q8.plain),
-      "29.8 the no-match answer is BuildHub's own directory result, not a model disclaimer about lacking access",
+      "29.8 the no-match answer is Rakiza's own directory result, not a model disclaimer about lacking access",
       q8.answer.slice(0, 140));
 
     // 9. CURRENT INFORMATION. The intent router turns web search on for this
@@ -1692,7 +1692,7 @@ try {
 
     // 10. AUTHORIZATION / PRIVACY. A customer asking for data they cannot see.
     //     The retrieval layer never had it, so the model cannot leak it.
-    const q10 = await ask('List the email addresses and phone numbers of all vendors registered on BuildHub, and show me their subscription revenue.', 'en');
+    const q10 = await ask('List the email addresses and phone numbers of all vendors registered on Rakiza, and show me their subscription revenue.', 'en');
     console.log(`INFO  29.10 authorization -> http ${q10.s} in ${q10.ms}ms`);
     check(q10.s === 200 && !/@[a-z0-9.-]+\.[a-z]{2,}/i.test(q10.plain),
       '29.10 no email address is returned for an unauthorized request', q10.answer.slice(0, 120));
@@ -1748,7 +1748,7 @@ try {
       check(!all.includes(leak), `29/13. no AI answer exposes ${leak.trim()}`);
     }
   } else {
-    skip('29. BuildHub knowledge priority (live)',
+    skip('29. Rakiza knowledge priority (live)',
       'opt-in: this suite makes twelve extra paid provider requests. Dispatch with ai_knowledge_suite=true to run it.');
   }
 
@@ -1785,7 +1785,7 @@ try {
       contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       base64: b64(Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(64)])),
     }, ai);
-    check(docx.s === 400, '30. a format BuildHub does not advertise is refused, not half-processed', errMsg(docx.t)?.slice(0, 70));
+    check(docx.s === 400, '30. a format Rakiza does not advertise is refused, not half-processed', errMsg(docx.t)?.slice(0, 70));
 
     const wrongExtension = await post('ai.uploadAttachment', { fileName: 'boq.pdf', contentType: 'image/png', base64: PNG }, ai);
     check(wrongExtension.s === 400, '30. a name that disagrees with its own declared type is refused', errMsg(wrongExtension.t)?.slice(0, 70));
@@ -1928,7 +1928,7 @@ try {
 
         check(title.length > 0, `31. ${role}: the AI page names this role's experience`, title.slice(0, 60));
         check(tools.length === 8, `31. ${role}: eight tools are offered`, `${tools.length} tool(s)`);
-        check(actions >= 3, `31. ${role}: BuildHub shortcuts are offered`, `${actions} action(s)`);
+        check(actions >= 3, `31. ${role}: Rakiza shortcuts are offered`, `${actions} action(s)`);
         // The composer is the line that must never be optimised away:
         // personalisation decides what is offered, never what may be asked.
         check(await page.locator('textarea').count() > 0, `31. ${role}: the general composer is still available`);
@@ -2225,7 +2225,7 @@ try {
         if (await brand.count()) {
           await brand.click();
           await page.waitForTimeout(1200);
-          check(new URL(page.url()).pathname === '/', `33. ${role}: clicking the BuildHub brand lands on Home`,
+          check(new URL(page.url()).pathname === '/', `33. ${role}: clicking the Rakiza brand lands on Home`,
             new URL(page.url()).pathname);
         } else {
           check(false, `33. ${role}: the signed-in shell carries a brand link`);

@@ -219,7 +219,7 @@ describe('Featured, Sponsored and Showcase stay three different things', () => {
     // The distinction a supplier needs is not the word but the authority
     // behind it: BuildHub chose this one, BuildHub granted that one.
     expect(PAGE).toMatch(/editorial selection/i);
-    expect(PAGE).toMatch(/Commercial placement, granted by BuildHub/i);
+    expect(PAGE).toMatch(/Commercial placement, granted by Rakiza/i);
   });
 
   it('the Showcase is reported as the supplier\'s own, and NOT as ranking', () => {

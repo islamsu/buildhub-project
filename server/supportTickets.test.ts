@@ -270,7 +270,7 @@ describe('the admin search box', () => {
   });
 });
 
-describe('priority is BuildHub’s judgement, not the customer’s', () => {
+describe('priority is Rakiza’s judgement, not the customer’s', () => {
   it('the rule is a written constant, not an accident of a zod schema', () => {
     expect(SUPPORT_PRIORITY_IS_STAFF_ONLY).toBe(true);
   });

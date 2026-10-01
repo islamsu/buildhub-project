@@ -55,7 +55,7 @@ export default function PasswordSetupPage() {
           </div>
           <CardTitle className="text-xl">{lang === 'ar' ? 'إعداد كلمة المرور للحساب' : 'Set Account Password'}</CardTitle>
           <CardDescription>
-            {lang === 'ar' ? 'أنشئ كلمة مرور جديدة لحسابك المنشأ بواسطة المشرف' : 'Create a password for your admin-created BuildHub account'}
+            {lang === 'ar' ? 'أنشئ كلمة مرور جديدة لحسابك المنشأ بواسطة المشرف' : 'Create a password for your admin-created Rakiza account'}
           </CardDescription>
         </CardHeader>
         <CardContent>

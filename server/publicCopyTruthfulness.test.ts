@@ -55,12 +55,15 @@ const UNSUPPORTED_CLAIMS: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /\bmillions\b/i, why: 'a scale claim with no query behind it' },
   { pattern: /آلاف/, why: 'the Arabic "thousands"' },
   { pattern: /\btrusted by\b/i, why: 'a sentiment claim about third parties' },
-  { pattern: /who trust BuildHub/i, why: 'a sentiment claim about users' },
+  /* BRAND-AGNOSTIC ON PURPOSE. The claim is the defect, not the name in
+     it, and a detector naming one brand stops detecting the day the
+     product is renamed - which is exactly what happened here. */
+  { pattern: /who trust (BuildHub|Rakiza)/i, why: 'a sentiment claim about users' },
   { pattern: /يثقون في/, why: 'the Arabic "who trust"' },
   { pattern: /\b(leading|#1|number one|most trusted|top-rated)\s+(b2b|marketplace|platform|supplier)/i,
     why: 'a ranking claim with nothing to rank against' },
-  { pattern: /\baward-winning\b/i, why: 'an award BuildHub has not won' },
-  { pattern: /\btestimonial/i, why: 'a testimonial BuildHub does not have' },
+  { pattern: /\baward-winning\b/i, why: 'an award Rakiza has not won' },
+  { pattern: /\btestimonial/i, why: 'a testimonial Rakiza does not have' },
   /*
    * THE FABRICATED-BADGE FAMILY. The census first caught ONE
    * ("Award-Winning" on the designers directory) and removing it revealed
@@ -90,7 +93,7 @@ const UNSUPPORTED_CLAIMS: readonly { pattern: RegExp; why: string }[] = [
     why: 'a hardcoded population figure' },
 ];
 
-describe('public copy claims nothing BuildHub cannot evidence', () => {
+describe('public copy claims nothing Rakiza cannot evidence', () => {
   for (const surface of PUBLIC_SURFACES) {
     it(`${surface} makes no unsupported claim`, () => {
       /*
@@ -117,7 +120,7 @@ describe('public copy claims nothing BuildHub cannot evidence', () => {
   it('and it would catch the claim it was written for', () => {
     // The exact sentence that was on the homepage, checked against the rules
     // rather than against the file - so the rule is proven, not the fix.
-    const removed = 'Join thousands of users who trust BuildHub to manage their construction projects.';
+    const removed = 'Join thousands of users who trust Rakiza to manage their construction projects.';
     const caught = UNSUPPORTED_CLAIMS.filter(claim => claim.pattern.test(removed));
     expect(caught.length, 'the original claim would pass the census').toBeGreaterThan(0);
     const arabic = 'انضم إلى آلاف المستخدمين الذين يثقون في BuildHub لإدارة مشاريعهم.';

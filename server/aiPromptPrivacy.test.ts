@@ -88,7 +88,7 @@ describe('no credential reaches the model, by any route', () => {
     // Every assertion above is vacuous if the prompt is empty.
     const prompt = assembledPrompt('en');
     expect(prompt.length).toBeGreaterThan(2000);
-    expect(prompt).toContain('You are BuildHub AI');
+    expect(prompt).toContain('You are Rakiza AI');
     expect(prompt).toContain('PROJECT CONTEXT');
   });
 
@@ -113,7 +113,7 @@ describe('no credential reaches the model, by any route', () => {
     const KNOWLEDGE = readFileSync(new URL('./_core/buildhubKnowledge.ts', import.meta.url), 'utf8');
     expect(KNOWLEDGE).toContain('viewer.userRole');
     expect(KNOWLEDGE).toContain('viewer.planId');
-    expect(assembledPrompt('en')).toContain('BuildHub role: homeowner');
+    expect(assembledPrompt('en')).toContain('Rakiza role: homeowner');
   });
 
   it('the prompt tells the model it does not have credentials at all', () => {

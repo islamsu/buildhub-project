@@ -67,7 +67,7 @@ export const PRODUCT_QUESTION_VOCABULARY = {
   reportReason: {
     abusive:        { en: 'Abusive or harassing', ar: 'مسيء أو يتضمن تحرشًا' },
     personal_data:  { en: 'Contains personal contact details', ar: 'يحتوي على بيانات اتصال شخصية' },
-    off_platform:   { en: 'Trying to move the deal off BuildHub', ar: 'محاولة لنقل التعامل خارج بيلدهَب' },
+    off_platform:   { en: 'Trying to move the deal off Rakiza', ar: 'محاولة لنقل التعامل خارج بيلدهَب' },
     competitor:     { en: 'Advertising a competitor', ar: 'إعلان لمنافس' },
     not_a_question: { en: 'Not a question about this product', ar: 'ليس سؤالًا عن هذا المنتج' },
     spam:           { en: 'Spam or repetition', ar: 'رسائل مزعجة أو تكرار' },

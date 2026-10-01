@@ -18,7 +18,7 @@ function makeAdminCtx(): TrpcContext {
       id: 1,
       openId: 'admin-1',
       email: 'admin@buildhub.com',
-      name: 'BuildHub Admin',
+      name: 'Rakiza Admin',
       loginMethod: 'test',
       role: 'admin',
       adminRole: 'SUPER_ADMIN', // migration 0020: an admin row must now say WHICH administrator it is

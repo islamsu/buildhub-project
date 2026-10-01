@@ -74,7 +74,7 @@ await check('landing page', '/', async response => {
   expect(response.status === 200, `expected 200, got ${response.status}`);
   const html = await response.text();
   expect(html.includes('<div id="root">'), 'app root element missing');
-  expect(html.includes('BuildHub'), 'page title missing');
+  expect(html.includes('Rakiza'), 'page title missing');
   // Slice 4 removed both of these from production output; a deploy that brings
   // them back is a deploy of the wrong artefact.
   expect(!html.includes('%VITE_'), 'unsubstituted build placeholder in the served page');

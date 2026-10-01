@@ -326,7 +326,7 @@ export function importCategoryResolver(
         return {
           ok: false as const,
           reason: rejection.reason,
-          message: `"${rejection.category.nameEn}" is a BuildHub category but is not currently available for new listings. Ask an administrator to reactivate it, or choose another.`,
+          message: `"${rejection.category.nameEn}" is a Rakiza category but is not currently available for new listings. Ask an administrator to reactivate it, or choose another.`,
         };
       case 'SERVICE_ONLY':
         return {
@@ -344,7 +344,7 @@ export function importCategoryResolver(
         return {
           ok: false as const,
           reason: rejection.reason,
-          message: `"${rejection.supplied}" matches more than one BuildHub category (${rejection.candidates.map(c => c.nameEn).join(', ')}). Use the exact category name.`,
+          message: `"${rejection.supplied}" matches more than one Rakiza category (${rejection.candidates.map(c => c.nameEn).join(', ')}). Use the exact category name.`,
           suggestions: rejection.candidates.map(c => c.nameEn),
         };
       default:
@@ -352,8 +352,8 @@ export function importCategoryResolver(
           ok: false as const,
           reason: 'UNKNOWN',
           message: rejection.suggestions.length > 0
-            ? `"${rejection.supplied}" is not a BuildHub category. Did you mean ${rejection.suggestions.map(s => `"${s}"`).join(' or ')}?`
-            : `"${rejection.supplied}" is not a BuildHub category. Choose an active BuildHub product category.`,
+            ? `"${rejection.supplied}" is not a Rakiza category. Did you mean ${rejection.suggestions.map(s => `"${s}"`).join(' or ')}?`
+            : `"${rejection.supplied}" is not a Rakiza category. Choose an active Rakiza product category.`,
           suggestions: rejection.suggestions,
         };
     }

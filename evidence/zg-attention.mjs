@@ -352,7 +352,7 @@ try {
       return JSON.stringify({
         navs: document.querySelectorAll('[data-testid^="nav-"]').length,
         unavailable: !!document.querySelector('[data-testid="admin-auth-unavailable"]'),
-        marketing: /Build Your Future with BuildHub/i.test(document.body.innerText),
+        marketing: /Build Your Future with Rakiza/i.test(document.body.innerText),
         text: document.body.innerText.slice(0, 100).split(String.fromCharCode(10)).join(' | '),
       });
     `));

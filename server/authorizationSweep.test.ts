@@ -579,7 +579,7 @@ describe('§3 uploads are checked against their bytes', () => {
   const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
   const html = Buffer.from('<!doctype html><script>alert(1)</script>');
 
-  it('recognises the formats BuildHub stores', () => {
+  it('recognises the formats Rakiza stores', () => {
     expect(sniffContentType(png)).toBe('image/png');
     expect(sniffContentType(jpeg)).toBe('image/jpeg');
     expect(sniffContentType(pdf)).toBe('application/pdf');

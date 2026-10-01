@@ -281,7 +281,7 @@ describe('dummy account isolation and UI wiring', () => {
 
     const authPage = readFileSync(new URL('../client/src/pages/AuthPage.tsx', import.meta.url), 'utf8');
     expect(authPage).toContain('isLoginMode');
-    expect(authPage).toContain('Sign in with BuildHub');
+    expect(authPage).toContain('Sign in with Rakiza');
     // Was 'No verification code is required' - a string that belonged to the
     // removed test-user panel and was only incidental to login routing. The
     // real subject of this test is that /auth?mode=login is the entry point.

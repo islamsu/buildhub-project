@@ -611,7 +611,7 @@ export async function extendSubscriptionPeriod(params: {
       if (!anchorDate || Number.isNaN(anchorDate.getTime())) {
         return {
           reject: 'This account has no finite subscription period to extend. '
-            + 'BuildHub does not create one - that would be granting paid access nobody decided to give.',
+            + 'Rakiza does not create one - that would be granting paid access nobody decided to give.',
         };
       }
 

@@ -217,7 +217,7 @@ check('ERROR QUALITY: a hidden category is reported as INACTIVE, not UNKNOWN',
 check('ERROR QUALITY: and the message does not send the supplier hunting for a typo',
   typeof hiddenIssue?.message === 'string'
   && hiddenIssue.message.includes('not currently available for new listings')
-  && !hiddenIssue.message.includes('is not a BuildHub category'),
+  && !hiddenIssue.message.includes('is not a Rakiza category'),
   hiddenIssue?.message ?? '');
 check('PROPAGATION: reactivating restores it immediately',
   (await upload(A.cookie, csv([`Restored Row ${stamp},,Waterproofing,X,10,1,piece,2,`]), true)).data?.errorCount === 0);

@@ -147,7 +147,7 @@ export const MARKET_COMPLIANCE: Readonly<Record<string, MarketComplianceConfig>>
         applicability: 'conditional', applicabilityCondition: 'To be established.',
         verification: 'manual_review',
         openQuestion: 'Establish whether Saudi law regulates construction project '
-          + 'management as a licensed activity at all. If it does not, any BuildHub '
+          + 'management as a licensed activity at all. If it does not, any Rakiza '
           + 'requirement here must be recorded as buildhub_policy, never as legal.',
       })],
     },
@@ -213,7 +213,7 @@ export const MARKET_COMPLIANCE: Readonly<Record<string, MarketComplianceConfig>>
         applicability: 'conditional', applicabilityCondition: 'To be established.',
         verification: 'licence_number',
         openQuestion: 'Establish which authority issues the licence for a building-materials '
-          + 'supplier, and whether mainland and free-zone entities differ for BuildHub purposes.',
+          + 'supplier, and whether mainland and free-zone entities differ for Rakiza purposes.',
       })],
       architect: [pending({
         type: 'professional_registration',
@@ -236,7 +236,7 @@ export const MARKET_COMPLIANCE: Readonly<Record<string, MarketComplianceConfig>>
         applicability: 'conditional', applicabilityCondition: 'To be established.',
         verification: 'manual_review',
         openQuestion: 'Establish whether construction project management is a licensed '
-          + 'activity in any emirate. If not, a BuildHub requirement must be '
+          + 'activity in any emirate. If not, a Rakiza requirement must be '
           + 'buildhub_policy.',
       })],
     },

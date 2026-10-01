@@ -187,11 +187,11 @@ export async function editProductAnswer(db: Db, params: {
   // hide, rewrite, and the decision is gone.
   if (question.answerHiddenAt) {
     throw new ProductQuestionModerationError(
-      'CONFLICT', 'This answer was hidden by BuildHub and cannot be edited.');
+      'CONFLICT', 'This answer was hidden by Rakiza and cannot be edited.');
   }
   if (question.hiddenAt) {
     throw new ProductQuestionModerationError(
-      'CONFLICT', 'This question was hidden by BuildHub.');
+      'CONFLICT', 'This question was hidden by Rakiza.');
   }
   if (question.answer.trim() === trimmed) {
     throw new ProductQuestionModerationError('BAD_REQUEST', 'That is the same answer.');

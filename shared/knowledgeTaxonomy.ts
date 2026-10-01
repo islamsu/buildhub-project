@@ -16,7 +16,7 @@
  * no standards body can tell you what BuildHub's RFQ rules are.
  */
 export const AUTHORITY_TIERS = {
-  1: 'BuildHub official product and business rules',
+  1: 'Rakiza official product and business rules',
   2: 'Government and regulatory authorities',
   3: 'Building codes and standards organisations',
   4: 'Recognised professional institutions',
@@ -67,7 +67,7 @@ export const KNOWLEDGE_DOMAINS = {
   61: 'Construction Finance', 62: 'Construction Technology',
   63: 'Construction Terminology', 64: 'Arabic-English Construction Dictionary',
   65: 'Jurisdiction and Regulation', 66: 'Manufacturer and Product Knowledge',
-  67: 'BuildHub Platform Knowledge', 68: 'Marketplace Knowledge',
+  67: 'Rakiza Platform Knowledge', 68: 'Marketplace Knowledge',
   69: 'Recommendation Intelligence', 70: 'AI Evaluation and Tricky Questions',
 } as const;
 

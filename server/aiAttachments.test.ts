@@ -171,7 +171,7 @@ describe('accepted formats', () => {
 // ── 2. What is refused ─────────────────────────────────────────────────────
 
 describe('refused uploads', () => {
-  it('refuses a type BuildHub does not advertise (DOCX)', () => {
+  it('refuses a type Rakiza does not advertise (DOCX)', () => {
     const docx = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(32)]);
     const result = validateAiAttachment({
       name: 'spec.docx',
@@ -343,7 +343,7 @@ describe('what the model receives', () => {
       .toMatchObject({ type: 'input_file', filename: 'a.pdf' });
   });
 
-  it('the bytes travel INLINE, never as a BuildHub URL the provider would fetch', () => {
+  it('the bytes travel INLINE, never as a Rakiza URL the provider would fetch', () => {
     const image = toModelContent({ name: 'a.png', contentType: 'image/png', bytes: PNG });
     const payload = JSON.stringify(image);
     expect(payload).toContain('data:image/png;base64,');
@@ -367,7 +367,7 @@ describe('what the model receives', () => {
     expect(call.messages[0].content).toContain('ATTACHED FILE');
   });
 
-  it('the instruction makes the file outrank BuildHub knowledge for facts about itself', () => {
+  it('the instruction makes the file outrank Rakiza knowledge for facts about itself', () => {
     const instruction = attachmentInstruction(['datasheet.pdf'], 'en');
     expect(instruction).toMatch(/OUTRANKS/);
     expect(instruction).toMatch(/THE ATTACHMENT GOVERNS/);

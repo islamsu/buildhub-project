@@ -224,7 +224,7 @@ describe('a message key resolves to exactly one category, by longest prefix', ()
   });
 });
 
-describe('THE CENSUS: no notification BuildHub can send is unmapped', () => {
+describe('THE CENSUS: no notification Rakiza can send is unmapped', () => {
   /**
    * Every messageKey written anywhere in the server tree, reduced to the part
    * that is statically known. Several call sites build their key at runtime -
@@ -518,7 +518,7 @@ describe('the table says what the code assumes', () => {
   });
 });
 
-describe('the screen tells the truth about what BuildHub can actually send', () => {
+describe('the screen tells the truth about what Rakiza can actually send', () => {
   it('OFFERS NO EMAIL OR SMS SWITCH, because neither channel exists', () => {
     // `server/_core/mailer.ts` has no configured provider and no notification
     // is routed to it; there is no SMS sender at all. A switch labelled Email

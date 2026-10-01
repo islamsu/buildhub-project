@@ -107,7 +107,7 @@ describe('the user directory does not administer administrators', () => {
 
 // ── Invariant 2: one usable Super Admin always remains ─────────────────────
 
-describe('BuildHub cannot be left without a usable Super Admin', () => {
+describe('Rakiza cannot be left without a usable Super Admin', () => {
   it('refuses when removing this one would leave zero', async () => {
     const { db } = makeDb(0);
     await expect(assertSuperAdminSurvives(db, superAdmin))

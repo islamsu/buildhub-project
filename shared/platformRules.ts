@@ -39,7 +39,7 @@ export const PLATFORM_RULES: readonly PlatformRule[] = [
   {
     id: 'rfq.post.free',
     topic: 'RFQ',
-    en: 'Posting a request for quotation (RFQ) on BuildHub is free for the customer. BuildHub does not charge a customer to submit an RFQ. Charging on BuildHub applies to vendor subscriptions, not to posting requests.',
+    en: 'Posting a request for quotation (RFQ) on Rakiza is free for the customer. Rakiza does not charge a customer to submit an RFQ. Charging on Rakiza applies to vendor subscriptions, not to posting requests.',
     ar: 'نشر طلب عرض سعر (RFQ) على BuildHub مجاني للعميل. لا تفرض BuildHub رسومًا على العميل مقابل تقديم طلب عرض سعر. الاشتراكات المدفوعة في BuildHub تخص المورّدين، وليست مقابل نشر الطلبات.',
     enforcedBy: 'server/routers.ts',
     enforcementAnchor: 'create: protectedProcedure',
@@ -71,7 +71,7 @@ export const PLATFORM_RULES: readonly PlatformRule[] = [
   {
     id: 'vendor.approval.documents',
     topic: 'Vendor onboarding',
-    en: 'A vendor cannot become approved without submitting the required compliance documents for their role. The required set differs by role and is listed in this briefing. Documents are reviewed by BuildHub compliance staff; an account stays unapproved until that review approves it.',
+    en: 'A vendor cannot become approved without submitting the required compliance documents for their role. The required set differs by role and is listed in this briefing. Documents are reviewed by Rakiza compliance staff; an account stays unapproved until that review approves it.',
     ar: 'لا يمكن للمورّد أن يصبح معتمَدًا دون تقديم مستندات الامتثال المطلوبة لدوره. المجموعة المطلوبة تختلف حسب الدور وهي مذكورة في هذا الملخص. تراجع المستندات إدارة الامتثال في BuildHub، ويظل الحساب غير معتمَد حتى تعتمده تلك المراجعة.',
     enforcedBy: 'shared/compliance.ts',
     enforcementAnchor: 'COMPLIANCE_REQUIREMENTS',
@@ -79,7 +79,7 @@ export const PLATFORM_RULES: readonly PlatformRule[] = [
   {
     id: 'vendor.ranking.not_for_sale',
     topic: 'Marketplace',
-    en: 'A paid plan does NOT buy a higher position in the organic vendor directory. Commercial placement appears only in a separate, clearly labelled Sponsored strip; sponsored vendors also still appear in the organic list in their organic position, with the same reputation data from the same source. Featured is a different thing entirely: it is editorial placement curated by BuildHub and cannot be bought.',
+    en: 'A paid plan does NOT buy a higher position in the organic vendor directory. Commercial placement appears only in a separate, clearly labelled Sponsored strip; sponsored vendors also still appear in the organic list in their organic position, with the same reputation data from the same source. Featured is a different thing entirely: it is editorial placement curated by Rakiza and cannot be bought.',
     ar: 'الاشتراك المدفوع لا يشتري ترتيبًا أعلى في دليل المورّدين الطبيعي. الظهور التجاري يقتصر على شريط «برعاية» منفصل وموسوم بوضوح؛ والمورّدون المدعومون يظهرون أيضًا في القائمة الطبيعية في مواضعهم الطبيعية، وبالبيانات التقييمية نفسها ومن المصدر نفسه. أما «مميّز» فهو أمر مختلف تمامًا: اختيار تحريري تنتقيه BuildHub ولا يمكن شراؤه.',
     enforcedBy: 'server/vendorDirectory.ts',
     enforcementAnchor: 'listEntitlementSponsoredVendors',

@@ -108,7 +108,7 @@ describe('NOTHING IS VERIFIED, AND THAT IS THE HONEST STATE', () => {
   });
 });
 
-describe('government requirement and BuildHub policy never blur', () => {
+describe('government requirement and Rakiza policy never blur', () => {
   it('only a legal_requirement is a government obligation', () => {
     expect(isGovernmentObligation(req({ provenance: 'legal_requirement' }))).toBe(true);
     expect(isGovernmentObligation(req({ provenance: 'buildhub_policy' }))).toBe(false);

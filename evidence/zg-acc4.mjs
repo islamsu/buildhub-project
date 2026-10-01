@@ -197,7 +197,7 @@ try {
     check(screen.h1.length === 1, `exactly one first-level heading on ${landing}`,
       `${screen.h1.length}: ${screen.h1.join(' | ').slice(0, 70)}`);
     const heading = screen.h1[0] ?? '';
-    check(heading.length > 3 && heading !== 'BuildHub',
+    check(heading.length > 3 && heading !== 'Rakiza',
       'and it says where the user is, not just the brand', heading.slice(0, 60));
 
     /* ── 2. AN OBVIOUS FIRST ACTION ── */

@@ -92,7 +92,7 @@ describe('the reported failure', () => {
       expect(result.ok && result.category.slug).toBe('waterproofing');
     });
 
-  it('"Pools" resolves through its alias to the category BuildHub already had', () => {
+  it('"Pools" resolves through its alias to the category Rakiza already had', () => {
     // Reused, not duplicated: the canonical name stays "Swimming Pool Equipment".
     const result = resolveCategory(full(), 'Pools');
     expect(result.ok).toBe(true);
@@ -212,7 +212,7 @@ describe('rejections say WHICH problem it is', () => {
     });
   });
 
-  it('a hidden category is INACTIVE, never "not a BuildHub category"', () => {
+  it('a hidden category is INACTIVE, never "not a Rakiza category"', () => {
     // The distinction the reported error could not make. A hidden category
     // EXISTS; the uploader needs to ask an administrator, not hunt for a typo.
     const index = indexFrom(SEED_CATEGORIES, { waterproofing: { status: 'hidden' } });

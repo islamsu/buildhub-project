@@ -91,7 +91,7 @@ const DELIBERATELY_SHARED: Record<string, string> = {
   'marketplace.recordPlacementEvent':
     'AN ADVERTISEMENT HAS NO OWNER AMONG ITS VIEWERS. It is shown to everyone, most of them anonymous, so "who may report having seen it" is not an ownership question and owner-scoping it would limit an advertiser\'s impressions to signed-in readers. The id IS constrained, just not by user: the placement must exist AND be live, so a fabricated id and an expired campaign both record nothing. It READS nothing back - it returns only whether the write happened - so there is no data to isolate. The event that WOULD be worth forging, QUALIFIED_ENQUIRY, is absent from the client enum entirely and is written server-side from the enquiry record.',
   'services.forProvider':
-    'A provider\'s PUBLISHED service catalogue, addressed by providerId - the shop window for the roles that sell work rather than goods. Owner-scoping it would mean only the provider could see what they offer. The id is constrained, just not by user: `visibleServicesFor` applies both visibility clauses, so a draft is invisible and an account BuildHub has not approved returns an empty list rather than an advertisement.',
+    'A provider\'s PUBLISHED service catalogue, addressed by providerId - the shop window for the roles that sell work rather than goods. Owner-scoping it would mean only the provider could see what they offer. The id is constrained, just not by user: `visibleServicesFor` applies both visibility clauses, so a draft is invisible and an account Rakiza has not approved returns an empty list rather than an advertisement.',
   'reviews.forUser':
     'A vendor reputation nobody but the vendor could read would not be a reputation.',
   'reviews.statsForUser':

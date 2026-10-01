@@ -114,7 +114,7 @@ export const REGULATORY_REFERENCES: readonly RegulatoryReference[] = [
     publicationDate: '2007',
     reviewDate: '2027-02-01',
     status: 'unverified',
-    note: 'THE ARABIC TEXT IS THE OFFICIAL ONE. English versions in circulation are unofficial translations and should not be relied on for compliance. BuildHub has not verified whether a later edition or revision is now in force - confirm the current edition with HBRC before designing to it.',
+    note: 'THE ARABIC TEXT IS THE OFFICIAL ONE. English versions in circulation are unofficial translations and should not be relied on for compliance. Rakiza has not verified whether a later edition or revision is now in force - confirm the current edition with HBRC before designing to it.',
     noteAr: 'النص العربي هو النص الرسمي، والنسخ الإنجليزية المتداولة ترجمات غير رسمية لا يُعتمد عليها في إثبات المطابقة. لم تتحقق BuildHub من صدور نسخة أحدث، لذا يجب مراجعة المركز القومي لبحوث الإسكان والبناء لمعرفة النسخة السارية.',
     sourceUrl: 'https://www.hbrc.edu.eg/',
     lastVerified: '2026-08-26',
@@ -173,7 +173,7 @@ export const REGULATORY_REFERENCES: readonly RegulatoryReference[] = [
     // naming the authority and stopping.
     reviewDate: '2027-02-01',
     status: 'unverified',
-    note: 'BUILDHUB HAS NOT ESTABLISHED THE CURRENT EDITION for Kuwait and does not claim one. What is verified is who regulates: Kuwait Municipality for building permitting and the Kuwait Fire Force for fire and life safety. Obtain the current requirements from those authorities directly - do not rely on a neighbouring country\'s code.',
+    note: 'RAKIZA HAS NOT ESTABLISHED THE CURRENT EDITION for Kuwait and does not claim one. What is verified is who regulates: Kuwait Municipality for building permitting and the Kuwait Fire Force for fire and life safety. Obtain the current requirements from those authorities directly - do not rely on a neighbouring country\'s code.',
     noteAr: 'لم تتحقق BuildHub من النسخة السارية في الكويت ولا تدّعي معرفتها. المؤكَّد هو الجهة المنظِّمة: بلدية الكويت لتراخيص البناء، والإدارة العامة للإطفاء للسلامة من الحريق وحماية الأرواح. احصل على المتطلبات السارية من هاتين الجهتين مباشرة، ولا تعتمد على كود دولة مجاورة.',
     sourceUrl: 'https://e.gov.kw/sites/kgoenglish/Pages/Services/FireDep/KuwaitFireForceServicesManual.aspx',
     lastVerified: '2026-08-27',
@@ -192,7 +192,7 @@ export const REGULATORY_REFERENCES: readonly RegulatoryReference[] = [
     publicationDate: '2019',
     reviewDate: '2027-02-01',
     status: 'unverified',
-    note: 'The 2019 editions are what BuildHub has on record. BuildHub has NOT confirmed whether a later edition has been issued since, and the guidebook is explicitly updated as entity requirements change - confirm the current version with the Ministry before relying on either.',
+    note: 'The 2019 editions are what Rakiza has on record. Rakiza has NOT confirmed whether a later edition has been issued since, and the guidebook is explicitly updated as entity requirements change - confirm the current version with the Ministry before relying on either.',
     noteAr: 'نسختا 2019 هما ما لدى BuildHub. ولم تتأكد BuildHub من صدور نسخة أحدث، كما أن الدليل يُحدَّث كلما تغيّرت اشتراطات الجهات؛ فتأكد من النسخة السارية لدى الوزارة قبل الاعتماد على أي منهما.',
     sourceUrl: 'https://www.works.gov.bh/English/Publications/standards/Pages/standardone.aspx',
     lastVerified: '2026-08-27',
@@ -211,7 +211,7 @@ export const REGULATORY_REFERENCES: readonly RegulatoryReference[] = [
     publicationDate: '1992',
     reviewDate: '2027-02-01',
     status: 'unverified',
-    note: 'REGULATION IS LOCAL IN OMAN. Muscat Municipality regulates within Muscat; other governorates have their own municipal authorities, so a Muscat rule is not an Omani rule. Local Order 23/92 is long-standing and BuildHub has not confirmed which amendments are in force - confirm with the relevant municipality for your governorate.',
+    note: 'REGULATION IS LOCAL IN OMAN. Muscat Municipality regulates within Muscat; other governorates have their own municipal authorities, so a Muscat rule is not an Omani rule. Local Order 23/92 is long-standing and Rakiza has not confirmed which amendments are in force - confirm with the relevant municipality for your governorate.',
     noteAr: 'التنظيم في عُمان محلي. تنظّم بلدية مسقط داخل مسقط، ولكل محافظة أخرى جهتها البلدية، فما يسري في مسقط ليس بالضرورة ساريًا في عموم السلطنة. والأمر المحلي 23/92 قديم ولم تتأكد BuildHub من التعديلات النافذة عليه، فراجع بلدية محافظتك.',
     sourceUrl: 'https://www.mm.gov.om/',
     lastVerified: '2026-08-27',
@@ -228,7 +228,7 @@ export const REGULATORY_REFERENCES: readonly RegulatoryReference[] = [
     scopeAr: 'مجموعة كودات وطنية تغطي الاشتراطات الإنشائية والميكانيكية والكهربائية والسلامة والعزل وكفاءة الطاقة لأعمال البناء في الأردن.',
     reviewDate: '2027-02-01',
     status: 'unverified',
-    note: 'ISSUED AS A FAMILY, NOT ONE DOCUMENT, and the individual codes are revised on their own timetables - so "the Jordanian code" has no single edition and asking which code and which edition is the right first question. BuildHub has verified the issuing bodies only. Confirm the applicable code and its current edition with the National Building Council.',
+    note: 'ISSUED AS A FAMILY, NOT ONE DOCUMENT, and the individual codes are revised on their own timetables - so "the Jordanian code" has no single edition and asking which code and which edition is the right first question. Rakiza has verified the issuing bodies only. Confirm the applicable code and its current edition with the National Building Council.',
     noteAr: 'تصدر ككودات متعددة لا كوثيقة واحدة، ويُحدَّث كل كود وفق جدوله الخاص، فلا توجد نسخة واحدة لـ"الكود الأردني"، والسؤال الصحيح هو أي كود وأي نسخة. وقد تحققت BuildHub من الجهات المصدِرة فقط، فراجع مجلس البناء الوطني لتحديد الكود السارية ونسخته.',
     sourceUrl: 'https://www.rss.jo',
     lastVerified: '2026-08-27',
@@ -268,8 +268,8 @@ export function formatRegulatoryForModel(matches: RegulatoryReference[], lang: '
     // never quietly omitted - a missing line reads as "no issue here", which is
     // the opposite of what it means.
     const edition = reference.edition
-      ? `edition BuildHub has on record: ${reference.edition}`
-      : 'edition: NOT ESTABLISHED BY BUILDHUB - do not state one, ask or refer them to the authority';
+      ? `edition Rakiza has on record: ${reference.edition}`
+      : 'edition: NOT ESTABLISHED BY RAKIZA - do not state one, ask or refer them to the authority';
     const superseded = reference.supersededBy
       ? `\n  superseded by: ${reference.supersededBy}`
       : '';
@@ -284,12 +284,12 @@ export function formatRegulatoryForModel(matches: RegulatoryReference[], lang: '
   status: ${reference.status}
   what matters about it: ${note}
   official source: ${reference.sourceUrl}
-  BuildHub last verified this: ${reference.lastVerified}
-  BuildHub should re-check this by: ${reference.reviewDate}`;
+  Rakiza last verified this: ${reference.lastVerified}
+  Rakiza should re-check this by: ${reference.reviewDate}`;
   }).join('\n\n');
 
-  return `=== REGULATORY REFERENCE (BuildHub, authority tier 2-3) ===
-These are POINTERS TO INSTRUMENTS, not their contents. BuildHub holds no clause
+  return `=== REGULATORY REFERENCE (Rakiza, authority tier 2-3) ===
+These are POINTERS TO INSTRUMENTS, not their contents. Rakiza holds no clause
 text, no table and no numeric requirement from any code, so you have none
 either.
 
@@ -299,11 +299,11 @@ HOW TO USE THIS:
   - STATE THE EDITION AND ITS STATUS EXPLICITLY. Where a newer edition exists
     or local amendments apply, say so - presenting a superseded edition as
     current is a serious error, not a rounding of detail.
-  - WHERE THE EDITION IS "NOT ESTABLISHED BY BUILDHUB", say that BuildHub does
+  - WHERE THE EDITION IS "NOT ESTABLISHED BY RAKIZA", say that Rakiza does
     not hold the current edition and name the authority to ask. Do NOT supply
     an edition from your own recollection to fill the gap - that is precisely
     the answer a person would act on and precisely the one nobody has checked.
-  - A record marked "unverified" means BuildHub has NOT confirmed it is current.
+  - A record marked "unverified" means Rakiza has NOT confirmed it is current.
     Say so rather than presenting it as settled.
   - DO NOT quote, paraphrase or reconstruct any clause, table, dimension,
     rating, cover, spacing or setback from a code. If you find yourself about

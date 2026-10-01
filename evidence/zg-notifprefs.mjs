@@ -232,7 +232,7 @@ try {
     `http=${decision.status} err=${String(decision.error).slice(0, 60)} n=${notifCount(muted.id, 'notif.compliance.applicant.approved')}`);
 
   const withBadRow = await query(muted, 'notifications.preferences');
-  check('22. and the screen reports compliance as ON, matching what BuildHub actually does',
+  check('22. and the screen reports compliance as ON, matching what Rakiza actually does',
     (withBadRow.data ?? []).find(row => row.category === 'compliance')?.enabled === true);
 
   // ── Nobody else's preferences ───────────────────────────────────────────

@@ -49,7 +49,7 @@ export default function ShowcaseStrip({ userId }: { userId: number }) {
         <p className="text-sm text-muted-foreground">
           {ar
             ? 'اختارها هذا المورّد بنفسه لعرضها أولاً. ليست ترشيحاً من BuildHub ولا مساحة مدفوعة.'
-            : 'Chosen by this supplier to show first. Not a BuildHub recommendation, and not a paid placement.'}
+            : 'Chosen by this supplier to show first. Not a Rakiza recommendation, and not a paid placement.'}
         </p>
       </CardHeader>
       <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

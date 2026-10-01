@@ -242,7 +242,7 @@ try {
   await waitFor(page, `document.body.innerText.includes('Does this ship to Alexandria')`);
   await settle(800);
   const saysRemoved = await page.evaluate(`
-    return String(/BuildHub removed this answer/.test(document.body.innerText));
+    return String(/Rakiza removed this answer/.test(document.body.innerText));
   `);
   check(saysRemoved === 'true',
     'PUBLIC: and the page SAYS the answer was removed rather than looking ignored');
