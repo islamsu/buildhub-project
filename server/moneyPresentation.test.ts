@@ -103,8 +103,26 @@ describe('the EGP hard-code is gone, everywhere', () => {
   });
 
   it('a form that asks for an amount derives its unit from the market', () => {
+    /*
+     * PHASE 3 STRENGTHENED THIS. It used to assert the budget label read
+     * `requireCurrencyForMarket(DEFAULT_MARKET)` at module scope, which was
+     * honest while the form could not choose a market: the same call the server
+     * made, and the same answer.
+     *
+     * It stops being honest once the form HAS a work location, because a
+     * constant evaluated at import cannot follow a selection. It also could not
+     * be routed through the fail-closed resolver, since a throw at module scope
+     * happens at IMPORT - enabling a second market would have white-screened
+     * the dashboard instead of refusing a write.
+     *
+     * So the unit is now derived per render FROM THE CHOSEN WORK LOCATION, and
+     * the assertion is the stronger one: the market-wide default must not be
+     * reachable from this form at all.
+     */
     const code = read('pages/HomeownerDashboard.tsx');
-    expect(code).toContain('requireCurrencyForMarket(DEFAULT_MARKET)');
+    expect(code).toContain('budgetCurrency(form.marketCode)');
+    expect(code).toContain('currencyForMarket(marketCode)');
+    expect(code).not.toContain('DEFAULT_MARKET');
   });
 });
 

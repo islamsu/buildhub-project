@@ -1666,3 +1666,206 @@ implementation -> code gate -> exact SHA -> staging deploy
 **Owner website acceptance is never inferred from automated evidence**, and
 production activation is never inferred from a merge to `main`. A market is not
 launched because it appears in a dropdown.
+
+---
+
+# 55. FOUR WORDS THAT ARE NOT SYNONYMS
+
+Every confusion in this workstream has been one of these four being read as
+another. They are listed first because the rest of this section is unreadable
+without them.
+
+| | what it means | where it lives | what it does NOT imply |
+|---|---|---|---|
+| **market REGISTERED** | BuildHub's code knows this market exists and has its currency, timezone and names | a row in `MARKETS` | nothing commercial whatsoever |
+| **market ENABLED** | BuildHub operates here today | `enabled: true` on that row | that any provider is approved here |
+| **provider APPROVED** | BuildHub has assessed this business for THIS market | a `providerMarkets` row at `approved` | that they offer any particular service here |
+| **service OFFERED** | this service has a live, independently priced offer in this market | a `serviceOfferingMarkets` row at `active` | that the market is enabled |
+
+A database row is not an enabled market. All six GCC markets are registered,
+none is enabled, and rows may legitimately exist for them during development
+without making them discoverable, matchable or quotable. `enabled` is the only
+thing that decides, and `marketEligibility` checks it **first and
+independently** so no combination of rows can substitute for it.
+
+# 56. TWO CURRENCY DOMAINS THAT MUST NEVER MERGE
+
+**Commercial transaction currency** is what a buyer and a provider transact in.
+It is derived from where the work is:
+
+```
+work location -> market -> RFQ currency -> quotation currency
+```
+
+Server-derived at every step. A provider cannot select it; a client cannot send
+it; a conflicting client value is refused rather than overridden.
+
+**BuildHub subscription / billing currency** is what a provider pays BuildHub.
+It is `BILLING_CURRENCY` — **EGP only**, with no payment provider connected.
+
+The two are independent in both directions, and this is enforced rather than
+documented:
+
+- a quotation's currency does not follow the provider's subscription. This was
+  the owner's original finding: quotation currency was taken from the supplier's
+  billing plan.
+- billing does not follow provider market, project market, RFQ currency or
+  service-offer currency.
+- `vendorSubscriptions.priceAmount` stays `DECIMAL(10,2)` while billing is
+  two-digit, guarded by a test that fails if `SUPPORTED_CURRENCIES` ever gains a
+  three-digit currency.
+- the billing limitation does **not** block multi-market commerce. Oman work is
+  denominated in OMR while billing remains EGP, because they are different
+  questions.
+
+Do not invent multi-currency subscription billing inside this workstream.
+
+# 57. PHASE 2 — MARKET-SPECIFIC SERVICE OFFERS (LANDED)
+
+`serviceOfferings` is the **service**: what a provider does, in which category.
+`serviceOfferingMarkets` is the **offer**: what they charge for it in one
+market. One row per `(serviceOfferingId, marketCode)`, enforced by a unique
+constraint — a second row would mean two live prices for the same work in the
+same place with nothing to say which a buyer is quoted.
+
+Offers are independent by construction. Changing the Saudi price cannot touch
+the Omani one because they are different rows.
+
+**There is no currency column on the offer.** The currency is derived from the
+market at the point of use. A stored currency beside a stored market is a pair
+that can disagree, and `marketCode = 'OM', currency = 'EGP'` is the row this
+workstream exists to prevent; validating at the write closes that only for paths
+that use the validator. With no column the state is not representable, and the
+client cannot send a currency because it is not an input field.
+
+No FX anywhere. BuildHub does not convert an approved price in one market and
+present the result as another market's price.
+
+## Legacy classification
+
+`currency = 'EGP'` is **necessary and never sufficient**. Migration 0061
+defaulted that column reasoning that every offering "was created by a provider
+in the one market BuildHub operates, priced in Egyptian pounds". That blanket
+claim is false and a real external user disproved it: a vendor operating in Oman
+whose listing showed EGP because the platform had nothing else to write. The
+column records what nobody contradicted, not what anybody chose.
+
+`PROVEN_EG` requires all four:
+
+1. the stored currency is EGP
+2. an **approved** legacy Egyptian registration instrument — tax card,
+   commercial registration or tax registration, with `marketCode IS NULL`,
+   because the column did not exist and Egypt is the only requirement set ever
+   configured
+3. an approved Egypt row in `providerMarkets`
+4. a free-text country that does not contradict Egypt
+
+The country field **disqualifies and never asserts**. Every condition can only
+shrink the proven set, which is what makes being wrong survivable: a false
+negative asks a provider to confirm their own price; a false positive publishes
+a number in a currency they never chose.
+
+`REMEDIATION_REQUIRED` is everything else, and is the column **default**. Such a
+row keeps its value and original denomination, is never relabelled, converted or
+published into any market, and waits for the provider to confirm or re-enter it.
+
+## Cutover
+
+The per-market row is the authoritative source for market-specific service
+commerce. Legacy `priceMin` / `priceMax` / `currency` remain physically for one
+bounded rollback release and are **READ-NEVER / WRITE-NEVER** in authoritative
+flows, guarded by tests on both the read and write paths. Two live pricing
+systems would leave no answer to which price a buyer is quoted.
+
+# 58. PHASE 3 — WORK-LOCATION AUTHORITY (LANDED)
+
+## The chain
+
+A project states its country explicitly. A project-backed RFQ inherits it
+**server-side**. A standalone RFQ captures it explicitly. The RFQ's currency is
+derived from its market; a quotation inherits the RFQ's currency and the provider
+cannot select one.
+
+**A conflict refuses.** If a client sends a market alongside a `projectId` and
+the two disagree, the request is rejected rather than resolved. Silently
+discarding the submitted value is the right outcome by the wrong route: a client
+that believes it is filing an Omani RFQ against a Cairo project would get a Cairo
+RFQ with no indication anything was overridden, and the figures a supplier later
+quotes would be in a currency the requester never saw chosen.
+
+A project whose market is no longer enabled also refuses, rather than falling
+through to the implicit market.
+
+## What may never determine it
+
+IP, browser geolocation, browser locale, the active-market browsing preference,
+free-text city or address, the requester's account country, the provider's
+country, the subscription currency. None is an input to any market decision —
+guaranteed by absence from the function signatures rather than by documentation.
+
+## Low-friction compatibility, bounded
+
+While exactly one market is enabled, the work-location field renders nothing: a
+selector with one option is a dead choice. The server resolves the single market
+through `resolveImplicitMarket()`, which **refuses** once more than one is
+enabled — so the quiet path cannot outlive the condition that justifies it. The
+field appears the day there is something to choose.
+
+## Cross-border is confirmed, not warned
+
+An Egyptian developer building in Oman is a customer, not an anomaly. Where the
+account country and work country differ, the product states the work location,
+the resulting quotation currency and the account difference, and offers continue
+or change. No warning colour, no alert role, no "are you sure".
+
+## One eligibility predicate
+
+```
+market ENABLED
+  AND provider APPROVED for that market
+  AND an ACTIVE offer for the service in that market   (service-level questions)
+  AND the existing category / visibility / project / business rules pass
+```
+
+`marketEligibility` is the only place this is answered. Four conditions
+assembled in five routers is how one of them goes missing in one of them, and
+the one that goes missing is the one nobody tests. Market interest, legal
+country, IP and billing are not parameters, so no caller can pass one in place
+of an approval.
+
+## Project market change
+
+A dedicated operation, never a field on `projects.update` — behind the same
+mutation that edits a title, a client POSTing a project object back could move a
+live commercial relationship between countries as a side effect of a rename.
+
+| state | behaviour |
+|---|---|
+| no RFQ | allowed, with a required reason and an audit event |
+| draft / unpublished RFQ | dedicated cascade (unreachable today: `rfqs.status` has no draft state) |
+| published RFQ (`open`/`closed`/`awarded`) | refuse — close and recreate |
+| any quotation exists | hard refuse |
+| accepted quotation / award | hard refuse |
+
+Blockers are evaluated strongest-first, so the reason a user is given is the most
+specific true one: a project with an award also has quotations and a published
+RFQ. A no-op is refused, so no audit records a jurisdiction change that did not
+happen. The currency follows the market, or jurisdiction and money disagree.
+
+# 59. WHAT IS STILL MISSING BEFORE ANY MARKET IS ENABLED
+
+Engineering is not the remaining gate. These are:
+
+- **verified compliance configuration** per market and role.
+  `COMPLIANCE_REQUIREMENTS_BY_MARKET` has Egypt populated and the six GCC
+  markets empty, and returns **empty** rather than Egypt's for an unconfigured
+  market — an empty list stops an onboarding, a wrong list sends a professional
+  to the wrong ministry. These are verified data, never model output. Every GCC
+  market is `ACTIVATION BLOCKED — COMPLIANCE CONFIGURATION INCOMPLETE`.
+- **deployed staging verification** of the exact candidate SHA.
+- **owner website acceptance** of the market behaviour, in EN and AR.
+- **explicit owner authorization** of the activation change itself, presented
+  before it is made.
+
+Currency decimal scale is one gate, not the gate. SAR, AED and QAR having two
+minor digits does not make Saudi Arabia, UAE or Qatar activation-ready.

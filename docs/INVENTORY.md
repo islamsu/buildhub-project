@@ -58,9 +58,9 @@
 
 Dead param routes: **0**
 
-## Server procedures (301)
+## Server procedures (302)
 
-- `protectedProcedure` — 93
+- `protectedProcedure` — 94
 - `adminWith:marketplace.manage` — 50
 - `publicProcedure` — 38
 - `approvedProviderProcedure` — 35
@@ -150,34 +150,34 @@ Dead param routes: **0**
 
 ## Notification write sites (32)
 
-- server/routers.ts:811 — notifyUser
-- server/routers.ts:1656 — notifyUser
-- server/routers.ts:1744 — notifyUser
-- server/routers.ts:3017 — notifyUser
-- server/routers.ts:3097 — notifyUser
-- server/routers.ts:3148 — notifyUser
-- server/routers.ts:4479 — notifyUser
-- server/routers.ts:4536 — notifyUser
-- server/routers.ts:5403 — notifyUser
-- server/routers.ts:5788 — notifyUser
-- server/routers.ts:6362 — notifyUser
-- server/routers.ts:6616 — notifyUser
-- server/routers.ts:6808 — notifyUser
-- server/routers.ts:6978 — notifyUser
-- server/routers.ts:8803 — notifyUser
-- server/routers.ts:9146 — notifyUser
-- server/routers.ts:9224 — notifyUser
-- server/routers.ts:10070 — notifyUser
-- server/routers.ts:10141 — notifyUser
-- server/routers.ts:10545 — notifyUser
-- server/routers.ts:10762 — notifyUser
-- server/routers.ts:10792 — notifyUser
-- server/routers.ts:10825 — notifyUser
-- server/routers.ts:11039 — notifyUser
-- server/routers.ts:11086 — notifyUser
-- server/routers.ts:11188 — notifyUser
-- server/routers.ts:11270 — notifyUser
-- server/routers.ts:11391 — notifyUser
+- server/routers.ts:812 — notifyUser
+- server/routers.ts:1657 — notifyUser
+- server/routers.ts:1745 — notifyUser
+- server/routers.ts:3110 — notifyUser
+- server/routers.ts:3190 — notifyUser
+- server/routers.ts:3241 — notifyUser
+- server/routers.ts:4608 — notifyUser
+- server/routers.ts:4665 — notifyUser
+- server/routers.ts:5532 — notifyUser
+- server/routers.ts:5917 — notifyUser
+- server/routers.ts:6491 — notifyUser
+- server/routers.ts:6745 — notifyUser
+- server/routers.ts:6937 — notifyUser
+- server/routers.ts:7107 — notifyUser
+- server/routers.ts:8932 — notifyUser
+- server/routers.ts:9275 — notifyUser
+- server/routers.ts:9353 — notifyUser
+- server/routers.ts:10199 — notifyUser
+- server/routers.ts:10270 — notifyUser
+- server/routers.ts:10674 — notifyUser
+- server/routers.ts:10891 — notifyUser
+- server/routers.ts:10921 — notifyUser
+- server/routers.ts:10954 — notifyUser
+- server/routers.ts:11168 — notifyUser
+- server/routers.ts:11215 — notifyUser
+- server/routers.ts:11317 — notifyUser
+- server/routers.ts:11399 — notifyUser
+- server/routers.ts:11520 — notifyUser
 - server/notifications.ts:41 — notifyUser
 - server/notifications.ts:51 — helper implementation
 - server/notifications.ts:65 — notifyUser

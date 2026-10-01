@@ -204,7 +204,12 @@ describe('rfq.create - optional project link', () => {
     // because rfq.create asks requireProjectAccess for the `commercial`
     // capability rather than relying on an ownerId predicate, and `.limit(1)`
     // exists because a real builder has it.
-    const ownedRows = [{ id: 7, ownerId: 1 }];
+    // `marketCode` because rfq.create reads the project's market after
+    // authorizing, and inherits it: a project-backed RFQ takes its market from
+    // the project server-side. A real projects row always has one - the column
+    // is NOT NULL - so a fixture without it was describing a row that cannot
+    // exist, and the new read correctly refuses it.
+    const ownedRows = [{ id: 7, ownerId: 1, marketCode: 'EG' }];
     const projectChain: any = { limit: vi.fn(() => projectChain),
       then: (res: any, rej?: any) => Promise.resolve(ownedRows).then(res, rej) };
     const projectWhere = vi.fn(() => projectChain);

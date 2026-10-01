@@ -264,7 +264,15 @@ describe('raising an RFQ against a project', () => {
     // The transaction handle needs the same surface as the connection: the
     // RFQ body reads inside the transaction as well as writing.
     (getDb as ReturnType<typeof vi.fn>).mockResolvedValue(withTransaction({
-      select: queue([[{ id: 7, ownerId: 999 }], [{ projectRole: 'manager' }]]),
+      /*
+       * THREE READS, NOT TWO. requireProjectAccess reads the project and the
+       * caller's membership; rfq.create then reads the project's MARKET, after
+       * authorization, because a project-backed RFQ inherits its market
+       * server-side and a conflicting client value is refused rather than
+       * discarded. The refusal case above still queues two, because it throws
+       * before reaching the market read.
+       */
+      select: queue([[{ id: 7, ownerId: 999 }], [{ projectRole: 'manager' }], [{ marketCode: 'EG' }]]),
       insert,
     }));
     await expect(

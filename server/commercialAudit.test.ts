@@ -281,7 +281,11 @@ describe('the events that matter are recorded', () => {
     // is a PRICE CHANGE IN A SPECIFIC MARKET, which is a commercial act rather
     // than a profile edit, and the market it applies to is part of what has to
     // be recoverable afterwards.
-    expect(sites).toHaveLength(18);
+    // 18 -> 19 when a project's WORK LOCATION became changeable: it alters the
+    // jurisdiction, sourcing currency and compliance basis of everything raised
+    // against the project from then on, and is only permitted while nothing has
+    // inherited the old one - a claim a reader should be able to check later.
+    expect(sites).toHaveLength(19);
 
     // The id expression each subjectType is allowed to carry. `input.rfqId` is
     // absent from 'quotation' and 'enquiry' deliberately - that was the defect.
@@ -306,7 +310,13 @@ describe('the events that matter are recorded', () => {
       // dispute asks. Recording the userId here would answer it with another
       // project's history whenever the two numbers happened to coincide -
       // exactly the defect this test was written for.
-      project:   ['input.projectId'],
+      // `input.id` as well as `input.projectId`, because the procedures in the
+      // projects router name their own subject `id` - `projects.update` does,
+      // and `projects.changeMarket` follows it rather than inventing a second
+      // convention inside one router. The guard's claim is unchanged: the id
+      // must genuinely be a PROJECTS row, which on a projects.* procedure
+      // taking `id` it is. The same pair is already allowed for `product`.
+      project:   ['input.projectId', 'input.id'],
     };
 
     for (const site of sites) {

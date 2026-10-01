@@ -1,17 +1,29 @@
 import { formatMoney, formatMoneyTotals, sumByCurrency } from '@shared/money';
-import { DEFAULT_MARKET, requireCurrencyForMarket } from '@shared/markets';
+import { currencyForMarket, resolveImplicitCurrency } from '@shared/markets';
+import { WorkLocationField, workLocationIsSelectable } from '@/components/WorkLocationField';
 
 /*
- * THE UNIT THE FORM IS ASKING FOR, DERIVED FROM THE MARKET THAT WILL OWN THE
- * PROJECT - not the literal "EGP" this label used to carry.
+ * THE UNIT THE FORM IS ASKING FOR, DERIVED FROM THE WORK LOCATION.
  *
- * `projects.create` resolves an absent marketCode to DEFAULT_MARKET and writes
- * `requireCurrencyForMarket(marketCode)`, and this form sends no marketCode. So
- * this is the same call the server makes, and it is the same answer. When a
- * second market is enabled the coupling is visible here rather than hidden in
- * a translation string, which is the whole point of §86.
+ * This was a module-level `requireCurrencyForMarket(DEFAULT_MARKET)`, computed
+ * once at import. That was honest while the form sent no market - it was the
+ * same call the server made and the same answer - and it stops being honest the
+ * moment the form can choose, because a constant evaluated at import cannot
+ * follow a selection.
+ *
+ * It also could not be routed through Phase 0's fail-closed resolver: at module
+ * scope a throw happens at IMPORT, so enabling a second market would have
+ * white-screened the dashboard instead of refusing a write. Now the question is
+ * asked per render, where a missing answer is a label without a unit rather
+ * than a page that will not load.
  */
-const NEW_PROJECT_CURRENCY = requireCurrencyForMarket(DEFAULT_MARKET);
+function budgetCurrency(marketCode: string | undefined): string | null {
+  if (marketCode) return currencyForMarket(marketCode);
+  // No choice made: the single enabled market, through the resolver that
+  // refuses once there is more than one. Inside a render, so a refusal is
+  // recoverable.
+  try { return resolveImplicitCurrency(); } catch { return null; }
+}
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/_core/hooks/useAuth';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -37,11 +49,11 @@ export default function HomeownerDashboard() {
   const { user, isAuthenticated, loading } = useAuth();
   const [, navigate] = useLocation();
   const [newProjectOpen, setNewProjectOpen] = useState(false);
-  const [form, setForm] = useState({ title: '', description: '', type: 'residential' as const, budget: '', location: '' });
+  const [form, setForm] = useState({ title: '', description: '', type: 'residential' as const, budget: '', location: '', marketCode: undefined as string | undefined });
 
   const { data: projects, refetch } = trpc.projects.list.useQuery(undefined, { enabled: isAuthenticated });
   const createProject = trpc.projects.create.useMutation({
-    onSuccess: () => { toast.success(t('common.success')); setNewProjectOpen(false); refetch(); setForm({ title: '', description: '', type: 'residential', budget: '', location: '' }); },
+    onSuccess: () => { toast.success(t('common.success')); setNewProjectOpen(false); refetch(); setForm({ title: '', description: '', type: 'residential', budget: '', location: '', marketCode: undefined }); },
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
@@ -133,11 +145,18 @@ export default function HomeownerDashboard() {
                       <SelectItem value="other">{t('project.type.other')}</SelectItem>
                     </SelectContent>
                   </Select>
+                  {/* WHERE THE WORK IS. Renders nothing while one market is
+                      enabled - see WorkLocationField for why the quiet path is
+                      safe, and where the server refuses once it is not. */}
+                  <WorkLocationField
+                    value={form.marketCode}
+                    onChange={next => setForm(f => ({ ...f, marketCode: next || undefined }))}
+                  />
                   <div className="grid grid-cols-2 gap-3">
-                    <Input data-testid="project-budget" placeholder={`${t('project.budget')} (${NEW_PROJECT_CURRENCY})`} type="number" value={form.budget} onChange={e => setForm(f => ({ ...f, budget: e.target.value }))} />
+                    <Input data-testid="project-budget" placeholder={budgetCurrency(form.marketCode) ? `${t('project.budget')} (${budgetCurrency(form.marketCode)})` : t('project.budget')} type="number" value={form.budget} onChange={e => setForm(f => ({ ...f, budget: e.target.value }))} />
                     <Input data-testid="project-location" placeholder={t('project.location')} value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
                   </div>
-                  <Button className="w-full" data-testid="project-create-submit" onClick={() => createProject.mutate({ ...form, budget: form.budget ? parseFloat(form.budget) : undefined })} disabled={createProject.isPending || !form.title}>
+                  <Button className="w-full" data-testid="project-create-submit" onClick={() => createProject.mutate({ ...form, budget: form.budget ? parseFloat(form.budget) : undefined })} disabled={createProject.isPending || !form.title || (workLocationIsSelectable() && !form.marketCode)}>
                     {createProject.isPending ? t('common.loading') : t('project.create')}
                   </Button>
                 </div>

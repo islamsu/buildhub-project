@@ -2,6 +2,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { formatMoney } from '@shared/money';
 import AskAiAbout from '@/components/AskAiAbout';
 import { currencyForMarket } from '@shared/markets';
+import { ChangeWorkLocation } from '@/components/ChangeWorkLocation';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -252,6 +253,27 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; icon: R
                 </Card>
               ))}
             </div>
+
+            {/*
+              * WHERE THE WORK IS, AND MOVING IT.
+              *
+              * `manage`-gated, like every other state change on this page. The
+              * component renders nothing while one market is enabled - the only
+              * reachable target would be the project's current market, which
+              * the server refuses as `same_market`, and a control whose every
+              * use is refused is not a control.
+              */}
+            {can('manage') && (
+              <Card>
+                <CardContent className="p-4">
+                  <ChangeWorkLocation
+                    projectId={projectId}
+                    currentMarketCode={(project as any)?.marketCode}
+                    onChanged={() => refetchProject()}
+                  />
+                </CardContent>
+              </Card>
+            )}
 
             {/* Tabs */}
             <Tabs defaultValue="tasks">

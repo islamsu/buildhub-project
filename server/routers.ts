@@ -263,6 +263,7 @@ import { vendorCategories, vendorSponsorships, vendorSubscriptions } from '../dr
 import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
 import { offerCurrency, mayManageOffer } from '../shared/serviceOfferingMarkets';
 import { isApprovedInMarket } from '../shared/providerMarkets';
+import { decideProjectMarketChange } from '../shared/projectMarketChange';
 
 const scryptAsync = promisify(scryptCallback);
 
@@ -1853,6 +1854,98 @@ const projectsRouter = router({
       }).where(eq(projects.id, id));
       return { success: true };
     }),
+
+  /**
+   * ── CHANGE WHERE THE WORK IS, AS ITS OWN OPERATION ────────────────────
+   *
+   * Deliberately NOT a field on `update` above. A project's market decides the
+   * jurisdiction, the sourcing currency and the compliance basis of everything
+   * raised against it: an RFQ inherits it, and every quotation against that RFQ
+   * is denominated by it. Behind the same mutation that edits a title, a client
+   * POSTing a whole project object back could move a live commercial
+   * relationship between countries as a side effect of a rename.
+   *
+   * The lifecycle rule lives in `shared/projectMarketChange.ts` so the order of
+   * blockers is one decision rather than a chain of ifs per caller - and the
+   * order matters, because a project with an awarded RFQ also has quotations
+   * and a published RFQ, and the reason a user is given should be the most
+   * specific true one.
+   */
+  changeMarket: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      marketCode: z.string().min(1).max(2),
+      /** Required: a jurisdiction change with no stated reason is not auditable. */
+      reason: z.string().min(3).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      // MANAGE, not read. And it throws rather than matching no rows, so a
+      // refusal is distinguishable from a no-op.
+      await requireProjectAccess(db, input.id, ctx.user.id, 'manage');
+
+      const [project] = await db.select({
+        id: projects.id, marketCode: projects.marketCode,
+      }).from(projects).where(eq(projects.id, input.id)).limit(1);
+      if (!project) throw new TRPCError({ code: 'NOT_FOUND', message: 'Project not found' });
+
+      // What has already inherited the market. One read each, because the
+      // decision needs all three facts and a partial answer would let a
+      // blocker through.
+      const attachedRfqs = await db.select({ id: rfqs.id, status: rfqs.status })
+        .from(rfqs).where(eq(rfqs.projectId, input.id));
+      const rfqIds = attachedRfqs.map(rfq => rfq.id);
+      const attachedQuotations = rfqIds.length > 0
+        ? await db.select({ status: quotations.status })
+            .from(quotations).where(inArray(quotations.rfqId, rfqIds))
+        : [];
+
+      const decision = decideProjectMarketChange({
+        currentMarketCode: project.marketCode,
+        targetMarketCode: input.marketCode,
+        state: {
+          rfqStatuses: attachedRfqs.map(rfq => rfq.status ?? 'open'),
+          hasQuotations: attachedQuotations.length > 0,
+          hasAcceptedQuotation: attachedQuotations.some(q => q.status === 'accepted'),
+        },
+      });
+
+      if (!decision.allowed) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          /*
+           * Each message names the actual obstacle and the way forward, because
+           * "cannot change" leaves a customer with a project in the wrong
+           * country and no idea what to do about it.
+           */
+          message: {
+            unknown_target: 'That is not a market BuildHub recognises.',
+            target_disabled: 'BuildHub does not currently operate in that market.',
+            same_market: 'The work location is already set to that market.',
+            award_exists: 'A quotation on this project has been accepted, so its work location is fixed. An agreed price cannot be restated in another currency.',
+            quotation_exists: 'Suppliers have already quoted work on this project in its current currency. Their quotations would have to be withdrawn before the work location can change.',
+            published_rfq: 'This project has a request open to suppliers. Close it first, then change the work location and raise a new request.',
+          }[decision.reason],
+        });
+      }
+
+      const currency = requireCurrencyForMarket(decision.targetMarketCode);
+      await db.update(projects).set({
+        marketCode: decision.targetMarketCode,
+        // THE CURRENCY FOLLOWS THE MARKET. Leaving it behind would give the
+        // project a jurisdiction and a currency that disagree, which is the
+        // defect the whole workstream is about.
+        currency,
+      }).where(eq(projects.id, input.id));
+
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        action: 'project_market_changed', subjectType: 'project', subjectId: input.id,
+        detail: `${project.marketCode} -> ${decision.targetMarketCode} (${currency}): ${input.reason.trim().slice(0, 200)}`,
+      });
+      return { marketCode: decision.targetMarketCode, currency, kind: decision.kind };
+    }),
+
   milestones: protectedProcedure.input(z.object({ projectId: z.number() })).query(async ({ ctx, input }) => {
     const db = await requireDb();
     await requireProjectAccess(db, input.projectId, ctx.user.id, 'read');
@@ -3816,9 +3909,45 @@ const rfqRouter = router({
        */
       let marketCode: MarketCode = resolveImplicitMarket();
       if (input.projectId != null) {
+        /*
+         * ── THE PROJECT IS THE SOLE AUTHORITY, AND A CONFLICT REFUSES ─────
+         *
+         * This used to read the project's market and, if the client ALSO sent
+         * one, ignore the client's silently. That is the right outcome reached
+         * the wrong way: silently discarding a submitted value means a client
+         * that believes it is filing an Omani RFQ against a Cairo project gets
+         * a Cairo RFQ and no indication anything was overridden. The figures
+         * the supplier later quotes are then in a currency the requester never
+         * saw chosen.
+         *
+         * So a conflict is refused rather than resolved. The owner's rule:
+         * refuse, do not silently prefer one.
+         */
         const [project] = await db.select({ marketCode: projects.marketCode })
           .from(projects).where(eq(projects.id, input.projectId)).limit(1);
-        if (project?.marketCode && isEnabledMarket(project.marketCode)) marketCode = project.marketCode;
+        if (!project) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Project not found' });
+        }
+        /*
+         * A PROJECT IN A MARKET BUILDHUB NO LONGER SERVES REFUSES TOO. This
+         * previously fell through to the implicit market, which would have
+         * turned an Omani project's RFQ into an Egyptian one the moment Oman
+         * was disabled - exactly the silent substitution Phase 0 removed
+         * everywhere else.
+         */
+        if (!isEnabledMarket(project.marketCode)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'BuildHub does not currently operate in this project\'s market, so a new request cannot be raised against it.',
+          });
+        }
+        if (input.marketCode !== undefined && input.marketCode !== project.marketCode) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'This request belongs to a project, so its work location comes from the project. Change the project\'s work location, or raise the request on its own.',
+          });
+        }
+        marketCode = project.marketCode;
       } else if (input.marketCode !== undefined) {
         if (!isEnabledMarket(input.marketCode)) {
           throw new TRPCError({

@@ -86,7 +86,13 @@ export type CommercialAction =
   // "who let the other contractor see our drawings, and when" needs an answer.
   // The role change is its own verb rather than a remove followed by an add:
   // conflating them would lose the fact that the person never left.
-  | 'project_member_added' | 'project_member_role_changed' | 'project_member_removed';
+  | 'project_member_added' | 'project_member_role_changed' | 'project_member_removed'
+  // Phase 3: a project's WORK LOCATION changed. Audited because it changes the
+  // jurisdiction, sourcing currency and compliance basis of everything raised
+  // against the project from then on - and because it is only ever permitted
+  // while nothing has inherited the old one, which is a claim a reader should
+  // be able to check afterwards.
+  | 'project_market_changed';
 
 export type CommercialEvent = {
   actorId: number | null;
