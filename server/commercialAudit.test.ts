@@ -277,7 +277,11 @@ describe('the events that matter are recorded', () => {
     // question or an answer. Both change what the public sees on a listing,
     // and an edit in particular is how an answer somebody relied on can be
     // rewritten after the fact - so neither may be silent.
-    expect(sites).toHaveLength(17);
+    // 17 -> 18 when service offers became per-market: setting a market's offer
+    // is a PRICE CHANGE IN A SPECIFIC MARKET, which is a commercial act rather
+    // than a profile edit, and the market it applies to is part of what has to
+    // be recoverable afterwards.
+    expect(sites).toHaveLength(18);
 
     // The id expression each subjectType is allowed to carry. `input.rfqId` is
     // absent from 'quotation' and 'enquiry' deliberately - that was the defect.

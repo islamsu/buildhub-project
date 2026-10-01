@@ -27,6 +27,42 @@ export type UncalledReason = {
 };
 
 export const UNCALLED_BY_DESIGN: readonly UncalledReason[] = [
+  // ── PER-MARKET SERVICE OFFERS: THE SECOND MARKET DOES NOT EXIST YET ──────
+  //
+  // These are not screens somebody forgot. The feature IS a second market: one
+  // service, independently priced in Oman, Saudi Arabia and the UAE. Every GCC
+  // market is `enabled: false`, and `mayManageOffer` refuses a disabled market
+  // outright, so `manageableMarkets` returns exactly [EG] today. A provider
+  // screen built against that would be a one-row form offering a single
+  // Egyptian price - which the existing service form already collects, in the
+  // legacy columns, which this work exists to supersede.
+  //
+  // So the UI lands with the market selection it is for, as part of the
+  // work-location and eligibility wiring, and not before. Declaring it here
+  // rather than deleting it is deliberate: the API is what the migration
+  // classified rows FOR, and the owner's GCC staging acceptance requires a
+  // provider journey that configures the same service in several markets with
+  // independent prices. That journey needs these procedures to already exist.
+  {
+    procedure: 'services.marketOffers',
+    reason:
+      'Reads a provider\'s per-market offers for their own service. No client '
+      + 'caller yet because every market but Egypt is disabled, so the list it '
+      + 'returns has exactly one row and nothing to choose between. Wired with '
+      + 'the provider market-pricing UI, which is required for GCC owner '
+      + 'website acceptance and cannot be exercised until a market is enabled.',
+  },
+  {
+    procedure: 'services.setMarketOffer',
+    reason:
+      'Creates or replaces one market\'s offer. Same reason: with one enabled '
+      + 'market it can only write the Egyptian price the legacy form already '
+      + 'writes. Its authorization (ownership, market enabled, approved in THAT '
+      + 'market) is tested directly in server/serviceOfferingMarkets.test.ts '
+      + 'including the disabled-market and wrong-owner negatives, so the '
+      + 'capability is proven rather than merely present.',
+  },
+
   {
     procedure: 'auth.signInDummy',
     reason:

@@ -937,6 +937,24 @@ export const serviceOfferings = mysqlTable('serviceOfferings', {
    * ones.
    */
   currency:    varchar('currency', { length: 3 }).default('EGP').notNull(),
+  /**
+   * WHETHER THIS LEGACY ROW'S EGYPT MEANING IS PROVEN.
+   *
+   * 0061 defaulted `currency` to EGP on the reasoning that every offering was
+   * created by an Egyptian provider in BuildHub's only market. A real external
+   * user disproved that blanket claim - a vendor operating in Oman whose
+   * listing displayed EGP because the platform had nothing else to write. So
+   * the column records what nobody contradicted, not what anybody chose.
+   *
+   * `remediation_required` is the DEFAULT because unproven is the safe state:
+   * such a row keeps its value and original denomination, is never relabelled
+   * or converted, is never published into a market, and waits for the provider
+   * to confirm or re-enter it. Stored rather than recomputed so the
+   * provider-facing prompt has something durable to read and the count can be
+   * reported rather than re-derived differently by each caller.
+   */
+  marketMigrationState: mysqlEnum('marketMigrationState', ['proven_eg', 'remediation_required'])
+    .default('remediation_required').notNull(),
   leadTimeDays:   int('leadTimeDays'),
   warrantyMonths: int('warrantyMonths'),
   status:      mysqlEnum('status', ['draft', 'active', 'inactive', 'archived']).default('draft').notNull(),
@@ -947,6 +965,61 @@ export const serviceOfferings = mysqlTable('serviceOfferings', {
 }, table => ({
   providerStatusIdx: index('serviceOfferings_provider_status_idx').on(table.providerId, table.status),
   categoryStatusIdx: index('serviceOfferings_category_status_idx').on(table.categoryId, table.status),
+}));
+
+/**
+ * ── ONE SERVICE, ONE OFFER PER MARKET ───────────────────────────────────
+ *
+ * The parent `serviceOfferings` row is the SERVICE: what the provider does,
+ * in which category, with which description. This table is the OFFER: what
+ * they charge for it in one particular market.
+ *
+ * Before it existed a service had one price and one currency, so the same
+ * provider offering the same work in three markets was not representable -
+ * 25.000 OMR/m2 alongside 260.00 SAR/m2 alongside 250.00 AED/m2 had nowhere
+ * to go. These are separate rows, so changing the Saudi price cannot touch
+ * the Omani one.
+ *
+ * ── THERE IS DELIBERATELY NO CURRENCY COLUMN ────────────────────────────
+ *
+ * A `currency` beside `marketCode` can hold `OM` + `EGP`. Validating at the
+ * write closes that for paths that use the validator and leaves it open to
+ * every migration, admin script and future router that does not. With no
+ * column there is nothing to disagree: the currency IS the market's, read
+ * from the registry at the point of use, and the inconsistent state is not
+ * one the schema can represent.
+ *
+ * What the provider originally entered, in whatever denomination, stays on
+ * the legacy parent columns - preserved, never rewritten.
+ */
+export const serviceOfferingMarkets = mysqlTable('serviceOfferingMarkets', {
+  id:                int('id').autoincrement().primaryKey(),
+  serviceOfferingId: int('serviceOfferingId').notNull()
+    .references(() => serviceOfferings.id, { onDelete: 'cascade', onUpdate: 'restrict' }),
+  marketCode:        varchar('marketCode', { length: 2 }).notNull(),
+  /**
+   * The basis may differ per market too: "per square metre" in one and "fixed
+   * project" in another are different offers, not one offer in two currencies.
+   */
+  pricingBasis: mysqlEnum('pricingBasis', ['quote_on_request', 'per_square_metre', 'per_linear_metre', 'per_unit', 'per_day', 'fixed_project'])
+    .default('quote_on_request').notNull(),
+  priceMin:          decimal('priceMin', { precision: 13, scale: 3 }),
+  priceMax:          decimal('priceMax', { precision: 13, scale: 3 }),
+  /** A provider may hold an active Egypt offer and a draft Saudi one. */
+  status: mysqlEnum('status', ['draft', 'active', 'inactive', 'archived']).default('draft').notNull(),
+  statusChangedAt:   timestamp('statusChangedAt'),
+  createdAt:         timestamp('createdAt').defaultNow().notNull(),
+  updatedAt:         timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  /**
+   * THE UNIQUENESS INVARIANT. One offer per service per market: a second row
+   * would mean two live prices for the same work in the same place, with
+   * nothing to say which one a buyer is being quoted.
+   */
+  serviceMarketUnique: uniqueIndex('serviceOfferingMarkets_service_market_unique')
+    .on(table.serviceOfferingId, table.marketCode),
+  // Drives discovery in the market -> offer direction.
+  marketStatusIdx: index('serviceOfferingMarkets_market_status_idx').on(table.marketCode, table.status),
 }));
 
 // ── Reviews ────────────────────────────────────────────────────────────────

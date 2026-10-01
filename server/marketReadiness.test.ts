@@ -524,6 +524,19 @@ const DECLARED_CURRENCY_HARDCODES: readonly { file: string; reason: string }[] =
       + 'which was the defect; a second billing market needs an approved '
       + 'catalogue price per market (§45), not an FX conversion of this one.',
   },
+  {
+    file: 'shared/serviceOfferingMarkets.ts',
+    reason: 'The LEGACY CLASSIFIER asks whether a stored value IS EGP. That '
+      + 'cannot be read from the record, because it IS the record: the question '
+      + 'is what 0061 wrote into serviceOfferings.currency when it had no other '
+      + 'value available, and whether other evidence proves the row meant it. '
+      + 'The literal is a historical fact being tested, not a currency being '
+      + 'put on a commercial surface - and the module writes no currency at '
+      + 'all: offerCurrency DERIVES it from the market, and the per-market '
+      + 'offer table deliberately has no currency column. The Egypt spellings '
+      + 'beside it are free-text country values used ONLY to disqualify a row '
+      + 'from the proven set, never to assert a market.',
+  },
 ];
 
 /**

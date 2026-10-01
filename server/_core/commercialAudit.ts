@@ -75,6 +75,10 @@ export type CommercialAction =
   // product" are different commercial acts and an operator filtering the trail
   // for one should not be handed the other.
   | 'service_created' | 'service_updated' | 'service_published'
+  // Phase 2: a per-market commercial offer was created or replaced. Audited
+  // because it is a price change in a specific market, which is a commercial
+  // act and not a profile edit.
+  | 'service_market_offer_set'
   | 'service_delisted' | 'service_archived'
   // PROJECT MEMBERSHIP. Adding somebody to a project, changing their capacity
   // on it, or taking them off it changes WHO CAN READ the customer's documents,

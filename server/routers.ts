@@ -114,6 +114,7 @@ import {
   reviewResponses, reviewReports, productQuestionReports,
   supportTickets, supportTicketMessages, supportTicketAttachments,
   disputeStatusHistory, disputeMessages, disputeEvidence, productCategories, serviceOfferings,
+  serviceOfferingMarkets, providerMarkets,
 } from '../drizzle/schema';
 import { and, asc, desc, eq, gte, inArray, isNull, like, notInArray, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -206,7 +207,7 @@ import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shar
 import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories, categoryUsage } from './categoryService';
 import {
   currencyForMarket, requireCurrencyForMarket, UnknownMarketError,
-  isEnabledMarket, marketFor, fractionDigitsFor, type MarketCode,
+  isEnabledMarket, marketFor, fractionDigitsFor, enabledMarkets, type MarketCode,
   resolveImplicitMarket, resolveImplicitCurrency,
 } from '@shared/markets';
 import {
@@ -260,6 +261,8 @@ import { assertOwnedUploads } from './_core/ownedUpload';
 import { RFQ_CATEGORIES, isRfqCategory } from '@shared/rfqCategories';
 import { vendorCategories, vendorSponsorships, vendorSubscriptions } from '../drizzle/schema';
 import { findRfqOpportunities, formatOpportunitiesForModel, isRfqSeekingRole } from './opportunity';
+import { offerCurrency, mayManageOffer } from '../shared/serviceOfferingMarkets';
+import { isApprovedInMarket } from '../shared/providerMarkets';
 
 const scryptAsync = promisify(scryptCallback);
 
@@ -6096,6 +6099,152 @@ const servicesRouter = router({
       } catch (error) {
         throw asServiceTrpcError(error);
       }
+    }),
+
+  /**
+   * ── THE PROVIDER'S OFFERS FOR ONE OF THEIR SERVICES, PER MARKET ───────
+   *
+   * Scoped to the caller's own service. A provider asking about a service they
+   * do not own gets NOT_FOUND rather than FORBIDDEN, so the endpoint is not an
+   * oracle for which service ids exist or which markets a competitor is
+   * approved in.
+   *
+   * The currency is DERIVED from each offer's market and sent alongside it,
+   * because the row deliberately does not store one - a stored currency beside
+   * a stored market is a pair that can disagree, and `OM` + `EGP` is the exact
+   * row this workstream exists to prevent.
+   */
+  marketOffers: complianceProcedure
+    .input(z.object({ serviceId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [service] = await db.select({
+        id: serviceOfferings.id,
+        providerId: serviceOfferings.providerId,
+        marketMigrationState: serviceOfferings.marketMigrationState,
+      }).from(serviceOfferings).where(eq(serviceOfferings.id, input.serviceId)).limit(1);
+      if (!service || service.providerId !== ctx.user.id) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Service not found' });
+      }
+      const offers = await db.select({
+        marketCode: serviceOfferingMarkets.marketCode,
+        pricingBasis: serviceOfferingMarkets.pricingBasis,
+        priceMin: serviceOfferingMarkets.priceMin,
+        priceMax: serviceOfferingMarkets.priceMax,
+        status: serviceOfferingMarkets.status,
+        updatedAt: serviceOfferingMarkets.updatedAt,
+      }).from(serviceOfferingMarkets)
+        .where(eq(serviceOfferingMarkets.serviceOfferingId, input.serviceId))
+        .orderBy(serviceOfferingMarkets.marketCode);
+      const markets = await db.select({
+        marketCode: providerMarkets.marketCode, status: providerMarkets.status,
+      }).from(providerMarkets).where(eq(providerMarkets.userId, ctx.user.id));
+      return {
+        /*
+         * The provider is told which of their legacy prices still needs their
+         * own confirmation. `remediation_required` is not an error and is not
+         * the provider's fault: the platform wrote a currency it had no better
+         * value for, and only they can say what the offer was meant to be.
+         */
+        needsConfirmation: service.marketMigrationState === 'remediation_required',
+        offers: offers.map(offer => ({ ...offer, currency: offerCurrency(offer.marketCode) })),
+        /** The markets they may currently open an offer in, so the UI offers no dead choice. */
+        manageableMarkets: enabledMarkets()
+          .filter(market => isApprovedInMarket(markets, market.code))
+          .map(market => ({ code: market.code, currency: market.currency })),
+      };
+    }),
+
+  /**
+   * ── CREATE OR REPLACE ONE MARKET'S OFFER ──────────────────────────────
+   *
+   * Upsert on (service, market), which is the uniqueness invariant the schema
+   * enforces: one offer per service per market, because a second row would
+   * mean two live prices for the same work in the same place with nothing to
+   * say which a buyer is being quoted.
+   *
+   * Every authorization condition lives in `mayManageOffer`, not here, so the
+   * same four checks cannot be assembled differently by a second caller:
+   * ownership, a real market code, the market being ENABLED, and approval in
+   * THAT market. A `providerMarkets` row is not an enabled market and
+   * pre-launch interest is not approval, so neither opens commerce.
+   *
+   * NO CURRENCY IS ACCEPTED FROM THE CLIENT. It is not a field on the input at
+   * all - there is nothing to validate because there is nothing to send. The
+   * denomination follows the market, server-side, always.
+   */
+  setMarketOffer: complianceProcedure
+    .input(z.object({
+      serviceId: z.number().int().positive(),
+      marketCode: z.string().min(1).max(2),
+      pricingBasis: z.enum(SERVICE_PRICING_BASES),
+      priceMin: z.number().nonnegative().max(9_999_999_999.999).nullable().optional(),
+      priceMax: z.number().nonnegative().max(9_999_999_999.999).nullable().optional(),
+      status: z.enum(['draft', 'active', 'inactive', 'archived']),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [service] = await db.select({
+        id: serviceOfferings.id, providerId: serviceOfferings.providerId,
+      }).from(serviceOfferings).where(eq(serviceOfferings.id, input.serviceId)).limit(1);
+      // NOT_FOUND for an absent service AND for someone else's, so the two are
+      // indistinguishable to a caller guessing ids.
+      if (!service) throw new TRPCError({ code: 'NOT_FOUND', message: 'Service not found' });
+
+      const markets = await db.select({
+        marketCode: providerMarkets.marketCode, status: providerMarkets.status,
+      }).from(providerMarkets).where(eq(providerMarkets.userId, ctx.user.id));
+
+      const decision = mayManageOffer({
+        callerId: ctx.user.id,
+        serviceOwnerId: service.providerId,
+        marketCode: input.marketCode,
+        providerMarkets: markets,
+      });
+      if (!decision.allowed) {
+        if (decision.reason === 'not_owner') {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Service not found' });
+        }
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          // The reason is the provider's own status, which they are entitled
+          // to know - it tells them what to do next rather than that something
+          // went wrong.
+          message: decision.reason === 'market_disabled'
+            ? 'BuildHub does not currently operate in that market.'
+            : decision.reason === 'not_approved_in_market'
+              ? 'Your business is not approved to offer services in that market yet.'
+              : 'That is not a market BuildHub recognises.',
+        });
+      }
+
+      if (input.priceMin != null && input.priceMax != null && input.priceMax < input.priceMin) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'The maximum price cannot be below the minimum.' });
+      }
+
+      const values = {
+        serviceOfferingId: input.serviceId,
+        marketCode: decision.marketCode,
+        pricingBasis: input.pricingBasis,
+        priceMin: input.priceMin != null ? String(input.priceMin) : null,
+        priceMax: input.priceMax != null ? String(input.priceMax) : null,
+        status: input.status,
+        statusChangedAt: new Date(),
+      };
+      await db.insert(serviceOfferingMarkets).values(values)
+        .onDuplicateKeyUpdate({ set: {
+          pricingBasis: values.pricingBasis,
+          priceMin: values.priceMin,
+          priceMax: values.priceMax,
+          status: values.status,
+          statusChangedAt: values.statusChangedAt,
+        } });
+      await recordCommercialEvent(db, {
+        actorId: ctx.user.id, ownerId: ctx.user.id,
+        action: 'service_market_offer_set', subjectType: 'service', subjectId: input.serviceId,
+        detail: `${decision.marketCode} ${decision.currency}`,
+      });
+      return { marketCode: decision.marketCode, currency: decision.currency };
     }),
 });
 

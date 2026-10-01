@@ -463,6 +463,13 @@
       "when": 1791000002000,
       "tag": "0065_provider_market_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "5",
+      "when": 1791000003000,
+      "tag": "0066_service_offering_markets",
+      "breakpoints": true
     }
   ]
 }
