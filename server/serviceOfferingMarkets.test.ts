@@ -74,6 +74,50 @@ describe('EGP NEVER MEANS EGYPT ON ITS OWN', () => {
     }
   });
 
+  /*
+   * ── BLANK IS NOT A DISQUALIFIER. IT IS NOT EVIDENCE EITHER. ───────────
+   *
+   * An earlier commit message described this as "a blank country is proven",
+   * which reads as though an absent field were affirmative proof of an
+   * Egyptian offer. It is not, and these three cases are the difference.
+   *
+   * The positive evidence is the OTHER three conditions: an EGP denomination,
+   * an approved Egyptian registration instrument, and an approved Egypt row.
+   * The country field can only ever subtract. A row with a blank country is
+   * proven because of what IS known about it, never because of what is not.
+   */
+  it('blank cannot substitute for ANY positive condition', () => {
+    for (const missing of [
+      { currency: 'AED' },
+      { hasApprovedEgyptianRegistrationDocument: false },
+      { providerMarkets: [] },
+    ] as const) {
+      expect(
+        classifyLegacyOffer(proven({ freeTextCountry: null, ...missing })),
+        `blank country stood in for ${Object.keys(missing)[0]}`,
+      ).toBe('remediation_required');
+    }
+  });
+
+  it('blank and a stated "Egypt" are INDISTINGUISHABLE, so the field adds nothing', () => {
+    // If blank were being read as evidence it could only show up as blank
+    // out-performing, or differing from, an explicit Egypt. It does neither.
+    const blank = classifyLegacyOffer(proven({ freeTextCountry: null }));
+    const stated = classifyLegacyOffer(proven({ freeTextCountry: 'Egypt' }));
+    expect(blank).toBe(stated);
+    for (const missing of [{ currency: null }, { providerMarkets: [] }] as const) {
+      expect(classifyLegacyOffer(proven({ freeTextCountry: null, ...missing })))
+        .toBe(classifyLegacyOffer(proven({ freeTextCountry: 'Egypt', ...missing })));
+    }
+  });
+
+  it('nothing but a blank country proves nothing at all', () => {
+    expect(classifyLegacyOffer({
+      currency: null, hasApprovedEgyptianRegistrationDocument: false,
+      providerMarkets: [], freeTextCountry: null,
+    })).toBe('remediation_required');
+  });
+
   it('the recognised Egypt spellings do not contradict it', () => {
     for (const spelling of ['Egypt', 'egypt', 'EG', ' eg ', 'مصر', 'Arab Republic of Egypt']) {
       expect(freeTextCountryContradictsEgypt(spelling), spelling).toBe(false);
