@@ -6,7 +6,28 @@
 //
 // The DB-facing layer is service.ts; the provider seam is provider.ts.
 
-import {
+import { fractionDigitsFor } from '../../shared/markets';
+
+
+/**
+ * ── THE BILLING CURRENCY'S OWN SCALE, NOT A LITERAL TWO ─────────────────
+ *
+ * `priceAmount` was formatted to a hard-coded two fractional digits in three
+ * places. It is right today - billing is EGP-only, and EGP has two minor
+ * digits - but it is right by coincidence rather than by derivation, and that
+ * is the pattern the multi-market pass exists to remove. Three of the six
+ * registered GCC currencies divide into 1,000, so a bare 2 anywhere near money
+ * is an assumption waiting to become a wrong invoice.
+ *
+ * Subscription billing stays a SEPARATE domain from transaction currency
+ * (owner §87): this is what a supplier pays BuildHub, never what a quotation
+ * is denominated in. So this reads the billing currency's scale specifically
+ * and never reaches for an RFQ's.
+ *
+ * Falls back to two only if the billing currency has no declared scale at all,
+ * which `server/moneyScale.test.ts` asserts cannot happen.
+ */
+const BILLING_SCALE = fractionDigitsFor(BILLING_CURRENCY) ?? 2;import {
   BILLING_CURRENCY,
   DEFAULT_PLAN_ID,
   FOUNDER_OFFER_MONTHS,
@@ -349,7 +370,7 @@ export function startTrial(params: {
     status: 'trialing',
     billingInterval: interval,
     currency: BILLING_CURRENCY,
-    priceAmount: price.toFixed(2),
+    priceAmount: price.toFixed(BILLING_SCALE),
     isFounderPrice: founder,
     // Phase 4B.4 fix: only ever WRITE this stamp, never clear it. Emitting
     // `founderPriceUsedAt: null` for a non-founder subscription wiped the
@@ -476,7 +497,7 @@ export function changePlan(params: {
 
   return {
     plan: targetPlan,
-    priceAmount: price.toFixed(2),
+    priceAmount: price.toFixed(BILLING_SCALE),
     // isFounderPrice / founderPriceUsedAt / founderPriceEndsAt are deliberately
     // untouched: a plan change neither grants nor re-grants the founder offer.
   };
@@ -524,7 +545,7 @@ export function expireFounderPrice(subscription: VendorSubscription): Subscripti
   return {
     isFounderPrice: false,
     founderPriceEndsAt: null,
-    priceAmount: standard.toFixed(2),
+    priceAmount: standard.toFixed(BILLING_SCALE),
   };
 }
 

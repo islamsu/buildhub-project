@@ -1280,7 +1280,7 @@ const isAllowedRegistrationDocumentType = (contentType: string) => contentType =
 function getOverallComplianceStatus(role: string | null | undefined, docs: Array<{ documentType: string; status: string }>, requestedStatus?: string): ComplianceStatus {
   if (requestedStatus === 'rejected') return 'rejected';
   if (requestedStatus === 'update_required') return 'update_required';
-  const required = getComplianceRequirements(role).filter(requirement => requirement.required);
+  const required = getComplianceRequirements(role, resolveImplicitMarket()).filter(requirement => requirement.required);
   const allApproved = required.length > 0 && required.every(requirement => docs.some(doc => doc.documentType === requirement.type && doc.status === 'approved'));
   return allApproved ? 'approved' : 'under_review';
 }
@@ -1293,7 +1293,7 @@ const registrationRouter = router({
     const docs = await db.select().from(registrationDocuments).where(eq(registrationDocuments.userId, ctx.user.id)).orderBy(desc(registrationDocuments.createdAt));
     const history = await db.select().from(registrationDocumentSubmissions).where(eq(registrationDocumentSubmissions.userId, ctx.user.id)).orderBy(desc(registrationDocumentSubmissions.createdAt)).limit(100);
     const events = await db.select().from(registrationReviewEvents).where(eq(registrationReviewEvents.userId, ctx.user.id)).orderBy(desc(registrationReviewEvents.createdAt)).limit(50);
-    return { role: applicant?.userRole ?? ctx.user.userRole, status: applicant?.onboardingStatus ?? 'not_started', reviewNotes: applicant?.onboardingReviewNotes ?? null, reviewedAt: applicant?.onboardingReviewedAt ?? null, requirements: getComplianceRequirements(applicant?.userRole ?? ctx.user.userRole), documents: docs, history, events };
+    return { role: applicant?.userRole ?? ctx.user.userRole, status: applicant?.onboardingStatus ?? 'not_started', reviewNotes: applicant?.onboardingReviewNotes ?? null, reviewedAt: applicant?.onboardingReviewedAt ?? null, requirements: getComplianceRequirements(applicant?.userRole ?? ctx.user.userRole, resolveImplicitMarket()), documents: docs, history, events };
   }),
   uploadDocument: complianceProcedure.input(z.object({
     documentType: z.string().min(1).max(100),
@@ -1305,7 +1305,7 @@ const registrationRouter = router({
     enforceUploadRateLimit(ctx.user.id);
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    const requirements = getComplianceRequirements(ctx.user.userRole);
+    const requirements = getComplianceRequirements(ctx.user.userRole, resolveImplicitMarket());
     const requirement = requirements.find(item => item.type === input.documentType);
     if (!requirement) throw new TRPCError({ code: 'BAD_REQUEST', message: 'This document is not required for the selected role' });
     const bytes = Buffer.from(input.base64, 'base64');
@@ -1358,7 +1358,7 @@ const projectsRouter = router({
      * place rather than dropped.
      */
     const totals = await spentByProject(db, ids);
-    return rows.map(row => ({ ...row, spent: spentFor(totals, row.id) }));
+    return rows.map(row => ({ ...row, spent: spentFor(totals, row.id, row.currency) }));
   }),
   directory: approvedProviderProcedure.input(z.object({
     page: z.number().int().min(0).default(0),
@@ -1407,7 +1407,7 @@ const projectsRouter = router({
     const totals = await spentByProject(db, [project.id]);
     // The caller's own capacity travels with the record so the UI can render
     // the right controls - it is a convenience, never the enforcement.
-    return { ...project, spent: spentFor(totals, project.id), myProjectRole: access.projectRole };
+    return { ...project, spent: spentFor(totals, project.id, project.currency), myProjectRole: access.projectRole };
   }),
   /**
    * WHO MAY START A PROJECT - the owner's decision, enforced HERE.
@@ -3575,6 +3575,11 @@ const rfqRouter = router({
         variantLabel: rfqItems.variantLabel, quantity: rfqItems.quantity,
         unit: rfqItems.unit, specifications: rfqItems.specifications,
         unitPriceSnapshot: rfqItems.unitPriceSnapshot,
+        // SENT, because a figure without its currency cannot be formatted
+        // honestly - and this one is nullable precisely when the denomination
+        // was never provable, which the UI must be able to show as unpriced
+        // rather than guess at.
+        unitPriceSnapshotCurrency: rfqItems.unitPriceSnapshotCurrency,
       }).from(rfqItems).where(eq(rfqItems.rfqId, input.id)).orderBy(rfqItems.position, rfqItems.id);
       /*
        * PARSED, because mysql2 hands a `json` column back as a STRING and a
@@ -3844,7 +3849,8 @@ const rfqRouter = router({
       const resolvedItems: {
         productId: number | null; name: string; variantLabel: string | null;
         quantity: string; unit: string | null; specifications: string | null;
-        unitPriceSnapshot: string | null; position: number;
+        unitPriceSnapshot: string | null; unitPriceSnapshotCurrency: string | null;
+        position: number;
       }[] = [];
       if (items && items.length > 0) {
         const catalogueIds = Array.from(new Set(
@@ -3854,6 +3860,10 @@ const rfqRouter = router({
           ? await db.select({
               id: products.id, name: products.name, unit: products.unit,
               price: products.price, status: products.status,
+              // ITS OWN CURRENCY, set independently of this RFQ's. Read so the
+              // snapshot below can refuse a denomination mismatch instead of
+              // copying a figure under the wrong currency's name.
+              currency: products.currency,
             }).from(products).where(inArray(products.id, catalogueIds))
           : [];
         const byId = new Map(catalogue.map(row => [row.id, row]));
@@ -3863,7 +3873,8 @@ const rfqRouter = router({
             resolvedItems.push({
               productId: null, name: item.name, variantLabel: item.variantLabel ?? null,
               quantity: String(item.quantity), unit: item.unit ?? null,
-              specifications: item.specifications ?? null, unitPriceSnapshot: null, position: index,
+              specifications: item.specifications ?? null, unitPriceSnapshot: null,
+              unitPriceSnapshotCurrency: null, position: index,
             });
             return;
           }
@@ -3884,7 +3895,28 @@ const rfqRouter = router({
             quantity: String(item.quantity),
             unit: item.unit ?? product.unit ?? null,
             specifications: item.specifications ?? null,
-            unitPriceSnapshot: product.price ?? null,
+            /*
+              * ── THE SNAPSHOT IS DENOMINATED, OR IT IS NOT TAKEN ──────────
+              *
+              * `product.price` used to be copied here with no currency on the
+              * row at all, and a reader would naturally attribute the RFQ's
+              * transaction currency to it. Those are two independent columns:
+              * a product priced in AED dropped into an Omani RFQ would have
+              * rendered as an OMR figure, with nothing recorded as wrong.
+              *
+              * The RFQ's currency is the authority (owner directive, Phase 0
+              * item 4). So a product that agrees with it contributes its price
+              * and that currency; a product that DISAGREES contributes no
+              * snapshot. Not a converted one - there is no FX here and an
+              * invented rate would make a reference figure look like a quote -
+              * and not a relabelled one, which would be the undenominated bug
+              * with a currency column added for confidence. The line still
+              * carries its name, quantity and specification; it simply has no
+              * indicative price, which is the truth.
+              */
+            unitPriceSnapshot: product.currency === marketCurrency ? (product.price ?? null) : null,
+            unitPriceSnapshotCurrency:
+              product.currency === marketCurrency && product.price != null ? marketCurrency : null,
             position: index,
           });
         });
@@ -4842,7 +4874,15 @@ const rfqRouter = router({
        * would be accepted, stored, and would disagree with its own components
        * the moment either side rounded differently.
        */
-      price: z.number().positive().max(9_999_999_999.99).optional(),
+      /*
+       * .999, NOT .99. This bound was written when quotations.price was
+       * DECIMAL(12,2); 0062 widened the column to (14,3) and every sibling
+       * component below already allows three digits. Leaving the AUTHORITATIVE
+       * TOTAL capped a hundredth short of its own components is the kind of
+       * inconsistency that only shows up on a three-digit currency, as a
+       * refused quotation whose line items each validated fine.
+       */
+      price: z.number().positive().max(9_999_999_999.999).optional(),
       /** custom | percentage | package | detailed. Defaults to the old behaviour. */
       pricingMethod: z.enum(PRICING_METHODS).optional(),
       /** percentage: the material cost the rate applies to, and the rate. */
@@ -10537,7 +10577,7 @@ const adminRouter = router({
     const docs = await db.select().from(registrationDocuments).orderBy(desc(registrationDocuments.createdAt));
     return applicants.map(applicant => ({
       ...applicant,
-      requirements: getComplianceRequirements(applicant.userRole),
+      requirements: getComplianceRequirements(applicant.userRole, resolveImplicitMarket()),
       documents: docs.filter(document => document.userId === applicant.id),
     })).filter(applicant => applicant.onboardingStatus !== 'approved' || applicant.documents.length > 0);
   }),
@@ -10549,7 +10589,7 @@ const adminRouter = router({
     const docs = await db.select().from(registrationDocuments).where(eq(registrationDocuments.userId, input.userId)).orderBy(desc(registrationDocuments.createdAt));
     const history = await db.select().from(registrationDocumentSubmissions).where(eq(registrationDocumentSubmissions.userId, input.userId)).orderBy(desc(registrationDocumentSubmissions.createdAt)).limit(100);
     const events = await db.select().from(registrationReviewEvents).where(eq(registrationReviewEvents.userId, input.userId)).orderBy(desc(registrationReviewEvents.createdAt)).limit(100);
-    return { applicant, requirements: getComplianceRequirements(applicant.userRole), documents: docs, history, events };
+    return { applicant, requirements: getComplianceRequirements(applicant.userRole, resolveImplicitMarket()), documents: docs, history, events };
   }),
   reviewComplianceDocument: adminWith('marketplace.manage').input(z.object({
     documentId: z.number(),

@@ -442,6 +442,20 @@
       "when": 1790400000000,
       "tag": "0062_finishing_pricing",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "5",
+      "when": 1791000000000,
+      "tag": "0063_money_scale",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "5",
+      "when": 1791000001000,
+      "tag": "0064_rfq_item_snapshot_currency",
+      "breakpoints": true
     }
   ]
 }

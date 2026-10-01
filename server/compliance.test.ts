@@ -14,7 +14,7 @@ describe('registration compliance requirements', () => {
   it('defines required legal documents for every professional category', () => {
     const roles = ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'] as const;
     for (const role of roles) {
-      const requirements = getComplianceRequirements(role);
+      const requirements = getComplianceRequirements(role, 'EG');
       expect(requirements.length).toBeGreaterThanOrEqual(4);
       expect(requirements.filter(item => item.required).length).toBeGreaterThanOrEqual(3);
       expect(requirements.every(item => item.type && item.name && item.nameAr)).toBe(true);
@@ -24,8 +24,8 @@ describe('registration compliance requirements', () => {
   });
 
   it('returns empty requirements for individual homeowners', () => {
-    expect(getComplianceRequirements('homeowner')).toEqual([]);
-    expect(getComplianceRequirements(null)).toEqual([]);
+    expect(getComplianceRequirements('homeowner', 'EG')).toEqual([]);
+    expect(getComplianceRequirements(null, 'EG')).toEqual([]);
   });
 
   it('provides bilingual labels for the full onboarding status lifecycle', () => {

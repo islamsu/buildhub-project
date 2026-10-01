@@ -233,8 +233,8 @@ export const projects = mysqlTable('projects', {
   status:      mysqlEnum('status', [
                  'planning', 'active', 'on_hold', 'completed', 'cancelled',
                ]).default('planning'),
-  budget:      decimal('budget', { precision: 14, scale: 2 }),
-  spent:       decimal('spent', { precision: 14, scale: 2 }).default('0.00'),
+  budget:      decimal('budget', { precision: 15, scale: 3 }),
+  spent:       decimal('spent', { precision: 15, scale: 3 }).default('0.000'),
   progress:    int('progress').default(0),
   location:    varchar('location', { length: 255 }),
   startDate:   timestamp('startDate'),
@@ -489,7 +489,7 @@ export const products = mysqlTable('products', {
   subCategory: varchar('subCategory', { length: 100 }),
   brand:       varchar('brand', { length: 100 }),
   origin:      varchar('origin', { length: 100 }),
-  price:       decimal('price', { precision: 12, scale: 2 }),
+  price:       decimal('price', { precision: 13, scale: 3 }),
   currency:    varchar('currency', { length: 10 }).default('EGP'),
   stock:       int('stock').default(0),
   unit:        varchar('unit', { length: 50 }),
@@ -557,7 +557,7 @@ export const rfqs = mysqlTable('rfqs', {
   title:       varchar('title', { length: 255 }).notNull(),
   description: text('description'),
   category:    varchar('category', { length: 100 }),
-  budget:      decimal('budget', { precision: 12, scale: 2 }),
+  budget:      decimal('budget', { precision: 13, scale: 3 }),
   /**
    * WHERE THE REQUIREMENT MUST BE SUPPLIED OR PERFORMED.
    *
@@ -646,7 +646,23 @@ export const rfqItems = mysqlTable('rfqItems', {
   /** The customer's own words for this line: grade, finish, tolerance. */
   specifications: text('specifications'),
   /** The catalogue price when it was added, for reference only - not a quote. */
-  unitPriceSnapshot: decimal('unitPriceSnapshot', { precision: 12, scale: 2 }),
+  unitPriceSnapshot: decimal('unitPriceSnapshot', { precision: 13, scale: 3 }),
+  /**
+   * WHAT CURRENCY THE SNAPSHOT ABOVE IS IN.
+   *
+   * Nullable on purpose, and it is not an oversight to be tidied away. The
+   * figure is copied from `products.price`, and `products` carries its own
+   * currency set independently of the RFQ's - so the server writes this only
+   * when the two AGREE, and leaves it NULL when they do not. A null here means
+   * "this historical amount's denomination was never recorded and cannot be
+   * proven", which is a readable state; a defaulted 'EGP' would mean "this is
+   * Egyptian", which for a disagreeing row is a claim nothing supports.
+   *
+   * The authority for a NEW row is the RFQ's transaction currency (0064). No
+   * FX: a product priced in another currency contributes no snapshot rather
+   * than a converted one.
+   */
+  unitPriceSnapshotCurrency: varchar('unitPriceSnapshotCurrency', { length: 3 }),
   position:  int('position').notNull().default(0),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
 }, table => ({
@@ -898,8 +914,8 @@ export const serviceOfferings = mysqlTable('serviceOfferings', {
   description: text('description'),
   pricingBasis: mysqlEnum('pricingBasis', ['quote_on_request', 'per_square_metre', 'per_linear_metre', 'per_unit', 'per_day', 'fixed_project']).default('quote_on_request').notNull(),
   /** Both NULL when the basis is quote_on_request - refused, not merely ignored. */
-  priceMin:    decimal('priceMin', { precision: 12, scale: 2 }),
-  priceMax:    decimal('priceMax', { precision: 12, scale: 2 }),
+  priceMin:    decimal('priceMin', { precision: 13, scale: 3 }),
+  priceMax:    decimal('priceMax', { precision: 13, scale: 3 }),
   /**
    * WHAT THE TWO PRICES ABOVE ARE DENOMINATED IN. 0061.
    *
@@ -1320,7 +1336,7 @@ export const expenses = mysqlTable('expenses', {
   projectId:   int('projectId').notNull().references(() => projects.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
   category:    varchar('category', { length: 100 }),
   description: text('description'),
-  amount:      decimal('amount', { precision: 12, scale: 2 }).notNull(),
+  amount:      decimal('amount', { precision: 13, scale: 3 }).notNull(),
   currency:    varchar('currency', { length: 10 }).default('EGP'),
   date:        timestamp('date').defaultNow(),
   receiptUrl:  text('receiptUrl'),

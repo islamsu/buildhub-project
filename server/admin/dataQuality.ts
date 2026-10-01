@@ -33,6 +33,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { getComplianceRequirements } from '../../shared/compliance';
 import { getDb } from '../db';
+import { resolveImplicitMarket } from '../../shared/markets';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -135,7 +136,7 @@ const approvedProviderMissingDocument: CheckDefinition = {
     const offending = providers
       .filter(provider => {
         const held = approvedTypes.get(Number(provider.id)) ?? new Set<string>();
-        return getComplianceRequirements(provider.userRole)
+        return getComplianceRequirements(provider.userRole, resolveImplicitMarket())
           .filter(requirement => requirement.required)
           .some(requirement => !held.has(requirement.type));
       })

@@ -77,15 +77,29 @@ export const COMPLIANCE_REQUIREMENTS_BY_MARKET: Partial<Record<string, Record<Co
 /**
  * The documents this role must supply in this market.
  *
- * `market` defaults to Egypt, so every existing caller keeps its behaviour
- * exactly. A market with no confirmed requirement set returns EMPTY rather
- * than falling back to Egypt's: telling a Saudi engineer to file an Egyptian
- * syndicate licence is a confident wrong answer, and an empty list is a
- * visible gap that stops the onboarding rather than misdirecting it.
+ * ── THE MARKET IS REQUIRED, AND USED TO DEFAULT TO EGYPT ────────────────
+ *
+ * This parameter read `market: string = 'EG'`. That kept every existing caller
+ * working while Egypt was the only market, and it also meant six call sites
+ * asserted an Egyptian compliance decision without naming one - the exact
+ * shape of implicit launch-market authority the multi-market pass removes.
+ * Compliance is the worst place for it: the output is the list of legal
+ * documents a professional is told to gather, and a silent default would hand
+ * a Saudi engineer Egypt's syndicate licence with no sign anything had been
+ * assumed.
+ *
+ * So the caller must state the market. Callers that have no per-provider
+ * market yet pass the single-enabled-market resolver, which refuses rather
+ * than guesses once a second market opens - so this cannot start answering for
+ * a market whose requirements nobody has confirmed.
+ *
+ * A market with no confirmed requirement set still returns EMPTY rather than
+ * falling back to Egypt's. An empty list is a visible gap that stops the
+ * onboarding; a wrong list sends someone to the wrong ministry.
  */
 export function getComplianceRequirements(
   role: string | null | undefined,
-  market: string = 'EG',
+  market: string,
 ): ComplianceRequirement[] {
   if (!isComplianceRole(role)) return [];
   const forMarket = COMPLIANCE_REQUIREMENTS_BY_MARKET[market];

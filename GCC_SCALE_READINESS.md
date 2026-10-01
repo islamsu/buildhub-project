@@ -1426,3 +1426,243 @@ Otherwise corrupted `ZZ` data can become an Egyptian RFQ, currency or compliance
 Update tests accordingly.
 
 These are release-safe correctness fixes and should be completed before regional readiness is called complete.
+
+---
+
+# 54. THE SETTLED MULTI-MARKET CONTRACT
+
+Owner authorization: GCC enablement is an active objective. Egypt plus the six
+registered GCC markets must be supportable, and the GCC markets enabled once
+their technical, compliance, staging and owner-acceptance gates pass.
+
+This section records the **architecture and its invariants**. It is not a
+history of how the decisions were reached. Where it disagrees with an earlier
+section or with a root-level report, this section is current.
+
+Authorization is not activation. Every market in `shared/markets.ts` other than
+Egypt remains `enabled: false` throughout Phases 0-3, and `enabled` is the only
+thing that decides.
+
+## A. Work location is the commercial authority
+
+The chain, and nothing may short-circuit it:
+
+```
+where the work is required
+  -> BuildHub market
+  -> RFQ transaction currency
+  -> quotation currency
+```
+
+A project states its country explicitly. A project-backed RFQ inherits that
+market **server-side**. A standalone RFQ captures the work country explicitly.
+The RFQ's currency is derived from its market on the server, and a quotation
+inherits the RFQ's currency without choosing it.
+
+Free-text address and city are **not** parsed to infer a market. A requirement's
+location is a property of the job, not of the form it was typed into.
+
+## B. What may never determine a commercial market
+
+- IP address
+- browser geolocation
+- browser locale
+- the active-market browsing preference
+- the account's subscription billing currency
+- the provider's legal country, physical location or nationality
+
+Geolocation may **suggest** a market to a signed-out visitor. `suggestMarket` is
+named for that and returns null rather than a fallback. A suggestion that
+becomes a stored commercial fact without an explicit human choice is a defect.
+
+## C. Cross-border commerce is intentional, not suspicious
+
+A user registered in one country may request work in another enabled country,
+and an eligible provider based in one country may serve another enabled market.
+
+| requester | work location | market | currency |
+|---|---|---|---|
+| Egypt | Oman | OM | OMR |
+| Oman | Saudi Arabia | SA | SAR |
+| Saudi Arabia | UAE | AE | AED |
+
+Where the account's country and the selected work country differ, the product
+**confirms** — it states the work country, the currency consequence and the
+account difference, and offers continue or change. It does not block, and it
+does not frame a legitimate cross-border request as a risk signal.
+
+## D. Provider identity has four separate parts
+
+1. **legal / home country** — where the business is registered
+2. **primary operating market** — where it mainly works
+3. **additional served markets** — where else it is willing to work
+4. **per-market status / approval** — whether BuildHub has approved it *there*
+
+These are four facts, not one. Approval in Egypt does **not** imply approval in
+Saudi Arabia, UAE, Qatar, Kuwait, Bahrain or Oman, and approval in a GCC market
+does not imply approval in Egypt. A provider does not become discoverable in
+every market because GCC is enabled globally.
+
+## E. Service offers are per-market and independently priced
+
+The same provider offering the same service in three markets has **three
+offers**, each with its own entered price:
+
+```
+provider X + service Y + OM  ->  25.000 OMR / m2
+provider X + service Y + SA  -> 260.00  SAR / m2
+provider X + service Y + AE  -> 250.00  AED / m2
+```
+
+Changing one must not mutate another. Uniqueness is enforced on service plus
+market under canonical provider/service ownership.
+
+**No FX-derived authoritative pricing.** BuildHub does not convert an approved
+price in one market and present the result as another market's price. A
+converted figure is an estimate wearing a commercial offer's clothes.
+
+## F. Legacy EGP rows are classified by evidence
+
+A historical EGP service price does not prove an Egypt market offer. Rows are
+classified, not assumed:
+
+- `PROVEN_EG` — evidence establishes the denomination and the market
+- `REMEDIATION_REQUIRED` — it does not
+
+For remediation-required rows: preserve the historical value, do not relabel the
+currency, do not FX-convert, do not publish into a new market. The provider
+confirms or re-enters before that market offer becomes commercially active.
+
+## G. Money carries its denomination explicitly
+
+Every stored monetary figure must be denominated by something on or above its
+own row. A number whose currency a reader has to infer from a neighbouring
+table is undenominated, whatever the neighbour happens to say today.
+
+`rfqItems.unitPriceSnapshotCurrency` is the worked example: the RFQ's currency
+is the authority, a product that agrees contributes its price and that currency,
+and a product that disagrees contributes **no snapshot at all** — not a
+converted one and not a relabelled one.
+
+## H. Currency precision comes from the registry
+
+`CURRENCY_FRACTION_DIGITS` is the single authority. KWD, BHD and OMR have
+**three** minor digits; EGP, SAR, AED and QAR have two.
+
+- storage precision and display precision are different concerns
+- an unknown currency has **no** scale rather than a defaulted two
+- raising scale without raising precision silently costs integer headroom
+- rate, percentage, rating and quantity columns are not money and are not widened
+
+Migration 0063 widened the eight market-denominated money columns.
+`server/moneyScale.test.ts` re-derives the census each run, so a new scale-2
+money column fails the build rather than waiting to be noticed.
+
+## I. Tax stays explicit
+
+There is no `market.defaultVatRate`. A market does not imply a tax rate. An
+unstated VAT rate is **NULL, not zero** — carried on the rate, which is echoed
+as nullable precisely so a reader can tell "0% VAT" from "VAT not stated". A
+dedicated tax architecture remains a separate, unauthorized workstream.
+
+## J. The implicit-market resolver is the pacing mechanism
+
+`DEFAULT_MARKET` is a **backfill value**: it records what a row written before
+markets existed meant. It is not the market of a new commercial record.
+
+New commercial writes that state no market of their own go through
+`resolveImplicitMarket()`:
+
+| enabled markets | behaviour |
+|---|---|
+| exactly one | resolve it |
+| zero | refuse |
+| more than one | **refuse** |
+
+The third row is the point. Enabling a second market does not quietly change
+what those paths write — it makes them throw until each has been given explicit
+market authority. Activation cannot outrun the work.
+
+This rule must not be weakened to make a flag turn green. Mutation coverage
+proves an Egypt/default fallback cannot silently return.
+
+## K. Compliance extends the canonical architecture
+
+`COMPLIANCE_REQUIREMENTS_BY_MARKET` keyed by market and role is the only
+mechanism. There are not six GCC compliance engines, and ordinary requirement
+differences are expressed as **configuration, never as `if Oman` / `if Saudi`**.
+
+A market with no confirmed requirement set returns **empty**, never Egypt's. An
+empty list is a visible gap that stops an onboarding; a wrong list sends a
+professional to the wrong ministry. `getComplianceRequirements` takes a required
+market: there is no default to fall through.
+
+**Jurisdictional requirements are verified data, not model output.** BuildHub
+does not populate them from assumption. A market whose requirements are
+unconfirmed is `ACTIVATION BLOCKED — COMPLIANCE CONFIGURATION INCOMPLETE`, which
+blocks that market's activation and does **not** block building the
+architecture.
+
+## L. Market interest is informational only
+
+A provider expressing interest in a disabled market does not become approved
+there, discoverable there, eligible for matching there, able to publish a
+commercial offer there, or able to quote work there. Interest never weakens the
+enabled-market guard.
+
+## M. Project market is a dedicated lifecycle operation
+
+Never part of a generic project update — changing a project's market changes the
+jurisdiction, currency and compliance basis of everything hanging off it.
+
+| state | behaviour |
+|---|---|
+| no RFQ | controlled change permitted, with audit |
+| draft / unpublished RFQ | dedicated controlled change with correct cascade and user notice |
+| published RFQ | refuse — canonical close/recreate path |
+| quotation exists | hard refusal |
+| award / contract exists | hard refusal |
+
+## N. One canonical eligibility predicate
+
+Discovery and matching converge on one mechanism:
+
+```
+market enabled
+  AND provider approved for that market
+  AND the applicable service offered in that market
+  AND existing visibility / category / project / business rules satisfied
+```
+
+Country-specific conditionals scattered through routers and components are the
+failure mode this replaces. The market registry and this predicate are the
+authority.
+
+## O. Activation gates, and owner website acceptance
+
+Per-market, reported factually and without ranking:
+
+- schema / precision ready
+- work-location flow ready
+- provider eligibility ready
+- market-specific service offers ready
+- compliance configuration verified or missing
+- automated regression pass / fail
+- deployed staging pass / blocked
+- owner website acceptance pass / pending / fail
+
+Currency decimal scale is **one** gate, not the gate. SAR, AED and QAR having
+two minor digits does not make Saudi Arabia, UAE or Qatar activation-ready; they
+need the same multi-market architecture as the rest.
+
+Release discipline for every user-facing candidate:
+
+```
+implementation -> code gate -> exact SHA -> staging deploy
+  -> /version verified -> deployed matrix -> OWNER WEBSITE ACCEPTANCE
+  -> explicit production activation -> production verification
+```
+
+**Owner website acceptance is never inferred from automated evidence**, and
+production activation is never inferred from a merge to `main`. A market is not
+launched because it appears in a dropdown.

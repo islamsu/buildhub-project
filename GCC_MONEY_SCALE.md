@@ -5,10 +5,15 @@
 > database precision must support the maximum enabled currency scale before
 > those markets are enabled
 
-This document is that plan. It must be executed **before** Kuwait, Bahrain or
-Oman is enabled in `shared/markets.ts`, and
-`server/marketReadiness.test.ts` fails the build if one of them is enabled
-while the columns are still two-scale.
+This document is that plan, and **it has been executed** — see
+`drizzle/0063_money_scale.sql`. It was required before Kuwait, Bahrain or Oman
+could be enabled in `shared/markets.ts`, and `server/marketReadiness.test.ts`
+still fails the build if one of them is enabled while any money column is
+two-scale, so the guard remains live rather than retired on completion.
+
+Widening the columns clears the storage gate ONLY. Those three markets remain
+`enabled: false`, behind the full multi-market readiness gate in
+`GCC_SCALE_READINESS.md` §54.
 
 ---
 
@@ -38,30 +43,67 @@ on **enablement** rather than on rendering.
 
 ## Columns to migrate
 
-Every column that holds a currency amount. Scale `2 → 3`; precision rises by
-one so the integer range is unchanged.
+**STATUS: EXECUTED as `drizzle/0063_money_scale.sql`.** This section records
+what was done; the list below was re-derived from the live schema at the time
+of writing rather than copied from the earlier draft of this document, which
+had already gone stale — it listed `quotations.price` as `DECIMAL(12,2)` when
+migration 0062 had widened it to `(14,3)`.
 
-| table.column | today | after |
+Scale `2 -> 3`; **precision rises by one so integer capacity is unchanged**.
+`DECIMAL(12,2)` holds ten integer digits and so does `DECIMAL(13,3)`. Raising
+scale alone would have cost every column a factor of ten of headroom, turning a
+precision fix into a range regression that surfaces as a large legitimate
+budget being refused.
+
+| table.column | before | after |
 |---|---|---|
 | `projects.budget` | `DECIMAL(14,2)` | `DECIMAL(15,3)` |
 | `projects.spent` | `DECIMAL(14,2)` | `DECIMAL(15,3)` |
 | `products.price` | `DECIMAL(12,2)` | `DECIMAL(13,3)` |
 | `rfqs.budget` | `DECIMAL(12,2)` | `DECIMAL(13,3)` |
 | `rfqItems.unitPriceSnapshot` | `DECIMAL(12,2)` | `DECIMAL(13,3)` |
-| `quotations.price` | `DECIMAL(12,2)` | `DECIMAL(13,3)` |
 | `serviceOfferings.priceMin` | `DECIMAL(12,2)` | `DECIMAL(13,3)` |
 | `serviceOfferings.priceMax` | `DECIMAL(12,2)` | `DECIMAL(13,3)` |
 | `expenses.amount` | `DECIMAL(12,2)` | `DECIMAL(13,3)` |
-| `vendorSubscriptions.priceAmount` | `DECIMAL(10,2)` | `DECIMAL(11,3)` |
 
-Re-derive the list before writing the migration — a column added after this
-document was written would be missed:
+### Already three-scale before 0063
+
+Migration 0062, in the finishing release, wrote the quotation pricing tables at
+scale 3 from the start: `quotations.price`, `baseAmount`, `discountAmount`,
+`vatAmount`, `materialBaseAmount`, `packageRate`, and `quotationItems.rate` and
+`lineTotal`. They need nothing here.
+
+### Deliberately NOT widened
+
+Mechanically widening every `DECIMAL(n,2)` would be a change with no reason
+behind it. Five columns stay at scale 2, each for a stated reason:
+
+| column | why |
+|---|---|
+| `users.rating`, `products.rating` | a 0.00-5.00 rating, not an amount |
+| `rfqItems.quantity` | a quantity (pieces, m2), not an amount |
+| `quotations.packageQuantity` | an area or quantity, not an amount |
+| `vendorSubscriptions.priceAmount` | money, but billing-domain and EGP-only |
+
+The last one is money and is still not widened: subscription billing is a
+separate domain whose currency set is EGP alone, so a three-digit billing
+currency is something no code can currently produce. The assumption is
+**enforced rather than remembered** — `server/moneyScale.test.ts` fails if
+`SUPPORTED_CURRENCIES` ever gains a currency needing more digits than that
+column holds.
+
+Re-derive before any future change — a column added after this was written
+would be missed:
 
 ```sql
 SELECT TABLE_NAME, COLUMN_NAME, NUMERIC_PRECISION, NUMERIC_SCALE
 FROM information_schema.COLUMNS
 WHERE TABLE_SCHEMA = DATABASE() AND DATA_TYPE = 'decimal' AND NUMERIC_SCALE = 2;
 ```
+
+`server/moneyScale.test.ts` performs the equivalent census over
+`drizzle/schema.ts` on every run, so a new scale-2 money column fails the build
+rather than waiting to be noticed.
 
 ---
 
@@ -108,20 +150,40 @@ FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE();
 
 ---
 
-## What is deliberately NOT done now
+## What this release delivers
 
-The migration is **not** written or applied in this release candidate.
+The migration IS now written and applied (0063). What remains deliberately
+separate is **market activation**: widening the columns removes one gate, not
+the gate.
 
-Running a full-table-copy ALTER across ten tables to support markets that are
-disabled, on a release whose own migrations are still local-only, is risk
-without benefit. What this release delivers instead is:
+Also in place:
 
 - the scale table (`CURRENCY_FRACTION_DIGITS`) so no code assumes two
-- a formatter that uses each currency's own scale
-- `MAX_CURRENCY_FRACTION_DIGITS`, published so the schema requirement is a
-  number rather than a memory
+- a formatter that uses each currency's own scale, with `null` for an unknown
+  currency rather than an imposed Egyptian two
+- `MAX_CURRENCY_FRACTION_DIGITS`, so the schema requirement is a number rather
+  than a memory
 - a test that **fails the build** if a three-digit market is enabled while the
   columns cannot hold it
 
 The last one is the point. The plan does not have to be remembered, because
-enabling Kuwait without executing it does not compile.
+enabling Kuwait against two-digit columns does not compile.
+
+### Verified, not assumed
+
+Against a real MariaDB instance, before and after 0063:
+
+- writing `1234.567` into the old `DECIMAL(12,2)` column returned `1234.57` —
+  the defect, reproduced
+- after the migration, `1234.567` returns `1234.567`
+- a legacy `1450.00` row returns `1450.000` — the same amount, losslessly
+- integer capacity confirmed at ten digits (`9999999999.999` fits)
+- the full chain applies from empty: 65 migrations, no error
+
+### Validation bounds followed the columns
+
+`submitQuotation` capped `price` at `9_999_999_999.99` while every sibling
+component already allowed `.999`. Leaving the authoritative total capped a
+hundredth short of its own components would surface only on a three-digit
+currency, as a refused quotation whose line items each validated fine. Corrected
+with the column.

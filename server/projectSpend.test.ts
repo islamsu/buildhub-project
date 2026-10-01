@@ -74,12 +74,41 @@ describe('spentByProject', () => {
 
 describe('spentFor', () => {
   it('hands back the decimal string shape the client already reads', () => {
-    expect(spentFor(new Map([[1, 2000]]), 1)).toBe('2000.00');
-    expect(spentFor(new Map([[1, 500.5]]), 1)).toBe('500.50');
+    expect(spentFor(new Map([[1, 2000]]), 1, 'EGP')).toBe('2000.00');
+    expect(spentFor(new Map([[1, 500.5]]), 1, 'EGP')).toBe('500.50');
   });
 
   it('says zero for a project with nothing logged', () => {
-    expect(spentFor(new Map(), 9)).toBe('0.00');
+    expect(spentFor(new Map(), 9, 'EGP')).toBe('0.00');
+  });
+
+  /*
+   * ── THE SCALE IS THE PROJECT'S, NOT THE PLATFORM'S ────────────────────
+   *
+   * These three cases are the whole reason the signature changed. The figure
+   * is headlined to the owner as "Total Spent"; rounding it to a scale that
+   * belongs to a different currency is a wrong number, not a formatting nit.
+   */
+  it('keeps the third digit for a 3-digit currency', () => {
+    for (const currency of ['OMR', 'KWD', 'BHD']) {
+      expect(spentFor(new Map([[1, 1234.567]]), 1, currency), currency).toBe('1234.567');
+    }
+  });
+
+  it('still rounds to two for a 2-digit currency', () => {
+    for (const currency of ['EGP', 'SAR', 'AED', 'QAR']) {
+      expect(spentFor(new Map([[1, 1234.567]]), 1, currency), currency).toBe('1234.57');
+    }
+  });
+
+  it('an UNKNOWN currency is not rounded to two - it is not rounded at all', () => {
+    // A scale nobody can name is exactly how a minor unit goes missing. A
+    // slightly long string is recoverable; a lost digit is not. And it must
+    // not throw: this sits behind a project page, and a bad currency code
+    // should not take the page down.
+    expect(spentFor(new Map([[1, 1234.567]]), 1, 'ZZZ')).toBe('1234.567');
+    expect(spentFor(new Map([[1, 1234.567]]), 1, null)).toBe('1234.567');
+    expect(() => spentFor(new Map([[1, 1]]), 1, 'ZZZ')).not.toThrow();
   });
 });
 
@@ -97,7 +126,10 @@ describe('the stored column is no longer a way in', () => {
   it('the derived value is what list and get return', async () => {
     const { readFileSync } = await import('node:fs');
     const source = readFileSync(new URL('./routers.ts', import.meta.url), 'utf8');
-    expect(source).toContain('spent: spentFor(totals, row.id)');
-    expect(source).toContain('spent: spentFor(totals, project.id)');
+    // UPDATED WITH THE SIGNATURE, and deliberately stricter: the project's
+    // currency must travel to the formatter, because without it the total
+    // silently reverts to a platform-wide two digits.
+    expect(source).toContain('spent: spentFor(totals, row.id, row.currency)');
+    expect(source).toContain('spent: spentFor(totals, project.id, project.currency)');
   });
 });

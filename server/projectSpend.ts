@@ -32,6 +32,7 @@
 import { inArray, sql } from 'drizzle-orm';
 import { expenses } from '../drizzle/schema';
 import type { requireDb } from './_core/requireDb';
+import { fractionDigitsFor } from '../shared/markets';
 
 /** The connected database handle, as requireDb() hands it over. */
 type Db = Awaited<ReturnType<typeof requireDb>>;
@@ -64,7 +65,27 @@ export async function spentByProject(
 /**
  * The same shape the client already reads - a decimal string, as the column
  * returned - so no screen has to learn a new type to stop being wrong.
+ *
+ * ── THE SCALE COMES FROM THE PROJECT'S CURRENCY ─────────────────────────
+ *
+ * This was `.toFixed(2)`, which is a platform-wide two digits applied to a
+ * figure that is denominated by its project. For an Omani, Kuwaiti or
+ * Bahraini project - 1,000 baisa or fils to the unit - that silently drops the
+ * third digit from a total the owner reads as "Total Spent". The expense
+ * column itself now holds three digits (0063), so this was the last place the
+ * precision was lost: after storage, on the way out.
+ *
+ * An UNKNOWN currency does not fall back to two. It returns the sum
+ * unrounded, because rounding to a scale nobody can name is how a digit goes
+ * missing, and a slightly long string on a screen is recoverable where a lost
+ * minor unit is not. It does not throw: this is a read path behind a project
+ * page, and refusing to render a project because its currency code is
+ * unrecognised would turn a data fault into an outage.
  */
-export function spentFor(totals: Map<number, number>, projectId: number): string {
-  return (totals.get(projectId) ?? 0).toFixed(2);
+export function spentFor(
+  totals: Map<number, number>, projectId: number, currency?: string | null,
+): string {
+  const total = totals.get(projectId) ?? 0;
+  const digits = fractionDigitsFor(currency);
+  return digits === null ? String(total) : total.toFixed(digits);
 }

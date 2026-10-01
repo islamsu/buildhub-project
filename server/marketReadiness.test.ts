@@ -422,11 +422,46 @@ describe('compliance is a property of the market, not just the role', () => {
     expect(hasComplianceRequirements('SA')).toBe(false);
   });
 
-  it('every existing caller keeps its behaviour', () => {
-    // The market defaults to Egypt, so nothing that called this before the
-    // parameter existed changed.
-    expect(getComplianceRequirements('engineer')).toEqual(getComplianceRequirements('engineer', 'EG'));
-    expect(getComplianceRequirements('engineer').length).toBeGreaterThan(0);
+  it('the market is REQUIRED - there is no Egypt default to fall through', () => {
+    /*
+     * THIS TEST USED TO ASSERT THE OPPOSITE. The parameter read
+     * `market: string = 'EG'`, and this case recorded that "every existing
+     * caller keeps its behaviour" - which was true, and was also six call
+     * sites making an Egyptian compliance decision without naming one.
+     *
+     * Compliance is the worst place for an implicit launch market: the output
+     * is the list of legal documents a professional is TOLD TO GATHER. A
+     * silent default would hand a Saudi engineer Egypt's syndicate licence
+     * with nothing on screen to say anything had been assumed.
+     *
+     * Asserted through the source, because a required parameter is a
+     * compile-time property that a runtime expectation cannot observe.
+     */
+    /*
+     * COMMENTS STRIPPED. The first version of this read the raw file and
+     * tripped on the explanatory comment in shared/compliance.ts, which
+     * QUOTES the old signature in order to explain why it is gone. A guard
+     * that cannot tell code from the prose describing it fails for the wrong
+     * reason - and the next person's fix is to delete the explanation.
+     */
+    const source = readSourceForAssertions(
+      readFileSync(join(ROOT, 'shared/compliance.ts'), 'utf8'));
+    expect(source).toContain('market: string,');
+    expect(source).not.toMatch(/market:\s*string\s*=\s*['"]EG['"]/);
+    // Egypt's own behaviour is unchanged when Egypt is stated.
+    expect(getComplianceRequirements('engineer', 'EG').length).toBeGreaterThan(0);
+  });
+
+  it('and no production caller passes a hard-coded market code', () => {
+    // The replacement must be the fail-closed resolver, not 'EG' spelled out
+    // six times - which would be the same assumption with more places to miss.
+    for (const file of ['server/routers.ts', 'server/admin/dataQuality.ts']) {
+      const source = readSourceForAssertions(readFileSync(join(ROOT, file), 'utf8'));
+      for (const call of source.match(/getComplianceRequirements\([^)]*\)/g) ?? []) {
+        expect(call, `${file} hard-codes a market`).not.toMatch(/['"](EG|SA|AE|QA|KW|BH|OM)['"]/);
+        expect(call, `${file} states no market`).toContain('resolveImplicitMarket()');
+      }
+    }
   });
 
   it('a market with no confirmed set returns EMPTY, not Egypt\'s', () => {
