@@ -68,7 +68,7 @@ export default function MarketingCenterPage() {
           <h1 className="text-xl font-bold">{ar ? 'مركز التسويق' : 'Marketing Center'}</h1>
           <p className="text-sm text-muted-foreground">
             {ar
-              ? 'كيف يُعرض نشاطك على BuildHub، وما هو فعّال الآن، ونطاقه وانتهاؤه، وأداؤه من أحداث مسجّلة فعلياً.'
+              ? 'كيف يُعرض نشاطك على ركيزة، وما هو فعّال الآن، ونطاقه وانتهاؤه، وأداؤه من أحداث مسجّلة فعلياً.'
               : 'How your business appears across Rakiza, what is active now, its scope and expiry, and how it is performing from events Rakiza actually recorded.'}
           </p>
         </div>
@@ -90,9 +90,9 @@ export default function MarketingCenterPage() {
               <Card data-testid="marketing-active-featured">
                 <CardContent className="pt-6">
                   <p className="text-2xl font-semibold tabular-nums">{data?.activeFeatured ?? 0}</p>
-                  <p className="mt-1 text-sm font-medium">{ar ? 'ترشيحات BuildHub الفعّالة' : 'Active Featured'}</p>
+                  <p className="mt-1 text-sm font-medium">{ar ? 'ترشيحات ركيزة الفعّالة' : 'Active Featured'}</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {ar ? 'اختيار تحريري من BuildHub' : "Rakiza's editorial selection"}
+                    {ar ? 'اختيار تحريري من ركيزة' : "Rakiza's editorial selection"}
                   </p>
                 </CardContent>
               </Card>
@@ -124,11 +124,11 @@ export default function MarketingCenterPage() {
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Megaphone className="h-4 w-4" />
-                  {ar ? 'مساحاتك على BuildHub' : 'Your placements'}
+                  {ar ? 'مساحاتك على ركيزة' : 'Your placements'}
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
                   {ar
-                    ? 'كل رقم هنا هو عدّ لأحداث سجّلتها BuildHub فعلاً: ظهور، وفتح الصفحة، ونقرة إجراء، وطلب مؤهل.'
+                    ? 'كل رقم هنا هو عدّ لأحداث سجّلتها ركيزة فعلاً: ظهور، وفتح الصفحة، ونقرة إجراء، وطلب مؤهل.'
                     : 'Every figure here counts events Rakiza actually recorded: impressions, page opens, action clicks and qualified enquiries.'}
                 </p>
               </CardHeader>
@@ -140,7 +140,7 @@ export default function MarketingCenterPage() {
                   <div className="rounded-lg border border-dashed py-10 text-center" data-testid="marketing-empty">
                     <p className="text-sm text-muted-foreground">
                       {ar
-                        ? 'لا توجد لديك مساحات مدفوعة أو ترشيحات حالياً. الترشيح اختيار تحريري من BuildHub، والمساحة التجارية تُمنح إدارياً.'
+                        ? 'لا توجد لديك مساحات مدفوعة أو ترشيحات حالياً. الترشيح اختيار تحريري من ركيزة، والمساحة التجارية تُمنح إدارياً.'
                         : 'You have no Sponsored placements or Featured selections right now. Featured is Rakiza’s editorial choice, and Sponsored placement is granted by Rakiza.'}
                     </p>
                     <p className="mx-auto mt-2 max-w-lg text-xs text-muted-foreground">
@@ -258,7 +258,7 @@ export default function MarketingCenterPage() {
                 <p className="flex items-start gap-1.5">
                   <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   {ar
-                    ? 'لا تعرض BuildHub ميزانيات أو تكلفة نقرة أو عائداً على الإنفاق، لأنه لا توجد بعد بوابة دفع — ورقم كهذا سيكون مُختلقاً.'
+                    ? 'لا تعرض ركيزة ميزانيات أو تكلفة نقرة أو عائداً على الإنفاق، لأنه لا توجد بعد بوابة دفع — ورقم كهذا سيكون مُختلقاً.'
                     : 'Rakiza shows no budget, cost-per-click or return-on-spend figures, because there is no payment provider yet — any such number would be invented.'}
                 </p>
               </CardContent>

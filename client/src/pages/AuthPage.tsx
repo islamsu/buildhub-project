@@ -260,7 +260,7 @@ export default function AuthPage() {
         </Link>
         <div>
           <h2 className="text-4xl font-bold leading-tight mb-4">
-            {lang === 'ar' ? 'ابنِ مستقبلك\nمع BuildHub' : 'Build Your Future\nwith Rakiza'}
+            {lang === 'ar' ? 'ابنِ مستقبلك\nمع ركيزة' : 'Build Your Future\nwith Rakiza'}
           </h2>
           {/* CAPABILITY, NOT SCALE (§75) - the same unsupported "join
               thousands who trust us" claim the landing page carried. */}
@@ -303,7 +303,7 @@ export default function AuthPage() {
 
           <div className="mb-8">
             <h1 className="text-2xl font-bold mb-1">{isLoginMode || isOAuthMode ? (lang === 'ar' ? 'تسجيل الدخول' : 'Sign in') : t('auth.signup')}</h1>
-            <p className="text-muted-foreground text-sm">{isLoginMode ? (lang === 'ar' ? 'استخدم بيانات المستخدم التجريبي أو اختر تسجيل الدخول للمستخدمين الحقيقيين.' : 'Use test-user credentials or choose real-user sign-in.') : isOAuthMode ? (lang === 'ar' ? 'تسجيل الدخول للمستخدمين الحقيقيين عبر BuildHub.' : 'Sign in as a real user through Rakiza.') : t('auth.role.select')}</p>
+            <p className="text-muted-foreground text-sm">{isLoginMode ? (lang === 'ar' ? 'استخدم بيانات المستخدم التجريبي أو اختر تسجيل الدخول للمستخدمين الحقيقيين.' : 'Use test-user credentials or choose real-user sign-in.') : isOAuthMode ? (lang === 'ar' ? 'تسجيل الدخول للمستخدمين الحقيقيين عبر ركيزة.' : 'Sign in as a real user through Rakiza.') : t('auth.role.select')}</p>
             {isAuthenticated && <div className="mt-3 flex items-center gap-2 rounded-lg border border-success/25 bg-success-50 px-3 py-2 text-xs text-success-700"><ShieldCheck className="h-4 w-4" />{lang === 'ar' ? 'تم التحقق من هويتك بأمان عبر تسجيل الدخول الموحد' : 'Your identity is securely verified through Rakiza OAuth'}</div>}
           </div>
 
@@ -351,7 +351,7 @@ export default function AuthPage() {
           {isOAuthMode && (
             <div className="mb-6 space-y-3">
               <Button type="button" className="w-full" onClick={() => startLogin()}>
-                {lang === 'ar' ? 'تسجيل الدخول باستخدام BuildHub' : 'Sign in with Rakiza'}
+                {lang === 'ar' ? 'تسجيل الدخول باستخدام ركيزة' : 'Sign in with Rakiza'}
               </Button>
               <Button type="button" variant="outline" className="w-full" onClick={() => navigate('/auth?mode=login')}>
                 {lang === 'ar' ? 'العودة إلى تسجيل دخول المستخدم التجريبي' : 'Back to test-user sign in'}

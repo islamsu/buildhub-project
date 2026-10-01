@@ -347,7 +347,7 @@ export default function Home() {
                 signal that a site is unmaintained, and it goes stale on a
                 fixed date with nobody watching. */}
             <p className="text-background/40 text-sm" data-testid="footer-copyright">
-              © {new Date().getFullYear()} BuildHub. {lang === 'ar' ? 'جميع الحقوق محفوظة.' : 'All rights reserved.'}
+              © {new Date().getFullYear()} {lang === 'ar' ? 'ركيزة' : 'Rakiza'}. {lang === 'ar' ? 'جميع الحقوق محفوظة.' : 'All rights reserved.'}
             </p>
             <div className="flex items-center gap-4 text-sm text-background/40">
               <span className="flex items-center gap-1.5"><Shield className="w-3.5 h-3.5" /> {lang === 'ar' ? 'آمن ومشفر' : 'Secure & Encrypted'}</span>

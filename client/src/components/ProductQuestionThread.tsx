@@ -123,7 +123,7 @@ export default function ProductQuestionThread({
               className="mt-2 border-s-2 border-muted-foreground/40 ps-3 text-sm italic text-muted-foreground"
               data-testid={`product-answer-hidden-${item.id}`}
             >
-              {ar ? 'أزالت بيلدهَب هذه الإجابة.' : 'Rakiza removed this answer.'}
+              {ar ? 'أزالت ركيزة هذه الإجابة.' : 'Rakiza removed this answer.'}
             </p>
           ) : item.answer ? (
             <div className="mt-2 border-s-2 border-primary ps-3">
@@ -229,7 +229,7 @@ export default function ProductQuestionThread({
             />
             <p className="text-xs text-muted-foreground">
               {ar
-                ? 'يراجع فريق بيلدهَب البلاغ. لا يُحذف أي محتوى — قد يُخفى فقط.'
+                ? 'يراجع فريق ركيزة البلاغ. لا يُحذف أي محتوى — قد يُخفى فقط.'
                 : 'A moderator reads every report. Nothing is deleted — content can only be hidden.'}
             </p>
           </div>

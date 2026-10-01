@@ -236,7 +236,7 @@ export default function SettingsPage() {
             : <NotForThisAccount
                 ar={ar}
                 en="Service categories are declared by provider accounts, so Rakiza knows which requests to route to them."
-                arabic="فئات الخدمة يعلنها مقدّمو الخدمة حتى تعرف BuildHub أي الطلبات تُوجَّه إليهم."
+                arabic="فئات الخدمة يعلنها مقدّمو الخدمة حتى تعرف ركيزة أي الطلبات تُوجَّه إليهم."
               />}
         </Section>
 

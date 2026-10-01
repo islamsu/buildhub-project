@@ -606,7 +606,7 @@ export default function AdminDashboard() {
                 what you are looking at. */}
             <h1 className="text-2xl font-bold mb-1" data-testid="admin-section-heading">{t(adminSectionLabelKey)}</h1>
             <p className="text-muted-foreground">{adminSection === 'overview'
-              ? (lang === 'ar' ? 'مراقبة وإدارة منصة BuildHub' : 'Monitor and manage the Rakiza platform')
+              ? (lang === 'ar' ? 'مراقبة وإدارة منصة ركيزة' : 'Monitor and manage the Rakiza platform')
               : t('admin.title')}</p>
           </div>
           <div className="flex items-center gap-2"><Badge className="badge-info text-xs px-3 py-1 flex items-center gap-1"><Activity className="w-3 h-3" /> {lang === 'ar' ? 'لوحة التشغيل' : 'Operational Console'}</Badge></div>

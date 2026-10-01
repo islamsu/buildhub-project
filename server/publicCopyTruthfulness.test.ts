@@ -123,7 +123,7 @@ describe('public copy claims nothing Rakiza cannot evidence', () => {
     const removed = 'Join thousands of users who trust Rakiza to manage their construction projects.';
     const caught = UNSUPPORTED_CLAIMS.filter(claim => claim.pattern.test(removed));
     expect(caught.length, 'the original claim would pass the census').toBeGreaterThan(0);
-    const arabic = 'انضم إلى آلاف المستخدمين الذين يثقون في BuildHub لإدارة مشاريعهم.';
+    const arabic = 'انضم إلى آلاف المستخدمين الذين يثقون في ركيزة لإدارة مشاريعهم.';
     expect(UNSUPPORTED_CLAIMS.filter(claim => claim.pattern.test(arabic)).length,
       'the Arabic original would pass the census').toBeGreaterThan(0);
   });

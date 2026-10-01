@@ -69,7 +69,7 @@ export default function ReferralInviteEarn() {
     if (!fullLink) return;
     void (navigator as any).share({
       title: 'Rakiza',
-      text: ar ? 'انضم إلى BuildHub عبر دعوتي' : 'Join me on Rakiza',
+      text: ar ? 'انضم إلى ركيزة عبر دعوتي' : 'Join me on Rakiza',
       url: fullLink,
     }).catch(() => { /* dismissed by the person - not an error */ });
   };

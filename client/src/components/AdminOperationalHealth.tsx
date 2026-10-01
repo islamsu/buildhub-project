@@ -177,7 +177,7 @@ export default function AdminOperationalHealth() {
               <p className="text-sm font-medium">{ar ? 'ما لا تقيسه هذه الشاشة' : 'What this screen does not measure'}</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {ar
-                  ? 'لا تُخزَّن هذه القيم في BuildHub، وعرض رقم لها هنا سيكون اختلاقاً: '
+                  ? 'لا تُخزَّن هذه القيم في ركيزة، وعرض رقم لها هنا سيكون اختلاقاً: '
                   : 'Rakiza does not store any of these, and showing a number for them here would be inventing it: '}
                 {data.notMeasured.map(key => text(NOT_MEASURED_LABEL, key, key)).join(ar ? '، ' : ', ')}.
               </p>

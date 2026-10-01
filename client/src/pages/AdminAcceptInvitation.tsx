@@ -91,7 +91,7 @@ export default function AdminAcceptInvitation() {
             <h1 className="text-2xl font-bold">{t('Set your password', 'عيّن كلمة المرور')}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {t('Choose a password only you know. Nobody at Rakiza can see it.',
-                 'اختر كلمة مرور لا يعرفها سواك. لا يمكن لأحد في BuildHub الاطلاع عليها.')}
+                 'اختر كلمة مرور لا يعرفها سواك. لا يمكن لأحد في ركيزة الاطلاع عليها.')}
             </p>
             <form
               className="mt-6 space-y-3"

@@ -89,7 +89,7 @@ export type SeoRoute = {
 
 /** The suffix every page title carries, so a tab is identifiable at any width. */
 export const SEO_BRAND_EN = 'Rakiza';
-export const SEO_BRAND_AR = 'بيلد هَب';
+export const SEO_BRAND_AR = 'ركيزة';
 
 /**
  * THE PUBLIC SURFACE. §37 names it: marketplace, categories, provider
@@ -191,7 +191,7 @@ export const PUBLIC_SEO_ROUTES: readonly SeoRoute[] = [
     descriptionEn:
       'Every construction service category on Rakiza, from structural works to finishing, with the providers who cover each one.',
     descriptionAr:
-      'كل فئات خدمات البناء على بيلد هَب، من الأعمال الإنشائية إلى التشطيب، مع مقدّمي الخدمة في كل فئة.',
+      'كل فئات خدمات البناء على ركيزة، من الأعمال الإنشائية إلى التشطيب، مع مقدّمي الخدمة في كل فئة.',
   },
   {
     path: '/pricing',
@@ -201,7 +201,7 @@ export const PUBLIC_SEO_ROUTES: readonly SeoRoute[] = [
     descriptionEn:
       'What each Rakiza plan includes for suppliers and professionals: qualified enquiries, catalogue capacity and marketplace visibility.',
     descriptionAr:
-      'ما تتضمنه كل خطة في بيلد هَب للموردين والمهنيين: الطلبات المؤهلة وسعة الكتالوج والظهور في السوق.',
+      'ما تتضمنه كل خطة في ركيزة للموردين والمهنيين: الطلبات المؤهلة وسعة الكتالوج والظهور في السوق.',
   },
 ];
 
@@ -285,7 +285,7 @@ export function seoEntityTitle(name: string | null | undefined, route: SeoRoute 
 export function seoDescription(route: SeoRoute | null, lang: 'en' | 'ar'): string {
   if (!route) {
     return lang === 'ar'
-      ? 'بيلد هَب: سوق ومنصة عمل لقطاع البناء.'
+      ? 'ركيزة: سوق ومنصة عمل لقطاع البناء.'
       : 'Rakiza: a construction marketplace and workspace.';
   }
   return lang === 'ar' ? route.descriptionAr : route.descriptionEn;

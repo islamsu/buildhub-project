@@ -212,17 +212,34 @@ describe('no English customer surface still carries the old brand', () => {
     expect(offenders(line => !ARABIC.test(line))).toEqual([]);
   });
 
-  it('the Arabic exemption is finite, and shrinks to nothing in R4', () => {
+  it('no Arabic line names the old brand either', () => {
     /*
-     * Arabic sentences carrying the brand are hand-reviewed rather than
-     * substituted, because Arabic agreement is grammatical: "بدأت BuildHub
-     * التحقيق" needs "بدأت ركيزة", not a word swapped in place. Until that
-     * pass lands they are counted here so the exemption is a number somebody
-     * has to look at, rather than a silence.
+     * R4 CLOSED THIS. It was a counted exemption at 56 while the Arabic was
+     * hand-reviewed, because Arabic agreement is grammatical rather than
+     * lexical: "يرسل BuildHub" treats the brand as a masculine token, and
+     * ركيزة is feminine, so the VERB has to change too - "ترسل ركيزة". A
+     * scripted swap would have left a trail of wrong agreement that nobody
+     * reading English would ever see.
      *
-     * LOWER THIS AS R4 LANDS. It must reach 0; it must never rise.
+     * Three strings were rebuilt rather than patched: the hero line, which
+     * moved to verb-first order as Arabic prefers; the notification
+     * preference line, where the relative clause had to re-agree; and the AI
+     * assistant's greeting, because "Rakiza AI" has no natural Arabic reading
+     * as a bare name.
+     *
+     * The old transliteration بيلد هَب / بيلدهَب is gone with it.
      */
-    const remaining = offenders(line => ARABIC.test(line));
-    expect(remaining.length, 'Arabic brand lines grew').toBeLessThanOrEqual(56);
+    expect(offenders(line => ARABIC.test(line))).toEqual([]);
+  });
+
+  it('the retired Arabic transliteration is gone everywhere', () => {
+    // It was never the brand; it was the English name spelled in Arabic
+    // letters. ركيزة is a real Arabic word, which is the point of it.
+    const found: string[] = [];
+    for (const file of FILES) {
+      const stripped = readSourceForAssertions(readFileSync(file, 'utf8'));
+      if (/بيلد\s?هَب/.test(stripped)) found.push(file.slice(ROOT.length + 1));
+    }
+    expect(found, 'the old Arabic transliteration survives').toEqual([]);
   });
 });

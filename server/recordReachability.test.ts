@@ -343,6 +343,6 @@ describe('a product names who sells it, and links there', () => {
   it('and degrades honestly when a supplier row is missing', () => {
     // A product whose supplier account was removed must not render "undefined".
     expect(productDetail).toContain('{product.supplier && (');
-    expect(productDetail).toContain("product.supplier.name ?? (lang === 'ar' ? 'مورد على BuildHub' : 'A Rakiza supplier')");
+    expect(productDetail).toContain("product.supplier.name ?? (lang === 'ar' ? 'مورد على ركيزة' : 'A Rakiza supplier')");
   });
 });

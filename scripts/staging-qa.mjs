@@ -1637,7 +1637,7 @@ try {
     const PRICE = String(professional?.standard?.month ?? '');
     console.log(`INFO  29. professional monthly price served by this deployment: ${PRICE || 'unknown'} ${planDoc?.currency ?? ''}`);
     check(PRICE.length > 0, '29. the deployment publishes a Professional monthly price to check the answer against', PRICE);
-    const q5 = await ask('كم تبلغ تكلفة خطة Professional الشهرية على BuildHub؟', 'ar');
+    const q5 = await ask('كم تبلغ تكلفة خطة Professional الشهرية على ركيزة؟', 'ar');
     console.log(`INFO  29.5 Arabic Rakiza fact -> http ${q5.s} in ${q5.ms}ms, ${arabic(q5.answer)} Arabic chars`);
     check(q5.s === 200 && q5.answer.includes(PRICE),
       `29.5 the Arabic answer carries Rakiza's own price (${PRICE} EGP)`,
