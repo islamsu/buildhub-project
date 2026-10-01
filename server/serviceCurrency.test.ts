@@ -63,7 +63,20 @@ describe('a new offering does not rely on the default', () => {
      */
     const routers = code('server/routers.ts');
     const create = routers.slice(routers.indexOf('db.insert(serviceOfferings).values({'));
-    expect(create.slice(0, 900)).toContain('currency: requireCurrencyForMarket(DEFAULT_MARKET)');
+    const body = create.slice(0, 900);
+    /*
+     * PHASE 0 STRENGTHENED THIS. It used to read
+     * `requireCurrencyForMarket(DEFAULT_MARKET)`, which was honest while Egypt
+     * was the only enabled market and would have become an Egyptian currency on
+     * an Omani provider's service the day a second market opened. It now goes
+     * through the fail-closed resolver, which REFUSES when more than one market
+     * is enabled instead of picking one - so this path cannot mislabel an
+     * offering; it can only stop working until it is given explicit market
+     * authority. Both halves are asserted: the resolver is used, and the
+     * platform-wide default is no longer reachable from here.
+     */
+    expect(body).toContain('currency: resolveImplicitCurrency()');
+    expect(body).not.toContain('DEFAULT_MARKET');
   });
 
   it('through requireCurrencyForMarket, which THROWS on an unknown market', () => {

@@ -206,7 +206,8 @@ import { importTemplateCsv, MAX_IMPORT_BYTES, parseProductImport } from '../shar
 import { loadCategoryIndex, resolveCategory as resolveProductCategory, importCategoryResolver, listableCategories, publicCategories, categoryUsage } from './categoryService';
 import {
   currencyForMarket, requireCurrencyForMarket, UnknownMarketError,
-  DEFAULT_MARKET, isEnabledMarket, marketFor, fractionDigitsFor, type MarketCode,
+  isEnabledMarket, marketFor, fractionDigitsFor, type MarketCode,
+  resolveImplicitMarket, resolveImplicitCurrency,
 } from '@shared/markets';
 import {
   PRICING_METHODS, COST_COMPONENTS, computeQuotationTotals, roundToScale,
@@ -1504,7 +1505,7 @@ const projectsRouter = router({
           message: 'BuildHub does not currently operate in that market.',
         });
       }
-      const marketCode: MarketCode = isEnabledMarket(input.marketCode) ? input.marketCode : DEFAULT_MARKET;
+      const marketCode: MarketCode = isEnabledMarket(input.marketCode) ? input.marketCode : resolveImplicitMarket();
 
       const projectRole = creatorProjectRole(ctx.user.userRole);
       const { marketCode: _requestedMarket, ...projectFields } = input;
@@ -3805,7 +3806,7 @@ const rfqRouter = router({
        * editing the project later cannot silently reinterpret an RFQ that
        * suppliers have already quoted against.
        */
-      let marketCode: MarketCode = DEFAULT_MARKET;
+      let marketCode: MarketCode = resolveImplicitMarket();
       if (input.projectId != null) {
         const [project] = await db.select({ marketCode: projects.marketCode })
           .from(projects).where(eq(projects.id, input.projectId)).limit(1);
@@ -5976,7 +5977,7 @@ const servicesRouter = router({
            * rfq.create make, and `requireCurrencyForMarket` throws on a market
            * it has no currency for rather than falling back to Egypt (§88).
            */
-          currency: requireCurrencyForMarket(DEFAULT_MARKET),
+          currency: resolveImplicitCurrency(),
           status: 'draft',
         });
         const serviceId = Number((result as any)[0].insertId);

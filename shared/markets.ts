@@ -231,3 +231,90 @@ export function suggestMarket(hint: string | null | undefined): MarketCode | nul
   const code = (hint ?? '').trim().toUpperCase();
   return isEnabledMarket(code) ? code : null;
 }
+
+/**
+ * ── THE IMPLICIT-MARKET RESOLVER, AND WHY IT REFUSES ────────────────────
+ *
+ * `DEFAULT_MARKET` is a backfill value: it says what a row written before
+ * markets existed MEANT. Seven paths had started using it for something else -
+ * as the market to write onto a NEW commercial record that never stated one.
+ * While Egypt is the only enabled market those two things coincide, so the
+ * substitution is invisible. The day a second market is enabled they come
+ * apart, and every one of those paths would silently stamp Egypt onto a
+ * record belonging somewhere else: an Omani project with an EGP budget, a
+ * Saudi RFQ whose quotations are denominated in Egyptian pounds.
+ *
+ * That is the failure this function exists to make impossible. It resolves a
+ * market ONLY while the answer is unambiguous, and refuses the moment it is
+ * not:
+ *
+ *   exactly one enabled market  -> resolve it. The answer is not a guess;
+ *                                  there is only one marketplace to be in.
+ *   zero enabled                -> refuse. A commercial record cannot be
+ *                                  written into a platform that operates
+ *                                  nowhere.
+ *   more than one enabled       -> REFUSE. This is the whole point. The path
+ *                                  has no market authority of its own, and
+ *                                  guessing between two live markets is the
+ *                                  defect, not the fallback.
+ *
+ * So enabling a second market does not quietly change what these paths write.
+ * It makes them throw, loudly, until each one has been given explicit market
+ * authority - which is exactly the Phase 0 -> Phase 1 order the owner set.
+ * The guard is the schedule: GCC activation cannot outrun the work, because
+ * the implicit paths stop functioning before they can mislabel anything.
+ *
+ * This is deliberately NOT a silent degradation. A refused write surfaces as
+ * an error a developer or operator sees; a wrong currency on a signed
+ * commercial document does not surface at all.
+ */
+export class ImplicitMarketUnavailableError extends Error {
+  constructor(public readonly enabledCount: number, public readonly detail: string) {
+    super(
+      `This path needs a market but states none, and BuildHub cannot resolve one: ${detail}. `
+      + `It must take its market from the record it is writing (a project's market, an RFQ's `
+      + `market) rather than from a platform-wide default.`,
+    );
+    this.name = 'ImplicitMarketUnavailableError';
+  }
+}
+
+/**
+ * The market for a path that does not state one, while that is unambiguous.
+ *
+ * Throws `ImplicitMarketUnavailableError` rather than returning a fallback.
+ * Call sites that CAN state their market must do so instead of calling this.
+ */
+export function resolveImplicitMarket(): MarketCode {
+  return implicitMarketFrom(enabledMarkets());
+}
+
+/**
+ * The rule itself, over a list passed in.
+ *
+ * Separated from `resolveImplicitMarket` so the three branches can be tested
+ * against real market rows without mocking the registry - a mocked registry
+ * would be testing the mock's shape rather than the rule, and the branch that
+ * matters most is the one that cannot be reached while Egypt is alone.
+ */
+export function implicitMarketFrom(enabled: readonly Market[]): MarketCode {
+  if (enabled.length === 0) {
+    throw new ImplicitMarketUnavailableError(0, 'no market is enabled');
+  }
+  if (enabled.length > 1) {
+    throw new ImplicitMarketUnavailableError(
+      enabled.length,
+      `${enabled.length} markets are enabled (${enabled.map(m => m.code).join(', ')}), `
+      + 'so there is no single implicit market',
+    );
+  }
+  return enabled[0].code;
+}
+
+/**
+ * The currency for a path that does not state a market, while unambiguous.
+ * The same refusal rules as `resolveImplicitMarket`.
+ */
+export function resolveImplicitCurrency(): string {
+  return requireCurrencyForMarket(resolveImplicitMarket());
+}
