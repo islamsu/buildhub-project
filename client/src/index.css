@@ -5,37 +5,37 @@
 
 /* ── Tailwind v4 Theme Tokens ── */
 @theme inline {
-  --color-background:         oklch(99% 0.005 220);
-  --color-foreground:         oklch(12% 0.02  220);
+  --color-background:         #F8FAFC;
+  --color-foreground:         #111827;
   --color-card:               oklch(100% 0 0);
-  --color-card-foreground:    oklch(12% 0.02 220);
+  --color-card-foreground:    #111827;
   --color-popover:            oklch(100% 0 0);
-  --color-popover-foreground: oklch(12% 0.02 220);
-  --color-primary:            oklch(42% 0.20 220);
-  --color-primary-foreground: oklch(99% 0.005 220);
-  --color-secondary:          oklch(95% 0.015 220);
-  --color-secondary-foreground: oklch(25% 0.05 220);
-  --color-muted:              oklch(96% 0.01 220);
-  --color-muted-foreground:   oklch(52% 0.04 220);
-  --color-accent:             oklch(95% 0.015 220);
-  --color-accent-foreground:  oklch(25% 0.05 220);
+  --color-popover-foreground: #111827;
+  --color-primary:            #0F2D5B;
+  --color-primary-foreground: #F8FAFC;
+  --color-secondary:          oklch(95.5% 0.008 257);
+  --color-secondary-foreground: #0F2D5B;
+  --color-muted:              oklch(96.5% 0.005 257);
+  --color-muted-foreground:   oklch(50.0% 0.030 257);
+  --color-accent:             oklch(95.5% 0.008 257);
+  --color-accent-foreground:  #0F2D5B;
   --color-destructive:        oklch(55% 0.22 25);
   --color-destructive-foreground: oklch(99% 0 0);
-  --color-border:             oklch(90% 0.015 220);
-  --color-input:              oklch(90% 0.015 220);
-  --color-ring:               oklch(42% 0.20 220);
-  --color-sidebar:            oklch(18% 0.04 220);
-  --color-sidebar-foreground: oklch(90% 0.02 220);
-  --color-sidebar-primary:    oklch(42% 0.20 220);
-  --color-sidebar-primary-foreground: oklch(99% 0 0);
-  --color-sidebar-accent:     oklch(25% 0.05 220);
-  --color-sidebar-accent-foreground: oklch(90% 0.02 220);
-  --color-sidebar-border:     oklch(28% 0.04 220);
-  --color-sidebar-ring:       oklch(42% 0.20 220);
-  --color-chart-1:            oklch(52% 0.22 220);
-  --color-chart-2:            oklch(68% 0.20 75);
+  --color-border:             oklch(91.0% 0.010 257);
+  --color-input:              oklch(91.0% 0.010 257);
+  --color-ring:               oklch(45.5% 0.108 259);
+  --color-sidebar:            oklch(23.2% 0.070 259);
+  --color-sidebar-foreground: oklch(92% 0.010 257);
+  --color-sidebar-primary:    oklch(69.5% 0.088 259);
+  --color-sidebar-primary-foreground: oklch(16.5% 0.048 259);
+  --color-sidebar-accent:     oklch(37.5% 0.100 259);
+  --color-sidebar-accent-foreground: oklch(96% 0.008 257);
+  --color-sidebar-border:     oklch(37.5% 0.100 259);
+  --color-sidebar-ring:       oklch(69.5% 0.088 259);
+  --color-chart-1:            oklch(45.5% 0.108 259);
+  --color-chart-2:            #F59E0B;
   --color-chart-3:            oklch(55% 0.18 145);
-  --color-chart-4:            oklch(60% 0.20 300);
+  --color-chart-4:            #1B6BFF;
   --color-chart-5:            oklch(55% 0.22 25);
   --radius-sm:   0.375rem;
   --radius-md:   0.5rem;
@@ -44,31 +44,58 @@
 
   /* ── THE BRAND SCALE, AS UTILITIES ──────────────────────────────────────
    *
-   * These values already existed under `:root` as `--brand-*`, which made
-   * them readable from hand-written CSS and invisible to Tailwind. So
-   * `bg-brand-600` did not exist, and 443 occurrences of `bg-blue-600`,
-   * `text-amber-600` and friends accumulated across the client - not because
-   * anyone preferred a raw palette colour, but because the brand had no
-   * utility to reach for.
+   * These values once existed under `:root` as `--brand-*`, which made them
+   * readable from hand-written CSS and invisible to Tailwind. So `bg-brand-600`
+   * did not exist, and 443 occurrences of `bg-blue-600`, `text-amber-600` and
+   * friends accumulated across the client - not because anyone preferred a raw
+   * palette colour, but because the brand had no utility to reach for.
    *
-   * Declaring them here is the change that makes every later cleanup a
-   * find-and-replace instead of a redesign: one token definition now backs
-   * `bg-brand-600`, `text-brand-700`, `border-brand-200` and the rest.
+   * ── WHERE THESE NUMBERS COME FROM ───────────────────────────────────────
    *
-   * Hue 220 is the existing BuildHub blue and is deliberately unchanged. This
-   * exposes the identity that was already chosen; it does not pick a new one.
+   * The RAKIZA brand sheet gives six hexes and no ramps. Nine more steps per
+   * family picked by eye is how a palette ends up with a 700 bluer than its
+   * 600, so these are GENERATED - `node scripts/brand/palette.mjs` prints
+   * every step with its hex and its contrast against white and against Text
+   * Dark, and that script is the reviewable source of these values.
+   *
+   * STEP 800 IS THE ANCHOR and holds Primary Navy #0F2D5B exactly. The rest
+   * is a smooth walk out from it at the anchor's own hue (259), with chroma
+   * peaking mid-ramp so the 50 does not look like dirty water and the 950
+   * does not go purple.
+   *
+   * The hue moved from 220 to 259 and the chroma roughly halved, because the
+   * approved navy is a genuinely more restrained colour than the blue it
+   * replaces. That restraint is the brand, not a loss of it (§56).
+   *
+   * ── WHY THE ANCHORS ARE HEX AND THE REST IS OKLCH ──────────────────────
+   *
+   * The owner's direction was "do not scatter hex values through components".
+   * This file is the opposite of scattering: it is the one place the approved
+   * values belong, and writing them as the exact hexes from the brand sheet
+   * means a reviewer can hold the sheet beside the file and compare. Rounding
+   * them into oklch would introduce a 1/255 drift for no gain and make that
+   * comparison impossible.
+   *
+   * Derived steps stay in oklch because they were computed in that space and
+   * because perceptual lightness is the thing being stepped.
+   *
+   * A NOTE ON THE BRAND SHEET. Its palette panel is headed "(Same as
+   * BuildHub)" and annotates the swatches with the OLD oklch values, which
+   * describe a different and more saturated palette than its own hexes. The
+   * owner resolved it: the hexes are authoritative, the annotations are stale
+   * carry-over. These ramps follow the hexes.
    */
-  --color-brand-50:  oklch(97% 0.015 220);
-  --color-brand-100: oklch(93% 0.04  220);
-  --color-brand-200: oklch(86% 0.08  220);
-  --color-brand-300: oklch(76% 0.13  220);
-  --color-brand-400: oklch(64% 0.18  220);
-  --color-brand-500: oklch(52% 0.22  220);
-  --color-brand-600: oklch(42% 0.20  220);
-  --color-brand-700: oklch(34% 0.17  220);
-  --color-brand-800: oklch(26% 0.13  220);
-  --color-brand-900: oklch(18% 0.09  220);
-  --color-brand-950: oklch(12% 0.05  220);
+  --color-brand-50:  oklch(98.0% 0.006 259);   /* #F6F9FD */
+  --color-brand-100: oklch(95.0% 0.018 259);   /* #E7EFFB */
+  --color-brand-200: oklch(89.0% 0.038 259);   /* #CCDCF5 */
+  --color-brand-300: oklch(80.5% 0.064 259);   /* #A7C1E9 */
+  --color-brand-400: oklch(69.5% 0.088 259);   /* #7C9ED4 */
+  --color-brand-500: oklch(57.5% 0.106 259);   /* #5179B7 */
+  --color-brand-600: oklch(45.5% 0.108 259);   /* #2F5692 */
+  --color-brand-700: oklch(37.5% 0.100 259);   /* #1D4075 */
+  --color-brand-800: #0F2D5B;                  /* Primary Navy - THE ANCHOR, literal */
+  --color-brand-900: oklch(23.2% 0.070 259);   /* #071C3E */
+  --color-brand-950: oklch(16.5% 0.048 259);   /* #030E23 */
 
   /* ── THE ACCENT, DELIBERATELY SHORT ─────────────────────────────────────
    *
@@ -76,10 +103,61 @@
    * progress and a premium indicator - and a full scale would invite it onto
    * backgrounds, borders and body text, which is how a blue product turns
    * orange. The shortness of this scale is the guardrail.
+   *
+   * ── AMBER CANNOT CARRY WHITE TEXT, AND THAT IS NOT NEGOTIABLE ───────────
+   *
+   * Accent Amber #F59E0B against white is 2.15:1. That fails AA for normal
+   * text (4.5), for large text (3.0) and for non-text UI (3.0). The approved
+   * mockup shows white "Sign Up" and "Search" labels on amber fills, and the
+   * owner was explicit that accessibility overrides literal screenshot
+   * reproduction: amber controls carry Text Dark, which is 8.26:1.
+   *
+   * Nor may amber be a text colour on a light surface, for the same 2.15:1.
+   * brandContrast.test.ts enforces both, because this is the one place in the
+   * palette where following the reference pixel-for-pixel breaks a gate the
+   * product currently passes.
+   *
+   * The 600 step exists for hover and pressed states on amber fills: 5.71:1
+   * against Text Dark, so darkening on hover does not darken past legibility.
    */
-  --color-brand-accent-400: oklch(78% 0.18 75);
-  --color-brand-accent-500: oklch(68% 0.20 75);
-  --color-brand-accent-600: oklch(58% 0.18 75);
+  --color-brand-accent-400: oklch(83.9% 0.128 70);  /* #FFBB67 */
+  --color-brand-accent-500: #F59E0B;                /* Accent Amber - THE ANCHOR, literal */
+  --color-brand-accent-600: oklch(66.9% 0.170 70);  /* #D57D00 */
+
+  /* ── SECONDARY BLUE, ALSO SHORT, AND NOT FORCED ANYWHERE ────────────────
+   *
+   * #1B6BFF is in the approved palette, and the owner's direction is precise
+   * about its standing: it belongs to the token system, navy stays dominant,
+   * amber stays the distinctive accent, and this is supporting rather than
+   * competing. It is not pushed onto surfaces the reference design does not
+   * ask for it.
+   *
+   * What it is genuinely FOR: the one job navy cannot do. Primary Navy and
+   * Text Dark are 1.31:1 apart, so a navy link inside body text is almost
+   * invisible as a link. Secondary Blue is 4.57:1 on white and reads as
+   * interactive. That is a real need, and it is why this family exists rather
+   * than being declared for completeness.
+   *
+   * NAMED `brand-blue`, NOT `secondary`. Tailwind already resolves
+   * `bg-secondary` to the light grey-blue surface token below, and two
+   * meanings for one word in one stylesheet is how a button ends up the
+   * colour of a panel.
+   */
+  --color-brand-blue-400: oklch(67.6% 0.186 262);  /* #5392FF */
+  --color-brand-blue-500: #1B6BFF;                 /* Secondary Blue - THE ANCHOR, literal */
+  --color-brand-blue-600: oklch(48.6% 0.228 262);  /* #004DDD */
+
+  /* ── NEUTRAL GRAY, WHICH IS NOT A TEXT COLOUR ───────────────────────────
+   *
+   * #94A3B8 is 2.56:1 on white. It is in the approved palette and it is
+   * perfectly good for a divider, a rule, an inactive dot or an icon on a
+   * dark surface - and it is NOT good for body or helper text, which the
+   * owner called out explicitly. `--muted-foreground` below is the helper
+   * text colour and is deliberately darker.
+   *
+   * One step, because a divider needs one value.
+   */
+  --color-brand-neutral: #94A3B8;                  /* Neutral Gray - THE ANCHOR, literal */
 
   /* ── SEMANTIC STATUS, SEPARATE FROM BRAND ───────────────────────────────
    *
@@ -103,53 +181,78 @@
   --color-info-700: oklch(42% 0.14 240);
 }
 
-/* ── Design Tokens ── */
+/* ── Design Tokens ──────────────────────────────────────────────────────
+ *
+ * The same values as `@theme inline` above, in plain custom properties, for
+ * hand-written CSS and for the `.dark` override that follows. Tailwind reads
+ * the block above; `var(--primary)` in a stylesheet reads this one.
+ */
 :root {
-  /* Brand palette */
-  --brand-50:  oklch(97% 0.015 220);
-  --brand-100: oklch(93% 0.04  220);
-  --brand-200: oklch(86% 0.08  220);
-  --brand-300: oklch(76% 0.13  220);
-  --brand-400: oklch(64% 0.18  220);
-  --brand-500: oklch(52% 0.22  220);
-  --brand-600: oklch(42% 0.20  220);
-  --brand-700: oklch(34% 0.17  220);
-  --brand-800: oklch(26% 0.13  220);
-  --brand-900: oklch(18% 0.09  220);
-  --brand-950: oklch(12% 0.05  220);
+  /* Brand palette. Generated - see scripts/brand/palette.mjs. */
+  --brand-50:  oklch(98.0% 0.006 259);
+  --brand-100: oklch(95.0% 0.018 259);
+  --brand-200: oklch(89.0% 0.038 259);
+  --brand-300: oklch(80.5% 0.064 259);
+  --brand-400: oklch(69.5% 0.088 259);
+  --brand-500: oklch(57.5% 0.106 259);
+  --brand-600: oklch(45.5% 0.108 259);
+  --brand-700: oklch(37.5% 0.100 259);
+  --brand-800: #0F2D5B;                  /* Primary Navy */
+  --brand-900: oklch(23.2% 0.070 259);
+  --brand-950: oklch(16.5% 0.048 259);
 
-  /* Accent — warm amber for construction */
-  --accent-400: oklch(78% 0.18  75);
-  --accent-500: oklch(68% 0.20  75);
-  --accent-600: oklch(58% 0.18  75);
+  /* Accent — Accent Amber #F59E0B at 500. Never carries white text. */
+  --accent-400: oklch(83.9% 0.128 70);
+  --accent-500: #F59E0B;
+  --accent-600: oklch(66.9% 0.170 70);
+
+  /* Secondary Blue #1B6BFF at 500. Supporting, not competing. */
+  --brand-blue-400: oklch(67.6% 0.186 262);
+  --brand-blue-500: #1B6BFF;
+  --brand-blue-600: oklch(48.6% 0.228 262);
+
+  /* Neutral Gray #94A3B8. Dividers and rules — not text. */
+  --brand-neutral: #94A3B8;
 
   /* Semantic */
   --radius: 0.625rem;
-  --background: oklch(99% 0.005 220);
-  --foreground: oklch(12% 0.02  220);
+  --background: #F8FAFC;                    /* Light Background */
+  --foreground: #111827;                    /* Text Dark */
   --card: oklch(100% 0 0);
-  --card-foreground: oklch(12% 0.02 220);
+  --card-foreground: #111827;
   --popover: oklch(100% 0 0);
-  --popover-foreground: oklch(12% 0.02 220);
-  --primary: oklch(42% 0.20 220);
-  --primary-foreground: oklch(99% 0.005 220);
-  --secondary: oklch(95% 0.015 220);
-  --secondary-foreground: oklch(25% 0.05 220);
-  --muted: oklch(96% 0.01 220);
-  --muted-foreground: oklch(52% 0.04 220);
-  --accent: oklch(95% 0.015 220);
-  --accent-foreground: oklch(25% 0.05 220);
+  --popover-foreground: #111827;
+  --primary: #0F2D5B;                       /* Primary Navy. White on it is 13.58:1. */
+  --primary-foreground: #F8FAFC;
+  --secondary: oklch(95.5% 0.008 257);
+  --secondary-foreground: #0F2D5B;
+  --muted: oklch(96.5% 0.005 257);
+  /*
+   * HELPER TEXT, AND WHY IT IS NOT #94A3B8. Neutral Gray is 2.56:1 on white
+   * and fails AA for body text. The owner called this out by name. This step
+   * is darker on purpose and clears 4.5:1 on the page background.
+   */
+  --muted-foreground: oklch(50.0% 0.030 257);
+  --accent: oklch(95.5% 0.008 257);
+  --accent-foreground: #0F2D5B;
   --destructive: oklch(55% 0.22 25);
   --destructive-foreground: oklch(99% 0 0);
-  --border: oklch(90% 0.015 220);
-  --input: oklch(90% 0.015 220);
-  --ring: oklch(42% 0.20 220);
+  --border: oklch(91.0% 0.010 257);
+  --input: oklch(91.0% 0.010 257);
+  /*
+   * THE FOCUS RING IS NOT THE PRIMARY. A navy ring around a navy button is
+   * 1.0:1 against the thing it is ringing. brand-600 is 7.32:1 on the page
+   * background, and the ring offset puts a light gap between ring and control
+   * so the ring only ever has to contrast with the background.
+   */
+  --ring: oklch(45.5% 0.108 259);
   --success: oklch(55% 0.18 145);
   --warning: oklch(72% 0.18 75);
-  --chart-1: oklch(52% 0.22 220);
-  --chart-2: oklch(68% 0.20 75);
+  --info:    oklch(55% 0.16 240);
+  --chart-1: oklch(45.5% 0.108 259);
+  --chart-2: #F59E0B;
   --chart-3: oklch(55% 0.18 145);
-  --chart-4: oklch(60% 0.20 300);
+  --chart-4: #1B6BFF;
   --chart-5: oklch(55% 0.22 25);
 
   /* Easing */
@@ -157,36 +260,42 @@
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
   /* Sidebar */
-  --sidebar: oklch(18% 0.04 220);
-  --sidebar-foreground: oklch(90% 0.02 220);
-  --sidebar-primary: oklch(42% 0.20 220);
-  --sidebar-primary-foreground: oklch(99% 0 0);
-  --sidebar-accent: oklch(25% 0.05 220);
-  --sidebar-accent-foreground: oklch(90% 0.02 220);
-  --sidebar-border: oklch(28% 0.04 220);
-  --sidebar-ring: oklch(42% 0.20 220);
+  --sidebar: oklch(23.2% 0.070 259);
+  --sidebar-foreground: oklch(92% 0.010 257);
+  --sidebar-primary: oklch(69.5% 0.088 259);
+  --sidebar-primary-foreground: oklch(16.5% 0.048 259);
+  --sidebar-accent: oklch(37.5% 0.100 259);
+  --sidebar-accent-foreground: oklch(96% 0.008 257);
+  --sidebar-border: oklch(37.5% 0.100 259);
+  --sidebar-ring: oklch(69.5% 0.088 259);
 }
 
 .dark {
-  --background: oklch(10% 0.02 220);
-  --foreground: oklch(95% 0.01 220);
-  --card: oklch(14% 0.025 220);
-  --card-foreground: oklch(95% 0.01 220);
-  --popover: oklch(14% 0.025 220);
-  --popover-foreground: oklch(95% 0.01 220);
-  --primary: oklch(64% 0.18 220);
-  --primary-foreground: oklch(10% 0.02 220);
-  --secondary: oklch(20% 0.03 220);
-  --secondary-foreground: oklch(90% 0.01 220);
-  --muted: oklch(18% 0.025 220);
-  --muted-foreground: oklch(62% 0.04 220);
-  --accent: oklch(20% 0.03 220);
-  --accent-foreground: oklch(90% 0.01 220);
+  --background: oklch(13% 0.022 259);
+  --foreground: oklch(96% 0.008 257);
+  --card: oklch(17% 0.028 259);
+  --card-foreground: oklch(96% 0.008 257);
+  --popover: oklch(17% 0.028 259);
+  --popover-foreground: oklch(96% 0.008 257);
+  /*
+   * Primary rises from the 800 step to the 400 step rather than inverting the
+   * palette: on a near-black surface the navy anchor is indistinguishable from
+   * the background. Which STEP a surface reaches for is what changes in dark
+   * mode; what each step means does not.
+   */
+  --primary: oklch(69.5% 0.088 259);
+  --primary-foreground: oklch(13% 0.022 259);
+  --secondary: oklch(22% 0.030 259);
+  --secondary-foreground: oklch(92% 0.010 257);
+  --muted: oklch(20% 0.026 259);
+  --muted-foreground: oklch(70% 0.030 257);
+  --accent: oklch(22% 0.030 259);
+  --accent-foreground: oklch(92% 0.010 257);
   --destructive: oklch(60% 0.22 25);
   --destructive-foreground: oklch(99% 0 0);
-  --border: oklch(22% 0.03 220);
-  --input: oklch(22% 0.03 220);
-  --ring: oklch(64% 0.18 220);
+  --border: oklch(25% 0.028 259);
+  --input: oklch(25% 0.028 259);
+  --ring: oklch(69.5% 0.088 259);
 
   /* ── STATUS COLOURS NEED A DARK ANSWER TOO ──────────────────────────────
    *
@@ -197,8 +306,8 @@
    * starts looking accidental.
    *
    * Lightness rises and chroma eases, which is the same move the primary
-   * makes (42% -> 64%): on a dark background a colour needs more light and
-   * less saturation to read as confident rather than neon.
+   * makes: on a dark background a colour needs more light and less saturation
+   * to read as confident rather than neon.
    */
   --success: oklch(68% 0.16 145);
   --warning: oklch(78% 0.15 75);
@@ -301,12 +410,21 @@
     scrollbar-gutter: stable;
   }
 
-  /* Brand gradient */
+  /* ── BRAND GRADIENTS, ON THE NEW RAMP ─────────────────────────────────
+   *
+   * Both were hard-coded at the old hue 220 and so would have been the only
+   * two surfaces in the product still wearing the previous brand. They are
+   * now walks along the navy ramp itself: brand-800 to brand-600, and
+   * brand-950 through brand-900 to brand-800.
+   *
+   * Restrained on purpose. §56 and §73 both warn against gradient-heavy
+   * surfaces reading as cheap, and a three-stop walk inside ONE family reads
+   * as depth rather than decoration. */
   .gradient-brand {
-    background: linear-gradient(135deg, oklch(42% 0.20 220) 0%, oklch(64% 0.18 220) 100%);
+    background: linear-gradient(135deg, var(--brand-800) 0%, var(--brand-600) 100%);
   }
   .gradient-hero {
-    background: linear-gradient(135deg, oklch(18% 0.06 220) 0%, oklch(28% 0.10 220) 50%, oklch(22% 0.08 240) 100%);
+    background: linear-gradient(135deg, var(--brand-950) 0%, var(--brand-900) 50%, var(--brand-800) 100%);
   }
 
   /* Glass effect */
@@ -324,7 +442,10 @@
      and the click read as broken, which is what the click audit recorded. This
      is the acknowledgement. */
   [data-section-landed] {
-    outline: 2px solid hsl(var(--primary));
+    /* `hsl(var(--primary))` here was invalid - the token is an oklch()
+       value, so the whole declaration was dropped and the acknowledgement
+       this block exists to give never rendered. */
+    outline: 2px solid var(--primary);
     outline-offset: 6px;
     border-radius: 0.75rem;
     transition: outline-color 220ms ease-out;
@@ -389,7 +510,11 @@
   .badge-success { background: oklch(55% 0.18 145 / 0.12); color: oklch(40% 0.18 145); }
   .badge-warning { background: oklch(72% 0.18 75 / 0.12);  color: oklch(52% 0.18 75); }
   .badge-error   { background: oklch(55% 0.22 25 / 0.12);  color: oklch(45% 0.22 25); }
-  .badge-info    { background: oklch(52% 0.22 220 / 0.12); color: oklch(42% 0.20 220); }
+  /* SEMANTIC, NOT BRAND. This was hue 220 - the old brand blue - so an
+     informational badge was wearing the product's primary colour and
+     competing with every real call to action beside it. It now uses the
+     `info` hue, which is what the other three badges already do. */
+  .badge-info    { background: oklch(55% 0.16 240 / 0.12); color: oklch(42% 0.14 240); }
 
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; height: 6px; }

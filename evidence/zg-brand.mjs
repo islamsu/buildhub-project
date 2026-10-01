@@ -51,41 +51,51 @@ try {
     await page.goto(`${BASE}/`);
     await settle(1200);
 
+    /* WHAT CHANGED, AND WHY THIS IS A STRONGER CHECK THAN IT WAS.
+       The lock-up used to be inline SVG, so tone was a computed `color` and
+       this read it. The RAKIZA lock-up is owner-supplied raster artwork, so
+       tone is which FILE is requested - and that brings a failure mode the
+       SVG never had: a path that is right in TypeScript and absent, corrupt
+       or the wrong size on disk. `naturalWidth` answers that, because it is
+       zero unless the browser actually fetched and decoded the image. */
     const hero = await page.evaluate(`
-      var mark = document.querySelector('[data-testid="buildhub-mark"]');
-      var word = document.querySelector('[data-testid="buildhub-wordmark"]');
-      if (!mark || !word) { return JSON.stringify({ found: false }); }
-      var nav = mark.closest('nav') || mark.closest('header');
+      var logo = document.querySelector('[data-testid="rakiza-logo"]');
+      if (!logo) { return JSON.stringify({ found: false }); }
+      var nav = logo.closest('nav') || logo.closest('header');
+      var r = logo.getBoundingClientRect();
       return JSON.stringify({
         found: true,
-        markColor: getComputedStyle(mark).color,
-        wordColor: getComputedStyle(word).color,
-        navBg: nav ? getComputedStyle(nav).backgroundColor : null,
-        markBox: mark.getBoundingClientRect().width,
-        /* THE ACCENT NODE, SELECTED BY STRUCTURE.
-           First attempt used querySelector('rect:last-of-type'), which returns
-           the first match in DOCUMENT ORDER - and the four frame rects live
-           inside a <g>, so it found the g's last rect, whose fill is set on
-           the group rather than the element. It read null and reported a
-           failure the product did not have.
-           The accent rect is the only rect that is a DIRECT child of the svg,
-           which is what ':scope > rect' says. */
-        nodeFill: mark.querySelector(':scope > rect')
-          ? mark.querySelector(':scope > rect').getAttribute('fill') : null
+        src: logo.getAttribute('src'),
+        naturalW: logo.naturalWidth,
+        naturalH: logo.naturalHeight,
+        declaredW: logo.getAttribute('width'),
+        declaredH: logo.getAttribute('height'),
+        alt: logo.getAttribute('alt'),
+        renderedW: Math.round(r.width),
+        renderedH: Math.round(r.height),
+        navBg: nav ? getComputedStyle(nav).backgroundColor : null
       });
     `);
     const h = JSON.parse(hero);
     check(h.found, 'homepage renders the shared brand component');
-    /* Over the dark hero the mark must be light. rgb(255,255,255) is the
-       inverse tone; anything dark means the tile is competing with the hero. */
-    check(h.found && /255,\s*255,\s*255/.test(h.markColor),
-      'mark is light over the dark hero', h.markColor);
-    check(h.found && /255,\s*255,\s*255/.test(h.wordColor),
-      'wordmark is light over the dark hero', h.wordColor);
-    check(h.found && h.markBox >= 24,
-      'mark is at least 24px wide, its stated floor', h.markBox + 'px');
-    check(h.found && h.nodeFill && h.nodeFill.includes('brand-accent'),
-      'accent node is a brand token, not a literal colour', String(h.nodeFill));
+    /* Over the dark hero the INVERSE asset must be the one requested. The old
+       defect this guards is real: the wordmark used to switch tone while the
+       icon tile kept its gradient, so the logo half-vanished into the hero. */
+    check(h.found && /inverse/.test(String(h.src)),
+      'the inverse lock-up is the one requested over the dark hero', String(h.src));
+    check(h.found && h.naturalW > 0 && h.naturalH > 0,
+      'the lock-up actually loaded and decoded', `${h.naturalW}x${h.naturalH}`);
+    /* THE RESERVED BOX IS THE REAL BOX. Declaring dimensions that do not match
+       the file reserves the WRONG space, which is a layout shift that looks
+       deliberate - worse than declaring none at all. */
+    check(h.found && String(h.naturalW) === String(h.declaredW)
+                  && String(h.naturalH) === String(h.declaredH),
+      'declared intrinsic size matches the served file',
+      `declared ${h.declaredW}x${h.declaredH}, served ${h.naturalW}x${h.naturalH}`);
+    check(h.found && h.alt && h.alt.length > 0,
+      'the lock-up carries an accessible name', String(h.alt));
+    check(h.found && h.renderedH >= 24,
+      'lock-up is at least 24px tall, its stated floor', h.renderedH + 'px');
     await page.close();
   }
 
@@ -96,15 +106,21 @@ try {
     await page.goto(`${BASE}/marketplace`);
     await settle(1200);
     const internal = await page.evaluate(`
-      var mark = document.querySelector('[data-testid="buildhub-mark"]');
-      if (!mark) { return JSON.stringify({ found: false }); }
-      return JSON.stringify({ found: true, markColor: getComputedStyle(mark).color });
+      var logo = document.querySelector('[data-testid="rakiza-logo"]');
+      if (!logo) { return JSON.stringify({ found: false }); }
+      return JSON.stringify({
+        found: true,
+        src: logo.getAttribute('src'),
+        naturalW: logo.naturalWidth
+      });
     `);
     const i = JSON.parse(internal);
     check(i.found, 'internal page renders the shared brand component');
-    /* Must NOT be white here, or it vanishes against the page. */
-    check(i.found && !/255,\s*255,\s*255/.test(i.markColor),
-      'mark is NOT white on a light page', i.markColor);
+    /* Must NOT be the inverse here, or a white lock-up sits on a white page. */
+    check(i.found && !/inverse/.test(String(i.src)),
+      'the navy lock-up is the one requested on a light page', String(i.src));
+    check(i.found && i.naturalW > 0,
+      'and it loaded there too', String(i.naturalW));
     await page.close();
   }
 
@@ -137,19 +153,19 @@ try {
     await settle(1400);
     const rtl = await page.evaluate(`
       var html = document.documentElement;
-      var mark = document.querySelector('[data-testid="buildhub-mark"]');
-      var word = document.querySelector('[data-testid="buildhub-wordmark"]');
-      if (!mark || !word) { return JSON.stringify({ found: false, dir: html.getAttribute('dir') }); }
-      var m = mark.getBoundingClientRect(), w = word.getBoundingClientRect();
+      var logo = document.querySelector('[data-testid="rakiza-logo"]');
+      var body = getComputedStyle(document.body);
+      if (!logo) { return JSON.stringify({ found: false, dir: html.getAttribute('dir') }); }
+      var r = logo.getBoundingClientRect();
       return JSON.stringify({
         found: true,
         dir: html.getAttribute('dir'),
         lang: html.getAttribute('lang'),
-        /* In RTL the lock-up should mirror: the mark sits to the RIGHT of the
-           wordmark, because the flex row itself reverses. */
-        markLeft: Math.round(m.left),
-        wordLeft: Math.round(w.left),
-        font: getComputedStyle(word).fontFamily,
+        naturalW: logo.naturalWidth,
+        /* The lock-up should sit on the RIGHT half of a 1440 viewport in RTL,
+           because the header row itself reverses. */
+        logoLeft: Math.round(r.left),
+        font: body.fontFamily,
         scrollW: document.documentElement.scrollWidth,
         clientW: document.documentElement.clientWidth
       });
@@ -157,11 +173,15 @@ try {
     const r = JSON.parse(rtl);
     check(r.dir === 'rtl', 'document direction is rtl in Arabic', String(r.dir));
     check(r.found, 'brand component renders in Arabic');
-    check(r.found && r.markLeft > r.wordLeft,
-      'lock-up mirrors: mark sits right of the wordmark in RTL',
-      `mark ${r.markLeft} vs word ${r.wordLeft}`);
+    /* THE LOCK-UP IS NOT MIRRORED, AND THAT IS CORRECT. It is one bilingual
+       image carrying ركيزة above RAKIZA - part of the identity the owner
+       approved rather than a localisation of it, so the same file is right in
+       both languages. What must mirror is its POSITION in the header. */
+    check(r.found && r.logoLeft > 720,
+      'the lock-up moves to the right half of the header in RTL',
+      'left ' + r.logoLeft);
     check(r.found && /Cairo/i.test(r.font),
-      'wordmark uses Cairo in Arabic', String(r.font));
+      'Arabic text is set in Cairo', String(r.font));
     check(r.found && r.scrollW - r.clientW <= 2,
       'no sideways scroll in Arabic at 1440px', `${r.scrollW} vs ${r.clientW}`);
     await page.close();
@@ -196,32 +216,50 @@ try {
   /* ── 6. THE FAVICON IS ACTUALLY SERVED ────────────────────────────── */
   {
     /* FETCHED, NOT NAVIGATED TO.
-       The first version navigated the page to the .svg and read
-       document.documentElement.textContent. A browser renders a standalone SVG
-       as an IMAGE document, whose textContent is empty - so the probe reported
-       the favicon missing while curl returned HTTP 200 with the right
-       content-type and the file intact. Two failures that were entirely the
-       instrument's. */
+       An earlier version navigated the page to the asset and read
+       document.documentElement.textContent. A browser renders a standalone
+       image as an IMAGE document, whose textContent is empty - so the probe
+       reported the favicon missing while curl returned HTTP 200 with the file
+       intact. Two failures that were entirely the instrument's. */
     const page = await browser.newPage();
     await page.goto(`${BASE}/`);
     await settle(400);
-    const favicon = await page.evaluate(`
-      return fetch('/brand/favicon.svg')
-        .then(function (r) { return r.ok ? r.text() : 'HTTP ' + r.status; })
-        .then(function (t) { return t.slice(0, 900); });
-    `);
-    check(/<svg|<rect/i.test(favicon), 'favicon.svg is served by the app',
-      String(favicon).slice(0, 60));
-    check(/f0a44a/i.test(favicon),
-      'favicon keeps the accent node that distinguishes it at 16px');
 
-    /* And the <link> actually points at it - a served file nothing references
-       is not a favicon. */
+    /* PNG now, not SVG: the RAKIZA mark is owner-supplied raster artwork and
+       a traced SVG of it is exactly what the owner forbade. Verified by magic
+       bytes rather than by extension, because a 404 page served with the
+       right URL is still a 404 page. */
+    const favicon = await page.evaluate(`
+      return fetch('/brand/favicon-32.png')
+        .then(function (r) { return r.ok ? r.arrayBuffer() : null; })
+        .then(function (buf) {
+          if (!buf) { return 'FETCH FAILED'; }
+          var b = new Uint8Array(buf.slice(0, 8));
+          return Array.from(b).join(',') + ' len=' + buf.byteLength;
+        });
+    `);
+    check(String(favicon).startsWith('137,80,78,71,13,10,26,10'),
+      'favicon-32.png is served by the app, and is a real PNG',
+      String(favicon).slice(0, 60));
+
+    /* And that it DECODES at the size the tab will use. A file that downloads
+       but will not decode is a default globe in the tab. */
+    const decoded = await page.evaluate(`
+      return new Promise(function (resolve) {
+        var img = new Image();
+        img.onload = function () { resolve(img.naturalWidth + 'x' + img.naturalHeight); };
+        img.onerror = function () { resolve('DECODE FAILED'); };
+        img.src = '/brand/favicon-32.png';
+      });
+    `);
+    check(decoded === '32x32', 'and it decodes at 32x32', String(decoded));
+
+    /* A served file nothing references is not a favicon. */
     const linked = await page.evaluate(`
       var l = document.querySelector('link[rel="icon"]');
       return l ? l.getAttribute('href') : 'none';
     `);
-    check(linked === '/brand/favicon.svg', 'the document links that favicon', linked);
+    check(linked === '/brand/favicon-32.png', 'the document links that favicon', linked);
     await page.close();
   }
 
