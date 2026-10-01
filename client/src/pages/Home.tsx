@@ -8,22 +8,22 @@ import { Link, useLocation } from 'wouter';
 import { startLogin } from '@/const';
 import { trpc } from '@/lib/trpc';
 import {
-  Building2, ShoppingBag, FileText, Bot, Users, ArrowRight,
-  CheckCircle2, Zap, Shield, Globe, HardHat, Layers,
-  Package, UserCog, ChevronRight, TrendingUp, Clock, MapPin,
+  ShoppingBag, FileText, Bot, Users, ArrowRight,
+  CheckCircle2, Zap, Shield, Globe,
+  ChevronRight, TrendingUp, Clock, MapPin,
   BarChart3, MessageSquare, Sparkles, Play
 } from 'lucide-react';
-import { Home as HomeIcon } from 'lucide-react';
 import { usePageTitle } from '../hooks/usePageTitle';
+import { BuildHubLogo } from '@/components/brand/BuildHubLogo';
+import { ROLE_IDENTITIES, ROLE_CARD_CLASSES, roleIconClasses } from '@/components/brand/roleIdentity';
 
-const ROLES = [
-  { id: 'homeowner', icon: HomeIcon, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', href: '/auth' },
-  { id: 'contractor', icon: HardHat, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', href: '/auth' },
-  { id: 'engineer', icon: Layers, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200', href: '/auth' },
-  { id: 'architect', icon: Building2, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200', href: '/auth' },
-  { id: 'supplier', icon: Package, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200', href: '/auth' },
-  { id: 'project_manager', icon: UserCog, color: 'text-teal-600', bg: 'bg-teal-50', border: 'border-teal-200', href: '/auth' },
-];
+/* THE ROLE LIST MOVED. Six per-role colours lived here and again in
+   AuthPage, where green, amber and purple collided with the success,
+   warning and destructive meanings those hues already carry elsewhere in
+   the product. One source now, in components/brand/roleIdentity.ts.
+   Every role still links to /auth, which is a property of this page
+   rather than of the role. */
+const ROLE_HREF = '/auth';
 
 /**
  * THE COUNTERS UNDER THE HEADLINE.
@@ -202,19 +202,24 @@ export default function Home() {
             <h2 className="text-4xl font-bold mb-4">{t('roles.title')}</h2>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {ROLES.map(role => (
+            {ROLE_IDENTITIES.map(role => (
               <Card
                 key={role.id}
-                className={`card-hover cursor-pointer border-2 ${role.border} hover:border-primary/40 group`}
-                onClick={() => navigate(role.href)}
+                className={`card-hover cursor-pointer group ${ROLE_CARD_CLASSES}`}
+                onClick={() => navigate(ROLE_HREF)}
               >
                 <CardContent className="p-6">
-                  <div className={`w-12 h-12 rounded-xl ${role.bg} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-200`}>
-                    <role.icon className={`w-6 h-6 ${role.color}`} />
+                  {/* The icon container is the only thing that varies, and it
+                      varies between two brand treatments rather than six hues.
+                      The icon itself does the identifying. */}
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-transform duration-200 group-hover:scale-105 ${roleIconClasses(role)}`}>
+                    <role.icon className="w-6 h-6" />
                   </div>
                   <h3 className="font-semibold text-lg mb-2">{roleLabels[role.id]}</h3>
                   <p className="text-muted-foreground text-sm leading-relaxed mb-4">{roleDescs[role.id]}</p>
-                  <Button variant="ghost" size="sm" className={`gap-1 ${role.color} p-0 h-auto font-medium`}>
+                  {/* One CTA colour across all six - the brand's. Six different
+                      link colours was the rainbow's loudest symptom. */}
+                  <Button variant="ghost" size="sm" className="gap-1 text-brand-600 p-0 h-auto font-medium">
                     {lang === 'ar' ? 'ابدأ الآن' : 'Get Started'} <ChevronRight className="w-4 h-4" />
                   </Button>
                 </CardContent>
@@ -273,15 +278,17 @@ export default function Home() {
             {/* Brand */}
             <div className="md:col-span-1">
               <Link href="/" className="flex items-center gap-2 mb-4" data-testid="brand-home-footer">
-                <div className="w-8 h-8 rounded-lg gradient-brand flex items-center justify-center">
-                  <Building2 className="w-4 h-4 text-white" />
-                </div>
-                <span className="font-bold text-xl text-background">BuildHub</span>
+                <BuildHubLogo tone="inverse" size="md" />
               </Link>
+              {/* POSITIONING, NOT ARCHITECTURE. This read "The AI-powered
+                  Construction OS", which describes the implementation to a
+                  customer who came to source materials. AI is an enabling
+                  capability here, not the reason the product exists, so the
+                  line now says what BuildHub does for them. */}
               <p className="text-background/60 text-sm leading-relaxed">
                 {lang === 'ar'
-                  ? 'نظام تشغيل البناء الذكي — يربط الجميع في منظومة واحدة.'
-                  : 'The AI-powered Construction OS — connecting everyone in one ecosystem.'}
+                  ? 'من التوريد إلى موقع التنفيذ — نربط رحلة مشروعك في منصة واحدة.'
+                  : 'From sourcing to site, BuildHub connects your construction journey.'}
               </p>
             </div>
 

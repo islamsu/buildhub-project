@@ -12,10 +12,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Link, useLocation } from 'wouter';
-import { Building2, Menu, X, Bell, ChevronDown, Bookmark } from 'lucide-react';
+import { Menu, X, Bell, ChevronDown, Bookmark } from 'lucide-react';
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
+import { BuildHubLogo } from '@/components/brand/BuildHubLogo';
 
 export default function Navbar() {
   const { lang, t, dir } = useLanguage();
@@ -87,13 +88,13 @@ export default function Navbar() {
       <div className="container">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
+          {/* THE LOCK-UP, not assembled here. `tone` is the only thing this
+              surface decides: the navbar sits over the dark homepage hero and
+              over white internal pages, and the mark has to stay visible in
+              both - which was previously handled for the wordmark only, so the
+              icon tile kept its gradient against the hero it was sitting on. */}
           <Link href="/" className="flex items-center gap-2 group" data-testid="brand-home-nav">
-            <div className="w-8 h-8 rounded-lg gradient-brand flex items-center justify-center shadow-sm">
-              <Building2 className="w-4 h-4 text-white" />
-            </div>
-            <span className={`font-bold text-xl tracking-tight ${isTransparent ? 'text-white' : 'text-foreground'}`}>
-              BuildHub
-            </span>
+            <BuildHubLogo tone={isTransparent ? 'inverse' : 'default'} size="md" />
           </Link>
 
           {/* Desktop Nav Links */}

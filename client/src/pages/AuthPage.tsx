@@ -11,19 +11,17 @@ import { useLocation, useSearch, Link } from 'wouter';
 import LanguageToggle from '@/components/LanguageToggle';
 import { toast } from 'sonner';
 import { getRolePlatformPath } from '@/lib/rolePlatform';
-import { Building2, Home, HardHat, Layers, Package, UserCog, ChevronRight, ShieldCheck, KeyRound } from 'lucide-react';
+import { ChevronRight, ShieldCheck, KeyRound } from 'lucide-react';
+import { BuildHubLogo } from '@/components/brand/BuildHubLogo';
+import { ROLE_IDENTITIES } from '@/components/brand/roleIdentity';
 
 type UserRole = 'homeowner' | 'contractor' | 'engineer' | 'architect' | 'supplier' | 'project_manager';
 const PROFESSIONAL_ROLES: UserRole[] = ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'];
 
-const ROLES: { id: UserRole; icon: React.ComponentType<any>; color: string; bg: string }[] = [
-  { id: 'homeowner', icon: Home, color: 'text-blue-600', bg: 'bg-blue-50 hover:bg-blue-100 border-blue-200' },
-  { id: 'contractor', icon: HardHat, color: 'text-amber-600', bg: 'bg-amber-50 hover:bg-amber-100 border-amber-200' },
-  { id: 'engineer', icon: Layers, color: 'text-green-600', bg: 'bg-green-50 hover:bg-green-100 border-green-200' },
-  { id: 'architect', icon: Building2, color: 'text-purple-600', bg: 'bg-purple-50 hover:bg-purple-100 border-purple-200' },
-  { id: 'supplier', icon: Package, color: 'text-orange-600', bg: 'bg-orange-50 hover:bg-orange-100 border-orange-200' },
-  { id: 'project_manager', icon: UserCog, color: 'text-teal-600', bg: 'bg-teal-50 hover:bg-teal-100 border-teal-200' },
-];
+/* The second copy of the rainbow lived here, with the same six hues as the
+   homepage. Both now read components/brand/roleIdentity.ts, so the signup
+   screen and the landing page cannot describe the same six roles in two
+   different visual languages. */
 
 export default function AuthPage() {
   const { t, lang, dir } = useLanguage();
@@ -253,11 +251,12 @@ export default function AuthPage() {
     <div className="min-h-screen bg-background flex" dir={dir}>
       {/* Left Panel - Branding */}
       <div className="hidden lg:flex lg:w-1/2 gradient-hero flex-col justify-between p-12 text-white">
+        {/* THE FOURTH COPY. A census for `gradient-brand` found three; this
+            one used `bg-white/20` instead and so read as a different
+            component entirely - which is exactly how a logo ends up with
+            four slightly different treatments nobody intended. */}
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
-            <Building2 className="w-5 h-5 text-white" />
-          </div>
-          <span className="font-bold text-xl">BuildHub</span>
+          <BuildHubLogo tone="inverse" size="lg" />
         </Link>
         <div>
           <h2 className="text-4xl font-bold leading-tight mb-4">
@@ -294,11 +293,10 @@ export default function AuthPage() {
       <div className="flex-1 flex flex-col items-center justify-center p-6 lg:p-12">
         <div className="w-full max-w-md">
           <div className="mb-8 flex items-center justify-between gap-4">
+            {/* The same lock-up the visitor saw in the navbar - entering the
+                product should not look like arriving at a different one. */}
             <Link href="/" className="flex items-center gap-2 lg:hidden">
-              <div className="w-8 h-8 rounded-lg gradient-brand flex items-center justify-center">
-                <Building2 className="w-4 h-4 text-white" />
-              </div>
-              <span className="font-bold text-lg">BuildHub</span>
+              <BuildHubLogo size="sm" />
             </Link>
             <LanguageToggle className="ml-auto" />
           </div>
@@ -306,7 +304,7 @@ export default function AuthPage() {
           <div className="mb-8">
             <h1 className="text-2xl font-bold mb-1">{isLoginMode || isOAuthMode ? (lang === 'ar' ? 'تسجيل الدخول' : 'Sign in') : t('auth.signup')}</h1>
             <p className="text-muted-foreground text-sm">{isLoginMode ? (lang === 'ar' ? 'استخدم بيانات المستخدم التجريبي أو اختر تسجيل الدخول للمستخدمين الحقيقيين.' : 'Use test-user credentials or choose real-user sign-in.') : isOAuthMode ? (lang === 'ar' ? 'تسجيل الدخول للمستخدمين الحقيقيين عبر BuildHub.' : 'Sign in as a real user through BuildHub.') : t('auth.role.select')}</p>
-            {isAuthenticated && <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700"><ShieldCheck className="h-4 w-4" />{lang === 'ar' ? 'تم التحقق من هويتك بأمان عبر تسجيل الدخول الموحد' : 'Your identity is securely verified through BuildHub OAuth'}</div>}
+            {isAuthenticated && <div className="mt-3 flex items-center gap-2 rounded-lg border border-success/25 bg-success-50 px-3 py-2 text-xs text-success-700"><ShieldCheck className="h-4 w-4" />{lang === 'ar' ? 'تم التحقق من هويتك بأمان عبر تسجيل الدخول الموحد' : 'Your identity is securely verified through BuildHub OAuth'}</div>}
           </div>
 
           {isLoginMode && (
@@ -364,19 +362,24 @@ export default function AuthPage() {
           {!isLoginMode && !isOAuthMode && <>
           {/* Step 1: Role Selection */}
           <div className="grid grid-cols-2 gap-3 mb-6">
-            {ROLES.map(role => (
+            {ROLE_IDENTITIES.map(role => (
               <button
                 key={role.id}
                 data-testid={`auth-role-${role.id}`}
-                onClick={() => setSelectedRole(role.id)}
-                className={`p-4 rounded-xl border-2 text-left transition-all ${
+                onClick={() => setSelectedRole(role.id as UserRole)}
+                /* SELECTION IS THE ONLY STRONG STATE HERE. Previously every
+                   unselected tile already carried a saturated tinted
+                   background, so "selected" had to compete with five other
+                   coloured cards. A neutral resting state makes the brand
+                   border and tint mean something. */
+                className={`p-4 rounded-xl border text-left transition-all ${
                   selectedRole === role.id
-                    ? 'border-primary bg-primary/5 shadow-sm'
-                    : `border-border ${role.bg}`
+                    ? 'border-brand-600 bg-brand-50 shadow-sm'
+                    : 'border-border bg-card hover:border-brand-300 hover:bg-brand-50/40'
                 }`}
               >
-                <role.icon className={`w-6 h-6 mb-2 ${selectedRole === role.id ? 'text-primary' : role.color}`} />
-                <p className={`text-sm font-semibold ${selectedRole === role.id ? 'text-primary' : 'text-foreground'}`}>
+                <role.icon className={`w-6 h-6 mb-2 ${selectedRole === role.id ? 'text-brand-600' : 'text-muted-foreground'}`} />
+                <p className={`text-sm font-semibold ${selectedRole === role.id ? 'text-brand-700' : 'text-foreground'}`}>
                   {roleLabels[role.id]}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{roleDescs[role.id]}</p>

@@ -26,7 +26,7 @@ const translations: Record<Language, Record<string, string>> = {
     'nav.admin': 'Admin Panel',
     'nav.ai': 'AI Assistant',
     // ── Hero ─────────────────────────────────────────────────────────────────
-    'hero.badge': 'AI-Powered Construction OS',
+    'hero.badge': 'Construction sourcing and project platform',
     'hero.title': 'Build Smarter. Connect Everyone.',
     'hero.subtitle': 'BuildHub connects homeowners, contractors, engineers, architects, and suppliers in one intelligent ecosystem — from planning to completion.',
     'hero.cta.primary': 'Start Your Project',
@@ -88,7 +88,7 @@ const translations: Record<Language, Record<string, string>> = {
     'cta.primary': 'Get Started Free',
     'cta.secondary': 'Learn More',
     // ── Footer ───────────────────────────────────────────────────────────────
-    'footer.tagline': 'The AI-powered construction operating system for the Middle East.',
+    'footer.tagline': 'From sourcing to site, BuildHub connects your construction journey.',
     'footer.platform': 'Platform',
     'footer.company': 'Company',
     'footer.support': 'Support',
@@ -1308,7 +1308,7 @@ const translations: Record<Language, Record<string, string>> = {
     'nav.admin': 'لوحة الإدارة',
     'nav.ai': 'مساعد الذكاء الاصطناعي',
     // ── Hero ─────────────────────────────────────────────────────────────────
-    'hero.badge': 'نظام تشغيل البناء بالذكاء الاصطناعي',
+    'hero.badge': 'منصة توريد وإدارة مشاريع البناء',
     'hero.title': 'ابنِ بذكاء. اربط الجميع.',
     'hero.subtitle': 'BuildHub يربط أصحاب المنازل والمقاولين والمهندسين والمعماريين والموردين في منظومة ذكية واحدة — من التخطيط حتى الإنجاز.',
     'hero.cta.primary': 'ابدأ مشروعك',
@@ -1370,7 +1370,7 @@ const translations: Record<Language, Record<string, string>> = {
     'cta.primary': 'ابدأ مجاناً',
     'cta.secondary': 'اعرف المزيد',
     // ── Footer ───────────────────────────────────────────────────────────────
-    'footer.tagline': 'نظام تشغيل البناء بالذكاء الاصطناعي للشرق الأوسط.',
+    'footer.tagline': 'من التوريد إلى موقع التنفيذ — نربط رحلة مشروعك في منصة واحدة.',
     'footer.platform': 'المنصة',
     'footer.company': 'الشركة',
     'footer.support': 'الدعم',

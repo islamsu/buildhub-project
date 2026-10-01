@@ -41,6 +41,66 @@
   --radius-md:   0.5rem;
   --radius-lg:   0.625rem;
   --radius-xl:   0.875rem;
+
+  /* ── THE BRAND SCALE, AS UTILITIES ──────────────────────────────────────
+   *
+   * These values already existed under `:root` as `--brand-*`, which made
+   * them readable from hand-written CSS and invisible to Tailwind. So
+   * `bg-brand-600` did not exist, and 443 occurrences of `bg-blue-600`,
+   * `text-amber-600` and friends accumulated across the client - not because
+   * anyone preferred a raw palette colour, but because the brand had no
+   * utility to reach for.
+   *
+   * Declaring them here is the change that makes every later cleanup a
+   * find-and-replace instead of a redesign: one token definition now backs
+   * `bg-brand-600`, `text-brand-700`, `border-brand-200` and the rest.
+   *
+   * Hue 220 is the existing BuildHub blue and is deliberately unchanged. This
+   * exposes the identity that was already chosen; it does not pick a new one.
+   */
+  --color-brand-50:  oklch(97% 0.015 220);
+  --color-brand-100: oklch(93% 0.04  220);
+  --color-brand-200: oklch(86% 0.08  220);
+  --color-brand-300: oklch(76% 0.13  220);
+  --color-brand-400: oklch(64% 0.18  220);
+  --color-brand-500: oklch(52% 0.22  220);
+  --color-brand-600: oklch(42% 0.20  220);
+  --color-brand-700: oklch(34% 0.17  220);
+  --color-brand-800: oklch(26% 0.13  220);
+  --color-brand-900: oklch(18% 0.09  220);
+  --color-brand-950: oklch(12% 0.05  220);
+
+  /* ── THE ACCENT, DELIBERATELY SHORT ─────────────────────────────────────
+   *
+   * Three steps, not eleven. Amber earns its place on marketing emphasis,
+   * progress and a premium indicator - and a full scale would invite it onto
+   * backgrounds, borders and body text, which is how a blue product turns
+   * orange. The shortness of this scale is the guardrail.
+   */
+  --color-brand-accent-400: oklch(78% 0.18 75);
+  --color-brand-accent-500: oklch(68% 0.20 75);
+  --color-brand-accent-600: oklch(58% 0.18 75);
+
+  /* ── SEMANTIC STATUS, SEPARATE FROM BRAND ───────────────────────────────
+   *
+   * `success`, `warning` and `info` were in `:root` with no utility either,
+   * so a green "approved" badge had to be spelled `bg-green-50` - which is
+   * why status colours drifted between screens.
+   *
+   * The warning hue is close to the accent, and that is the one real risk in
+   * this palette: amber must not come to mean "something is wrong". The rule
+   * is that `warning` is for state and `brand-accent` is for emphasis, and
+   * they are separate tokens so a reviewer can tell which was meant.
+   */
+  --color-success:     oklch(55% 0.18 145);
+  --color-success-50:  oklch(96% 0.03 145);
+  --color-success-700: oklch(42% 0.15 145);
+  --color-warning:     oklch(72% 0.18 75);
+  --color-warning-50:  oklch(97% 0.03 75);
+  --color-warning-700: oklch(48% 0.14 75);
+  --color-info:        oklch(55% 0.16 240);
+  --color-info-50:     oklch(96% 0.03 240);
+  --color-info-700: oklch(42% 0.14 240);
 }
 
 /* ── Design Tokens ── */
@@ -56,6 +116,7 @@
   --brand-700: oklch(34% 0.17  220);
   --brand-800: oklch(26% 0.13  220);
   --brand-900: oklch(18% 0.09  220);
+  --brand-950: oklch(12% 0.05  220);
 
   /* Accent — warm amber for construction */
   --accent-400: oklch(78% 0.18  75);
@@ -126,6 +187,28 @@
   --border: oklch(22% 0.03 220);
   --input: oklch(22% 0.03 220);
   --ring: oklch(64% 0.18 220);
+
+  /* ── STATUS COLOURS NEED A DARK ANSWER TOO ──────────────────────────────
+   *
+   * `--destructive` was lifted here from 55% to 60% so red stays legible on
+   * a dark card. `--success` and `--warning` were not, so an "approved" badge
+   * carried the light-mode green onto a near-black surface - readable, but
+   * noticeably muddier than the red beside it, which is how a status row
+   * starts looking accidental.
+   *
+   * Lightness rises and chroma eases, which is the same move the primary
+   * makes (42% -> 64%): on a dark background a colour needs more light and
+   * less saturation to read as confident rather than neon.
+   */
+  --success: oklch(68% 0.16 145);
+  --warning: oklch(78% 0.15 75);
+  --info:    oklch(68% 0.14 240);
+
+  /* THE BRAND SCALE IS A PALETTE, NOT A THEME, so it does NOT invert: amber
+   * is amber in both modes. What changes is which step a surface reaches for,
+   * and that is what `--primary` above already expresses. Inverting the scale
+   * itself would mean `brand-600` meant two different colours depending on
+   * the mode, and every component using it would have to know which. */
 }
 
 /* ── Base ── */

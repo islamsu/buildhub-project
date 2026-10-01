@@ -17,7 +17,22 @@
          shared/seo.ts AND only when the deployment is production. If that
          rewrite ever fails to run, the safe answer is the one already here. -->
     <meta name="robots" content="noindex, nofollow" />
-    <meta name="theme-color" content="#0f172a" />
+
+    <!-- ── BRAND ASSETS ────────────────────────────────────────────────────
+         There was no favicon link at all, so every tab showed the browser's
+         default globe - the one piece of branding a visitor sees before the
+         page has even painted.
+
+         SVG first, because the mark is geometry and scales cleanly. The .ico
+         fallback is listed for older browsers and is an owner asset decision:
+         see BRAND_ASSET_NOTES below. -->
+    <link rel="icon" type="image/svg+xml" href="/brand/favicon.svg" />
+    <link rel="apple-touch-icon" href="/brand/favicon.svg" />
+
+    <!-- Matches --brand-900, so the mobile browser chrome continues the hero
+         rather than sitting against it. Was #0f172a, a hex that belonged to no
+         token and matched nothing in the palette. -->
+    <meta name="theme-color" content="#122c45" />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="BuildHub" />
@@ -28,6 +43,26 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="BuildHub — Construction sourcing, quotations and projects" />
     <meta name="twitter:description" content="Source verified construction suppliers and professionals, request quotations, compare them side by side, and run the project from one place." />
+
+    <!-- ── SOCIAL CARD ─────────────────────────────────────────────────────
+         og:image was absent, so a shared BuildHub link rendered as a bare
+         title with no visual identity.
+
+         NOTE FOR THE OWNER (BRAND_ASSET_NOTES): several scrapers - including
+         some Slack and WhatsApp versions - do not render SVG for og:image. A
+         1200x630 PNG export of /brand/og-image.svg should replace this path
+         before launch. The artwork is final; only the file format is pending.
+
+         og:url is deliberately NOT hard-coded: the deployment serves staging
+         and production from different hostnames, and a wrong canonical URL in
+         a social card is worse than an absent one. server/_core/seoHead.ts
+         already rewrites per-request metadata and is where an absolute URL
+         belongs. -->
+    <meta property="og:image" content="/brand/og-image.svg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="BuildHub — from sourcing to site." />
+    <meta name="twitter:image" content="/brand/og-image.svg" />
   </head>
 
   <body>
