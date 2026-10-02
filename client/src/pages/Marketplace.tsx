@@ -40,7 +40,22 @@ export default function Marketplace() {
   const { t, lang } = useLanguage();
   const basket = useRfqBasket();
   const [, navigate] = useLocation();
-  const [search, setSearch] = useState('');
+  /*
+   * ?q= FROM THE HOMEPAGE SEARCH, HONOURED.
+   *
+   * The hero's Search button lands here, and `marketplace.list` has always
+   * taken a `search` argument - so this is a real server-side catalogue
+   * search, not a field that navigates somewhere and forgets what was typed.
+   * Read once as the initial value, exactly like `cat` below: the field stays
+   * the authority afterwards.
+   */
+  const initialSearch = (() => {
+    try {
+      const requested = new URLSearchParams(window.location.search).get('q');
+      return requested?.trim() ?? '';
+    } catch { return ''; }
+  })();
+  const [search, setSearch] = useState(initialSearch);
   /**
    * ?cat= FROM THE HUB, HONOURED.
    *

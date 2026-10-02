@@ -73,7 +73,27 @@ export default function Navbar() {
     return () => document.removeEventListener('keydown', onKey);
   }, [mobileOpen]);
 
-  const isTransparent = location === '/';
+  /*
+   * TRANSPARENT AT THE TOP OF THE HOMEPAGE, SOLID ONCE YOU LEAVE IT.
+   *
+   * This used to be `location === '/'` and nothing else, so the bar stayed
+   * transparent for the WHOLE homepage. Scroll past the navy hero and white
+   * nav links sat on a white section: the logo, every link, the language
+   * toggle and Sign In were invisible against the category rail. A visitor
+   * scrolling back up to navigate found no navigation.
+   *
+   * The threshold is deliberately short - the hero is the only dark band at
+   * the top, and the bar should go solid before the content under it turns
+   * light rather than at the exact pixel it does.
+   */
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  const isTransparent = location === '/' && !scrolled;
 
   const getDashboardPath = () => getRolePlatformPath((user as any)?.userRole);
 

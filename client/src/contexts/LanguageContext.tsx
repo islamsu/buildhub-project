@@ -16,6 +16,25 @@ const translations: Record<Language, Record<string, string>> = {
     'nav.marketplace': 'Marketplace',
     // Direct sourcing destinations, shown to signed-out visitors. Each one is
     // a route that exists; nothing here is a label without a destination.
+    'search.submit': 'Search',
+    'hero.overlay': 'From Planning to Completion',
+    // THE TRUST STRIP. Capability statements, not counts — every one of these
+    // is a thing the product actually does, checkable on the next page. §15
+    // forbids a claim the system cannot prove, and a count that moves is a
+    // worse promise than a capability that does not.
+    'home.trust.verified': 'Verified suppliers',
+    'home.trust.verified.note': 'Approved against submitted compliance documents',
+    'home.trust.compare': 'Compare quotations',
+    'home.trust.compare.note': 'Side by side, on scope as well as price',
+    'home.trust.free': 'Requesting quotes is free',
+    'home.trust.free.note': 'Buyers are never charged to post a requirement',
+    'home.trust.oneplace': 'One place for the project',
+    'home.trust.oneplace.note': 'Messages, documents and decisions stay together',
+    'home.browse.title': 'Start with what you need',
+    'home.browse.subtitle': 'Browse the catalogue by category, or describe the job and let suppliers come to you.',
+    'home.browse.viewAll': 'All categories',
+    'home.browse.quotes': 'Get Quotes',
+    'home.browse.quotesNote': 'Describe the job once',
     'nav.products': 'Products',
     'nav.vendors': 'Vendors',
     'nav.designers': 'Designers',
@@ -1302,6 +1321,21 @@ const translations: Record<Language, Record<string, string>> = {
     // ── Nav ──────────────────────────────────────────────────────────────────
     'nav.home': 'الرئيسية',
     'nav.marketplace': 'السوق',
+    'search.submit': 'بحث',
+    'hero.overlay': 'من التخطيط إلى التسليم',
+    'home.trust.verified': 'موردون موثّقون',
+    'home.trust.verified.note': 'معتمدون بعد مراجعة مستندات الامتثال',
+    'home.trust.compare': 'قارن عروض الأسعار',
+    'home.trust.compare.note': 'جنباً إلى جنب، في النطاق كما في السعر',
+    'home.trust.free': 'طلب العروض مجاني',
+    'home.trust.free.note': 'لا نحاسب المشتري على نشر طلبه',
+    'home.trust.oneplace': 'مكان واحد للمشروع',
+    'home.trust.oneplace.note': 'الرسائل والمستندات والقرارات في موضع واحد',
+    'home.browse.title': 'ابدأ بما تحتاجه',
+    'home.browse.subtitle': 'تصفّح الكتالوج حسب الفئة، أو صِف العمل ودع الموردين يأتون إليك.',
+    'home.browse.viewAll': 'كل الفئات',
+    'home.browse.quotes': 'اطلب عروض أسعار',
+    'home.browse.quotesNote': 'صِف العمل مرة واحدة',
     'nav.products': 'المنتجات',
     'nav.vendors': 'الموردون',
     'nav.designers': 'المصممون',

@@ -213,15 +213,46 @@ describe('no component pairs amber with a light label', () => {
   it('amber is never a text colour at the two steps that cannot be one', () => {
     /*
      * accent-400 is 1.67:1 on white and accent-500 is 2.15:1. Neither can be
-     * text on a light surface under any size rule. accent-600 is 3.11:1 and
-     * is permitted for large text and non-text, so it is not forbidden here.
+     * text on a LIGHT surface under any size rule. accent-600 is 3.11:1 and is
+     * permitted for large text and non-text, so it is not forbidden here.
+     *
+     * ── THE EXCEPTION, AND WHY IT IS AN ATTRIBUTE ──────────────────────
+     *
+     * On a dark surface the same amber is fine - 6.3:1 against the navy
+     * anchor, 8.9:1 against brand-950 - and the approved design uses exactly
+     * that for the hero's trust-strip icons. A class string cannot see its own
+     * background, so the only honest way to allow it is to make the author say
+     * so: `data-on-dark` on the element itself.
+     *
+     * That keeps the rule absolute rather than fuzzy. The exception cannot be
+     * applied by accident, it is one grep away for a reviewer, and a careless
+     * `text-brand-accent-500` on a white card still fails.
      */
     const offenders: string[] = [];
     for (const file of FILES) {
-      for (const m of source(file).matchAll(/\btext-brand-accent-(400|500)\b/g)) {
+      const text = source(file);
+      for (const m of text.matchAll(/\btext-brand-accent-(400|500)\b/g)) {
+        /* The element's own attributes: from the opening `<` before the match
+           to the `>` after it. Narrow on purpose - a sibling's opt-out must
+           not excuse this one. */
+        const open = text.lastIndexOf('<', m.index!);
+        const close = text.indexOf('>', m.index!);
+        const element = open >= 0 && close > open ? text.slice(open, close) : '';
+        if (/data-on-dark/.test(element)) continue;
         offenders.push(`${rel(file)} :: ${m[0]}`);
       }
     }
-    expect(offenders, 'amber is being used as text below 3:1').toEqual([]);
+    expect(offenders, 'amber is being used as text below 3:1 on a light surface').toEqual([]);
+  });
+
+  it('and the dark-surface exception is used sparingly enough to review', () => {
+    /*
+     * A RATCHET ON AN ESCAPE HATCH. `data-on-dark` is correct where it is
+     * used and corrosive if it spreads: the moment it is the habit rather
+     * than the exception, the rule above stops meaning anything.
+     */
+    const uses = FILES.reduce(
+      (sum, file) => sum + [...source(file).matchAll(/data-on-dark/g)].length, 0);
+    expect(uses, 'the dark-surface exception is spreading').toBeLessThanOrEqual(2);
   });
 });

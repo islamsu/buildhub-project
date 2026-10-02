@@ -1,4 +1,7 @@
+import { useMemo } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import SourcingSearch from '@/components/SourcingSearch';
+import LoadFailed, { loadFailedCopy } from '@/components/LoadFailed';
 import SourcingJourney from '@/components/SourcingJourney';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
@@ -76,6 +79,7 @@ const STAT_LABELS = {
 export default function Home() {
   usePageTitle();
   const { t, lang, dir } = useLanguage();
+  const ar = lang === 'ar';
   const [, navigate] = useLocation();
 
   /**
@@ -94,6 +98,41 @@ export default function Home() {
     // five, not a satisfaction percentage - the percentage measured nothing.
     { key: 'satisfaction', value: `${stats.satisfaction?.averageRating ?? 0}/5`, label: STAT_LABELS.satisfaction, show: stats.satisfaction !== null },
   ].filter(stat => stat.show);
+
+  /**
+   * THE CATEGORY RAIL, FROM THE ONE TAXONOMY.
+   *
+   * `view: 'public'` and `withCounts` - the same read the Marketplace Hub
+   * makes, not a list compiled into this page. Categories that actually have
+   * listings lead, because what a buyer sees first should be what Rakiza can
+   * actually supply.
+   */
+  const {
+    data: taxonomy,
+    isError: categoriesFailed,
+    refetch: refetchCategories,
+  } = trpc.marketplace.categories.useQuery({ view: 'public', withCounts: true }, { retry: false });
+
+  const browseCategories = useMemo(() => {
+    const rows = [...(taxonomy?.categories ?? [])];
+    rows.sort((a: any, b: any) => (b.listedProducts ?? 0) - (a.listedProducts ?? 0));
+    return rows.slice(0, 9);
+  }, [taxonomy]);
+
+  /*
+   * "1 listings" IS A DEFECT, AND SO IS "2 منتج". English needs a singular;
+   * Arabic needs four forms. The hub already solved this - the same keys are
+   * read here rather than a second, simpler rule being written.
+   */
+  const listedLabel = (n: number) => {
+    const key = !ar
+      ? (n === 1 ? 'marketHub.listingsCountOne' : 'marketHub.listingsCount')
+      : n === 1 ? 'marketHub.listingsCountOne'
+      : n === 2 ? 'marketHub.listingsCountTwo'
+      : n % 100 >= 3 && n % 100 <= 10 ? 'marketHub.listingsCount'
+      : 'marketHub.listingsCountMany';
+    return t(key).replace('{n}', String(n));
+  };
 
   const roleLabels: Record<string, string> = {
     homeowner: t('roles.homeowner'),
@@ -118,69 +157,244 @@ export default function Home() {
       <Navbar />
 
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
-      <section className="relative min-h-screen flex items-center gradient-hero overflow-hidden">
-        {/* Background pattern */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-20 left-10 w-72 h-72 bg-white rounded-full blur-3xl" />
-          <div className="absolute bottom-20 right-10 w-96 h-96 bg-white rounded-full blur-3xl" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-white rounded-full blur-3xl opacity-50" />
-        </div>
+      {/*
+        THE SPLIT THE OWNER APPROVED, BUILT NOW, PHOTOGRAPH PENDING.
 
-        {/* Grid overlay */}
-        <div className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
+        The reference puts copy and a search field on the left and an
+        architectural photograph on the right, with "From Planning to
+        Completion" set over it. The photograph is an owner asset that has not
+        arrived, and §57 forbids filling the slot with irrelevant stock or a
+        stretched low-resolution image to make the page look populated.
 
-        <div className="container relative z-10 pt-24 pb-16">
-          <div className="max-w-4xl mx-auto text-center text-white">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/15 backdrop-blur-sm border border-white/20 text-sm font-medium mb-6 animate-fade-in">
-              <Sparkles className="w-4 h-4" />
-              {t('hero.badge')}
-            </div>
+        So the LAYOUT is the approved one and the right panel carries a
+        restrained brand treatment until the image lands - one file and one
+        <img> away from being the reference. What is NOT done is pretending:
+        there is no placeholder photograph of somebody else's building.
 
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-tight mb-6 tracking-tight">
-              {t('hero.title')}
-            </h1>
+        No longer `min-h-screen`. It was, and with the flex min-size defect
+        fixed in R5 that now genuinely means a full viewport - which pushes
+        every other section of the homepage below the fold. The reference hero
+        is roughly half a screen.
+      */}
+      <section className="relative overflow-hidden gradient-hero">
+        {/* Grid overlay. The only decoration: §73 names gradient-heavy,
+            blurred-blob surfaces as the generated-interface look. The three
+            blurred white circles that used to sit here are gone. */}
+        <div
+          className="absolute inset-0 opacity-[0.07]"
+          aria-hidden="true"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(255,255,255,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.6) 1px, transparent 1px)',
+            backgroundSize: '64px 64px',
+          }}
+        />
 
-            <p className="text-lg sm:text-xl text-white/75 max-w-2xl mx-auto mb-10 leading-relaxed">
-              {t('hero.subtitle')}
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-              <Button
-                size="lg"
-                className="bg-white text-primary hover:bg-white/90 shadow-xl shadow-black/20 gap-2 text-base px-8 h-12"
-                onClick={() => navigate('/auth')}
-              >
-                {t('hero.cta.primary')} <ArrowRight className="w-4 h-4" />
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="border-white/30 text-white bg-white/10 hover:bg-white/20 backdrop-blur-sm gap-2 text-base px-8 h-12"
-                onClick={() => navigate('/marketplace')}
-              >
-                {t('hero.cta.secondary')}
-              </Button>
-            </div>
-
-            {/* Stats - real counts, and nothing where there is no count yet. */}
-            {liveStats.length > 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 max-w-2xl mx-auto" data-testid="platform-stats">
-                {liveStats.map(stat => (
-                  <div key={stat.key} className="text-center">
-                    <p className="text-3xl font-bold text-white">{stat.value}</p>
-                    <p className="text-sm text-white/60 mt-1">{lang === 'ar' ? stat.label.ar : stat.label.en}</p>
-                  </div>
-                ))}
+        <div className="container relative z-10 pt-28 pb-14 lg:pt-32 lg:pb-20">
+          <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.78fr)]">
+            {/* ── LEFT: the proposition, and the way in ──────────────────── */}
+            <div className="text-white">
+              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium backdrop-blur-sm">
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+                {t('hero.badge')}
               </div>
-            )}
-          </div>
-        </div>
 
-        {/* Wave divider */}
-        <div className="absolute bottom-0 inset-x-0">
-          <svg viewBox="0 0 1440 80" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full">
-            <path d="M0 80L48 66.7C96 53.3 192 26.7 288 20C384 13.3 480 26.7 576 33.3C672 40 768 40 864 33.3C960 26.7 1056 13.3 1152 16.7C1248 20 1344 40 1392 50L1440 60V80H1392C1344 80 1248 80 1152 80C1056 80 960 80 864 80C768 80 672 80 576 80C480 80 384 80 288 80C192 80 96 80 48 80H0Z" fill="hsl(var(--background))"/>
-          </svg>
+              <h1 className="mb-5 text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl lg:text-6xl">
+                {t('hero.title')}
+              </h1>
+
+              <p className="mb-8 max-w-xl text-lg leading-relaxed text-white/75">
+                {t('hero.subtitle')}
+              </p>
+
+              {/* THE SEARCH IS THE PRIMARY ACTION, which is the reference's
+                  whole argument: a visitor who knows what they need should not
+                  have to pick a role first. */}
+              <SourcingSearch variant="hero" className="max-w-xl" />
+
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="h-12 gap-2 border-white/30 bg-white/10 px-7 text-base text-white backdrop-blur-sm hover:bg-white/20 hover:text-white"
+                  onClick={() => navigate('/rfq')}
+                  data-testid="hero-cta-rfq"
+                >
+                  {t('hero.cta.primary')} <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="h-12 gap-2 border-white/30 bg-transparent px-7 text-base text-white hover:bg-white/10 hover:text-white"
+                  onClick={() => navigate('/marketplace')}
+                  data-testid="hero-cta-marketplace"
+                >
+                  {t('hero.cta.secondary')}
+                </Button>
+              </div>
+            </div>
+
+            {/* ── RIGHT: the panel the photograph will occupy ─────────────── */}
+            <div className="hidden lg:block">
+              <div
+                className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-white/15 bg-brand-900/40"
+                data-testid="hero-visual"
+              >
+                <div
+                  className="absolute inset-0 opacity-20"
+                  aria-hidden="true"
+                  style={{
+                    backgroundImage:
+                      'linear-gradient(135deg, rgba(255,255,255,0.35) 1px, transparent 1px), linear-gradient(45deg, rgba(255,255,255,0.35) 1px, transparent 1px)',
+                    backgroundSize: '44px 44px',
+                  }}
+                />
+                <div className="absolute inset-0 flex flex-col justify-end p-8">
+                  <span className="h-1 w-16 rounded-full bg-brand-accent-500" aria-hidden="true" />
+                  <p className="mt-4 text-2xl font-semibold leading-snug text-white">
+                    {t('hero.overlay')}
+                  </p>
+                  <RakizaLogo tone="inverse" size="sm" className="mt-5 opacity-70" decorative />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── THE TRUST STRIP ──────────────────────────────────────────
+              Four capability statements, not four counts. Every one names
+              something the product does and the next page can be checked
+              against; §15 and §68 both forbid a trust signal the system
+              cannot prove, and a verification badge nobody earned is the
+              worst thing a marketplace can put on its front door. */}
+          <ul
+            className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-white/15 bg-white/10 sm:grid-cols-2 lg:grid-cols-4"
+            data-testid="home-trust-strip"
+          >
+            {[
+              { icon: Shield, key: 'verified' },
+              { icon: BarChart3, key: 'compare' },
+              { icon: FileText, key: 'free' },
+              { icon: MessageSquare, key: 'oneplace' },
+            ].map(item => (
+              <li key={item.key} className="bg-brand-950/40 px-5 py-5 backdrop-blur-sm">
+                {/* data-on-dark: amber as a foreground colour is
+                    forbidden by brandContrast.test.ts because it is
+                    2.15:1 on white. This strip is brand-950 over the
+                    navy hero, where the same amber is 8.9:1. The
+                    attribute is the deliberate, greppable exception -
+                    a class string cannot see its own background. */}
+                <item.icon
+                  data-on-dark="true"
+                  className="mb-3 h-5 w-5 text-brand-accent-500"
+                  aria-hidden="true"
+                />
+                <p className="text-sm font-semibold text-white">{t(`home.trust.${item.key}`)}</p>
+                <p className="mt-1 text-xs leading-relaxed text-white/60">
+                  {t(`home.trust.${item.key}.note`)}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          {/* Real counts, and nothing where there is no count yet. */}
+          {liveStats.length > 0 && (
+            <div
+              className="mt-12 grid grid-cols-2 gap-6 border-t border-white/10 pt-8 sm:grid-cols-4"
+              data-testid="platform-stats"
+            >
+              {liveStats.map(stat => (
+                <div key={stat.key}>
+                  <p className="text-3xl font-bold text-white">{stat.value}</p>
+                  <p className="mt-1 text-sm text-white/60">
+                    {lang === 'ar' ? stat.label.ar : stat.label.en}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── BROWSE BY CATEGORY, AND THE OTHER WAY IN ─────────────────────
+          The reference shows a nine-card image-top category rail whose last
+          tile is Projects. There is no public projects listing - /projects/:id
+          is membership-gated - so a Projects tile would lead nowhere, and the
+          owner's direction was explicit: do not invent a destination and do
+          not relabel /rfq as Projects. The rail ends with Get Quotes, which is
+          the real buyer action that tile implied.
+
+          Category imagery is an owner asset that has not arrived. Rather than
+          stretch stock photography across nine tiles, each category carries a
+          restrained brand surface and its own real listing count. */}
+      <section className="border-b bg-background py-20" data-testid="home-browse">
+        <div className="container">
+          <div className="mb-10 flex flex-wrap items-end justify-between gap-4">
+            <div className="max-w-xl">
+              <h2 className="text-3xl font-bold sm:text-4xl">{t('home.browse.title')}</h2>
+              <p className="mt-3 text-muted-foreground">{t('home.browse.subtitle')}</p>
+            </div>
+            <Button variant="outline" onClick={() => navigate('/service-categories')} data-testid="home-browse-all">
+              {t('home.browse.viewAll')} <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
+
+          {categoriesFailed ? (
+            <LoadFailed
+              text={loadFailedCopy(lang === 'ar').text}
+              retryText={loadFailedCopy(lang === 'ar').retryText}
+              onRetry={() => void refetchCategories()}
+            />
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              {browseCategories.map((category: any) => (
+                <button
+                  key={category.nameEn}
+                  type="button"
+                  onClick={() => navigate(`/marketplace/products?cat=${encodeURIComponent(category.nameEn)}`)}
+                  className="group flex flex-col rounded-xl border border-border bg-card p-4 text-start transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  data-testid="home-category-tile"
+                >
+                  {/* NO ICON. Nine identical package glyphs in a row is the
+                      filler §73 names - an icon that distinguishes nothing is
+                      decoration. A thin brand rule marks the tile as a
+                      category without pretending to illustrate it, and the
+                      name does the identifying until the owner's category
+                      imagery arrives. */}
+                  <span
+                    aria-hidden="true"
+                    className="mb-4 h-1 w-8 rounded-full bg-brand-200 transition-colors group-hover:bg-brand-accent-500"
+                  />
+                  <span className="text-sm font-semibold leading-snug">
+                    {lang === 'ar' ? category.nameAr : category.nameEn}
+                  </span>
+                  {/* A count only where there is one. An empty category still
+                      appears - a buyer sourcing marble should learn that
+                      Rakiza has none, rather than be unable to find it. */}
+                  {(category.listedProducts ?? 0) > 0 && (
+                    <span className="mt-1 text-xs text-muted-foreground">
+                      {listedLabel(category.listedProducts)}
+                    </span>
+                  )}
+                </button>
+              ))}
+
+              {/* THE OTHER WAY IN, as a peer of the categories rather than a
+                  banner below them: a buyer the catalogue cannot serve
+                  describes the job once and suppliers answer. */}
+              <button
+                type="button"
+                onClick={() => navigate('/rfq')}
+                className="group flex flex-col rounded-xl border border-brand-accent-500/40 bg-brand-accent-500/10 p-4 text-start transition-all hover:-translate-y-0.5 hover:border-brand-accent-500 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                data-testid="home-get-quotes-tile"
+              >
+                <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-brand-accent-500 text-foreground">
+                  <FileText className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <span className="text-sm font-semibold leading-snug">{t('home.browse.quotes')}</span>
+                <span className="mt-1 text-xs text-muted-foreground">{t('home.browse.quotesNote')}</span>
+              </button>
+            </div>
+          )}
         </div>
       </section>
 

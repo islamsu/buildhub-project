@@ -20,6 +20,9 @@ import { readSourceForAssertions } from './_testing/sourceText';
  * property produced a false finding, and checking both properties removed it.
  */
 
+/** Repo-relative read of a client file, comments stripped. */
+const read = (rel: string) => readSourceForAssertions(readFileSync(`client/src/${rel}`, 'utf8'));
+
 const NAVBAR = readSourceForAssertions(readFileSync('client/src/components/Navbar.tsx', 'utf8'));
 const MARKET = readSourceForAssertions(readFileSync('client/src/pages/MarketplaceHub.tsx', 'utf8'));
 
@@ -65,16 +68,31 @@ describe('icon-only buttons carry a name', () => {
 });
 
 describe('inputs are named by a label, not by a placeholder', () => {
-  it('the marketplace search field', () => {
-    // Same hardening as the two above: a moved anchor must fail loudly rather
-    // than hand back a window from elsewhere in the file.
-    const searchAt = MARKET.indexOf('marketHub.searchPlaceholder');
+  /*
+   * THE FIELD MOVED, THE RULE DID NOT.
+   *
+   * The sourcing typeahead left MarketplaceHub for its own component when the
+   * homepage needed the same thing, so this reads the component rather than
+   * the page that used to hold it. Both surfaces render it, so asserting once
+   * covers both - which is the point of extracting it.
+   */
+  const SEARCH = read('components/SourcingSearch.tsx');
+
+  it('the sourcing search field', () => {
+    // A moved anchor must fail loudly rather than hand back a window from
+    // elsewhere in the file.
+    const searchAt = SEARCH.indexOf('marketHub.searchPlaceholder');
     expect(searchAt, 'the search box anchor has moved - rewire this test').toBeGreaterThan(-1);
-    const block = MARKET.slice(Math.max(0, searchAt - 400), searchAt + 200);
+    const block = SEARCH.slice(Math.max(0, searchAt - 600), searchAt + 300);
     expect(block).toMatch(/aria-label=\{t\('marketHub\.searchPlaceholder'\)\}/);
   });
 
   it('the placeholder stays as well - it is useful, just not sufficient', () => {
-    expect(MARKET).toMatch(/placeholder=\{t\('marketHub\.searchPlaceholder'\)\}/);
+    expect(SEARCH).toMatch(/placeholder=\{t\('marketHub\.searchPlaceholder'\)\}/);
+  });
+
+  it('and both surfaces render that one field', () => {
+    expect(MARKET, 'the hub no longer renders the shared search').toContain('<SourcingSearch');
+    expect(read('pages/Home.tsx'), 'the homepage no longer renders it').toContain('<SourcingSearch');
   });
 });

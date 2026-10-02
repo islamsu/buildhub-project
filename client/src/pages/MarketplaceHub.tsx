@@ -1,4 +1,5 @@
 import { useLanguage } from '@/contexts/LanguageContext';
+import SourcingSearch from '@/components/SourcingSearch';
 import Navbar from '@/components/Navbar';
 import { FeaturedProductCard } from '@/components/FeaturedProductCard';
 import { Input } from '@/components/ui/input';
@@ -118,38 +119,6 @@ export default function MarketplaceHub() {
   const designers = directory.filter(v => v.categories?.includes('Design'));
   const finishing = directory.filter(v => v.categories?.includes('Renovation'));
 
-  // AI-style autocomplete: search across products categories, vendors, designers, companies
-  const suggestions = useMemo(() => {
-    if (!search.trim() || search.trim().length < 2) return [];
-    const q = search.trim().toLowerCase();
-    const out: { type: string; label: string; href: string }[] = [];
-    // The link carries the CANONICAL English name, which is what the
-    // marketplace filter and products.category both hold. It used to carry a
-    // slug from a different vocabulary, which matched no filter at all.
-    productCategories
-      .filter(c => c.nameEn.toLowerCase().includes(q) || c.nameAr.includes(q))
-      .slice(0, 4)
-      .forEach(c => out.push({
-        type: t('marketHub.suggestionProductCategory'),
-        label: ar ? c.nameAr : c.nameEn,
-        href: `/marketplace/products?cat=${encodeURIComponent(c.nameEn)}`,
-      }));
-    // Suggestions are drawn from the SAME authorized directory rows that the
-    // strips below render - never a second, looser source.
-    // /vendor/:id, not /marketplace/vendors/:id. The latter renders the whole
-    // directory and drops the id, so picking one vendor out of the suggestions
-    // delivered a page listing all of them. The designer and finishing
-    // suggestions immediately below already used the canonical route; this one
-    // was the odd branch out.
-    directory.filter(v => (v.name ?? '').toLowerCase().includes(q)).slice(0, 3).forEach(v =>
-      out.push({ type: t('marketHub.suggestionVendor'), label: v.name ?? `#${v.id}`, href: `/vendor/${v.id}` }));
-    designers.filter(d => (d.name ?? '').toLowerCase().includes(q)).slice(0, 3).forEach(d =>
-      out.push({ type: t('marketHub.suggestionDesigner'), label: d.name ?? `#${d.id}`, href: `/vendor/${d.id}` }));
-    finishing.filter(f => (f.name ?? '').toLowerCase().includes(q)).slice(0, 3).forEach(f =>
-      out.push({ type: t('marketHub.suggestionFinishingCompany'), label: f.name ?? `#${f.id}`, href: `/vendor/${f.id}` }));
-    return out.slice(0, 8);
-  }, [search, ar, t, directory, designers, finishing, productCategories]);
-
   const sections = [
     {
       id: 'products',
@@ -249,34 +218,13 @@ export default function MarketplaceHub() {
             <p className="text-primary-foreground/80 text-lg max-w-2xl mb-8">
               {t('marketHub.heroSubtitle')}
             </p>
-            <div className="relative max-w-2xl">
-              <Search className="absolute start-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-              {/* aria-label, not placeholder. A placeholder is not an
-                  accessible name: it disappears the moment there is text in the
-                  field, so a screen-reader user reviewing what they typed hears
-                  an unnamed edit box. */}
-              <Input
-                aria-label={t('marketHub.searchPlaceholder')}
-                className="ps-12 h-14 text-base bg-white text-foreground shadow-xl rounded-xl"
-                placeholder={t('marketHub.searchPlaceholder')}
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-              {suggestions.length > 0 && (
-                <div className="absolute top-full mt-2 inset-x-0 bg-popover text-popover-foreground rounded-xl shadow-2xl border border-border overflow-hidden z-50">
-                  {suggestions.map((s, i) => (
-                    <button
-                      key={i}
-                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted text-start transition-colors"
-                      onClick={() => { setSearch(''); navigate(s.href); }}
-                    >
-                      <span className="font-medium text-sm">{s.label}</span>
-                      <Badge variant="secondary" className="text-xs">{s.type}</Badge>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* THE SHARED TYPEAHEAD. This page's own copy of it was the
+                original; the homepage needed the same thing, so it moved to
+                components/SourcingSearch.tsx rather than being written twice.
+                Same two authorized public queries, same destinations, plus
+                keyboard navigation and an honest failure state it did not
+                have here. */}
+            <SourcingSearch variant="hero" className="max-w-2xl" />
           </div>
         </div>
 
