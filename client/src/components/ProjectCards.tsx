@@ -151,7 +151,7 @@ export function ProjectOpportunityCard({
         </div>
         <Badge variant="outline" className="shrink-0">{statusLabel}</Badge>
       </div>
-      <ProgressBar progress={Number(project.progress ?? 0)} label={progressLabel} tone="bg-cyan-500" />
+      <ProgressBar progress={Number(project.progress ?? 0)} label={progressLabel} tone="bg-primary" />
       <span className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <span className="font-medium text-muted-foreground" data-testid="project-opportunity-count">{count}</span>
         <span className="inline-flex items-center gap-1 font-medium text-primary" data-testid="project-opportunity-cta">

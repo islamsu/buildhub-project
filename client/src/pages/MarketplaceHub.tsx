@@ -1,4 +1,5 @@
 import { useLanguage } from '@/contexts/LanguageContext';
+import { domainById, type DomainId } from '@/components/brand/domainIdentity';
 import SourcingSearch from '@/components/SourcingSearch';
 import Navbar from '@/components/Navbar';
 import { FeaturedProductCard } from '@/components/FeaturedProductCard';
@@ -34,6 +35,21 @@ import { usePageTitle } from '../hooks/usePageTitle';
  * under those names. The chips now come from the same taxonomy a supplier
  * lists against, and carry the canonical name the marketplace filter uses.
  */
+/**
+ * The identity a macro card wears, from the one canonical model.
+ *
+ * Returned as a spread rather than read inline so a card cannot acquire a
+ * private copy of a colour: the only thing a call site names is the DOMAIN.
+ */
+function domainStyle(id: DomainId) {
+  const domain = domainById(id);
+  return {
+    domainAccent: domain.accent,
+    domainTint: domain.tint,
+    domainAccentBar: id === 'products' ? 'bg-domain-products' : 'bg-domain-providers',
+  };
+}
+
 export default function MarketplaceHub() {
   usePageTitle();
   const { lang, t } = useLanguage();
@@ -124,6 +140,7 @@ export default function MarketplaceHub() {
       id: 'products',
       href: '/marketplace/products',
       icon: Package,
+      ...domainStyle('products'),
       title: t('marketHub.sectionProductsTitle'),
       desc: t('marketHub.sectionProductsDesc'),
       stat: countOrUnknown(statsFailed, statsLoading, platformStats?.publicProducts ?? 0),
@@ -140,6 +157,7 @@ export default function MarketplaceHub() {
       id: 'vendors',
       href: '/marketplace/vendors',
       icon: Store,
+      ...domainStyle('providers'),
       title: t('marketHub.sectionVendorsTitle'),
       desc: t('marketHub.sectionVendorsDesc'),
       stat: countOrUnknown(directoryFailed, directoryLoading, directory.length),
@@ -150,7 +168,10 @@ export default function MarketplaceHub() {
     {
       id: 'designers',
       href: '/marketplace/designers',
+      /* A CATEGORY PRESET of the provider directory, so it wears the provider
+         identity and is told apart by its icon and title. */
       icon: PenTool,
+      ...domainStyle('providers'),
       title: t('marketHub.sectionDesignersTitle'),
       desc: t('marketHub.sectionDesignersDesc'),
       /**
@@ -173,6 +194,7 @@ export default function MarketplaceHub() {
       id: 'finishing',
       href: '/marketplace/finishing',
       icon: HardHat,
+      ...domainStyle('providers'),
       title: t('marketHub.sectionFinishingTitle'),
       desc: t('marketHub.sectionFinishingDesc'),
       // The same correction, for the same reason.
@@ -252,10 +274,15 @@ export default function MarketplaceHub() {
                     §73 both name. The icon is what identifies a
                     destination; the colour identifies the brand. Same
                     decision the six role cards already made. */}
-                <div className="absolute inset-x-0 top-0 h-1 bg-brand-200 transition-colors group-hover:bg-brand-accent-500" />
+                {/* The domain's own accent, from components/brand/domainIdentity.ts
+                    - the same model the homepage gateway reads, so the two
+                    cannot drift into giving one destination two identities. A
+                    card with no domain (Design, Finishing - category presets of
+                    the provider directory) falls back to the brand rule. */}
+                <div className={`absolute inset-x-0 top-0 h-1 transition-colors ${s.domainAccentBar}`} />
                 <div className="flex h-full flex-col p-6 md:p-8">
                   <div className="flex items-start justify-between mb-4">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
+                    <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${s.domainTint} ${s.domainAccent}`}>
                       <s.icon className="w-7 h-7" />
                     </div>
                     <div className="text-end">
@@ -298,7 +325,7 @@ export default function MarketplaceHub() {
           <div className="container pt-10 pb-2">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold flex items-center gap-2">
-                <BadgeCheck className="w-5 h-5 text-success" /> {t('marketHub.featuredVendors')}
+                <Star className="w-5 h-5 text-primary" aria-hidden="true" /> {t('marketHub.featuredVendors')}
               </h2>
               <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/vendors')}>
                 {t('marketHub.viewAll')}
@@ -327,7 +354,7 @@ export default function MarketplaceHub() {
                     {/* Featured is ONE concept (§18), so it reads the same wherever
                         it appears. Three Featured headings in three different
                         hues taught a visitor that they were three things. */}
-                    <BadgeCheck className="w-5 h-5 text-success" /> {t('marketHub.featuredDesigners')}
+                    <Star className="w-5 h-5 text-primary" aria-hidden="true" /> {t('marketHub.featuredDesigners')}
                   </h2>
                   <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/designers')}>
                     {t('marketHub.viewAll')}
@@ -346,7 +373,7 @@ export default function MarketplaceHub() {
               <div>
                 <div className="flex items-center justify-between mb-5">
                   <h2 className="text-lg font-bold flex items-center gap-2">
-                    <BadgeCheck className="w-5 h-5 text-success" /> {t('marketHub.featuredCompanies')}
+                    <Star className="w-5 h-5 text-primary" aria-hidden="true" /> {t('marketHub.featuredCompanies')}
                   </h2>
                   <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/finishing')}>
                     {t('marketHub.viewAll')}
@@ -389,7 +416,7 @@ export default function MarketplaceHub() {
           <div className="container pt-8 pb-2" data-testid="hub-featured-products">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold flex items-center gap-2">
-                <BadgeCheck className="w-5 h-5 text-success" />
+                <Star className="w-5 h-5 text-primary" aria-hidden="true" />
                 {lang === 'ar' ? 'منتجات مختارة' : 'Featured Products'}
               </h2>
               <button

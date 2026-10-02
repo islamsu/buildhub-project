@@ -188,6 +188,36 @@ describe('no component pairs amber with a light label', () => {
   const rel = (f: string) => f.slice(ROOT.length).replace(/^\/+/, '');
   const source = (f: string) => readSourceForAssertions(readFileSync(f, 'utf8'));
 
+  /**
+   * EVERY CLASS STRING IN A FILE, wherever it is written.
+   *
+   * ── WHY NOT JUST `className=` ──────────────────────────────────────────
+   *
+   * Because the rules below stopped applying the moment the product started
+   * doing the right thing architecturally. A role-based model such as
+   * components/brand/domainIdentity.ts holds its utilities as a PROPERTY -
+   * `cta: 'bg-brand-accent-500 ... text-foreground'` - and interpolates them
+   * into `className` at the call site. A detector anchored on `className=`
+   * sees none of it, so the one place in the codebase where a colour decision
+   * is centralised was also the one place these guards could not read. A
+   * mutation test proved it: a white label on an amber fill, declared in the
+   * model, passed cleanly.
+   *
+   * So: any quoted literal that looks like a utility list. Over-collecting is
+   * harmless here - a string of prose will not match the token shapes the
+   * rules look for.
+   */
+  function classStrings(text: string): string[] {
+    const out: string[] = [];
+    for (const m of text.matchAll(/(?:"([^"\n]*)"|'([^'\n]*)'|`([^`\n]*)`)/g)) {
+      const value = m[1] ?? m[2] ?? m[3] ?? '';
+      if (/(?:^|\s)(?:bg|text|border|ring|fill|rounded|px|py|p|gap|flex|inline)-[a-z0-9[]/.test(value)) {
+        out.push(value);
+      }
+    }
+    return out;
+  }
+
   it('no element sets a white label on an amber fill', () => {
     /*
      * The mockup does exactly this, twice - the Sign Up button and the Search
@@ -196,12 +226,12 @@ describe('no component pairs amber with a light label', () => {
      *
      * The detector is per class-string rather than per file, because a file
      * may legitimately contain both an amber fill and a white label on
-     * different elements.
+     * different elements. It reads class strings wherever they are written -
+     * see classStrings() for the blind spot that cost.
      */
     const offenders: string[] = [];
     for (const file of FILES) {
-      for (const match of source(file).matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\}|\{'([^']*)'\})/g)) {
-        const classes = match[1] ?? match[2] ?? match[3] ?? '';
+      for (const classes of classStrings(source(file))) {
         const amberFill = /\bbg-brand-accent-\d{3}\b/.test(classes);
         const lightLabel = /\btext-(white|primary-foreground|brand-50|brand-100)\b/.test(classes);
         if (amberFill && lightLabel) offenders.push(`${rel(file)} :: ${classes.trim().slice(0, 120)}`);
@@ -243,6 +273,39 @@ describe('no component pairs amber with a light label', () => {
       }
     }
     expect(offenders, 'amber is being used as text below 3:1 on a light surface').toEqual([]);
+  });
+
+  it('ACCENT-600 IS NEVER A SMALL-TEXT COLOUR EITHER', () => {
+    /*
+     * THE GAP THIS CLOSES, AND HOW IT WAS FOUND.
+     *
+     * The rule above forbids accent-400 and accent-500 as light-surface text
+     * and deliberately permits accent-600, because 3.11:1 is legal for a glyph
+     * (SC 1.4.11) and for large text (SC 1.4.3). What it does not say is that
+     * 3.11:1 is NOT legal for small text - and the homepage gateway's
+     * Get Quotes card promptly used `text-brand-accent-600` on a 14px label.
+     *
+     * Every source test passed. A rendered probe measuring computed colour
+     * against measured background caught it, which is the whole argument for
+     * having one: a class string cannot see its own font size any more than
+     * it can see its own background.
+     *
+     * So the surviving rule is size-aware. A text-size utility in the same
+     * class string is the author declaring "this is text at this size", and
+     * amber at 3.11:1 cannot be that. Amber's legitimate text use is a FILL
+     * with a dark label - the `accent` Button variant - which this permits
+     * untouched because it pairs `bg-brand-accent-500` with `text-foreground`.
+     */
+    const offenders: string[] = [];
+    for (const file of FILES) {
+      for (const classes of classStrings(source(file))) {
+        if (!/\btext-brand-accent-600\b/.test(classes)) continue;
+        if (/\btext-(xs|sm|base|lg)\b/.test(classes)) {
+          offenders.push(`${rel(file)} :: ${classes.trim().slice(0, 100)}`);
+        }
+      }
+    }
+    expect(offenders, 'amber at 3.11:1 is being used as small text').toEqual([]);
   });
 
   it('and the dark-surface exception is used sparingly enough to review', () => {

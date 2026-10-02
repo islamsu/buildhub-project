@@ -182,7 +182,13 @@ describe('dashboard KPIs lead to the records they count', () => {
     // The shared metrics branch serves contractor, engineer and architect. Now
     // that all three render the section, the conditional is gone and every one
     // of them must actually have it.
-    expect(workspace).toContain("value: myQuotations.length, icon: FileText, tone: 'text-violet-600 bg-violet-50', section: 'role-quotations'");
+    //
+    // Asserted on the KPI and its destination, not on the card's decorative
+    // tone. The first version of this pinned the whole literal including
+    // `tone: 'text-violet-600 bg-violet-50'`, so retoning the card - which
+    // changes nothing about reachability - failed a reachability test.
+    expect(workspace).toMatch(
+      /value: myQuotations\.length, icon: FileText,[^}]*section: 'role-quotations'/);
     expect(workspace).not.toContain("? 'role-quotations' : undefined");
     for (const role of ['contractor', 'engineer', 'architect', 'supplier'] as const) {
       expect(ROLE_SECTIONS[role], `${role}'s quotation KPI must lead somewhere`).toContain('role-quotations');

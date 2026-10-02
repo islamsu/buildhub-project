@@ -93,16 +93,35 @@ describe('the hero search is real, and is the one search', () => {
 });
 
 describe('the rail ends with a real action, not a dead tile', () => {
-  it('Get Quotes replaced the reference Projects tile', () => {
+  it('Get Quotes is on the page, and no longer as a category tile', () => {
     /*
-     * The reference's ninth tile is Projects. `/projects/:id` is membership
-     * gated and there is no public listing, so that tile would lead nowhere -
-     * and the owner was explicit that /rfq must NOT be relabelled Projects to
-     * fill the hole. Get Quotes is the buyer action the tile implied, under
-     * its own name, on the canonical route.
+     * HISTORY, because this assertion has now been corrected twice and the
+     * reason matters both times.
+     *
+     * The reference's ninth tile was Projects. `/projects/:id` is membership
+     * gated with no public listing, so that tile led nowhere - and the owner
+     * was explicit that /rfq must NOT be relabelled Projects to fill the hole.
+     * So Get Quotes took the slot: the buyer action the tile implied, under its
+     * own name, on the canonical route. That fixed the dead link.
+     *
+     * It did not fix the category error, and this test could not see it. Get
+     * Quotes was now the tenth tile in a nine-category grid - the product's
+     * highest-intent workflow rendered as a peer of "Marble", which is what the
+     * owner saw on staging. A taxonomy rail answers "what are you sourcing";
+     * a workflow answers "what do you want to do". They are different
+     * questions and they do not belong in one grid.
+     *
+     * Get Quotes is now a gateway card beside Products and Providers, above the
+     * rail. What survives from the original intent is what still matters: the
+     * destination is `/rfq`, and nothing on this page advertises a public
+     * projects listing (asserted next).
      */
-    expect(HOME()).toContain('home-get-quotes-tile');
-    expect(HOME()).toContain("navigate('/rfq')");
+    const home = HOME();
+    expect(home, 'the workflow is back in the taxonomy rail')
+      .not.toContain('home-get-quotes-tile');
+    expect(home, 'the gateway is missing').toContain('data-testid="home-explore"');
+    expect(code('client/src/components/brand/domainIdentity.ts'))
+      .toMatch(/id: 'quotes'[\s\S]{0,200}href: '\/rfq'/);
   });
 
   it('and the homepage advertises no public projects destination', () => {

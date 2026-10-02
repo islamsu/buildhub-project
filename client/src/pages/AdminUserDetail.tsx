@@ -266,7 +266,7 @@ export default function AdminUserDetail() {
                           (§55, §62). The person's name IS the title here. */}
                       <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold leading-none tracking-tight">
                         {detail.name || detail.email || `#${detail.id}`}
-                        {detail.isDummy && <Badge className="border-violet-200 bg-violet-50 text-violet-700">{lang === 'ar' ? 'تجريبي / اختباري' : 'Dummy / Test'}</Badge>}
+                        {detail.isDummy && <Badge className="border-border bg-muted text-muted-foreground">{lang === 'ar' ? 'تجريبي / اختباري' : 'Dummy / Test'}</Badge>}
                       </h1>
                       <p className="mt-1 text-sm text-muted-foreground">@{detail.username || '—'} · {roleLabel(detail.userRole, lang)}</p>
                     </div>

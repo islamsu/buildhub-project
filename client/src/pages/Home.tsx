@@ -19,6 +19,7 @@ import {
 import { usePageTitle } from '../hooks/usePageTitle';
 import { RakizaLogo } from '@/components/brand/RakizaLogo';
 import { ROLE_IDENTITIES, ROLE_CARD_CLASSES, roleIconClasses } from '@/components/brand/roleIdentity';
+import { DOMAIN_IDENTITIES, PROVIDER_PRESETS } from '@/components/brand/domainIdentity';
 
 /* THE ROLE LIST MOVED. Six per-role colours lived here and again in
    AuthPage, where green, amber and purple collided with the success,
@@ -315,17 +316,130 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── BROWSE BY CATEGORY, AND THE OTHER WAY IN ─────────────────────
-          The reference shows a nine-card image-top category rail whose last
-          tile is Projects. There is no public projects listing - /projects/:id
-          is membership-gated - so a Projects tile would lead nowhere, and the
-          owner's direction was explicit: do not invent a destination and do
-          not relabel /rfq as Projects. The rail ends with Get Quotes, which is
-          the real buyer action that tile implied.
+      {/* ── EXPLORE RAKIZA ───────────────────────────────────────────────
+          THE SECTION THE REBRAND LOST, AND WHY IT SITS HERE.
 
-          Category imagery is an owner asset that has not arrived. Rather than
-          stretch stock photography across nine tiles, each category carries a
-          restrained brand surface and its own real listing count. */}
+          Before this, the first thing after the hero was the taxonomy rail,
+          and the single highest-intent workflow in the product - Get Quotes -
+          was the TENTH TILE in it, a peer of "Marble". That told a visitor a
+          material and a workflow are the same kind of object. It was a
+          category error, not a weighting mistake.
+
+          A first-time visitor has to learn what KINDS of thing exist here
+          before which subcategory of one of them. Taxonomy is a filter inside
+          a domain, not a peer of it. So: journeys, then taxonomy.
+
+          THE HIERARCHY SURVIVES GRAYSCALE, which is the explicit QA criterion.
+          These cards are larger, carry supporting copy and a prominent icon,
+          and come FIRST in document order; the category tiles below are small,
+          copy-free and later. Remove every colour and the ranking is
+          unchanged. Domain colour is supplemental, never the signal.
+
+          And because the gateway precedes the rail in the DOM, no responsive
+          reflow can invert them at any breakpoint. */}
+      <section className="border-b bg-background py-20" data-testid="home-explore">
+        <div className="container">
+          <div className="mb-10 max-w-2xl">
+            <h2 className="text-3xl font-bold sm:text-4xl">{t('home.explore.title')}</h2>
+            <p className="mt-3 text-lg text-muted-foreground">{t('home.explore.subtitle')}</p>
+          </div>
+
+          <div className="grid gap-5 md:grid-cols-3">
+            {DOMAIN_IDENTITIES.map(domain => (
+              /* A DIV, NOT A BUTTON, and the reason is the Providers card.
+                 It carries two secondary destinations inside it, and nested
+                 interactive content inside a <button> is invalid HTML: the
+                 inner control is unreachable for some assistive technology and
+                 a nested activation is ambiguous for all of it. So the card is
+                 a plain container, the whole surface is made clickable by one
+                 stretched link on the title, and the presets sit above that
+                 link in the stacking order as real links of their own.
+
+                 Focus follows: the ring is drawn on the CARD via
+                 focus-within, so tabbing to the title shows the whole card
+                 focused, and the presets keep their own rings. */
+              <div
+                key={domain.id}
+                className="group relative flex flex-col rounded-2xl border border-border bg-card p-7 text-start transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
+                data-testid={`home-domain-${domain.id}`}
+                data-domain-kind={domain.kind}
+              >
+                {/* Icon well: the domain's own tint, the domain's own accent.
+                    Identity never rests on the colour alone - the icon and the
+                    label below carry it too (WCAG 2.2 SC 1.4.1). */}
+                <span className={`mb-5 flex h-14 w-14 items-center justify-center rounded-xl ${domain.tint} ${domain.accent}`}>
+                  <domain.icon className="h-7 w-7" aria-hidden="true" />
+                </span>
+                {/* The stretched link. `after:absolute after:inset-0` makes the
+                    entire card the hit target without wrapping anything. */}
+                <Link
+                  href={domain.href}
+                  className="text-xl font-semibold leading-snug after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:outline-none"
+                  data-testid={`home-domain-${domain.id}-link`}
+                >
+                  {t(domain.labelKey)}
+                </Link>
+                <span className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  {t(domain.blurbKey)}
+                </span>
+                {/* A VISUAL AFFORDANCE, NOT A CONTROL. The stretched link
+                    above already makes the whole card clickable, so a second
+                    focusable element here would be a duplicate tab stop to the
+                    same place. It is a span on purpose.
+
+                    `domain.cta` differs in KIND, not just hue: the two domains
+                    get a text link, the workflow gets a filled pill. See the
+                    contrast note in domainIdentity.ts for why amber has no
+                    choice about that - and why the result is better anyway. */}
+                <span
+                  data-domain-cta=""
+                  className={`mt-5 inline-flex w-fit items-center gap-1.5 text-sm font-semibold ${domain.cta}`}
+                >
+                  {t(domain.id === 'quotes' ? 'domain.quotes.cta' : 'marketHub.viewAll')}
+                  <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 rtl:rotate-180" aria-hidden="true" />
+                </span>
+
+                {/* THE PROVIDER PRESETS, as secondary links rather than cards.
+                    Designers and Finishing are the SAME directory with a
+                    category preset - not separate architectures - so they
+                    inherit this card's accent and differ by icon and label.
+                    Rendering them as peers would make the visual separation
+                    stronger than the information architecture. */}
+                {domain.id === 'providers' && (
+                  <span className="mt-5 flex flex-wrap gap-2 border-t border-border pt-4">
+                    {PROVIDER_PRESETS.map(preset => (
+                      <Link
+                        key={preset.id}
+                        href={preset.href}
+                        className="relative z-10 inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-brand-300 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        data-testid={`home-preset-${preset.id}`}
+                      >
+                        <preset.icon className="h-3.5 w-3.5" aria-hidden="true" />
+                        {t(preset.labelKey)}
+                      </Link>
+                    ))}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── BROWSE BY CATEGORY ───────────────────────────────────────────
+          TAXONOMY ONLY, NOW. The Get Quotes tile that used to end this rail
+          has moved into the gateway above, where a workflow belongs. What is
+          left is what the heading says: real categories, nothing else.
+
+          Categories get ONE restrained common treatment, not a permanent hue
+          each. Semantic colour is for stable meaning, and a taxonomy grows -
+          a palette that grows with it stops being a palette. Individual
+          categories are told apart by name, count and (when the owner's
+          imagery arrives) their own picture.
+
+          The reference also showed a Projects tile here. There is no public
+          projects listing - /projects/:id is membership-gated - so it is
+          absent rather than invented. */}
       <section className="border-b bg-background py-20" data-testid="home-browse">
         <div className="container">
           <div className="mb-10 flex flex-wrap items-end justify-between gap-4">
@@ -378,21 +492,6 @@ export default function Home() {
                 </button>
               ))}
 
-              {/* THE OTHER WAY IN, as a peer of the categories rather than a
-                  banner below them: a buyer the catalogue cannot serve
-                  describes the job once and suppliers answer. */}
-              <button
-                type="button"
-                onClick={() => navigate('/rfq')}
-                className="group flex flex-col rounded-xl border border-brand-accent-500/40 bg-brand-accent-500/10 p-4 text-start transition-all hover:-translate-y-0.5 hover:border-brand-accent-500 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                data-testid="home-get-quotes-tile"
-              >
-                <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-brand-accent-500 text-foreground">
-                  <FileText className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <span className="text-sm font-semibold leading-snug">{t('home.browse.quotes')}</span>
-                <span className="mt-1 text-xs text-muted-foreground">{t('home.browse.quotesNote')}</span>
-              </button>
             </div>
           )}
         </div>

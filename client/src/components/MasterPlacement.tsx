@@ -44,7 +44,24 @@ import { useImpression, usePlacementReporter } from '@/hooks/usePlacementAnalyti
 export function PlacementBadge({ label }: { label: PlacementLabel }) {
   const { lang } = useLanguage();
   const sponsored = label === 'SPONSORED';
-  const Icon = sponsored ? Megaphone : BadgeCheck;
+  /*
+   * ── FEATURED IS NOT VERIFIED, AND NO LONGER LOOKS LIKE IT ──────────────
+   *
+   * Featured used to be BadgeCheck + green - the exact icon and the exact
+   * colour family that Verified uses everywhere else in this product. Green is
+   * the success/credential family in every system we follow; a check mark in
+   * it says "approved". Featured means RAKIZA chose this editorially. It does
+   * not mean verified, approved, compliant, safer or better, and it must not
+   * be able to be read that way (§68).
+   *
+   * Star + navy: the platform's own voice, with no status implication. Three
+   * placement/credential states, three icons, three colour families:
+   *
+   *   Verified   BadgeCheck  green     a credential the compliance review gave
+   *   Featured   Star        navy      RAKIZA's editorial choice
+   *   Sponsored  Megaphone   neutral   somebody paid
+   */
+  const Icon = sponsored ? Megaphone : Star;
   return (
     <Badge
       variant="outline"
@@ -62,7 +79,7 @@ export function PlacementBadge({ label }: { label: PlacementLabel }) {
        * NONE of that distinction rests on colour: the word differs, the icon
        * differs, and a filled amber button is a different element entirely.
        */
-      className={`gap-1.5 ${sponsored ? 'border-border bg-muted/70 text-muted-foreground' : 'border-emerald-500/60 text-emerald-700 dark:text-emerald-400'}`}
+      className={`gap-1.5 ${sponsored ? 'border-border bg-muted/70 text-muted-foreground' : 'border-primary/40 bg-brand-50 text-primary'}`}
       data-testid={sponsored ? 'placement-sponsored' : 'placement-featured'}
     >
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
@@ -140,8 +157,14 @@ function PlacedProviderCard({ placed, compact }: { placed: PlacedProviderCardDat
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <PlacementBadge label={placed.label} />
+            {/* VERIFIED IS GREEN WHEREVER IT APPEARS. It was `secondary` here and
+                success-green in the vendor directory, so the same credential had
+                two looks. With Featured now on navy and Sponsored on neutral,
+                this card can show all three dimensions at once - provider
+                identity, credential, placement - and none of them is confusable
+                with another. */}
             {placed.verified && (
-              <Badge variant="secondary" className="gap-1">
+              <Badge className="gap-1 border-0 bg-success-50 text-success-700">
                 <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" />
                 {t('common.verified')}
               </Badge>

@@ -43,8 +43,56 @@ describe('the two labels are distinguishable without colour', () => {
   it('and they carry DIFFERENT ICONS, not only different hues', () => {
     // Two badges distinguished only by hue are one stylesheet away from
     // being indistinguishable, and invisible to a colour-blind reader (§56).
-    expect(BADGE).toContain('const Icon = sponsored ? Megaphone : BadgeCheck;');
+    expect(BADGE).toContain('const Icon = sponsored ? Megaphone : Star;');
     expect(BADGE).toContain('<Icon className="h-3.5 w-3.5" aria-hidden="true" />');
+  });
+
+  it('FEATURED DOES NOT WEAR THE VERIFIED TREATMENT', () => {
+    /*
+     * ── WHY THIS CHANGED, AND WHY IT IS NOT A STYLE PREFERENCE ──────────
+     *
+     * Featured was BadgeCheck + green: the exact icon and the exact colour
+     * family Verified uses everywhere else in this product. Green is the
+     * success/credential family in Carbon's support tokens, in Fluent's
+     * semantic shared colours and in every reader's expectation; a check mark
+     * in it says "approved".
+     *
+     * Featured means RAKIZA chose this editorially. It does not mean verified,
+     * approved, compliant, safer or better, and §68 forbids implying a
+     * verification the system has not performed. Navy + Star is the platform's
+     * own voice with no status claim attached.
+     *
+     * THE UNDERLYING LOGIC IS UNTOUCHED. placementLabel() still decides what
+     * Featured means; only its presentation moved.
+     */
+    const badge = BADGE.slice(BADGE.indexOf('export function PlacementBadge'));
+    const body = badge.slice(0, badge.indexOf('\n}'));
+    const featuredBranch = body.slice(body.indexOf(" : '"), body.indexOf('}`}'));
+    expect(featuredBranch.length, 'the featured branch could not be isolated').toBeGreaterThan(10);
+    expect(featuredBranch, 'Featured is still wearing the success/verified family')
+      .not.toMatch(/emerald|green|success/);
+    expect(featuredBranch, 'Featured lost its brand treatment').toMatch(/primary|brand-/);
+  });
+
+  it('three dimensions, three icons, three families', () => {
+    /*
+     * A provider must be able to be its DOMAIN, its CREDENTIAL and its
+     * PLACEMENT at once without any pair being confusable:
+     *
+     *   Verified   BadgeCheck  success green   a compliance credential
+     *   Featured   Star        brand navy      RAKIZA's editorial choice
+     *   Sponsored  Megaphone   neutral         somebody paid
+     *
+     * The card in MasterPlacement renders a placement badge and a verified
+     * badge side by side, so this is not hypothetical.
+     */
+    expect(BADGE, 'the verified badge left this card').toContain('placed.verified');
+    expect(BADGE, 'Verified is no longer the success family')
+      .toContain('bg-success-50 text-success-700');
+    // And the three glyphs are three different glyphs.
+    for (const glyph of ['Megaphone', 'Star', 'BadgeCheck']) {
+      expect(BADGE, `${glyph} is missing`).toContain(glyph);
+    }
   });
 
   it('and the icon is hidden from assistive technology, because the word is there', () => {

@@ -90,18 +90,27 @@ export default function HomeownerDashboard() {
    * language.
    */
   const statCards = [
+    /*
+     * NO VIOLET, PURPLE, CYAN OR TEAL IN HERE, and it is not a style
+     * preference. Those hues now carry DOMAIN meaning product-wide - teal is
+     * Products, violet is Providers (components/brand/domainIdentity.ts) - so
+     * a decorative violet KPI beside a violet provider card makes the domain
+     * colour mean nothing. These stats differentiate by icon and label, which
+     * is what a reader actually uses. server/domainIdentity.test.ts fails the
+     * build if a domain hue reappears as page-local decoration.
+     */
     { id: 'projects', label: lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects', value: projects?.length ?? 0, icon: FolderOpen, color: 'text-blue-500', bg: 'bg-blue-50' },
     { id: 'active', label: t('dash.active_projects'), value: activeCount, icon: TrendingUp, color: 'text-green-500', bg: 'bg-green-50' },
     // A dash, not a zero: an account with no projects has no budget, and
     // "EGP 0" asserts a figure in a currency it has never transacted in.
     { id: 'budget', label: t('project.budget'), value: formatMoneyTotals(budgetTotals, lang, 2, { compact: true }) ?? '—', icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-50' },
-    { id: 'spent', label: t('dash.total_spent'), value: formatMoneyTotals(spentTotals, lang, 2, { compact: true }) ?? '—', icon: BarChart3, color: 'text-purple-500', bg: 'bg-purple-50' },
+    { id: 'spent', label: t('dash.total_spent'), value: formatMoneyTotals(spentTotals, lang, 2, { compact: true }) ?? '—', icon: BarChart3, color: 'text-foreground', bg: 'bg-muted' },
   ];
 
   const quickActions = [
     { label: t('dash.explore_market'), icon: ShoppingCart, href: '/marketplace', color: 'text-blue-500' },
     { label: t('dash.get_quotes'), icon: FileText, href: '/rfq', color: 'text-green-500' },
-    { label: t('dash.ai'), icon: Bot, href: '/ai', color: 'text-purple-500' },
+    { label: t('dash.ai'), icon: Bot, href: '/ai', color: 'text-foreground' },
     { label: t('dash.messages'), icon: Building2, href: '/messages', color: 'text-amber-500' },
   ];
 

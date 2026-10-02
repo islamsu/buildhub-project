@@ -1,0 +1,158 @@
+BUILD  e40ea19 (local) built 2026-10-02T16:58:26.404Z  http://127.0.0.1:5401
+PASS  en@375 both sections render  [explore=1414 browse=2665]
+PASS  en@375 hero/trust precedes the gateway  [666 < 1414]
+PASS  en@375 ON SCREEN the gateway is above Browse by Category  [1414 < 2665]
+PASS  en@375 three gateway cards  [3]
+PASS  en@375 no horizontal page scroll  [overflow=0px]
+PASS  en@375 document direction  [dir=ltr]
+PASS  en@375 a gateway card outweighs a category tile without colour  [card=83385px2 tile=4824px2]
+PASS  en@375 two domains and one workflow are on screen  [domain,domain,workflow]
+PASS  en@375 home-domain-products glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 195) on oklch(1 0 0) = 6.69]
+PASS  en@375 home-domain-products exposes a measurable CTA row
+PASS  en@375 home-domain-products CTA label clears AA as rendered  [14px needs 4.5:1, got 6.69 (oklch(0.45 0.11 195) on oklch(1 0 0))]
+PASS  en@375 home-domain-products carries an icon, not colour alone
+PASS  en@375 home-domain-products carries a text label  ["ProductsConstruction and finishing mater"]
+PASS  en@375 home-domain-providers glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@375 home-domain-providers exposes a measurable CTA row
+PASS  en@375 home-domain-providers CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@375 home-domain-providers carries an icon, not colour alone
+PASS  en@375 home-domain-providers carries a text label  ["Suppliers & professionalsApproved contra"]
+PASS  en@375 home-domain-quotes glyph clears 3:1 on its painted surface  [oklch(0.669 0.17 70) on oklch(1 0 0) = 3.11]
+PASS  en@375 home-domain-quotes exposes a measurable CTA row
+PASS  en@375 home-domain-quotes CTA label clears AA as rendered  [14px needs 4.5:1, got 8.26 (rgb(17, 24, 39) on rgb(245, 158, 11))]
+PASS  en@375 home-domain-quotes carries an icon, not colour alone
+PASS  en@375 home-domain-quotes carries a text label  ["Get QuotesDescribe the job once. Approve"]
+PASS  en@375 Products and Providers are visually distinct  [rgb distance 106]
+PASS  en@375 the page is not a rainbow  [4 hue families in use: 30, 180, 210, 240]
+PASS  en@768 both sections render  [explore=1005 browse=1711]
+PASS  en@768 hero/trust precedes the gateway  [574 < 1005]
+PASS  en@768 ON SCREEN the gateway is above Browse by Category  [1005 < 1711]
+PASS  en@768 three gateway cards  [3]
+PASS  en@768 no horizontal page scroll  [overflow=-6px]
+PASS  en@768 document direction  [dir=ltr]
+PASS  en@768 a gateway card outweighs a category tile without colour  [card=93075px2 tile=4824px2]
+PASS  en@768 two domains and one workflow are on screen  [domain,domain,workflow]
+PASS  en@768 home-domain-products glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 195) on oklch(1 0 0) = 6.69]
+PASS  en@768 home-domain-products exposes a measurable CTA row
+PASS  en@768 home-domain-products CTA label clears AA as rendered  [14px needs 4.5:1, got 6.69 (oklch(0.45 0.11 195) on oklch(1 0 0))]
+PASS  en@768 home-domain-products carries an icon, not colour alone
+PASS  en@768 home-domain-products carries a text label  ["ProductsConstruction and finishing mater"]
+PASS  en@768 home-domain-providers glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@768 home-domain-providers exposes a measurable CTA row
+PASS  en@768 home-domain-providers CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@768 home-domain-providers carries an icon, not colour alone
+PASS  en@768 home-domain-providers carries a text label  ["Suppliers & professionalsApproved contra"]
+PASS  en@768 home-domain-quotes glyph clears 3:1 on its painted surface  [oklch(0.669 0.17 70) on oklch(1 0 0) = 3.11]
+PASS  en@768 home-domain-quotes exposes a measurable CTA row
+PASS  en@768 home-domain-quotes CTA label clears AA as rendered  [14px needs 4.5:1, got 8.26 (rgb(17, 24, 39) on rgb(245, 158, 11))]
+PASS  en@768 home-domain-quotes carries an icon, not colour alone
+PASS  en@768 home-domain-quotes carries a text label  ["Get QuotesDescribe the job once. Approve"]
+PASS  en@768 Products and Providers are visually distinct  [rgb distance 106]
+PASS  en@768 the page is not a rainbow  [4 hue families in use: 30, 180, 210, 240]
+PASS  en@1440 both sections render  [explore=975 browse=1574]
+PASS  en@1440 hero/trust precedes the gateway  [617 < 975]
+PASS  en@1440 ON SCREEN the gateway is above Browse by Category  [975 < 1574]
+PASS  en@1440 three gateway cards  [3]
+PASS  en@1440 no horizontal page scroll  [overflow=-6px]
+PASS  en@1440 document direction  [dir=ltr]
+PASS  en@1440 a gateway card outweighs a category tile without colour  [card=121158px2 tile=4824px2]
+PASS  en@1440 two domains and one workflow are on screen  [domain,domain,workflow]
+PASS  en@1440 home-domain-products glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 195) on oklch(1 0 0) = 6.69]
+PASS  en@1440 home-domain-products exposes a measurable CTA row
+PASS  en@1440 home-domain-products CTA label clears AA as rendered  [14px needs 4.5:1, got 6.69 (oklch(0.45 0.11 195) on oklch(1 0 0))]
+PASS  en@1440 home-domain-products carries an icon, not colour alone
+PASS  en@1440 home-domain-products carries a text label  ["ProductsConstruction and finishing mater"]
+PASS  en@1440 home-domain-providers glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@1440 home-domain-providers exposes a measurable CTA row
+PASS  en@1440 home-domain-providers CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@1440 home-domain-providers carries an icon, not colour alone
+PASS  en@1440 home-domain-providers carries a text label  ["Suppliers & professionalsApproved contra"]
+PASS  en@1440 home-domain-quotes glyph clears 3:1 on its painted surface  [oklch(0.669 0.17 70) on oklch(1 0 0) = 3.11]
+PASS  en@1440 home-domain-quotes exposes a measurable CTA row
+PASS  en@1440 home-domain-quotes CTA label clears AA as rendered  [14px needs 4.5:1, got 8.26 (rgb(17, 24, 39) on rgb(245, 158, 11))]
+PASS  en@1440 home-domain-quotes carries an icon, not colour alone
+PASS  en@1440 home-domain-quotes carries a text label  ["Get QuotesDescribe the job once. Approve"]
+PASS  en@1440 Products and Providers are visually distinct  [rgb distance 106]
+PASS  en@1440 the page is not a rainbow  [4 hue families in use: 30, 180, 210, 240]
+PASS  ar@375 both sections render  [explore=1414 browse=2603]
+PASS  ar@375 hero/trust precedes the gateway  [666 < 1414]
+PASS  ar@375 ON SCREEN the gateway is above Browse by Category  [1414 < 2603]
+PASS  ar@375 three gateway cards  [3]
+PASS  ar@375 no horizontal page scroll  [overflow=0px]
+PASS  ar@375 document direction  [dir=rtl]
+PASS  ar@375 a gateway card outweighs a category tile without colour  [card=83385px2 tile=3888px2]
+PASS  ar@375 two domains and one workflow are on screen  [domain,domain,workflow]
+PASS  ar@375 home-domain-products glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 195) on oklch(1 0 0) = 6.69]
+PASS  ar@375 home-domain-products exposes a measurable CTA row
+PASS  ar@375 home-domain-products CTA label clears AA as rendered  [14px needs 4.5:1, got 6.69 (oklch(0.45 0.11 195) on oklch(1 0 0))]
+PASS  ar@375 home-domain-products carries an icon, not colour alone
+PASS  ar@375 home-domain-products carries a text label  ["المنتجاتمواد البناء والتشطيب من موردين م"]
+PASS  ar@375 home-domain-providers glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@375 home-domain-providers exposes a measurable CTA row
+PASS  ar@375 home-domain-providers CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@375 home-domain-providers carries an icon, not colour alone
+PASS  ar@375 home-domain-providers carries a text label  ["الموردون والمحترفونمقاولون ومهندسون ومعم"]
+PASS  ar@375 home-domain-quotes glyph clears 3:1 on its painted surface  [oklch(0.669 0.17 70) on oklch(1 0 0) = 3.11]
+PASS  ar@375 home-domain-quotes exposes a measurable CTA row
+PASS  ar@375 home-domain-quotes CTA label clears AA as rendered  [14px needs 4.5:1, got 8.26 (rgb(17, 24, 39) on rgb(245, 158, 11))]
+PASS  ar@375 home-domain-quotes carries an icon, not colour alone
+PASS  ar@375 home-domain-quotes carries a text label  ["اطلب عروض أسعارصِف العمل مرة واحدة، وتصل"]
+PASS  ar@375 Products and Providers are visually distinct  [rgb distance 106]
+PASS  ar@375 the page is not a rainbow  [4 hue families in use: 30, 180, 210, 240]
+PASS  ar@768 both sections render  [explore=952 browse=1636]
+PASS  ar@768 hero/trust precedes the gateway  [521 < 952]
+PASS  ar@768 ON SCREEN the gateway is above Browse by Category  [952 < 1636]
+PASS  ar@768 three gateway cards  [3]
+PASS  ar@768 no horizontal page scroll  [overflow=-6px]
+PASS  ar@768 document direction  [dir=rtl]
+PASS  ar@768 a gateway card outweighs a category tile without colour  [card=88038px2 tile=3888px2]
+PASS  ar@768 two domains and one workflow are on screen  [domain,domain,workflow]
+PASS  ar@768 home-domain-products glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 195) on oklch(1 0 0) = 6.69]
+PASS  ar@768 home-domain-products exposes a measurable CTA row
+PASS  ar@768 home-domain-products CTA label clears AA as rendered  [14px needs 4.5:1, got 6.69 (oklch(0.45 0.11 195) on oklch(1 0 0))]
+PASS  ar@768 home-domain-products carries an icon, not colour alone
+PASS  ar@768 home-domain-products carries a text label  ["المنتجاتمواد البناء والتشطيب من موردين م"]
+PASS  ar@768 home-domain-providers glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@768 home-domain-providers exposes a measurable CTA row
+PASS  ar@768 home-domain-providers CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@768 home-domain-providers carries an icon, not colour alone
+PASS  ar@768 home-domain-providers carries a text label  ["الموردون والمحترفونمقاولون ومهندسون ومعم"]
+PASS  ar@768 home-domain-quotes glyph clears 3:1 on its painted surface  [oklch(0.669 0.17 70) on oklch(1 0 0) = 3.11]
+PASS  ar@768 home-domain-quotes exposes a measurable CTA row
+PASS  ar@768 home-domain-quotes CTA label clears AA as rendered  [14px needs 4.5:1, got 8.26 (rgb(17, 24, 39) on rgb(245, 158, 11))]
+PASS  ar@768 home-domain-quotes carries an icon, not colour alone
+PASS  ar@768 home-domain-quotes carries a text label  ["اطلب عروض أسعارصِف العمل مرة واحدة، وتصل"]
+PASS  ar@768 Products and Providers are visually distinct  [rgb distance 106]
+PASS  ar@768 the page is not a rainbow  [4 hue families in use: 30, 180, 210, 240]
+PASS  ar@1440 both sections render  [explore=896 browse=1495]
+PASS  ar@1440 hero/trust precedes the gateway  [557 < 896]
+PASS  ar@1440 ON SCREEN the gateway is above Browse by Category  [896 < 1495]
+PASS  ar@1440 three gateway cards  [3]
+PASS  ar@1440 no horizontal page scroll  [overflow=-6px]
+PASS  ar@1440 document direction  [dir=rtl]
+PASS  ar@1440 a gateway card outweighs a category tile without colour  [card=121158px2 tile=3888px2]
+PASS  ar@1440 two domains and one workflow are on screen  [domain,domain,workflow]
+PASS  ar@1440 home-domain-products glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 195) on oklch(1 0 0) = 6.69]
+PASS  ar@1440 home-domain-products exposes a measurable CTA row
+PASS  ar@1440 home-domain-products CTA label clears AA as rendered  [14px needs 4.5:1, got 6.69 (oklch(0.45 0.11 195) on oklch(1 0 0))]
+PASS  ar@1440 home-domain-products carries an icon, not colour alone
+PASS  ar@1440 home-domain-products carries a text label  ["المنتجاتمواد البناء والتشطيب من موردين م"]
+PASS  ar@1440 home-domain-providers glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@1440 home-domain-providers exposes a measurable CTA row
+PASS  ar@1440 home-domain-providers CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@1440 home-domain-providers carries an icon, not colour alone
+PASS  ar@1440 home-domain-providers carries a text label  ["الموردون والمحترفونمقاولون ومهندسون ومعم"]
+PASS  ar@1440 home-domain-quotes glyph clears 3:1 on its painted surface  [oklch(0.669 0.17 70) on oklch(1 0 0) = 3.11]
+PASS  ar@1440 home-domain-quotes exposes a measurable CTA row
+PASS  ar@1440 home-domain-quotes CTA label clears AA as rendered  [14px needs 4.5:1, got 8.26 (rgb(17, 24, 39) on rgb(245, 158, 11))]
+PASS  ar@1440 home-domain-quotes carries an icon, not colour alone
+PASS  ar@1440 home-domain-quotes carries a text label  ["اطلب عروض أسعارصِف العمل مرة واحدة، وتصل"]
+PASS  ar@1440 Products and Providers are visually distinct  [rgb distance 106]
+PASS  ar@1440 the page is not a rainbow  [4 hue families in use: 30, 180, 210, 240]
+PASS  keyboard: the gateway is in the DOM
+PASS  keyboard: every card and preset is focusable  [5 stops]
+PASS  KEYBOARD: NO INTERACTIVE ELEMENT IS NESTED IN ANOTHER  [none]
+PASS  keyboard: no span is impersonating a link  [0]
+PASS  keyboard: both provider presets render  [2]
+
+OK  pass=155 fail=0

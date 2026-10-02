@@ -199,21 +199,30 @@ export default function RolePlatform() {
      * no budget, and "EGP 0" states a fact about a currency it has never used.
      */
     { label: t('project.budget'), value: formatMoneyTotals(sumByCurrency(projects.map(project => ({ amount: project.budget, currency: project.currency }))), lang, 2, { compact: true }) ?? '—', icon: DollarSign, tone: 'text-amber-600 bg-amber-50' },
-    { label: t('dash.total_spent'), value: formatMoneyTotals(sumByCurrency(projects.map(project => ({ amount: project.spent, currency: project.currency }))), lang, 2, { compact: true }) ?? '—', icon: BarChart3, tone: 'text-violet-600 bg-violet-50' },
+    /*
+     * NO VIOLET, PURPLE, CYAN OR TEAL IN HERE, and it is not a style
+     * preference. Those hues now carry DOMAIN meaning product-wide - teal is
+     * Products, violet is Providers (components/brand/domainIdentity.ts) - so
+     * a decorative violet KPI beside a violet provider card makes the domain
+     * colour mean nothing. These stats differentiate by icon and label, which
+     * is what a reader actually uses. server/domainIdentity.test.ts fails the
+     * build if a domain hue reappears as page-local decoration.
+     */
+    { label: t('dash.total_spent'), value: formatMoneyTotals(sumByCurrency(projects.map(project => ({ amount: project.spent, currency: project.currency }))), lang, 2, { compact: true }) ?? '—', icon: BarChart3, tone: 'text-foreground bg-muted' },
   ] : role === 'supplier' ? [
     { label: lang === 'ar' ? 'المنتجات المدرجة' : 'Listed Products', value: products.length, icon: Package, tone: 'text-orange-600 bg-orange-50', section: 'role-catalogue' },
     { label: lang === 'ar' ? 'طلبات مفتوحة' : 'Open Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-blue-600 bg-blue-50', section: 'role-rfqs' },
     { label: lang === 'ar' ? 'مخزون منخفض' : 'Low Stock', value: products.filter(product => Number(product.stock ?? 0) < 10).length, icon: PackagePlus, tone: 'text-rose-600 bg-rose-50', section: 'role-catalogue' },
-    { label: lang === 'ar' ? 'عروض الأسعار' : 'My Quotations', value: myQuotations.length, icon: FileText, tone: 'text-violet-600 bg-violet-50', section: 'role-quotations' },
+    { label: lang === 'ar' ? 'عروض الأسعار' : 'My Quotations', value: myQuotations.length, icon: FileText, tone: 'text-foreground bg-muted', section: 'role-quotations' },
   ] : role === 'project_manager' ? [
     /*
      * A PROJECT MANAGER'S OWN WORK, not the platform's. Both of these counted
      * `projectDirectory` - every project that exists - under labels that read
      * as "mine".
      */
-    { label: t('platform.projects'), value: managedProjects.length, icon: FolderKanban, tone: 'text-cyan-600 bg-cyan-50', section: 'role-queue' },
+    { label: t('platform.projects'), value: managedProjects.length, icon: FolderKanban, tone: 'text-foreground bg-muted', section: 'role-queue' },
     { label: t('dash.active_projects'), value: managedProjects.filter(project => project.status === 'active').length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50', section: 'role-queue' },
-    { label: lang === 'ar' ? 'متوسط الإنجاز' : 'Average Progress', value: averageProgress === null ? '—' : `${averageProgress}%`, icon: BarChart3, tone: 'text-violet-600 bg-violet-50', section: 'role-queue' },
+    { label: lang === 'ar' ? 'متوسط الإنجاز' : 'Average Progress', value: averageProgress === null ? '—' : `${averageProgress}%`, icon: BarChart3, tone: 'text-foreground bg-muted', section: 'role-queue' },
     { label: lang === 'ar' ? 'الطلبات المفتوحة' : 'Open Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-amber-600 bg-amber-50', section: 'role-rfqs' },
   ] : [
     // The contractor's requests card is the pipeline; engineer and architect
@@ -221,7 +230,7 @@ export default function RolePlatform() {
     // quotation KPIs lead to it - previously only the contractor's did, because
     // only the contractor had somewhere for them to go.
     { label: lang === 'ar' ? 'الطلبات المؤهلة' : 'Qualified Requests', value: matchingRfqs.length, icon: ClipboardList, tone: 'text-blue-600 bg-blue-50', section: role === 'contractor' ? 'role-pipeline' : 'role-rfqs' },
-    { label: lang === 'ar' ? 'عروض الأسعار' : 'My Quotations', value: myQuotations.length, icon: FileText, tone: 'text-violet-600 bg-violet-50', section: 'role-quotations' },
+    { label: lang === 'ar' ? 'عروض الأسعار' : 'My Quotations', value: myQuotations.length, icon: FileText, tone: 'text-foreground bg-muted', section: 'role-quotations' },
     { label: lang === 'ar' ? 'العروض المقبولة' : 'Accepted Quotes', value: awardedQuotes.length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50', section: 'role-quotations' },
     /*
      * COUNTED, NOT GUESSED. This read `projectDirectory.length` - every project
@@ -237,18 +246,18 @@ export default function RolePlatform() {
     { label: t('dash.create_project'), icon: Plus, onClick: () => navigate('/dashboard'), tone: 'text-blue-600' },
     { label: t('dash.get_quotes'), icon: FileText, onClick: () => navigate('/rfq'), tone: 'text-emerald-600' },
     { label: t('dash.explore_market'), icon: ShoppingBag, onClick: () => navigate('/marketplace'), tone: 'text-amber-600' },
-    { label: t('dash.ask_ai'), icon: Sparkles, onClick: () => navigate('/ai'), tone: 'text-violet-600' },
+    { label: t('dash.ask_ai'), icon: Sparkles, onClick: () => navigate('/ai'), tone: 'text-foreground' },
   ] : role === 'supplier' ? [
     { label: t('platform.new_listing'), icon: PackagePlus, onClick: () => navigate('/products/new'), tone: 'text-orange-600' },
     { label: t('platform.review_requests'), icon: ClipboardList, onClick: () => navigate('/rfq'), tone: 'text-blue-600' },
-    { label: t('platform.projects'), icon: BriefcaseBusiness, onClick: () => goToSection('role-projects'), tone: 'text-cyan-600' },
-    { label: t('dash.messages'), icon: MessageSquare, onClick: () => navigate('/messages'), tone: 'text-violet-600' },
+    { label: t('platform.projects'), icon: BriefcaseBusiness, onClick: () => goToSection('role-projects'), tone: 'text-foreground' },
+    { label: t('dash.messages'), icon: MessageSquare, onClick: () => navigate('/messages'), tone: 'text-foreground' },
   ] : role === 'project_manager' ? [
-    { label: t('platform.managed_projects'), icon: KanbanSquare, onClick: () => goToSection('role-queue'), tone: 'text-cyan-600' },
+    { label: t('platform.managed_projects'), icon: KanbanSquare, onClick: () => goToSection('role-queue'), tone: 'text-foreground' },
     /* Was "Team", and went to Messages - the same defect the note below
        describes, two lines above the note. Team structure is an open owner
        decision; the shortcut says what it does. */
-    { label: t('dash.messages'), icon: MessageSquare, onClick: () => navigate('/messages'), tone: 'text-violet-600' },
+    { label: t('dash.messages'), icon: MessageSquare, onClick: () => navigate('/messages'), tone: 'text-foreground' },
     /* "Documents" used to sit here and scroll to the project list. A project
        manager's documents live on a project, not on this page, and a shortcut
        that lands somewhere other than its label is the same defect as one that
@@ -262,12 +271,12 @@ export default function RolePlatform() {
        not exist here. */
     { label: t('platform.pipeline'), icon: ClipboardList, onClick: () => goToSection('role-pipeline'), tone: 'text-blue-600' },
     { label: t('platform.projects'), icon: BriefcaseBusiness, onClick: () => goToSection('role-projects'), tone: 'text-amber-600' },
-    { label: t('dash.messages'), icon: MessageSquare, onClick: () => navigate('/messages'), tone: 'text-violet-600' },
+    { label: t('dash.messages'), icon: MessageSquare, onClick: () => navigate('/messages'), tone: 'text-foreground' },
     { label: t('dash.ai'), icon: Sparkles, onClick: () => navigate('/ai'), tone: 'text-emerald-600' },
   ] : [
     { label: t('platform.review_requests'), icon: ClipboardList, onClick: () => goToSection('role-rfqs'), tone: 'text-blue-600' },
     { label: t('platform.projects'), icon: BriefcaseBusiness, onClick: () => goToSection('role-projects'), tone: 'text-amber-600' },
-    { label: t('dash.messages'), icon: MessageSquare, onClick: () => navigate('/messages'), tone: 'text-violet-600' },
+    { label: t('dash.messages'), icon: MessageSquare, onClick: () => navigate('/messages'), tone: 'text-foreground' },
     { label: t('dash.ai'), icon: Sparkles, onClick: () => navigate('/ai'), tone: 'text-emerald-600' },
   ];
 
@@ -509,7 +518,7 @@ function HomeownerWorkspace({ projects, t, lang, navigate }: { projects: any[]; 
   return (
     <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
       <Card id="role-projects"><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><FolderKanban className="h-5 w-5" />{t('dash.recent_projects')}</CardTitle><Button variant="outline" size="sm" onClick={() => navigate('/dashboard')}>{t('dash.view_all')}</Button></CardHeader><CardContent>{projects.length === 0 ? <EmptyState text={t('dash.no_projects')} /> : <div className="space-y-3">{projects.slice(0, 5).map(project => <ManagedProjectCard key={project.id} project={project} lang={lang} progressLabel={t('project.progress')} statusLabel={localizedStatus(project.status, t)} />)}</div>}</CardContent></Card>
-      <Card><CardHeader><CardTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-violet-500" />{t('dash.ask_ai')}</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">{lang === 'ar' ? 'احصل على تقدير أولي للتكلفة ونصائح للمواد والجدول الزمني.' : 'Get an early cost estimate and practical guidance on materials and timelines.'}</p><Button className="mt-4 w-full" onClick={() => navigate('/ai')}>{t('dash.ask_ai')}</Button></CardContent></Card>
+      <Card><CardHeader><CardTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-primary" />{t('dash.ask_ai')}</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">{lang === 'ar' ? 'احصل على تقدير أولي للتكلفة ونصائح للمواد والجدول الزمني.' : 'Get an early cost estimate and practical guidance on materials and timelines.'}</p><Button className="mt-4 w-full" onClick={() => navigate('/ai')}>{t('dash.ask_ai')}</Button></CardContent></Card>
     </div>
   );
 }

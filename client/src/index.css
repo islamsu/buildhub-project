@@ -147,6 +147,59 @@
   --color-brand-blue-500: #1B6BFF;                 /* Secondary Blue - THE ANCHOR, literal */
   --color-brand-blue-600: oklch(48.6% 0.228 262);  /* #004DDD */
 
+  /* ── DOMAIN WAYFINDING, WHICH IS NOT BRAND AND NOT STATUS ───────────────
+   *
+   * A fourth job for colour, and it has to be kept apart from the other
+   * three or all of them stop meaning anything:
+   *
+   *   BRAND      whose platform is this        navy, amber, secondary blue
+   *   DOMAIN     which part of the marketplace teal, violet   <- here
+   *   STATUS     what happened / what state    success, warning, error, info
+   *   PLACEMENT  why is this emphasised        Featured, Sponsored
+   *
+   * The separation is the established one: Fluent 2 splits neutral / shared /
+   * brand and reserves semantic colours for feedback and status; Carbon ships
+   * exactly four support tokens and nothing else may enter that family;
+   * Material 3 puts accent roles on "smaller elements that need special
+   * emphasis" rather than on surfaces.
+   *
+   * ── WHY ONLY TWO ───────────────────────────────────────────────────────
+   *
+   * Because the product has two public marketplace domains. /marketplace/products
+   * is the catalogue; /marketplace/vendors is ONE directory holding all five
+   * provider roles. Designers and Finishing are that same directory with a
+   * CATEGORY preset - not separate architectures - so they inherit the
+   * provider accent and are told apart by icon and label.
+   *
+   * The pre-RAKIZA system had ten identities across two incompatible tables,
+   * four of them colliding with status meanings - vendors in emerald (success),
+   * finishing in amber (warning), engineer in green, contractor in amber. That
+   * was the rainbow. Two hues, each ~45 degrees clear of every status family
+   * and of navy, is wayfinding; six arbitrary hues is decoration.
+   *
+   * Add a third ONLY when the architecture gains a real third domain.
+   *
+   * ── WHERE THEY MAY BE USED ─────────────────────────────────────────────
+   *
+   * Icons, small tinted surfaces, thin markers, selected states. NEVER a card
+   * body, never a page background, never text on a dark photograph. Domain
+   * colour is supplemental: every domain also carries an icon and a label, so
+   * the page is still readable in grayscale (WCAG 2.2 SC 1.4.1).
+   */
+  /* THESE REFERENCE THE RUNTIME VARIABLE, which every other token in this
+   * block does NOT. The rest are literals, so `bg-primary` inlines #0F2D5B and
+   * the `.dark` override below cannot reach it - dark mode is currently inert
+   * for Tailwind utilities and only reaches hand-written `var(--primary)` CSS.
+   * That is pre-existing, invisible today (ThemeProvider is pinned to light,
+   * with no switcher) and deliberately NOT fixed inside this bounded
+   * correction. The domain tokens are simply not built that way: `inline` here
+   * inlines `var(--domain-products)`, which resolves at runtime and therefore
+   * honours the theme. */
+  --color-domain-products:       var(--domain-products);
+  --color-domain-products-tint:  var(--domain-products-tint);
+  --color-domain-providers:      var(--domain-providers);
+  --color-domain-providers-tint: var(--domain-providers-tint);
+
   /* ── NEUTRAL GRAY, WHICH IS NOT A TEXT COLOUR ───────────────────────────
    *
    * #94A3B8 is 2.56:1 on white. It is in the approved palette and it is
@@ -210,6 +263,12 @@
   --brand-blue-400: oklch(67.6% 0.186 262);
   --brand-blue-500: #1B6BFF;
   --brand-blue-600: oklch(48.6% 0.228 262);
+
+  /* Domain wayfinding. Two, because the architecture has two. See @theme. */
+  --domain-products:       oklch(45% 0.110 195);
+  --domain-products-tint:  oklch(96% 0.025 195);
+  --domain-providers:      oklch(45% 0.110 300);
+  --domain-providers-tint: oklch(96% 0.025 300);
 
   /* Neutral Gray #94A3B8. Dividers and rules — not text. */
   --brand-neutral: #94A3B8;
@@ -312,6 +371,23 @@
   --success: oklch(68% 0.16 145);
   --warning: oklch(78% 0.15 75);
   --info:    oklch(68% 0.14 240);
+
+  /* ── DOMAIN COLOURS DO INVERT, UNLIKE THE BRAND SCALE ───────────────────
+   *
+   * The brand ramp is a palette and does not flip: `brand-600` means one
+   * colour in both modes, and what changes is which STEP a surface reaches
+   * for. A domain token is not a step - it is a single role-based value, so
+   * it has to resolve differently per theme or the teal that reads at 6.69:1
+   * on white reads at 1.6:1 on near-black.
+   *
+   * There is no theme switcher and none is being built; ThemeProvider is
+   * fixed to light. These exist so the semantic system is structurally
+   * complete rather than silently broken the day a switcher appears.
+   */
+  --domain-products:       oklch(78% 0.100 195);   /* #5ECBCB  10.44 on the dark page */
+  --domain-products-tint:  oklch(24% 0.045 195);
+  --domain-providers:      oklch(78% 0.100 300);   /* #C1A9EE   9.77 on the dark page */
+  --domain-providers-tint: oklch(24% 0.045 300);
 
   /* THE BRAND SCALE IS A PALETTE, NOT A THEME, so it does NOT invert: amber
    * is amber in both modes. What changes is which step a surface reaches for,
