@@ -50,7 +50,18 @@ services:
     # truth, but an already-provisioned Render service may still require a
     # Blueprint sync or dashboard branch change before the live service follows
     # it. Never call staging current until /version proves the served SHA.
-    branch: claude/buildhub-global-release-candidate
+    #
+    # ── WHY THIS IS THE AUDIT BRANCH AND NOT THE RC BRANCH ───────────────
+    #
+    # The owner asked for the frozen review candidate on staging AND for the
+    # previous RC branch pointer to be preserved for provenance - explicitly,
+    # "do NOT fast-forward claude/buildhub-global-release-candidate merely to
+    # make staging deploy". Those two requirements can only both hold by
+    # pointing staging at the branch that actually carries the candidate.
+    # claude/buildhub-global-release-candidate therefore stays where it is, as
+    # the record of what the RC was at that point, and is not the deploy
+    # source during this review.
+    branch: claude/buildhub-audit-verification-vrai7l
     autoDeploy: true
 
     # Liveness, deliberately - not /readyz. A database blip must not make Render
