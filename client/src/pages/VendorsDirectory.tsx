@@ -305,7 +305,12 @@ function VendorCard({
       >
         {sponsored && (
           <div className="mb-2.5 flex items-center gap-1.5">
-            <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-900 text-[10px] font-medium">
+            {/* Neutral, for the same reason as the canonical badge in
+                MasterPlacement: amber is now the brand accent, and a paid slot
+                must not be able to read as RAKIZA's own emphasis. The word and
+                the Megaphone carry the disclosure; the colour carries none of
+                it. */}
+            <Badge variant="outline" className="border-border bg-muted text-muted-foreground text-[10px] font-medium">
               <Megaphone className="w-2.5 h-2.5 me-1" />{t('vendorsDir.sponsored')}
             </Badge>
           </div>

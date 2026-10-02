@@ -48,7 +48,21 @@ export function PlacementBadge({ label }: { label: PlacementLabel }) {
   return (
     <Badge
       variant="outline"
-      className={`gap-1.5 ${sponsored ? 'border-amber-500/60 text-amber-700 dark:text-amber-400' : 'border-emerald-500/60 text-emerald-700 dark:text-emerald-400'}`}
+      /*
+       * SPONSORED IS NEUTRAL, AND THAT IS A BRAND CONSEQUENCE.
+       *
+       * It used to be amber. Amber is now RAKIZA's accent - the colour of the
+       * primary action on every surface - so a paid slot wearing it could read
+       * as the platform's own emphasis, which is the precise thing §18 and §68
+       * forbid: giving a commercial booking RAKIZA's editorial credibility.
+       *
+       * A restrained neutral says "this is here because somebody paid" without
+       * borrowing anything. It is distinguishable from Featured (which keeps
+       * its own treatment, deliberately untouched) and from a brand CTA, and
+       * NONE of that distinction rests on colour: the word differs, the icon
+       * differs, and a filled amber button is a different element entirely.
+       */
+      className={`gap-1.5 ${sponsored ? 'border-border bg-muted/70 text-muted-foreground' : 'border-emerald-500/60 text-emerald-700 dark:text-emerald-400'}`}
       data-testid={sponsored ? 'placement-sponsored' : 'placement-featured'}
     >
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
