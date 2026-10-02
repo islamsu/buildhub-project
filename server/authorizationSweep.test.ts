@@ -433,13 +433,21 @@ describe('§2b marketplace', () => {
     // `list` filtered active=true; `get` did not, so a product the supplier had
     // withdrawn stayed fully readable by id.
     //
-    // The predicate is now `publicProductFilter()` rather than an inline
-    // `eq(products.active, true)`: "withdrawn" grew from one boolean into four
-    // states (draft, live, off sale, archived), and an inline literal at each
-    // reader is what would let one of them keep serving drafts. The class-level
-    // census over every products reader lives in productLifecycle.test.ts.
+    // The predicate grew twice, and both times in the strict direction.
+    // First from an inline `eq(products.active, true)` to
+    // `publicProductFilter()`, because "withdrawn" became four states (draft,
+    // live, off sale, archived) and an inline literal at each reader is what
+    // lets one of them keep serving drafts. Then to
+    // `publicMarketplaceProductFilter()`, which adds the SELLER: a suspended
+    // supplier's product page offered the normal buying experience for a
+    // business nobody can transact with.
+    //
+    // Asserted as "the canonical public authority" rather than one name, so the
+    // next strengthening does not read as a regression here. The class-level
+    // census over every products reader is in publicEligibility.test.ts.
     const body = procedureBody('marketplace.get');
-    expect(body).toContain('publicProductFilter()');
+    expect(body, 'marketplace.get is not using the canonical public authority')
+      .toContain('publicMarketplaceProductFilter()');
   });
 
   it('REGRESSION: marketplace.questions does not expose askerId', () => {
@@ -476,7 +484,8 @@ describe('§2b marketplace', () => {
     expect(body).not.toMatch(/productId > \d/);
     // THE SAME predicate as marketplace.get, and that is now literally true
     // rather than true by matching spelling: both call the one filter.
-    expect(body).toContain('publicProductFilter()');
+    expect(body, 'askQuestion drifted from marketplace.get')
+      .toContain('publicMarketplaceProductFilter()');
     expect(body).toContain("code: 'NOT_FOUND'");
   });
 

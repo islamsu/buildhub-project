@@ -125,7 +125,13 @@ describe('the product count is the size of the catalogue', () => {
     // products. It can only be kept by counting with the predicate the
     // marketplace lists with - so this module must not spell out its own.
     const source = readFileSync(new URL('./platformStats.ts', import.meta.url), 'utf8');
-    expect(source).toContain('publicProductFilter()');
+    /* The CATALOGUE's rule, whatever it currently is - that is the claim this
+       test makes and it survives the rule getting stricter. It is now
+       `publicMarketplaceProductFilter()`, product state plus seller standing,
+       so the headline "X Products" still promises exactly what clicking
+       through delivers. */
+    expect(source, 'the count stopped using the catalogue authority')
+      .toContain('publicMarketplaceProductFilter()');
     expect(source, 'a second, inline visibility rule would drift from the catalogue')
       .not.toContain('products.status');
     expect(source).not.toContain('products.active');

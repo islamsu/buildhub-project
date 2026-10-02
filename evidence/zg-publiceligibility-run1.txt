@@ -1,0 +1,66 @@
+BUILD  179dcc8 (local) built 2026-10-02T20:22:39.904Z  http://127.0.0.1:5401
+PASS  1. eligible + eligible: public catalogue  [: list=true search=true vendor=true detail=true featured=true sponsored=true count=30]
+PASS  1. eligible + eligible: search
+PASS  1. eligible + eligible: public vendor products
+PASS  1. eligible + eligible: product detail
+PASS  1. eligible + eligible: Featured
+PASS  1. eligible + eligible: Sponsored
+PASS  1. eligible + eligible: counted in the public product total  [canonical count=30]
+PASS  1. §18 the public endpoint counts with the SAME authority as the rows  [endpoint=30 canonical=30 (60s cache)]
+PASS  2. off-sale + eligible: absent from the catalogue  [: list=false search=false vendor=false detail=false featured=false sponsored=false count=29]
+PASS  2. off-sale + eligible: absent from search
+PASS  2. off-sale + eligible: absent from public vendor products
+PASS  2. off-sale + eligible: detail is the canonical NOT_FOUND  [NOT_FOUND]
+PASS  2. off-sale + eligible: absent from Featured
+PASS  2. off-sale + eligible: absent from Sponsored
+PASS  2. off-sale + eligible: the public count dropped by exactly one  [30 -> 29]
+PASS  3. suspended: the PRODUCT is still legitimately active  [lifecycle untouched - §2]
+PASS  3. suspended: absent from the public catalogue  [: list=false search=false vendor=false detail=false featured=false sponsored=false count=29]
+PASS  3. suspended: absent from search
+PASS  3. suspended: absent from public vendor products
+PASS  3. suspended: detail is the canonical NOT_FOUND  [NOT_FOUND]
+PASS  3. suspended: absent from Featured
+PASS  3. suspended: absent from Sponsored
+PASS  3. suspended: the public count dropped by exactly one  [30 -> 29]
+PASS  3. suspended: the public CATEGORY count dropped too - rows and counts agree  [1 -> 0]
+PASS  3. suspended: the refusal names no reason  [NOT_FOUND]
+PASS  4. deactivated: the PRODUCT is still legitimately active  [lifecycle untouched - §2]
+PASS  4. deactivated: absent from the public catalogue  [: list=false search=false vendor=false detail=false featured=false sponsored=false count=29]
+PASS  4. deactivated: absent from search
+PASS  4. deactivated: absent from public vendor products
+PASS  4. deactivated: detail is the canonical NOT_FOUND  [NOT_FOUND]
+PASS  4. deactivated: absent from Featured
+PASS  4. deactivated: absent from Sponsored
+PASS  4. deactivated: the public count dropped by exactly one  [30 -> 29]
+PASS  4. deactivated: the public CATEGORY count dropped too - rows and counts agree  [1 -> 0]
+PASS  4. deactivated: the refusal names no reason  [NOT_FOUND]
+PASS  5. unapproved: the PRODUCT is still legitimately active  [lifecycle untouched - §2]
+PASS  5. unapproved: absent from the public catalogue  [: list=false search=false vendor=false detail=false featured=false sponsored=false count=29]
+PASS  5. unapproved: absent from search
+PASS  5. unapproved: absent from public vendor products
+PASS  5. unapproved: detail is the canonical NOT_FOUND  [NOT_FOUND]
+PASS  5. unapproved: absent from Featured
+PASS  5. unapproved: absent from Sponsored
+PASS  5. unapproved: the public count dropped by exactly one  [30 -> 29]
+PASS  5. unapproved: the public CATEGORY count dropped too - rows and counts agree  [1 -> 0]
+PASS  5. unapproved: the refusal names no reason  [NOT_FOUND]
+PASS  6. restored seller: back in the public catalogue  [: list=true search=true vendor=true detail=true featured=true sponsored=true count=30]
+PASS  6. restored seller: back in search
+PASS  6. restored seller: back in public vendor products
+PASS  6. restored seller: detail answers again
+PASS  6. restored seller: Featured follows its own independent state
+PASS  6. restored seller: Sponsored follows its own independent state
+PASS  6. restored seller: the count is back where it started  [30 vs 30]
+PASS  6. AND NOTHING REWROTE THE PRODUCT TO GET HERE - §2, §11  [active/1/-]
+PASS  §10 Featured is a SUBSET of public marketplace eligibility  [strays: none]
+PASS  §10 Sponsored is a SUBSET of public marketplace eligibility  [strays: none]
+PASS  §12 rfqItems keeps its own name, independent of the product  [name]
+PASS  §12 rfqItems keeps its own quantity, independent of the product  [quantity]
+PASS  §12 rfqItems keeps its own unit, independent of the product  [unit]
+PASS  §12 rfqItems keeps its own specifications, independent of the product  [specifications]
+PASS  §12 rfqItems keeps its own unitPriceSnapshot, independent of the product  [unitPriceSnapshot]
+PASS  §12 an RFQ line survives its product being removed  [SET NULL]
+PASS  §12 quotation lines hold no product reference at all  [id,quotationId,component,tradeGroup,description,quantity,unit,rate,lineTotal,pos]
+PASS  §14 product discovery gained no market dimension  [no market column on products]
+
+ALL PASS  63 passed, 0 failed

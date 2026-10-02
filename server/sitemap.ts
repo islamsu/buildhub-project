@@ -8,9 +8,10 @@
  *
  * ── THE SAME PREDICATES THE CATALOGUE USES, NOT NEW ONES ─────────────────
  *
- * Every product URL comes from `publicProductFilter()` and every provider URL
- * from `directoryVisibilityFilter()` - the canonical predicates the marketplace
- * itself reads through. §11: one canonical rule, not a second copy that drifts.
+ * Every product URL comes from `publicMarketplaceProductFilter()` and every
+ * provider URL from `directoryVisibilityFilter()` - the canonical predicates the
+ * marketplace itself reads through. §11: one canonical rule, not a second copy
+ * that drifts.
  *
  * The drift would not be cosmetic. A sitemap built from its own idea of
  * "visible" would advertise drafts, withdrawn products, archived rows or
@@ -29,7 +30,7 @@
 import { desc } from 'drizzle-orm';
 import { products, users } from '../drizzle/schema';
 import { requireDb } from './_core/requireDb';
-import { publicProductFilter } from './productLifecycle';
+import { publicMarketplaceProductFilter } from './publicEligibility';
 import { directoryVisibilityFilter } from './vendorDirectory';
 import { PUBLIC_SEO_ROUTES, canonicalUrl } from '../shared/seo';
 
@@ -78,10 +79,15 @@ export async function collectSitemapEntries(origin: string): Promise<SitemapColl
     entries.push({ loc, lastmod: null, priority: route.path === '/' ? '1.0' : '0.8' });
   }
 
+  /* THE SAME AUTHORITY AS THE CATALOGUE, or the sitemap publishes dead URLs.
+     marketplace.get now answers NOT_FOUND for a product whose seller the
+     directory does not list, so a sitemap built on the product gate alone
+     would hand crawlers a list of 404s and ask them to index a suspended
+     company's catalogue. */
   const productRows = await db
     .select({ id: products.id, updatedAt: products.updatedAt })
     .from(products)
-    .where(publicProductFilter())
+    .where(publicMarketplaceProductFilter())
     .orderBy(desc(products.updatedAt))
     .limit(SITEMAP_URL_LIMIT);
 

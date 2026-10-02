@@ -24,6 +24,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { productCategories, productCategoryAliases, products } from '../drizzle/schema';
 import { PRODUCT_PUBLIC_STATUS } from '../shared/productLifecycle';
 import { normalizeCategoryKey, type CategoryScope, type CategoryStatus } from '../shared/categoryTaxonomy';
+import { publicMarketplaceProductFilter } from './publicEligibility';
 
 export type CanonicalCategory = {
   id: number;
@@ -277,22 +278,50 @@ export function adminCategories(index: CategoryIndex): CanonicalCategory[] {
   return index.all;
 }
 
-/** Real product counts per category. Never estimated, never fabricated. */
-export async function categoryUsage(db: any): Promise<Map<number, { products: number; activeProducts: number }>> {
+/**
+ * Real product counts per category. Never estimated, never fabricated.
+ *
+ * ── THREE NUMBERS, BECAUSE TWO AUDIENCES ASK DIFFERENT QUESTIONS ──────────
+ *
+ * This one query serves the public category rail and the Admin categories
+ * page, and they do not want the same count:
+ *
+ *   products        every row in the category, whatever its state. Admin's
+ *                   dependency check before renaming or retiring a category.
+ *   activeProducts  published rows. What Admin means by "live listings",
+ *                   independent of who happens to be suspended today.
+ *   publicProducts  what a VISITOR can actually open: published AND sold by a
+ *                   provider the directory lists.
+ *
+ * The public rail reads `publicProducts`, Admin keeps the other two. Before
+ * this split the rail printed `activeProducts`, so a suspended supplier's ten
+ * listings went on inflating a public count whose rows had stopped being
+ * reachable - §18's "counts and rows disagreeing", on the home page.
+ *
+ * STILL ONE GROUPED QUERY. The seller test is a conditional SUM over the same
+ * scan, not a lookup per category and not a second round trip.
+ */
+export async function categoryUsage(
+  db: any,
+): Promise<Map<number, { products: number; activeProducts: number; publicProducts: number }>> {
   const rows = await db.select({
     categoryId: products.categoryId,
     total: sql<number>`count(*)`,
     // "Active" here means LIVE IN THE MARKETPLACE, counted from the
     // authoritative status rather than the legacy boolean beside it.
     active: sql<number>`sum(case when ${products.status} = ${PRODUCT_PUBLIC_STATUS} then 1 else 0 end)`,
+    // And publicly reachable: the same two gates the catalogue applies, which
+    // is why the seller subquery is the canonical one rather than a copy.
+    publiclyVisible: sql<number>`sum(case when ${publicMarketplaceProductFilter()} then 1 else 0 end)`,
   }).from(products).groupBy(products.categoryId);
 
-  const usage = new Map<number, { products: number; activeProducts: number }>();
+  const usage = new Map<number, { products: number; activeProducts: number; publicProducts: number }>();
   for (const row of rows as any[]) {
     if (row.categoryId == null) continue;
     usage.set(Number(row.categoryId), {
       products: Number(row.total ?? 0),
       activeProducts: Number(row.active ?? 0),
+      publicProducts: Number(row.publiclyVisible ?? 0),
     });
   }
   return usage;

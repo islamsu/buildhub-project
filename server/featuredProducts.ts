@@ -86,11 +86,10 @@ export async function listFeaturedProducts(
     supplierId: products.supplierId,
     supplierName: users.name,
   }).from(products)
-    /* INNER, not LEFT. The seller clauses in the filter above live on `users`,
-       so a LEFT join would leave them filtering nothing for any product whose
-       supplier row did not match - the fail-OPEN direction, and the exact
-       shape of the defect this replaces. A product with no reachable seller
-       is not promotable: the card could not say who sells it. */
+    /* FOR THE SELLER'S NAME. Eligibility no longer depends on this join -
+       publiclyPromotableProductFilter carries the seller gate as a subquery -
+       but INNER is still right: a promoted card that cannot name who sells the
+       product should not be rendered at all. */
     .innerJoin(users, eq(users.id, products.supplierId))
     .where(and(...conditions))
     // Newest deliberate pick first. Ties broken by id so the order is stable

@@ -122,11 +122,14 @@ const DELIBERATELY_SHARED: Record<string, string> = {
  */
 const PUBLIC_BY_OWNER: Record<string, { reason: string; mustAlsoConstrain: RegExp }> = {
   'marketplace.vendorProducts': {
-    reason: 'One vendor\'s shop window. Every row it returns is already returned by marketplace.list to anyone at all; withholding it would only mean a vendor page that cannot show what the vendor sells.',
-    // The one shared visibility filter, not an inline literal: "publicly
-    // visible" is now four lifecycle states rather than one boolean, and a
-    // reader that spelled the rule out itself would be free to serve drafts.
-    mustAlsoConstrain: /publicProductFilter\(\)/,
+    reason: 'One vendor\'s shop window. Every row it returns is already returned by marketplace.list to anyone at all - literally the same predicate, so the two cannot diverge; withholding it would only mean a vendor page that cannot show what the vendor sells.',
+    // The one shared visibility filter, not an inline literal. "Publicly
+    // visible" has grown twice: from a boolean to four lifecycle states, and
+    // then to the SELLER'S standing as well - which matters most on exactly
+    // this endpoint, because it takes a vendor id directly and was therefore a
+    // second public route to a suspended seller's whole inventory while the
+    // storefront page itself already refused.
+    mustAlsoConstrain: /publicMarketplaceProductFilter\(\)/,
   },
 };
 

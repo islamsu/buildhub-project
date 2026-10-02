@@ -192,6 +192,12 @@ import { REVIEW_REPORT_REASONS, REVIEW_RESPONSE_MAX_LENGTH } from '../shared/rev
 import {
   publicProductFilter, transitionProduct, ProductLifecycleError,
 } from './productLifecycle';
+/* THE authority for every PUBLIC product read on this router. The three
+   publicProcedure endpoints below - list, vendorProducts and get - use this;
+   the owner, admin and workflow endpoints deliberately do not, because an
+   administrator investigating a suspended seller's catalogue and a supplier
+   managing their own inventory are not public discovery. */
+import { publicMarketplaceProductFilter } from './publicEligibility';
 import {
   listProjectDocuments, requireDocumentAccess, canRetireDocument,
   archiveDocument, restoreDocument, markSuperseded, ProjectDocumentError,
@@ -2386,7 +2392,17 @@ const marketplaceRouter = router({
       // went unnoticed because the products page filtered a hardcoded array on
       // the client instead of calling this endpoint at all, so the parameters
       // had no consumer to be wrong for.
-      const conditions = [publicProductFilter()];
+      /*
+       * PUBLIC MARKETPLACE ELIGIBILITY, not the product gate alone.
+       *
+       * This asked only whether the PRODUCT was published, so a supplier the
+       * marketplace had suspended kept a fully browsable catalogue here - and
+       * the promoted strips above this list, which do check the seller, were
+       * stricter than the listings beneath them. The seller gate travels
+       * inside the predicate as a subquery, so search, category filtering and
+       * Boost all inherit it without this call site changing shape.
+       */
+      const conditions = [publicMarketplaceProductFilter()];
       if (input.category && input.category !== 'All') {
         conditions.push(eq(products.category, input.category));
       }
@@ -2424,28 +2440,52 @@ const marketplaceRouter = router({
    *
    * The vendor detail page listed no products at all, so a buyer who found a
    * supplier in the directory could see their rating and nothing they sell.
-   * Same visibility rule as `list`: published rows only, so a delisted product
-   * is no more visible here than it is on the marketplace.
+   *
+   * THE SAME RULE AS `list`, AND THAT MATTERS MORE HERE THAN IT LOOKS.
+   *
+   * `vendorProfile.getPublic` already refuses a storefront whose provider the
+   * directory does not list, so the PAGE 404s for a suspended seller. This
+   * endpoint is separate and takes the vendor id directly, so with only the
+   * product gate it went on serving that seller's whole published inventory
+   * to anyone who called it - a second public route to exactly what the
+   * storefront and the catalogue both correctly hide.
    */
   vendorProducts: publicProcedure
     .input(z.object({ vendorId: z.number().int().positive(), limit: z.number().int().positive().max(60).default(24) }))
     .query(async ({ input }) => {
       const db = await requireDb();
       return db.select().from(products)
-        .where(and(eq(products.supplierId, input.vendorId), publicProductFilter()))
+        .where(and(eq(products.supplierId, input.vendorId), publicMarketplaceProductFilter()))
         .orderBy(desc(products.createdAt))
         .limit(input.limit);
     }),
   get: publicProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-    // Slice 9: `active` is filtered here as well as in `list` above. A supplier
-    // who deactivates a product - delisted, discontinued, mispriced - has
-    // withdrawn it from sale, and it stayed fully readable by id to anyone who
-    // knew or guessed the number. Absent and withdrawn are the same answer to a
-    // buyer, so both are NOT_FOUND.
+    /*
+     * Slice 9: `active` is filtered here as well as in `list` above. A supplier
+     * who deactivates a product - delisted, discontinued, mispriced - has
+     * withdrawn it from sale, and it stayed fully readable by id to anyone who
+     * knew or guessed the number. Absent and withdrawn are the same answer to a
+     * buyer, so both are NOT_FOUND.
+     *
+     * THE SELLER IS PART OF THAT ANSWER NOW, and NOT_FOUND is the right shape
+     * for it rather than a new one. A suspended seller's product page offered
+     * the normal buying experience - price, specifications, Ask the supplier,
+     * Request a quote - for a business nobody can transact with. The visitor
+     * gets the canonical unavailable answer and learns nothing about WHY: not
+     * that the product exists, not that a seller was suspended, not that
+     * approval was revoked. Admin and the owner keep their own paths.
+     *
+     * NOTHING HISTORICAL DEPENDS ON THIS READ. `rfqItems` carries its own
+     * name, quantity, unit, specifications and price snapshot with
+     * `productId` as ON DELETE SET NULL; `quotationItems` holds no product
+     * reference at all; and no RFQ, quotation, order or project read path
+     * joins `products`. Public discovery and historical authorization are
+     * separate concerns here in fact, not just in principle.
+     */
     const [product] = await db.select().from(products)
-      .where(and(eq(products.id, input.id), publicProductFilter()));
+      .where(and(eq(products.id, input.id), publicMarketplaceProductFilter()));
     if (!product) throw new TRPCError({ code: 'NOT_FOUND' });
     // WHO SELLS THIS.
     //
@@ -2770,7 +2810,10 @@ const marketplaceRouter = router({
           // ABSENT FROM THE AGGREGATE MEANS NONE, not unknown: the grouped
           // query covers the whole products table, so a category with no row
           // in it genuinely holds nothing.
-          listedProducts: usage.get(category.id)?.activeProducts ?? 0,
+          /* PUBLICLY reachable, not merely published - see categoryUsage.
+             The rail is a public surface, so its number has to match the rows
+             a visitor gets when they click the tile. */
+          listedProducts: usage.get(category.id)?.publicProducts ?? 0,
         })),
       };
     }),
@@ -3094,9 +3137,17 @@ const marketplaceRouter = router({
     // that a withdrawn product and an absent one are the same answer to a
     // buyer; a question thread attached to a product the supplier has delisted
     // contradicted that, and had nowhere to be displayed.
+    //
+    // THE SAME ARGUMENT REACHES THE SELLER. A question put to a suspended
+    // supplier lands on a product with no public page, addressed to a business
+    // that cannot answer while it is suspended - the thread this endpoint's
+    // own note calls "nowhere to be displayed". This is a public marketplace
+    // interaction, so it uses the public marketplace authority. The supplier's
+    // own inbox below is not: it is scoped to their id and keeps showing their
+    // history whatever the directory currently thinks of them.
     const [product] = await db.select({ id: products.id, name: products.name, supplierId: products.supplierId })
       .from(products)
-      .where(and(eq(products.id, input.productId), publicProductFilter()));
+      .where(and(eq(products.id, input.productId), publicMarketplaceProductFilter()));
     if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: 'Product not found' });
     const result = await db.insert(productQuestions).values({ productId: input.productId, askerId: ctx.user.id, question: input.question });
     // The supplier is the only person who can answer, and nothing told them a
@@ -3308,6 +3359,12 @@ const marketplaceRouter = router({
       })
       .from(productQuestions)
       .innerJoin(products, eq(productQuestions.productId, products.id))
+      /* OWNER PATH, DELIBERATELY NOT THE PUBLIC ONE. Scoped to ctx.user.id:
+         this is the supplier's own question inbox, and it must keep answering
+         for them while their account is suspended - that is when they most
+         need to see what was asked. publicProductFilter() is right here;
+         publicMarketplaceProductFilter() would empty a supplier's own inbox
+         on suspension, which is a records problem dressed as a privacy fix. */
       .where(and(eq(products.supplierId, ctx.user.id), publicProductFilter()))
       .orderBy(desc(productQuestions.createdAt));
   }),

@@ -27,7 +27,7 @@
  */
 import { and, asc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
 import { products, users, vendorSponsorships } from '../drizzle/schema';
-import { publicProductFilter } from './productLifecycle';
+import { publicMarketplaceProductFilter } from './publicEligibility';
 import { getDb } from './db';
 import { requireDb } from './_core/requireDb';
 import {
@@ -237,41 +237,29 @@ export const PLACEMENT_PRODUCT_COLUMNS = {
 } as const;
 
 /**
- * ── THE ONE RULE FOR PROMOTING A PRODUCT PUBLICLY ─────────────────────────
+ * ── PROMOTIONAL ELIGIBILITY COMPOSES MARKETPLACE ELIGIBILITY ──────────────
  *
- * Two gates, and both are somebody else's definition rather than a local one:
+ *   PUBLIC MARKETPLACE PRODUCT ELIGIBILITY + the placement/Featured condition
+ *     = PUBLIC PROMOTIONAL ELIGIBILITY
  *
- *   publicProductFilter()      the catalogue's own lifecycle rule - published,
- *                              not draft, not off sale, not archived.
- *   directoryVisibilityFilter() the directory's own rule for the SELLER -
- *                              a provider role, account active, not
- *                              deactivated, onboarding approved.
+ * A placement may NARROW what is visible. It may never broaden it, and that
+ * is now structural rather than a rule somebody has to keep: this returns the
+ * marketplace predicate itself, and each promotional surface ANDs its own
+ * condition on top - a live booking here, `products.featured` in
+ * featuredProducts.ts. There is no way to express "promoted, therefore
+ * visible" because the subset relation is the composition.
  *
- * The second gate is the one that is easy to forget, and forgetting it was a
- * real defect rather than a hypothetical. A suspended supplier keeps every row
- * in `products` exactly as it was - status 'active', perfectly eligible as a
- * product - so a surface that checks only the product goes on promoting a
- * business the marketplace has withdrawn. `placedProducts` had the join;
- * `listFeaturedProducts` did not, so freezing a seller silenced their
- * Sponsored slot and left their Featured slot advertising them.
+ * KEPT AS A SEPARATE NAME on purpose. The promotional surfaces state what
+ * they mean, and if promotion ever needs a condition the organic catalogue
+ * does not have, it has somewhere to go that cannot leak back into the
+ * catalogue.
  *
- * ── WHY THIS IS A FUNCTION AND NOT A COMMENT ──────────────────────────────
- *
- * Because the two call sites agreeing today is not the same as there being one
- * rule. They were written months apart, they agreed on the first gate and
- * disagreed on the second, and nothing failed. Editorial Featured and
- * commercial Sponsored are deliberately separate systems - different labels,
- * different causes, different modules - but "may a visitor be shown this
- * product in a promoted slot" is one question, and it now has one answer.
- *
- * REQUIRES AN INNER JOIN to `users` on `products.supplierId`. The seller
- * clauses live on `users`, so without the join they filter nothing; with a
- * LEFT join a product whose supplier row is missing survives, which is the
- * fail-OPEN direction. A promoted card that cannot name its seller should not
- * be rendered at all.
+ * See server/publicEligibility.ts for the two gates and for why the seller
+ * gate reaches `users` by subquery rather than by obliging every caller to
+ * add an inner join.
  */
 export function publiclyPromotableProductFilter() {
-  return and(publicProductFilter(), directoryVisibilityFilter());
+  return publicMarketplaceProductFilter();
 }
 
 export type PlacedProduct = {
@@ -296,12 +284,17 @@ export type PlacedProduct = {
 /**
  * Products holding a live placement, filtered to those a visitor may see.
  *
- * TWO eligibility gates, not one. The product must be active - and its
- * SUPPLIER must still be an eligible provider. A supplier who is suspended
- * keeps rows in `products` with `active = 1`, and without the join a paid
- * placement would go on advertising a seller the marketplace has withdrawn.
- * That is precisely the "paid placement bypasses a safety gate" case, so the
- * join is inner and the filter is the directory's own.
+ * TWO eligibility gates, not one, and BOTH travel inside the predicate. The
+ * product must be published AND its seller must still be a provider the
+ * directory lists - a suspended supplier's rows are untouched, so a reader
+ * that asks only about the product goes on advertising a business the
+ * marketplace has withdrawn.
+ *
+ * THE JOIN HERE IS FOR THE SELLER'S NAME, NOT FOR ELIGIBILITY. That was the
+ * other way round once, and it was fragile in a way that bit: eligibility
+ * depended on the join being INNER, so a LEFT join silently disabled the gate.
+ * The predicate now carries its own reach, so the two are independent and
+ * placementEligibility.test.ts pins that they stay independent.
  */
 export async function placedProducts(params: {
   db: Db;

@@ -482,7 +482,10 @@ describe('which routes may be titled from the database', () => {
     // A second visibility rule would put a draft's or a withdrawn product's
     // name in a title for a page that refuses to render it.
     const source = readFileSync(join(import.meta.dirname, 'seoEntityName.ts'), 'utf8');
-    expect(source).toContain('publicProductFilter()');
+    /* The canonical public product predicate, now including the seller: a
+       suspended supplier's product name must not reach a page title either. */
+    expect(source, 'titles stopped using the canonical public predicate')
+      .toContain('publicMarketplaceProductFilter()');
     expect(source).toContain("eq(products.id, id)");
   });
 });

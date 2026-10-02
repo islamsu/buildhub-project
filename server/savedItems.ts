@@ -26,7 +26,7 @@
 import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import { products, savedItems, users, vendorProfiles } from '../drizzle/schema';
 import { MAX_SAVED_ITEMS, MAX_SAVED_NOTE, type SavedItemKind } from '../shared/savedItems';
-import { publicProductFilter } from './productLifecycle';
+import { publicMarketplaceProductFilter } from './publicEligibility';
 import { directoryVisibilityFilter } from './vendorDirectory';
 import { isDuplicateKeyError } from './_core/dbErrors';
 
@@ -48,8 +48,12 @@ export class SavedItemError extends Error {
  */
 async function targetIsVisible(db: Db, kind: SavedItemKind, itemId: number): Promise<boolean> {
   if (kind === 'product') {
+    /* The SAME authority the catalogue uses, which is what this file's own
+       rule above demands: the provider branch below has always asked the
+       directory, and a product branch that asked only about the product let
+       the shortlist diverge from what is browsable in one direction only. */
     const [row] = await db.select({ id: products.id }).from(products)
-      .where(and(eq(products.id, itemId), publicProductFilter())).limit(1);
+      .where(and(eq(products.id, itemId), publicMarketplaceProductFilter())).limit(1);
     return row !== undefined;
   }
   const [row] = await db.select({ id: users.id }).from(users)
@@ -194,7 +198,13 @@ export async function listSaved(db: Db, userId: number) {
       id: products.id, name: products.name, nameAr: products.nameAr,
       category: products.category, price: products.price, currency: products.currency,
       unit: products.unit, images: products.images, supplierId: products.supplierId,
-    }).from(products).where(and(inArray(products.id, productIds), publicProductFilter())),
+      /* A SHORTLIST IS NOT A RECORD. The saved ROW survives untouched - this
+         filters the rendering, exactly as the provider branch beside it
+         already does, so a suspended seller's product leaves the shortlist
+         while it is unreachable and comes back if they are reinstated.
+         Nothing transactional lives here: RFQ lines and quotation lines carry
+         their own denormalised copies. */
+    }).from(products).where(and(inArray(products.id, productIds), publicMarketplaceProductFilter())),
     providerIds.length === 0 ? [] : db.select({
       id: users.id, name: users.name, avatar: users.avatar, location: users.location,
       userRole: users.userRole, verified: users.verified,

@@ -69,6 +69,22 @@ function makeDb(tables: {
         for (const key of ['queryChunks', 'conditions', 'left', 'right', 'value']) {
           if (key in node) walk(node[key]);
         }
+        /*
+         * AND INTO SUBQUERIES. The seller gate used to be a join predicate
+         * sitting beside the product one, so a flat walk saw both. It is now
+         * `supplierId IN (SELECT id FROM users WHERE ...)` - deliberately, so
+         * that no call site can disable it by making a join outer - and the
+         * clauses it carries live on a nested select's own `config.where`.
+         *
+         * Without this branch the walk stopped at the subquery boundary and
+         * reported that the eligibility filter was missing, which is the
+         * instrument failing rather than the product. Descending keeps the
+         * assertion honest: it still proves the clauses are in the query the
+         * database will run, wherever in the tree they sit.
+         */
+        if (node.config && typeof node.config === 'object' && 'where' in node.config) {
+          walk(node.config.where);
+        }
       }
     };
     walk(condition);
@@ -192,8 +208,9 @@ describe('a placement never smuggles an ineligible entity onto the page', () => 
   });
 
   it('the product fetch requires an active product AND an eligible supplier', async () => {
-    // Two gates. Without the supplier join, a suspended seller keeps
-    // advertising through rows that are still active = 1.
+    // Two gates, and the second one now reaches `users` by SUBQUERY rather
+    // than by join - see the walker's note above. Without it a suspended
+    // seller keeps advertising through rows that are still perfectly active.
     const { db, whereSql } = makeDb({
       placements: [placementRow({ entityType: 'PRODUCT', vendorId: null, productId: 77 })],
       products: [{ id: 77, name: 'Rebar 12mm', supplierId: 10, supplierName: 'Nile' }],

@@ -31,6 +31,7 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { portfolioItems, products, serviceOfferings, supplierShowcase } from '../drizzle/schema';
 import { publicProductFilter } from './productLifecycle';
+import { publicMarketplaceProductFilter } from './publicEligibility';
 import {
   MAX_SHOWCASE_ITEMS, normaliseShowcase, showcaseKey,
   type ShowcaseEntry, type ShowcaseItemKind,
@@ -57,6 +58,14 @@ async function ownedVisibleIds(
   if (ids.length === 0) return new Set();
   let rows: Array<{ id: number }> = [];
   if (kind === 'product') {
+    /* THE WRITER'S RULE, AND IT IS DELIBERATELY NOT THE PUBLIC ONE.
+       `publicProductFilter()`, not `publicMarketplaceProductFilter()`: this is
+       the supplier curating their own storefront, and a suspended supplier must
+       still be able to do that - their picker (listShowcaseCandidates) and this
+       validator have to accept the same set or the form fails on submit for no
+       visible reason. The PUBLIC read in listShowcase applies the seller gate,
+       so the choices are kept and simply not rendered while the account is
+       suspended. */
     rows = await db.select({ id: products.id }).from(products)
       .where(and(inArray(products.id, ids as number[]), eq(products.supplierId, userId), publicProductFilter()));
   } else if (kind === 'service') {
@@ -167,7 +176,13 @@ export async function listShowcase(
       // RE-CHECKED ON READ, not trusted from the write. A product archived
       // after it was showcased must leave the storefront the moment it is
       // archived, without anything having to run.
-      publicProductFilter(),
+      //
+      // AND THE SELLER IS RE-CHECKED TOO, for the same reason and against the
+      // same authority as the catalogue. vendorProfile.showcase is a
+      // publicProcedure keyed by supplier id, so with only the product gate it
+      // was a third public route to a suspended seller's inventory - after the
+      // storefront page itself and marketplace.vendorProducts both closed.
+      publicMarketplaceProductFilter(),
     )),
     idsOf('service').length === 0 ? [] : db.select({
       id: serviceOfferings.id, title: serviceOfferings.title,

@@ -1,6 +1,6 @@
 import { and, avg, count, eq, inArray } from 'drizzle-orm';
 import { products, projects, reviews, users } from '../drizzle/schema';
-import { publicProductFilter } from './productLifecycle';
+import { publicMarketplaceProductFilter } from './publicEligibility';
 
 /**
  * THE NUMBERS ON THE FRONT DOOR.
@@ -33,8 +33,9 @@ export type PlatformStats = {
   /**
    * HOW MANY THINGS A BUYER CAN ACTUALLY BROWSE.
    *
-   * Counted with `publicProductFilter()` - THE CATALOGUE'S OWN RULE, not a
-   * second one written here. That matters more than it sounds: the headline
+   * Counted with `publicMarketplaceProductFilter()` - THE CATALOGUE'S OWN
+   * RULE, not a second one written here, which since the eligibility
+   * unification means the seller's standing as well as the product's. That matters more than it sounds: the headline
    * "X Products" is a promise that clicking through to the marketplace shows
    * X products, and the only way to keep that promise is to count with the
    * predicate the marketplace lists with. Drafts, withdrawn and archived rows
@@ -75,7 +76,13 @@ export async function getPlatformStats(db: any): Promise<PlatformStats> {
     eq(users.isDummy, false),
     inArray(users.userRole, [...PROVIDER_ROLES]),
   ));
-  const [productRow] = await db.select({ n: count() }).from(products).where(publicProductFilter());
+  /* COUNTS AND ROWS MUST AGREE. This is the "X Products" claim on the home
+     page, and it has to count the same products a visitor can actually reach.
+     Counted with the catalogue's own authority, so a suspended seller's ten
+     listings leave both the rows and the number together rather than
+     advertising stock nobody can browse. */
+  const [productRow] = await db.select({ n: count() }).from(products)
+    .where(publicMarketplaceProductFilter());
   const [reviewRow] = await db.select({ n: count(), average: avg(reviews.rating) }).from(reviews);
 
   const reviewCount = Number(reviewRow?.n ?? 0);

@@ -100,7 +100,12 @@ describe('§3 the endpoint honours its own inputs', () => {
     // Through the one shared filter, not an inline literal - "withdrawn" is
     // now three states (draft, off sale, archived) rather than one boolean,
     // and a reader spelling the rule out itself is how one of them leaks.
-    expect(block).toContain('publicProductFilter()');
+    /* The canonical public authority, which now also covers the SELLER - a
+       suspended supplier's listings left the catalogue in the same pass. The
+       assertion follows the authority rather than one of its historical
+       names. */
+    expect(block, 'the listing is not using the canonical public authority')
+      .toContain('publicMarketplaceProductFilter()');
   });
 
   it('"All" is treated as no filter rather than a category named All', () => {

@@ -177,7 +177,15 @@ describe('you can only showcase what is yours, and what is published', () => {
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const reader = SHOWCASE.slice(start, end);
-    expect(reader).toContain('publicProductFilter()');
+    /* THE PUBLIC READER, and it re-checks the SELLER as well as the product
+       now. vendorProfile.showcase is a publicProcedure keyed by supplier id,
+       so it was a third public route to a suspended seller's inventory after
+       the storefront page and marketplace.vendorProducts both closed.
+       The supplier's own writer and picker deliberately keep the
+       product-only rule - asserted separately - so a suspended supplier can
+       still curate a storefront that is simply not rendered. */
+    expect(reader, 'the public showcase reader lost the canonical authority')
+      .toContain('publicMarketplaceProductFilter()');
     expect(reader).toContain('eq(products.supplierId, supplierId)');
   });
 

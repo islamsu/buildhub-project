@@ -12,10 +12,11 @@
  * else. It used to run for the product alone, because `/vendor/:id` needed a
  * session; now that it does not, a storefront's own name reaches the shell too.
  *
- * ONLY WHAT THE CATALOGUE ITSELF WOULD SHOW. `publicProductFilter()` - the
- * same predicate the marketplace reads through. Without it a draft's or a
- * withdrawn product's name would appear in a title for a page that refuses to
- * render it.
+ * ONLY WHAT THE CATALOGUE ITSELF WOULD SHOW.
+ * `publicMarketplaceProductFilter()` - the same predicate the marketplace
+ * reads through, covering the seller as well as the product. Without it a
+ * draft's, a withdrawn product's or a suspended seller's name would appear in
+ * a title for a page that refuses to render it.
  *
  * AND NEVER AT THE COST OF THE PAGE. Any failure returns null and the caller
  * falls back to the route's generic title. A database outage must not turn
@@ -25,7 +26,7 @@
 import { and, eq } from 'drizzle-orm';
 import { products, users, vendorProfiles } from '../drizzle/schema';
 import { getDb } from './db';
-import { publicProductFilter } from './productLifecycle';
+import { publicMarketplaceProductFilter } from './publicEligibility';
 import { directoryVisibilityFilter } from './vendorDirectory';
 import type { SeoRoute } from '../shared/seo';
 
@@ -69,10 +70,14 @@ export async function publicEntityName(route: SeoRoute | null, pathname: string)
       return name.length > 0 ? name : null;
     }
 
+    /* Symmetry with the provider branch above, which already asks the
+       directory. A page title is public metadata: naming the product of a
+       seller the marketplace does not list would put that catalogue back into
+       search results through the one surface that still answered. */
     const [row] = await db
       .select({ name: products.name })
       .from(products)
-      .where(and(eq(products.id, id), publicProductFilter()))
+      .where(and(eq(products.id, id), publicMarketplaceProductFilter()))
       .limit(1);
     const name = (row?.name ?? '').trim();
     return name.length > 0 ? name : null;
