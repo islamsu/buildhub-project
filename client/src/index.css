@@ -374,6 +374,31 @@
     height: auto;
   }
 
+  /* ── THE FLEX MIN-SIZE GUARD, AND WHY IT MOVED LAYERS ──────────────────
+   *
+   * A flex item defaults to `min-width: auto`, which means it refuses to
+   * shrink below its content and a long unbroken string pushes the whole page
+   * sideways. Zeroing it on every flex element is the standard defence, and
+   * that is what this is for - the horizontal-overflow guards at 320, 375,
+   * 390 and 430px depend on it.
+   *
+   * IT USED TO LIVE IN `@layer utilities`, WHERE IT BEAT TAILWIND'S OWN.
+   * Same specificity, declared later, so `.flex` won every collision - and
+   * `min-h-screen` on a flex container silently computed to 0. The symptom
+   * was the authentication page: its branded navy panel stopped 170px short
+   * of the bottom of a 900px viewport, leaving a white band under it, on 28
+   * files that ask for `min-h-screen` and on every `min-w-*` beside a `flex`.
+   *
+   * Verified by reproduction rather than inspection: an injected
+   * `<div class="min-h-screen">` computed 900px, the same div with `flex`
+   * added computed 0px.
+   *
+   * In `base` it still applies to every flex element that asks for nothing
+   * else, and loses - correctly - to any explicit min-width or min-height
+   * utility. siteWideLayout.test.ts pins the layer so it cannot drift back.
+   */
+  .flex { min-width: 0; min-height: 0; }
+
   html {
     scroll-behavior: smooth;
   }
@@ -394,7 +419,6 @@
     .container { padding-inline: 3rem; }
   }
 
-  .flex { min-width: 0; min-height: 0; }
 
   /* Keep ordinary pages within the viewport while allowing intentional wide tables and comparison panels to scroll horizontally. */
   .viewport-shell {

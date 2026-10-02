@@ -1,4 +1,5 @@
 import { useLanguage } from '@/contexts/LanguageContext';
+import LoadFailed, { loadFailedCopy } from '@/components/LoadFailed';
 import { SaveButton } from '@/components/SaveButton';
 import { useSavedIds } from '@/lib/useSavedIds';
 import { formatMoney } from '@shared/money';
@@ -133,11 +134,31 @@ export default function Marketplace() {
   // It also broke images: the fictional products referenced Manus-era
   // /manus-storage/ assets, which the storage proxy refuses to anonymous
   // callers, so every card on the public marketplace showed a broken image.
-  const { data: filtered = [], isLoading: productsLoading } = trpc.marketplace.list.useQuery({
+  /*
+   * AN OUTAGE IS NOT AN EMPTY CATALOGUE.
+   *
+   * This destructured `{ data = [], isLoading }` and read NEITHER - the
+   * loading flag was dead, and the failure was never observed at all. With the
+   * database unreachable the default empty array survived and the page
+   * rendered "0 products" above an empty grid, on the public catalogue, which
+   * is a statement about the size of the business made to a visitor judging
+   * it. §10: ERROR != EMPTY.
+   *
+   * It slipped past the client census in truthfulEmptyStates.test.ts because
+   * that census looks for an empty PHRASE - "No products yet" - and this
+   * surface says it with a NUMBER instead. The census now reads counts too.
+   */
+  const {
+    data: filtered = [],
+    isLoading: productsLoading,
+    isError: productsFailed,
+    refetch: refetchProducts,
+  } = trpc.marketplace.list.useQuery({
     category: selectedCategory === 'All' ? undefined : selectedCategory,
     search: search.trim() || undefined,
     limit: 48,
   });
+  const loadFailure = loadFailedCopy(lang === 'ar');
 
   /**
    * WHICH OF THESE IS ALREADY SAVED - one query for the grid.
@@ -286,10 +307,32 @@ export default function Marketplace() {
                   the server. Collapses entirely when nothing is booked. */}
               <ProductSpotlight category={selectedCategory === 'All' ? undefined : selectedCategory} />
 
+              {/* THE COUNT IS A CLAIM, so it is only made when the catalogue
+                  was actually read. While the query is in flight or has
+                  failed it says nothing rather than saying zero. */}
               <div className="flex items-center justify-between mb-4">
-                <p className="text-sm text-muted-foreground">{filtered.length} {lang === 'ar' ? 'منتج' : 'products'}</p>
+                <p className="text-sm text-muted-foreground" data-testid="product-count">
+                  {productsFailed || productsLoading
+                    ? '\u00a0'
+                    : `${filtered.length} ${lang === 'ar' ? 'منتج' : 'products'}`}
+                </p>
               </div>
 
+              {productsFailed ? (
+                <LoadFailed
+                  text={loadFailure.text}
+                  retryText={loadFailure.retryText}
+                  onRetry={() => void refetchProducts()}
+                />
+              ) : productsLoading ? (
+                /* A skeleton at the grid's own shape, so the page does not
+                   jump when the real cards land (§63, CLS). */
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" data-testid="product-grid-loading">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="h-80 rounded-xl border bg-muted/40 animate-pulse" />
+                  ))}
+                </div>
+              ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filtered.map(product => (
                   <Card key={product.id} className="card-hover overflow-hidden group cursor-pointer" role="button" tabIndex={0} onClick={() => navigate(`/marketplace/products/${product.id}`)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') navigate(`/marketplace/products/${product.id}`); }}>
@@ -412,6 +455,7 @@ export default function Marketplace() {
                   </Card>
                 ))}
               </div>
+              )}
             </div>
           </div>
         </div>

@@ -29,6 +29,44 @@ describe('site-wide language and responsive layout wiring', () => {
     expect(notFound).toContain('<LanguageToggle />');
   });
 
+  it('the flex min-size guard sits in BASE, so an explicit min-* utility still wins', () => {
+    /*
+     * A flex item defaults to `min-width: auto` and refuses to shrink below
+     * its content, so a long unbroken string pushes the page sideways. The
+     * defence is zeroing it on every flex element, and the overflow checks at
+     * 320, 375, 390 and 430px depend on that rule existing.
+     *
+     * IT USED TO SIT IN `@layer utilities`, where it had the same specificity
+     * as Tailwind's own `.min-h-screen` and was declared later - so it won
+     * every collision. `min-h-screen` on a flex container computed to ZERO.
+     * The authentication page's branded navy panel stopped 170px short of the
+     * bottom of a 900px viewport with a white band under it, and the same
+     * silent loss applied to 28 files asking for min-h-screen and to every
+     * `min-w-*` written beside a `flex`.
+     *
+     * Reproduced before it was believed: an injected `<div class="min-h-screen">`
+     * computed 900px; the same div with `flex` added computed 0px.
+     *
+     * In `base` the guard still applies to every flex element that asks for
+     * nothing else, and loses to an explicit utility - which is the whole
+     * point of the layer order. This pins WHICH layer, because moving it back
+     * would reintroduce a defect that no test could see from the markup.
+     */
+    const css = readClientFile('index.css');
+    const rule = '.flex { min-width: 0; min-height: 0; }';
+    expect(css, 'the flex min-size guard is gone entirely').toContain(rule);
+
+    const baseStart = css.indexOf('@layer base {');
+    const utilitiesStart = css.indexOf('@layer utilities {');
+    const ruleAt = css.indexOf(rule);
+    expect(baseStart, '@layer base not found').toBeGreaterThan(-1);
+    expect(utilitiesStart, '@layer utilities not found').toBeGreaterThan(-1);
+    expect(baseStart, 'the layers are not in the expected order').toBeLessThan(utilitiesStart);
+    expect(ruleAt, 'the guard is before @layer base').toBeGreaterThan(baseStart);
+    expect(ruleAt, 'the guard is back in @layer utilities, where it beats min-h-screen')
+      .toBeLessThan(utilitiesStart);
+  });
+
   it('keeps the viewport shrinkable while allowing intentional horizontal overflow to scroll', () => {
     const css = readClientFile('index.css');
     const sidebar = readClientFile('components/ui/sidebar.tsx');

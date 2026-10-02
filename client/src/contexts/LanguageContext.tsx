@@ -14,6 +14,12 @@ const translations: Record<Language, Record<string, string>> = {
     // ── Nav ──────────────────────────────────────────────────────────────────
     'nav.home': 'Home',
     'nav.marketplace': 'Marketplace',
+    // Direct sourcing destinations, shown to signed-out visitors. Each one is
+    // a route that exists; nothing here is a label without a destination.
+    'nav.products': 'Products',
+    'nav.vendors': 'Vendors',
+    'nav.designers': 'Designers',
+    'nav.finishing': 'Finishing',
     'nav.projects': 'Projects',
     'nav.rfq': 'Get Quotes',
     'nav.pricing': 'Pricing',
@@ -1296,6 +1302,10 @@ const translations: Record<Language, Record<string, string>> = {
     // ── Nav ──────────────────────────────────────────────────────────────────
     'nav.home': 'الرئيسية',
     'nav.marketplace': 'السوق',
+    'nav.products': 'المنتجات',
+    'nav.vendors': 'الموردون',
+    'nav.designers': 'المصممون',
+    'nav.finishing': 'التشطيبات',
     'nav.projects': 'المشاريع',
     'nav.rfq': 'طلب عروض',
     'nav.pricing': 'الباقات',

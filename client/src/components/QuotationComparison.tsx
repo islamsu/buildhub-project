@@ -170,7 +170,13 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqCur
   const [confirmAccept, setConfirmAccept] = useState<QuotationRow | null>(null);
   const [confirmReject, setConfirmReject] = useState<QuotationRow | null>(null);
 
-  const { data: quotes = [], refetch, isLoading } = trpc.rfq.quotations.useQuery({ rfqId });
+  /*
+   * "0 quotations" under the heading of a comparison screen is a commercial
+   * statement: a buyer reads it as nobody having responded and stops waiting.
+   * On a failed query it was the default empty array talking.
+   */
+  const { data: quotes = [], refetch, isLoading, isError: quotesFailed } =
+    trpc.rfq.quotations.useQuery({ rfqId });
 
   const acceptMutation = trpc.rfq.acceptQuotation.useMutation({
     onSuccess: () => {
@@ -238,7 +244,8 @@ export default function QuotationComparison({ rfqId, rfqTitle, rfqBudget, rfqCur
         <div>
           <h2 className="text-xl font-bold">{rfqTitle}</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {quotes.length} {t('rfq.quotations')}
+            {/* The count is only claimed once the quotations were read. */}
+            {quotesFailed || isLoading ? '\u00a0' : `${quotes.length} ${t('rfq.quotations')}`}
             {rfqBudget != null && <span className="ml-2">· {t('project.budget')}: <strong data-testid="comparison-rfq-budget">{formatMoney(rfqBudget, rfqCurrency, lang) ?? rfqBudget.toLocaleString()}</strong></span>}
           </p>
         </div>

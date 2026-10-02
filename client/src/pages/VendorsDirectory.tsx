@@ -3,6 +3,7 @@ import { SaveButton } from '@/components/SaveButton';
 import { useSavedIds } from '@/lib/useSavedIds';
 import { useLocation } from 'wouter';
 import { useLanguage } from '@/contexts/LanguageContext';
+import LoadFailed, { loadFailedCopy } from '@/components/LoadFailed';
 import { trpc } from '@/lib/trpc';
 import Navbar from '@/components/Navbar';
 import { Input } from '@/components/ui/input';
@@ -62,7 +63,13 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
   const [category, setCategory] = useState(presetCategory ?? 'all');
   const [location, setLocation] = useState('');
 
-  const { data: vendors = [], isLoading } = trpc.marketplace.vendors.useQuery({
+  /*
+   * A failed directory query rendered neither the count nor the loading line -
+   * just an empty page with no explanation of why. §64: every substantial data
+   * surface must distinguish loading, ready, empty and error.
+   */
+  const { data: vendors = [], isLoading, isError: vendorsFailed, refetch: refetchVendors } =
+    trpc.marketplace.vendors.useQuery({
     search: search.trim() || undefined,
     category: category === 'all' ? undefined : category,
     location: location.trim() || undefined,
@@ -157,6 +164,14 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
           <p className="text-xs text-muted-foreground mb-4">
             {vendors.length} {t('vendorsDir.countSuffix')} · {t('vendorsDir.organicNote')}
           </p>
+        )}
+
+        {vendorsFailed && (
+          <LoadFailed
+            text={loadFailedCopy(lang === 'ar').text}
+            retryText={loadFailedCopy(lang === 'ar').retryText}
+            onRetry={() => void refetchVendors()}
+          />
         )}
 
         {isLoading && (

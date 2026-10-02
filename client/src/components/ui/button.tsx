@@ -10,6 +10,28 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        /*
+         * THE AMBER CALL TO ACTION, as a variant rather than a class string
+         * pasted onto a button.
+         *
+         * The approved design puts amber on the single most important action
+         * on a surface - Sign Up, Search, Join Rakiza. It exists here so that
+         * treatment is one decision in one place (§49), and so the one rule
+         * it must obey cannot be forgotten at a call site.
+         *
+         * THE LABEL IS DARK, AND THAT IS NOT A STYLE CHOICE. Accent Amber
+         * against white is 2.15:1 - it fails AA for normal text, large text
+         * and non-text UI alike - and white ON amber is the same 2.15:1. The
+         * reference mockup shows white labels on amber fills; the owner ruled
+         * that accessibility overrides literal screenshot reproduction.
+         * `text-foreground` is Text Dark at 8.26:1, and the 600 hover step
+         * still clears 5.71:1 so darkening on hover does not darken past
+         * legibility. brandContrast.test.ts fails the build if a white label
+         * is ever paired with an amber fill.
+         */
+        accent:
+          "bg-brand-accent-500 text-foreground hover:bg-brand-accent-600 shadow-xs "
+          + "focus-visible:ring-brand-accent-600/60",
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'wouter';
 import { trpc } from '@/lib/trpc';
 import { useLanguage } from '@/contexts/LanguageContext';
+import LoadFailed, { loadFailedCopy } from '@/components/LoadFailed';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -66,8 +67,26 @@ export default function SupplierCatalogue() {
   const ar = lang === 'ar';
   const utils = trpc.useUtils();
 
-  const { data: products = [], isLoading } = trpc.marketplace.myProducts.useQuery();
-  const { data: questions = [] } = trpc.marketplace.myProductQuestions.useQuery();
+  /*
+   * "You haven't listed any products yet. Add your first product" is the
+   * sentence this screen says when the catalogue query comes back empty. Told
+   * to a supplier whose catalogue is full because the database was briefly
+   * unreachable, it invites a duplicate listing - and the questions query had
+   * the same shape, so an outage read as "Nobody has asked about your
+   * products yet" to a supplier with unanswered questions waiting.
+   */
+  const {
+    data: products = [],
+    isLoading,
+    isError: productsFailed,
+    refetch: refetchProducts,
+  } = trpc.marketplace.myProducts.useQuery();
+  const {
+    data: questions = [],
+    isError: questionsFailed,
+    refetch: refetchQuestions,
+  } = trpc.marketplace.myProductQuestions.useQuery();
+  const loadFailure = loadFailedCopy(ar);
 
   const [imaging, setImaging] = useState<Product | null>(null);
   const [answering, setAnswering] = useState<{ id: number; question: string; productName: string } | null>(null);
@@ -178,7 +197,10 @@ export default function SupplierCatalogue() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {questions.length === 0 ? (
+          {questionsFailed ? (
+            <LoadFailed text={loadFailure.text} retryText={loadFailure.retryText}
+              onRetry={() => void refetchQuestions()} />
+          ) : questions.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               {ar
                 ? 'لم يسأل أحد عن منتجاتك بعد. تظهر الأسئلة هنا عندما يسأل عميل عن منتج مدرج.'
@@ -232,7 +254,10 @@ export default function SupplierCatalogue() {
           </div>
         </CardHeader>
         <CardContent>
-          {products.length === 0 ? (
+          {productsFailed ? (
+            <LoadFailed text={loadFailure.text} retryText={loadFailure.retryText}
+              onRetry={() => void refetchProducts()} />
+          ) : products.length === 0 ? (
             <div className="rounded-xl border border-dashed py-8 text-center">
               <p className="text-sm text-muted-foreground">
                 {ar

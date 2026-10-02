@@ -374,6 +374,63 @@ describe('the census finds real surfaces', () => {
   });
 });
 
+/**
+ * ── THE SAME RULE, SAID WITH A NUMBER ───────────────────────────────────
+ *
+ * The census above looks for an empty PHRASE, and it missed the public
+ * catalogue entirely - because `/marketplace/products` does not say "No
+ * products yet". It says `{filtered.length} products`, and with the database
+ * unreachable the default empty array survived and it said "0 products" over
+ * an empty grid. On the page a visitor judges the size of the business by.
+ *
+ * Found by accident, while the local database happened to be down. That is
+ * the argument for this rule existing rather than for being more careful: a
+ * count rendered from query data is exactly as much of a claim as a sentence
+ * is, and nothing was checking the counts.
+ *
+ * SCOPED TO A RENDERED CLAIM. `{items.length}` closed immediately is a number
+ * on the screen; `{items.length > 0 && …}` is a conditional that collapses to
+ * nothing and tells no lie. An earlier draft matched both and reported two
+ * surfaces that were already correct.
+ */
+const countingSurfaces = () =>
+  pages()
+    .filter(p => p.path.startsWith('pages/') || p.path.startsWith('components/'))
+    .filter(p => p.text.includes('useQuery'))
+    .map(p => ({
+      path: p.path,
+      counted: [...p.text.matchAll(/data:\s*(\w+)\s*(?:=\s*\[\])?\s*[,}]/g)]
+        .map(m => m[1])
+        .filter(alias => new RegExp(`\\{\\s*${alias}\\.length\\s*\\}`).test(p.text)),
+    }))
+    .filter(p => p.counted.length > 0);
+
+describe('a count is a claim, so it is only made when the data was read', () => {
+  it('finds surfaces that render a query-derived count', () => {
+    // POSITIVE CONTROL. Without it a regex that stops matching makes the rule
+    // below pass over an empty list.
+    const all = countingSurfaces().map(p => p.path);
+    expect(all.length, 'the count census matches nothing').toBeGreaterThan(2);
+  });
+
+  it('NO SURFACE RENDERS A COUNT IT CANNOT YET VOUCH FOR', () => {
+    const offenders = countingSurfaces()
+      .filter(p => !distinguishesError(p.path))
+      .map(p => `${p.path} (${p.counted.join(', ')})`);
+    expect(offenders, `these print a number from a query whose failure they never look at:\n  ${offenders.join('\n  ')}`)
+      .toEqual([]);
+  });
+
+  it('the public catalogue specifically says nothing rather than zero', () => {
+    // The one this rule was written for, pinned by name.
+    const market = sourceOf('pages/Marketplace.tsx');
+    expect(market, 'the catalogue no longer observes its failure').toContain('isError: productsFailed');
+    expect(market, 'the failure is observed but never rendered').toContain('<LoadFailed');
+    expect(market, 'the count is still printed unconditionally')
+      .toMatch(/productsFailed \|\| productsLoading/);
+  });
+});
+
 describe('a surface that can say "nothing here" can also say "I could not look"', () => {
   it('NO SURFACE OUTSIDE THE DEBT LIST CONFLATES THE TWO', () => {
     const offenders = surfaces().filter(rel => !distinguishesError(rel) && !KNOWN_GAPS.includes(rel));
