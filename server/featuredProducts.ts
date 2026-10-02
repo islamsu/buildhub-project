@@ -15,10 +15,19 @@
  *   the whole point of the two labels is that a reader can tell which is
  *   which.
  *
- *   THE CATALOGUE'S OWN VISIBILITY RULE, not a second one. publicProductFilter
- *   is the same filter the catalogue uses, so a product that is archived, a
- *   draft or off sale cannot appear in a premium slot after it has vanished
- *   from the list beneath it.
+ *   THE SHARED PROMOTION RULE, not a second one.
+ *   publiclyPromotableProductFilter is what the paid surfaces use, so a
+ *   product that is archived, a draft or off sale cannot appear in a premium
+ *   slot after it has vanished from the list beneath it - AND neither can a
+ *   product whose SELLER the marketplace has suspended.
+ *
+ *   That second half was missing and it was a real defect, not a tidy-up.
+ *   This reader checked the product and not the business behind it, so
+ *   freezing a supplier stopped their Sponsored placement - placedProducts
+ *   joins the directory - and left their Featured placement advertising them.
+ *   Editorial and commercial promotion stay separate systems; what they now
+ *   share is the single answer to "may a visitor be shown this product in a
+ *   promoted slot".
  *
  *   NOTHING IS INVENTED WHEN THERE IS NOTHING. An empty array, and the screen
  *   renders no heading - never a placeholder, because a fabricated editorial
@@ -27,7 +36,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { products, users } from '../drizzle/schema';
 import { requireDb } from './_core/requireDb';
-import { publicProductFilter } from './productLifecycle';
+import { publiclyPromotableProductFilter } from './publicPlacement';
 
 export type FeaturedProduct = {
   id: number;
@@ -59,7 +68,7 @@ export async function listFeaturedProducts(
   const db = await requireDb();
   const limit = Math.min(Math.max(filters.limit ?? 8, 1), 24);
 
-  const conditions = [publicProductFilter(), eq(products.featured, true)];
+  const conditions = [publiclyPromotableProductFilter(), eq(products.featured, true)];
   if (filters.category && filters.category !== 'All') {
     conditions.push(eq(products.category, filters.category));
   }
@@ -77,7 +86,12 @@ export async function listFeaturedProducts(
     supplierId: products.supplierId,
     supplierName: users.name,
   }).from(products)
-    .leftJoin(users, eq(users.id, products.supplierId))
+    /* INNER, not LEFT. The seller clauses in the filter above live on `users`,
+       so a LEFT join would leave them filtering nothing for any product whose
+       supplier row did not match - the fail-OPEN direction, and the exact
+       shape of the defect this replaces. A product with no reachable seller
+       is not promotable: the card could not say who sells it. */
+    .innerJoin(users, eq(users.id, products.supplierId))
     .where(and(...conditions))
     // Newest deliberate pick first. Ties broken by id so the order is stable
     // between two requests - a premium strip that reshuffles on refresh reads

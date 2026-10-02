@@ -1,0 +1,30 @@
+BUILD  714824b (local) built 2026-10-02T19:12:24.078Z  http://127.0.0.1:5401
+PASS  A. eligible product + active Sponsored placement renders  [got=228 want=228]
+PASS  B. setup: the application permits active -> inactive  [OK {"ok":true,"from":"active","to":"inactive"}]
+PASS  B. setup: status is the authority and it moved  [inactive/0]
+PASS  B. setup: the placement is still live
+PASS  B. OFF-SALE product does NOT render through its live Sponsored placement  [null]
+PASS  B. the placement record is NOT destroyed to achieve that
+PASS  C. setup: the application permits inactive -> active again  [OK {"ok":true,"from":"inactive","to":"active"}]
+PASS  C. republished product renders again with no duplicated state  [got=228]
+PASS  C. archiving a product with a live placement is REFUSED, not silent  [REFUSED CONFLICT This product has a live placement. End the placement before archiving it, or the paid slot wo]
+PASS  E. setup: the spotlight product renders first  [[229]]
+PASS  E. a placement whose target id is NULL renders nothing  [[]]
+--------------
+update vendorSponsorships set productId=999999999 where id=233
+--------------
+
+ERROR 1452 (23000) at line 1: Cannot add or update a child row: a foreign key constraint fails (`buildhub_prelaunch`.`vendorSponsorships`, CONSTRAINT `vendorSponsorships_productId_products_id_fk` FOREIGN KEY (`productId`) REFERENCES `products` (`id`))
+PASS  E. the database REFUSES a placement pointing at a non-existent product  [-------------- update vendorSponsorships set productId=999999999 where id=233 -------------- ERROR 1452 (23000]
+PASS  E. and a product holding a placement cannot be deleted out from under it  [ON DELETE RESTRICT]
+PASS  D. setup: the Sponsored product renders while the seller is active  [[230]]
+PASS  D. setup: the Featured product renders while the seller is active  [[231]]
+PASS  D. setup: the products themselves are still publicly eligible  [active,active]
+PASS  D. SPONSORED: a suspended seller stops being promoted  [[]]
+PASS  D. FEATURED: a suspended seller stops being promoted  [[]]
+PASS  F. setup: an eligible provider holds the Master slot  [got=1529 want=1529]
+PASS  F. a provider who loses approval stops holding the Master slot  [null]
+PASS  F. a deactivated provider stops holding the Master slot  [null]
+PASS  the public response leaks no eligibility reason  [[][]]
+
+ALL PASS  22 passed, 0 failed

@@ -137,8 +137,23 @@ try {
   check(home.providerNamed,
     'HOME: the curated PROVIDER is on the marketplace home too',
     home.providerNamed ? 'named' : 'absent');
-  check(home.stripTop !== null && home.sectionTop !== null && home.stripTop < home.sectionTop,
-    'HOME: and Featured sits ABOVE the ordinary section cards - it is prime',
+  /* ── THIS ASSERTION WAS INVERTED ON OWNER INSTRUCTION ─────────────────
+     It used to require Featured ABOVE the four macro destination cards, on
+     the standing "Featured gets prime placement" rule, and it has been
+     failing: Featured renders below them.
+
+     The owner was shown the measurement and ruled on it directly - "Do NOT
+     move Featured above the four marketplace destination cards in this pass.
+     Primary marketplace navigation may legitimately precede editorial content.
+     Preserve the current /marketplace hierarchy for staging review." The
+     judgement is deferred to the real website rather than settled here.
+
+     So this now PINS the preserved order rather than asserting the deferred
+     one. It is a real check either way: if the page starts reordering itself,
+     this says so, and the owner's deferred decision is not quietly lost. It
+     goes back to the original direction the moment the owner asks for it. */
+  check(home.stripTop !== null && home.sectionTop !== null && home.sectionTop < home.stripTop,
+    'HOME: the destination cards precede Featured - the order the owner preserved',
     `featured at ${Math.round(home.stripTop)}px, sections at ${Math.round(home.sectionTop)}px`);
   check(!home.ordinaryShown,
     'HOME: while a non-curated product of the same supplier is NOT promoted',

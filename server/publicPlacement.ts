@@ -236,6 +236,44 @@ export const PLACEMENT_PRODUCT_COLUMNS = {
   images: products.images,
 } as const;
 
+/**
+ * ── THE ONE RULE FOR PROMOTING A PRODUCT PUBLICLY ─────────────────────────
+ *
+ * Two gates, and both are somebody else's definition rather than a local one:
+ *
+ *   publicProductFilter()      the catalogue's own lifecycle rule - published,
+ *                              not draft, not off sale, not archived.
+ *   directoryVisibilityFilter() the directory's own rule for the SELLER -
+ *                              a provider role, account active, not
+ *                              deactivated, onboarding approved.
+ *
+ * The second gate is the one that is easy to forget, and forgetting it was a
+ * real defect rather than a hypothetical. A suspended supplier keeps every row
+ * in `products` exactly as it was - status 'active', perfectly eligible as a
+ * product - so a surface that checks only the product goes on promoting a
+ * business the marketplace has withdrawn. `placedProducts` had the join;
+ * `listFeaturedProducts` did not, so freezing a seller silenced their
+ * Sponsored slot and left their Featured slot advertising them.
+ *
+ * ── WHY THIS IS A FUNCTION AND NOT A COMMENT ──────────────────────────────
+ *
+ * Because the two call sites agreeing today is not the same as there being one
+ * rule. They were written months apart, they agreed on the first gate and
+ * disagreed on the second, and nothing failed. Editorial Featured and
+ * commercial Sponsored are deliberately separate systems - different labels,
+ * different causes, different modules - but "may a visitor be shown this
+ * product in a promoted slot" is one question, and it now has one answer.
+ *
+ * REQUIRES AN INNER JOIN to `users` on `products.supplierId`. The seller
+ * clauses live on `users`, so without the join they filter nothing; with a
+ * LEFT join a product whose supplier row is missing survives, which is the
+ * fail-OPEN direction. A promoted card that cannot name its seller should not
+ * be rendered at all.
+ */
+export function publiclyPromotableProductFilter() {
+  return and(publicProductFilter(), directoryVisibilityFilter());
+}
+
 export type PlacedProduct = {
   id: number;
   supplierId: number;
@@ -280,10 +318,10 @@ export async function placedProducts(params: {
     .from(products)
     .innerJoin(users, eq(users.id, products.supplierId))
     .where(and(
-      // ONE definition of "a buyer can see this" - a placement must never
-      // render a draft, a withdrawn product or an archived one.
-      publicProductFilter(),
-      directoryVisibilityFilter(),
+      // THE shared rule, not a local restatement of it. See
+      // publiclyPromotableProductFilter above for what the two gates are and
+      // which one went missing on the Featured surface.
+      publiclyPromotableProductFilter(),
       inArray(products.id, rows.map(row => row.entityId)),
     ));
   const byId = new Map((eligible as (Omit<PlacedProduct, 'placementId' | 'label' | 'placementCategory'>)[])

@@ -226,8 +226,10 @@ try {
 
   // ── PRODUCTS: the same rules, on the other entity type ─────────────────
   const supplier = mkProvider('d', { userRole: 'supplier' });
-  sql(`insert into products (supplierId, name, category, price, currency, unit, active)
-       values (${supplier}, 'Probe Rebar ${stamp}', 'Materials', '18500.00', 'EGP', 'tonne', 1)`);
+  /* `status` written explicitly alongside the derived boolean, so the fixture
+     is a row the application would actually have produced. */
+  sql(`insert into products (supplierId, name, category, price, currency, unit, status, active)
+       values (${supplier}, 'Probe Rebar ${stamp}', 'Materials', '18500.00', 'EGP', 'tonne', 'active', 1)`);
   const productId = Number(sql(`select id from products where name='Probe Rebar ${stamp}'`));
   made.products.push(productId);
   book({ entityType: 'PRODUCT', productId, vendorId: null });
@@ -241,11 +243,23 @@ try {
     liveProduct.data?.price === '18500.00' && liveProduct.data?.unit === 'tonne',
     `${liveProduct.data?.price} / ${liveProduct.data?.unit}`);
 
-  sql(`update products set active=0 where id=${productId}`);
+  /* ── THIS CHECK USED TO DELIST THE WRONG COLUMN ──────────────────────
+     It wrote `active=0` and asserted the product vanished. `active` is the
+     LEGACY boolean: server/productLifecycle.ts writes it FROM `status` and no
+     reader consults it, so the row it produced was `status='active'` with
+     `active=0` - publicly eligible, and a state no application path can
+     reach. The probe then reported the marketplace's correct answer as an
+     integrity defect, which cost a round of investigation.
+
+     `status` is the authority, so that is what moves here. The full lifecycle
+     treatment - the transition driven through the module that owns it, the
+     refusal when a live placement blocks archiving, and the seller-side gate -
+     lives in evidence/zg-placementeligibility.mjs. */
+  sql(`update products set status='inactive', active=0 where id=${productId}`);
   const delisted = await query('marketplace.masterProduct', {});
-  check('PRODUCT NEGATIVE: a DELISTED product does not render though the booking is live',
+  check('PRODUCT NEGATIVE: an OFF-SALE product does not render though the booking is live',
     delisted.data === null, JSON.stringify(delisted.data));
-  sql(`update products set active=1 where id=${productId}`);
+  sql(`update products set status='active', active=1 where id=${productId}`);
 
   // The gate this join exists for: the product is fine, the SELLER is not.
   sql(`update users set accountStatus='frozen' where id=${supplier}`);
