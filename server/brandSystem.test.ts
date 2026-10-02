@@ -303,18 +303,21 @@ describe('the brand is reachable as utilities, which is why hardcoding stopped',
 
   it('and the rest of the client does not get WORSE', () => {
     /*
-     * A RATCHET, NOT A CLAIM OF COMPLETION. 398 raw palette classes remain,
+     * A RATCHET, NOT A CLAIM OF COMPLETION. 374 raw palette classes remain,
      * almost all in admin and status surfaces where they encode state rather
      * than brand - rewriting them wholesale would be a redesign of screens
      * this pass was told not to touch.
      *
-     * What this stops is the count climbing while nobody is looking. Lower it
-     * deliberately as those surfaces are migrated; never raise it.
+     * Lowered from 398 when the public surfaces were migrated: the Marketplace
+     * Hub's four rainbow macro cards, the Featured headings that wore three
+     * different hues for one concept, the pricing founder panel, the verified
+     * badges and every rating star. The admin remainder is next, and this
+     * number only ever goes DOWN.
      */
     const total = CLIENT
       .filter(file => !rel(file).includes('components/brand/'))
       .reduce((sum, file) => sum + [...codeAbs(file).matchAll(PALETTE)].length, 0);
-    expect(total, 'raw palette usage has grown').toBeLessThanOrEqual(398);
+    expect(total, 'raw palette usage has grown').toBeLessThanOrEqual(374);
     /*
      * 398 is `readSourceForAssertions`'s count, not a hand-rolled grep's. An
      * earlier number here was three lower because it used a simpler comment

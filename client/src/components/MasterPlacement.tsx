@@ -141,7 +141,7 @@ function PlacedProviderCard({ placed, compact }: { placed: PlacedProviderCardDat
                 not a zero, and it is not a plausible 4.8 either. */}
             {placed.averageRating != null && (
               <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-hidden="true" />
+                <Star className="h-3.5 w-3.5 fill-brand-accent-600 text-brand-accent-600" aria-hidden="true" />
                 {placed.averageRating} ({placed.reviewCount})
               </span>
             )}

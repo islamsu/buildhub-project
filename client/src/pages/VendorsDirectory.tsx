@@ -339,7 +339,7 @@ function VendorCard({
                 {(vendor as any).businessName || vendor.name}
               </span>
               {vendor.verified && (
-                <Badge className="shrink-0 bg-emerald-100 text-emerald-700 border-0 text-xs">
+                <Badge className="shrink-0 border-0 bg-success-50 text-success-700 text-xs">
                   <BadgeCheck className="w-3 h-3 me-0.5" />{t('common.verified')}
                 </Badge>
               )}
@@ -368,7 +368,9 @@ function VendorCard({
               key={star}
               className={`w-3.5 h-3.5 ${
                 vendor.averageRating !== null && star <= Math.round(vendor.averageRating)
-                  ? 'fill-amber-400 text-amber-400'
+                  /* accent-600, not amber-400: 3.11:1 rather than 1.67:1
+                     against the card, and a token rather than a raw hue. */
+                  ? 'fill-brand-accent-600 text-brand-accent-600'
                   : 'text-muted-foreground/30'
               }`}
             />

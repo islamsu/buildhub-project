@@ -124,7 +124,6 @@ export default function MarketplaceHub() {
       id: 'products',
       href: '/marketplace/products',
       icon: Package,
-      gradient: 'from-blue-600 to-cyan-500',
       title: t('marketHub.sectionProductsTitle'),
       desc: t('marketHub.sectionProductsDesc'),
       stat: countOrUnknown(statsFailed, statsLoading, platformStats?.publicProducts ?? 0),
@@ -141,7 +140,6 @@ export default function MarketplaceHub() {
       id: 'vendors',
       href: '/marketplace/vendors',
       icon: Store,
-      gradient: 'from-emerald-600 to-teal-500',
       title: t('marketHub.sectionVendorsTitle'),
       desc: t('marketHub.sectionVendorsDesc'),
       stat: countOrUnknown(directoryFailed, directoryLoading, directory.length),
@@ -153,7 +151,6 @@ export default function MarketplaceHub() {
       id: 'designers',
       href: '/marketplace/designers',
       icon: PenTool,
-      gradient: 'from-violet-600 to-purple-500',
       title: t('marketHub.sectionDesignersTitle'),
       desc: t('marketHub.sectionDesignersDesc'),
       /**
@@ -176,7 +173,6 @@ export default function MarketplaceHub() {
       id: 'finishing',
       href: '/marketplace/finishing',
       icon: HardHat,
-      gradient: 'from-orange-600 to-amber-500',
       title: t('marketHub.sectionFinishingTitle'),
       desc: t('marketHub.sectionFinishingDesc'),
       // The same correction, for the same reason.
@@ -249,10 +245,17 @@ export default function MarketplaceHub() {
                 className="group cursor-pointer overflow-hidden border-border hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 relative"
                 onClick={() => navigate(s.href)}
               >
-                <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${s.gradient}`} />
+                {/* ONE TREATMENT, FOUR DESTINATIONS. These four cards
+                    carried four different rainbow gradients - blue,
+                    emerald, violet, orange - on the most visible public
+                    page in the product, which is the pattern §13 and
+                    §73 both name. The icon is what identifies a
+                    destination; the colour identifies the brand. Same
+                    decision the six role cards already made. */}
+                <div className="absolute inset-x-0 top-0 h-1 bg-brand-200 transition-colors group-hover:bg-brand-accent-500" />
                 <div className="flex h-full flex-col p-6 md:p-8">
                   <div className="flex items-start justify-between mb-4">
-                    <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${s.gradient} flex items-center justify-center text-white shadow-lg`}>
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
                       <s.icon className="w-7 h-7" />
                     </div>
                     <div className="text-end">
@@ -295,7 +298,7 @@ export default function MarketplaceHub() {
           <div className="container pt-10 pb-2">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold flex items-center gap-2">
-                <BadgeCheck className="w-5 h-5 text-emerald-600" /> {t('marketHub.featuredVendors')}
+                <BadgeCheck className="w-5 h-5 text-success" /> {t('marketHub.featuredVendors')}
               </h2>
               <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/vendors')}>
                 {t('marketHub.viewAll')}
@@ -321,7 +324,10 @@ export default function MarketplaceHub() {
               <div>
                 <div className="flex items-center justify-between mb-5">
                   <h2 className="text-lg font-bold flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-violet-600" /> {t('marketHub.featuredDesigners')}
+                    {/* Featured is ONE concept (§18), so it reads the same wherever
+                        it appears. Three Featured headings in three different
+                        hues taught a visitor that they were three things. */}
+                    <BadgeCheck className="w-5 h-5 text-success" /> {t('marketHub.featuredDesigners')}
                   </h2>
                   <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/designers')}>
                     {t('marketHub.viewAll')}
@@ -340,7 +346,7 @@ export default function MarketplaceHub() {
               <div>
                 <div className="flex items-center justify-between mb-5">
                   <h2 className="text-lg font-bold flex items-center gap-2">
-                    <HardHat className="w-5 h-5 text-orange-600" /> {t('marketHub.featuredCompanies')}
+                    <BadgeCheck className="w-5 h-5 text-success" /> {t('marketHub.featuredCompanies')}
                   </h2>
                   <button className="text-sm text-primary font-medium hover:underline" onClick={() => navigate('/marketplace/finishing')}>
                     {t('marketHub.viewAll')}
@@ -383,7 +389,7 @@ export default function MarketplaceHub() {
           <div className="container pt-8 pb-2" data-testid="hub-featured-products">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold flex items-center gap-2">
-                <BadgeCheck className="w-5 h-5 text-emerald-600" />
+                <BadgeCheck className="w-5 h-5 text-success" />
                 {lang === 'ar' ? 'منتجات مختارة' : 'Featured Products'}
               </h2>
               <button
@@ -530,7 +536,7 @@ function DirectoryCard({
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-sm truncate flex items-center gap-1">
             {vendor.name ?? `#${vendor.id}`}
-            {vendor.verified && <BadgeCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />}
+            {vendor.verified && <BadgeCheck className="w-3.5 h-3.5 text-success flex-shrink-0" />}
           </div>
           <div className="text-xs text-muted-foreground truncate">
             {vendor.categories.length > 0 ? vendor.categories.slice(0, 2).join(' · ') : (vendor.location ?? '')}
@@ -540,7 +546,10 @@ function DirectoryCard({
       <div className="flex items-center gap-1 text-xs mt-2">
         {vendor.averageRating != null ? (
           <>
-            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+            {/* accent-600, not amber-400. The old star was 1.67:1 on white -
+              below the 3:1 floor for a non-text indicator. This one is
+              3.11:1 and is a brand token rather than a raw palette hue. */}
+            <Star className="w-3.5 h-3.5 fill-brand-accent-600 text-brand-accent-600" />
             <span className="font-medium">{vendor.averageRating}</span>
             <span className="text-muted-foreground">({vendor.reviewCount})</span>
           </>

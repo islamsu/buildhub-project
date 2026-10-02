@@ -176,18 +176,23 @@ export default function Pricing() {
                       )}
                     </p>
 
+                    {/* THE FOUNDER OFFER IS EMPHASIS, NOT A WARNING. It was
+                        raw amber-300/50/900 - the same hue the product uses for
+                        "something needs attention". On the brand accent it
+                        reads as a highlight, which is what it is, and the
+                        tokens mean one edit changes it everywhere. */}
                     {founderMonth !== null && (
-                      <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50/60 p-3">
-                        <div className="flex items-center gap-1.5 text-amber-900 text-sm font-medium">
+                      <div className="mt-3 rounded-lg border border-brand-accent-500/40 bg-brand-accent-500/10 p-3">
+                        <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                           <Sparkles className="w-3.5 h-3.5" />
                           {t('pricing.founderBadge')}: {data.currency} {money(founderMonth)}{t('pricing.perMonth')}
                         </div>
-                        <p className="text-xs text-amber-900/80 mt-1">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           {t('pricing.founderNote')} ({data.founderOfferMonths}).
                         </p>
                         {/* No annual founder price is an approved product, so the
                             page must not imply one exists. */}
-                        <p className="text-xs text-amber-900/60 mt-1">{t('pricing.founderMonthlyOnly')}</p>
+                        <p className="mt-1 text-xs text-muted-foreground/80">{t('pricing.founderMonthlyOnly')}</p>
                       </div>
                     )}
                   </div>
@@ -207,7 +212,7 @@ export default function Pricing() {
                         <li key={key} className="flex items-start gap-2 text-sm">
                           {absent
                             ? <Minus className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground/40" />
-                            : <Check className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${live ? 'text-emerald-600' : 'text-muted-foreground/40'}`} />}
+                            : <Check className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${live ? 'text-success' : 'text-muted-foreground/40'}`} />}
                           <span className={`flex-1 ${absent ? 'text-muted-foreground/60' : ''}`}>
                             <span className="text-muted-foreground">{t(`ent.${key}`)}: </span>
                             <span className={absent ? '' : 'font-medium'}>{renderValue(key, value)}</span>
