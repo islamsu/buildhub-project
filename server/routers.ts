@@ -174,6 +174,7 @@ import {
   directoryVisibilityFilter,
   getVendorTargetingDiagnostics, listDirectoryCategories,
   listDirectoryVendors, listFeaturedProviders, listSponsoredVendors,
+  PROVIDER_ROLES,
 } from './vendorDirectory';
 import { getPlatformStats } from './platformStats';
 import {
@@ -2184,6 +2185,17 @@ const marketplaceRouter = router({
       location: z.string().max(MAX_SEARCH_LENGTH).optional(),
       search: z.string().max(MAX_SEARCH_LENGTH).optional(),
       limit: z.number().int().positive().max(100).optional(),
+      /*
+       * ONE PROVIDER ROLE, for the Suppliers and Contractors destinations.
+       *
+       * An ENUM over PROVIDER_ROLES, not a string: the directory is public and
+       * unauthenticated, and a free-text role would be an invitation to ask
+       * for 'admin' or 'homeowner'. Zod refuses anything outside the five
+       * professional roles before the query is built, and
+       * `directoryVisibilityFilter()` would refuse it again - see the note on
+       * DirectoryFilters.role for why this can only narrow.
+       */
+      role: z.enum(PROVIDER_ROLES).optional(),
     }).optional())
     .query(async ({ input }) => {
       const organic = await listDirectoryVendors(input ?? {});

@@ -96,7 +96,7 @@ try {
           var r = el.getBoundingClientRect();
           return Math.round(r.top + window.scrollY);
         }
-        var cards = [].slice.call(document.querySelectorAll('[data-testid^="home-domain-"][data-domain-kind]'));
+        var cards = [].slice.call(document.querySelectorAll('[data-testid^="home-journey-"][data-journey-kind]'));
         var tiles = [].slice.call(document.querySelectorAll('[data-testid="home-browse"] a, [data-testid="home-browse"] button'));
         return JSON.stringify({
           hero: top('[data-testid="home-trust-strip"]'),
@@ -105,7 +105,7 @@ try {
           cardCount: cards.length,
           cardAreas: cards.map(function (c) {
             var r = c.getBoundingClientRect();
-            return { id: c.getAttribute('data-testid'), kind: c.getAttribute('data-domain-kind'), w: Math.round(r.width), h: Math.round(r.height) };
+            return { id: c.getAttribute('data-testid'), kind: c.getAttribute('data-journey-kind'), w: Math.round(r.width), h: Math.round(r.height) };
           }),
           tileArea: tiles.length ? (function () { var r = tiles[0].getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; })() : null,
           docOverflow: document.documentElement.scrollWidth - window.innerWidth,
@@ -120,7 +120,7 @@ try {
         `${tag} hero/trust precedes the gateway`, `${g.hero} < ${g.explore}`);
       check(g.explore < g.browse,
         `${tag} ON SCREEN the gateway is above Browse by Category`, `${g.explore} < ${g.browse}`);
-      check(g.cardCount === 3, `${tag} three gateway cards`, `${g.cardCount}`);
+      check(g.cardCount === 6, `${tag} SIX first-class journey cards`, `${g.cardCount}`);
       check(g.docOverflow <= 0, `${tag} no horizontal page scroll`, `overflow=${g.docOverflow}px`);
       check(g.dir === (lang === 'ar' ? 'rtl' : 'ltr'), `${tag} document direction`, `dir=${g.dir}`);
 
@@ -137,8 +137,16 @@ try {
 
       /* ── 3. ONE WORKFLOW, TWO DOMAINS ─────────────────────────────── */
       const kinds = g.cardAreas.map(c => c.kind);
-      check(kinds.filter(k => k === 'domain').length === 2 && kinds.filter(k => k === 'workflow').length === 1,
-        `${tag} two domains and one workflow are on screen`, kinds.join(','));
+      check(kinds.filter(k => k === 'discovery').length === 5 && kinds.filter(k => k === 'action').length === 1,
+        `${tag} five discovery journeys and one action are on screen`, kinds.join(','));
+      /* THE OWNER'S ACCEPTANCE CRITERION, measured: all six recognisable
+         independently, none of them a footnote. The smallest card must be at
+         least 70% of the largest - the rejected pattern was one giant card and
+         two chips, which is nowhere near that. */
+      const areas = g.cardAreas.map(c => c.w * c.h).filter(a => a > 0);
+      const spread = Math.min(...areas) / Math.max(...areas);
+      check(spread >= 0.7, `${tag} no journey is a footnote beside the others`,
+        `smallest is ${(spread * 100).toFixed(0)}% of largest`);
 
       /* ── 4. COMPUTED COLOUR vs MEASURED BACKGROUND ──────────────────
          The only part of the contrast story a token test cannot tell: the
@@ -163,7 +171,7 @@ try {
           return 'rgb(255, 255, 255)';
         }
         var out = [];
-        var cards = [].slice.call(document.querySelectorAll('[data-testid^="home-domain-"][data-domain-kind]'));
+        var cards = [].slice.call(document.querySelectorAll('[data-testid^="home-journey-"][data-journey-kind]'));
         cards.forEach(function (card) {
           var id = card.getAttribute('data-testid');
           var well = card.querySelector('span');
@@ -172,12 +180,12 @@ try {
              card is the PRESETS container - so the Providers CTA was never
              measured and the assertion passed on the wrong element. A probe
              that silently measures something else is worse than no probe. */
-          var cta = card.querySelector('[data-domain-cta]');
+          var cta = card.querySelector('[data-journey-cta]');
           var fontPx = cta ? parseFloat(getComputedStyle(cta).fontSize) : 0;
           var weight = cta ? Number(getComputedStyle(cta).fontWeight) : 0;
           out.push({
             id: id,
-            kind: card.getAttribute('data-domain-kind'),
+            kind: card.getAttribute('data-journey-kind'),
             /* THE GLYPH: non-text UI, SC 1.4.11, needs 3:1. */
             iconFg: well ? getComputedStyle(well).color : null,
             iconBg: well ? backdrop(well.parentElement) : null,
@@ -190,6 +198,20 @@ try {
             ctaPx: fontPx,
             ctaLarge: fontPx >= 24 || (fontPx >= 18.66 && weight >= 700),
             hasIcon: !!(well && well.querySelector('svg')),
+            /* THE GLYPH ITSELF, as its path data. Four journeys share a hue,
+               so the icon is what tells a visitor which card is theirs - two
+               cards wearing one glyph would put the whole distinction back on
+               colour, and nothing short of reading the drawn paths can see
+               that. */
+            glyph: (function () {
+              if (!well) { return 'none'; }
+              var svg = well.querySelector('svg');
+              if (!svg) { return 'none'; }
+              return [].slice.call(svg.querySelectorAll('path,circle,rect,line,polyline,polygon'))
+                .map(function (n) {
+                  return n.tagName + ':' + (n.getAttribute('d') || n.getAttribute('points') || '');
+                }).join('|').slice(0, 200);
+            })(),
             label: (card.textContent || '').trim().slice(0, 40)
           });
         });
@@ -219,13 +241,36 @@ try {
         check(c.label.length > 2, `${tag} ${c.id} carries a text label`, JSON.stringify(c.label));
       }
 
-      /* ── 5. THE TWO DOMAINS ARE ACTUALLY DISTINGUISHABLE ───────────── */
+      /* ── 5. COLOUR FOLLOWS THE DOMAIN, NOT THE CARD COUNT ───────────
+         Six cards, three hue families: the catalogue, the provider directory,
+         and the action. Measured as PAINTED colour, so a page-local override
+         would show up here even if the model were right. */
       const parsed = JSON.parse(colours);
-      const dom = parsed.filter(c => c.kind === 'domain').map(c => parseColour(c.iconFg));
-      if (dom.length === 2 && dom[0] && dom[1]) {
-        const dist = Math.hypot(dom[0][0] - dom[1][0], dom[0][1] - dom[1][1], dom[0][2] - dom[1][2]);
-        check(dist > 60, `${tag} Products and Providers are visually distinct`, `rgb distance ${dist.toFixed(0)}`);
+      const byId = Object.fromEntries(parsed.map(c => [c.id, c]));
+      const hex = c => { const v = parseColour(c.iconFg); return v ? v.join(',') : 'none'; };
+      const providerJourneys = ['suppliers', 'contractors', 'design', 'finishing']
+        .map(id => byId[`home-journey-${id}`]).filter(Boolean);
+      check(providerJourneys.length === 4, `${tag} all four provider journeys render`,
+        `${providerJourneys.length}`);
+      const providerAccents = new Set(providerJourneys.map(hex));
+      check(providerAccents.size === 1,
+        `${tag} the four provider journeys share ONE domain accent`,
+        `${providerAccents.size} accents: ${[...providerAccents].join(' | ')}`);
+      const families = new Set(parsed.map(hex));
+      check(families.size === 3, `${tag} six cards, three hue families - no rainbow`,
+        `${families.size}: ${[...families].join(' | ')}`);
+      const products = byId['home-journey-products'];
+      if (products && providerJourneys[0]) {
+        const a = parseColour(products.iconFg), b = parseColour(providerJourneys[0].iconFg);
+        const dist = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+        check(dist > 60, `${tag} the catalogue and the directory are visually distinct`,
+          `rgb distance ${dist.toFixed(0)}`);
       }
+      /* AND EACH JOURNEY HAS ITS OWN GLYPH - which is what carries identity
+         once four of them share a hue, and what makes the grid legible in
+         grayscale. */
+      const glyphs = new Set(parsed.map(c => c.glyph));
+      check(glyphs.size === 6, `${tag} six distinct icons`, `${glyphs.size} unique paths`);
 
       /* ── 6. NO RAINBOW. Count the distinct strong hues on the page. ──
          The owner's constraint was "restore domain identity without turning
@@ -298,16 +343,24 @@ try {
         focusable: focusables.length,
         nested: nested.map(function (e) { return e.getAttribute('data-testid') || e.tagName; }),
         fakeLinks: fakeLinks.length,
-        presets: section.querySelectorAll('[data-testid^="home-preset-"]').length
+        presets: section.querySelectorAll('[data-testid^="home-preset-"]').length,
+        cards: section.querySelectorAll('[data-testid^="home-journey-"][data-journey-kind]').length
       });
     `);
     const k = JSON.parse(kb);
     check(k.found, 'keyboard: the gateway is in the DOM');
-    check(k.focusable >= 5, 'keyboard: every card and preset is focusable', `${k.focusable} stops`);
+    check(k.focusable >= 6, 'keyboard: every journey card is focusable', `${k.focusable} stops`);
     check(k.nested.length === 0, 'KEYBOARD: NO INTERACTIVE ELEMENT IS NESTED IN ANOTHER',
       k.nested.join(',') || 'none');
     check(k.fakeLinks === 0, 'keyboard: no span is impersonating a link', `${k.fakeLinks}`);
-    check(k.presets === 2, 'keyboard: both provider presets render', `${k.presets}`);
+    /* THE PRESET CHIPS ARE GONE, which is the correction: Design Services and
+       Finishing were two small secondary links under a combined provider card
+       and are now first-class journeys of their own. What replaces this check
+       is that every journey is its OWN tab stop rather than a chip inside
+       somebody else's card. */
+    check(k.presets === 0, 'keyboard: the secondary preset chips are gone', `${k.presets}`);
+    check(k.focusable === 6, 'keyboard: each of the six journeys is one tab stop',
+      `${k.focusable} stops`);
     await page.close();
   }
 } finally {

@@ -44,6 +44,29 @@ export type DirectoryFilters = {
   location?: string;
   search?: string;
   limit?: number;
+  /**
+   * ── ONE PROVIDER ROLE, FOR A FIRST-CLASS NAVIGATION DESTINATION ────────
+   *
+   * A buyer arrives thinking "I need a supplier" or "I need a contractor".
+   * Those are different intents with different outcomes, and until now the
+   * directory could only answer the generic "I need a provider" - category and
+   * location were the only axes, so Suppliers and Contractors had nowhere to
+   * point but the undifferentiated list of all five roles.
+   *
+   * ROLE AND CATEGORY ARE DIFFERENT DIMENSIONS, and both are real. A category
+   * preset ('Design', 'Renovation') matches what a provider has DECLARED they
+   * do. A role is what kind of business they registered as. Design Services
+   * and Finishing are correctly category views - a contractor who declares
+   * Renovation belongs in Finishing - and Suppliers and Contractors are
+   * correctly role views. Collapsing either into the other would make the
+   * navigation describe RAKIZA's data model instead of the customer's need.
+   *
+   * CONSTRAINED TO PROVIDER ROLES at the type level, so this cannot become a
+   * way to list homeowners or administrators through a public endpoint. It
+   * NARROWS `directoryVisibilityFilter()`'s existing role set and can never
+   * widen it.
+   */
+  role?: ProviderRole;
 };
 
 /**
@@ -139,6 +162,16 @@ export async function listDirectoryVendors(filters: DirectoryFilters = {}): Prom
   if (filters.search) {
     const term = containsTerm(filters.search);
     conditions.push(or(like(users.name, term), like(users.bio, term))!);
+  }
+  /*
+   * ROLE NARROWS, NEVER WIDENS. `directoryVisibilityFilter()` above has
+   * already restricted the query to PROVIDER_ROLES; this picks one of them.
+   * The two conditions are ANDed, so a role outside that set - were the type
+   * ever bypassed - would return nothing rather than reaching a homeowner or
+   * an administrator. Fail closed by construction.
+   */
+  if (filters.role) {
+    conditions.push(eq(users.userRole, filters.role));
   }
   // Category filter is a declared-category match, using the same shared
   // taxonomy as RFQ targeting - never a separate vendor-only vocabulary.

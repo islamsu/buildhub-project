@@ -34,18 +34,37 @@ const translations: Record<Language, Record<string, string>> = {
     // Two domains and one workflow. Every label here has a route that exists.
     'home.explore.title': 'Explore Rakiza',
     'home.explore.subtitle': 'Source materials, find the right firm, or describe the job and let them come to you.',
-    'domain.products': 'Products',
-    'domain.products.blurb': 'Construction and finishing materials from approved suppliers, with specifications.',
-    'domain.providers': 'Suppliers & professionals',
-    'domain.providers.blurb': 'Approved contractors, engineers, architects, suppliers and project managers.',
-    'domain.quotes': 'Get Quotes',
-    'domain.quotes.blurb': 'Describe the job once. Approved providers answer with comparable quotations.',
-    /* The workflow card's own CTA. The domains say "View all" because they
-       lead to a listing; this one leads to a form, and "View all" would be a
-       lie about what the click does. */
-    'domain.quotes.cta': 'Start a request',
-    'domain.preset.design': 'Design services',
-    'domain.preset.finishing': 'Finishing companies',
+    /* ── THE SIX FIRST-CLASS JOURNEYS ──────────────────────────────────
+       Each names what the CUSTOMER is looking for, not the provider role
+       behind it. "Design Services" rather than "Professionals" is an owner
+       decision: the customer wants a service, and the label should not make
+       them translate a database role first.
+
+       NO COPY CLAIMS "APPROVED". The old providers blurb read "Approved
+       contractors, engineers, architects, suppliers and project managers" -
+       and `onboardingStatus = 'approved'` is real, but it means a completed
+       professional registration that an administrator accepted, not an
+       endorsement of the business. Verification is a separate state with its
+       own badge on the card. So these describe the destination and let the
+       per-provider signals speak for themselves. */
+    'journey.products': 'Products & Materials',
+    'journey.products.blurb': 'Construction and finishing materials with real specifications and prices.',
+    'journey.suppliers': 'Suppliers',
+    'journey.suppliers.blurb': 'Businesses that supply materials, equipment and fittings.',
+    'journey.contractors': 'Contractors',
+    'journey.contractors.blurb': 'Construction firms that build, install and execute on site.',
+    'journey.design': 'Design Services',
+    'journey.design.blurb': 'Architects, engineers and studios offering design work.',
+    'journey.finishing': 'Finishing',
+    'journey.finishing.blurb': 'Companies that handle finishing and renovation work.',
+    'journey.quotes': 'Get Quotes',
+    'journey.quotes.blurb': 'Describe your project once and receive comparable quotations.',
+    /* THREE CTA VERBS, BECAUSE THE CLICKS DIFFER. A catalogue is browsed, a
+       directory is searched, and the RFQ leads to a form - "View all" on that
+       last one would be a lie about what the click does. */
+    'journey.cta.browse': 'Browse catalogue',
+    'journey.cta.find': 'View directory',
+    'journey.cta.quotes': 'Post your project',
     'home.browse.title': 'Browse by category',
     'home.browse.subtitle': 'Every category in the catalogue, with what is listed in each.',
     'home.browse.viewAll': 'All categories',
@@ -1137,8 +1156,18 @@ const translations: Record<Language, Record<string, string>> = {
     'vendorsDir.sponsoredSection': 'Sponsored providers',
     'vendorsDir.editorialNote': 'Editorial picks from the platform.',
     'vendorsDir.sponsoredNote': 'Paid placement. These providers also appear in the results below, in their normal position.',
+    /* ── THE TWO ROLE DIRECTORIES ──────────────────────────────────────
+       Subtitles state the FILTER in the customer's language, so the page says
+       what it has actually done - a destination that claims to be filtered and
+       quietly shows everyone is worse than no filter. Neither says "approved":
+       the directory's eligibility rule includes a completed registration, but
+       that is not an endorsement and the Verified badge is a separate state. */
+    'suppliersDir.title': 'Suppliers',
+    'suppliersDir.subtitle': 'Businesses registered on Rakiza as suppliers of materials, equipment and fittings. Ratings come from verified reviews.',
+    'contractorsDir.title': 'Contractors',
+    'contractorsDir.subtitle': 'Construction firms registered on Rakiza as contractors. Ratings come from verified reviews; an empty list means none has joined yet.',
     'designersDir.title': 'Design Services',
-    'designersDir.subtitle': 'Approved Rakiza providers who have declared the Design category. Ratings come from verified reviews; an empty list means no designer has joined yet.',
+    'designersDir.subtitle': 'Rakiza providers who have declared the Design category. Ratings come from verified reviews; an empty list means no designer has joined yet.',
     'designersDir.specialtyAll': 'All',
     'designersDir.searchPlaceholder': 'Search designers or studios…',
     'designersDir.sortFeatured': 'Featured first',
@@ -1155,7 +1184,7 @@ const translations: Record<Language, Record<string, string>> = {
     'designersDir.designStyles': 'Design Styles',
     'designersDir.requestDesign': 'Request Design',
     'finishingDir.title': 'Finishing Companies',
-    'finishingDir.subtitle': 'Approved Rakiza providers who have declared the Renovation category. Ratings come from verified reviews; an empty list means none has joined yet.',
+    'finishingDir.subtitle': 'Rakiza providers who have declared the Renovation category. Ratings come from verified reviews; an empty list means none has joined yet.',
     'finishingDir.categoryAll': 'All',
     'finishingDir.searchPlaceholder': 'Search finishing companies…',
     'finishingDir.sortFeatured': 'Featured first',
@@ -1196,8 +1225,17 @@ const translations: Record<Language, Record<string, string>> = {
     'marketHub.rfqDesc': 'Describe what your project needs and send one request to the suppliers who can quote it. You compare the responses side by side.',
     'marketHub.rfqCta': 'Request quotations',
     'marketHub.categoriesLabel': 'Categories',
+    /* ── THE HUB'S MACRO DESTINATIONS, MATCHING THE HOMEPAGE ───────────
+       "Vendors" described every provider role at once while the homepage said
+       something else for the same intent. A visitor must not learn two names
+       for one journey. "Trusted" is also gone: the directory's rule is
+       registration and listing eligibility, not trust. */
+    'marketHub.sectionSuppliersTitle': 'Suppliers',
+    'marketHub.sectionSuppliersDesc': 'Businesses supplying materials, equipment and fittings',
+    'marketHub.sectionContractorsTitle': 'Contractors',
+    'marketHub.sectionContractorsDesc': 'Construction firms that build, install and execute on site',
     'marketHub.sectionVendorsTitle': 'Vendors',
-    'marketHub.sectionVendorsDesc': 'Directory of trusted suppliers and manufacturers across Egypt',
+    'marketHub.sectionVendorsDesc': 'Directory of suppliers and manufacturers across Egypt',
     'marketHub.vendorsLabel': 'Vendors',
     'marketHub.sectionDesignersTitle': 'Design Services',
     'marketHub.sectionDesignersDesc': 'Professional design firms and independent designers across 14 disciplines',
@@ -1347,15 +1385,31 @@ const translations: Record<Language, Record<string, string>> = {
     'home.trust.oneplace.note': 'الرسائل والمستندات والقرارات في موضع واحد',
     'home.explore.title': 'استكشف ركيزة',
     'home.explore.subtitle': 'وفّر الخامات، أو اعثر على الجهة المناسبة، أو صِف العمل ودع العروض تأتيك.',
-    'domain.products': 'المنتجات',
-    'domain.products.blurb': 'مواد البناء والتشطيب من موردين معتمدين، بمواصفاتها.',
-    'domain.providers': 'الموردون والمحترفون',
-    'domain.providers.blurb': 'مقاولون ومهندسون ومعماريون وموردون ومديرو مشاريع معتمدون.',
-    'domain.quotes': 'اطلب عروض أسعار',
-    'domain.quotes.blurb': 'صِف العمل مرة واحدة، وتصلك عروض قابلة للمقارنة من مزوّدين معتمدين.',
-    'domain.quotes.cta': 'ابدأ طلبًا',
-    'domain.preset.design': 'خدمات التصميم',
-    'domain.preset.finishing': 'شركات التشطيبات',
+    /* ── THE SIX JOURNEYS IN ARABIC ────────────────────────────────────
+       The canonical terms this product already uses, not new coinages:
+       خدمات التصميم and شركات التشطيبات are the existing directory titles,
+       الموردون is the existing vendor term, and مقاولون is the contractor term
+       the role vocabulary and the hero copy already use. Nothing is
+       transliterated.
+
+       Like the English, no blurb says "معتمدون" - approved. The registration
+       state is real but it is not an endorsement, and the per-provider
+       verification badge carries that meaning where it belongs. */
+    'journey.products': 'المنتجات والمواد',
+    'journey.products.blurb': 'مواد البناء والتشطيب بمواصفاتها وأسعارها الحقيقية.',
+    'journey.suppliers': 'الموردون',
+    'journey.suppliers.blurb': 'شركات توريد المواد والمعدات والتجهيزات.',
+    'journey.contractors': 'المقاولون',
+    'journey.contractors.blurb': 'شركات التنفيذ والبناء والتركيب في الموقع.',
+    'journey.design': 'خدمات التصميم',
+    'journey.design.blurb': 'معماريون ومهندسون ومكاتب تصميم يقدّمون أعمال التصميم.',
+    'journey.finishing': 'التشطيبات',
+    'journey.finishing.blurb': 'شركات متخصّصة في أعمال التشطيب والترميم.',
+    'journey.quotes': 'اطلب عروض أسعار',
+    'journey.quotes.blurb': 'صِف مشروعك مرة واحدة وتصلك عروض قابلة للمقارنة.',
+    'journey.cta.browse': 'تصفّح الكتالوج',
+    'journey.cta.find': 'استعرض الدليل',
+    'journey.cta.quotes': 'انشر مشروعك',
     'home.browse.title': 'تصفّح حسب الفئة',
     'home.browse.subtitle': 'كل فئات الكتالوج، وما هو مدرج في كل منها.',
     'home.browse.viewAll': 'كل الفئات',
@@ -2379,8 +2433,12 @@ const translations: Record<Language, Record<string, string>> = {
     'vendorsDir.sponsoredSection': 'مزوّدون مموّلون',
     'vendorsDir.editorialNote': 'اختيار تحريري من المنصة.',
     'vendorsDir.sponsoredNote': 'مكان إعلاني مدفوع. يظهر هؤلاء المزوّدون أيضاً في النتائج أدناه بترتيبهم المعتاد.',
+    'suppliersDir.title': 'الموردون',
+    'suppliersDir.subtitle': 'شركات مسجّلة في ركيزة كموردين للمواد والمعدات والتجهيزات. التقييمات مصدرها مراجعات موثّقة.',
+    'contractorsDir.title': 'المقاولون',
+    'contractorsDir.subtitle': 'شركات تنفيذ مسجّلة في ركيزة كمقاولين. التقييمات مصدرها مراجعات موثّقة، والقائمة الفارغة تعني أنه لم ينضم أحد بعد.',
     'designersDir.title': 'خدمات التصميم',
-    'designersDir.subtitle': 'مزوّدو البناء هنا المعتمدون الذين أعلنوا فئة التصميم. التقييمات من مراجعات موثّقة، والقائمة الفارغة تعني أنه لم ينضم مصمم بعد.',
+    'designersDir.subtitle': 'مزوّدون في ركيزة أعلنوا فئة التصميم. التقييمات من مراجعات موثّقة، والقائمة الفارغة تعني أنه لم ينضم مصمم بعد.',
     'designersDir.specialtyAll': 'الكل',
     'designersDir.searchPlaceholder': 'ابحث عن مصمم أو استوديو…',
     'designersDir.sortFeatured': 'مميز أولاً',
@@ -2397,7 +2455,7 @@ const translations: Record<Language, Record<string, string>> = {
     'designersDir.designStyles': 'أنماط التصميم',
     'designersDir.requestDesign': 'طلب تصميم',
     'finishingDir.title': 'شركات التشطيبات',
-    'finishingDir.subtitle': 'مزوّدو البناء هنا المعتمدون الذين أعلنوا فئة التجديد. التقييمات من مراجعات موثّقة، والقائمة الفارغة تعني أنه لم تنضم شركة بعد.',
+    'finishingDir.subtitle': 'مزوّدون في ركيزة أعلنوا فئة الترميم. التقييمات من مراجعات موثّقة، والقائمة الفارغة تعني أنه لم تنضم شركة بعد.',
     'finishingDir.categoryAll': 'الكل',
     'finishingDir.searchPlaceholder': 'ابحث عن شركة تشطيبات…',
     'finishingDir.sortFeatured': 'مميز أولاً',
@@ -2436,6 +2494,10 @@ const translations: Record<Language, Record<string, string>> = {
     'marketHub.rfqDesc': 'اشرح ما يحتاجه مشروعك وأرسل طلباً واحداً إلى الموردين القادرين على تسعيره، ثم قارن العروض جنباً إلى جنب.',
     'marketHub.rfqCta': 'اطلب عروض أسعار',
     'marketHub.categoriesLabel': 'فئة',
+    'marketHub.sectionSuppliersTitle': 'الموردون',
+    'marketHub.sectionSuppliersDesc': 'شركات توريد المواد والمعدات والتجهيزات',
+    'marketHub.sectionContractorsTitle': 'المقاولون',
+    'marketHub.sectionContractorsDesc': 'شركات التنفيذ والبناء والتركيب في الموقع',
     'marketHub.sectionVendorsTitle': 'الموردون',
     'marketHub.sectionVendorsDesc': 'دليل الموردين والمصنعين الموثوقين في مصر',
     'marketHub.vendorsLabel': 'مورد',

@@ -544,7 +544,10 @@ describe('the six surfaces fixed in this pass, by what each of them claimed', ()
     // the first version of this assertion passed on that.
     const cards = source.slice(source.indexOf('const sections = ['));
     const stats = [...cards.matchAll(/stat: ([^\n]+),/g)].map(m => m[1]);
-    expect(stats.length).toBe(4);
+    /* FIVE cards now - Vendors split into Suppliers and Contractors on the
+       role axis. Asserting the COUNT as well as the rule, so a card added
+       later cannot avoid the loop by never being counted. */
+    expect(stats.length, 'a hub card is no longer being checked').toBe(5);
     for (const stat of stats) expect(stat, stat).toContain('countOrUnknown(');
   });
 

@@ -1,0 +1,33 @@
+BUILD  b94d216 (local) built 2026-10-03T05:15:39.813Z  http://127.0.0.1:5401
+PASS  1. the unfiltered directory returns all five roles  [architect,contractor,engineer,project_manager,supplier]
+PASS  2. SUPPLIERS: the role view returns the supplier  [got 1 of the fixture]
+PASS  2. SUPPLIERS: and returns NO other role  [supplier]
+PASS  2. SUPPLIERS: every row the endpoint returned really is a supplier  [supplier]
+PASS  2. SUPPLIERS: it is NARROWER than the unfiltered directory  [4 < 8]
+PASS  3. CONTRACTORS: the role view returns the contractor  [got 1 of the fixture]
+PASS  3. CONTRACTORS: and returns NO other role  [contractor]
+PASS  3. CONTRACTORS: every row really is a contractor  [contractor]
+PASS  4. DESIGN SERVICES: includes the architect who DECLARED Design  [1614]
+PASS  4. DESIGN SERVICES: excludes the supplier who declared nothing
+PASS  4. DESIGN SERVICES: is a category view, not an architect-role view  [declared-category semantics]
+PASS  4. FINISHING: includes the CONTRACTOR who declared Renovation  [1612]
+PASS  4. FINISHING: excludes the architect who declared only Design
+PASS  5. role AND category compose to the intersection  [1612]
+PASS  5. and an empty intersection is empty, not a fallback to everyone  [0 fixture rows leaked]
+PASS  6. role="admin" is refused by the endpoint  [status=400]
+PASS  6. role="homeowner" is refused by the endpoint  [status=400]
+PASS  6. role="ADMIN" is refused by the endpoint  [status=400]
+PASS  6. role="" is refused by the endpoint  [status=400]
+PASS  6. role="supplier OR 1=1" is refused by the endpoint  [status=400]
+PASS  7. a suspended supplier is absent from the Suppliers view
+PASS  7. an unapproved supplier is absent from the Suppliers view
+PASS  7. and it returns once the provider is eligible again  [1611]
+PASS  8. /marketplace/products is served  [status=200]
+PASS  8. /marketplace/suppliers is served  [status=200]
+PASS  8. /marketplace/contractors is served  [status=200]
+PASS  8. /marketplace/designers is served  [status=200]
+PASS  8. /marketplace/finishing is served  [status=200]
+PASS  8. /marketplace/vendors is served  [status=200]
+PASS  8. /rfq is served  [status=200]
+
+ALL PASS  30 passed, 0 failed

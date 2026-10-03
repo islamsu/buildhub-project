@@ -71,8 +71,29 @@ describe('every headline count on the hub counts something real', () => {
     expect(hits[1], 'the Arabic label is an English fallback').toMatch(/[؀-ۿ]/);
   });
 
-  it('the vendors card was already honest and is untouched', () => {
-    expect(section('vendors')).toContain('directory.length');
+  it('the two ROLE cards count providers of that role, not every provider', () => {
+    /*
+     * This was one "vendors" card counting `directory.length` - every provider
+     * role at once - and it was honest about what it counted while being the
+     * wrong noun for a card a visitor reads as "suppliers". It is now two
+     * cards on the role axis, each counting its own role out of the same
+     * already-fetched list.
+     *
+     * The DESTINATIONS filter server-side via marketplace.vendors' role
+     * parameter. These are counts of a list the hub already holds; what
+     * matters here is that the number on the card describes the same set the
+     * page behind it will show.
+     */
+    expect(section('suppliers'), 'the suppliers card counts every provider again')
+      .toContain('suppliers.length');
+    expect(section('contractors'), 'the contractors card counts every provider')
+      .toContain('contractors.length');
+    for (const [id, role] of [['suppliers', 'supplier'], ['contractors', 'contractor']]) {
+      expect(section(id), `${id} does not point at its own destination`)
+        .toContain(`/marketplace/${id}`);
+      expect(HUB, `${id} is not derived from the canonical role column`)
+        .toContain(`v.userRole === '${role}'`);
+    }
   });
 
   /**
@@ -115,7 +136,10 @@ describe('every headline count on the hub counts something real', () => {
     const sections = HUB.slice(HUB.indexOf('const sections = ['), HUB.indexOf('EDITORIAL FEATURED') > -1
       ? HUB.indexOf('EDITORIAL FEATURED') : HUB.length);
     const stats = [...sections.matchAll(/stat: ([^\n]+),/g)].map(m => m[1]);
-    expect(stats.length, 'the stats are gone').toBe(4);
+    /* FIVE, since Vendors became Suppliers and Contractors joined it. The
+       count is asserted so a card added later cannot slip past the rule
+       below by never being looked at. */
+    expect(stats.length, 'the stats are gone').toBe(5);
     for (const expression of stats) {
       expect(expression, `${expression} is a constant, not a count of anything real`)
         .not.toMatch(/[A-Z_]{4,}\.length/);

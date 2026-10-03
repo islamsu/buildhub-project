@@ -19,6 +19,8 @@ import { lazy, Suspense } from "react";
 const MarketplaceHub = lazy(() => import("./pages/MarketplaceHub"));
 const VendorsDirectory = lazy(() => import("./pages/VendorsDirectory"));
 const SavedPage = lazy(() => import("./pages/SavedPage"));
+const SuppliersDirectory = lazy(() => import("./pages/SuppliersDirectory"));
+const ContractorsDirectory = lazy(() => import("./pages/ContractorsDirectory"));
 const DesignersDirectory = lazy(() => import("./pages/DesignersDirectory"));
 const FinishingDirectory = lazy(() => import("./pages/FinishingDirectory"));
 const HomeownerDashboard = lazy(() => import("./pages/HomeownerDashboard"));
@@ -148,6 +150,15 @@ function Router() {
           contractor sourcing materials is a buyer - so this is not gated to
           one role's workspace. */}
       <Route path={"/saved"} component={SavedPage} />
+      {/* ── FIRST-CLASS PROVIDER JOURNEYS ─────────────────────────────
+          Role views, beside the category views below. Each `:id` alias
+          redirects to the canonical /vendor/:id storefront, exactly as the
+          existing directory routes do, so a provider has ONE public URL
+          however a visitor arrived at them. */}
+      <Route path={"/marketplace/suppliers/:id"} component={RedirectToVendor} />
+      <Route path={"/marketplace/suppliers"} component={SuppliersDirectory} />
+      <Route path={"/marketplace/contractors/:id"} component={RedirectToVendor} />
+      <Route path={"/marketplace/contractors"} component={ContractorsDirectory} />
       <Route path={"/marketplace/designers/:id"} component={RedirectToVendor} />
       <Route path={"/marketplace/designers"} component={DesignersDirectory} />
       <Route path={"/marketplace/finishing/:id"} component={RedirectToVendor} />

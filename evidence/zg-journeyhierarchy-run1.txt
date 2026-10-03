@@ -1,0 +1,279 @@
+BUILD  b94d216 (local) built 2026-10-03T05:15:39.813Z  http://127.0.0.1:5401
+PASS  en@375 both sections render  [explore=1414 browse=2500]
+PASS  en@375 hero/trust precedes the gateway  [666 < 1414]
+PASS  en@375 ON SCREEN the gateway is above Browse by Category  [1414 < 2500]
+PASS  en@375 SIX first-class journey cards  [6]
+PASS  en@375 no horizontal page scroll  [overflow=0px]
+PASS  en@375 document direction  [dir=ltr]
+PASS  en@375 a gateway card outweighs a category tile without colour  [card=38868px2 tile=4824px2]
+PASS  en@375 five discovery journeys and one action are on screen  [discovery,discovery,discovery,discovery,discovery,action]
+PASS  en@375 no journey is a footnote beside the others  [smallest is 89% of largest]
+PASS  en@375 home-journey-products glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 195) on oklch(1 0 0) = 6.69]
+PASS  en@375 home-journey-products exposes a measurable CTA row
+PASS  en@375 home-journey-products CTA label clears AA as rendered  [12px needs 4.5:1, got 6.69 (oklch(0.45 0.11 195) on oklch(1 0 0))]
+PASS  en@375 home-journey-products carries an icon, not colour alone
+PASS  en@375 home-journey-products carries a text label  ["Products & MaterialsConstruction and fin"]
+PASS  en@375 home-journey-suppliers glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@375 home-journey-suppliers exposes a measurable CTA row
+PASS  en@375 home-journey-suppliers CTA label clears AA as rendered  [12px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@375 home-journey-suppliers carries an icon, not colour alone
+PASS  en@375 home-journey-suppliers carries a text label  ["SuppliersBusinesses that supply material"]
+PASS  en@375 home-journey-contractors glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@375 home-journey-contractors exposes a measurable CTA row
+PASS  en@375 home-journey-contractors CTA label clears AA as rendered  [12px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@375 home-journey-contractors carries an icon, not colour alone
+PASS  en@375 home-journey-contractors carries a text label  ["ContractorsConstruction firms that build"]
+PASS  en@375 home-journey-design glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@375 home-journey-design exposes a measurable CTA row
+PASS  en@375 home-journey-design CTA label clears AA as rendered  [12px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@375 home-journey-design carries an icon, not colour alone
+PASS  en@375 home-journey-design carries a text label  ["Design ServicesArchitects, engineers and"]
+PASS  en@375 home-journey-finishing glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@375 home-journey-finishing exposes a measurable CTA row
+PASS  en@375 home-journey-finishing CTA label clears AA as rendered  [12px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@375 home-journey-finishing carries an icon, not colour alone
+PASS  en@375 home-journey-finishing carries a text label  ["FinishingCompanies that handle finishing"]
+PASS  en@375 home-journey-quotes glyph clears 3:1 on its painted surface  [oklch(0.669 0.17 70) on oklch(1 0 0) = 3.11]
+PASS  en@375 home-journey-quotes exposes a measurable CTA row
+PASS  en@375 home-journey-quotes CTA label clears AA as rendered  [12px needs 4.5:1, got 8.26 (rgb(17, 24, 39) on rgb(245, 158, 11))]
+PASS  en@375 home-journey-quotes carries an icon, not colour alone
+PASS  en@375 home-journey-quotes carries a text label  ["Get QuotesDescribe your project once and"]
+PASS  en@375 all four provider journeys render  [4]
+PASS  en@375 the four provider journeys share ONE domain accent  [1 accents: 95,69,137]
+PASS  en@375 six cards, three hue families - no rainbow  [3: 0,103,104 | 95,69,137 | 213,125,0]
+PASS  en@375 the catalogue and the directory are visually distinct  [rgb distance 106]
+PASS  en@375 six distinct icons  [6 unique paths]
+PASS  en@375 the page is not a rainbow  [4 hue families in use: 30, 180, 210, 240]
+PASS  en@768 both sections render  [explore=1005 browse=2019]
+PASS  en@768 hero/trust precedes the gateway  [574 < 1005]
+PASS  en@768 ON SCREEN the gateway is above Browse by Category  [1005 < 2019]
+PASS  en@768 SIX first-class journey cards  [6]
+PASS  en@768 no horizontal page scroll  [overflow=-6px]
+PASS  en@768 document direction  [dir=ltr]
+PASS  en@768 a gateway card outweighs a category tile without colour  [card=77748px2 tile=4824px2]
+PASS  en@768 five discovery journeys and one action are on screen  [discovery,discovery,discovery,discovery,discovery,action]
+PASS  en@768 no journey is a footnote beside the others  [smallest is 93% of largest]
+PASS  en@768 home-journey-products glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 195) on oklch(1 0 0) = 6.69]
+PASS  en@768 home-journey-products exposes a measurable CTA row
+PASS  en@768 home-journey-products CTA label clears AA as rendered  [14px needs 4.5:1, got 6.69 (oklch(0.45 0.11 195) on oklch(1 0 0))]
+PASS  en@768 home-journey-products carries an icon, not colour alone
+PASS  en@768 home-journey-products carries a text label  ["Products & MaterialsConstruction and fin"]
+PASS  en@768 home-journey-suppliers glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@768 home-journey-suppliers exposes a measurable CTA row
+PASS  en@768 home-journey-suppliers CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@768 home-journey-suppliers carries an icon, not colour alone
+PASS  en@768 home-journey-suppliers carries a text label  ["SuppliersBusinesses that supply material"]
+PASS  en@768 home-journey-contractors glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@768 home-journey-contractors exposes a measurable CTA row
+PASS  en@768 home-journey-contractors CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@768 home-journey-contractors carries an icon, not colour alone
+PASS  en@768 home-journey-contractors carries a text label  ["ContractorsConstruction firms that build"]
+PASS  en@768 home-journey-design glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@768 home-journey-design exposes a measurable CTA row
+PASS  en@768 home-journey-design CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@768 home-journey-design carries an icon, not colour alone
+PASS  en@768 home-journey-design carries a text label  ["Design ServicesArchitects, engineers and"]
+PASS  en@768 home-journey-finishing glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@768 home-journey-finishing exposes a measurable CTA row
+PASS  en@768 home-journey-finishing CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@768 home-journey-finishing carries an icon, not colour alone
+PASS  en@768 home-journey-finishing carries a text label  ["FinishingCompanies that handle finishing"]
+PASS  en@768 home-journey-quotes glyph clears 3:1 on its painted surface  [oklch(0.669 0.17 70) on oklch(1 0 0) = 3.11]
+PASS  en@768 home-journey-quotes exposes a measurable CTA row
+PASS  en@768 home-journey-quotes CTA label clears AA as rendered  [14px needs 4.5:1, got 8.26 (rgb(17, 24, 39) on rgb(245, 158, 11))]
+PASS  en@768 home-journey-quotes carries an icon, not colour alone
+PASS  en@768 home-journey-quotes carries a text label  ["Get QuotesDescribe your project once and"]
+PASS  en@768 all four provider journeys render  [4]
+PASS  en@768 the four provider journeys share ONE domain accent  [1 accents: 95,69,137]
+PASS  en@768 six cards, three hue families - no rainbow  [3: 0,103,104 | 95,69,137 | 213,125,0]
+PASS  en@768 the catalogue and the directory are visually distinct  [rgb distance 106]
+PASS  en@768 six distinct icons  [6 unique paths]
+PASS  en@768 the page is not a rainbow  [4 hue families in use: 30, 180, 210, 240]
+PASS  en@1440 both sections render  [explore=975 browse=1786]
+PASS  en@1440 hero/trust precedes the gateway  [617 < 975]
+PASS  en@1440 ON SCREEN the gateway is above Browse by Category  [975 < 1786]
+PASS  en@1440 SIX first-class journey cards  [6]
+PASS  en@1440 no horizontal page scroll  [overflow=-6px]
+PASS  en@1440 document direction  [dir=ltr]
+PASS  en@1440 a gateway card outweighs a category tile without colour  [card=94107px2 tile=4824px2]
+PASS  en@1440 five discovery journeys and one action are on screen  [discovery,discovery,discovery,discovery,discovery,action]
+PASS  en@1440 no journey is a footnote beside the others  [smallest is 94% of largest]
+PASS  en@1440 home-journey-products glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 195) on oklch(1 0 0) = 6.69]
+PASS  en@1440 home-journey-products exposes a measurable CTA row
+PASS  en@1440 home-journey-products CTA label clears AA as rendered  [14px needs 4.5:1, got 6.69 (oklch(0.45 0.11 195) on oklch(1 0 0))]
+PASS  en@1440 home-journey-products carries an icon, not colour alone
+PASS  en@1440 home-journey-products carries a text label  ["Products & MaterialsConstruction and fin"]
+PASS  en@1440 home-journey-suppliers glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@1440 home-journey-suppliers exposes a measurable CTA row
+PASS  en@1440 home-journey-suppliers CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@1440 home-journey-suppliers carries an icon, not colour alone
+PASS  en@1440 home-journey-suppliers carries a text label  ["SuppliersBusinesses that supply material"]
+PASS  en@1440 home-journey-contractors glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@1440 home-journey-contractors exposes a measurable CTA row
+PASS  en@1440 home-journey-contractors CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@1440 home-journey-contractors carries an icon, not colour alone
+PASS  en@1440 home-journey-contractors carries a text label  ["ContractorsConstruction firms that build"]
+PASS  en@1440 home-journey-design glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@1440 home-journey-design exposes a measurable CTA row
+PASS  en@1440 home-journey-design CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@1440 home-journey-design carries an icon, not colour alone
+PASS  en@1440 home-journey-design carries a text label  ["Design ServicesArchitects, engineers and"]
+PASS  en@1440 home-journey-finishing glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  en@1440 home-journey-finishing exposes a measurable CTA row
+PASS  en@1440 home-journey-finishing CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  en@1440 home-journey-finishing carries an icon, not colour alone
+PASS  en@1440 home-journey-finishing carries a text label  ["FinishingCompanies that handle finishing"]
+PASS  en@1440 home-journey-quotes glyph clears 3:1 on its painted surface  [oklch(0.669 0.17 70) on oklch(1 0 0) = 3.11]
+PASS  en@1440 home-journey-quotes exposes a measurable CTA row
+PASS  en@1440 home-journey-quotes CTA label clears AA as rendered  [14px needs 4.5:1, got 8.26 (rgb(17, 24, 39) on rgb(245, 158, 11))]
+PASS  en@1440 home-journey-quotes carries an icon, not colour alone
+PASS  en@1440 home-journey-quotes carries a text label  ["Get QuotesDescribe your project once and"]
+PASS  en@1440 all four provider journeys render  [4]
+PASS  en@1440 the four provider journeys share ONE domain accent  [1 accents: 95,69,137]
+PASS  en@1440 six cards, three hue families - no rainbow  [3: 0,103,104 | 95,69,137 | 213,125,0]
+PASS  en@1440 the catalogue and the directory are visually distinct  [rgb distance 106]
+PASS  en@1440 six distinct icons  [6 unique paths]
+PASS  en@1440 the page is not a rainbow  [4 hue families in use: 30, 180, 210, 240]
+PASS  ar@375 both sections render  [explore=1414 browse=2395]
+PASS  ar@375 hero/trust precedes the gateway  [666 < 1414]
+PASS  ar@375 ON SCREEN the gateway is above Browse by Category  [1414 < 2395]
+PASS  ar@375 SIX first-class journey cards  [6]
+PASS  ar@375 no horizontal page scroll  [overflow=0px]
+PASS  ar@375 document direction  [dir=rtl]
+PASS  ar@375 a gateway card outweighs a category tile without colour  [card=32390px2 tile=3888px2]
+PASS  ar@375 five discovery journeys and one action are on screen  [discovery,discovery,discovery,discovery,discovery,action]
+PASS  ar@375 no journey is a footnote beside the others  [smallest is 84% of largest]
+PASS  ar@375 home-journey-products glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 195) on oklch(1 0 0) = 6.69]
+PASS  ar@375 home-journey-products exposes a measurable CTA row
+PASS  ar@375 home-journey-products CTA label clears AA as rendered  [12px needs 4.5:1, got 6.69 (oklch(0.45 0.11 195) on oklch(1 0 0))]
+PASS  ar@375 home-journey-products carries an icon, not colour alone
+PASS  ar@375 home-journey-products carries a text label  ["المنتجات والموادمواد البناء والتشطيب بمو"]
+PASS  ar@375 home-journey-suppliers glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@375 home-journey-suppliers exposes a measurable CTA row
+PASS  ar@375 home-journey-suppliers CTA label clears AA as rendered  [12px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@375 home-journey-suppliers carries an icon, not colour alone
+PASS  ar@375 home-journey-suppliers carries a text label  ["الموردونشركات توريد المواد والمعدات والت"]
+PASS  ar@375 home-journey-contractors glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@375 home-journey-contractors exposes a measurable CTA row
+PASS  ar@375 home-journey-contractors CTA label clears AA as rendered  [12px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@375 home-journey-contractors carries an icon, not colour alone
+PASS  ar@375 home-journey-contractors carries a text label  ["المقاولونشركات التنفيذ والبناء والتركيب "]
+PASS  ar@375 home-journey-design glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@375 home-journey-design exposes a measurable CTA row
+PASS  ar@375 home-journey-design CTA label clears AA as rendered  [12px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@375 home-journey-design carries an icon, not colour alone
+PASS  ar@375 home-journey-design carries a text label  ["خدمات التصميممعماريون ومهندسون ومكاتب تص"]
+PASS  ar@375 home-journey-finishing glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@375 home-journey-finishing exposes a measurable CTA row
+PASS  ar@375 home-journey-finishing CTA label clears AA as rendered  [12px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@375 home-journey-finishing carries an icon, not colour alone
+PASS  ar@375 home-journey-finishing carries a text label  ["التشطيباتشركات متخصّصة في أعمال التشطيب "]
+PASS  ar@375 home-journey-quotes glyph clears 3:1 on its painted surface  [oklch(0.669 0.17 70) on oklch(1 0 0) = 3.11]
+PASS  ar@375 home-journey-quotes exposes a measurable CTA row
+PASS  ar@375 home-journey-quotes CTA label clears AA as rendered  [12px needs 4.5:1, got 8.26 (rgb(17, 24, 39) on rgb(245, 158, 11))]
+PASS  ar@375 home-journey-quotes carries an icon, not colour alone
+PASS  ar@375 home-journey-quotes carries a text label  ["اطلب عروض أسعارصِف مشروعك مرة واحدة وتصل"]
+PASS  ar@375 all four provider journeys render  [4]
+PASS  ar@375 the four provider journeys share ONE domain accent  [1 accents: 95,69,137]
+PASS  ar@375 six cards, three hue families - no rainbow  [3: 0,103,104 | 95,69,137 | 213,125,0]
+PASS  ar@375 the catalogue and the directory are visually distinct  [rgb distance 106]
+PASS  ar@375 six distinct icons  [6 unique paths]
+PASS  ar@375 the page is not a rainbow  [4 hue families in use: 30, 180, 210, 240]
+PASS  ar@768 both sections render  [explore=952 browse=1966]
+PASS  ar@768 hero/trust precedes the gateway  [521 < 952]
+PASS  ar@768 ON SCREEN the gateway is above Browse by Category  [952 < 1966]
+PASS  ar@768 SIX first-class journey cards  [6]
+PASS  ar@768 no horizontal page scroll  [overflow=-6px]
+PASS  ar@768 document direction  [dir=rtl]
+PASS  ar@768 a gateway card outweighs a category tile without colour  [card=77748px2 tile=3888px2]
+PASS  ar@768 five discovery journeys and one action are on screen  [discovery,discovery,discovery,discovery,discovery,action]
+PASS  ar@768 no journey is a footnote beside the others  [smallest is 93% of largest]
+PASS  ar@768 home-journey-products glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 195) on oklch(1 0 0) = 6.69]
+PASS  ar@768 home-journey-products exposes a measurable CTA row
+PASS  ar@768 home-journey-products CTA label clears AA as rendered  [14px needs 4.5:1, got 6.69 (oklch(0.45 0.11 195) on oklch(1 0 0))]
+PASS  ar@768 home-journey-products carries an icon, not colour alone
+PASS  ar@768 home-journey-products carries a text label  ["المنتجات والموادمواد البناء والتشطيب بمو"]
+PASS  ar@768 home-journey-suppliers glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@768 home-journey-suppliers exposes a measurable CTA row
+PASS  ar@768 home-journey-suppliers CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@768 home-journey-suppliers carries an icon, not colour alone
+PASS  ar@768 home-journey-suppliers carries a text label  ["الموردونشركات توريد المواد والمعدات والت"]
+PASS  ar@768 home-journey-contractors glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@768 home-journey-contractors exposes a measurable CTA row
+PASS  ar@768 home-journey-contractors CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@768 home-journey-contractors carries an icon, not colour alone
+PASS  ar@768 home-journey-contractors carries a text label  ["المقاولونشركات التنفيذ والبناء والتركيب "]
+PASS  ar@768 home-journey-design glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@768 home-journey-design exposes a measurable CTA row
+PASS  ar@768 home-journey-design CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@768 home-journey-design carries an icon, not colour alone
+PASS  ar@768 home-journey-design carries a text label  ["خدمات التصميممعماريون ومهندسون ومكاتب تص"]
+PASS  ar@768 home-journey-finishing glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@768 home-journey-finishing exposes a measurable CTA row
+PASS  ar@768 home-journey-finishing CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@768 home-journey-finishing carries an icon, not colour alone
+PASS  ar@768 home-journey-finishing carries a text label  ["التشطيباتشركات متخصّصة في أعمال التشطيب "]
+PASS  ar@768 home-journey-quotes glyph clears 3:1 on its painted surface  [oklch(0.669 0.17 70) on oklch(1 0 0) = 3.11]
+PASS  ar@768 home-journey-quotes exposes a measurable CTA row
+PASS  ar@768 home-journey-quotes CTA label clears AA as rendered  [14px needs 4.5:1, got 8.26 (rgb(17, 24, 39) on rgb(245, 158, 11))]
+PASS  ar@768 home-journey-quotes carries an icon, not colour alone
+PASS  ar@768 home-journey-quotes carries a text label  ["اطلب عروض أسعارصِف مشروعك مرة واحدة وتصل"]
+PASS  ar@768 all four provider journeys render  [4]
+PASS  ar@768 the four provider journeys share ONE domain accent  [1 accents: 95,69,137]
+PASS  ar@768 six cards, three hue families - no rainbow  [3: 0,103,104 | 95,69,137 | 213,125,0]
+PASS  ar@768 the catalogue and the directory are visually distinct  [rgb distance 106]
+PASS  ar@768 six distinct icons  [6 unique paths]
+PASS  ar@768 the page is not a rainbow  [4 hue families in use: 30, 180, 210, 240]
+PASS  ar@1440 both sections render  [explore=896 browse=1668]
+PASS  ar@1440 hero/trust precedes the gateway  [557 < 896]
+PASS  ar@1440 ON SCREEN the gateway is above Browse by Category  [896 < 1668]
+PASS  ar@1440 SIX first-class journey cards  [6]
+PASS  ar@1440 no horizontal page scroll  [overflow=-6px]
+PASS  ar@1440 document direction  [dir=rtl]
+PASS  ar@1440 a gateway card outweighs a category tile without colour  [card=85344px2 tile=3888px2]
+PASS  ar@1440 five discovery journeys and one action are on screen  [discovery,discovery,discovery,discovery,discovery,action]
+PASS  ar@1440 no journey is a footnote beside the others  [smallest is 91% of largest]
+PASS  ar@1440 home-journey-products glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 195) on oklch(1 0 0) = 6.69]
+PASS  ar@1440 home-journey-products exposes a measurable CTA row
+PASS  ar@1440 home-journey-products CTA label clears AA as rendered  [14px needs 4.5:1, got 6.69 (oklch(0.45 0.11 195) on oklch(1 0 0))]
+PASS  ar@1440 home-journey-products carries an icon, not colour alone
+PASS  ar@1440 home-journey-products carries a text label  ["المنتجات والموادمواد البناء والتشطيب بمو"]
+PASS  ar@1440 home-journey-suppliers glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@1440 home-journey-suppliers exposes a measurable CTA row
+PASS  ar@1440 home-journey-suppliers CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@1440 home-journey-suppliers carries an icon, not colour alone
+PASS  ar@1440 home-journey-suppliers carries a text label  ["الموردونشركات توريد المواد والمعدات والت"]
+PASS  ar@1440 home-journey-contractors glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@1440 home-journey-contractors exposes a measurable CTA row
+PASS  ar@1440 home-journey-contractors CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@1440 home-journey-contractors carries an icon, not colour alone
+PASS  ar@1440 home-journey-contractors carries a text label  ["المقاولونشركات التنفيذ والبناء والتركيب "]
+PASS  ar@1440 home-journey-design glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@1440 home-journey-design exposes a measurable CTA row
+PASS  ar@1440 home-journey-design CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@1440 home-journey-design carries an icon, not colour alone
+PASS  ar@1440 home-journey-design carries a text label  ["خدمات التصميممعماريون ومهندسون ومكاتب تص"]
+PASS  ar@1440 home-journey-finishing glyph clears 3:1 on its painted surface  [oklch(0.45 0.11 300) on oklch(1 0 0) = 7.78]
+PASS  ar@1440 home-journey-finishing exposes a measurable CTA row
+PASS  ar@1440 home-journey-finishing CTA label clears AA as rendered  [14px needs 4.5:1, got 7.78 (oklch(0.45 0.11 300) on oklch(1 0 0))]
+PASS  ar@1440 home-journey-finishing carries an icon, not colour alone
+PASS  ar@1440 home-journey-finishing carries a text label  ["التشطيباتشركات متخصّصة في أعمال التشطيب "]
+PASS  ar@1440 home-journey-quotes glyph clears 3:1 on its painted surface  [oklch(0.669 0.17 70) on oklch(1 0 0) = 3.11]
+PASS  ar@1440 home-journey-quotes exposes a measurable CTA row
+PASS  ar@1440 home-journey-quotes CTA label clears AA as rendered  [14px needs 4.5:1, got 8.26 (rgb(17, 24, 39) on rgb(245, 158, 11))]
+PASS  ar@1440 home-journey-quotes carries an icon, not colour alone
+PASS  ar@1440 home-journey-quotes carries a text label  ["اطلب عروض أسعارصِف مشروعك مرة واحدة وتصل"]
+PASS  ar@1440 all four provider journeys render  [4]
+PASS  ar@1440 the four provider journeys share ONE domain accent  [1 accents: 95,69,137]
+PASS  ar@1440 six cards, three hue families - no rainbow  [3: 0,103,104 | 95,69,137 | 213,125,0]
+PASS  ar@1440 the catalogue and the directory are visually distinct  [rgb distance 106]
+PASS  ar@1440 six distinct icons  [6 unique paths]
+PASS  ar@1440 the page is not a rainbow  [4 hue families in use: 30, 180, 210, 240]
+PASS  keyboard: the gateway is in the DOM
+PASS  keyboard: every journey card is focusable  [6 stops]
+PASS  KEYBOARD: NO INTERACTIVE ELEMENT IS NESTED IN ANOTHER  [none]
+PASS  keyboard: no span is impersonating a link  [0]
+PASS  keyboard: the secondary preset chips are gone  [0]
+PASS  keyboard: each of the six journeys is one tab stop  [6 stops]
+
+OK  pass=276 fail=0

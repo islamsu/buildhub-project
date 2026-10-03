@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { rfqCategoryLabel } from '@shared/rfqCategories';
+import type { ProviderRole } from '@shared/roleMatrix';
 import { MasterProviderSlot, PlacementBadge, ProviderSpotlight } from '@/components/MasterPlacement';
 import { Search, Star, BadgeCheck, MapPin, Megaphone, Store, ChevronLeft, ChevronRight } from 'lucide-react';
 import { usePageTitle } from '../hooks/usePageTitle';
@@ -45,6 +46,25 @@ import { usePageTitle } from '../hooks/usePageTitle';
 export type VendorsDirectoryProps = {
   /** A category from the shared RFQ taxonomy to start filtered on. */
   presetCategory?: string;
+  /**
+   * ONE PROVIDER ROLE, fixed for the whole view.
+   *
+   * ── WHY THIS IS NOT A CATEGORY PRESET ──────────────────────────────────
+   *
+   * Role and declared category are different dimensions and the navigation
+   * needs both. Design Services and Finishing are CATEGORY views: a contractor
+   * who has declared Renovation belongs in Finishing, and filtering those by
+   * role would throw away the providers the customer came for. Suppliers and
+   * Contractors are ROLE views: "I need a supplier" is a question about what
+   * kind of business it is, not about what service they listed.
+   *
+   * NOT A USER-CHANGEABLE FILTER. The category dropdown stays usable inside a
+   * role view - a buyer can narrow Contractors to Renovation - but the role
+   * itself is the destination's identity. A role select would turn four
+   * first-class journeys back into one directory with a dropdown, which is the
+   * consolidation the owner rejected.
+   */
+  presetRole?: ProviderRole;
   titleKey?: string;
   subtitleKey?: string;
 };
@@ -55,7 +75,9 @@ export default function VendorsDirectory() {
   return <VendorsDirectoryView />;
 }
 
-export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: VendorsDirectoryProps) {
+export function VendorsDirectoryView({
+  presetCategory, presetRole, titleKey, subtitleKey,
+}: VendorsDirectoryProps) {
   const { lang, t } = useLanguage();
   const ar = lang === 'ar';
   const [, navigate] = useLocation();
@@ -73,6 +95,11 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
     search: search.trim() || undefined,
     category: category === 'all' ? undefined : category,
     location: location.trim() || undefined,
+    // Enforced SERVER-SIDE, not by filtering the response. A role view that
+    // fetched everything and hid the rest would still ship other roles'
+    // provider records to the browser, and its result count would describe a
+    // list the page does not show.
+    role: presetRole,
   });
   const { data: categories = [] } = trpc.marketplace.vendorCategories.useQuery();
   // Sponsored placement is fetched SEPARATELY from the organic list, matching
@@ -84,16 +111,40 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
   // service category - and a reader should not have to care which. The server
   // merges both and labels each with `sponsorshipSource`; an admin grant is
   // category-scoped, so it only ever appears when a category is selected.
+  /*
+   * ── PLACEMENT IS SOLD BY CATEGORY, SO IT IS NOT SHOWN ON A ROLE VIEW ───
+   *
+   * Every placement surface - Master, Spotlight, Sponsored, editorial Featured
+   * - is scoped by CATEGORY or globally. None of them is sold per role, which
+   * leaves exactly two ways to render them on a Suppliers or Contractors page
+   * and both are wrong:
+   *
+   *   SHOW THEM UNFILTERED and the page that promises Suppliers opens with a
+   *   contractor in a paid slot. That is the generic all-provider directory
+   *   wearing a role label, which is the consolidation being corrected.
+   *
+   *   FILTER THEM CLIENT-SIDE and an advertiser silently loses impressions on
+   *   a surface they did bring relevance to, with no record of it. Narrowing
+   *   what a booking delivers is a commercial change, and placement
+   *   eligibility is frozen.
+   *
+   * So a role view renders the ORGANIC role-filtered directory only. Nothing
+   * about placement changes: the bookings keep their category scope and keep
+   * appearing in full on /marketplace/vendors, on the category views and on
+   * the marketplace hub. They are simply not surfaced on a view whose axis
+   * they were never sold against.
+   */
+  const placementsApply = !presetRole;
   const { data: featured = [] } = trpc.marketplace.sponsoredVendors.useQuery({
     category: category === 'all' ? undefined : category,
     location: location.trim() || undefined,
-  });
+  }, { enabled: placementsApply });
   // EDITORIAL FEATURED is separate from paid sponsorship. When this directory
   // is category-preset (Designers/Finishing), fetch only that category's picks;
   // the general vendors directory shows all editorial picks.
   const { data: editorialFeatured = [] } = trpc.marketplace.featuredProviders.useQuery({
     category: presetCategory,
-  });
+  }, { enabled: placementsApply });
 
   /**
    * WHICH OF THESE IS ALREADY SAVED - ONE QUERY FOR THE PAGE.
@@ -218,13 +269,13 @@ export function VendorsDirectoryView({ presetCategory, titleKey, subtitleKey }: 
             none chosen it is the platform-wide slot, which is what a visitor
             sees before they narrow to a provider type. Renders nothing at all
             when no eligible Master is booked. */}
-        <MasterProviderSlot category={category === 'all' ? undefined : category} />
+        {placementsApply && <MasterProviderSlot category={category === 'all' ? undefined : category} />}
 
         {/* SPOTLIGHT, once a provider type is chosen. Master belongs to root
             discovery and Spotlight to the chosen type; only one of the two ever
             renders, because each asks for a different scope. Capped at three,
             with the organic list below rather than an advertising wall. */}
-        <ProviderSpotlight category={category === 'all' ? undefined : category} />
+        {placementsApply && <ProviderSpotlight category={category === 'all' ? undefined : category} />}
 
         {/* Sponsored strip (Slice 8). A SEPARATE, labelled section - never a
             reordering of the organic list below, which still ranks by

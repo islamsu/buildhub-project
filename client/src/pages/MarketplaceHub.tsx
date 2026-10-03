@@ -1,5 +1,5 @@
 import { useLanguage } from '@/contexts/LanguageContext';
-import { domainById, type DomainId } from '@/components/brand/domainIdentity';
+import { domainAccent, journeyById, type JourneyId } from '@/components/brand/domainIdentity';
 import SourcingSearch from '@/components/SourcingSearch';
 import Navbar from '@/components/Navbar';
 import { FeaturedProductCard } from '@/components/FeaturedProductCard';
@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useLocation } from 'wouter';
 import { useMemo, useState } from 'react';
-import { Search, Package, Store, PenTool, HardHat, ArrowRight, ArrowLeft, Star, BadgeCheck, TrendingUp, Sparkles } from 'lucide-react';
+import { Search, Package, Store, PenTool, HardHat, PaintRoller, ArrowRight, ArrowLeft, Star, BadgeCheck, TrendingUp, Sparkles } from 'lucide-react';
 import { DESIGN_CATEGORIES, FINISHING_CATEGORIES } from '@/lib/marketplaceData';
 import { trpc } from '@/lib/trpc';
 import { usePageTitle } from '../hooks/usePageTitle';
@@ -38,15 +38,20 @@ import { usePageTitle } from '../hooks/usePageTitle';
 /**
  * The identity a macro card wears, from the one canonical model.
  *
- * Returned as a spread rather than read inline so a card cannot acquire a
- * private copy of a colour: the only thing a call site names is the DOMAIN.
+ * Takes a JOURNEY id, not a domain: the hub's destinations are the same
+ * journeys the homepage offers, so both pages resolve identity from
+ * components/brand/domainIdentity.ts and cannot teach contradictory mental
+ * models. Returned as a spread rather than read inline so a card cannot
+ * acquire a private copy of a colour - the only thing a call site names is the
+ * journey.
  */
-function domainStyle(id: DomainId) {
-  const domain = domainById(id);
+function journeyStyle(id: JourneyId) {
+  const journey = journeyById(id);
+  const domain = journey.domain ?? 'providers';
   return {
-    domainAccent: domain.accent,
-    domainTint: domain.tint,
-    domainAccentBar: id === 'products' ? 'bg-domain-products' : 'bg-domain-providers',
+    domainAccent: journey.accent,
+    domainTint: journey.tint,
+    domainAccentBar: domainAccent(domain).bar,
   };
 }
 
@@ -134,13 +139,28 @@ export default function MarketplaceHub() {
 
   const designers = directory.filter(v => v.categories?.includes('Design'));
   const finishing = directory.filter(v => v.categories?.includes('Renovation'));
+  /*
+   * ── THE TWO ROLE LISTS, FOR THE HEADLINE COUNTS ONLY ───────────────────
+   *
+   * `directory` is the full authorized provider list this page already reads
+   * for its counts and chips, so counting roles in it costs no extra query -
+   * exactly as the two category lists above already do.
+   *
+   * The DESTINATIONS do not work this way. /marketplace/suppliers and
+   * /marketplace/contractors filter on the SERVER via marketplace.vendors'
+   * role parameter; this is a count of a list the hub has in hand, not the
+   * mechanism behind the card. A card whose number came from one source and
+   * whose page came from another is how the two drift apart.
+   */
+  const suppliers = directory.filter(v => v.userRole === 'supplier');
+  const contractors = directory.filter(v => v.userRole === 'contractor');
 
   const sections = [
     {
       id: 'products',
       href: '/marketplace/products',
       icon: Package,
-      ...domainStyle('products'),
+      ...journeyStyle('products'),
       title: t('marketHub.sectionProductsTitle'),
       desc: t('marketHub.sectionProductsDesc'),
       stat: countOrUnknown(statsFailed, statsLoading, platformStats?.publicProducts ?? 0),
@@ -153,25 +173,50 @@ export default function MarketplaceHub() {
         : `${productCategories.length} ${t('marketHub.categoriesLabel').toLowerCase()}`,
       chips: productCategories.slice(0, 4).map(c => (ar ? c.nameAr : c.nameEn)),
     },
+    /*
+     * ── SUPPLIERS AND CONTRACTORS, NOT "VENDORS" ───────────────────────────
+     *
+     * This was ONE card pointing at /marketplace/vendors - every provider role
+     * at once - so the hub and the homepage taught different mental models for
+     * the same intent. A visitor should not learn "Suppliers" on one page and
+     * "Suppliers & professionals" on another.
+     *
+     * The full provider directory still exists at /marketplace/vendors and is
+     * still linked from each directory's own breadcrumb. It is just not a
+     * macro destination any more: "all five provider roles in one list" is a
+     * fallback, not a customer intent.
+     */
     {
-      id: 'vendors',
-      href: '/marketplace/vendors',
+      id: 'suppliers',
+      href: '/marketplace/suppliers',
       icon: Store,
-      ...domainStyle('providers'),
-      title: t('marketHub.sectionVendorsTitle'),
-      desc: t('marketHub.sectionVendorsDesc'),
-      stat: countOrUnknown(directoryFailed, directoryLoading, directory.length),
-      statLabel: t('marketHub.vendorsLabel'),
+      ...journeyStyle('suppliers'),
+      title: t('marketHub.sectionSuppliersTitle'),
+      desc: t('marketHub.sectionSuppliersDesc'),
+      stat: countOrUnknown(directoryFailed, directoryLoading, suppliers.length),
+      statLabel: t('marketHub.providersLabel'),
       secondary: null,
-      chips: directory.slice(0, 3).map(v => v.name ?? `#${v.id}`),
+      chips: suppliers.slice(0, 3).map(v => v.name ?? `#${v.id}`),
+    },
+    {
+      id: 'contractors',
+      href: '/marketplace/contractors',
+      icon: HardHat,
+      ...journeyStyle('contractors'),
+      title: t('marketHub.sectionContractorsTitle'),
+      desc: t('marketHub.sectionContractorsDesc'),
+      stat: countOrUnknown(directoryFailed, directoryLoading, contractors.length),
+      statLabel: t('marketHub.providersLabel'),
+      secondary: null,
+      chips: contractors.slice(0, 3).map(v => v.name ?? `#${v.id}`),
     },
     {
       id: 'designers',
       href: '/marketplace/designers',
-      /* A CATEGORY PRESET of the provider directory, so it wears the provider
-         identity and is told apart by its icon and title. */
+      /* A declared-CATEGORY view of the provider directory - a different axis
+         from the two role cards above, and both are truthful. */
       icon: PenTool,
-      ...domainStyle('providers'),
+      ...journeyStyle('design'),
       title: t('marketHub.sectionDesignersTitle'),
       desc: t('marketHub.sectionDesignersDesc'),
       /**
@@ -193,8 +238,8 @@ export default function MarketplaceHub() {
     {
       id: 'finishing',
       href: '/marketplace/finishing',
-      icon: HardHat,
-      ...domainStyle('providers'),
+      icon: PaintRoller,
+      ...journeyStyle('finishing'),
       title: t('marketHub.sectionFinishingTitle'),
       desc: t('marketHub.sectionFinishingDesc'),
       // The same correction, for the same reason.

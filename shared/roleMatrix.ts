@@ -25,8 +25,20 @@ export const MATRIX_ROLES = [
 export type MatrixRole = (typeof MATRIX_ROLES)[number];
 
 /** The five roles that go through professional onboarding. */
-export const PROVIDER_ROLES: readonly MatrixRole[] =
-  ['contractor', 'engineer', 'architect', 'supplier', 'project_manager'];
+export const PROVIDER_ROLES = [
+  'contractor', 'engineer', 'architect', 'supplier', 'project_manager',
+] as const satisfies readonly MatrixRole[];
+
+/**
+ * One of those five, as a type.
+ *
+ * `as const satisfies readonly MatrixRole[]` above rather than a widening
+ * annotation: the annotation erased the literals, so anything typed from this
+ * list was just `MatrixRole` and included 'homeowner'. A public role filter
+ * typed that loosely would compile while accepting a role the directory must
+ * never list. The `satisfies` still proves every entry is a real matrix role.
+ */
+export type ProviderRole = (typeof PROVIDER_ROLES)[number];
 
 export const MATRIX_RESOURCES = [
   'dashboard', 'project', 'rfq', 'qualifiedEnquiry', 'quotation', 'submission',

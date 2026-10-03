@@ -19,7 +19,7 @@ import {
 import { usePageTitle } from '../hooks/usePageTitle';
 import { RakizaLogo } from '@/components/brand/RakizaLogo';
 import { ROLE_IDENTITIES, ROLE_CARD_CLASSES, roleIconClasses } from '@/components/brand/roleIdentity';
-import { DOMAIN_IDENTITIES, PROVIDER_PRESETS } from '@/components/brand/domainIdentity';
+import { JOURNEY_IDENTITIES } from '@/components/brand/domainIdentity';
 
 /* THE ROLE LIST MOVED. Six per-role colours lived here and again in
    AuthPage, where green, amber and purple collided with the success,
@@ -317,23 +317,39 @@ export default function Home() {
       </section>
 
       {/* ── EXPLORE RAKIZA ───────────────────────────────────────────────
-          THE SECTION THE REBRAND LOST, AND WHY IT SITS HERE.
+          THE SIX JOURNEYS, EACH FIRST-CLASS.
 
-          Before this, the first thing after the hero was the taxonomy rail,
-          and the single highest-intent workflow in the product - Get Quotes -
-          was the TENTH TILE in it, a peer of "Marble". That told a visitor a
-          material and a workflow are the same kind of object. It was a
-          category error, not a weighting mistake.
+          Two corrections live in this section and they happened in that order.
 
-          A first-time visitor has to learn what KINDS of thing exist here
-          before which subcategory of one of them. Taxonomy is a filter inside
-          a domain, not a peer of it. So: journeys, then taxonomy.
+          FIRST: the taxonomy rail used to come straight after the hero, with
+          Get Quotes - the highest-intent workflow in the product - as the
+          TENTH TILE in it, a peer of "Marble". That told a visitor a material
+          and a workflow are the same kind of object. A first-time visitor has
+          to learn what KINDS of thing exist here before which subcategory of
+          one of them, so: journeys, then taxonomy.
+
+          SECOND, and this is what the owner found on the real site: those
+          journeys were then collapsed into one. A single "Suppliers &
+          professionals" card, described as "approved contractors, engineers,
+          architects, suppliers and project managers", with Design Services and
+          Finishing as small chips underneath it. The reasoning was that they
+          share one directory component over one provider table - true, and
+          irrelevant. Shared implementation does not require shared navigation
+          identity. A visitor arrives needing a supplier, or a contractor, or
+          design services, or a finishing company; they should not have to
+          learn RAKIZA's provider model to start.
+
+          So: six cards, one grid, comparable prominence. Colour follows the
+          DOMAIN - teal for the catalogue, violet for the four provider
+          journeys, amber for the action - and the JOURNEY is carried by icon,
+          label, copy and route. Three hue families for six cards, not six.
 
           THE HIERARCHY SURVIVES GRAYSCALE, which is the explicit QA criterion.
           These cards are larger, carry supporting copy and a prominent icon,
           and come FIRST in document order; the category tiles below are small,
-          copy-free and later. Remove every colour and the ranking is
-          unchanged. Domain colour is supplemental, never the signal.
+          copy-free and later. Remove every colour and the ranking holds, and
+          so does which card is which - a hard hat says contractor faster than
+          any hue does.
 
           And because the gateway precedes the rail in the DOM, no responsive
           reflow can invert them at any breakpoint. */}
@@ -344,82 +360,58 @@ export default function Home() {
             <p className="mt-3 text-lg text-muted-foreground">{t('home.explore.subtitle')}</p>
           </div>
 
-          <div className="grid gap-5 md:grid-cols-3">
-            {DOMAIN_IDENTITIES.map(domain => (
-              /* A DIV, NOT A BUTTON, and the reason is the Providers card.
-                 It carries two secondary destinations inside it, and nested
-                 interactive content inside a <button> is invalid HTML: the
-                 inner control is unreachable for some assistive technology and
-                 a nested activation is ambiguous for all of it. So the card is
-                 a plain container, the whole surface is made clickable by one
-                 stretched link on the title, and the presets sit above that
-                 link in the stacking order as real links of their own.
-
-                 Focus follows: the ring is drawn on the CARD via
-                 focus-within, so tabbing to the title shows the whole card
-                 focused, and the presets keep their own rings. */
+          {/* TWO COLUMNS FROM 375px UP, three from `lg`. Six single-file cards
+              on a phone would put Get Quotes most of a screen-height below the
+              fold; two columns keep all six scannable in roughly one and a
+              half screens while leaving each tap target well clear of 44px. */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 lg:gap-5">
+            {JOURNEY_IDENTITIES.map(journey => (
+              /* A DIV, NOT A BUTTON OR A LINK WRAPPER. One stretched link on
+                 the title makes the whole card clickable without nesting
+                 anything interactive inside anything else - invalid HTML whose
+                 failure mode is an inner control that assistive technology
+                 skips or mis-announces. The focus ring is drawn on the CARD
+                 via focus-within, so tabbing to the title shows the whole card
+                 focused. */
               <div
-                key={domain.id}
-                className="group relative flex flex-col rounded-2xl border border-border bg-card p-7 text-start transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
-                data-testid={`home-domain-${domain.id}`}
-                data-domain-kind={domain.kind}
+                key={journey.id}
+                className="group relative flex flex-col rounded-2xl border border-border bg-card p-4 text-start transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 sm:p-6 lg:p-7"
+                data-testid={`home-journey-${journey.id}`}
+                data-journey-kind={journey.kind}
+                data-journey-domain={journey.domain ?? 'none'}
               >
-                {/* Icon well: the domain's own tint, the domain's own accent.
-                    Identity never rests on the colour alone - the icon and the
-                    label below carry it too (WCAG 2.2 SC 1.4.1). */}
-                <span className={`mb-5 flex h-14 w-14 items-center justify-center rounded-xl ${domain.tint} ${domain.accent}`}>
-                  <domain.icon className="h-7 w-7" aria-hidden="true" />
+                {/* Icon well: the DOMAIN's tint and accent. Identity never
+                    rests on colour alone - the icon and the label below carry
+                    it too (WCAG 2.2 SC 1.4.1). */}
+                <span className={`mb-3 flex h-11 w-11 items-center justify-center rounded-xl sm:mb-4 sm:h-12 sm:w-12 lg:h-14 lg:w-14 ${journey.tint} ${journey.accent}`}>
+                  <journey.icon className="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7" aria-hidden="true" />
                 </span>
-                {/* The stretched link. `after:absolute after:inset-0` makes the
-                    entire card the hit target without wrapping anything. */}
                 <Link
-                  href={domain.href}
-                  className="text-xl font-semibold leading-snug after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:outline-none"
-                  data-testid={`home-domain-${domain.id}-link`}
+                  href={journey.href}
+                  className="text-base font-semibold leading-snug after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:outline-none sm:text-lg lg:text-xl"
+                  data-testid={`home-journey-${journey.id}-link`}
                 >
-                  {t(domain.labelKey)}
+                  {t(journey.labelKey)}
                 </Link>
-                <span className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                  {t(domain.blurbKey)}
+                <span className="mt-1.5 text-xs leading-relaxed text-muted-foreground sm:mt-2 sm:text-sm">
+                  {t(journey.blurbKey)}
                 </span>
-                {/* A VISUAL AFFORDANCE, NOT A CONTROL. The stretched link
-                    above already makes the whole card clickable, so a second
-                    focusable element here would be a duplicate tab stop to the
-                    same place. It is a span on purpose.
+                {/* A VISUAL AFFORDANCE, NOT A CONTROL: the stretched link
+                    above already owns the whole card, so a second focusable
+                    element here would be a duplicate tab stop to one place.
 
-                    `domain.cta` differs in KIND, not just hue: the two domains
-                    get a text link, the workflow gets a filled pill. See the
-                    contrast note in domainIdentity.ts for why amber has no
-                    choice about that - and why the result is better anyway. */}
+                    `journey.cta` differs in KIND, not just hue - the five
+                    discovery cards get a text link, the action gets a filled
+                    pill. See the contrast note in domainIdentity.ts for why
+                    amber has no choice about that, and why the result ranks
+                    the money journey first with no colour at all. */}
                 <span
-                  data-domain-cta=""
-                  className={`mt-5 inline-flex w-fit items-center gap-1.5 text-sm font-semibold ${domain.cta}`}
+                  data-journey-cta=""
+                  className={`mt-3 inline-flex w-fit items-center gap-1.5 text-xs font-semibold sm:mt-4 sm:text-sm ${journey.cta}`}
                 >
-                  {t(domain.id === 'quotes' ? 'domain.quotes.cta' : 'marketHub.viewAll')}
-                  <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 rtl:rotate-180" aria-hidden="true" />
+                  {t(journey.ctaKey)}
+                  <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 rtl:rotate-180 sm:h-4 sm:w-4" aria-hidden="true" />
                 </span>
-
-                {/* THE PROVIDER PRESETS, as secondary links rather than cards.
-                    Designers and Finishing are the SAME directory with a
-                    category preset - not separate architectures - so they
-                    inherit this card's accent and differ by icon and label.
-                    Rendering them as peers would make the visual separation
-                    stronger than the information architecture. */}
-                {domain.id === 'providers' && (
-                  <span className="mt-5 flex flex-wrap gap-2 border-t border-border pt-4">
-                    {PROVIDER_PRESETS.map(preset => (
-                      <Link
-                        key={preset.id}
-                        href={preset.href}
-                        className="relative z-10 inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-brand-300 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        data-testid={`home-preset-${preset.id}`}
-                      >
-                        <preset.icon className="h-3.5 w-3.5" aria-hidden="true" />
-                        {t(preset.labelKey)}
-                      </Link>
-                    ))}
-                  </span>
-                )}
               </div>
             ))}
           </div>
