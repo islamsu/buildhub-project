@@ -223,6 +223,177 @@ describe('the model offers journeys, not a provider umbrella', () => {
   });
 });
 
+describe('the compact pass changed proportions, not the architecture', () => {
+  /**
+   * ── WHAT THE OWNER FROZE, AND WHAT THEY ASKED TO CHANGE ────────────────
+   *
+   * The six journeys were reviewed on the real Arabic mobile site and
+   * APPROVED. What was rejected was density: a measured 1086px at 375px wide -
+   * 1.21 phone screens for one section - with descriptions wrapping to four
+   * lines inside a 158px card and an amber pill 48px tall.
+   *
+   * So the titles, routes and filters are frozen here, and the structure that
+   * delivers the density is pinned. The PIXELS are not: they live in
+   * evidence/zg-journeydensity.mjs, which measures before and after rather
+   * than freezing a number that one Arabic copy edit would falsify.
+   */
+  it('THE SIX TITLES ARE EXACTLY WHAT THE OWNER APPROVED', () => {
+    const copy = code('client/src/contexts/LanguageContext.tsx');
+    const frozen: Array<[string, string, string]> = [
+      ['journey.products', 'Products & Materials', 'المنتجات والمواد'],
+      ['journey.suppliers', 'Suppliers', 'الموردون'],
+      ['journey.contractors', 'Contractors', 'المقاولون'],
+      ['journey.design', 'Design Services', 'خدمات التصميم'],
+      ['journey.finishing', 'Finishing', 'التشطيبات'],
+      ['journey.quotes', 'Get Quotes', 'اطلب عروض أسعار'],
+    ];
+    for (const [key, en, ar] of frozen) {
+      expect(copy, `${key} is no longer "${en}"`).toContain(`'${key}': '${en}'`);
+      expect(copy, `${key} is no longer "${ar}"`).toContain(`'${key}': '${ar}'`);
+    }
+  });
+
+  it('every journey has BOTH a long and a short description, and both CTAs', () => {
+    /*
+     * The density fix is copy length before padding before type size, so the
+     * short strings are load-bearing: a journey that lost its `.short` would
+     * render `undefined` on a phone, and one that lost its `.blurb` would lose
+     * the sentence the desktop card has room for.
+     */
+    const copy = code('client/src/contexts/LanguageContext.tsx');
+    const model = MODEL();
+    const shortKeys = [...model.matchAll(/shortKey: '([^']+)'/g)].map(m => m[1]);
+    expect(shortKeys, 'a journey has no short description').toHaveLength(6);
+    const ctaKeys = [...model.matchAll(/ctaKey: '([^']+)'/g)].map(m => m[1]);
+    const arabic = /[؀-ۿ]/;
+    for (const key of [...shortKeys, ...ctaKeys, ...ctaKeys.map(k => `${k}.short`)]) {
+      const values = [...copy.matchAll(new RegExp(`'${key.replace(/\./g, '\\.')}': '([^']*)'`, 'g'))]
+        .map(m => m[1]);
+      expect(values.length, `${key} is not defined twice (EN + AR)`).toBe(2);
+      expect(values.some(v => arabic.test(v)), `${key} has no Arabic value`).toBe(true);
+      expect(values.every(v => v.trim().length > 0), `${key} is empty`).toBe(true);
+    }
+  });
+
+  it('and the short copy is ACTUALLY SHORTER than the long copy', () => {
+    /*
+     * Otherwise two keys exist and nothing is gained. Compared per journey and
+     * per language, because an English pair that shortens while the Arabic one
+     * does not would leave the phone card tall in exactly the language the
+     * owner reviewed.
+     */
+    const copy = code('client/src/contexts/LanguageContext.tsx');
+    const value = (key: string) =>
+      [...copy.matchAll(new RegExp(`'${key.replace(/\./g, '\\.')}': '([^']*)'`, 'g'))].map(m => m[1]);
+    for (const id of ['products', 'suppliers', 'contractors', 'design', 'finishing', 'quotes']) {
+      const long = value(`journey.${id}.blurb`);
+      const brief = value(`journey.${id}.short`);
+      expect(long).toHaveLength(2);
+      expect(brief).toHaveLength(2);
+      for (let lang = 0; lang < 2; lang++) {
+        expect(brief[lang].length, `journey.${id}.short[${lang}] is not shorter than its blurb`)
+          .toBeLessThan(long[lang].length);
+      }
+    }
+  });
+
+  it('CSS CHOOSES WHICH DESCRIPTION SHOWS, NOT JAVASCRIPT', () => {
+    /*
+     * A matchMedia hook was the obvious alternative and is worse: the existing
+     * useIsMobile returns false on first render, so a phone would paint the
+     * long copy and then swap - a flash and a layout shift on the most
+     * important section of the homepage. `display: none` also keeps the hidden
+     * string out of the accessibility tree, so a screen reader is read exactly
+     * one description rather than both.
+     */
+    const home = HOME();
+    const explore = home.slice(home.indexOf('data-testid="home-explore"'));
+    const section = explore.slice(0, explore.indexOf('</section>'));
+    expect(section, 'the phone description is gone').toMatch(/shortKey[\s\S]{0,40}/);
+    expect(section, 'the phone copy is not hidden above the breakpoint').toMatch(/sm:hidden/);
+    expect(section, 'the long copy is not hidden below the breakpoint').toMatch(/hidden[^"]*sm:inline/);
+    expect(section, 'a media-query hook crept back in').not.toMatch(/useIsMobile|matchMedia/);
+  });
+
+  it('and nothing achieves compactness by clipping or fixing a height', () => {
+    /*
+     * The forbidden shortcuts, and they are forbidden for the same reason: a
+     * fixed height breaks Arabic the moment a word wraps differently, and
+     * `overflow: hidden` on meaningful copy is a sentence the reader cannot
+     * finish. The rendered probe measures both; this stops them being written.
+     */
+    const home = HOME();
+    const explore = home.slice(home.indexOf('data-testid="home-explore"'));
+    const section = explore.slice(0, explore.indexOf('</section>'));
+    /* THE CARD'S OWN CLASS STRING. A first version banned `h-[` across the
+       whole section and tripped on the icon glyph's `h-[18px]` - which is an
+       icon size, not a card height, and exactly the kind of precision this
+       rule needs: fixing a CARD's height breaks Arabic, fixing an ICON's is
+       how icons are sized. */
+    const cardClass = section.slice(section.indexOf('className="group relative'));
+    expect(cardClass.slice(0, 400), 'a card has a fixed height').not.toMatch(/\bh-\[\d|\bh-\d+\b/);
+    expect(section, 'meaningful copy is being clipped').not.toMatch(/overflow-hidden|line-clamp/);
+    expect(section, 'the body copy shrank below 12px').not.toMatch(/text-\[(?:[0-9]|10|11)px\]/);
+  });
+
+  it('the action keeps its fill and the five discovery cards keep text links', () => {
+    /*
+     * The pill got smaller, not weaker. §9: it must not become an ordinary
+     * text link, and it must not grow to dominate a 180px card either - the
+     * measured 124x48 is now 109x28, still the only filled action in the grid.
+     */
+    const quotes = entry('quotes');
+    expect(quotes, 'the action stopped being a fill').toMatch(/cta: '[^']*bg-brand-accent-500/);
+    expect(quotes, 'the action lost its dark label').toMatch(/cta: '[^']*text-foreground/);
+    expect(quotes, 'the pill is no longer compact on a phone').toMatch(/px-2\.5 py-1\.5/);
+    expect(quotes, 'the pill lost its roomier desktop padding').toMatch(/sm:px-3\.5 sm:py-2/);
+  });
+
+  it('THE PROVIDER FAMILY IS DIFFERENTIATED BY AXIS, NOT BY A NEW HUE', () => {
+    /*
+     * The owner's second note: the four provider journeys "look strongly
+     * related - which is good - but slightly too identical". Four saturated
+     * hues would fix recognition and rebuild the rainbow, so the variation is
+     * the one distinction the architecture has - role views versus declared-
+     * category views - expressed as a hairline ring rather than a colour.
+     * Fill versus outline is a shape, so it survives grayscale.
+     */
+    const model = MODEL();
+    const ringed = ['products', 'suppliers', 'contractors', 'design', 'finishing', 'quotes']
+      .filter(id => entry(id).includes('wellRing'));
+    expect(ringed, 'the ring is no longer on exactly the two category journeys')
+      .toEqual(['design', 'finishing']);
+    /* And the ring stays inside the provider family: it is the domain accent
+       at low opacity, never a second colour. */
+    expect(model, 'the ring became its own colour')
+      .toMatch(/CATEGORY_WELL_RING = 'ring-1 ring-domain-providers\/\d+'/);
+    /* The accents are still three, which is the anti-rainbow invariant. */
+    const accents = [...model.matchAll(/^    accent: ([^,\n]+),$/gm)].map(m => m[1]);
+    expect(new Set(accents).size, 'the ring turned into a fourth accent').toBe(3);
+  });
+
+  it('and the section breathes less without losing its hierarchy', () => {
+    /*
+     * §21: once the cards shorten, 160px of section padding reads as a gap
+     * rather than a rhythm. Reduced at the phone end only - the desktop
+     * proportions were never the complaint.
+     */
+    const home = HOME();
+    /* The section's OPENING TAG, found by its own class rather than by slicing
+       forward from the testid - the padding sits before `data-testid` in the
+       attribute order, so a forward slice from there could never see it. */
+    const open = home.indexOf('<section className="border-b bg-background');
+    expect(open, 'the gateway section is gone').toBeGreaterThan(-1);
+    expect(home.slice(open, open + 200), 'the section padding no longer scales')
+      .toMatch(/py-12 sm:py-16 lg:py-20/);
+    const explore = home.slice(home.indexOf('data-testid="home-explore"'));
+    const section = explore.slice(0, explore.indexOf('</section>'));
+    expect(section, 'the header block no longer scales').toMatch(/mb-6 max-w-2xl sm:mb-8 lg:mb-10/);
+    expect(section, 'the card padding no longer scales').toMatch(/p-3\.5 /);
+    expect(section, 'the card lost its roomier desktop padding').toMatch(/sm:p-5 lg:p-7/);
+  });
+});
+
 describe('the journey tokens are accessible, computed not asserted', () => {
   function tokenRgb(block: string, token: string): [number, number, number] {
     const m = block.match(new RegExp(`${token}:\\s*oklch\\(\\s*([\\d.]+)%\\s+([\\d.]+)\\s+([\\d.]+)\\s*\\)`));
@@ -367,6 +538,7 @@ describe('journeys come before taxonomy, and stay out of it', () => {
     const card = explore.slice(0, explore.indexOf('</section>'));
     expect(card, 'the journey cards lost their supporting copy').toContain('blurbKey');
     expect(card, 'the journey cards lost their larger padding').toMatch(/lg:p-7/);
+    expect(card, 'the journey cards lost their icon well').toContain('data-journey-well');
 
     const browse = home.slice(home.indexOf('data-testid="home-browse"'));
     const tile = browse.slice(0, browse.indexOf('</section>'));

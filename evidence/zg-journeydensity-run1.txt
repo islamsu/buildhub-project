@@ -1,0 +1,16 @@
+BUILD  75ae3e8 (local) built 2026-10-03T06:09:41.277Z  http://127.0.0.1:5401
+
+EXPLORE RAKIZA DENSITY  label=compact  build=75ae3e8
+view      cols  section  screens  tall short  cardW  icon titleL descL descPx       cta   gap   row=   skew
+en@375       2      765     0.85   188   168    159    40      2     2     12    109x28     0   100%    0px
+en@393       2      765     0.85   188   168    168    40      2     2     12    109x28     0   100%    0px
+en@430       2      746     0.83   180   168    186    40      1     2     12    109x28     0   100%    0px
+en@768       2      908     1.01   224   208    341    44      1     2     14    165x36     0   100%    0px
+en@1440      3      799     0.89   257   241    381    56      1     2     14    165x36     0   100%    0px
+ar@375       2      707     0.79   180   149    159    40      1     2     12    114x28     0   100%    0px
+ar@393       2      687     0.76   161   149    168    40      1     1     12    114x28     0   100%    0px
+ar@430       2      687     0.76   161   149    186    40      1     1     12    114x28     0   100%    0px
+ar@768       2      885     0.98   224   185    341    44      1     2     14    137x36     0   100%    0px
+ar@1440      3      760     0.84   241   218    381    56      1     2     14    137x36     0   100%    0px
+
+OK  no overflow, no clipped text, no tap target under 44px, six cards, rows balanced, actions on a shared baseline, well rings on design+finishing only

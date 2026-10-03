@@ -353,18 +353,39 @@ export default function Home() {
 
           And because the gateway precedes the rail in the DOM, no responsive
           reflow can invert them at any breakpoint. */}
-      <section className="border-b bg-background py-20" data-testid="home-explore">
+      {/* ── THE DENSITY PASS, MEASURED RATHER THAN EYEBALLED ──────────
+          The owner accepted the six journeys on Arabic mobile and rejected
+          their height: a measured 1086px at 375px wide, 1.21 phone screens for
+          one section, with descriptions wrapping to FOUR lines inside a 158px
+          card and a Get Quotes pill 48px tall because its label wrapped too.
+
+          Every number below moved for that reason, and the ones that did NOT
+          move matter as much: the body copy stays at 12px, the tap target stays
+          the whole card, nothing is clipped and no height is fixed. Compactness
+          comes from copy length, padding and gaps - in that order - because
+          shrinking type to save pixels is how a premium page becomes a dense
+          one. evidence/zg-journeydensity.mjs holds the before and after. */}
+      <section className="border-b bg-background py-12 sm:py-16 lg:py-20" data-testid="home-explore">
         <div className="container">
-          <div className="mb-10 max-w-2xl">
-            <h2 className="text-3xl font-bold sm:text-4xl">{t('home.explore.title')}</h2>
-            <p className="mt-3 text-lg text-muted-foreground">{t('home.explore.subtitle')}</p>
+          {/* The header block shrinks with the cards - 40px of margin above
+              six now-compact tiles read as a gap rather than a rhythm. */}
+          <div className="mb-6 max-w-2xl sm:mb-8 lg:mb-10">
+            <h2 className="text-2xl font-bold sm:text-3xl lg:text-4xl">{t('home.explore.title')}</h2>
+            <p className="mt-2 text-base text-muted-foreground sm:mt-3 sm:text-lg">{t('home.explore.subtitle')}</p>
           </div>
 
           {/* TWO COLUMNS FROM 375px UP, three from `lg`. Six single-file cards
               on a phone would put Get Quotes most of a screen-height below the
-              fold; two columns keep all six scannable in roughly one and a
-              half screens while leaving each tap target well clear of 44px. */}
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 lg:gap-5">
+              fold; two columns keep all six scannable while leaving each tap
+              target the whole card, well clear of 44px.
+
+              `items-stretch` is the grid DEFAULT written out, not a fix -
+              removing it changes nothing, as a mutation confirmed. It is here
+              so that the next person to reach for `items-start` can see the
+              intent they would be undoing: the pair in a row match height
+              because the grid stretches them, and the alternative to that is a
+              fixed height, which is the thing that breaks Arabic. */}
+          <div className="grid grid-cols-2 items-stretch gap-2.5 sm:gap-4 lg:grid-cols-3 lg:gap-5">
             {JOURNEY_IDENTITIES.map(journey => (
               /* A DIV, NOT A BUTTON OR A LINK WRAPPER. One stretched link on
                  the title makes the whole card clickable without nesting
@@ -375,42 +396,76 @@ export default function Home() {
                  focused. */
               <div
                 key={journey.id}
-                className="group relative flex flex-col rounded-2xl border border-border bg-card p-4 text-start transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 sm:p-6 lg:p-7"
+                className="group relative flex flex-col rounded-2xl border border-border bg-card p-3.5 text-start transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 sm:p-5 lg:p-7"
                 data-testid={`home-journey-${journey.id}`}
                 data-journey-kind={journey.kind}
                 data-journey-domain={journey.domain ?? 'none'}
               >
-                {/* Icon well: the DOMAIN's tint and accent. Identity never
-                    rests on colour alone - the icon and the label below carry
-                    it too (WCAG 2.2 SC 1.4.1). */}
-                <span className={`mb-3 flex h-11 w-11 items-center justify-center rounded-xl sm:mb-4 sm:h-12 sm:w-12 lg:h-14 lg:w-14 ${journey.tint} ${journey.accent}`}>
-                  <journey.icon className="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7" aria-hidden="true" />
+                {/* Icon well: the DOMAIN's tint and accent, plus a hairline
+                    ring on the two CATEGORY journeys. Identity never rests on
+                    colour alone - the icon and the label carry it too (WCAG
+                    2.2 SC 1.4.1), and fill-versus-outline survives grayscale
+                    where a second hue would not. 40px on a phone, down from
+                    44: still a comfortable visual weight for an 18px glyph,
+                    and four pixels back on every one of three rows. */}
+                <span
+                  data-journey-well=""
+                  className={`mb-2.5 flex h-10 w-10 items-center justify-center rounded-xl sm:mb-3.5 sm:h-11 sm:w-11 lg:h-14 lg:w-14 ${journey.tint} ${journey.accent} ${journey.wellRing ?? ''}`}
+                >
+                  <journey.icon className="h-[18px] w-[18px] sm:h-5 sm:w-5 lg:h-7 lg:w-7" aria-hidden="true" />
                 </span>
                 <Link
                   href={journey.href}
-                  className="text-base font-semibold leading-snug after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:outline-none sm:text-lg lg:text-xl"
+                  className="text-sm font-semibold leading-snug after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:outline-none sm:text-base lg:text-xl"
                   data-testid={`home-journey-${journey.id}-link`}
                 >
                   {t(journey.labelKey)}
                 </Link>
-                <span className="mt-1.5 text-xs leading-relaxed text-muted-foreground sm:mt-2 sm:text-sm">
+                {/* TWO LENGTHS, ONE VISIBLE. CSS chooses, not JavaScript: the
+                    existing useIsMobile returns false on first render, so a
+                    hook would paint the long copy on a phone and then swap -
+                    a flash and a layout shift on the most important section of
+                    the homepage. `display: none` also keeps the hidden string
+                    out of the accessibility tree, so a screen reader is read
+                    exactly one description. See domainIdentity.ts. */}
+                <span className="mt-1 text-xs leading-relaxed text-muted-foreground sm:hidden">
+                  {t(journey.shortKey)}
+                </span>
+                <span className="mt-1.5 hidden text-xs leading-relaxed text-muted-foreground sm:inline sm:text-sm">
                   {t(journey.blurbKey)}
                 </span>
                 {/* A VISUAL AFFORDANCE, NOT A CONTROL: the stretched link
                     above already owns the whole card, so a second focusable
                     element here would be a duplicate tab stop to one place.
 
+                    `mt-auto` pins the action row to the bottom of the card,
+                    so the pair in a row share a BOTTOM baseline however their
+                    copy wraps - the brief's "actions sitting far from the
+                    information they belong to" was the opposite problem, a row
+                    floating directly under short copy while its neighbour's
+                    sat three lines lower. Bottoms, not tops: the amber pill is
+                    28px and a text link is 16px, so their top edges cannot
+                    align and should not be expected to.
+
                     `journey.cta` differs in KIND, not just hue - the five
                     discovery cards get a text link, the action gets a filled
                     pill. See the contrast note in domainIdentity.ts for why
                     amber has no choice about that, and why the result ranks
                     the money journey first with no colour at all. */}
-                <span
-                  data-journey-cta=""
-                  className={`mt-3 inline-flex w-fit items-center gap-1.5 text-xs font-semibold sm:mt-4 sm:text-sm ${journey.cta}`}
-                >
-                  {t(journey.ctaKey)}
-                  <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 rtl:rotate-180 sm:h-4 sm:w-4" aria-hidden="true" />
+                {/* THE SPACING LIVES ON THE WRAPPER, not on the pill. The
+                    action's own classes carry the amber fill, so putting the
+                    gap there padded the inside of the pill and reshaped it -
+                    `mt-auto` has to push a container, and the pill has to keep
+                    its own tight padding. */}
+                <span className="mt-auto flex pt-2.5 sm:pt-3.5">
+                  <span
+                    data-journey-cta=""
+                    className={`inline-flex w-fit items-center gap-1.5 text-xs font-semibold sm:text-sm ${journey.cta}`}
+                  >
+                    <span className="sm:hidden">{t(`${journey.ctaKey}.short`)}</span>
+                    <span className="hidden sm:inline">{t(journey.ctaKey)}</span>
+                    <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 rtl:rotate-180 sm:h-4 sm:w-4" aria-hidden="true" />
+                  </span>
                 </span>
               </div>
             ))}

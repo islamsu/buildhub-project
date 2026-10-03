@@ -140,16 +140,70 @@ export type JourneyIdentity = {
   filter: { by: 'role'; value: string } | { by: 'category'; value: string } | { by: 'none' };
   /** i18n keys, so no label is ever typed at a call site. */
   labelKey: string;
+  /**
+   * The description, in two lengths.
+   *
+   * ── WHY TWO, AND WHY CSS CHOOSES BETWEEN THEM ──────────────────────────
+   *
+   * The owner reviewed the six journeys on Arabic mobile and accepted the
+   * architecture; what they rejected was the height. A measured 1086px at
+   * 375px wide - 1.21 phone screens for one section - with descriptions
+   * wrapping to FOUR lines inside a 158px card. Those four lines are most of
+   * the excess, and shortening the desktop copy to fix a phone is the wrong
+   * trade: at 1440 there is room for a sentence that actually explains the
+   * destination.
+   *
+   * So both strings ship and CSS picks one (`sm:hidden` / `hidden sm:inline`).
+   * A `matchMedia` hook was the obvious alternative and is worse here: the
+   * existing useIsMobile returns false on first render, so a phone would paint
+   * the long copy and then swap - a visible flash and a layout shift on the
+   * most important section of the homepage. `display: none` also removes the
+   * hidden string from the accessibility tree, so a screen reader is read
+   * exactly one description rather than both.
+   */
   blurbKey: string;
+  /** The same thing in one short phrase, for phone widths. */
+  shortKey: string;
   /** The accent, as utility class names: the component names its ROLE. */
   accent: string;
   /** The icon well behind the glyph. */
   tint: string;
+  /**
+   * An extra treatment on the well, where the product has something true to
+   * say with it.
+   *
+   * ── DIFFERENTIATION THAT MEANS SOMETHING ───────────────────────────────
+   *
+   * The owner's other note was that the four provider journeys "look strongly
+   * related - which is good - but slightly too identical". Four arbitrary
+   * saturated hues would fix recognition and rebuild the rainbow, so the
+   * variation here is the one distinction the architecture actually has:
+   *
+   *   ROLE journeys     (Suppliers, Contractors)  what KIND of business
+   *   CATEGORY journeys (Design, Finishing)       what they have DECLARED
+   *
+   * Same hue family, same foreground accent, two well treatments - a plain
+   * tint for the role views and a tinted well with a hairline ring for the
+   * category views. It aids recognition, it survives grayscale because fill
+   * and outline are shapes rather than colours, and it is not invented: a
+   * reader who never works out what the ring means still gets the benefit of
+   * two visually distinct pairs instead of four identical tiles.
+   */
+  wellRing?: string;
   /** The call-to-action row. Differs in KIND for the action - see above. */
   cta: string;
   /** The CTA's own label key, because a form is not a listing. */
   ctaKey: string;
 };
+
+/**
+ * The hairline that marks a CATEGORY journey's icon well.
+ *
+ * A ring at 25% of the domain accent - visible as a defined edge, far too
+ * quiet to read as a second colour. Named here rather than written at the two
+ * call sites so the pair cannot drift apart.
+ */
+const CATEGORY_WELL_RING = 'ring-1 ring-domain-providers/25';
 
 const PRODUCTS_ACCENT = 'text-domain-products';
 const PRODUCTS_TINT = 'bg-domain-products-tint';
@@ -166,6 +220,7 @@ export const JOURNEY_IDENTITIES: readonly JourneyIdentity[] = [
     filter: { by: 'none' },
     labelKey: 'journey.products',
     blurbKey: 'journey.products.blurb',
+    shortKey: 'journey.products.short',
     accent: PRODUCTS_ACCENT,
     tint: PRODUCTS_TINT,
     cta: PRODUCTS_ACCENT,
@@ -182,6 +237,7 @@ export const JOURNEY_IDENTITIES: readonly JourneyIdentity[] = [
     filter: { by: 'role', value: 'supplier' },
     labelKey: 'journey.suppliers',
     blurbKey: 'journey.suppliers.blurb',
+    shortKey: 'journey.suppliers.short',
     accent: PROVIDER_ACCENT,
     tint: PROVIDER_TINT,
     cta: PROVIDER_ACCENT,
@@ -196,6 +252,7 @@ export const JOURNEY_IDENTITIES: readonly JourneyIdentity[] = [
     filter: { by: 'role', value: 'contractor' },
     labelKey: 'journey.contractors',
     blurbKey: 'journey.contractors.blurb',
+    shortKey: 'journey.contractors.short',
     accent: PROVIDER_ACCENT,
     tint: PROVIDER_TINT,
     cta: PROVIDER_ACCENT,
@@ -218,8 +275,10 @@ export const JOURNEY_IDENTITIES: readonly JourneyIdentity[] = [
     filter: { by: 'category', value: 'Design' },
     labelKey: 'journey.design',
     blurbKey: 'journey.design.blurb',
+    shortKey: 'journey.design.short',
     accent: PROVIDER_ACCENT,
     tint: PROVIDER_TINT,
+    wellRing: CATEGORY_WELL_RING,
     cta: PROVIDER_ACCENT,
     ctaKey: 'journey.cta.find',
   },
@@ -239,8 +298,10 @@ export const JOURNEY_IDENTITIES: readonly JourneyIdentity[] = [
     filter: { by: 'category', value: 'Renovation' },
     labelKey: 'journey.finishing',
     blurbKey: 'journey.finishing.blurb',
+    shortKey: 'journey.finishing.short',
     accent: PROVIDER_ACCENT,
     tint: PROVIDER_TINT,
+    wellRing: CATEGORY_WELL_RING,
     cta: PROVIDER_ACCENT,
     ctaKey: 'journey.cta.find',
   },
@@ -253,12 +314,19 @@ export const JOURNEY_IDENTITIES: readonly JourneyIdentity[] = [
     filter: { by: 'none' },
     labelKey: 'journey.quotes',
     blurbKey: 'journey.quotes.blurb',
+    shortKey: 'journey.quotes.short',
     accent: 'text-brand-accent-600',
     tint: 'bg-brand-accent-500/12',
     /* The canonical amber pairing, identical to the `accent` Button variant:
        Accent Amber behind Text Dark at 8.26:1. Never a white label - that is
-       2.15:1 and brandContrast.test.ts fails the build over it. */
-    cta: 'rounded-lg bg-brand-accent-500 px-3.5 py-2 text-foreground',
+       2.15:1 and brandContrast.test.ts fails the build over it.
+
+       PROPORTIONATE ON A PHONE. The measured pill was 124x48 at 375px - taller
+       than the action row needs and tall enough to dominate a 227px card -
+       because `py-2` plus a two-line label is 48px. Shorter padding here and a
+       shorter label in the copy bring it back in scale without making it an
+       ordinary text link: it is still the only filled action in the grid. */
+    cta: 'rounded-lg bg-brand-accent-500 px-2.5 py-1.5 text-foreground sm:px-3.5 sm:py-2',
     ctaKey: 'journey.cta.quotes',
   },
 ];

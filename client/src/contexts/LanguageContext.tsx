@@ -47,24 +47,47 @@ const translations: Record<Language, Record<string, string>> = {
        endorsement of the business. Verification is a separate state with its
        own badge on the card. So these describe the destination and let the
        per-provider signals speak for themselves. */
+    /* ── TWO LENGTHS OF DESCRIPTION, ONE MEANING ───────────────────────
+       `.blurb` is the tablet-and-desktop sentence; `.short` is the phone
+       phrase. The owner measured four wrapped lines inside a 158px card on
+       Arabic mobile, which was most of the section's excess height - and
+       cutting the desktop copy to fix a phone would be the wrong trade, since
+       at 1440 there is room to actually explain the destination.
+
+       The short forms are NOUN PHRASES, not truncated sentences. "Materials
+       and building supplies" scans in one glance; "Construction and finishing
+       materials with real..." trailing off does not. Titles are frozen and
+       unchanged. */
     'journey.products': 'Products & Materials',
     'journey.products.blurb': 'Construction and finishing materials with real specifications and prices.',
+    'journey.products.short': 'Materials and building supplies.',
     'journey.suppliers': 'Suppliers',
     'journey.suppliers.blurb': 'Businesses that supply materials, equipment and fittings.',
+    'journey.suppliers.short': 'Material and equipment suppliers.',
     'journey.contractors': 'Contractors',
     'journey.contractors.blurb': 'Construction firms that build, install and execute on site.',
+    'journey.contractors.short': 'Construction and installation firms.',
     'journey.design': 'Design Services',
     'journey.design.blurb': 'Architects, engineers and studios offering design work.',
+    'journey.design.short': 'Architectural and engineering design.',
     'journey.finishing': 'Finishing',
     'journey.finishing.blurb': 'Companies that handle finishing and renovation work.',
+    'journey.finishing.short': 'Finishing and renovation companies.',
     'journey.quotes': 'Get Quotes',
     'journey.quotes.blurb': 'Describe your project once and receive comparable quotations.',
+    'journey.quotes.short': 'Describe the job, compare quotes.',
     /* THREE CTA VERBS, BECAUSE THE CLICKS DIFFER. A catalogue is browsed, a
        directory is searched, and the RFQ leads to a form - "View all" on that
        last one would be a lie about what the click does. */
     'journey.cta.browse': 'Browse catalogue',
     'journey.cta.find': 'View directory',
     'journey.cta.quotes': 'Post your project',
+    /* THE PHONE FORMS. "Post your project" wrapped to two lines inside a 158px
+       card, which is most of why the measured CTA was 48px tall - taller than
+       the whole action row needs to be. Same verbs, fewer words. */
+    'journey.cta.browse.short': 'Browse',
+    'journey.cta.find.short': 'View',
+    'journey.cta.quotes.short': 'Post project',
     'home.browse.title': 'Browse by category',
     'home.browse.subtitle': 'Every category in the catalogue, with what is listed in each.',
     'home.browse.viewAll': 'All categories',
@@ -1395,21 +1418,36 @@ const translations: Record<Language, Record<string, string>> = {
        Like the English, no blurb says "معتمدون" - approved. The registration
        state is real but it is not an endorsement, and the per-provider
        verification badge carries that meaning where it belongs. */
+    /* ── THE SHORT ARABIC IS WRITTEN, NOT TRIMMED ──────────────────────
+       Each `.short` is composed to read naturally as a construction-trade
+       noun phrase at phone width, not shortened from the sentence above it
+       and not matched to the English word count. Arabic carries more meaning
+       per character here, so several of these are genuinely shorter than their
+       English counterparts rather than padded to match. Titles are frozen. */
     'journey.products': 'المنتجات والمواد',
     'journey.products.blurb': 'مواد البناء والتشطيب بمواصفاتها وأسعارها الحقيقية.',
+    'journey.products.short': 'مواد ومستلزمات البناء.',
     'journey.suppliers': 'الموردون',
     'journey.suppliers.blurb': 'شركات توريد المواد والمعدات والتجهيزات.',
+    'journey.suppliers.short': 'موردو المواد والمعدات.',
     'journey.contractors': 'المقاولون',
     'journey.contractors.blurb': 'شركات التنفيذ والبناء والتركيب في الموقع.',
+    'journey.contractors.short': 'شركات التنفيذ والتركيب.',
     'journey.design': 'خدمات التصميم',
     'journey.design.blurb': 'معماريون ومهندسون ومكاتب تصميم يقدّمون أعمال التصميم.',
+    'journey.design.short': 'تصميم معماري وهندسي.',
     'journey.finishing': 'التشطيبات',
     'journey.finishing.blurb': 'شركات متخصّصة في أعمال التشطيب والترميم.',
+    'journey.finishing.short': 'شركات تشطيب وترميم.',
     'journey.quotes': 'اطلب عروض أسعار',
     'journey.quotes.blurb': 'صِف مشروعك مرة واحدة وتصلك عروض قابلة للمقارنة.',
+    'journey.quotes.short': 'صِف العمل وقارن العروض.',
     'journey.cta.browse': 'تصفّح الكتالوج',
     'journey.cta.find': 'استعرض الدليل',
     'journey.cta.quotes': 'انشر مشروعك',
+    'journey.cta.browse.short': 'تصفّح',
+    'journey.cta.find.short': 'استعرض',
+    'journey.cta.quotes.short': 'انشر مشروعك',
     'home.browse.title': 'تصفّح حسب الفئة',
     'home.browse.subtitle': 'كل فئات الكتالوج، وما هو مدرج في كل منها.',
     'home.browse.viewAll': 'كل الفئات',
