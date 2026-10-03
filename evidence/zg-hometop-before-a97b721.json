@@ -1,0 +1,536 @@
+{
+ "label": "baseline-a97b721",
+ "build": "a97b721",
+ "measurements": [
+  {
+   "lang": "en",
+   "width": 375,
+   "dir": "ltr",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 48,
+   "heroHeight": 1414,
+   "heroScreens": 1.68,
+   "h1Lines": 2,
+   "h1Font": 36,
+   "subtitleLines": 4,
+   "subtitleFont": 18,
+   "ctaHeight": 108,
+   "searchHeight": 56,
+   "inputFont": 16,
+   "trustCols": 1,
+   "trustHeight": 467,
+   "trustItems": [
+    116,
+    116,
+    116,
+    116
+   ],
+   "statCols": 2,
+   "statHeight": 177,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "Products Listed"
+    },
+    {
+     "value": "13",
+     "label": "Registered Users"
+    },
+    {
+     "value": "1",
+     "label": "Active Projects"
+    },
+    {
+     "value": "4",
+     "label": "Verified Providers"
+    }
+   ],
+   "exploreTop": 1414,
+   "exploreScreens": 1.68,
+   "docOverflow": 0,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "en",
+   "width": 393,
+   "dir": "ltr",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 48,
+   "heroHeight": 1414,
+   "heroScreens": 1.68,
+   "h1Lines": 2,
+   "h1Font": 36,
+   "subtitleLines": 4,
+   "subtitleFont": 18,
+   "ctaHeight": 108,
+   "searchHeight": 56,
+   "inputFont": 16,
+   "trustCols": 1,
+   "trustHeight": 467,
+   "trustItems": [
+    116,
+    116,
+    116,
+    116
+   ],
+   "statCols": 2,
+   "statHeight": 177,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "Products Listed"
+    },
+    {
+     "value": "13",
+     "label": "Registered Users"
+    },
+    {
+     "value": "1",
+     "label": "Active Projects"
+    },
+    {
+     "value": "4",
+     "label": "Verified Providers"
+    }
+   ],
+   "exploreTop": 1414,
+   "exploreScreens": 1.68,
+   "docOverflow": 0,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "en",
+   "width": 430,
+   "dir": "ltr",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 48,
+   "heroHeight": 1414,
+   "heroScreens": 1.68,
+   "h1Lines": 2,
+   "h1Font": 36,
+   "subtitleLines": 4,
+   "subtitleFont": 18,
+   "ctaHeight": 108,
+   "searchHeight": 56,
+   "inputFont": 16,
+   "trustCols": 1,
+   "trustHeight": 467,
+   "trustItems": [
+    116,
+    116,
+    116,
+    116
+   ],
+   "statCols": 2,
+   "statHeight": 177,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "Products Listed"
+    },
+    {
+     "value": "13",
+     "label": "Registered Users"
+    },
+    {
+     "value": "1",
+     "label": "Active Projects"
+    },
+    {
+     "value": "4",
+     "label": "Verified Providers"
+    }
+   ],
+   "exploreTop": 1414,
+   "exploreScreens": 1.68,
+   "docOverflow": 0,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "en",
+   "width": 768,
+   "dir": "ltr",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 48,
+   "heroHeight": 1005,
+   "heroScreens": 1.19,
+   "h1Lines": 2,
+   "h1Font": 48,
+   "subtitleLines": 2,
+   "subtitleFont": 18,
+   "ctaHeight": 48,
+   "searchHeight": 56,
+   "inputFont": 14,
+   "trustCols": 2,
+   "trustHeight": 234,
+   "trustItems": [
+    116,
+    116,
+    116,
+    116
+   ],
+   "statCols": 4,
+   "statHeight": 93,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "Products Listed"
+    },
+    {
+     "value": "13",
+     "label": "Registered Users"
+    },
+    {
+     "value": "1",
+     "label": "Active Projects"
+    },
+    {
+     "value": "4",
+     "label": "Verified Providers"
+    }
+   ],
+   "exploreTop": 1005,
+   "exploreScreens": 1.19,
+   "docOverflow": -6,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "en",
+   "width": 1440,
+   "dir": "ltr",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 64,
+   "heroHeight": 975,
+   "heroScreens": 1.16,
+   "h1Lines": 2,
+   "h1Font": 60,
+   "subtitleLines": 2,
+   "subtitleFont": 18,
+   "ctaHeight": 48,
+   "searchHeight": 56,
+   "inputFont": 14,
+   "trustCols": 4,
+   "trustHeight": 137,
+   "trustItems": [
+    135,
+    135,
+    135,
+    135
+   ],
+   "statCols": 4,
+   "statHeight": 93,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "Products Listed"
+    },
+    {
+     "value": "13",
+     "label": "Registered Users"
+    },
+    {
+     "value": "1",
+     "label": "Active Projects"
+    },
+    {
+     "value": "4",
+     "label": "Verified Providers"
+    }
+   ],
+   "exploreTop": 975,
+   "exploreScreens": 1.16,
+   "docOverflow": -6,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "ar",
+   "width": 375,
+   "dir": "rtl",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 48,
+   "heroHeight": 1414,
+   "heroScreens": 1.68,
+   "h1Lines": 2,
+   "h1Font": 36,
+   "subtitleLines": 4,
+   "subtitleFont": 18,
+   "ctaHeight": 108,
+   "searchHeight": 56,
+   "inputFont": 16,
+   "trustCols": 1,
+   "trustHeight": 467,
+   "trustItems": [
+    116,
+    116,
+    116,
+    116
+   ],
+   "statCols": 2,
+   "statHeight": 177,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "منتج معروض"
+    },
+    {
+     "value": "13",
+     "label": "مستخدم مسجل"
+    },
+    {
+     "value": "1",
+     "label": "مشروع نشط"
+    },
+    {
+     "value": "4",
+     "label": "مزود موثق"
+    }
+   ],
+   "exploreTop": 1414,
+   "exploreScreens": 1.68,
+   "docOverflow": 0,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "ar",
+   "width": 393,
+   "dir": "rtl",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 48,
+   "heroHeight": 1375,
+   "heroScreens": 1.63,
+   "h1Lines": 1,
+   "h1Font": 36,
+   "subtitleLines": 4,
+   "subtitleFont": 18,
+   "ctaHeight": 108,
+   "searchHeight": 56,
+   "inputFont": 16,
+   "trustCols": 1,
+   "trustHeight": 467,
+   "trustItems": [
+    116,
+    116,
+    116,
+    116
+   ],
+   "statCols": 2,
+   "statHeight": 177,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "منتج معروض"
+    },
+    {
+     "value": "13",
+     "label": "مستخدم مسجل"
+    },
+    {
+     "value": "1",
+     "label": "مشروع نشط"
+    },
+    {
+     "value": "4",
+     "label": "مزود موثق"
+    }
+   ],
+   "exploreTop": 1375,
+   "exploreScreens": 1.63,
+   "docOverflow": 0,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "ar",
+   "width": 430,
+   "dir": "rtl",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 48,
+   "heroHeight": 1345,
+   "heroScreens": 1.59,
+   "h1Lines": 1,
+   "h1Font": 36,
+   "subtitleLines": 3,
+   "subtitleFont": 18,
+   "ctaHeight": 108,
+   "searchHeight": 56,
+   "inputFont": 16,
+   "trustCols": 1,
+   "trustHeight": 467,
+   "trustItems": [
+    116,
+    116,
+    116,
+    116
+   ],
+   "statCols": 2,
+   "statHeight": 177,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "منتج معروض"
+    },
+    {
+     "value": "13",
+     "label": "مستخدم مسجل"
+    },
+    {
+     "value": "1",
+     "label": "مشروع نشط"
+    },
+    {
+     "value": "4",
+     "label": "مزود موثق"
+    }
+   ],
+   "exploreTop": 1345,
+   "exploreScreens": 1.59,
+   "docOverflow": 0,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "ar",
+   "width": 768,
+   "dir": "rtl",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 48,
+   "heroHeight": 952,
+   "heroScreens": 1.13,
+   "h1Lines": 1,
+   "h1Font": 48,
+   "subtitleLines": 2,
+   "subtitleFont": 18,
+   "ctaHeight": 48,
+   "searchHeight": 56,
+   "inputFont": 14,
+   "trustCols": 2,
+   "trustHeight": 234,
+   "trustItems": [
+    116,
+    116,
+    116,
+    116
+   ],
+   "statCols": 4,
+   "statHeight": 93,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "منتج معروض"
+    },
+    {
+     "value": "13",
+     "label": "مستخدم مسجل"
+    },
+    {
+     "value": "1",
+     "label": "مشروع نشط"
+    },
+    {
+     "value": "4",
+     "label": "مزود موثق"
+    }
+   ],
+   "exploreTop": 952,
+   "exploreScreens": 1.13,
+   "docOverflow": -6,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "ar",
+   "width": 1440,
+   "dir": "rtl",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 67,
+   "heroHeight": 896,
+   "heroScreens": 1.06,
+   "h1Lines": 1,
+   "h1Font": 60,
+   "subtitleLines": 2,
+   "subtitleFont": 18,
+   "ctaHeight": 48,
+   "searchHeight": 56,
+   "inputFont": 14,
+   "trustCols": 4,
+   "trustHeight": 118,
+   "trustItems": [
+    116,
+    116,
+    116,
+    116
+   ],
+   "statCols": 4,
+   "statHeight": 93,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "منتج معروض"
+    },
+    {
+     "value": "13",
+     "label": "مستخدم مسجل"
+    },
+    {
+     "value": "1",
+     "label": "مشروع نشط"
+    },
+    {
+     "value": "4",
+     "label": "مزود موثق"
+    }
+   ],
+   "exploreTop": 896,
+   "exploreScreens": 1.06,
+   "docOverflow": -6,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  }
+ ]
+}

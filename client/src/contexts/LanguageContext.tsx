@@ -1237,6 +1237,46 @@ const translations: Record<Language, Record<string, string>> = {
     // stat does, from the database.
     'marketHub.sectionProductsDesc': 'Building and finishing materials from approved suppliers, listed by category and specification.',
     'marketHub.productsLabel': 'Products',
+    /* ── THE PROOF-STRIP LABELS, COUNT-AWARE ───────────────────────────
+       "1 Active Projects" was on the real homepage. English needs two forms;
+       Arabic needs four, and the four are the ones this product already uses
+       for marketHub.listingsCount* below - singular, dual, 3-10, and 11+. The
+       same selector reads both, so there is one rule for counted nouns rather
+       than a second simpler one written here.
+
+       The NUMBER is rendered separately from the LABEL in the stats grid, so
+       unlike the listings strings these carry no {n} placeholder.
+
+       PRESENTATION ONLY. No query, no suppression rule and no stat definition
+       is touched: 1 Active Project still shows, because truthful thin proof is
+       better than fabricated proof.
+
+       ENGLISH DECLARES ALL FOUR FORMS, with `two` and `few` repeating the
+       plural. English has no dual and no 3-to-10 case, so two of these are
+       redundant on their own terms - but the dictionary-parity test requires
+       the two maps to carry identical keys, and that test is worth more than
+       the eight duplicated strings: it is what catches a genuinely missing
+       translation. The marketHub.listingsCount* keys below already do exactly
+       this, for exactly this reason. Weakening the parity rule to accommodate
+       Arabic grammar would be solving the wrong problem. */
+    'home.stat.publicProducts.one': 'Product Listed',
+    'home.stat.publicProducts.two': 'Products Listed',
+    'home.stat.publicProducts.few': 'Products Listed',
+    'home.stat.publicProducts.other': 'Products Listed',
+    'home.stat.registeredUsers.one': 'Registered User',
+    'home.stat.registeredUsers.two': 'Registered Users',
+    'home.stat.registeredUsers.few': 'Registered Users',
+    'home.stat.registeredUsers.other': 'Registered Users',
+    'home.stat.activeProjects.one': 'Active Project',
+    'home.stat.activeProjects.two': 'Active Projects',
+    'home.stat.activeProjects.few': 'Active Projects',
+    'home.stat.activeProjects.other': 'Active Projects',
+    'home.stat.verifiedProviders.one': 'Verified Provider',
+    'home.stat.verifiedProviders.two': 'Verified Providers',
+    'home.stat.verifiedProviders.few': 'Verified Providers',
+    'home.stat.verifiedProviders.other': 'Verified Providers',
+    /* Not a count, so it has no forms - an average out of five. */
+    'home.stat.satisfaction.other': 'Average Rating',
     'marketHub.listingsCount': '{n} listings',
     'marketHub.listingsCountOne': '1 listing',
     // English has two forms and Arabic four; the dictionaries must still carry
@@ -2523,6 +2563,34 @@ const translations: Record<Language, Record<string, string>> = {
     // Arabic counts a noun four different ways. "1 منتج" and "2 منتج" are
     // both wrong, and a marketplace that gets its own product noun wrong in
     // its own language is not a first-class Arabic product.
+    /* ── THE SAME LABELS IN ARABIC, WITH REAL ARABIC NUMBER AGREEMENT ──
+       Four forms, because Arabic has four: the singular, the dual (مثنى), the
+       plural used for 3-10, and the accusative singular that follows 11 and
+       above. An English one/other model forced onto Arabic produces "29 منتج
+       معروض", which is what the page showed before - grammatically the 11+
+       slot filled with the singular form.
+
+       one   1   منتج معروض            singular
+       two   2   منتجان معروضان        dual
+       few   3-10 منتجات معروضة        plural
+       many  11+ منتجًا معروضًا          accusative singular after a large number */
+    'home.stat.publicProducts.one': 'منتج معروض',
+    'home.stat.publicProducts.two': 'منتجان معروضان',
+    'home.stat.publicProducts.few': 'منتجات معروضة',
+    'home.stat.publicProducts.other': 'منتجًا معروضًا',
+    'home.stat.registeredUsers.one': 'مستخدم مسجّل',
+    'home.stat.registeredUsers.two': 'مستخدمان مسجّلان',
+    'home.stat.registeredUsers.few': 'مستخدمين مسجّلين',
+    'home.stat.registeredUsers.other': 'مستخدمًا مسجّلًا',
+    'home.stat.activeProjects.one': 'مشروع نشط',
+    'home.stat.activeProjects.two': 'مشروعان نشطان',
+    'home.stat.activeProjects.few': 'مشاريع نشطة',
+    'home.stat.activeProjects.other': 'مشروعًا نشطًا',
+    'home.stat.verifiedProviders.one': 'مزوّد موثّق',
+    'home.stat.verifiedProviders.two': 'مزوّدان موثّقان',
+    'home.stat.verifiedProviders.few': 'مزوّدين موثّقين',
+    'home.stat.verifiedProviders.other': 'مزوّدًا موثّقًا',
+    'home.stat.satisfaction.other': 'متوسط التقييم',
     'marketHub.listingsCount': '{n} منتجات',
     'marketHub.listingsCountOne': 'منتج واحد',
     'marketHub.listingsCountTwo': 'منتجان',

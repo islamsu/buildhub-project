@@ -1,0 +1,536 @@
+{
+ "label": "refined",
+ "build": "a97b721",
+ "measurements": [
+  {
+   "lang": "en",
+   "width": 375,
+   "dir": "ltr",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 16,
+   "heroHeight": 1155,
+   "heroScreens": 1.37,
+   "h1Lines": 2,
+   "h1Font": 36,
+   "subtitleLines": 4,
+   "subtitleFont": 16,
+   "ctaHeight": 108,
+   "searchHeight": 56,
+   "inputFont": 16,
+   "trustCols": 2,
+   "trustHeight": 317,
+   "trustItems": [
+    147,
+    147,
+    167,
+    167
+   ],
+   "statCols": 2,
+   "statHeight": 165,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "Products Listed"
+    },
+    {
+     "value": "13",
+     "label": "Registered Users"
+    },
+    {
+     "value": "1",
+     "label": "Active Project"
+    },
+    {
+     "value": "4",
+     "label": "Verified Providers"
+    }
+   ],
+   "exploreTop": 1155,
+   "exploreScreens": 1.37,
+   "docOverflow": 0,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "en",
+   "width": 393,
+   "dir": "ltr",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 16,
+   "heroHeight": 1154,
+   "heroScreens": 1.37,
+   "h1Lines": 2,
+   "h1Font": 36,
+   "subtitleLines": 4,
+   "subtitleFont": 16,
+   "ctaHeight": 108,
+   "searchHeight": 56,
+   "inputFont": 16,
+   "trustCols": 2,
+   "trustHeight": 316,
+   "trustItems": [
+    147,
+    147,
+    167,
+    167
+   ],
+   "statCols": 2,
+   "statHeight": 165,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "Products Listed"
+    },
+    {
+     "value": "13",
+     "label": "Registered Users"
+    },
+    {
+     "value": "1",
+     "label": "Active Project"
+    },
+    {
+     "value": "4",
+     "label": "Verified Providers"
+    }
+   ],
+   "exploreTop": 1154,
+   "exploreScreens": 1.37,
+   "docOverflow": 0,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "en",
+   "width": 430,
+   "dir": "ltr",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 16,
+   "heroHeight": 1089,
+   "heroScreens": 1.29,
+   "h1Lines": 2,
+   "h1Font": 36,
+   "subtitleLines": 3,
+   "subtitleFont": 16,
+   "ctaHeight": 108,
+   "searchHeight": 56,
+   "inputFont": 16,
+   "trustCols": 2,
+   "trustHeight": 277,
+   "trustItems": [
+    127,
+    127,
+    147,
+    147
+   ],
+   "statCols": 2,
+   "statHeight": 165,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "Products Listed"
+    },
+    {
+     "value": "13",
+     "label": "Registered Users"
+    },
+    {
+     "value": "1",
+     "label": "Active Project"
+    },
+    {
+     "value": "4",
+     "label": "Verified Providers"
+    }
+   ],
+   "exploreTop": 1089,
+   "exploreScreens": 1.29,
+   "docOverflow": 0,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "en",
+   "width": 768,
+   "dir": "ltr",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 32,
+   "heroHeight": 989,
+   "heroScreens": 1.17,
+   "h1Lines": 2,
+   "h1Font": 48,
+   "subtitleLines": 2,
+   "subtitleFont": 18,
+   "ctaHeight": 48,
+   "searchHeight": 56,
+   "inputFont": 14,
+   "trustCols": 2,
+   "trustHeight": 234,
+   "trustItems": [
+    116,
+    116,
+    116,
+    116
+   ],
+   "statCols": 4,
+   "statHeight": 93,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "Products Listed"
+    },
+    {
+     "value": "13",
+     "label": "Registered Users"
+    },
+    {
+     "value": "1",
+     "label": "Active Project"
+    },
+    {
+     "value": "4",
+     "label": "Verified Providers"
+    }
+   ],
+   "exploreTop": 989,
+   "exploreScreens": 1.17,
+   "docOverflow": -6,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "en",
+   "width": 1440,
+   "dir": "ltr",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 64,
+   "heroHeight": 975,
+   "heroScreens": 1.16,
+   "h1Lines": 2,
+   "h1Font": 60,
+   "subtitleLines": 2,
+   "subtitleFont": 18,
+   "ctaHeight": 48,
+   "searchHeight": 56,
+   "inputFont": 14,
+   "trustCols": 4,
+   "trustHeight": 137,
+   "trustItems": [
+    135,
+    135,
+    135,
+    135
+   ],
+   "statCols": 4,
+   "statHeight": 93,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "Products Listed"
+    },
+    {
+     "value": "13",
+     "label": "Registered Users"
+    },
+    {
+     "value": "1",
+     "label": "Active Project"
+    },
+    {
+     "value": "4",
+     "label": "Verified Providers"
+    }
+   ],
+   "exploreTop": 975,
+   "exploreScreens": 1.16,
+   "docOverflow": -6,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "ar",
+   "width": 375,
+   "dir": "rtl",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 16,
+   "heroHeight": 1069,
+   "heroScreens": 1.27,
+   "h1Lines": 2,
+   "h1Font": 36,
+   "subtitleLines": 3,
+   "subtitleFont": 16,
+   "ctaHeight": 108,
+   "searchHeight": 56,
+   "inputFont": 16,
+   "trustCols": 2,
+   "trustHeight": 257,
+   "trustItems": [
+    127,
+    127,
+    127,
+    127
+   ],
+   "statCols": 2,
+   "statHeight": 165,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "منتجًا معروضًا"
+    },
+    {
+     "value": "13",
+     "label": "مستخدمًا مسجّلًا"
+    },
+    {
+     "value": "1",
+     "label": "مشروع نشط"
+    },
+    {
+     "value": "4",
+     "label": "مزوّدين موثّقين"
+    }
+   ],
+   "exploreTop": 1069,
+   "exploreScreens": 1.27,
+   "docOverflow": 0,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "ar",
+   "width": 393,
+   "dir": "rtl",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 16,
+   "heroHeight": 1030,
+   "heroScreens": 1.22,
+   "h1Lines": 1,
+   "h1Font": 36,
+   "subtitleLines": 3,
+   "subtitleFont": 16,
+   "ctaHeight": 108,
+   "searchHeight": 56,
+   "inputFont": 16,
+   "trustCols": 2,
+   "trustHeight": 257,
+   "trustItems": [
+    127,
+    127,
+    127,
+    127
+   ],
+   "statCols": 2,
+   "statHeight": 165,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "منتجًا معروضًا"
+    },
+    {
+     "value": "13",
+     "label": "مستخدمًا مسجّلًا"
+    },
+    {
+     "value": "1",
+     "label": "مشروع نشط"
+    },
+    {
+     "value": "4",
+     "label": "مزوّدين موثّقين"
+    }
+   ],
+   "exploreTop": 1030,
+   "exploreScreens": 1.22,
+   "docOverflow": 0,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "ar",
+   "width": 430,
+   "dir": "rtl",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 16,
+   "heroHeight": 1030,
+   "heroScreens": 1.22,
+   "h1Lines": 1,
+   "h1Font": 36,
+   "subtitleLines": 3,
+   "subtitleFont": 16,
+   "ctaHeight": 108,
+   "searchHeight": 56,
+   "inputFont": 16,
+   "trustCols": 2,
+   "trustHeight": 257,
+   "trustItems": [
+    127,
+    127,
+    127,
+    127
+   ],
+   "statCols": 2,
+   "statHeight": 165,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "منتجًا معروضًا"
+    },
+    {
+     "value": "13",
+     "label": "مستخدمًا مسجّلًا"
+    },
+    {
+     "value": "1",
+     "label": "مشروع نشط"
+    },
+    {
+     "value": "4",
+     "label": "مزوّدين موثّقين"
+    }
+   ],
+   "exploreTop": 1030,
+   "exploreScreens": 1.22,
+   "docOverflow": 0,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "ar",
+   "width": 768,
+   "dir": "rtl",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 32,
+   "heroHeight": 936,
+   "heroScreens": 1.11,
+   "h1Lines": 1,
+   "h1Font": 48,
+   "subtitleLines": 2,
+   "subtitleFont": 18,
+   "ctaHeight": 48,
+   "searchHeight": 56,
+   "inputFont": 14,
+   "trustCols": 2,
+   "trustHeight": 234,
+   "trustItems": [
+    116,
+    116,
+    116,
+    116
+   ],
+   "statCols": 4,
+   "statHeight": 93,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "منتجًا معروضًا"
+    },
+    {
+     "value": "13",
+     "label": "مستخدمًا مسجّلًا"
+    },
+    {
+     "value": "1",
+     "label": "مشروع نشط"
+    },
+    {
+     "value": "4",
+     "label": "مزوّدين موثّقين"
+    }
+   ],
+   "exploreTop": 936,
+   "exploreScreens": 1.11,
+   "docOverflow": -6,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  },
+  {
+   "lang": "ar",
+   "width": 1440,
+   "dir": "rtl",
+   "vh": 844,
+   "navH": 64,
+   "navPosition": "fixed",
+   "navGap": 67,
+   "heroHeight": 896,
+   "heroScreens": 1.06,
+   "h1Lines": 1,
+   "h1Font": 60,
+   "subtitleLines": 2,
+   "subtitleFont": 18,
+   "ctaHeight": 48,
+   "searchHeight": 56,
+   "inputFont": 14,
+   "trustCols": 4,
+   "trustHeight": 118,
+   "trustItems": [
+    116,
+    116,
+    116,
+    116
+   ],
+   "statCols": 4,
+   "statHeight": 93,
+   "statTiles": [
+    {
+     "value": "29",
+     "label": "منتجًا معروضًا"
+    },
+    {
+     "value": "13",
+     "label": "مستخدمًا مسجّلًا"
+    },
+    {
+     "value": "1",
+     "label": "مشروع نشط"
+    },
+    {
+     "value": "4",
+     "label": "مزوّدين موثّقين"
+    }
+   ],
+   "exploreTop": 896,
+   "exploreScreens": 1.06,
+   "docOverflow": -6,
+   "clipped": 0,
+   "spill": [],
+   "hiddenUnderHeader": [],
+   "heroOverflow": "hidden"
+  }
+ ]
+}

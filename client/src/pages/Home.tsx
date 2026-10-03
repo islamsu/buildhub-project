@@ -43,16 +43,19 @@ const ROLE_HREF = '/auth';
  * yet is not rendered, following the rule this codebase already applies to
  * provider ratings: an absent number is shown as absent, never as a number.
  */
-const STAT_LABELS = {
-  // The owner asked for the size of the catalogue back on the front door.
-  // Counted server-side with the marketplace's own visibility rule, so the
-  // number is one a visitor can go and browse.
-  publicProducts: { en: 'Products Listed', ar: 'منتج معروض' },
-  registeredUsers: { en: 'Registered Users', ar: 'مستخدم مسجل' },
-  activeProjects: { en: 'Active Projects', ar: 'مشروع نشط' },
-  verifiedProviders: { en: 'Verified Providers', ar: 'مزود موثق' },
-  satisfaction: { en: 'Average Rating', ar: 'متوسط التقييم' },
-} as const;
+/*
+ * THE STAT LABELS MOVED INTO THE i18n TABLE, as four grammatical forms each.
+ *
+ * They used to live here as one flat {en, ar} pair per stat, which is why the
+ * homepage printed "1 Active Projects" and, in Arabic, "29 منتج معروض" - the
+ * 11-and-above slot filled with a singular. A label that has to agree with a
+ * number cannot be a constant.
+ *
+ * See `home.stat.*` in LanguageContext and `statLabel` below. The owner's note
+ * on the catalogue count being back on the front door still holds: it is
+ * counted server-side with the marketplace's own visibility rule, so the
+ * number is one a visitor can go and browse.
+ */
 
 /**
  * THE TESTIMONIALS WERE INVENTED.
@@ -91,14 +94,23 @@ export default function Home() {
    */
   const { data: stats } = trpc.marketplace.platformStats.useQuery();
   const liveStats = !stats ? [] : [
-    { key: 'publicProducts', value: stats.publicProducts.toLocaleString(), label: STAT_LABELS.publicProducts, show: stats.publicProducts > 0 },
-    { key: 'registeredUsers', value: stats.registeredUsers.toLocaleString(), label: STAT_LABELS.registeredUsers, show: stats.registeredUsers > 0 },
-    { key: 'activeProjects', value: stats.activeProjects.toLocaleString(), label: STAT_LABELS.activeProjects, show: stats.activeProjects > 0 },
-    { key: 'verifiedProviders', value: stats.verifiedProviders.toLocaleString(), label: STAT_LABELS.verifiedProviders, show: stats.verifiedProviders > 0 },
+    { key: 'publicProducts', value: stats.publicProducts.toLocaleString(), count: stats.publicProducts, show: stats.publicProducts > 0 },
+    { key: 'registeredUsers', value: stats.registeredUsers.toLocaleString(), count: stats.registeredUsers, show: stats.registeredUsers > 0 },
+    { key: 'activeProjects', value: stats.activeProjects.toLocaleString(), count: stats.activeProjects, show: stats.activeProjects > 0 },
+    { key: 'verifiedProviders', value: stats.verifiedProviders.toLocaleString(), count: stats.verifiedProviders, show: stats.verifiedProviders > 0 },
     // Null until somebody has actually left a review. It is an average out of
     // five, not a satisfaction percentage - the percentage measured nothing.
-    { key: 'satisfaction', value: `${stats.satisfaction?.averageRating ?? 0}/5`, label: STAT_LABELS.satisfaction, show: stats.satisfaction !== null },
+    //
+    // `count: 0` because this is NOT a counted noun: "Average Rating" has one
+    // form, and 0 resolves to `.other` in both languages, which is the only
+    // form it declares. Passing the rating itself would ask Arabic to decline
+    // a label that has no plural.
+    { key: 'satisfaction', value: `${stats.satisfaction?.averageRating ?? 0}/5`, count: 0, show: stats.satisfaction !== null },
   ].filter(stat => stat.show);
+  // NOTHING ABOVE CHANGED in substance: the same five definitions, the same
+  // queries, the same suppress-at-zero rule. 1 Active Project still shows -
+  // truthful thin proof beats fabricated proof. Only the LABEL now agrees
+  // with its number.
 
   /**
    * THE CATEGORY RAIL, FROM THE ONE TAXONOMY.
@@ -121,18 +133,57 @@ export default function Home() {
   }, [taxonomy]);
 
   /*
-   * "1 listings" IS A DEFECT, AND SO IS "2 منتج". English needs a singular;
-   * Arabic needs four forms. The hub already solved this - the same keys are
-   * read here rather than a second, simpler rule being written.
+   * ── WHICH FORM OF A COUNTED NOUN ────────────────────────────────────────
+   *
+   * "1 listings" is a defect, and so is "2 منتج". English needs two forms;
+   * Arabic needs four, and they are not optional politeness - they are
+   * grammatical number agreement:
+   *
+   *   one   1     singular
+   *   two   2     the dual, مثنى - Arabic has a form English does not
+   *   few   3-10  the plural
+   *   other 11+   accusative singular after a large number
+   *
+   * `% 100` rather than the bare count because the rule is positional: 103
+   * behaves like 3, and 111 behaves like 11.
+   *
+   * ONE SELECTOR, TWO CALLERS. The category rail's "{n} listings" and the
+   * proof strip's "Active Project(s)" are the same grammatical problem, and
+   * before this the rail solved it while the proof strip printed "1 Active
+   * Projects" on the real homepage. A second, simpler rule beside a correct
+   * one is how the simpler one ends up being the one that ships.
    */
+  const countForm = (n: number): 'one' | 'two' | 'few' | 'other' => {
+    if (n === 1) return 'one';
+    if (!ar) return 'other';
+    if (n === 2) return 'two';
+    return n % 100 >= 3 && n % 100 <= 10 ? 'few' : 'other';
+  };
+
   const listedLabel = (n: number) => {
-    const key = !ar
-      ? (n === 1 ? 'marketHub.listingsCountOne' : 'marketHub.listingsCount')
-      : n === 1 ? 'marketHub.listingsCountOne'
-      : n === 2 ? 'marketHub.listingsCountTwo'
-      : n % 100 >= 3 && n % 100 <= 10 ? 'marketHub.listingsCount'
-      : 'marketHub.listingsCountMany';
+    /* The rail's keys predate the selector and keep their own names; the FORM
+       they are chosen by is now the shared one. */
+    const key = {
+      one: 'marketHub.listingsCountOne',
+      two: 'marketHub.listingsCountTwo',
+      few: 'marketHub.listingsCount',
+      other: ar ? 'marketHub.listingsCountMany' : 'marketHub.listingsCount',
+    }[countForm(n)];
     return t(key).replace('{n}', String(n));
+  };
+
+  /**
+   * A proof-strip label, agreeing with its own number.
+   *
+   * Falls back to `.other` when a form is not defined - English declares only
+   * `one` and `other`, and Average Rating is not a count at all, so it
+   * declares `other` alone. A missing key would render its own name on the
+   * homepage, which is worse than a slightly wrong form.
+   */
+  const statLabel = (key: string, n: number) => {
+    const form = countForm(n);
+    const exact = t(`home.stat.${key}.${form}`);
+    return exact === `home.stat.${key}.${form}` ? t(`home.stat.${key}.other`) : exact;
   };
 
   const roleLabels: Record<string, string> = {
@@ -191,7 +242,18 @@ export default function Home() {
           }}
         />
 
-        <div className="container relative z-10 pt-28 pb-14 lg:pt-32 lg:pb-20">
+        {/* ── B AND C: THE MOBILE TOP, RE-PROPORTIONED ─────────────────
+            `pt-28` put 112px above the first thing in the hero, over a
+            64px fixed navbar - 48px of measured nothing on a phone.
+            `pt-20` leaves 16px of clearance, which still reads as
+            deliberate separation rather than a collision, and the
+            desktop figure is untouched because desktop was never the
+            complaint. No negative margin: the hero clears the navbar by
+            padding, as it always did.
+
+            `pb-14` to `pb-10` closes the tail between the proof strip
+            and the accepted Explore section below. */}
+        <div className="container relative z-10 pt-20 pb-10 sm:pt-24 sm:pb-14 lg:pt-32 lg:pb-20">
           <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.78fr)]">
             {/* ── LEFT: the proposition, and the way in ──────────────────── */}
             <div className="text-white">
@@ -204,7 +266,13 @@ export default function Home() {
                 {t('hero.title')}
               </h1>
 
-              <p className="mb-8 max-w-xl text-lg leading-relaxed text-white/75">
+              {/* ── D: 16px ON A PHONE, 18px ABOVE ────────────────────────
+                  `text-lg` wrapped to four lines inside a 327px column. 16px
+                  is comfortable mobile body size and the floor this page is
+                  held to - the probe fails below it - so the copy is not
+                  truncated, clamped or rewritten to force a line count. The
+                  value proposition is unchanged in both languages. */}
+              <p className="mb-7 max-w-xl text-base leading-relaxed text-white/75 sm:mb-8 sm:text-lg">
                 {t('hero.subtitle')}
               </p>
 
@@ -267,8 +335,25 @@ export default function Home() {
               against; §15 and §68 both forbid a trust signal the system
               cannot prove, and a verification badge nobody earned is the
               worst thing a marketplace can put on its front door. */}
+          {/* ── A: TWO BY TWO ON A PHONE, NOT ONE BY FOUR ──────────────
+              Four capability statements in a single column measured 467px -
+              a third of the hero, and the largest single contributor to the
+              1.68 screens a phone visitor had to scroll before reaching
+              Explore RAKIZA. Two columns is the same pattern the owner has
+              just accepted on the Explore grid itself, so the two sections
+              now read as one system rather than two conventions.
+
+              ALL FOUR STATEMENTS ARE RETAINED. Not carouselled, not
+              collapsed behind a toggle, not reduced to numbers. They are
+              capability claims the next page can be checked against, which
+              is the only kind of trust signal this product is allowed to
+              make.
+
+              `mt-14` to `mt-10`: the gap between the hero's own actions and
+              the trust block. It was the largest in the section and it now
+              matches the rhythm of the tighter blocks around it. */}
           <ul
-            className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-white/15 bg-white/10 sm:grid-cols-2 lg:grid-cols-4"
+            className="mt-10 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/15 bg-white/10 sm:mt-14 lg:grid-cols-4"
             data-testid="home-trust-strip"
           >
             {[
@@ -277,7 +362,15 @@ export default function Home() {
               { icon: FileText, key: 'free' },
               { icon: MessageSquare, key: 'oneplace' },
             ].map(item => (
-              <li key={item.key} className="bg-brand-950/40 px-5 py-5 backdrop-blur-sm">
+              /* Padding scales with the column: 20px all round was set for a
+                 full-width row and is too generous in a half-width tile. The
+                 text sizes do NOT change - a narrower column is a reason to
+                 reconsider padding, never a reason to shrink body copy.
+
+                 A JS comment, not a JSX one: a `{/* ... *''/}` as the first
+                 sibling inside `map(item => ( ... ))` makes the arrow return
+                 two children without a fragment, which is a syntax error. */
+              <li key={item.key} className="bg-brand-950/40 px-4 py-4 backdrop-blur-sm sm:px-5 sm:py-5">
                 {/* data-on-dark: amber as a foreground colour is
                     forbidden by brandContrast.test.ts because it is
                     2.15:1 on white. This strip is brand-950 over the
@@ -297,17 +390,32 @@ export default function Home() {
             ))}
           </ul>
 
-          {/* Real counts, and nothing where there is no count yet. */}
+          {/* Real counts, and nothing where there is no count yet.
+
+              `mt-12`/`pt-8` to `mt-8`/`pt-6` on a phone: this pair separates
+              the capability statements from the real counts, and the rule
+              between them already does most of that work. Desktop keeps its
+              original figures.
+
+              A COMMENT CANNOT LIVE INSIDE A JSX OPENING TAG: a bare block
+              comment among the attributes is a syntax error, which is where
+              the first version of this put it - and writing the comment
+              delimiters out here closed this JSX comment early, which is the
+              second mistake in the same two lines. */}
           {liveStats.length > 0 && (
             <div
-              className="mt-12 grid grid-cols-2 gap-6 border-t border-white/10 pt-8 sm:grid-cols-4"
+              className="mt-8 grid grid-cols-2 gap-5 border-t border-white/10 pt-6 sm:mt-12 sm:gap-6 sm:pt-8 sm:grid-cols-4"
               data-testid="platform-stats"
             >
               {liveStats.map(stat => (
                 <div key={stat.key}>
                   <p className="text-3xl font-bold text-white">{stat.value}</p>
+                  {/* The label agrees with the number beside it - see
+                      `statLabel`. No language check here: the form selector
+                      already knows which language it is in, and a `lang ===
+                      'ar'` ternary at the call site is how the two drift. */}
                   <p className="mt-1 text-sm text-white/60">
-                    {lang === 'ar' ? stat.label.ar : stat.label.en}
+                    {statLabel(stat.key, stat.count)}
                   </p>
                 </div>
               ))}
