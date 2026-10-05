@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { readSourceForAssertions } from './_testing/sourceText';
 import { join } from 'node:path';
+import { BLUEPRINT_INVARIANTS, parseBlueprint } from './_testing/blueprintInvariants';
 
 /**
  * ── WHAT THE REBRAND MUST NOT TOUCH ─────────────────────────────────────
@@ -19,8 +20,13 @@ import { join } from 'node:path';
  *   buildhub_lang            every returning visitor silently reverts to English
  *   __Host-buildhub_*        sign-ups and OAuth logins in flight break at the cut
  *   BUILDHUB_* env vars      a deploy-coordination change wearing a brand costume
- *   buildhub-staging         a Render service with a disk; a rename destroys it
- *   buildhub (db / user)     same, one layer down
+ *   buildhub-staging-mysql   a Render service whose NAME IS A HANDLE ON A DISK;
+ *                            a Blueprint rename provisions a new service with a
+ *                            new empty disk and the staging database is gone
+ *   buildhub (db / user)     same, one layer down - inside that disk
+ *   VITE_APP_ID              the session-JWT audience claim, not a service name
+ *   buildhub-staging         the .onrender.com HOSTNAME, which a rename never
+ *                            changes, so it outlives the RAKIZA rebrand
  *   'buildhub_policy'        a stored value; renaming it orphans existing rows
  *   drizzle/                 editing an applied migration desynchronises the journal
  *   buildhub.eg              DOMAIN MIGRATION IS A SEPARATE RELEASE (owner, §10)
@@ -65,27 +71,33 @@ describe('browser-held identifiers survive the rebrand', () => {
   });
 });
 
+/**
+ * ── WHY THIS BLOCK PARSES THE BLUEPRINT INSTEAD OF GREPPING IT ──────────
+ *
+ * It used to read:
+ *
+ *   expect(yaml).toContain('name: buildhub-staging');
+ *   expect(yaml).toContain('name: buildhub-staging-mysql');
+ *
+ * and the first of those COULD NEVER FAIL while the second passed, because
+ * "name: buildhub-staging" is a substring of "name: buildhub-staging-mysql".
+ * The assertion that read as though it pinned the web service was satisfied
+ * by the line below it, so a complete web-service rename - the declaration
+ * and the `fromService` self-reference both - left all three green. That was
+ * proven by mutation before it was replaced.
+ *
+ * The invariants themselves live in _testing/blueprintInvariants.ts so that
+ * blueprintGuardMutation.test.ts can exercise THE SAME predicates rather than
+ * a restatement of them. A mutation test that re-implements what it tests
+ * proves only that two copies agree.
+ */
+
 describe('deployment identity survives the rebrand', () => {
-  const yaml = read('render.yaml');
+  const blueprint = parseBlueprint(read('render.yaml'));
 
-  it('the services keep their names, because a Render rename is a destroy', () => {
-    /*
-     * buildhub-staging-mysql carries a persistent disk. Renaming a service in
-     * a Blueprint does not rename it in place: Render provisions a new one and
-     * the old disk is not carried over. The brand has no business costing the
-     * staging database.
-     */
-    expect(yaml).toContain('name: buildhub-staging');
-    expect(yaml).toContain('name: buildhub-staging-mysql');
-  });
-
-  it('the database name and user are unchanged', () => {
-    expect(yaml).toContain('value: buildhub\n');
-  });
-
-  it('VITE_APP_ID is unchanged', () => {
-    expect(yaml).toContain('value: buildhub-staging');
-  });
+  for (const invariant of BLUEPRINT_INVARIANTS) {
+    it(invariant.name, () => invariant.check(blueprint));
+  }
 });
 
 describe('stored values survive the rebrand', () => {

@@ -33,15 +33,39 @@
  *   buildhub_lang            renaming resets every returning visitor's language
  *   __Host-buildhub_*        renaming breaks sign-up and OAuth already in flight
  *   BUILDHUB_* env vars      a deployment-coordination change, not a brand one
- *   buildhub-staging         a Render service with a disk; a rename destroys it
- *   buildhub (db / user)     same
+ *   buildhub-staging-mysql   the STATEFUL staging database service. Its name is
+ *                            a handle on a 10 GB disk, and Render matches
+ *                            Blueprint services by name - so a rename is not a
+ *                            rename, it provisions a new service with a new
+ *                            empty disk and the staging database is gone.
+ *   buildhub (db / user)     a schema and a grant stored INSIDE that disk
+ *   VITE_APP_ID              the audience claim in every session JWT; sdk.ts
+ *                            rejects a token whose appId differs, so renaming
+ *                            it signs out every staging user
+ *   buildhub-staging         .onrender.com HOSTNAME. A service's slug is fixed
+ *                            at creation and no rename changes it, so the host
+ *                            stays after the RAKIZA rename and every reference
+ *                            to it in this repository is still correct
  *   'buildhub_policy'        a stored discriminant in the compliance model
  *   drizzle/                 applied migrations; editing them desynchronises
  *   buildhub.eg              DOMAIN MIGRATION IS A SEPARATE RELEASE
  *
- * brandGuards.test.ts fails the build if any of those move. The split is the
- * point: a brand is what customers read, and an identifier is what systems
- * depend on. Conflating them is how a rebrand becomes an outage.
+ * WHAT WAS SAFE TO REBRAND, and the correction that made it visible: the WEB
+ * service is now `rakiza-staging`. An earlier version of this list said it
+ * carried a disk and that renaming it was destructive. It does not and it is
+ * not - the disk belongs to buildhub-staging-mysql, which is why that entry
+ * now names the right service. The web service is stateless; everything it
+ * holds is an environment variable or a built image. A wrong reason is worse
+ * than no reason, because it guards the wrong thing while reading as though
+ * it guards the right one.
+ *
+ * brandGuards.test.ts fails the build if any of those move, and it does so
+ * STRUCTURALLY - it parses render.yaml and compares service names by type.
+ * The substring assertion it replaced could not detect a web-service rename
+ * at all, because "name: buildhub-staging" is a substring of
+ * "name: buildhub-staging-mysql". The split is the point: a brand is what
+ * customers read, and an identifier is what systems depend on. Conflating
+ * them is how a rebrand becomes an outage.
  */
 
 /** The logotype. Drawn artwork - use it for the lock-up, never inside a sentence. */

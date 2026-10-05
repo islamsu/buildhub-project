@@ -35,7 +35,7 @@ autoDeploy: true
 
 This aligns the checked-in deployment intent with the release process.
 
-**Important:** an already-provisioned Render service does not become current merely because this file changed. If Render has not synchronized the Blueprint/source setting yet, use the Render dashboard for `buildhub-staging` to:
+**Important:** an already-provisioned Render service does not become current merely because this file changed. If Render has not synchronized the Blueprint/source setting yet, use the Render dashboard for `rakiza-staging` (renamed from `buildhub-staging`; the hostname `buildhub-staging.onrender.com` is unchanged, because a service's `.onrender.com` slug is fixed at creation and no rename alters it) to:
 
 1. confirm **Branch** = `claude/buildhub-global-release-candidate`
 2. confirm **Auto-Deploy** = On
@@ -132,7 +132,10 @@ verified on staging, the SHA matched.
 
 - Production is **not** deployed by any of this, and never will be without
   your explicit approval.
-- Staging keeps its **own** database (`buildhub-staging-db`, a private service)
+- Staging keeps its **own** database (`buildhub-staging-mysql`, a private service
+  with a persistent disk; this one is deliberately NOT rebranded, because Render
+  matches Blueprint services by name and a rename would provision a new service
+  with a new empty disk)
   and its own generated `JWT_SECRET`. No production secret appears in the
   blueprint.
 - Object storage and SMTP remain `sync: false` — supplied in the dashboard or

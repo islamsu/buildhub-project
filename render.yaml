@@ -1,4 +1,4 @@
-# ── BuildHub staging on Render ─────────────────────────────────────────────
+# ── RAKIZA staging on Render ─────────────────────────────────────────────
 #
 # A TEMPORARY, ISOLATED STAGING ENVIRONMENT. It does not replace the planned
 # Vultr production architecture and shares nothing with it: its own database,
@@ -8,6 +8,45 @@
 # Render reads this file directly. In the dashboard: New -> Blueprint, pick this
 # repository and the branch, and it provisions everything below. Nothing is
 # clicked together by hand, so the environment is reproducible and reviewable.
+#
+# ── WHICH NAMES ARE STATE AND WHICH ARE A LABEL ───────────────────
+#
+# Two services, and the difference between them decides what a rename costs.
+# An earlier version of this file, and of shared/brand.ts, said the WEB service
+# "has a disk; a rename destroys it". That was wrong, and it is corrected here
+# because a wrong reason protects the wrong thing:
+#
+#   rakiza-staging          STATELESS. No disk, no volume, no persistent state.
+#                           Everything it holds is an environment variable or a
+#                           built image. Renaming it costs a hostname and the
+#                           re-entry of the `sync: false` values below - it
+#                           destroys no data.
+#
+#   buildhub-staging-mysql  STATEFUL. Carries the 10 GB `mysql-data` disk that
+#                           IS the staging database. Render matches Blueprint
+#                           services BY NAME, so changing this name does not
+#                           rename it: Render provisions a NEW private service
+#                           with a NEW EMPTY DISK and the staging database is
+#                           gone. NEVER RENAME THIS. The same applies to
+#                           MYSQL_DATABASE and MYSQL_USER, which name a schema
+#                           and a grant stored inside that volume.
+#
+# THE HOSTNAME IS NOT RENAMED BY THIS FILE. A service's `.onrender.com` slug is
+# fixed when the service is created and a rename never changes it; a BLUEPRINT
+# name change would instead provision a second service under the new name. The
+# owner-approved change was a DASHBOARD rename of the display name, with this
+# file updated to match it, so buildhub-staging.onrender.com REMAINS the
+# hostname. Every reference to that host elsewhere in the repository is still
+# factually correct and was deliberately left alone.
+#
+# VITE_APP_ID also stays `buildhub-staging` (see its own note below). It is not
+# infrastructure naming: it is the audience claim stamped into every session
+# JWT, so changing it would sign out every staging user.
+#
+# brandGuards.test.ts asserts all of this STRUCTURALLY - it parses this file and
+# compares service names by type, rather than by substring. The substring form
+# it replaced could not see a web-service rename at all, because
+# "name: buildhub-staging" is a substring of "name: buildhub-staging-mysql".
 #
 # WHY MYSQL IS A PRIVATE SERVICE RATHER THAN A MANAGED DATABASE
 #
@@ -30,7 +69,7 @@ databases: []
 services:
   # ── The application ──────────────────────────────────────────────────────
   - type: web
-    name: buildhub-staging
+    name: rakiza-staging
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: starter
@@ -144,7 +183,7 @@ services:
       - key: APP_BASE_URL
         fromService:
           type: web
-          name: buildhub-staging
+          name: rakiza-staging
           envVarKey: RENDER_EXTERNAL_URL
 
       # Points at the private MySQL service by its internal hostname. Not
@@ -217,6 +256,13 @@ services:
       - key: ADMIN_BOOTSTRAP_PASSWORD
         sync: false
 
+      # DELIBERATELY NOT REBRANDED, and not infrastructure naming.
+      #
+      # server/_core/sdk.ts stamps `appId: ENV.appId` into every session JWT
+      # and then REJECTS a token whose appId differs from the configured one.
+      # So this string is the session audience: changing it invalidates every
+      # session this deployment has ever issued and signs out every staging
+      # user. It shares the old service name by history, not by meaning.
       - key: VITE_APP_ID
         value: buildhub-staging
 
@@ -287,7 +333,12 @@ services:
       - key: OPENAI_BASE_URL
         sync: false
 
-  # ── MySQL 8, private ─────────────────────────────────────────────────────
+  # ── MySQL 8, private ─ STATEFUL, NEVER RENAME ───────────────────
+  #
+  # This name is not a label, it is a handle on the `mysql-data` disk below.
+  # Render matches Blueprint services by name, so renaming it provisions a new
+  # private service with a new empty disk and the staging database is gone. It
+  # deliberately keeps the buildhub name while the web service reads RAKIZA.
   - type: pserv
     name: buildhub-staging-mysql
     runtime: image
